@@ -76,6 +76,10 @@
 - 明細行を編集する場合も、保存前に[1.3](#13-貸借バランスの検証)のバランス検証を通す。
 - 編集のたびに`journal_entries.updated_at`を更新する(明細行自体は`updated_at`を持たない。[accounts.md 3.1 フィールド定義](./accounts.md#31-フィールド定義)参照)。
 
+**物理削除は常に許可する**([GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)で決着)。取消仕訳(反対仕訳)を挟むことは強制しない。[accounts.md 2.1](./accounts.md#21-操作ルール)の「別科目への実質変更」は反対仕訳で扱うが、これは科目マスタ側の大量の過去仕訳を一括付け替えする特殊な操作の文脈であり、1件の仕訳を日常的に編集・削除する場面にまで同じ重さを求めると、入力ミスの訂正が煩雑になり[domain.md 1.1 基本方針](../domain.md#11-基本方針)の「会計知識のない一般ユーザーにも使える」という方針に反する。会計ソフト的な監査証跡(何をいつ変更したか)は持たない。
+
+**CSVインポート由来の仕訳(`external_transaction_refs`を持つ、[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産への直接記帳の制限)参照)も、`is_reconcilable`資産側の`account_id`/`amount`/`side`や`entry_date`を含め編集を許可する**(Issue #1で決着)。ただし編集すると`external_transaction_refs`が指す元のCSV明細との対応が崩れるため、UI上で警告する。[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産への直接記帳の制限)の「CSV由来のみ許可」はあくまで**作成経路**の制約であり、事後の内容がCSVの生データと一致し続けることまでは保証しない。内容が誤っていた場合、削除して正しい内容で再取込する([reconciliation.md 1.7](./reconciliation.md#17-ライフサイクル)参照)か、その場で編集するかはユーザーの選択に委ねる。
+
 ### 1.6 CSVインポートとの関係
 
 CSVインポート時の相手勘定科目の自動推定は、取引先マスタを介したサジェスト機能として[counterparties.md 1章](./counterparties.md#1-取引先)で定義する。本章で定義した仕訳・仕訳明細のデータモデルと貸借バランス検証は、CSVインポート経由・マニュアル起票経由のいずれからも共通して使われる土台として位置づける([architecture.md](../architecture.md) 12章の方針の通り)。

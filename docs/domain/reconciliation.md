@@ -93,8 +93,8 @@ CSVの1行(またはCSVから生成された仕訳)を「外部取引」とし�
 
 ### 1.7 ライフサイクル
 
-- 仕訳(`journal_entries`)が削除された場合、対応する`external_transaction_refs`もCASCADE削除する。
-- 突合済み(=`external_transaction_refs`に存在する)仕訳の編集・削除については、[journal.md 1.5](./journal.md#15-仕訳の編集削除)および[GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)(仕訳自体のライフサイクル設計)で改めて検討する。少なくとも「突合済み明細を編集すると外部明細との対応が崩れる」ことをユーザーに警告する仕組みは必要になる見込み。
+- 仕訳(`journal_entries`)が削除された場合、対応する`external_transaction_refs`もCASCADE削除する。削除後に同じ内容で正しく再取込すれば復元できるため、内容が誤っていた場合の訂正手段として使える。
+- 突合済み(=`external_transaction_refs`に存在する)仕訳の編集・削除は、[journal.md 1.5 仕訳の編集・削除](./journal.md#15-仕訳の編集削除)の通り([GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)で決着)、`is_reconcilable`資産側の値を含めて許可する。UI上で「外部明細との対応が崩れる」警告を出すに留め、DB・Repository層での禁止は行わない。`external_transaction_refs`の存在は「CSV由来として作成されたことがある」ことのみを保証し、「現在の内容がCSVの生データと一致し続けている」ことは保証しない。
 
 ### 1.8 残高検証(将来拡張、(b)のスコープ)
 
@@ -151,4 +151,5 @@ END;
 
 - [1.3](#13-is_reconcilable資産への直接記帳の制限)の記帳経路制限は`JournalEntryRepository`(仕訳ドメイン、[journal.md](./journal.md))の実装要件になる。
 - [1.4](#14-暫定記帳未払金未収金と消込)の未収金は、口座登録UXとは別に「一時勘定」として`is_reconcilable = false`の資産科目をユーザーが作成できる必要がある([accounts.md](./accounts.md)参照)。
+- [1.7](#17-ライフサイクル)の突合済み仕訳の編集・削除ルールは[GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)(仕訳自体のライフサイクル設計)で決着し、[journal.md 1.5](./journal.md#15-仕訳の編集削除)に反映済み。
 - [1.7](#17-ライフサイクル)の通り、仕訳自体の編集・削除ルール(Issue #1)が固まった際、突合済み判定との整合を再確認する必要がある。
