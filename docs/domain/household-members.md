@@ -1,0 +1,193 @@
+# 世帯メンバードメイン
+
+[domain.md](../domain.md)(エントリポイント)から分割された、世帯メンバー(HouseholdMember)に関する詳細設計。
+
+---
+
+## 目次
+
+1. [世帯メンバー](#1-世帯メンバー)
+2. [世帯メンバーマスタ(household_members)](#2-世帯メンバーマスタhousehold_members)
+
+---
+
+## 1. 世帯メンバー
+
+### 1.1 位置づけ
+
+世帯メンバーは「誰の口座か/誰の取引か」を表す軸であり、プロジェクト(目的)・勘定科目(用途)とも独立する。1つの家計簿を世帯で共有し、個人ごとの資産・支出を把握したい、というニーズに応える。
+
+**認証・ログインの概念ではない。** このアプリはLocal-first・サーバーレスであり([architecture.md](../architecture.md) 1章・11章)、アクセス制御や権限管理は持たない。全データは同一のローカルDB内にあり、世帯メンバーはあくまで集計・表示のための分類ラベルである。
+
+> **命名について**
+> テーブル名は`users`ではなく`household_members`(世帯メンバー)とする。`users`は「アプリにログインする主体」を連想させ、将来アプリの利用者アカウント機能(認証)を追加する際に概念が衝突しうるため、意図的に区別する。
+
+### 1.2 紐づけ対象と既定値の継承
+
+プロジェクトとは異なり、世帯メンバーは **全区分(資産・負債・純資産・収益・費用)に適用可能** とする。ただし、口座(BS科目)の名義は取引のたびに変わるものではなく口座に固定される性質があるため、勘定科目とプロジェクトのときのようなJournalLineへの都度タグ付けだけでは実態に合わない。そこで2段階の仕組みを取る。
+
+| レベル | カラム | 役割 |
+|---|---|---|
+| 既定値 | `accounts.household_member_id` | 口座・科目自体の既定の名義。例:「三菱UFJ銀行」口座は夫名義 |
+| 上書き | `journal_lines.household_member_id` | 個々の取引での例外的な指定。未設定(NULL)なら既定値を継承 |
+
+```
+実効メンバー(journal_line) =
+  COALESCE(journal_lines.household_member_id, accounts.household_member_id)
+  (accounts は journal_lines.account_id で参照される勘定科目)
+```
+
+いずれも`NULL`を許容し、`NULL`は「世帯共通(特定の個人に紐づかない)」を意味する。生活費口座のように夫婦共有の口座は`accounts.household_member_id = NULL`のままにしておけばよい。
+
+```
+例: 夫名義の普通預金口座(account.household_member_id = 夫)から、
+    妻が買い物をした
+
+(借) 費用・食費        4,000   line.household_member_id = 妻 (上書き)
+(貸) 資産・普通預金            4,000   line.household_member_id = (未設定 → 夫を継承)
+```
+
+口座開設時に既定値を設定しておけば、以降の取引では通常何も指定しなくても実効メンバーが自動的に決まる。個別の取引だけ実際の利用者が異なる場合のみ、明細側で明示的に上書きする。
+
+### 1.3 ライフサイクル
+
+プロジェクト・勘定科目と同様、削除ではなく非アクティブ化を基本とする。
+
+| 操作 | 条件 | 扱い |
+|---|---|---|
+| 物理削除 | 紐づく勘定科目・仕訳明細が0件 | 可 |
+| 物理削除 | 紐づく勘定科目・仕訳明細が1件以上 | 不可(非アクティブ化のみ) |
+| 名称変更 | 常に | 可 |
+| 非アクティブ化 | 任意(例: 世帯構成の変化) | 過去集計はそのまま表示、新規の紐づけでは選択不可 |
+
+### 1.4 集計への影響
+
+メンバー別の集計は、[financial-statements.md 2章 財務諸表(FS)](./financial-statements.md#2-財務諸表fs)の期間集計・[projects.md 1.4 集計への影響](./projects.md#14-集計への影響)のプロジェクト別集計と直交する軸として提供する。
+
+```
+メンバー別残高(household_member, 基準日) =
+  Σ(実効メンバー = household_member の journal_lines の残高、基準日まで)
+```
+
+期間・プロジェクト・世帯メンバーの3軸は互いに独立しており、任意の組み合わせで絞り込める(例:「今月・アメリカ旅行・夫」の支出)。
+
+### 1.5 グループ(複数メンバーの集合)
+
+「夫婦共有口座」のように、特定の複数メンバーの集合に紐づく口座・支出を表現するため、`household_members`は「個人」と「グループ」を同じテーブル・同じ形式で扱う。`is_group`フラグで区別し、グループの場合は所属する個人メンバーを中間テーブル(`household_member_group_memberships`)で管理する。
+
+```
+例: 「夫婦」というグループを作り、「夫」「妻」を所属させる
+
+household_members:
+  (1, "夫",   is_group=false)
+  (2, "妻",   is_group=false)
+  (3, "夫婦", is_group=true)
+
+household_member_group_memberships:
+  (group_id=3, member_id=1)
+  (group_id=3, member_id=2)
+```
+
+`accounts.household_member_id`・`journal_lines.household_member_id`は、個人・グループのどちらのIDも区別なく指定できる。既存の既定値の継承ロジック([1.2](#12-紐づけ対象と既定値の継承))や集計ロジック([1.4](#14-集計への影響))はグループに対してもそのまま適用され、変更を必要としない。グループは「所属者を持つ、もう1つの`household_member`」に過ぎない。
+
+**グループは独立した集計単位として扱う。** 「夫婦」グループの残高は「夫」「妻」個人の集計には含まれない。二重計上を避け、個人の資産・支出を正確に把握できるようにするための判断。世帯全体を俯瞰したい場合は、UI側で個人とグループを横断的に合算する。
+
+```
+世帯合計 = Σ(household_member = 夫) + Σ(household_member = 妻) + Σ(household_member = 夫婦) + ...
+```
+
+[1.2](#12-紐づけ対象と既定値の継承)の「`NULL` = 世帯共通」との違いに注意する。`NULL`は「特定の誰にも紐づかない、未分類の共有」であるのに対し、グループは「夫婦」のように具体的な構成メンバーが明示された共有である。両者は併存してよく、例えば子供の教育費用の口座のように具体的な名義を持たせたくない場合は引き続き`NULL`を使い、「誰と誰の共有か」を集計上区別したい場合にグループを使う。
+
+グループのネストは許可しない(グループの中に別のグループを含めることはできない)。個人が複数のグループに同時に所属することは許可する(多対多)。
+
+> **`is_group`は変更不可**
+> `category`([accounts.md 3.2 DDL](./accounts.md#32-ddl))と同様、`is_group`はレコード作成後の変更を禁止する。個人として作成したメンバーを後からグループへ、あるいはその逆へ変更すると、既存の`accounts.household_member_id`等の参照が指し示す意味が変わってしまうため。
+
+---
+
+## 2. 世帯メンバーマスタ(household_members)
+
+### 2.1 フィールド定義
+
+**household_members**
+
+| カラム | 内容 | 制約・備考 |
+|---|---|---|
+| `id` | メンバーID | PK |
+| `name` | 表示名 | 例:「夫」「妻」「夫婦」、自由記述 |
+| `is_group` | 個人かグループか | `false`=個人、`true`=グループ。作成後の変更不可([1.5](#15-グループ複数メンバーの集合)参照) |
+| `is_active` | 有効/非アクティブ | falseにしても過去仕訳・過去集計に影響なし |
+| `created_at` | 作成日時 | |
+| `updated_at` | 更新日時 | |
+
+認証情報(パスワード・メールアドレス等)は一切持たない。勘定科目・プロジェクトと同様、識別のためのラベルに過ぎない([1.1](#11-位置づけ)参照)。
+
+**household_member_group_memberships**
+
+| カラム | 内容 | 制約・備考 |
+|---|---|---|
+| `group_id` | グループ側のID | FK、`is_group=TRUE`のレコードのみ許可(TRIGGERで強制) |
+| `member_id` | 所属する個人のID | FK、`is_group=FALSE`のレコードのみ許可、ネスト禁止(TRIGGERで強制) |
+
+複合主キー(`group_id`, `member_id`)で組み合わせの重複登録を防ぐ。
+
+### 2.2 DDL
+
+```sql
+CREATE TABLE household_members (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL,
+  is_group    BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE household_member_group_memberships (
+  group_id   INTEGER NOT NULL REFERENCES household_members(id) ON DELETE CASCADE,
+  member_id  INTEGER NOT NULL REFERENCES household_members(id) ON DELETE CASCADE,
+  PRIMARY KEY (group_id, member_id)
+);
+
+-- group_id は is_group=TRUE のレコードのみ許可
+-- member_id は is_group=FALSE のレコードのみ許可(グループのネスト禁止)
+-- (CHECK制約はサブクエリ不可のためTRIGGERで実装。実機検証済み: 1.5参照)
+CREATE TRIGGER check_group_membership_group_insert
+BEFORE INSERT ON household_member_group_memberships
+WHEN (SELECT is_group FROM household_members WHERE id = NEW.group_id) IS NOT TRUE
+BEGIN
+  SELECT RAISE(ABORT, 'group_id must reference a group (is_group = TRUE)');
+END;
+
+CREATE TRIGGER check_group_membership_member_insert
+BEFORE INSERT ON household_member_group_memberships
+WHEN (SELECT is_group FROM household_members WHERE id = NEW.member_id) IS NOT FALSE
+BEGIN
+  SELECT RAISE(ABORT, 'member_id must reference an individual (is_group = FALSE); nesting groups is not allowed');
+END;
+
+-- is_group の変更を禁止
+CREATE TRIGGER prevent_is_group_change
+BEFORE UPDATE OF is_group ON household_members
+WHEN OLD.is_group != NEW.is_group
+BEGIN
+  SELECT RAISE(ABORT, 'is_group cannot be changed');
+END;
+
+-- 勘定科目・仕訳明細が紐づくメンバー/グループの物理削除を禁止
+CREATE TRIGGER prevent_delete_member_with_references
+BEFORE DELETE ON household_members
+WHEN EXISTS (SELECT 1 FROM accounts WHERE household_member_id = OLD.id)
+  OR EXISTS (SELECT 1 FROM journal_lines WHERE household_member_id = OLD.id)
+BEGIN
+  SELECT RAISE(ABORT, 'cannot delete household member with references');
+END;
+
+-- updated_at の自動更新
+CREATE TRIGGER household_members_set_updated_at
+AFTER UPDATE ON household_members
+WHEN NEW.updated_at = OLD.updated_at
+BEGIN
+  UPDATE household_members SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
+```
