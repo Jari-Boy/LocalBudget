@@ -1,0 +1,81 @@
+# CSVインポートドメイン
+
+[domain.md](../domain.md)(エントリポイント)から分割された、CSVインポート(Importer)に関する詳細設計。[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針(`Importer`インターフェース、金融機関ごとのパーサー差し替え、レビュー画面必須)を具体化する。
+
+> **たたき台**
+> [1.5](#15-相手勘定科目サジェストの範囲)は[GitHub Issue #2](https://github.com/Jari-Boy/LocalBudget/issues/2)での議論を経て確定。他の節は初稿。
+
+---
+
+## 目次
+
+1. [CSVインポート](#1-csvインポート)
+2. [責務分担](#2-責務分担)
+
+---
+
+## 1. CSVインポート
+
+### 1.1 位置づけ
+
+金融機関ごとに異なるCSVフォーマットを共通の中間表現に正規化し、[reconciliation.md](./reconciliation.md)(重複防止・取り込み漏れ検出)・[counterparties.md](./counterparties.md)(取引先推定)・[journal.md](./journal.md)(仕訳生成)の各ドメインロジックへ橋渡しする役割を担う。本ドメイン自体はデータモデル(DDL)を持たず、[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)で定義された`Importer`インターフェースの入出力と、パースからレビュー確定までの処理フローを定義する。
+
+### 1.2 中間表現(ImportedRecord)
+
+金融機関固有のCSVフォーマット(列の並び、日付形式、「入金額・出金額」2列形式か「金額」1列符号付き形式か等)の差異は、金融機関ごとのImporter実装(`BankAImporter`等)が吸収し、以下の共通フォーマットに正規化して返す。
+
+| フィールド | 内容 | 備考 |
+|---|---|---|
+| `entry_date` | 取引日 | |
+| `description` | 摘要 | 生文字列、正規化前。[counterparties.md 1.3](./counterparties.md#13-csvインポートとの関係)の取引先推定はここから行う |
+| `amount` | 金額 | 符号付き整数。正 = 口座残高増加側(入金)、負 = 口座残高減少側(出金) |
+| `balance_after` | 取引後残高 | 任意。CSVに残高列がある場合のみ。[reconciliation.md 1.8](./reconciliation.md#18-取り込み漏れ検出)の連続性検証・[1.9](./reconciliation.md#19-原因不明差異への残高調整)の残高調整に使う |
+| `external_id` | 外部取引の一意キー | 任意。金融機関側にIDがあれば使用。無ければレビュー確定時に`entry_date`/`amount`/`description`から正規化ハッシュを生成し代替する([reconciliation.md 1.5](./reconciliation.md#15-データモデルの考え方)参照) |
+
+`amount`の符号によって「口座残高が増えたか減ったか」だけを表現し、複式仕訳としての借方/貸方への変換(相手科目に応じてどちらが借方かが変わる)は[1.4](#14-レコード処理フロー)のレビュー確定時に行う。中間表現の段階では複式簿記の概念(借方/貸方)を持ち込まない。
+
+### 1.3 パース方式
+
+- `Importer`インターフェースは「CSV文字列 → `ImportedRecord`の配列」という入出力のみを持つ純粋な変換処理とする([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)参照)。
+- 金融機関固有の実装(`BankAImporter`、`CardBImporter`等)は、この変換処理の中でのみ金融機関ごとのフォーマット知識を持つ。[1.4](#14-レコード処理フロー)以降のフロー(重複防止・取り込み漏れ検出・取引先推定・レビュー)は金融機関を問わず共通である。
+- CSVパース処理自体はメインスレッドで実行する([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針を踏襲)。
+
+### 1.4 レコード処理フロー
+
+CSVインポートからレビュー確定までは、以下の順で各ドメインのロジックを通す。
+
+1. **パース**: CSV文字列 → `ImportedRecord`の配列([1.2](#12-中間表現importedrecord)、Importer実装の責務)
+2. **重複チェック**: `external_id`(またはハッシュ)で[reconciliation.md 1.6 重複防止フロー](./reconciliation.md#16-重複防止フロー)を適用する
+3. **取り込み漏れチェック**: `balance_after`が取得できる場合、[reconciliation.md 1.8 取り込み漏れ検出](./reconciliation.md#18-取り込み漏れ検出)で残高の連続性を検証する
+4. **取引先推定**: `description`を正規化し、[counterparties.md 1.3](./counterparties.md#13-csvインポートとの関係)の部分一致パターンマッチングを適用する
+5. **相手勘定科目のサジェスト**(優先順位順、[1.5](#15-相手勘定科目サジェストの範囲)参照):
+   - a. 対象口座に未消込の未払金・未収金があれば、その消込仕訳をサジェストする([reconciliation.md 1.4 暫定記帳と消込](./reconciliation.md#14-暫定記帳未払金未収金と消込))
+   - b. 未消込の候補がなく、手順4の取引先推定で一意に特定できていれば、`counterparties.default_account_id`をサジェストする([counterparties.md 1.4](./counterparties.md#14-勘定科目のデフォルトサジェスト))
+   - c. どちらにも該当しなければサジェストなし。ユーザーが手動で選択する
+6. **レビュー確定**: レビュー画面でユーザーが日付・金額・相手科目・プロジェクト・世帯メンバー・取引先を確認・修正し、確定する
+7. **永続化**: 確定した内容を`JournalEntryRepository`に渡し、[journal.md 1.3 貸借バランスの検証](./journal.md#13-貸借バランスの検証)を経て`journal_entries`・`journal_lines`・`external_transaction_refs`を同一トランザクションで書き込む
+
+### 1.5 相手勘定科目サジェストの範囲
+
+取引先経由のサジェスト([1.4](#14-レコード処理フロー)の5-b、`counterparties.default_account_id`)のみをMVPスコープとする。取引先が特定できない場合、過去の類似摘要文字列からの推定のような追加のサジェスト機構は持たず、ユーザーに手動選択させる。
+
+> **なぜ類似摘要からの推定を見送るか**
+> 類似度判定(表記ゆれ・部分一致の閾値調整等)の設計・実装コストに対して、MVPで得られる精度向上の恩恵が見合わない。[counterparties.md 1.3](./counterparties.md#13-csvインポートとの関係)の学習の仕組み(手動確定した摘要が`pattern`として自動登録される)により、取引先マスタが育つにつれて自然にサジェスト精度は上がっていくため、初手から複雑な推定ロジックを持ち込む必要性が薄い。
+
+### 1.6 複合仕訳への対応
+
+[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)で触れた「クレジットカード引き落とし明細を複合仕訳(未払金消込)にまとめる」運用は、CSVの取り込み粒度([1.4](#14-レコード処理フロー)の5-a)の話であり、`Importer`層自体が複数のCSV行を1仕訳に束ねる特別な処理を持つわけではない。1件のCSVレコード(=1回の口座引き落とし)に対して、レビュー画面で複数の未消込未払金を選択し複合仕訳として消し込む、という形で表現する([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)の複合仕訳の考え方と同じ)。
+
+---
+
+## 2. 責務分担
+
+CSVインポートに関わる3層の責務を明確に分離する。
+
+| 層 | 責務 | 持たない責務 |
+|---|---|---|
+| Importer(金融機関固有実装) | CSV文字列 → `ImportedRecord`の配列への変換のみ([1.2](#12-中間表現importedrecord)・[1.3](#13-パース方式)) | 重複判定・取引先推定・複式簿記への変換は一切行わない |
+| レビュー画面 | 重複・取り込み漏れの警告表示、相手科目のサジェスト提示、ユーザーによる確認・修正の受付([1.4](#14-レコード処理フロー)の2〜6) | 最終的なドメインルールの強制(貸借バランス等)は行わない |
+| `JournalEntryRepository` | 確定した仕訳ドラフトの永続化、貸借バランス検証([journal.md 1.3](./journal.md#13-貸借バランスの検証))、`is_reconcilable`資産への記帳経路制限の強制([reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産への直接記帳の制限)) | CSVインポート固有の知識(パース・サジェスト)は持たない。マニュアル起票と共通の入り口([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)) |
+
+この分担により、「入力経路(CSVかマニュアルか)によってドメインの整合性ルールが分岐しない」という[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針が保たれる。`Importer`とレビュー画面はあくまで`JournalEntryRepository`への入力を組み立てる前段階であり、最終的な整合性は常に`JournalEntryRepository`が一元的に担保する。

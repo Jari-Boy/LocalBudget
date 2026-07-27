@@ -2,8 +2,8 @@
 
 [domain.md](../domain.md)(エントリポイント)から分割された、外部明細との突合(Reconciliation)に関する詳細設計。
 
-> **関連Issue**
-> [architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)のCSVインポート方針、および[GitHub Issue #2](https://github.com/Jari-Boy/LocalBudget/issues/2)(CSVインポート・記帳方法の詳細設計)と密接に関わる。Importer層の実装方針が固まった段階で本ファイルも見直しが必要。
+> **関連ドメイン**
+> [architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)のCSVインポート方針を具体化した[csv-import.md](./csv-import.md)([GitHub Issue #2](https://github.com/Jari-Boy/LocalBudget/issues/2))と密接に関わる。本ファイルの重複防止([1.6](#16-重複防止フロー))・取り込み漏れ検出([1.8](#18-取り込み漏れ検出))は、csv-import.mdのレコード処理フロー([csv-import.md 1.4](./csv-import.md#14-レコード処理フロー))から呼び出される。
 
 ---
 

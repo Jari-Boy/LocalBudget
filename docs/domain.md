@@ -54,3 +54,4 @@
 | 予算 | 勘定科目ごとの月次予算額と実績比較 | [domain/budgets.md](./domain/budgets.md) |
 | 突合 | 外部明細(CSV)と仕訳の対応関係・重複取込防止 | [domain/reconciliation.md](./domain/reconciliation.md) |
 | 定期取引 | 家賃・サブスク等、繰り返し発生する仕訳のテンプレート化 | [domain/recurring-transactions.md](./domain/recurring-transactions.md) |
+| CSVインポート | 金融機関CSVの中間表現への正規化、パースからレビュー確定までのフロー、Importer/レビュー画面/Repositoryの責務分担。**たたき台** | [domain/csv-import.md](./domain/csv-import.md) |
