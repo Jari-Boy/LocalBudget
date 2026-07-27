@@ -45,7 +45,7 @@
 
 | ドメイン | 概要 | 詳細 |
 |---|---|---|
-| 勘定科目 | 資産・負債・純資産・収益・費用の5区分と、ユーザーが自由に追加する勘定科目(`accounts`)。ライフサイクル・表示用グルーピング(`account_groups`)・口座登録UXを含む | [domain/accounts.md](./domain/accounts.md) |
+| 勘定科目 | 資産・負債・純資産・収益・費用の5区分と、ユーザーが自由に追加する勘定科目(`accounts`)。ライフサイクル・表示用グルーピング(`account_groups`)・口座登録UX/クレジットカード登録UXを含む | [domain/accounts.md](./domain/accounts.md) |
 | 仕訳 | 複式簿記の仕訳(JournalEntry)・仕訳明細(JournalLine)。貸借バランス検証、金額と通貨の扱い、CSVインポートとの関係 | [domain/journal.md](./domain/journal.md) |
 | プロジェクト | 「何の目的で使ったお金か」を表す横断タグ軸。PL科目の行にのみ設定可能 | [domain/projects.md](./domain/projects.md) |
 | 世帯メンバー | 「誰の口座/誰の取引か」を表す軸。既定値の継承、個人・グループ(複数メンバーの集合)を扱う | [domain/household-members.md](./domain/household-members.md) |

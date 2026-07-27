@@ -1,6 +1,6 @@
 # 勘定科目ドメイン
 
-[domain.md](../domain.md)(エントリポイント)から分割された、勘定科目(Account)に関する詳細設計。体系・ライフサイクル・マスタ(accounts / account_groups)・口座登録UXを扱う。
+[domain.md](../domain.md)(エントリポイント)から分割された、勘定科目(Account)に関する詳細設計。体系・ライフサイクル・マスタ(accounts / account_groups)・口座登録UX/クレジットカード登録UXを扱う。
 
 ---
 
@@ -10,6 +10,7 @@
 2. [勘定科目のライフサイクル](#2-勘定科目のライフサイクル)
 3. [勘定科目マスタ(accounts)](#3-勘定科目マスタaccounts)
 4. [口座登録のUX](#4-口座登録のux)
+5. [クレジットカード登録のUX](#5-クレジットカード登録のux)
 
 ---
 
@@ -34,7 +35,7 @@
 | 区分 | コード | 所属 | 勘定科目の例 |
 |---|---|---|---|
 | 資産 | `asset` | BS | 現金/普通預金/定期預金/電子マネー/証券口座/未収金(一時勘定) |
-| 負債 | `liability` | BS | クレジットカード未払金/未払金(一時勘定)/ローン/立替金 |
+| 負債 | `liability` | BS | クレジットカード未払金(カードごと、`is_reconcilable = true`)/未払金(一時勘定)/ローン/立替金 |
 | 純資産 | `equity` | BS | 初期残高(口座ごと、システム管理) |
 | 収益 | `revenue` | PL | 給与収入/副業収入/謝礼収入 |
 | 費用 | `expense` | PL | 食費/住居費/水道光熱費/娯楽費/残高調整(システム管理) … |
@@ -43,7 +44,10 @@
 > 貯蓄・投資は現金という資産が別の資産へ形を変える、資産→資産の振替であり、費用ではない。PLには影響しない。
 
 > **「未収金」はis_reconcilable = falseで登録する**
-> [reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産への直接記帳の制限)の通り、`asset`区分かつ`is_reconcilable = true`の科目はCSVインポート由来の仕訳からしか使えない。「未収金」は給与等をCSV到着前に暫定計上するための一時勘定であり、CSVと直接照合される本物の口座ではないため、口座登録ウィザード([4章](#4-口座登録のux))ではなく通常の勘定科目追加で`is_reconcilable = false`として作成する([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)参照)。`is_reconcilable = true`にしてしまうと未収金自体への暫定計上ができなくなり本末転倒になる。
+> [reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)の通り、`is_reconcilable = true`の科目はCSVインポート由来の仕訳からしか使えない。「未収金」は給与等をCSV到着前に暫定計上するための一時勘定であり、CSVと直接照合される本物の口座ではないため、口座登録ウィザード([4章](#4-口座登録のux))ではなく通常の勘定科目追加で`is_reconcilable = false`として作成する([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)参照)。`is_reconcilable = true`にしてしまうと未収金自体への暫定計上ができなくなり本末転倒になる。
+>
+> **「クレジットカード未払金」は逆にis_reconcilable = trueで登録する**
+> クレジットカードの利用明細はCSVという外部の正が存在する点で銀行口座と同じ性質を持つため、専用のウィザード([5章 クレジットカード登録のUX](#5-クレジットカード登録のux))で`is_reconcilable = true`の負債科目として登録する。同じ「未払金」でも、家賃等の暫定計上に使う一時勘定([3.1](#31-フィールド定義)の`is_reconcilable = false`側)とは役割も制約も異なるため混同しない。
 
 > **純資産(equity)区分はユーザーが科目を追加できない**
 > 資本科目間の振替(決算振替仕訳等)は一般ユーザー向け家計簿では実質発生しないため、`equity`区分はシステムが生成する科目(口座ごとの初期残高科目、[3.1](#31-フィールド定義)参照)のみが存在し、ユーザーによる新規作成を許可しない([3.2 DDL](#32-ddl)のトリガーで強制)。ユーザーが編集できるのは既存のsystem-managed科目の`name`(ラベル)のみである。
@@ -99,7 +103,7 @@
 | `id` | 科目ID | PK |
 | `category` | 区分 | ENUM: asset/liability/equity/revenue/expense、変更不可 |
 | `name` | 勘定科目名 | 同一区分内であればいつでも変更可 |
-| `is_reconcilable` | 照合可否 | 資産科目は`NOT NULL`、他区分は`NULL`必須(CHECK制約で強制) |
+| `is_reconcilable` | 照合可否 | 資産・負債科目は`NOT NULL`、他区分は`NULL`必須(CHECK制約で強制)。負債側は主にクレジットカードのカード専用未払金科目([5章 クレジットカード登録のUX](#5-クレジットカード登録のux)参照) |
 | `is_active` | 有効/非アクティブ | falseにしても過去仕訳・過去FSに影響なし |
 | `is_system_managed` | システム管理科目か | 口座ごとの初期残高科目・残高調整など、削除・区分変更・非アクティブ化を禁止。`name`(ラベル)変更のみ可 |
 | `household_member_id` | 既定の名義 | FK、任意。NULL=世帯共通([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照) |
@@ -131,8 +135,8 @@ CREATE TABLE accounts (
   created_at           TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK (
-    (category = 'asset' AND is_reconcilable IS NOT NULL) OR
-    (category != 'asset' AND is_reconcilable IS NULL)
+    (category IN ('asset','liability') AND is_reconcilable IS NOT NULL) OR
+    (category NOT IN ('asset','liability') AND is_reconcilable IS NULL)
   ),
   CHECK (
     initial_balance_for_account_id IS NULL OR
@@ -284,3 +288,27 @@ END;
 
 > **段階的開示**
 > シンプルUI / 上級者モードの方針に沿い、上級者モードでのみ内部(資産科目としての登録)が見える。通常はタスク単位の体験で完結させる。
+
+---
+
+## 5. クレジットカード登録のUX
+
+クレジットカードの登録は、口座登録([4章](#4-口座登録のux))と対になる専用ウィザードで行う。裏側で`accounts`に負債科目を1件作成する。ユーザーには「区分」「照合可否」という語を見せない。
+
+### 5.1 ウィザードと裏側の対応
+
+| ユーザーが見る画面 | 裏側で作られるデータ |
+|---|---|
+| 「クレジットカードを登録する」ボタン | ― |
+| ① 名前を付ける(例:楽天カード) | `category = 'liability'`, `is_reconcilable = true`が固定・非表示ですべて。`name = "楽天カード"` |
+| ② 名義を選ぶ(任意、例:夫/妻/夫婦/共通) | `household_member_id`を設定([4.1](#41-ウィザードと裏側の対応)の口座登録と同じ継承ルール) |
+
+口座登録の「① 種類を選ぶ」([4.1](#41-ウィザードと裏側の対応)参照)に相当するステップは無い(クレジットカードという種類自体が`category = 'liability'` かつ `is_reconcilable = true`に一意に対応するため)。「④ 初期残高を入力」に相当するステップもMVPでは設けない。銀行口座と異なり、未精算額はCSVインポートを重ねるうちに自然に積み上がるため、初期値を入力する必要性が薄い。
+
+### 5.2 なぜカードごとに専用科目にするか
+
+全カードで単一の「未払金」科目を共有すると、[reconciliation.md 1.6 重複防止フロー](./reconciliation.md#16-重複防止フロー)の`external_id`重複判定がカード横断になり、どのカードの明細かを区別できなくなる。[3.1](#31-フィールド定義)で口座ごとに初期残高科目を分けた判断([なぜ口座ごとに初期残高科目を分けるか](#31-フィールド定義)参照)と同じ発想で、カードごとに専用の未払金科目を作る。
+
+### 5.3 is_reconcilable = trueが意味すること
+
+このカード専用未払金科目は[reconciliation.md 1.3 is_reconcilable資産・負債への直接記帳の制限](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)の対象になり、そのカードの利用明細CSVインポート由来の仕訳でしか記帳できない。家賃等の「口座引落を待つ暫定計上」に使う汎用の未払金科目(`is_reconcilable = false`、[reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)参照)とは役割が異なるため混同しない。

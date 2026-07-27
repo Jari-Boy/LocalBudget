@@ -47,7 +47,7 @@
 ```
 
 > **is_reconcilable資産への記帳経路の制約**
-> 「普通預金」のような`is_reconcilable = true`の資産科目を直接使う仕訳は、[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産への直接記帳の制限)の通りCSVインポート由来の仕訳(+口座開設時の初期残高仕訳)に限られる。「給与が振り込まれる」の例はCSV到着時にその場で記帳するケースを表す。CSV到着前に先に記帳したい場合は「給与を先に見込み計上」のように未収金・未払金を経由した暫定計上を行い、CSV到着後にそれを消し込む([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)参照)。
+> 「普通預金」のような`is_reconcilable = true`の資産科目を直接使う仕訳は、[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)の通りCSVインポート由来の仕訳(+口座開設時の初期残高仕訳)に限られる。「給与が振り込まれる」の例はCSV到着時にその場で記帳するケースを表す。CSV到着前に先に記帳したい場合は「給与を先に見込み計上」のように未収金・未払金を経由した暫定計上を行い、CSV到着後にそれを消し込む([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)参照)。
 
 ### 1.3 貸借バランスの検証
 
@@ -78,7 +78,7 @@
 
 **物理削除は常に許可する**([GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)で決着)。取消仕訳(反対仕訳)を挟むことは強制しない。[accounts.md 2.1](./accounts.md#21-操作ルール)の「別科目への実質変更」は反対仕訳で扱うが、これは科目マスタ側の大量の過去仕訳を一括付け替えする特殊な操作の文脈であり、1件の仕訳を日常的に編集・削除する場面にまで同じ重さを求めると、入力ミスの訂正が煩雑になり[domain.md 1.1 基本方針](../domain.md#11-基本方針)の「会計知識のない一般ユーザーにも使える」という方針に反する。会計ソフト的な監査証跡(何をいつ変更したか)は持たない。
 
-**CSVインポート由来の仕訳(`external_transaction_refs`を持つ、[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産への直接記帳の制限)参照)も、`is_reconcilable`資産側の`account_id`/`amount`/`side`や`entry_date`を含め編集を許可する**(Issue #1で決着)。ただし編集すると`external_transaction_refs`が指す元のCSV明細との対応が崩れるため、UI上で警告する。[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産への直接記帳の制限)の「CSV由来のみ許可」はあくまで**作成経路**の制約であり、事後の内容がCSVの生データと一致し続けることまでは保証しない。内容が誤っていた場合、削除して正しい内容で再取込する([reconciliation.md 1.7](./reconciliation.md#17-ライフサイクル)参照)か、その場で編集するかはユーザーの選択に委ねる。
+**CSVインポート由来の仕訳(`external_transaction_refs`を持つ、[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)参照)も、`is_reconcilable`資産側の`account_id`/`amount`/`side`や`entry_date`を含め編集を許可する**(Issue #1で決着)。ただし編集すると`external_transaction_refs`が指す元のCSV明細との対応が崩れるため、UI上で警告する。[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)の「CSV由来のみ許可」はあくまで**作成経路**の制約であり、事後の内容がCSVの生データと一致し続けることまでは保証しない。内容が誤っていた場合、削除して正しい内容で再取込する([reconciliation.md 1.7](./reconciliation.md#17-ライフサイクル)参照)か、その場で編集するかはユーザーの選択に委ねる。
 
 ### 1.6 CSVインポートとの関係
 

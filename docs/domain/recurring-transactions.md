@@ -17,8 +17,8 @@
 
 家賃・サブスクリプション・給与など、毎月ほぼ同じ内容で繰り返される取引をテンプレート化する機能。テンプレート(`recurring_transaction_rules`)は仕訳のひな形を保持するのみで、実際の`journal_entries`は各サイクルごとに個別レコードとして生成される。生成後は独立した仕訳として扱われ、[journal.md 1.5 仕訳の編集・削除](./journal.md#15-仕訳の編集削除)の通り通常の仕訳と同様に編集・削除できる(締めを設けない設計との整合)。
 
-> **is_reconcilable資産を直接の`debit_account_id`/`credit_account_id`にはできない**
-> [reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産への直接記帳の制限)の通り、`asset`区分かつ`is_reconcilable = true`の科目(銀行口座等)を使う仕訳はCSVインポート由来に限られ、定期取引による生成(レビュー確認を経ても)はこれに該当しない。したがって家賃・給与のように口座が絡む定期取引は、口座科目を直接使わず未払金・未収金を経由して暫定計上するテンプレートとして組む([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)の例、[journal.md 1.2](./journal.md#12-記帳の型具体例)参照)。CSV到着後の消込自体は突合ドメイン側([reconciliation.md 1.6 重複防止フロー](./reconciliation.md#16-重複防止フロー))で行われ、定期取引の生成物ではない。
+> **is_reconcilable科目を直接の`debit_account_id`/`credit_account_id`にはできない**
+> [reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)の通り、`is_reconcilable = true`の科目(銀行口座等、およびクレジットカードのカード専用未払金)を使う仕訳はCSVインポート由来に限られ、定期取引による生成(レビュー確認を経ても)はこれに該当しない。したがって家賃・給与のように口座が絡む定期取引は、口座科目を直接使わず未払金・未収金を経由して暫定計上するテンプレートとして組む([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)の例、[journal.md 1.2](./journal.md#12-記帳の型具体例)参照)。CSV到着後の消込自体は突合ドメイン側([reconciliation.md 1.6 重複防止フロー](./reconciliation.md#16-重複防止フロー))で行われ、定期取引の生成物ではない。
 
 ### 1.2 自動生成 vs レビュー確認
 

@@ -46,12 +46,12 @@ CSVフォーマットごとの差異(列の並び、日付形式、「入金額�
 
 CSVインポートからレビュー確定までは、以下の順で各ドメインのロジックを通す。
 
-1. **パース**: CSV文字列 → `ImportedRecord`の配列([1.2](#12-中間表現importedrecord)、Importer実装の責務)
+1. **対象科目の選択とパース**: ユーザーが「どの口座/どのクレジットカードのCSVか」を選び、対応するフォーマット単位のImporterでCSV文字列 → `ImportedRecord`の配列に変換する([1.2](#12-中間表現importedrecord)・[1.3](#13-パース方式)、Importer実装の責務)。ここで選ばれた科目(`asset`の口座、または`liability`のクレカ専用未払金、[accounts.md 5章](./accounts.md#5-クレジットカード登録のux)参照)が、以降の全ステップの`account_id`になる
 2. **重複チェック**: [reconciliation.md 1.6 重複防止フロー](./reconciliation.md#16-重複防止フロー)を適用する。`external_id`(またはハッシュ)の完全一致に加え、クレジットカードの速報/確定対策として日付・金額が近い既存明細の候補提示も含む
 3. **取り込み漏れチェック**: `balance_after`が取得できる場合、[reconciliation.md 1.8 取り込み漏れ検出](./reconciliation.md#18-取り込み漏れ検出)で残高の連続性を検証する
 4. **取引先推定**: `description`を正規化し、[counterparties.md 1.3](./counterparties.md#13-csvインポートとの関係)の部分一致パターンマッチングを適用する
 5. **相手勘定科目のサジェスト**(優先順位順、[1.5](#15-相手勘定科目サジェストの範囲)参照):
-   - a. 対象口座に未消込の未払金・未収金があれば、その消込仕訳をサジェストする([reconciliation.md 1.4 暫定記帳と消込](./reconciliation.md#14-暫定記帳未払金未収金と消込))
+   - a. 手順1の対象科目に未消込の未払金・未収金があれば、その消込仕訳をサジェストする([reconciliation.md 1.4 暫定記帳と消込](./reconciliation.md#14-暫定記帳未払金未収金と消込))。対象科目がクレカ専用未払金の場合、通常はここに該当せず、そのまま費用科目側をサジェスト対象とする(手順4の取引先推定へ)
    - b. 未消込の候補がなく、手順4の取引先推定で一意に特定できていれば、`counterparties.default_account_id`をサジェストする([counterparties.md 1.4](./counterparties.md#14-勘定科目のデフォルトサジェスト))
    - c. どちらにも該当しなければサジェストなし。ユーザーが手動で選択する
 6. **レビュー確定**: レビュー画面でユーザーが日付・金額・相手科目・プロジェクト・世帯メンバー・取引先を確認・修正し、確定する
@@ -78,7 +78,7 @@ CSVインポートに関わる3層の責務を明確に分離する。
 |---|---|---|
 | Importer(フォーマット単位の実装) | CSV文字列 → `ImportedRecord`の配列への変換のみ([1.2](#12-中間表現importedrecord)・[1.3](#13-パース方式))。`is_settled`を設定できるならここで固定値として設定する | 重複判定・取引先推定・複式簿記への変換は一切行わない |
 | レビュー画面 | 重複・取り込み漏れの警告表示、相手科目のサジェスト提示、ユーザーによる確認・修正の受付([1.4](#14-レコード処理フロー)の2〜6) | 最終的なドメインルールの強制(貸借バランス等)は行わない |
-| `JournalEntryRepository` | 確定した仕訳ドラフトの永続化、貸借バランス検証([journal.md 1.3](./journal.md#13-貸借バランスの検証))、`is_reconcilable`資産への記帳経路制限の強制([reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産への直接記帳の制限)) | CSVインポート固有の知識(パース・サジェスト)は持たない。マニュアル起票と共通の入り口([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)) |
+| `JournalEntryRepository` | 確定した仕訳ドラフトの永続化、貸借バランス検証([journal.md 1.3](./journal.md#13-貸借バランスの検証))、`is_reconcilable`資産への記帳経路制限の強制([reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)) | CSVインポート固有の知識(パース・サジェスト)は持たない。マニュアル起票と共通の入り口([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)) |
 
 この分担により、「入力経路(CSVかマニュアルか)によってドメインの整合性ルールが分岐しない」という[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針が保たれる。`Importer`とレビュー画面はあくまで`JournalEntryRepository`への入力を組み立てる前段階であり、最終的な整合性は常に`JournalEntryRepository`が一元的に担保する。
 
