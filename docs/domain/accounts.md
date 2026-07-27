@@ -35,12 +35,17 @@
 |---|---|---|---|
 | 資産 | `asset` | BS | 現金/普通預金/定期預金/電子マネー/証券口座 |
 | 負債 | `liability` | BS | クレジットカード未払金/ローン/立替金 |
-| 純資産 | `equity` | BS | 初期残高/繰越利益(システム管理) |
+| 純資産 | `equity` | BS | 初期残高(口座ごと、システム管理) |
 | 収益 | `revenue` | PL | 給与収入/副業収入/謝礼収入 |
-| 費用 | `expense` | PL | 食費/住居費/水道光熱費/娯楽費 … |
+| 費用 | `expense` | PL | 食費/住居費/水道光熱費/娯楽費/現金過不足(システム管理) … |
 
 > **資産振替は費用ではない**
 > 貯蓄・投資は現金という資産が別の資産へ形を変える、資産→資産の振替であり、費用ではない。PLには影響しない。
+
+> **純資産(equity)区分はユーザーが科目を追加できない**
+> 資本科目間の振替(決算振替仕訳等)は一般ユーザー向け家計簿では実質発生しないため、`equity`区分はシステムが生成する科目(口座ごとの初期残高科目、[3.1](#31-フィールド定義)参照)のみが存在し、ユーザーによる新規作成を許可しない([3.2 DDL](#32-ddl)のトリガーで強制)。ユーザーが編集できるのは既存のsystem-managed科目の`name`(ラベル)のみである。
+>
+> なお「繰越利益」は科目としては存在しない。[financial-statements.md 2.1 生成方式](./financial-statements.md#21-生成方式)の通り、決算振替仕訳を行わない設計であるため、当期純利益相当額(収益−費用)は常にFS生成時の計算値として求められ、`accounts`にレコードとして計上されることはない。
 
 ### 1.3 グルーピング(表示用)
 
@@ -93,14 +98,18 @@
 | `name` | 勘定科目名 | 同一区分内であればいつでも変更可 |
 | `is_reconcilable` | 照合可否 | 資産科目は`NOT NULL`、他区分は`NULL`必須(CHECK制約で強制) |
 | `is_active` | 有効/非アクティブ | falseにしても過去仕訳・過去FSに影響なし |
-| `is_system_managed` | システム管理科目か | 初期残高・繰越利益など、削除・区分変更・非アクティブ化を禁止 |
+| `is_system_managed` | システム管理科目か | 口座ごとの初期残高科目・現金過不足など、削除・区分変更・非アクティブ化を禁止。`name`(ラベル)変更のみ可 |
 | `household_member_id` | 既定の名義 | FK、任意。NULL=世帯共通([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照) |
 | `account_group_id` | 表示用グループ | FK、任意。0または1個のグループに属する(単一所属、[1.3](#13-グルーピング表示用)参照)。NULL=未分類 |
+| `initial_balance_for_account_id` | 初期残高科目の対象口座 | FK(自己参照)、任意。この科目が特定の資産科目専用の初期残高科目(`category = 'equity'`かつ`is_system_managed = true`)である場合のみ値を持つ([4.3 初期残高の自動仕訳](#43-初期残高の自動仕訳)参照)。通常の科目では`NULL` |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | `name`/`is_active`等の変更のたびに更新する。将来のマルチデバイス同期([architecture.md](../architecture.md) 5章)の布石 |
 
 > **補足**
 > `has_journal_lines`(仕訳紐付け)は物理カラムを持たず、`EXISTS`判定で都度算出する(性能上の必要が出る段階でキャッシュ化)。
+
+> **なぜ口座ごとに初期残高科目を分けるか**
+> 全口座で単一の「初期残高」科目を共有すると、初期残高科目自体の残高が全口座分の合算になり、個々の口座の初期仕訳を特定・追跡しづらくなる。口座ごとに専用の初期残高科目(`initial_balance_for_account_id`で対象口座を明示)を発行することで、「この口座の初期残高はこの1科目だけに現れる」という対応が常に一意に保たれる。ユーザーには見せず、上級者モードでのみ内部が見える([4章 口座登録のUX](#4-口座登録のux)参照)。
 
 ### 3.2 DDL
 
@@ -115,15 +124,21 @@ CREATE TABLE accounts (
   is_system_managed    BOOLEAN NOT NULL DEFAULT FALSE,
   household_member_id  INTEGER REFERENCES household_members(id),
   account_group_id     INTEGER REFERENCES account_groups(id),
+  initial_balance_for_account_id INTEGER REFERENCES accounts(id),
   created_at           TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK (
     (category = 'asset' AND is_reconcilable IS NOT NULL) OR
     (category != 'asset' AND is_reconcilable IS NULL)
+  ),
+  CHECK (
+    initial_balance_for_account_id IS NULL OR
+    (category = 'equity' AND is_system_managed = TRUE)
   )
 );
 
 CREATE INDEX idx_accounts_group ON accounts(account_group_id);
+CREATE INDEX idx_accounts_initial_balance_for ON accounts(initial_balance_for_account_id);
 
 -- 区分の変更を禁止
 CREATE TRIGGER prevent_category_change
@@ -131,6 +146,14 @@ BEFORE UPDATE OF category ON accounts
 WHEN OLD.category != NEW.category
 BEGIN
   SELECT RAISE(ABORT, 'category cannot be changed');
+END;
+
+-- equity区分の新規作成はシステム管理科目のみ許可(ユーザーによる新規作成を禁止)
+CREATE TRIGGER prevent_user_created_equity_account
+BEFORE INSERT ON accounts
+WHEN NEW.category = 'equity' AND NEW.is_system_managed = FALSE
+BEGIN
+  SELECT RAISE(ABORT, 'equity accounts can only be system-managed');
 END;
 
 -- 仕訳が紐づく科目の物理削除を禁止
@@ -247,11 +270,11 @@ END;
 
 ### 4.3 初期残高の自動仕訳
 
-「初期残高10万円」の入力で、以下の仕訳が裏で生成される。ユーザーは純資産という概念を理解する必要がない。
+「初期残高10万円」の入力で、まず口座専用の初期残高科目(`category = 'equity'`, `is_system_managed = true`, `initial_balance_for_account_id` = 対象の資産科目ID、[3.1](#31-フィールド定義)参照)が自動生成され、続けて以下の仕訳が裏で生成される。ユーザーは純資産という概念を理解する必要がない。
 
 ```
-(借) 資産・三菱UFJ銀行   100,000
-(貸) 純資産・初期残高       100,000
+(借) 資産・三菱UFJ銀行           100,000
+(貸) 純資産・初期残高(三菱UFJ銀行)  100,000
 ```
 
 この初期仕訳の`journal_lines.household_member_id`は明示的に設定しない。口座(`accounts.household_member_id`)に既定値が設定されていれば、[household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)の継承ルールにより自動的にその名義として扱われる。
