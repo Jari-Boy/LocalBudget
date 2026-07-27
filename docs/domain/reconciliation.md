@@ -2,7 +2,7 @@
 
 [domain.md](../domain.md)(エントリポイント)から分割された、外部明細との突合(Reconciliation)に関する詳細設計。
 
-> **たたき台**
+> **関連Issue**
 > [architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)のCSVインポート方針、および[GitHub Issue #2](https://github.com/Jari-Boy/LocalBudget/issues/2)(CSVインポート・記帳方法の詳細設計)と密接に関わる。Importer層の実装方針が固まった段階で本ファイルも見直しが必要。
 
 ---
@@ -22,7 +22,7 @@
 
 `is_reconcilable = false`の現金は対象外([financial-statements.md 1.2 資産の照合可否](./financial-statements.md#12-資産の照合可否)の実残調整で扱う)。
 
-### 1.2 スコープ(要議論)
+### 1.2 スコープ
 
 突合と一口に言っても複数の機能が混ざりやすいため、明確に切り分ける。
 
@@ -39,7 +39,7 @@
 
 CSVの1行(またはCSVから生成された仕訳)を「外部取引」として、そこから生成された`journal_entries`への参照を記録する。外部取引を一意に特定するキー(`external_id`)が取得できる金融機関はそれを使い、取得できない場合は日付・金額・摘要から生成した正規化ハッシュで代替する(具体的な正規化ロジックはImporter層の実装課題、[counterparties.md 1.3](./counterparties.md#13-csvインポートとの関係)の摘要正規化と同様の考え方)。
 
-`journal_entries`ではなく`journal_lines`ではなく仕訳ヘッダー単位で参照する。CSVの1行は通常1仕訳(入出金明細の片側+相手科目)に対応するため、[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)の「取引先はPL行単位」とは異なり、突合は仕訳ヘッダー単位で十分と考える。
+`journal_lines`ではなく仕訳ヘッダー単位で参照する。CSVの1行は通常1仕訳(入出金明細の片側+相手科目)に対応するため、[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)の「取引先はPL行単位」とは異なり、突合は仕訳ヘッダー単位で十分と考える。
 
 ### 1.4 重複防止フロー
 
@@ -63,14 +63,14 @@ CSVに取引後残高が含まれる金融機関では、`external_balance_after
 
 ### 2.1 フィールド定義
 
-| カラム | 内容 | 制約・備考 |
-|---|---|---|
-| `id` | ID | PK |
-| `account_id` | 対象口座 | FK、`is_reconcilable = true`の資産科目のみ許可(TRIGGERで強制) |
-| `journal_entry_id` | 対応する仕訳 | FK、親削除時CASCADE |
-| `external_id` | 外部取引の一意キー | 金融機関側のトランザクションIDまたは正規化ハッシュ |
-| `external_balance_after` | 取引後残高 | 任意。CSVに残高列がある場合のみ格納([1.6](#16-残高検証将来拡張bのスコープ)参照) |
-| `imported_at` | 取込日時 | |
+| カラム                      | 内容        | 制約・備考                                            |
+| ------------------------ | --------- | ------------------------------------------------ |
+| `id`                     | ID        | PK                                               |
+| `account_id`             | 対象口座      | FK、`is_reconcilable = true`の資産科目のみ許可(TRIGGERで強制) |
+| `journal_entry_id`       | 対応する仕訳    | FK、親削除時CASCADE                                   |
+| `external_id`            | 外部取引の一意キー | 金融機関側のトランザクションIDまたは正規化ハッシュ                       |
+| `external_balance_after` | 取引後残高     | 任意。CSVに残高列がある場合のみ格納([1.6](#16-残高検証将来拡張bのスコープ)参照) |
+| `imported_at`            | 取込日時      |                                                  |
 
 同一口座内で`external_id`は重複登録できない(重複防止の要)。
 
@@ -104,4 +104,4 @@ END;
 
 ### 2.3 他ドメインへの影響
 
-`journal_entries`・`journal_lines`へのカラム追加は不要(FKは`external_transaction_refs`側が持つ)。ただし[1.5](#15-ライフサイクル)の通り、仕訳自体の編集・削除ルール(Issue #1)が固まった際、突合済み判定との整合を再確認する必要がある。
+	`journal_entries`・`journal_lines`へのカラム追加は不要(FKは`external_transaction_refs`側が持つ)。ただし[1.5](#15-ライフサイクル)の通り、仕訳自体の編集・削除ルール(Issue #1)が固まった際、突合済み判定との整合を再確認する必要がある。

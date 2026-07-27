@@ -51,6 +51,6 @@
 | 世帯メンバー | 「誰の口座/誰の取引か」を表す軸。既定値の継承、個人・グループ(複数メンバーの集合)を扱う | [domain/household-members.md](./domain/household-members.md) |
 | 取引先 | 「どこで/誰に対しての取引か」を表す軸。CSVインポートの自動推定・勘定科目のデフォルトサジェストに利用 | [domain/counterparties.md](./domain/counterparties.md) |
 | 期間確定・財務諸表 | 締め(ロック)を設けない方針、PL/BS等FSの生成方式と表示UI | [domain/financial-statements.md](./domain/financial-statements.md) |
-| 予算 | 勘定科目ごとの月次予算額と実績比較。**たたき台** | [domain/budgets.md](./domain/budgets.md) |
-| 突合 | 外部明細(CSV)と仕訳の対応関係・重複取込防止。**たたき台** | [domain/reconciliation.md](./domain/reconciliation.md) |
-| 定期取引 | 家賃・サブスク等、繰り返し発生する仕訳のテンプレート化。**たたき台** | [domain/recurring-transactions.md](./domain/recurring-transactions.md) |
+| 予算 | 勘定科目ごとの月次予算額と実績比較 | [domain/budgets.md](./domain/budgets.md) |
+| 突合 | 外部明細(CSV)と仕訳の対応関係・重複取込防止 | [domain/reconciliation.md](./domain/reconciliation.md) |
+| 定期取引 | 家賃・サブスク等、繰り返し発生する仕訳のテンプレート化 | [domain/recurring-transactions.md](./domain/recurring-transactions.md) |

@@ -2,9 +2,6 @@
 
 [domain.md](../domain.md)(エントリポイント)から分割された、定期取引(RecurringTransactionRule)に関する詳細設計。
 
-> **たたき台**
-> 特に[1.2](#12-自動生成-vs-レビュー確認要議論)・[1.3](#13-繰り返しルールのスコープ)は方向性の確定が必要。
-
 ---
 
 ## 目次
@@ -20,20 +17,30 @@
 
 家賃・サブスクリプション・給与など、毎月ほぼ同じ内容で繰り返される取引をテンプレート化する機能。テンプレート(`recurring_transaction_rules`)は仕訳のひな形を保持するのみで、実際の`journal_entries`は各サイクルごとに個別レコードとして生成される。生成後は独立した仕訳として扱われ、[journal.md 1.5 仕訳の編集・削除](./journal.md#15-仕訳の編集削除)の通り通常の仕訳と同様に編集・削除できる(締めを設けない設計との整合)。
 
-### 1.2 自動生成 vs レビュー確認(要議論)
+### 1.2 自動生成 vs レビュー確認
 
-[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)のCSVインポートは「レビュー画面を経由してから確定する」方針を取っている。定期取引も同じ思想を踏襲すべきか検討する。
+[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)のCSVインポートは「レビュー画面を経由してから確定する」方針を取っている。定期取引も同じ思想を踏襲し、対象日になったら「提案」を作成してホーム画面等でユーザーに確認を促し、確認して初めて`journal_entries`が生成される方式とする。
 
-| 案 | 概要 | 長所 | 短所 |
-|---|---|---|---|
-| A. レビュー必須 | 対象日になったら「提案」を作成し、ホーム画面等でユーザーに確認を促す。確認して初めて`journal_entries`が生成される | 金額が変動しうる定期取引(電気代等)でも誤記帳を防げる。CSVインポートと一貫した「入力経路によらずレビューを挟む」思想を維持できる | 家賃のように絶対に金額が変わらないものでも毎回ひと手間かかる |
-| B. 自動確定を選択可能 | ルールごとに「自動確定」フラグを持たせ、有効なら対象日に`journal_entries`を即座に生成する | 手間が減る | 「ドメインの整合性ルールは入力経路で分岐しない」([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)末尾)の精神とはやや矛盾する。過去の交通事例(サブスク料金の値上げ等)を取りこぼすリスクがある |
+> **なぜ自動確定オプションを設けないか**
+> ルールごとに「自動確定」フラグを持たせ即座に`journal_entries`を生成する案も検討したが、「ドメインの整合性ルールは入力経路で分岐しない」([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)末尾)の精神とはやや矛盾するうえ、サブスク料金の値上げのような金額変動を取りこぼすリスクがある。レビュー確認方式に統一する。将来的に自動確定オプションを追加する場合も、この「提案生成」の仕組みの上に選択式で載せられるため、後方拡張は可能。
 
-**本たたき台ではA案(レビュー必須)を採用**する。将来的にB案(自動確定オプション)を追加する場合も、A案の「提案生成」の仕組みの上に選択式で載せられるため、後方拡張は可能。
+### 1.3 繰り返しルールの表現方式
 
-### 1.3 繰り返しルールのスコープ
+家賃(毎月1日)・給与(毎月25日)だけでなく、「毎週月曜日」「第2土曜日」のような曜日ベースの繰り返しにも対応する。`frequency`(`weekly`/`monthly`/`yearly`)を起点に、繰り返しの種類に応じて必要なカラムのみを埋める列挙型で表現する([2.1](#21-フィールド定義)参照)。
 
-MVPでは「毎月◯日」のみをサポートする。毎週・毎年・「第◯営業日」等の複雑なルールは将来課題とする。月末近辺の日付(31日等、存在しない月がある)を指定した場合の扱い(例: その月の末日に丸める)は実装時に確定する。
+| frequency | 使うカラム | 例 |
+|---|---|---|
+| `weekly` | `day_of_week` | 毎週月曜日 |
+| `monthly`(日付指定) | `day_of_month` | 毎月25日(給与) |
+| `monthly`(曜日指定) | `week_of_month` + `day_of_week` | 第2土曜日 |
+| `yearly` | `month_of_year` + `day_of_month` | 毎年6月1日(保険料) |
+
+> **なぜRRULE(iCalendar形式)を採用しないか**
+> RFC 5545のRRULE文字列をそのまま保存し`rrule.js`等の外部ライブラリで次回発生日を計算する案も検討したが、表現力に対して実装コストが見合わない。家計簿の定期取引は「月◯日」「毎週◯曜日」「第◯何曜日」「年◯月◯日」の組み合わせでほぼ尽くせるため、列挙型カラムで素直に表現し、外部ライブラリへの依存([architecture.md 11章](../architecture.md#11-セキュリティプライバシー方針)のサプライチェーンリスク方針)を増やさない。
+>
+> **「月2回」の扱い**: 1ルールにつき1つの発生パターンのみを許可する(単一ルールでの複数日付指定はサポートしない)。「15日と月末に半分ずつ家賃を払う」のような月2回パターンは、`day_of_month = 15`のルールと`day_of_month = 末日`のルールを2件登録することで表現する。データモデルを単純に保つためのトレードオフ。
+>
+> 月末近辺の日付(31日等、存在しない月がある)を指定した場合の扱い(例: その月の末日に丸める)は実装時に確定する。
 
 ### 1.4 テンプレートの仕訳構成(スコープ)
 
@@ -61,17 +68,23 @@ MVPでは「毎月◯日」のみをサポートする。毎週・毎年・「�
 | カラム | 内容 | 制約・備考 |
 |---|---|---|
 | `id` | ルールID | PK |
-| `name` | ルール名 | 例:「家賃」「Netflix」 |
+| `name` | ルール名 | 例:「家賃」「Netflix」「お小遣い(第2土曜日)」 |
 | `debit_account_id` | 借方科目 | FK |
 | `credit_account_id` | 貸方科目 | FK |
-| `amount` | 金額 | 通貨最小単位の正の整数。生成時のレビューで編集可能([1.2](#12-自動生成-vs-レビュー確認要議論)参照) |
-| `day_of_month` | 実行日(毎月◯日) | 1〜31([1.3](#13-繰り返しルールのスコープ)参照) |
+| `amount` | 金額 | 通貨最小単位の正の整数。生成時のレビューで編集可能([1.2](#12-自動生成-vs-レビュー確認)参照) |
+| `frequency` | 繰り返し種別 | ENUM: `weekly`/`monthly`/`yearly`([1.3](#13-繰り返しルールの表現方式)参照) |
+| `day_of_week` | 曜日 | 0(日)〜6(土)、任意。`weekly`、または`monthly`の「第◯何曜日」指定で使用 |
+| `day_of_month` | 日 | 1〜31、任意。`monthly`の「◯日」指定、または`yearly`で使用 |
+| `week_of_month` | 第◯週 | 1〜5または-1(最終週)、任意。`monthly`の「第◯何曜日」指定でのみ使用 |
+| `month_of_year` | 月 | 1〜12、任意。`yearly`でのみ使用 |
 | `project_id` | プロジェクト | FK、任意。PL科目側の行にのみ意味を持つ([1.4](#14-テンプレートの仕訳構成スコープ)参照) |
 | `household_member_id` | 世帯メンバー | FK、任意 |
 | `counterparty_id` | 取引先 | FK、任意。PL科目側の行にのみ意味を持つ |
 | `is_active` | 有効/非アクティブ | falseにすると新規の提案生成のみ停止する |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
+
+`frequency`ごとに使用するカラムの組み合わせは[1.3](#13-繰り返しルールの表現方式)の表の通りで、それ以外のカラムは`NULL`にする(DDLのCHECK制約で強制、[2.2](#22-ddl)参照)。
 
 **journal_entriesへの追加フィールド**(既存テーブルへの変更、[journal.md](./journal.md)側への反映が別途必要)
 
@@ -88,13 +101,34 @@ CREATE TABLE recurring_transaction_rules (
   debit_account_id      INTEGER NOT NULL REFERENCES accounts(id),
   credit_account_id     INTEGER NOT NULL REFERENCES accounts(id),
   amount                INTEGER NOT NULL CHECK (amount > 0),
-  day_of_month          INTEGER NOT NULL CHECK (day_of_month BETWEEN 1 AND 31),
+  frequency             TEXT NOT NULL CHECK (frequency IN ('weekly', 'monthly', 'yearly')),
+  day_of_week           INTEGER CHECK (day_of_week BETWEEN 0 AND 6),
+  day_of_month          INTEGER CHECK (day_of_month BETWEEN 1 AND 31),
+  week_of_month         INTEGER CHECK (week_of_month BETWEEN -1 AND 5 AND week_of_month != 0),
+  month_of_year         INTEGER CHECK (month_of_year BETWEEN 1 AND 12),
   project_id            INTEGER REFERENCES projects(id),
   household_member_id   INTEGER REFERENCES household_members(id),
   counterparty_id       INTEGER REFERENCES counterparties(id),
   is_active             BOOLEAN NOT NULL DEFAULT TRUE,
   created_at            TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  -- frequencyごとに使用するカラムの組み合わせを強制する(1.3の対応表参照)
+  CHECK (
+    (frequency = 'weekly'
+      AND day_of_week IS NOT NULL
+      AND day_of_month IS NULL AND week_of_month IS NULL AND month_of_year IS NULL)
+    OR
+    (frequency = 'monthly' AND month_of_year IS NULL
+      AND (
+        (day_of_month IS NOT NULL AND day_of_week IS NULL AND week_of_month IS NULL)
+        OR
+        (day_of_week IS NOT NULL AND week_of_month IS NOT NULL AND day_of_month IS NULL)
+      ))
+    OR
+    (frequency = 'yearly'
+      AND month_of_year IS NOT NULL AND day_of_month IS NOT NULL
+      AND day_of_week IS NULL AND week_of_month IS NULL)
+  )
 );
 
 -- 仕訳が紐づくルールの物理削除を禁止
