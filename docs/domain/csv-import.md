@@ -40,8 +40,21 @@ CSVフォーマットごとの差異(列の並び、日付形式、「入金額�
 
 ### 1.3 パース方式
 
-- `Importer`インターフェースは「CSV文字列 → `ImportedRecord`の配列」という入出力のみを持つ純粋な変換処理とする([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)参照)。
+`Importer`は以下の契約を持つ、CSVフォーマット単位の実装である。
+
+```typescript
+interface Importer {
+  readonly id: string       // 一意な識別子。例: "rakuten-card-settled"
+  readonly label: string    // ユーザー向け表示名。例: "楽天カード(確定明細)"
+  parse(csvText: string): ImportedRecord[]
+}
+```
+
+- `parse`は「CSV文字列 → `ImportedRecord`の配列」という入出力のみを持つ純粋な変換処理とする([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)参照)。重複判定・取引先推定・複式簿記への変換は一切行わない([2章 責務分担](#2-責務分担)参照)。
+- CSVの列構成が想定と一致しない場合(必須列が無い、ヘッダーが異なる等)は`parse`がエラーを投げ、レビュー画面で「このCSVは◯◯用のフォーマットと一致しません」とユーザーに伝える。フォーマットの自動判定(CSVの中身から適切なImporterを推測すること)は行わない。どのImporterで読むかは常にユーザーが明示的に選ぶ([1.4](#14-レコード処理フロー)のステップ1参照)。
+- `id`/`label`は、対象科目に対して複数のImporter候補がある場合(例: 楽天カードの速報用/確定用)にユーザーが選ぶ際の表示・識別に使う。
 - **実装単位は金融機関ではなくCSVフォーマット単位。** 同一の金融機関・カード会社でも、速報明細と確定明細でヘッダー構成(列の並びや項目自体)が異なることがある(例: 楽天カードの確定前CSVがa/b/c/d/eの5列、確定後CSVがa/b/c/f/g/nの6列)。1つの実装で両方のフォーマットを吸収しようとせず、フォーマットごとに別実装を用意する(例: `RakutenCardPreliminaryImporter`、`RakutenCardSettledImporter`)。[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の`BankAImporter`という例示はあくまで一般化した命名であり、実際には「金融機関 × フォーマット」の組み合わせの数だけ実装が存在しうる。
+- 命名規則: `{金融機関・カード会社名}{フォーマット種別}Importer`(例: `RakutenCardPreliminaryImporter`、`RakutenCardSettledImporter`、`MitsubishiUfjBankImporter`)。
 - [1.4](#14-レコード処理フロー)以降のフロー(重複防止・取り込み漏れ検出・取引先推定・レビュー)は、金融機関ともフォーマットとも独立して共通である。
 - CSVパース処理自体はメインスレッドで実行する([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針を踏襲)。
 
@@ -49,7 +62,7 @@ CSVフォーマットごとの差異(列の並び、日付形式、「入金額�
 
 CSVインポートからレビュー確定までは、以下の順で各ドメインのロジックを通す。
 
-1. **対象科目の選択とパース**: ユーザーが「どの口座/どのクレジットカードのCSVか」を選び、対応するフォーマット単位のImporterでCSV文字列 → `ImportedRecord`の配列に変換する([1.2](#12-中間表現importedrecord)・[1.3](#13-パース方式)、Importer実装の責務)。ここで選ばれた科目(`asset`の口座、または`liability`のクレカ専用未払金、[accounts.md 5章](./accounts.md#5-クレジットカード登録のux)参照)が、以降の全ステップの`account_id`になる
+1. **対象科目とImporterの選択、パース**: ユーザーが「どの口座/どのクレジットカードのCSVか」(対象科目)を選ぶ。次に、その科目のCSVフォーマットに対応する`Importer`を選ぶ(候補が1つなら自動選択、楽天カードの速報用/確定用のように複数あれば`Importer.label`で選択させる)。選んだ`Importer.parse`でCSV文字列 → `ImportedRecord`の配列に変換する([1.2](#12-中間表現importedrecord)・[1.3](#13-パース方式)、Importer実装の責務)。ここで選ばれた対象科目(`asset`の口座、または`liability`のクレカ専用未払金、[accounts.md 5章](./accounts.md#5-クレジットカード登録のux)参照)が、以降の全ステップの`account_id`になる
 2. **重複チェック**: [reconciliation.md 1.6 重複防止フロー](./reconciliation.md#16-重複防止フロー)を適用する。`external_id`(またはハッシュ)の完全一致に加え、クレジットカードの速報/確定対策として日付・金額が近い既存明細の候補提示も含む
 3. **取り込み漏れチェック**: `balance_after`が取得できる場合、[reconciliation.md 1.8 取り込み漏れ検出](./reconciliation.md#18-取り込み漏れ検出)で残高の連続性を検証する
 4. **取引先推定**: `description`を正規化し、[counterparties.md 1.3](./counterparties.md#13-csvインポートとの関係)の部分一致パターンマッチングを適用する
