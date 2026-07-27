@@ -100,11 +100,13 @@ CSVの1行(またはCSVから生成された仕訳)を「外部取引」とし�
 
 近似判定の具体的な閾値(日数・金額差の許容範囲)はドメイン設計のスコープ外とし、Importer層の実装課題とする。金融機関によって速報/確定のズレ方(数日〜数週間、手数料相当の差額等)が異なるため、固定値をドメイン側で決め打ちしない。
 
+`external_transaction_refs.is_settled`([2.1](#21-フィールド定義)参照)が取得できる場合、`is_settled = false`の既存明細を優先的に確定版候補として提示する。未確定と分かっている明細ほど、後から確定版に置き換わる可能性が高いため。`is_settled`が判定できない金融機関(大多数)では、日付・金額の近さのみで候補を提示する。
+
 > **なぜ自動で置き換えないか**
 > [csv-import.md 1.5](./csv-import.md#15-相手勘定科目サジェストの範囲)で取引先の類似度推定を見送った判断とは、外れた場合のコストが非対称である点が異なる。取引先サジェストが外れても手動選択の手間が増えるだけだが、重複判定を誤って自動処理すると、別の取引を誤って削除する、あるいは二重計上を見逃す、というデータ整合性上の実害が生じる。したがって候補は提示するが、確定は常にユーザーのレビューを必須とする([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の一貫方針)。
 
-> **将来ネタ: 確定/未確定のドメイン保持**
-> CSVから確定/未確定が判別できる金融機関があれば、`external_transaction_refs`に`is_settled`(任意・NULL許容)を持たせ、あいまいマッチングの精度向上やUI表示に使う、という拡張も考えられる。FS集計には関与させない付帯情報([accounts.md 1.3](./accounts.md#13-グルーピング表示用)の`account_groups`と同じ位置づけ)に留める前提。MVPではスコープ外。実装コストが低そうなら手を出す程度の温度感で、無理に作り込まない。
+> **確定版が来なかった場合**
+> `is_settled = false`のまま新しいCSVが来ず、確定版に置き換わらない状態を許容する。検知・催促の仕組みは特に持たない。クレジットカードの明細であれば、いずれ未払金の消込([1.4](#14-暫定記帳未払金未収金と消込)、[journal.md 1.2](./journal.md#12-記帳の型具体例)参照)の対象になるため、確定額とズレていればその消込時の複合仕訳で気づける。
 
 ### 1.7 ライフサイクル
 
@@ -141,6 +143,7 @@ CSVに取引後残高が含まれる金融機関では、`external_balance_after
 | `journal_entry_id`       | 対応する仕訳    | FK、親削除時CASCADE                                   |
 | `external_id`            | 外部取引の一意キー | 金融機関側のトランザクションIDまたは正規化ハッシュ                       |
 | `external_balance_after` | 取引後残高     | 任意。CSVに残高列がある場合のみ格納([1.8](#18-取り込み漏れ検出)参照) |
+| `is_settled`             | 確定済みか     | 任意(NULL許容)。[csv-import.md 1.2](./csv-import.md#12-中間表現importedrecord)の`ImportedRecord.is_settled`をそのまま引き継ぐ。確定版候補のサジェスト([1.6](#16-重複防止フロー))にのみ使い、FS集計には関与しない |
 | `imported_at`            | 取込日時      |                                                  |
 
 同一口座内で`external_id`は重複登録できない(重複防止の要)。
@@ -155,6 +158,7 @@ CREATE TABLE external_transaction_refs (
     REFERENCES journal_entries(id) ON DELETE CASCADE,
   external_id             TEXT NOT NULL,
   external_balance_after  INTEGER,
+  is_settled              BOOLEAN,
   imported_at             TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -181,3 +185,4 @@ END;
 - [1.4](#14-暫定記帳未払金未収金と消込)の未収金は、口座登録UXとは別に「一時勘定」として`is_reconcilable = false`の資産科目をユーザーが作成できる必要がある([accounts.md](./accounts.md)参照)。
 - [1.7](#17-ライフサイクル)の突合済み仕訳の編集・削除ルールは[GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)(仕訳自体のライフサイクル設計)で決着し、[journal.md 1.5](./journal.md#15-仕訳の編集削除)に反映済み。
 - [1.9](#19-原因不明差異への残高調整)の「残高調整」科目は[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)の現金の実残調整と共通の科目であり、`accounts.md`側のシステム管理科目定義に反映が必要。
+- `external_transaction_refs.is_settled`は[csv-import.md 1.2](./csv-import.md#12-中間表現importedrecord)の`ImportedRecord.is_settled`の値をそのまま引き継ぐ。設定するのはフォーマット単位のImporter実装([csv-import.md 1.3](./csv-import.md#13-パース方式))であり、本ドメイン側では値の判定ロジックを持たない。
