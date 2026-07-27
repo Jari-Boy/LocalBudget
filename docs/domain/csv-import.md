@@ -1,16 +1,17 @@
 # CSVインポートドメイン
 
-[domain.md](../domain.md)(エントリポイント)から分割された、CSVインポート(Importer)に関する詳細設計。[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針(`Importer`インターフェース、金融機関ごとのパーサー差し替え、レビュー画面必須)を具体化する。
+[domain.md](../domain.md)(エントリポイント)から分割された、CSVインポートに関する詳細設計。[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針(CSVフォーマットの差異をデータ駆動のマッピング定義で吸収する、レビュー画面必須)を具体化する。
 
 > **たたき台**
-> [1.5](#15-相手勘定科目サジェストの範囲)は[GitHub Issue #2](https://github.com/Jari-Boy/LocalBudget/issues/2)での議論を経て確定。他の節は初稿。
+> [1.6](#16-相手勘定科目サジェストの範囲)は[GitHub Issue #2](https://github.com/Jari-Boy/LocalBudget/issues/2)での議論を経て確定。マッピング定義のデータ駆動化([1.4](#14-マッピング定義データ駆動)・[2章](#2-マッピング定義マスタimport_mapping_definitions))も同Issueでの議論を経て確定。他の節は初稿。
 
 ---
 
 ## 目次
 
 1. [CSVインポート](#1-csvインポート)
-2. [責務分担](#2-責務分担)
+2. [マッピング定義マスタ(import_mapping_definitions)](#2-マッピング定義マスタimport_mapping_definitions)
+3. [責務分担](#3-責務分担)
 
 ---
 
@@ -18,87 +19,164 @@
 
 ### 1.1 位置づけ
 
-金融機関ごとに異なるCSVフォーマットを共通の中間表現に正規化し、[reconciliation.md](./reconciliation.md)(重複防止・取り込み漏れ検出)・[counterparties.md](./counterparties.md)(取引先推定)・[journal.md](./journal.md)(仕訳生成)の各ドメインロジックへ橋渡しする役割を担う。本ドメイン自体はデータモデル(DDL)を持たず、[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)で定義された`Importer`インターフェースの入出力と、パースからレビュー確定までの処理フローを定義する。
+金融機関ごとに異なるCSVフォーマットを共通の中間表現に正規化し、[reconciliation.md](./reconciliation.md)(重複防止・取り込み漏れ検出)・[counterparties.md](./counterparties.md)(取引先推定)・[journal.md](./journal.md)(仕訳生成)の各ドメインロジックへ橋渡しする役割を担う。[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針の通り、CSVフォーマットごとの差異はコードのハードコードではなく、宣言的なデータとして表現する**マッピング定義**(`import_mapping_definitions`、[2章](#2-マッピング定義マスタimport_mapping_definitions))で吸収する。パース処理は「CSVの読み取り([1.3](#13-csvの読み取りreader))」と「マッピング定義に基づく変換([1.4](#14-マッピング定義データ駆動))」の2段階に分離し、パースからレビュー確定までの処理フローを本ドメインで定義する。
 
 ### 1.2 中間表現(ImportedRecord)
 
-CSVフォーマットごとの差異(列の並び、日付形式、「入金額・出金額」2列形式か「金額」1列符号付き形式か等)は、[1.3](#13-パース方式)のフォーマット単位のImporter実装が吸収し、以下の共通フォーマットに正規化して返す。
+CSVフォーマットごとの差異(列の並び、日付形式、「入金額・出金額」2列形式か「金額」1列符号付き形式か等)は、[1.4](#14-マッピング定義データ駆動)のマッピング定義が吸収し、以下の共通フォーマットに正規化して返す。
 
 | フィールド           | 内容        | 備考                                                                                                                                               |
 | --------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `entry_date`    | 取引日       |                                                                                                                                                  |
 | `description`   | 摘要        | 生文字列、正規化前。[counterparties.md 1.3](./counterparties.md#13-csvインポートとの関係)の取引先推定はここから行う                                                              |
-| `amount`        | 金額        | 符号付き整数。正 = 対象科目(手順1で選んだ口座/カード)の残高が増える方向、負 = 減る方向。「増える方向」が借方/貸方どちらに対応するかはこの時点では決めない([1.4](#14-レコード処理フロー)参照)                                    |
+| `amount`        | 金額        | 符号付き整数。正 = 対象科目(手順1で選んだ口座/カード)の残高が増える方向、負 = 減る方向。「増える方向」が借方/貸方どちらに対応するかはこの時点では決めない([1.5](#15-レコード処理フロー)参照)                                    |
 | `balance_after` | 取引後残高     | 任意。CSVに残高列がある場合のみ。[reconciliation.md 1.8](./reconciliation.md#18-取り込み漏れ検出)の連続性検証・[1.9](./reconciliation.md#19-原因不明差異への残高調整)の残高調整に使う              |
 | `external_id`   | 外部取引の一意キー | 任意。金融機関側にIDがあれば使用。無ければレビュー確定時に`entry_date`/`amount`/`description`から正規化ハッシュを生成し代替する([reconciliation.md 1.5](./reconciliation.md#15-データモデルの考え方)参照) |
-| `is_settled`    | 確定済みか     | 任意(Boolean、NULL許容)。CSVの中身を解析して判定するのではなく、[1.3](#13-パース方式)のパースに使った`Importer.is_settled`をそのまま引き継ぐ。確定/未確定の区別を持たないフォーマットでは`NULL` |
+| `is_settled`    | 確定済みか     | 任意(Boolean、NULL許容)。CSVの中身を解析して判定するのではなく、[1.4](#14-マッピング定義データ駆動)のマッピングに使った`import_mapping_definitions.is_settled`をそのまま引き継ぐ。確定/未確定の区別を持たないフォーマットでは`NULL` |
 
-`amount`の符号によって「対象科目の残高が増えたか減ったか」だけを表現し、複式仕訳としての借方/貸方への変換は[1.4](#14-レコード処理フロー)のレビュー確定時に行う。中間表現の段階では複式簿記の概念(借方/貸方)を持ち込まない。
+`amount`の符号によって「対象科目の残高が増えたか減ったか」だけを表現し、複式仕訳としての借方/貸方への変換は[1.5](#15-レコード処理フロー)のレビュー確定時に行う。中間表現の段階では複式簿記の概念(借方/貸方)を持ち込まない。
 
 > **「増える方向」は科目区分によって借方/貸方が逆転する**
-> 対象科目が`asset`(銀行口座等)なら、残高が増える方向(`amount`正)は**借方**の増加。対象科目が`liability`(クレジットカード専用未払金)なら、残高が増える方向(`amount`正)は**貸方**の増加になる([financial-statements.md 2.1 生成方式](./financial-statements.md#21-生成方式)の残高計算の一般式: `asset`/`expense`は借方が増加側、`liability`/`equity`/`revenue`は貸方が増加側、と同じロジック)。この変換はImporterの責務ではなく、対象科目の`category`を知っている側([1.4](#14-レコード処理フロー)のレビュー確定〜`JournalEntryRepository`)が行う。Importerは「`amount`正 = 対象科目の残高が増える方向」という区分に依存しない統一ルールでCSVの生の符号表記(入金/出金列の別、プラスマイナスの意味等、フォーマットごとに異なる)を正規化する責務だけを負う。
+> 対象科目が`asset`(銀行口座等)なら、残高が増える方向(`amount`正)は**借方**の増加。対象科目が`liability`(クレジットカード専用未払金)なら、残高が増える方向(`amount`正)は**貸方**の増加になる([financial-statements.md 2.1 生成方式](./financial-statements.md#21-生成方式)の残高計算の一般式: `asset`/`expense`は借方が増加側、`liability`/`equity`/`revenue`は貸方が増加側、と同じロジック)。この変換はマッピング定義の責務ではなく、対象科目の`category`を知っている側([1.5](#15-レコード処理フロー)のレビュー確定〜`JournalEntryRepository`)が行う。マッピング定義は「`amount`正 = 対象科目の残高が増える方向」という区分に依存しない統一ルールでCSVの生の符号表記(入金/出金列の別、プラスマイナスの意味等、フォーマットごとに異なる)を正規化する責務だけを負う。
 
-### 1.3 パース方式
+### 1.3 CSVの読み取り(Reader)
 
-`Importer`は以下の契約を持つ、CSVフォーマット単位の実装である。
+CSV文字列を「行×列」の生データ(セル値の文字列の二次元配列)に変換する処理。文字コード(UTF-8/Shift-JIS等)・区切り文字(カンマ/タブ等)・改行コードの違いを吸収する構文レベルの読み取りのみを担い、各列が何を意味するか(日付か金額か等)の解釈は行わない。
 
-```typescript
-interface Importer {
-  readonly formatGroupId: string       // 金融機関・カードを示す識別子。例: "rakuten-card"
-  readonly is_settled: boolean | null  // 確定/速報の区別があるフォーマットのみ設定。区別がなければ null
-  readonly label: string               // ユーザー向け表示名。例: "楽天カード(確定明細)"
-  parse(csvText: string): ImportedRecord[]
-}
-```
-
-- `parse`は「CSV文字列 → `ImportedRecord`の配列」という入出力のみを持つ純粋な変換処理とする([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)参照)。重複判定・取引先推定・複式簿記への変換は一切行わない([2章 責務分担](#2-責務分担)参照)。
-- CSVの列構成が想定と一致しない場合(必須列が無い、ヘッダーが異なる等)は`parse`がエラーを投げ、レビュー画面で「このCSVは◯◯用のフォーマットと一致しません」とユーザーに伝える。フォーマットの自動判定(CSVの中身から適切なImporterを推測すること)は行わない。どのImporterで読むかは常にユーザーが明示的に選ぶ([1.4](#14-レコード処理フロー)のステップ1参照)。
-- **同じ金融機関・カードの複数フォーマットは`formatGroupId`で束ねる。** `RakutenCardPreliminaryImporter`(`formatGroupId: "rakuten-card"`, `is_settled: false`)と`RakutenCardSettledImporter`(`formatGroupId: "rakuten-card"`, `is_settled: true`)は、IDの文字列が偶然似ているのではなく、同じ`formatGroupId`を持つ実装として構造的に関連づけられる。単一の一意識別子(`id`)は持たず、`formatGroupId` + `is_settled`の組み合わせで一意になる。レビュー画面で対象科目に対応するImporter候補を一覧・グルーピングする際にも、この`formatGroupId`を使う。
-- `label`は、ユーザーが複数のImporter候補から選ぶ際の表示に使う。
-- [1.2](#12-中間表現importedrecord)の`ImportedRecord.is_settled`は、パースに使った`Importer.is_settled`をそのまま引き継ぐ(Importerが個々のCSVレコードの内容を解析して判定するのではない)。
-- **実装単位は金融機関ではなくCSVフォーマット単位。** 同一の金融機関・カード会社でも、速報明細と確定明細でヘッダー構成(列の並びや項目自体)が異なることがある(例: 楽天カードの確定前CSVがa/b/c/d/eの5列、確定後CSVがa/b/c/f/g/nの6列)。1つの実装で両方のフォーマットを吸収しようとせず、フォーマットごとに別実装を用意する(例: `RakutenCardPreliminaryImporter`、`RakutenCardSettledImporter`)。[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の`BankAImporter`という例示はあくまで一般化した命名であり、実際には「金融機関 × フォーマット」の組み合わせの数だけ実装が存在しうる。
-- 命名規則: `{金融機関・カード会社名}{フォーマット種別}Importer`(例: `RakutenCardPreliminaryImporter`、`RakutenCardSettledImporter`、`MitsubishiUfjBankImporter`)。
-- [1.4](#14-レコード処理フロー)以降のフロー(重複防止・取り込み漏れ検出・取引先推定・レビュー)は、金融機関ともフォーマットとも独立して共通である。
+- 日本の金融機関CSVはShift-JISエンコーディングが多いため、エンコーディングは[2章](#2-マッピング定義マスタimport_mapping_definitions)のマッピング定義側(`encoding`)で指定する。
+- CSVの構文解析(クォート・エスケープ等)自体は標準的なライブラリに委ね、本ドメインの対象外とする。
 - CSVパース処理自体はメインスレッドで実行する([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針を踏襲)。
+- 将来TSVやExcel(.xlsx)のような別の表形式に対応する場合も、この層(生データの読み取り方法)だけを差し替えれば[1.4](#14-マッピング定義データ駆動)のマッピング定義の仕組みをそのまま再利用できる。PDF・API連携のような表形式でない入力は本ドメインの対象外とし、必要になった時点で別途検討する。
 
-### 1.4 レコード処理フロー
+### 1.4 マッピング定義(データ駆動)
+
+[1.3](#13-csvの読み取りreader)で得た「行×列」データを、[2章](#2-マッピング定義マスタimport_mapping_definitions)の`import_mapping_definitions`に基づいて`ImportedRecord`の配列へ変換する。マッピング定義は「どの列がどのフィールドに対応するか」「日付の書式」「金額の符号規則」等を宣言的なデータとして表現したものであり、コードを書かずに新しい金融機関・フォーマットへ対応できる。
+
+> **なぜコードではなくデータで表現するか**
+> Local-first・OSSという前提([architecture.md 1章](../architecture.md#1-目的とスコープ))では、対応金融機関を増やす作業がTypeScriptを書けるコントリビューターに限られると裾野が狭くなる。マッピング定義は宣言的なデータに限定し、変換ロジック(式やコード)をデータとして持たせることは行わない。これは任意コード実行の経路を作らないためでもある([architecture.md 11章](../architecture.md#11-セキュリティプライバシー方針)のサプライチェーンリスク方針と整合)。
+
+- CSVの列構成が定義と一致しない場合(必須列が無い等)はマッピング処理がエラーを返し、レビュー画面で「このCSVは◯◯用のフォーマットと一致しません」とユーザーに伝える。フォーマットの自動判定(CSVの中身から適切な定義を推測すること)は行わない。どのマッピング定義を使うかは常にユーザーが明示的に選ぶ([1.5](#15-レコード処理フロー)のステップ1参照)。
+- [1.2](#12-中間表現importedrecord)の`ImportedRecord.is_settled`は、マッピングに使った`import_mapping_definitions.is_settled`をそのまま引き継ぐ(個々のCSVレコードの内容を解析して判定するのではない)。
+
+### 1.5 レコード処理フロー
 
 CSVインポートからレビュー確定までは、以下の順で各ドメインのロジックを通す。
 
-1. **対象科目とImporterの選択、パース**: ユーザーが「どの口座/どのクレジットカードのCSVか」(対象科目)を選ぶ。次に、その科目のCSVフォーマットに対応する`Importer`を選ぶ(候補が1つなら自動選択、楽天カードの速報用/確定用のように複数あれば`Importer.label`で選択させる)。選んだ`Importer.parse`でCSV文字列 → `ImportedRecord`の配列に変換する([1.2](#12-中間表現importedrecord)・[1.3](#13-パース方式)、Importer実装の責務)。ここで選ばれた対象科目(`asset`の口座、または`liability`のクレカ専用未払金、[accounts.md 5章](./accounts.md#5-クレジットカード登録のux)参照)が、以降の全ステップの`account_id`になる
+1. **対象科目とマッピング定義の選択、変換**: ユーザーが「どの口座/どのクレジットカードのCSVか」(対象科目)を選ぶ。次に、その科目のCSVフォーマットに対応する`import_mapping_definitions`を選ぶ(候補が1つなら自動選択、楽天カードの速報用/確定用のように複数あれば`label`で選択させる)。選んだ定義で[1.3](#13-csvの読み取りreader)の読み取り→[1.4](#14-マッピング定義データ駆動)の変換を行い、`ImportedRecord`の配列を得る。ここで選ばれた対象科目(`asset`の口座、または`liability`のクレカ専用未払金、[accounts.md 5章](./accounts.md#5-クレジットカード登録のux)参照)が、以降の全ステップの`account_id`になる
 2. **重複チェック**: [reconciliation.md 1.6 重複防止フロー](./reconciliation.md#16-重複防止フロー)を適用する。`external_id`(またはハッシュ)の完全一致に加え、クレジットカードの速報/確定対策として日付・金額が近い既存明細の候補提示も含む
 3. **取り込み漏れチェック**: `balance_after`が取得できる場合、[reconciliation.md 1.8 取り込み漏れ検出](./reconciliation.md#18-取り込み漏れ検出)で残高の連続性を検証する
 4. **取引先推定**: `description`を正規化し、[counterparties.md 1.3](./counterparties.md#13-csvインポートとの関係)の部分一致パターンマッチングを適用する
-5. **相手勘定科目のサジェスト**(優先順位順、[1.5](#15-相手勘定科目サジェストの範囲)参照):
+5. **相手勘定科目のサジェスト**(優先順位順、[1.6](#16-相手勘定科目サジェストの範囲)参照):
    - a. 手順1の対象科目に未消込の未払金・未収金があれば、その消込仕訳をサジェストする([reconciliation.md 1.4 暫定記帳と消込](./reconciliation.md#14-暫定記帳未払金未収金と消込))。対象科目がクレカ専用未払金の場合、通常はここに該当せず、そのまま費用科目側をサジェスト対象とする(手順4の取引先推定へ)
    - b. 未消込の候補がなく、手順4の取引先推定で一意に特定できていれば、`counterparties.default_account_id`をサジェストする([counterparties.md 1.4](./counterparties.md#14-勘定科目のデフォルトサジェスト))
    - c. どちらにも該当しなければサジェストなし。ユーザーが手動で選択する
 6. **レビュー確定**: レビュー画面でユーザーが日付・金額・相手科目・プロジェクト・世帯メンバー・取引先を確認・修正し、確定する
 7. **永続化**: 確定した内容を`JournalEntryRepository`に渡し、[journal.md 1.3 貸借バランスの検証](./journal.md#13-貸借バランスの検証)を経て`journal_entries`・`journal_lines`・`external_transaction_refs`を同一トランザクションで書き込む
 
-### 1.5 相手勘定科目サジェストの範囲
+### 1.6 相手勘定科目サジェストの範囲
 
-取引先経由のサジェスト([1.4](#14-レコード処理フロー)の5-b、`counterparties.default_account_id`)のみをMVPスコープとする。取引先が特定できない場合、過去の類似摘要文字列からの推定のような追加のサジェスト機構は持たず、ユーザーに手動選択させる。
+取引先経由のサジェスト([1.5](#15-レコード処理フロー)の5-b、`counterparties.default_account_id`)のみをMVPスコープとする。取引先が特定できない場合、過去の類似摘要文字列からの推定のような追加のサジェスト機構は持たず、ユーザーに手動選択させる。
 
 > **なぜ類似摘要からの推定を見送るか**
 > 類似度判定(表記ゆれ・部分一致の閾値調整等)の設計・実装コストに対して、MVPで得られる精度向上の恩恵が見合わない。[counterparties.md 1.3](./counterparties.md#13-csvインポートとの関係)の学習の仕組み(手動確定した摘要が`pattern`として自動登録される)により、取引先マスタが育つにつれて自然にサジェスト精度は上がっていくため、初手から複雑な推定ロジックを持ち込む必要性が薄い。
 
-### 1.6 複合仕訳への対応
+### 1.7 複合仕訳への対応
 
-[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)で触れた「クレジットカード引き落とし明細を複合仕訳(未払金消込)にまとめる」運用は、CSVの取り込み粒度([1.4](#14-レコード処理フロー)の5-a)の話であり、`Importer`層自体が複数のCSV行を1仕訳に束ねる特別な処理を持つわけではない。1件のCSVレコード(=1回の口座引き落とし)に対して、レビュー画面で複数の未消込未払金を選択し複合仕訳として消し込む、という形で表現する([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)の複合仕訳の考え方と同じ)。
+[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)で触れた「クレジットカード引き落とし明細を複合仕訳(未払金消込)にまとめる」運用は、CSVの取り込み粒度([1.5](#15-レコード処理フロー)の5-a)の話であり、マッピング定義側が複数のCSV行を1仕訳に束ねる特別な処理を持つわけではない。1件のCSVレコード(=1回の口座引き落とし)に対して、レビュー画面で複数の未消込未払金を選択し複合仕訳として消し込む、という形で表現する([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)の複合仕訳の考え方と同じ)。
 
 ---
 
-## 2. 責務分担
+## 2. マッピング定義マスタ(import_mapping_definitions)
 
-CSVインポートに関わる3層の責務を明確に分離する。
+### 2.1 フィールド定義
+
+| カラム | 内容 | 制約・備考 |
+|---|---|---|
+| `id` | 定義ID | PK |
+| `account_id` | 対応する科目 | FK、任意。特定の口座/カード専用の定義ならここに設定する。`NULL`は「まだどの科目にも紐づいていない」組み込み・共有の定義([2.3](#23-組み込み定義とユーザー定義)参照) |
+| `format_group_id` | 金融機関・カードを示す識別子 | 例:「rakuten-card」。速報/確定のように複数の定義が同じ金融機関に属する場合、共通の値を持たせる |
+| `is_settled` | 確定済み明細用か | 任意(NULL許容)。確定/速報の区別があるフォーマットのみ設定。[1.2](#12-中間表現importedrecord)の`ImportedRecord.is_settled`にそのまま引き継がれる |
+| `label` | 表示名 | 例:「楽天カード(確定明細)」。ユーザーが定義を選ぶ際に表示 |
+| `encoding` | 文字コード | 例:`utf-8`、`shift-jis` |
+| `delimiter` | 区切り文字 | 既定はカンマ |
+| `header_row_count` | 先頭スキップ行数 | ヘッダー・注記行の数 |
+| `date_column` | 取引日の列 | 列インデックス(0始まり)またはヘッダー名の文字列 |
+| `date_format` | 日付書式 | 例:`YYYY/MM/DD` |
+| `description_column` | 摘要の列 | 列インデックスまたはヘッダー名 |
+| `amount_mode` | 金額の表現方式 | ENUM: `single_signed`(符号付き1列) / `debit_credit_split`(入金・出金2列) |
+| `amount_column` | 金額の列 | `amount_mode = single_signed`のときのみ使用 |
+| `debit_column` | 出金額の列 | `amount_mode = debit_credit_split`のときのみ使用 |
+| `credit_column` | 入金額の列 | `amount_mode = debit_credit_split`のときのみ使用 |
+| `balance_column` | 取引後残高の列 | 任意。[reconciliation.md 1.8](./reconciliation.md#18-取り込み漏れ検出)・[1.9](./reconciliation.md#19-原因不明差異への残高調整)で使う |
+| `external_id_column` | 外部取引IDの列 | 任意。無ければレビュー確定時にハッシュで代替([reconciliation.md 1.5](./reconciliation.md#15-データモデルの考え方)参照) |
+| `created_at` | 作成日時 | |
+| `updated_at` | 更新日時 | |
+
+列の指定(`date_column`等)は、数値文字列であれば0始まりの列インデックス、そうでなければヘッダー行の列名として解釈する。ヘッダー名指定は列の並びが多少変わっても頑健だが、`header_row_count = 0`(ヘッダー行が無いCSV)の場合はインデックス指定のみ使える。
+
+### 2.2 DDL
+
+```sql
+CREATE TABLE import_mapping_definitions (
+  id                    INTEGER PRIMARY KEY,
+  account_id            INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+  format_group_id       TEXT NOT NULL,
+  is_settled            BOOLEAN,
+  label                 TEXT NOT NULL,
+  encoding              TEXT NOT NULL DEFAULT 'utf-8',
+  delimiter             TEXT NOT NULL DEFAULT ',',
+  header_row_count      INTEGER NOT NULL DEFAULT 1,
+  date_column           TEXT NOT NULL,
+  date_format           TEXT NOT NULL,
+  description_column    TEXT NOT NULL,
+  amount_mode           TEXT NOT NULL CHECK (amount_mode IN ('single_signed', 'debit_credit_split')),
+  amount_column         TEXT,
+  debit_column          TEXT,
+  credit_column         TEXT,
+  balance_column        TEXT,
+  external_id_column    TEXT,
+  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK (
+    (amount_mode = 'single_signed'
+      AND amount_column IS NOT NULL AND debit_column IS NULL AND credit_column IS NULL) OR
+    (amount_mode = 'debit_credit_split'
+      AND amount_column IS NULL AND debit_column IS NOT NULL AND credit_column IS NOT NULL)
+  )
+);
+
+CREATE INDEX idx_import_mapping_definitions_account ON import_mapping_definitions(account_id);
+CREATE INDEX idx_import_mapping_definitions_format_group ON import_mapping_definitions(format_group_id);
+
+-- updated_at の自動更新
+CREATE TRIGGER import_mapping_definitions_set_updated_at
+AFTER UPDATE ON import_mapping_definitions
+WHEN NEW.updated_at = OLD.updated_at
+BEGIN
+  UPDATE import_mapping_definitions SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
+```
+
+### 2.3 組み込み定義とユーザー定義
+
+`account_id`が`NULL`の定義は、特定の科目にまだ紐づいていない汎用の定義を表す。OSSとして主要金融機関向けの定義がアプリに同梱される想定であり([3章 責務分担](#3-責務分担)参照)、これらは`account_id = NULL`のまま提供される。ユーザーが対象科目に対して初めてその定義を使うと([1.5](#15-レコード処理フロー)のステップ1)、`account_id`をその科目に更新し、以降は既定の候補として扱う。
+
+> **削除・更新にライフサイクル制約を設けない理由**
+> `accounts`や`projects`と異なり、`import_mapping_definitions`は仕訳や`external_transaction_refs`から直接参照されない。マッピング定義はCSVインポート実行時にのみ使われる一時的な変換ルールであり、インポート済みの仕訳データは定義への参照を保持しない。したがって定義を削除・変更しても過去のインポート結果には影響せず、[accounts.md 2章](./accounts.md#2-勘定科目のライフサイクル)のような「紐づく仕訳があれば削除不可」という保護は不要である。逆方向として、口座/カード自体([accounts.md 2章](./accounts.md#2-勘定科目のライフサイクル)の物理削除、仕訳が0件の場合のみ可能)が削除された場合、その口座専用だった定義は`account_id`が`NULL`に戻り([2.2 DDL](#22-ddl)の`ON DELETE SET NULL`)、汎用定義として残る(自動では削除しない)。
+
+---
+
+## 3. 責務分担
+
+CSVインポートに関わる4層の責務を明確に分離する。
 
 | 層 | 責務 | 持たない責務 |
 |---|---|---|
-| Importer(フォーマット単位の実装) | CSV文字列 → `ImportedRecord`の配列への変換([1.2](#12-中間表現importedrecord)・[1.3](#13-パース方式))。自身の`formatGroupId`/`is_settled`/`label`を持つ | 重複判定・取引先推定・複式簿記への変換は一切行わない |
-| レビュー画面 | 重複・取り込み漏れの警告表示、相手科目のサジェスト提示、ユーザーによる確認・修正の受付([1.4](#14-レコード処理フロー)の2〜6) | 最終的なドメインルールの強制(貸借バランス等)は行わない |
-| `JournalEntryRepository` | 確定した仕訳ドラフトの永続化、貸借バランス検証([journal.md 1.3](./journal.md#13-貸借バランスの検証))、`is_reconcilable`資産への記帳経路制限の強制([reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)) | CSVインポート固有の知識(パース・サジェスト)は持たない。マニュアル起票と共通の入り口([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)) |
+| CSVの読み取り(Reader、[1.3](#13-csvの読み取りreader)) | CSV文字列 → 「行×列」の生データへの変換のみ。文字コード・区切り文字の差異を吸収 | 列の意味(日付か金額か等)の解釈は行わない |
+| マッピング定義(`import_mapping_definitions`、[2章](#2-マッピング定義マスタimport_mapping_definitions)) | 「行×列」データ → `ImportedRecord`への変換。列の意味・日付書式・金額の符号規則を宣言的なデータとして保持 | 変換ロジック(コード・式)は持たない。重複判定・取引先推定・複式簿記への変換は一切行わない |
+| レビュー画面 | 重複・取り込み漏れの警告表示、相手科目のサジェスト提示、ユーザーによる確認・修正の受付([1.5](#15-レコード処理フロー)の2〜6) | 最終的なドメインルールの強制(貸借バランス等)は行わない |
+| `JournalEntryRepository` | 確定した仕訳ドラフトの永続化、貸借バランス検証([journal.md 1.3](./journal.md#13-貸借バランスの検証))、`is_reconcilable`資産への記帳経路制限の強制([reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)) | CSVインポート固有の知識(読み取り・マッピング・サジェスト)は持たない。マニュアル起票と共通の入り口([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)) |
 
-この分担により、「入力経路(CSVかマニュアルか)によってドメインの整合性ルールが分岐しない」という[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針が保たれる。`Importer`とレビュー画面はあくまで`JournalEntryRepository`への入力を組み立てる前段階であり、最終的な整合性は常に`JournalEntryRepository`が一元的に担保する。
+この分担により、「入力経路(CSVかマニュアルか)によってドメインの整合性ルールが分岐しない」という[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針が保たれる。読み取り・マッピングとレビュー画面はあくまで`JournalEntryRepository`への入力を組み立てる前段階であり、最終的な整合性は常に`JournalEntryRepository`が一元的に担保する。
 
-Importerは「CSV文字列 → `ImportedRecord`の配列」という狭い入出力契約に閉じているため、対応金融機関・フォーマットを増やす作業は他のドメインロジックに触れずに追加できる。OSSとして、Importer実装(特に[1.3](#13-パース方式)の金融機関×フォーマットごとの実装)はコミュニティからのコントリビューションを主な想定経路とする。
+マッピング定義は宣言的なデータであり、コードを書かずに追加できる。OSSとして、新しい金融機関・フォーマットへの対応はマッピング定義の追加(コミュニティによるコントリビューション)を主な想定経路とする。CSVの読み取り(Reader)側は文字コード・区切り文字といった構文レベルの差異のみを扱うため、拡張の主戦場にはならない見込み。
