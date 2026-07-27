@@ -31,7 +31,7 @@ CSVフォーマットごとの差異(列の並び、日付形式、「入金額�
 | `amount`        | 金額        | 符号付き整数。正 = 対象科目(手順1で選んだ口座/カード)の残高が増える方向、負 = 減る方向。「増える方向」が借方/貸方どちらに対応するかはこの時点では決めない([1.4](#14-レコード処理フロー)参照)                                    |
 | `balance_after` | 取引後残高     | 任意。CSVに残高列がある場合のみ。[reconciliation.md 1.8](./reconciliation.md#18-取り込み漏れ検出)の連続性検証・[1.9](./reconciliation.md#19-原因不明差異への残高調整)の残高調整に使う              |
 | `external_id`   | 外部取引の一意キー | 任意。金融機関側にIDがあれば使用。無ければレビュー確定時に`entry_date`/`amount`/`description`から正規化ハッシュを生成し代替する([reconciliation.md 1.5](./reconciliation.md#15-データモデルの考え方)参照) |
-| `is_settled`    | 確定済みか     | 任意(Boolean、NULL許容)。値の有無・内容はCSVを解析して判定するのではなく、[1.3](#13-パース方式)のフォーマット単位のImporter実装が固定値として設定する(例: `RakutenCardPreliminaryImporter`は常に`false`、`RakutenCardSettledImporter`は常に`true`)。確定/未確定の区別を持たないフォーマットでは`NULL` |
+| `is_settled`    | 確定済みか     | 任意(Boolean、NULL許容)。CSVの中身を解析して判定するのではなく、[1.3](#13-パース方式)のパースに使った`Importer.is_settled`をそのまま引き継ぐ。確定/未確定の区別を持たないフォーマットでは`NULL` |
 
 `amount`の符号によって「対象科目の残高が増えたか減ったか」だけを表現し、複式仕訳としての借方/貸方への変換は[1.4](#14-レコード処理フロー)のレビュー確定時に行う。中間表現の段階では複式簿記の概念(借方/貸方)を持ち込まない。
 
@@ -44,15 +44,18 @@ CSVフォーマットごとの差異(列の並び、日付形式、「入金額�
 
 ```typescript
 interface Importer {
-  readonly id: string       // 一意な識別子。例: "rakuten-card-settled"
-  readonly label: string    // ユーザー向け表示名。例: "楽天カード(確定明細)"
+  readonly formatGroupId: string       // 金融機関・カードを示す識別子。例: "rakuten-card"
+  readonly is_settled: boolean | null  // 確定/速報の区別があるフォーマットのみ設定。区別がなければ null
+  readonly label: string               // ユーザー向け表示名。例: "楽天カード(確定明細)"
   parse(csvText: string): ImportedRecord[]
 }
 ```
 
 - `parse`は「CSV文字列 → `ImportedRecord`の配列」という入出力のみを持つ純粋な変換処理とする([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)参照)。重複判定・取引先推定・複式簿記への変換は一切行わない([2章 責務分担](#2-責務分担)参照)。
 - CSVの列構成が想定と一致しない場合(必須列が無い、ヘッダーが異なる等)は`parse`がエラーを投げ、レビュー画面で「このCSVは◯◯用のフォーマットと一致しません」とユーザーに伝える。フォーマットの自動判定(CSVの中身から適切なImporterを推測すること)は行わない。どのImporterで読むかは常にユーザーが明示的に選ぶ([1.4](#14-レコード処理フロー)のステップ1参照)。
-- `id`/`label`は、対象科目に対して複数のImporter候補がある場合(例: 楽天カードの速報用/確定用)にユーザーが選ぶ際の表示・識別に使う。
+- **同じ金融機関・カードの複数フォーマットは`formatGroupId`で束ねる。** `RakutenCardPreliminaryImporter`(`formatGroupId: "rakuten-card"`, `is_settled: false`)と`RakutenCardSettledImporter`(`formatGroupId: "rakuten-card"`, `is_settled: true`)は、IDの文字列が偶然似ているのではなく、同じ`formatGroupId`を持つ実装として構造的に関連づけられる。単一の一意識別子(`id`)は持たず、`formatGroupId` + `is_settled`の組み合わせで一意になる。レビュー画面で対象科目に対応するImporter候補を一覧・グルーピングする際にも、この`formatGroupId`を使う。
+- `label`は、ユーザーが複数のImporter候補から選ぶ際の表示に使う。
+- [1.2](#12-中間表現importedrecord)の`ImportedRecord.is_settled`は、パースに使った`Importer.is_settled`をそのまま引き継ぐ(Importerが個々のCSVレコードの内容を解析して判定するのではない)。
 - **実装単位は金融機関ではなくCSVフォーマット単位。** 同一の金融機関・カード会社でも、速報明細と確定明細でヘッダー構成(列の並びや項目自体)が異なることがある(例: 楽天カードの確定前CSVがa/b/c/d/eの5列、確定後CSVがa/b/c/f/g/nの6列)。1つの実装で両方のフォーマットを吸収しようとせず、フォーマットごとに別実装を用意する(例: `RakutenCardPreliminaryImporter`、`RakutenCardSettledImporter`)。[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の`BankAImporter`という例示はあくまで一般化した命名であり、実際には「金融機関 × フォーマット」の組み合わせの数だけ実装が存在しうる。
 - 命名規則: `{金融機関・カード会社名}{フォーマット種別}Importer`(例: `RakutenCardPreliminaryImporter`、`RakutenCardSettledImporter`、`MitsubishiUfjBankImporter`)。
 - [1.4](#14-レコード処理フロー)以降のフロー(重複防止・取り込み漏れ検出・取引先推定・レビュー)は、金融機関ともフォーマットとも独立して共通である。
@@ -92,7 +95,7 @@ CSVインポートに関わる3層の責務を明確に分離する。
 
 | 層 | 責務 | 持たない責務 |
 |---|---|---|
-| Importer(フォーマット単位の実装) | CSV文字列 → `ImportedRecord`の配列への変換のみ([1.2](#12-中間表現importedrecord)・[1.3](#13-パース方式))。`is_settled`を設定できるならここで固定値として設定する | 重複判定・取引先推定・複式簿記への変換は一切行わない |
+| Importer(フォーマット単位の実装) | CSV文字列 → `ImportedRecord`の配列への変換([1.2](#12-中間表現importedrecord)・[1.3](#13-パース方式))。自身の`formatGroupId`/`is_settled`/`label`を持つ | 重複判定・取引先推定・複式簿記への変換は一切行わない |
 | レビュー画面 | 重複・取り込み漏れの警告表示、相手科目のサジェスト提示、ユーザーによる確認・修正の受付([1.4](#14-レコード処理フロー)の2〜6) | 最終的なドメインルールの強制(貸借バランス等)は行わない |
 | `JournalEntryRepository` | 確定した仕訳ドラフトの永続化、貸借バランス検証([journal.md 1.3](./journal.md#13-貸借バランスの検証))、`is_reconcilable`資産への記帳経路制限の強制([reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)) | CSVインポート固有の知識(パース・サジェスト)は持たない。マニュアル起票と共通の入り口([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)) |
 
