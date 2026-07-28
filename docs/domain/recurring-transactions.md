@@ -8,6 +8,7 @@
 
 1. [定期取引](#1-定期取引)
 2. [定期取引マスタ(recurring_transaction_rules)](#2-定期取引マスタrecurring_transaction_rules)
+3. [大口費用の按分](#3-大口費用の按分)
 
 ---
 
@@ -18,7 +19,7 @@
 家賃・サブスクリプション・給与など、毎月ほぼ同じ内容で繰り返される取引をテンプレート化する機能。テンプレート(`recurring_transaction_rules`)は仕訳のひな形を保持するのみで、実際の`journal_entries`は各サイクルごとに個別レコードとして生成される。生成後は独立した仕訳として扱われ、[journal.md 1.5 仕訳の編集・削除](./journal.md#15-仕訳の編集削除)の通り通常の仕訳と同様に編集・削除できる(締めを設けない設計との整合)。
 
 > **is_reconcilable科目を直接の`debit_account_id`/`credit_account_id`にはできない**
-> [reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)の通り、`is_reconcilable = true`の科目(銀行口座等、およびクレジットカードのカード専用未払金)を使う仕訳はCSVインポート由来に限られ、定期取引による生成(レビュー確認を経ても)はこれに該当しない。したがって家賃・給与のように口座が絡む定期取引は、口座科目を直接使わず未払金・未収金を経由して暫定計上するテンプレートとして組む([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)の例、[journal.md 1.2](./journal.md#12-記帳の型具体例)参照)。CSV到着後の消込自体は突合ドメイン側([reconciliation.md 1.6 重複防止フロー](./reconciliation.md#16-重複防止フロー))で行われ、定期取引の生成物ではない。
+> 定期取引から生成される仕訳の`source_type`は`recurring_generated`であり、[reconciliation.md 1.3 is_reconcilable資産・負債への直接記帳の制限](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)のホワイトリスト(`external_import`/`initial_balance`/`balance_adjustment`)に含まれない([journal.md 1.7 作成経路(source_type)](./journal.md#17-作成経路source_type)参照)。したがって`is_reconcilable = true`の科目(区分を問わない。銀行口座等・クレジットカードのカード専用未払金のいずれも)を直接使う仕訳は生成できない。したがって家賃・給与のように口座が絡む定期取引は、口座科目を直接使わず未払金・未収金を経由して暫定計上するテンプレートとして組む([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)の例、[journal.md 1.2](./journal.md#12-記帳の型具体例)参照)。CSV到着後の消込自体は突合ドメイン側([reconciliation.md 1.6 重複防止フロー](./reconciliation.md#16-重複防止フロー))で行われ、定期取引の生成物ではない。
 
 ### 1.2 自動生成 vs レビュー確認
 
@@ -28,7 +29,7 @@
 > ルールごとに「自動確定」フラグを持たせ即座に`journal_entries`を生成する案も検討したが、「ドメインの整合性ルールは入力経路で分岐しない」([architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)末尾)の精神とはやや矛盾するうえ、サブスク料金の値上げのような金額変動を取りこぼすリスクがある。レビュー確認方式に統一する。将来的に自動確定オプションを追加する場合も、この「提案生成」の仕組みの上に選択式で載せられるため、後方拡張は可能。
 
 > **なぜ将来分をまとめて事前生成しないか**
-> 定期取引には終了日がなく、将来分を事前生成するにしても「向こう1年分」のようにどこかで打ち切る必要があり、期限が近づけば結局追加生成が要る。生成の粒度が変わるだけで「都度生成」自体はなくならないうえ、[1.1](#11-位置づけ)の通り口座科目を直接使えない制約から恩恵も限定的、かつ将来分を今の金額でまとめて確定すると値上げ等をレビューなしで取りこぼす。[architecture.md](../architecture.md)の通りサーバーを持たないローカルファーストアプリであるため、そもそも「対象日になったら」を実現するcron相当の仕組みは存在しない。**アプリ起動時に、前回チェック日から現在までの間で発生すべき対象日をまとめて遅延評価し、提案を生成する**実装とする。専用のバッチ処理を別途持つ必要がなく、生成タイミングは「起動時」に一本化される。
+> 定期取引には終了日がなく、将来分を事前生成するにしても「向こう1年分」のようにどこかで打ち切る必要があり、期限が近づけば結局追加生成が要る。生成の粒度が変わるだけで「都度生成」自体はなくならないうえ、[1.1](#11-位置づけ)の通り口座科目を直接使えない制約から恩恵も限定的、かつ将来分を今の金額でまとめて確定すると値上げ等をレビューなしで取りこぼす。[architecture.md](../architecture.md)の通りサーバーを持たないローカルファーストアプリであるため、そもそも「対象日になったら」を実現するcron相当の仕組みは存在しない。**アプリ起動時に、前回チェック日から現在までの間で発生すべき対象日をまとめて遅延評価し、提案を生成する**実装とする。専用のバッチ処理を別途持つ必要がなく、生成タイミングは「起動時」に一本化される。この遅延評価の際、`max_occurrences`が設定されているルールは生成済み件数と照合し、上限に達していれば対象日が残っていても以降の提案を生成しない([2.1](#21-フィールド定義)、[1.6](#16-ライフサイクル)参照)。
 
 ### 1.3 繰り返しルールの表現方式
 
@@ -64,6 +65,7 @@
 | 物理削除 | 生成済みの`journal_entries`が1件以上 | 不可(非アクティブ化のみ) |
 | 内容変更(金額・科目等) | 常に | 可。次回以降の提案生成にのみ反映され、過去生成分には影響しない |
 | 非アクティブ化 | 任意(解約等) | 新規の提案生成を停止する。過去生成分の仕訳はそのまま残る |
+| 上限到達 | `max_occurrences`が設定されており、生成済み件数がそれに達した([2.1](#21-フィールド定義)参照) | 新規の提案生成を自動的に停止する。`is_active`自体は変更しない(ユーザーが意図的に非アクティブ化したのか、上限到達で自然に終わったのかをUI上で区別するため) |
 
 ---
 
@@ -75,7 +77,7 @@
 |---|---|---|
 | `id` | ルールID | PK |
 | `name` | ルール名 | 例:「家賃」「Netflix」「お小遣い(第2土曜日)」 |
-| `debit_account_id` | 借方科目 | FK。`asset`区分かつ`is_reconcilable = true`の科目は指定不可([1.1](#11-位置づけ)参照) |
+| `debit_account_id` | 借方科目 | FK。`is_reconcilable = true`の科目は指定不可(区分を問わない、[1.1](#11-位置づけ)参照) |
 | `credit_account_id` | 貸方科目 | FK。同上 |
 | `amount` | 金額 | 通貨最小単位の正の整数。生成時のレビューで編集可能([1.2](#12-自動生成-vs-レビュー確認)参照) |
 | `frequency` | 繰り返し種別 | ENUM: `weekly`/`monthly`/`yearly`([1.3](#13-繰り返しルールの表現方式)参照) |
@@ -86,81 +88,86 @@
 | `project_id` | プロジェクト | FK、任意。PL科目側の行にのみ意味を持つ([1.4](#14-テンプレートの仕訳構成スコープ)参照) |
 | `household_member_id` | 世帯メンバー | FK、任意 |
 | `counterparty_id` | 取引先 | FK、任意。PL科目側の行にのみ意味を持つ |
+| `max_occurrences` | 最大生成回数 | 任意。設定すると、生成済み件数(`journal_entries.generated_from_rule_id`のCOUNT、[1.5](#15-生成された仕訳との関係)参照)がこの値に達した時点で新規の提案生成を自動的に停止する([1.6](#16-ライフサイクル)参照)。`NULL` = 無期限(既定)。[3章 大口費用の按分](#3-大口費用の按分)の按却ルールで、按分回数(例:12回)を指定する用途を主に想定するが、按分に限らず汎用的に使える |
 | `is_active` | 有効/非アクティブ | falseにすると新規の提案生成のみ停止する |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
 
 `frequency`ごとに使用するカラムの組み合わせは[1.3](#13-繰り返しルールの表現方式)の表の通りで、それ以外のカラムは`NULL`にする(DDLのCHECK制約で強制、[2.2](#22-ddl)参照)。
 
+> **なぜ`max_occurrences`を専用の残数カウンタにしないか**
+> 「あと何回生成したか」を別カラムでカウントアップ/ダウンする方式も検討したが、生成失敗時のロールバック漏れ等でカウンタと実際の`journal_entries`件数がずれるリスクがある。[1.5](#15-生成された仕訳との関係)の`generated_from_rule_id`は既に「どのルールから何件生成されたか」を一意に復元できる参照であるため、これをCOUNTするだけで済ませ、二重管理を避ける。
+
 **journal_entriesへの追加フィールド**(既存テーブルへの変更、[journal.md](./journal.md)側への反映が別途必要)
 
 | カラム | 内容 | 制約・備考 |
 |---|---|---|
-| `generated_from_rule_id` | 生成元の定期取引ルール | FK、任意。手入力・CSVインポート由来の仕訳では`NULL`([1.5](#15-生成された仕訳との関係)参照) |
+| `generated_from_rule_id` | 生成元の定期取引ルール | FK、任意。`source_type = 'recurring_generated'`([journal.md 1.7](./journal.md#17-作成経路source_type)参照)の仕訳でのみ値を持つ。手入力・CSVインポート由来の仕訳では`NULL`([1.5](#15-生成された仕訳との関係)参照) |
 
 ### 2.2 DDL
 
-```sql
-CREATE TABLE recurring_transaction_rules (
-  id                    INTEGER PRIMARY KEY,
-  name                  TEXT NOT NULL,
-  debit_account_id      INTEGER NOT NULL REFERENCES accounts(id),
-  credit_account_id     INTEGER NOT NULL REFERENCES accounts(id),
-  amount                INTEGER NOT NULL CHECK (amount > 0),
-  frequency             TEXT NOT NULL CHECK (frequency IN ('weekly', 'monthly', 'yearly')),
-  day_of_week           INTEGER CHECK (day_of_week BETWEEN 0 AND 6),
-  day_of_month          INTEGER CHECK (day_of_month BETWEEN 1 AND 31),
-  week_of_month         INTEGER CHECK (week_of_month BETWEEN -1 AND 5 AND week_of_month != 0),
-  month_of_year         INTEGER CHECK (month_of_year BETWEEN 1 AND 12),
-  project_id            INTEGER REFERENCES projects(id),
-  household_member_id   INTEGER REFERENCES household_members(id),
-  counterparty_id       INTEGER REFERENCES counterparties(id),
-  is_active             BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
-  -- frequencyごとに使用するカラムの組み合わせを強制する(1.3の対応表参照)
-  CHECK (
-    (frequency = 'weekly'
-      AND day_of_week IS NOT NULL
-      AND day_of_month IS NULL AND week_of_month IS NULL AND month_of_year IS NULL)
-    OR
-    (frequency = 'monthly' AND month_of_year IS NULL
-      AND (
-        (day_of_month IS NOT NULL AND day_of_week IS NULL AND week_of_month IS NULL)
-        OR
-        (day_of_week IS NOT NULL AND week_of_month IS NOT NULL AND day_of_month IS NULL)
-      ))
-    OR
-    (frequency = 'yearly'
-      AND month_of_year IS NOT NULL AND day_of_month IS NOT NULL
-      AND day_of_week IS NULL AND week_of_month IS NULL)
-  )
-);
-
--- 仕訳が紐づくルールの物理削除を禁止
-CREATE TRIGGER prevent_delete_rule_with_journal_entries
-BEFORE DELETE ON recurring_transaction_rules
-WHEN EXISTS (
-  SELECT 1 FROM journal_entries WHERE generated_from_rule_id = OLD.id
-)
-BEGIN
-  SELECT RAISE(ABORT, 'cannot delete rule with generated journal entries');
-END;
-
--- updated_at の自動更新
-CREATE TRIGGER recurring_transaction_rules_set_updated_at
-AFTER UPDATE ON recurring_transaction_rules
-WHEN NEW.updated_at = OLD.updated_at
-BEGIN
-  UPDATE recurring_transaction_rules SET updated_at = datetime('now') WHERE id = NEW.id;
-END;
-
--- journal_entries への追加(journal.md 2.2 DDL側への反映が必要)
-ALTER TABLE journal_entries
-  ADD COLUMN generated_from_rule_id INTEGER
-    REFERENCES recurring_transaction_rules(id);
-```
+実装: [schema/recurring_transactions.sql](../schema/recurring_transactions.sql)
 
 ### 2.3 他ドメインへの影響
 
 `journal_entries`に`generated_from_rule_id`カラムの追加が必要(上記DDL参照)。方向性が固まり次第、[journal.md 2章](./journal.md#2-仕訳マスタjournal_entriesjournal_lines)に反映する。
+
+---
+
+## 3. 大口費用の按分
+
+サブスクの年間契約のように、支払いが年1回でも実質的な負担は毎月発生している大口費用を、発生月にまとめて費用計上せず期間按分したいケースを扱う。按分専用のフィールドや生成ロジックを定期取引ルールに新設するのではなく、**一時勘定(資産または負債)を経由した2つの独立したルールの組み合わせ**で表現する。支払いのタイミングが按分期間より先か後かによって、経由する一時勘定と仕訳の向きが逆になる。
+
+### 3.1 前払い型・後払い型
+
+| | 前払い型 | 後払い型 |
+|---|---|---|
+| 支払いタイミング | 按分期間より先(例: 年初にまとめて払う) | 按分期間より後(例: 年度末・更新時にまとめて請求される) |
+| 経由する一時勘定 | 前払費用(**資産**) | 未払費用(**負債**) |
+| 按分(毎月)の意味 | 資産の取り崩し | 負債の積み増し |
+| 按分(毎月)の仕訳 | (借) 費用 / (貸) 前払費用 | (借) 費用 / (貸) 未払費用 |
+| 支払い時の仕訳 | (借) 前払費用 / (貸) 未払金 | (借) 未払費用 / (貸) 未払金 |
+
+いずれも「支払い」と「按分計上」を担う2つのルールに分け、両者を一時勘定でつなぐ点は共通。前払費用・未払費用は`accounts.md`の「未収金(一時勘定)」と同様、ユーザーが任意に追加できる一時勘定([accounts.md 1.2](./accounts.md#12-区分5要素)参照)として扱い、按分用に専用の科目種別を新設する必要はない。
+
+> **未払費用と未払金(一時勘定)は役割が異なる**
+> [1.1](#11-位置づけ)の「未払金」は口座引き落としを待つ暫定計上専用の一時勘定であり、支払いルール側の貸方(相手科目)として引き続き使う。「未払費用」はそれとは別に、後払い型の按分でのみ使う「まだ請求されていないが発生済みの費用」を積み上げる一時勘定であり、両者を混同しない。後払い型では按分計上で未払費用が積み上がり、実際の支払い時にその未払費用を取り崩して未払金へ付け替え、CSV到着後に未払金を消し込む、という2段階を経る([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)参照)。
+
+### 3.2 前払い型の例(支払いが先)
+
+```
+ルール1「Netflix年払い」  frequency = yearly, 毎年1/1
+(借) 資産・前払費用     14,400
+(貸) 負債・未払金       14,400
+
+ルール2「Netflix按却」    frequency = monthly, 毎月1日, max_occurrences = 12
+(借) 費用・通信費(サブスク)  1,200
+(貸) 資産・前払費用          1,200
+```
+
+ルール1が契約更新時の支払いを前払費用として計上し、ルール2が毎月その前払費用を取り崩して費用に振り替える。
+
+### 3.3 後払い型の例(支払いが後)
+
+```
+ルール1「税理士顧問料 按分計上」  frequency = monthly, 毎月末日, max_occurrences = 12
+(借) 費用・顧問料           10,000
+(貸) 負債・未払費用         10,000
+
+ルール2「税理士顧問料 支払い」   frequency = yearly, 毎年3/31
+(借) 負債・未払費用        120,000
+(貸) 負債・未払金          120,000
+```
+
+ルール1が毎月の利用実績分を費用として先に計上し未払費用を積み増し、ルール2が年1回の請求確定時にその未払費用をまとめて取り崩し、口座引き落としを待つ未払金へ付け替える。
+
+> **なぜ単一ルールに按分機能を持たせないか**
+> `recurring_transaction_rules`に按分月数のようなフィールドを追加し、1回の提案承認で複数回分の按分仕訳をまとめて生成する案も検討したが、[1.2](#12-自動生成-vs-レビュー確認)が前提とする「1回の対象日 → 1件の提案 → 1件の仕訳」という単純な対応が崩れる。加えて按分の終了条件・途中解約時に残った一時勘定残高の扱い・端数処理など、定期取引ドメインに新しい仕様を持ち込むことになる。一時勘定を経由する2ルール構成なら、[1.4 テンプレートの仕訳構成(スコープ)](#14-テンプレートの仕訳構成スコープ)の「借方1科目・貸方1科目」を一切崩さずに実現でき、かつ複式簿記における費用の期間配分という標準的な会計処理そのものであるため、ドメインとして特別扱いする理由がない。
+
+### 3.4 按分ルールの終了
+
+前払い型・後払い型いずれも、按分計上を担うルール(前払い型ではルール2、後払い型ではルール1)には`max_occurrences`([2.1](#21-フィールド定義)参照)を按分回数(通常12)に設定する。これにより13ヶ月目以降は提案が生成されず、按分の終わりに気づかず放置してしまう事故を防ぐ。支払いを担うルール側は契約が続く限り毎年発生するため、`max_occurrences`は設定しない(`NULL`のまま)。
+
+### 3.5 端数処理はドメインの関心事としない
+
+`amount`は固定金額のフィールドであり、契約金額を按分回数で割った結果(割り切れない場合の端数調整を含む)をどう計算するかはUI側の入力支援の話であって、ドメインモデルとしては関与しない。ユーザーが按却ルール作成時に月割り金額を計算して入力する運用を基本とし、電卓的な補助(年額÷回数の自動計算、端数を初月または最終月に寄せる等)を提供するかはUXの検討事項として別途扱う。

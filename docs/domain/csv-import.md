@@ -19,25 +19,40 @@
 
 ### 1.1 位置づけ
 
-金融機関ごとに異なるCSVフォーマットを共通の中間表現に正規化し、[reconciliation.md](./reconciliation.md)(重複防止・取り込み漏れ検出)・[counterparties.md](./counterparties.md)(取引先推定)・[journal.md](./journal.md)(仕訳生成)の各ドメインロジックへ橋渡しする役割を担う。[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針の通り、CSVフォーマットごとの差異はコードのハードコードではなく、宣言的なデータとして表現する**マッピング定義**(`import_mapping_definitions`、[2章](#2-マッピング定義マスタimport_mapping_definitions))で吸収する。パース処理は「CSVの読み取り([1.3](#13-csvの読み取りreader))」と「マッピング定義に基づく変換([1.4](#14-マッピング定義データ駆動))」の2段階に分離し、パースからレビュー確定までの処理フローを本ドメインで定義する。
+金融機関ごとに異なるCSVフォーマットを共通の中間表現に正規化し、[reconciliation.md](./reconciliation.md)(重複防止・残高照合)・[counterparties.md](./counterparties.md)(取引先推定)・[journal.md](./journal.md)(仕訳生成)の各ドメインロジックへ橋渡しする役割を担う。[architecture.md 12章](../architecture.md#12-起票方式csvインポートマニュアル起票)の方針の通り、CSVフォーマットごとの差異はコードのハードコードではなく、宣言的なデータとして表現する**マッピング定義**(`import_mapping_definitions`、[2章](#2-マッピング定義マスタimport_mapping_definitions))で吸収する。パース処理は「CSVの読み取り([1.3](#13-csvの読み取りreader))」と「マッピング定義に基づく変換([1.4](#14-マッピング定義データ駆動))」の2段階に分離し、パースからレビュー確定までの処理フローを本ドメインで定義する。
 
 ### 1.2 中間表現(ImportedRecord)
 
 CSVフォーマットごとの差異(列の並び、日付形式、「入金額・出金額」2列形式か「金額」1列符号付き形式か等)は、[1.4](#14-マッピング定義データ駆動)のマッピング定義が吸収し、以下の共通フォーマットに正規化して返す。
 
-| フィールド           | 内容        | 備考                                                                                                                                               |
-| --------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `entry_date`    | 取引日       |                                                                                                                                                  |
-| `description`   | 摘要        | 生文字列、正規化前。[counterparties.md 1.3](./counterparties.md#13-csvインポートとの関係)の取引先推定はここから行う                                                              |
-| `amount`        | 金額        | 符号付き整数。正 = 対象科目(手順1で選んだ口座/カード)の残高が増える方向、負 = 減る方向。「増える方向」が借方/貸方どちらに対応するかはこの時点では決めない([1.5](#15-レコード処理フロー)参照)                                    |
-| `balance_after` | 取引後残高     | 任意。CSVに残高列がある場合のみ。[reconciliation.md 1.8](./reconciliation.md#18-取り込み漏れ検出)の連続性検証・[1.9](./reconciliation.md#19-原因不明差異への残高調整)の残高調整に使う              |
-| `external_id`   | 外部取引の一意キー | 任意。金融機関側にIDがあれば使用。無ければレビュー確定時に`entry_date`/`amount`/`description`から正規化ハッシュを生成し代替する([reconciliation.md 1.5](./reconciliation.md#15-データモデルの考え方)参照) |
+| フィールド           | 内容        | 備考                                                                                                                                                     |
+| --------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `entry_date`    | 取引日       |                                                                                                                                                        |
+| `description`   | 摘要        | 生文字列、正規化前。[counterparties.md 1.3](./counterparties.md#13-csvインポートとの関係)の取引先推定はここから行う                                                                    |
+| `amount`        | 金額        | 符号付き整数。正 = 対象科目(手順1で選んだ口座/カード)の残高が増える方向、負 = 減る方向。「増える方向」が借方/貸方どちらに対応するかはこの時点では決めない([1.5](#15-レコード処理フロー)参照)                                             |
+| `balance_after` | 取引後残高     | 任意。CSVに残高列がある場合のみ。[reconciliation.md 1.8](./reconciliation.md#18-残高照合)の残高照合・[1.9](./reconciliation.md#19-原因不明差異への残高調整)の残高調整に使う                         |
+| `external_id`   | 外部取引の一意キー | 任意。金融機関側にIDがあれば使用。無ければレビュー確定時に`entry_date`/`amount`/`description`から正規化ハッシュを生成し代替する([reconciliation.md 1.5](./reconciliation.md#15-データモデルの考え方)参照)       |
 | `is_settled`    | 確定済みか     | 任意(Boolean、NULL許容)。CSVの中身を解析して判定するのではなく、[1.4](#14-マッピング定義データ駆動)のマッピングに使った`import_mapping_definitions.is_settled`をそのまま引き継ぐ。確定/未確定の区別を持たないフォーマットでは`NULL` |
 
 `amount`の符号によって「対象科目の残高が増えたか減ったか」だけを表現し、複式仕訳としての借方/貸方への変換は[1.5](#15-レコード処理フロー)のレビュー確定時に行う。中間表現の段階では複式簿記の概念(借方/貸方)を持ち込まない。
 
 > **「増える方向」は科目区分によって借方/貸方が逆転する**
 > 対象科目が`asset`(銀行口座等)なら、残高が増える方向(`amount`正)は**借方**の増加。対象科目が`liability`(クレジットカード専用未払金)なら、残高が増える方向(`amount`正)は**貸方**の増加になる([financial-statements.md 2.1 生成方式](./financial-statements.md#21-生成方式)の残高計算の一般式: `asset`/`expense`は借方が増加側、`liability`/`equity`/`revenue`は貸方が増加側、と同じロジック)。この変換はマッピング定義の責務ではなく、対象科目の`category`を知っている側([1.5](#15-レコード処理フロー)のレビュー確定〜`JournalEntryRepository`)が行う。マッピング定義は「`amount`正 = 対象科目の残高が増える方向」という区分に依存しない統一ルールでCSVの生の符号表記(入金/出金列の別、プラスマイナスの意味等、フォーマットごとに異なる)を正規化する責務だけを負う。
+
+**`ImportedRecord`の各フィールドは、確定後どこに格納されるか**
+
+レビュー確定([1.5](#15-レコード処理フロー)のステップ6〜7)で、`ImportedRecord`の内容は「編集可能な仕訳」と「不変のスナップショット」の2箇所に分かれて書き込まれる。
+
+| `ImportedRecord`のフィールド | 編集可能な側(仕訳、後から変更しうる) | 不変のスナップショット側([reconciliation.md 2.1](./reconciliation.md#21-フィールド定義)の`external_transaction_refs`) |
+|---|---|---|
+| `entry_date` | `journal_entries.entry_date` | `external_transaction_refs.entry_date` |
+| `description` | `journal_entries.memo`(レビュー画面での初期値、ユーザーが上書き可) | `external_transaction_refs.description` |
+| `amount` | `journal_lines.amount`/`side`(科目区分に応じて借方/貸方に変換、上記「増える方向」注記参照) | `external_transaction_refs.amount`(符号付きのまま複写) |
+| `balance_after` | ― | `external_transaction_refs.external_balance_after` |
+| `external_id` | ― | `external_transaction_refs.external_id` |
+| `is_settled` | ― | `external_transaction_refs.is_settled` |
+
+編集可能な側は[journal.md 1.5 仕訳の編集・削除](./journal.md#15-仕訳の編集削除)の通りレビュー確定後もユーザーが自由に書き換えられるのに対し、スナップショット側は書き込まれた後は不変(更新用のUI・APIを持たない)。この2つが揃って初めて、事後編集で内容が変わったかどうかを比較できる([reconciliation.md 2.1 なぜコピーを持つか](./reconciliation.md#21-フィールド定義)参照)。
 
 ### 1.3 CSVの読み取り(Reader)
 
@@ -64,14 +79,14 @@ CSVインポートからレビュー確定までは、以下の順で各ドメ�
 
 1. **対象科目とマッピング定義の選択、変換**: ユーザーが「どの口座/どのクレジットカードのCSVか」(対象科目)を選ぶ。次に、その科目のCSVフォーマットに対応する`import_mapping_definitions`を選ぶ(候補が1つなら自動選択、楽天カードの速報用/確定用のように複数あれば`label`で選択させる)。選んだ定義で[1.3](#13-csvの読み取りreader)の読み取り→[1.4](#14-マッピング定義データ駆動)の変換を行い、`ImportedRecord`の配列を得る。ここで選ばれた対象科目(`asset`の口座、または`liability`のクレカ専用未払金、[accounts.md 5章](./accounts.md#5-クレジットカード登録のux)参照)が、以降の全ステップの`account_id`になる
 2. **重複チェック**: [reconciliation.md 1.6 重複防止フロー](./reconciliation.md#16-重複防止フロー)を適用する。`external_id`(またはハッシュ)の完全一致に加え、クレジットカードの速報/確定対策として日付・金額が近い既存明細の候補提示も含む
-3. **取り込み漏れチェック**: `balance_after`が取得できる場合、[reconciliation.md 1.8 取り込み漏れ検出](./reconciliation.md#18-取り込み漏れ検出)で残高の連続性を検証する
+3. **残高照合**: `balance_after`が取得できる場合、[reconciliation.md 1.8 残高照合](./reconciliation.md#18-残高照合)で帳簿残高と外部残高を照合する
 4. **取引先推定**: `description`を正規化し、[counterparties.md 1.3](./counterparties.md#13-csvインポートとの関係)の部分一致パターンマッチングを適用する
 5. **相手勘定科目のサジェスト**(優先順位順、[1.6](#16-相手勘定科目サジェストの範囲)参照):
    - a. 手順1の対象科目に未消込の未払金・未収金があれば、その消込仕訳をサジェストする([reconciliation.md 1.4 暫定記帳と消込](./reconciliation.md#14-暫定記帳未払金未収金と消込))。対象科目がクレカ専用未払金の場合、通常はここに該当せず、そのまま費用科目側をサジェスト対象とする(手順4の取引先推定へ)
    - b. 未消込の候補がなく、手順4の取引先推定で一意に特定できていれば、`counterparties.default_account_id`をサジェストする([counterparties.md 1.4](./counterparties.md#14-勘定科目のデフォルトサジェスト))
    - c. どちらにも該当しなければサジェストなし。ユーザーが手動で選択する
 6. **レビュー確定**: レビュー画面でユーザーが日付・金額・相手科目・プロジェクト・世帯メンバー・取引先を確認・修正し、確定する
-7. **永続化**: 確定した内容を`JournalEntryRepository`に渡し、[journal.md 1.3 貸借バランスの検証](./journal.md#13-貸借バランスの検証)を経て`journal_entries`・`journal_lines`・`external_transaction_refs`を同一トランザクションで書き込む
+7. **永続化**: 確定した内容を`JournalEntryRepository`に渡し、[journal.md 1.3 貸借バランスの検証](./journal.md#13-貸借バランスの検証)を経て`journal_entries`(`source_type = 'external_import'`、[journal.md 1.7](./journal.md#17-作成経路source_type)参照)・`journal_lines`・`external_transaction_refs`を同一トランザクションで書き込む。手順5-aで未消込の未払金・未収金を消込対象として選んだ場合は、あわせて`journal_entry_links`(`link_type = 'settles'`、[journal.md 1.8](./journal.md#18-仕訳間の関係journal_entry_links)参照)も書き込む
 
 ### 1.6 相手勘定科目サジェストの範囲
 
@@ -107,7 +122,7 @@ CSVインポートからレビュー確定までは、以下の順で各ドメ�
 | `amount_column` | 金額の列 | `amount_mode = single_signed`のときのみ使用 |
 | `debit_column` | 出金額の列 | `amount_mode = debit_credit_split`のときのみ使用 |
 | `credit_column` | 入金額の列 | `amount_mode = debit_credit_split`のときのみ使用 |
-| `balance_column` | 取引後残高の列 | 任意。[reconciliation.md 1.8](./reconciliation.md#18-取り込み漏れ検出)・[1.9](./reconciliation.md#19-原因不明差異への残高調整)で使う |
+| `balance_column` | 取引後残高の列 | 任意。[reconciliation.md 1.8](./reconciliation.md#18-残高照合)・[1.9](./reconciliation.md#19-原因不明差異への残高調整)で使う |
 | `external_id_column` | 外部取引IDの列 | 任意。無ければレビュー確定時にハッシュで代替([reconciliation.md 1.5](./reconciliation.md#15-データモデルの考え方)参照) |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
@@ -116,46 +131,7 @@ CSVインポートからレビュー確定までは、以下の順で各ドメ�
 
 ### 2.2 DDL
 
-```sql
-CREATE TABLE import_mapping_definitions (
-  id                    INTEGER PRIMARY KEY,
-  account_id            INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
-  format_group_id       TEXT NOT NULL,
-  is_settled            BOOLEAN,
-  label                 TEXT NOT NULL,
-  encoding              TEXT NOT NULL DEFAULT 'utf-8',
-  delimiter             TEXT NOT NULL DEFAULT ',',
-  header_row_count      INTEGER NOT NULL DEFAULT 1,
-  date_column           TEXT NOT NULL,
-  date_format           TEXT NOT NULL,
-  description_column    TEXT NOT NULL,
-  amount_mode           TEXT NOT NULL CHECK (amount_mode IN ('single_signed', 'debit_credit_split')),
-  amount_column         TEXT,
-  debit_column          TEXT,
-  credit_column         TEXT,
-  balance_column        TEXT,
-  external_id_column    TEXT,
-  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
-  CHECK (
-    (amount_mode = 'single_signed'
-      AND amount_column IS NOT NULL AND debit_column IS NULL AND credit_column IS NULL) OR
-    (amount_mode = 'debit_credit_split'
-      AND amount_column IS NULL AND debit_column IS NOT NULL AND credit_column IS NOT NULL)
-  )
-);
-
-CREATE INDEX idx_import_mapping_definitions_account ON import_mapping_definitions(account_id);
-CREATE INDEX idx_import_mapping_definitions_format_group ON import_mapping_definitions(format_group_id);
-
--- updated_at の自動更新
-CREATE TRIGGER import_mapping_definitions_set_updated_at
-AFTER UPDATE ON import_mapping_definitions
-WHEN NEW.updated_at = OLD.updated_at
-BEGIN
-  UPDATE import_mapping_definitions SET updated_at = datetime('now') WHERE id = NEW.id;
-END;
-```
+実装: [schema/csv_import.sql](../schema/csv_import.sql)
 
 ### 2.3 組み込み定義とユーザー定義
 

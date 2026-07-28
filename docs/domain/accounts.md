@@ -63,6 +63,7 @@
   > **なぜ単一所属か**
   > 科目が複数グループに属せると、将来「グループ別合計」を提供する際に同じ科目の金額が複数グループの合計に二重計上され、「全グループの合計 = 全科目の合計」という直感的な性質が崩れる。[household-members.md 1.5 グループ(複数メンバーの集合)](./household-members.md#15-グループ複数メンバーの集合)の世帯メンバーグループは個人の多重所属を許可しつつ「グループを独立した集計単位として扱う」ことで二重計上を回避しているが、勘定科目グループは単純なフォルダ分けとして使うため、同種の複雑な回避策を導入するより単一所属に制限する方が設計として素直である。
 - 勘定科目の階層化(親子関係)は採用しない。階層は[financial-statements.md 2.1 生成方式](./financial-statements.md#21-生成方式)のロールアップ計算や、[2章 勘定科目のライフサイクル](#2-勘定科目のライフサイクル)の親子間での伝播ルール(非アクティブ化・削除等)を新たに必要とし、複式簿記のコアロジックを不必要に複雑化するため。
+- 一方、`account_groups`自体は入れ子(親子の多階層)にできる([3.3](#33-勘定科目グループマスタaccount_groups)参照)。階層を持つのは表示用ラベルであるグループ側であり、`accounts`自体はフラットなままである。グループはFS集計・貸借バランス検証に一切関与しないため、勘定科目自体を階層化する場合と異なり、上記のロールアップ計算・伝播ルールをコアロジックに持ち込まずに済む(例:「固定費」グループの下に「クレジットカード」グループを作り、その下にカードごとの専用未払金科目を集約する、といった使い方を想定)。
 - グループ自体は`projects`・`counterparties`と同様、`category`や`is_system_managed`に相当する概念を持たない、対等なユーザー定義ラベルである。
 
 ---
@@ -79,7 +80,7 @@
 | 物理削除 | 紐づく仕訳が1件以上 | 不可(非アクティブ化のみ) |
 | ラベル(表示名)変更 | 同一区分内 | 常に可 |
 | 区分またぎ変更 | 常に | 不可(ラベルが中身か) |
-| 別科目への実質変更 | 別科目にする | 反対仕訳で持ち消し、新科目で計上 |
+| 別科目への実質変更 | 別科目にする | 反対仕訳([journal.md 1.8 仕訳間の関係](./journal.md#18-仕訳間の関係journal_entry_links)の`reverses`)で持ち消し、新科目で計上 |
 | 非アクティブ化 | 任意 | 過去集計はそのまま表示、新規仕訳では選択不可 |
 
 ### 2.2 過去仕訳の付け替え
@@ -120,77 +121,14 @@
 
 ### 3.2 DDL
 
-```sql
-CREATE TABLE accounts (
-  id                   INTEGER PRIMARY KEY,
-  category             TEXT NOT NULL
-    CHECK (category IN ('asset','liability','equity','revenue','expense')),
-  name                 TEXT NOT NULL,
-  is_reconcilable      BOOLEAN,
-  is_active            BOOLEAN NOT NULL DEFAULT TRUE,
-  is_system_managed    BOOLEAN NOT NULL DEFAULT FALSE,
-  household_member_id  INTEGER REFERENCES household_members(id),
-  account_group_id     INTEGER REFERENCES account_groups(id),
-  initial_balance_for_account_id INTEGER REFERENCES accounts(id),
-  created_at           TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
-  CHECK (
-    (category IN ('asset','liability') AND is_reconcilable IS NOT NULL) OR
-    (category NOT IN ('asset','liability') AND is_reconcilable IS NULL)
-  ),
-  CHECK (
-    initial_balance_for_account_id IS NULL OR
-    (category = 'equity' AND is_system_managed = TRUE)
-  )
-);
-
-CREATE INDEX idx_accounts_group ON accounts(account_group_id);
-CREATE INDEX idx_accounts_initial_balance_for ON accounts(initial_balance_for_account_id);
-
--- 区分の変更を禁止
-CREATE TRIGGER prevent_category_change
-BEFORE UPDATE OF category ON accounts
-WHEN OLD.category != NEW.category
-BEGIN
-  SELECT RAISE(ABORT, 'category cannot be changed');
-END;
-
--- equity区分の新規作成はシステム管理科目のみ許可(ユーザーによる新規作成を禁止)
-CREATE TRIGGER prevent_user_created_equity_account
-BEFORE INSERT ON accounts
-WHEN NEW.category = 'equity' AND NEW.is_system_managed = FALSE
-BEGIN
-  SELECT RAISE(ABORT, 'equity accounts can only be system-managed');
-END;
-
--- 仕訳が紐づく科目の物理削除を禁止
-CREATE TRIGGER prevent_delete_with_journal_lines
-BEFORE DELETE ON accounts
-WHEN EXISTS (SELECT 1 FROM journal_lines WHERE account_id = OLD.id)
-BEGIN
-  SELECT RAISE(ABORT, 'cannot delete account with journal lines');
-END;
-
--- 勘定科目名は区分内でユニーク(非アクティブは除外)
-CREATE UNIQUE INDEX idx_accounts_unique_name_per_category
-ON accounts(category, name)
-WHERE is_active = TRUE;
-
--- updated_at の自動更新
-CREATE TRIGGER accounts_set_updated_at
-AFTER UPDATE ON accounts
-WHEN NEW.updated_at = OLD.updated_at
-BEGIN
-  UPDATE accounts SET updated_at = datetime('now') WHERE id = NEW.id;
-END;
-```
+実装: [schema/accounts.sql](../schema/accounts.sql)
 
 > **ユニーク制約**
 > 部分インデックス(`WHERE is_active = TRUE`)により、非アクティブ化した科目と同名の科目を新規作成できる。区分またぎのユニークは設けない。
 
 ### 3.3 勘定科目グループマスタ(account_groups)
 
-[1.3](#13-グルーピング表示用)の通り、似た用途の勘定科目(例:水道代・ガス料金・電気代)を表示上まとめるためのラベル。`accounts.account_group_id`から単一所属で参照される([3.1](#31-フィールド定義)参照)。FS集計・仕訳の整合性検証には一切関与しない。
+[1.3](#13-グルーピング表示用)の通り、似た用途の勘定科目(例:水道代・ガス料金・電気代)を表示上まとめるためのラベル。`accounts.account_group_id`から単一所属で参照される([3.1](#31-フィールド定義)参照)。グループ自体は`parent_group_id`による自己参照で入れ子(多階層)にできる。FS集計・仕訳の整合性検証には一切関与しない。
 
 **フィールド定義**
 
@@ -198,7 +136,8 @@ END;
 |---|---|---|
 | `id` | グループID | PK |
 | `name` | グループ名 | 例:「水道光熱費」、自由記述 |
-| `is_active` | 有効/非アクティブ | falseにしても既存科目の所属・過去集計に影響なし |
+| `parent_group_id` | 親グループ | FK(自己参照)、任意。`NULL` = 最上位グループ。多階層のグルーピングに使う([1.3](#13-グルーピング表示用)参照)。勘定科目は最上位・下位を問わずどの階層のグループにも直接所属できる(末端グループに限定しない) |
+| `is_active` | 有効/非アクティブ | falseにしても既存科目・子グループの所属・過去集計に影響なし |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
 
@@ -208,46 +147,24 @@ END;
 
 | 操作 | 条件 | 扱い |
 |---|---|---|
-| 物理削除 | 紐づく勘定科目が0件 | 可 |
-| 物理削除 | 紐づく勘定科目が1件以上 | 不可(非アクティブ化のみ) |
+| 物理削除 | 紐づく勘定科目・子グループがともに0件 | 可 |
+| 物理削除 | 紐づく勘定科目または子グループが1件以上 | 不可(非アクティブ化のみ) |
 | 名称変更 | 常に | 可 |
-| 非アクティブ化 | 任意(例: 使わなくなった分類) | 既存科目の所属はそのまま維持され過去集計に影響しない。新規科目のグループ選択肢からは除外 |
+| 親グループの変更 | 新しい親が自分自身の子孫である場合 | 不可(循環参照になるため。検証方法は本節末尾の注記参照) |
+| 非アクティブ化 | 任意(例: 使わなくなった分類) | 既存科目・子グループの所属はそのまま維持され過去集計に影響しない。新規科目のグループ選択肢からは除外。子グループへは連動しない(自動非アクティブ化等はしない) |
 
 **DDL**
 
-```sql
-CREATE TABLE account_groups (
-  id          INTEGER PRIMARY KEY,
-  name        TEXT NOT NULL,
-  is_active   BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- 勘定科目が紐づくグループの物理削除を禁止
-CREATE TRIGGER prevent_delete_account_group_with_accounts
-BEFORE DELETE ON account_groups
-WHEN EXISTS (SELECT 1 FROM accounts WHERE account_group_id = OLD.id)
-BEGIN
-  SELECT RAISE(ABORT, 'cannot delete account group with accounts');
-END;
-
--- グループ名はユニーク(非アクティブは除外)
-CREATE UNIQUE INDEX idx_account_groups_unique_name
-ON account_groups(name)
-WHERE is_active = TRUE;
-
--- updated_at の自動更新
-CREATE TRIGGER account_groups_set_updated_at
-AFTER UPDATE ON account_groups
-WHEN NEW.updated_at = OLD.updated_at
-BEGIN
-  UPDATE account_groups SET updated_at = datetime('now') WHERE id = NEW.id;
-END;
-```
+実装: [schema/accounts.sql](../schema/accounts.sql)
 
 > **単一所属は列で表現する**
 > [household-members.md 1.5 グループ(複数メンバーの集合)](./household-members.md#15-グループ複数メンバーの集合)の世帯メンバーグループは多対多のため中間テーブル(`household_member_group_memberships`)が必要だったが、勘定科目グループは単一所属([1.3](#13-グルーピング表示用)参照)のため`accounts.account_group_id`という1列のFKのみで表現でき、中間テーブルは不要である。
+
+> **循環参照の防止はRepository層で行う**
+> `parent_group_id`の更新時、新しい親が自分自身の子孫でないことを検証する必要がある。SQLiteのTRIGGERでも再帰CTE(`WITH RECURSIVE`)を使えば不可能ではないが、祖先を辿る木構造の走査はアプリケーションコードで書いた方が可読性が高い。[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)の「なぜDBのTRIGGERで強制しないか」と同じ判断で、更新前に新しい親から祖先方向へ辿り自分自身が現れないことを確認する処理をRepository層で行う。
+
+> **なぜ勘定科目自体の階層化とは違って許容できるか**
+> [1.3](#13-グルーピング表示用)で勘定科目自体の階層化を却下した理由は、ロールアップ計算や非アクティブ化・削除の伝播ルールが複式簿記のコアロジックに入り込むことだった。`account_groups`はFS集計・貸借バランス検証に一切関与しない表示専用ラベルであるため、これを入れ子にしてもコアロジックには触れない。単一所属の原則(1科目は0または1個のグループに属する)も維持されるため、将来「グループ別合計」を提供する際も、最上位グループの合計を合算すれば全科目の合計と一致する性質([1.3 なぜ単一所属か](#13-グルーピング表示用)参照)は壊れない。
 
 ---
 
@@ -277,7 +194,7 @@ END;
 
 ### 4.3 初期残高の自動仕訳
 
-「初期残高10万円」の入力で、まず口座専用の初期残高科目(`category = 'equity'`, `is_system_managed = true`, `initial_balance_for_account_id` = 対象の資産科目ID、[3.1](#31-フィールド定義)参照)が自動生成され、続けて以下の仕訳が裏で生成される。ユーザーは純資産という概念を理解する必要がない。
+「初期残高10万円」の入力で、まず口座専用の初期残高科目(`category = 'equity'`, `is_system_managed = true`, `initial_balance_for_account_id` = 対象の資産科目ID、[3.1](#31-フィールド定義)参照)が自動生成され、続けて以下の仕訳が裏で生成される。ユーザーは純資産という概念を理解する必要がない。この仕訳の`source_type`は`initial_balance`とする([journal.md 1.7 作成経路(source_type)](./journal.md#17-作成経路source_type)、[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)参照)。
 
 ```
 (借) 資産・三菱UFJ銀行           100,000
