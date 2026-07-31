@@ -83,36 +83,44 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
   }
 
   merge(targetId: number, sourceIds: number[]): void {
-    const target = this.findById(targetId)
-    if (!target) {
-      throw new Error(`counterparty not found: ${targetId}`)
-    }
-
-    for (const sourceId of sourceIds) {
-      const source = this.findById(sourceId)
-      if (!source) {
-        throw new Error(`counterparty not found: ${sourceId}`)
+    this.db.run('BEGIN')
+    try {
+      const target = this.findById(targetId)
+      if (!target) {
+        throw new Error(`counterparty not found: ${targetId}`)
       }
 
-      const lineCount = this.countRows('journal_lines', 'counterparty_id', sourceId)
-      const patternCount = this.countRows('counterparty_patterns', 'counterparty_id', sourceId)
+      for (const sourceId of sourceIds) {
+        const source = this.findById(sourceId)
+        if (!source) {
+          throw new Error(`counterparty not found: ${sourceId}`)
+        }
 
-      this.db.run('UPDATE journal_lines SET counterparty_id = ? WHERE counterparty_id = ?', [
-        targetId,
-        sourceId,
-      ])
-      this.db.run(
-        'UPDATE counterparty_patterns SET counterparty_id = ? WHERE counterparty_id = ?',
-        [targetId, sourceId],
-      )
-      this.db.run(
-        `INSERT INTO counterparty_merge_log
-           (target_counterparty_id, target_counterparty_name,
-            source_counterparty_id, source_counterparty_name,
-            line_count, pattern_count)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [targetId, target.name, sourceId, source.name, lineCount, patternCount],
-      )
+        const lineCount = this.countRows('journal_lines', 'counterparty_id', sourceId)
+        const patternCount = this.countRows('counterparty_patterns', 'counterparty_id', sourceId)
+
+        this.db.run('UPDATE journal_lines SET counterparty_id = ? WHERE counterparty_id = ?', [
+          targetId,
+          sourceId,
+        ])
+        this.db.run(
+          'UPDATE counterparty_patterns SET counterparty_id = ? WHERE counterparty_id = ?',
+          [targetId, sourceId],
+        )
+        this.db.run(
+          `INSERT INTO counterparty_merge_log
+             (target_counterparty_id, target_counterparty_name,
+              source_counterparty_id, source_counterparty_name,
+              line_count, pattern_count)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [targetId, target.name, sourceId, source.name, lineCount, patternCount],
+        )
+      }
+
+      this.db.run('COMMIT')
+    } catch (error) {
+      this.db.run('ROLLBACK')
+      throw error
     }
   }
 

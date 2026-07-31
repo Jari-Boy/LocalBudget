@@ -81,6 +81,21 @@ describe('merge', () => {
     expect(result.values.map((v) => v[0])).toEqual([sourceA.id, sourceB.id])
   })
 
+  it('複数の統合元のうち途中で失敗した場合、それまでの付け替え・ログをロールバックする', () => {
+    const target = repository.create({ name: 'ローソン' })
+    const sourceA = repository.create({ name: 'ローソン 東京日本橋店' })
+    const accountId = insertAccount(db, 'expense', '食費')
+    const entryId = insertJournalEntry(db)
+    const lineId = insertJournalLine(db, entryId, accountId, sourceA.id)
+    const nonExistentSourceId = 9999
+
+    expect(() => repository.merge(target.id, [sourceA.id, nonExistentSourceId])).toThrow()
+
+    expect(queryCounterpartyIdOfLine(db, lineId)).toBe(sourceA.id)
+    const [logResult] = db.exec('SELECT COUNT(*) FROM counterparty_merge_log')
+    expect(logResult.values[0][0]).toBe(0)
+  })
+
   it('統合後、統合元は仕訳・パターンともに0件になり物理削除できる', () => {
     const target = repository.create({ name: 'ローソン' })
     const source = repository.create({ name: 'ローソン 東京日本橋店' })
