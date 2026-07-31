@@ -15,8 +15,12 @@ import type { CreateJournalEntryLinkInput, JournalEntryLink } from './JournalEnt
  * 実装はそちらの制約違反例外をそのまま呼び出し元に伝播させる。
  *
  * 仕訳間の関係(journal_entry_links、docs/domain/journal.md 1.8・2.3)も本Repositoryのメソッドとして
- * 扱う。settlesリンクの作成は消込仕訳自体の作成と同一トランザクションで書き込む必要があり
- * (docs/domain/reconciliation.md 2.3)、別Repositoryに分離するとトランザクション境界を跨ぐため。
+ * 扱う。settlesリンクの作成は消込仕訳自体の作成と同一トランザクションで書き込む必要があるため
+ * (docs/domain/reconciliation.md 2.3)、別Repositoryに分離せず、CreateJournalEntryInput.linksを
+ * 経由してcreate()内の単一トランザクションでリンクも書き込めるようにしている(settlesハード検証
+ * 失敗時は仕訳・明細・リンクのいずれも書き込まれずROLLBACKされる)。createLinkは、既に存在する
+ * 2つの仕訳間へ事後的にリンクを追加する場合(allocatesの追加付与等)のための別メソッドであり、
+ * こちらは独立したトランザクションを持つ。
  */
 export interface JournalEntryRepository {
   create(input: CreateJournalEntryInput): JournalEntry

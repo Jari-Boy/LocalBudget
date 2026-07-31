@@ -675,6 +675,66 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
   })
 })
 
+describe('create(linksオプションによる消込仕訳自体の作成とsettlesリンクの同時書き込み)', () => {
+  it('creates the settling entry and its settles link in a single call when the tags match', () => {
+    const toEntry = repository.create({
+      entryDate: '2026-07-01',
+      memo: '家賃(暫定計上)',
+      lines: [
+        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
+        { accountId: payableAccountId, side: 'credit', amount: 80000 },
+      ],
+    })
+
+    const fromEntry = repository.create({
+      entryDate: '2026-07-05',
+      memo: '家賃(消込)',
+      sourceType: 'external_import',
+      lines: [
+        { accountId: payableAccountId, side: 'debit', amount: 80000 },
+        { accountId: bankAccountId, side: 'credit', amount: 80000 },
+      ],
+      links: [{ toEntryId: toEntry.id, linkType: 'settles', amount: 80000 }],
+    })
+
+    expect(fromEntry.lines).toHaveLength(2)
+    const links = repository.listLinksForEntry(fromEntry.id)
+    expect(links).toHaveLength(1)
+    expect(links[0]).toMatchObject({
+      fromEntryId: fromEntry.id,
+      toEntryId: toEntry.id,
+      linkType: 'settles',
+      amount: 80000,
+    })
+  })
+
+  it('rolls back the entry, its lines, and the link together when the settles hard validation fails', () => {
+    const toEntry = repository.create({
+      entryDate: '2026-07-01',
+      lines: [
+        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
+        { accountId: payableAccountId, side: 'credit', amount: 80000 },
+      ],
+    })
+    const entryCountBefore = repository.findAll().length
+
+    expect(() =>
+      repository.create({
+        entryDate: '2026-07-05',
+        sourceType: 'external_import',
+        lines: [
+          { accountId: foodExpenseAccountId, side: 'debit', amount: 80000 },
+          { accountId: bankAccountId, side: 'credit', amount: 80000 },
+        ],
+        links: [{ toEntryId: toEntry.id, linkType: 'settles', amount: 80000 }],
+      }),
+    ).toThrow(SettlementTagMismatchError)
+
+    expect(repository.findAll()).toHaveLength(entryCountBefore)
+    expect(repository.listLinksForEntry(toEntry.id)).toHaveLength(0)
+  })
+})
+
 function countJournalLines(database: Database): number {
   return database.exec('SELECT COUNT(*) AS c FROM journal_lines')[0].values[0][0] as number
 }

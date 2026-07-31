@@ -55,6 +55,23 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
       )
       const entryId = lastInsertRowId(this.db)
       insertLines(this.db, entryId, input.lines)
+
+      for (const link of input.links ?? []) {
+        if (link.linkType === 'settles') {
+          this.assertSettlementTagMatch({
+            fromEntryId: entryId,
+            toEntryId: link.toEntryId,
+            linkType: link.linkType,
+            amount: link.amount,
+          })
+        }
+        this.db.run(
+          `INSERT INTO journal_entry_links (from_entry_id, to_entry_id, link_type, amount)
+           VALUES (?, ?, ?, ?)`,
+          [entryId, link.toEntryId, link.linkType, link.amount],
+        )
+      }
+
       this.db.run('COMMIT')
       return this.findById(entryId)!
     } catch (error) {
@@ -118,12 +135,20 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
       this.assertSettlementTagMatch(input)
     }
 
-    this.db.run(
-      `INSERT INTO journal_entry_links (from_entry_id, to_entry_id, link_type, amount)
-       VALUES (?, ?, ?, ?)`,
-      [input.fromEntryId, input.toEntryId, input.linkType, input.amount],
-    )
-    return this.findLinkById(lastInsertRowId(this.db))!
+    this.db.run('BEGIN')
+    try {
+      this.db.run(
+        `INSERT INTO journal_entry_links (from_entry_id, to_entry_id, link_type, amount)
+         VALUES (?, ?, ?, ?)`,
+        [input.fromEntryId, input.toEntryId, input.linkType, input.amount],
+      )
+      const link = this.findLinkById(lastInsertRowId(this.db))!
+      this.db.run('COMMIT')
+      return link
+    } catch (error) {
+      this.db.run('ROLLBACK')
+      throw error
+    }
   }
 
   listLinksForEntry(entryId: number): JournalEntryLink[] {

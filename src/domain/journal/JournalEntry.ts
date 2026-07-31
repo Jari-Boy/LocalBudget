@@ -1,3 +1,5 @@
+import type { JournalEntryLinkTarget } from './JournalEntryLink'
+
 export type JournalLineSide = 'debit' | 'credit'
 
 export type JournalEntrySourceType =
@@ -45,6 +47,13 @@ export interface CreateJournalEntryInput {
   currency?: string
   sourceType?: JournalEntrySourceType
   lines: JournalLineInput[]
+  /**
+   * この仕訳をfrom_entryとして同時に作成するjournal_entry_links(docs/domain/journal.md 1.8)。
+   * 消込(settles)仕訳の作成とリンクの作成を単一のDBトランザクションで行うためのもの
+   * (docs/domain/reconciliation.md 2.3)。settlesハード検証(docs/domain/settlement.md 1.8)に
+   * 失敗した場合、仕訳・明細・リンクのいずれも書き込まれない。
+   */
+  links?: JournalEntryLinkTarget[]
 }
 
 export interface UpdateJournalEntryInput {
