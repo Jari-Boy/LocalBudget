@@ -64,6 +64,21 @@ BEGIN
   UPDATE accounts SET updated_at = datetime('now') WHERE id = NEW.id;
 END;
 
+-- 科目統合(複数科目を1科目に集約する操作)の操作ログ
+-- ドメイン定義は docs/domain/accounts.md 2.2 を参照
+CREATE TABLE account_merge_log (
+  id                   INTEGER PRIMARY KEY,
+  target_account_id    INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+  target_account_name  TEXT NOT NULL,
+  source_account_id    INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+  source_account_name  TEXT NOT NULL,
+  line_count           INTEGER NOT NULL CHECK (line_count >= 0),
+  merged_at            TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_account_merge_log_target ON account_merge_log(target_account_id);
+CREATE INDEX idx_account_merge_log_source ON account_merge_log(source_account_id);
+
 CREATE TABLE account_groups (
   id                INTEGER PRIMARY KEY,
   name              TEXT NOT NULL,
@@ -91,9 +106,10 @@ BEGIN
   SELECT RAISE(ABORT, 'cannot delete account group with child groups');
 END;
 
--- グループ名はユニーク(非アクティブは除外)
+-- グループ名は同じ親グループ内でユニーク(非アクティブは除外)。
+-- parent_group_id = NULL(最上位)はCOALESCEで0に束ね、最上位グループ同士の重複も検出する
 CREATE UNIQUE INDEX idx_account_groups_unique_name
-ON account_groups(name)
+ON account_groups(COALESCE(parent_group_id, 0), name)
 WHERE is_active = TRUE;
 
 -- updated_at の自動更新

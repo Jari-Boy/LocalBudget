@@ -46,24 +46,7 @@ BEGIN
   UPDATE journal_entries SET updated_at = datetime('now') WHERE id = NEW.id;
 END;
 
--- project_id は revenue/expense の行にのみ設定可能
--- (CHECK制約はサブクエリ不可のためTRIGGERで実装。実機検証済み: projects.md 1.2参照)
--- household_member_id には同様の区分制約はない(household-members.md 1.2の通り全区分で許可)
-CREATE TRIGGER prevent_project_on_non_pl_line_insert
-BEFORE INSERT ON journal_lines
-WHEN NEW.project_id IS NOT NULL
-  AND (SELECT category FROM accounts WHERE id = NEW.account_id) NOT IN ('revenue', 'expense')
-BEGIN
-  SELECT RAISE(ABORT, 'project_id can only be set on revenue/expense lines');
-END;
-
-CREATE TRIGGER prevent_project_on_non_pl_line_update
-BEFORE UPDATE ON journal_lines
-WHEN NEW.project_id IS NOT NULL
-  AND (SELECT category FROM accounts WHERE id = NEW.account_id) NOT IN ('revenue', 'expense')
-BEGIN
-  SELECT RAISE(ABORT, 'project_id can only be set on revenue/expense lines');
-END;
+-- project_id には区分制約はない(household_member_idと同様、全区分で許可。projects.md 1.2参照)
 
 -- counterparty_id は revenue/expense の行にのみ設定可能
 -- (project_id と同じ理由でTRIGGERによる実装、counterparties.md 1.2参照)
@@ -90,12 +73,52 @@ CREATE TABLE journal_entry_links (
   id              INTEGER PRIMARY KEY,
   from_entry_id   INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
   to_entry_id     INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
-  link_type       TEXT NOT NULL CHECK (link_type IN ('settles', 'reverses')),
-  amount          INTEGER CHECK (amount IS NULL OR amount > 0),
-  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  -- settlesは金額必須、reversesは金額を持たない(全額の打ち消しのため)
-  CHECK ((link_type = 'settles') = (amount IS NOT NULL))
+  link_type       TEXT NOT NULL CHECK (link_type IN ('settles', 'allocates')),
+  amount          INTEGER NOT NULL CHECK (amount > 0),
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX idx_journal_entry_links_from ON journal_entry_links(from_entry_id);
 CREATE INDEX idx_journal_entry_links_to   ON journal_entry_links(to_entry_id);
+
+-- journal_entry_drafts / journal_entry_draft_lines のDDL
+-- journal_entries とは異なり貸借バランス・NOT NULL制約を課さない(入力途中の状態を許容するため)
+-- ドメイン定義・設計判断は docs/domain/journal.md 3章を参照
+
+CREATE TABLE journal_entry_drafts (
+  id           INTEGER PRIMARY KEY,
+  purpose      TEXT NOT NULL DEFAULT 'manual_entry'
+    CHECK (purpose IN ('manual_entry')),
+  entry_date   TEXT,
+  memo         TEXT,
+  currency     TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE journal_entry_draft_lines (
+  id                      INTEGER PRIMARY KEY,
+  journal_entry_draft_id  INTEGER NOT NULL
+    REFERENCES journal_entry_drafts(id) ON DELETE CASCADE,
+  account_id              INTEGER
+    REFERENCES accounts(id),
+  project_id              INTEGER
+    REFERENCES projects(id),
+  household_member_id     INTEGER
+    REFERENCES household_members(id),
+  counterparty_id         INTEGER
+    REFERENCES counterparties(id),
+  side                    TEXT CHECK (side IS NULL OR side IN ('debit', 'credit')),
+  amount                  INTEGER,
+  created_at              TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_journal_entry_draft_lines_draft ON journal_entry_draft_lines(journal_entry_draft_id);
+
+-- journal_entry_drafts.updated_at の自動更新
+CREATE TRIGGER journal_entry_drafts_set_updated_at
+AFTER UPDATE ON journal_entry_drafts
+WHEN NEW.updated_at = OLD.updated_at
+BEGIN
+  UPDATE journal_entry_drafts SET updated_at = datetime('now') WHERE id = NEW.id;
+END;

@@ -36,3 +36,19 @@ WHEN NEW.updated_at = OLD.updated_at
 BEGIN
   UPDATE counterparties SET updated_at = datetime('now') WHERE id = NEW.id;
 END;
+
+-- 取引先統合(複数取引先を1取引先に集約する操作)の操作ログ
+-- ドメイン定義は docs/domain/counterparties.md 1.5a を参照
+CREATE TABLE counterparty_merge_log (
+  id                       INTEGER PRIMARY KEY,
+  target_counterparty_id   INTEGER REFERENCES counterparties(id) ON DELETE SET NULL,
+  target_counterparty_name TEXT NOT NULL,
+  source_counterparty_id   INTEGER REFERENCES counterparties(id) ON DELETE SET NULL,
+  source_counterparty_name TEXT NOT NULL,
+  line_count               INTEGER NOT NULL CHECK (line_count >= 0),
+  pattern_count            INTEGER NOT NULL CHECK (pattern_count >= 0),
+  merged_at                TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_counterparty_merge_log_target ON counterparty_merge_log(target_counterparty_id);
+CREATE INDEX idx_counterparty_merge_log_source ON counterparty_merge_log(source_counterparty_id);

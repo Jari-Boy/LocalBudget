@@ -1,5 +1,5 @@
 -- import_mapping_definitions のDDL
--- ドメイン定義・各制約の設計判断は docs/domain/csv-import.md を参照
+-- ドメイン定義・各制約の設計判断は docs/domain/statement-import.md を参照
 
 CREATE TABLE import_mapping_definitions (
   id                    INTEGER PRIMARY KEY,
