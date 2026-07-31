@@ -21,7 +21,7 @@ beforeEach(async () => {
 })
 
 describe('create / findById', () => {
-  it('creates an asset account and reads it back by id', () => {
+  it('資産科目を作成しidで参照できる', () => {
     const created = repository.create({
       category: 'asset',
       name: '三菱UFJ銀行',
@@ -40,13 +40,13 @@ describe('create / findById', () => {
     })
   })
 
-  it('returns null for an id that does not exist', () => {
+  it('存在しないidに対してはnullを返す', () => {
     expect(repository.findById(9999)).toBeNull()
   })
 })
 
 describe('findAll', () => {
-  it('returns every created account', () => {
+  it('作成した全ての科目を返す', () => {
     repository.create({ category: 'asset', name: '現金', isReconcilable: false })
     repository.create({ category: 'expense', name: '食費', isReconcilable: null })
 
@@ -57,7 +57,7 @@ describe('findAll', () => {
 })
 
 describe('update', () => {
-  it('changes the label within the same category', () => {
+  it('区分を変えずに科目名を変更する', () => {
     const created = repository.create({
       category: 'expense',
       name: '娯楽費',
@@ -70,7 +70,7 @@ describe('update', () => {
     expect(updated.category).toBe('expense')
   })
 
-  it('does not allow changing category directly via raw SQL (prevent_category_change trigger)', () => {
+  it('生SQLであっても区分の直接変更は許可されない(prevent_category_changeトリガー)', () => {
     const created = repository.create({
       category: 'expense',
       name: '水道光熱費',
@@ -84,7 +84,7 @@ describe('update', () => {
 })
 
 describe('delete', () => {
-  it('physically deletes an account with zero references', () => {
+  it('紐づく参照が0件の科目は物理削除できる', () => {
     const created = repository.create({
       category: 'expense',
       name: '雑費',
@@ -96,7 +96,7 @@ describe('delete', () => {
     expect(repository.findById(created.id)).toBeNull()
   })
 
-  it('refuses to delete an account referenced by journal_lines', () => {
+  it('journal_linesから参照されている科目の削除は拒否される', () => {
     const account = repository.create({
       category: 'expense',
       name: '交通費',
@@ -115,7 +115,7 @@ describe('delete', () => {
     expect(() => repository.delete(account.id)).toThrow()
   })
 
-  it('refuses to delete an account referenced by budgets', () => {
+  it('budgetsから参照されている科目の削除は拒否される', () => {
     const account = repository.create({
       category: 'expense',
       name: '食費(予算あり)',
@@ -129,7 +129,7 @@ describe('delete', () => {
     expect(() => repository.delete(account.id)).toThrow()
   })
 
-  it('refuses to delete an account referenced by recurring_transaction_rules', () => {
+  it('recurring_transaction_rulesから参照されている科目の削除は拒否される', () => {
     const debitAccount = repository.create({
       category: 'expense',
       name: '家賃',
@@ -150,7 +150,7 @@ describe('delete', () => {
     expect(() => repository.delete(debitAccount.id)).toThrow()
   })
 
-  it('refuses to delete a system-managed account even with zero references', () => {
+  it('参照が0件でもシステム管理科目の削除は拒否される', () => {
     const systemManaged = repository.create({
       category: 'equity',
       name: '初期残高(現金)',
@@ -163,7 +163,7 @@ describe('delete', () => {
 })
 
 describe('deactivate', () => {
-  it('marks the account inactive without deleting it', () => {
+  it('科目を削除せず非アクティブにする', () => {
     const created = repository.create({
       category: 'asset',
       name: '解約した口座',
@@ -176,7 +176,7 @@ describe('deactivate', () => {
     expect(repository.findById(created.id)).not.toBeNull()
   })
 
-  it('refuses to deactivate a system-managed account', () => {
+  it('システム管理科目の非アクティブ化は拒否される', () => {
     const systemManaged = repository.create({
       category: 'equity',
       name: '初期残高(普通預金)',
@@ -189,7 +189,7 @@ describe('deactivate', () => {
 })
 
 describe('system-managed科目は name 以外の変更を禁止(domain/accounts.md 3.1)', () => {
-  it('still allows changing the name of a system-managed account', () => {
+  it('システム管理科目でも名前の変更は引き続き許可される', () => {
     const systemManaged = repository.create({
       category: 'equity',
       name: '初期残高(旧名義)',
@@ -202,7 +202,7 @@ describe('system-managed科目は name 以外の変更を禁止(domain/accounts.
     expect(updated.name).toBe('初期残高(新名義)')
   })
 
-  it('refuses to change householdMemberId on a system-managed account', () => {
+  it('システム管理科目のhouseholdMemberId変更は拒否される', () => {
     const member = insertHouseholdMember(db, '夫')
     const systemManaged = repository.create({
       category: 'equity',
@@ -218,7 +218,7 @@ describe('system-managed科目は name 以外の変更を禁止(domain/accounts.
 })
 
 describe('equity区分のライフサイクルルール(prevent_user_created_equity_account)', () => {
-  it('rejects a user-created equity account (is_system_managed = false)', () => {
+  it('ユーザーが作成したequity科目(is_system_managed = false)は拒否される', () => {
     expect(() =>
       repository.create({
         category: 'equity',
@@ -229,7 +229,7 @@ describe('equity区分のライフサイクルルール(prevent_user_created_equ
     ).toThrow()
   })
 
-  it('allows a system-managed equity account', () => {
+  it('システム管理のequity科目は作成できる', () => {
     const created = repository.create({
       category: 'equity',
       name: '初期残高(三菱UFJ銀行)',
@@ -242,13 +242,13 @@ describe('equity区分のライフサイクルルール(prevent_user_created_equ
 })
 
 describe('is_reconcilable のCHECK制約(区分依存)', () => {
-  it('rejects asset accounts with is_reconcilable = null', () => {
+  it('is_reconcilable = nullの資産科目は拒否される', () => {
     expect(() =>
       repository.create({ category: 'asset', name: '不正な資産科目', isReconcilable: null }),
     ).toThrow()
   })
 
-  it('rejects expense accounts with a non-null is_reconcilable', () => {
+  it('is_reconcilableがnull以外の費用科目は拒否される', () => {
     expect(() =>
       repository.create({
         category: 'expense',
@@ -260,7 +260,7 @@ describe('is_reconcilable のCHECK制約(区分依存)', () => {
 })
 
 describe('勘定科目名のユニーク制約(区分内・is_active=TRUEのみ)', () => {
-  it('rejects creating an active duplicate name within the same category', () => {
+  it('同一区分内でアクティブな重複名の作成は拒否される', () => {
     repository.create({ category: 'expense', name: '重複科目', isReconcilable: null })
 
     expect(() =>
@@ -268,7 +268,7 @@ describe('勘定科目名のユニーク制約(区分内・is_active=TRUEのみ)
     ).toThrow()
   })
 
-  it('allows the same name again after the original is deactivated', () => {
+  it('元の科目を非アクティブ化した後は同名で再作成できる', () => {
     const original = repository.create({
       category: 'expense',
       name: '再利用する科目名',

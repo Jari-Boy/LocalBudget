@@ -61,7 +61,7 @@ beforeEach(async () => {
 })
 
 describe('create / findById', () => {
-  it('creates a balanced journal entry with header and lines and reads it back by id', () => {
+  it('貸借バランスの取れた仕訳をヘッダー・明細付きで作成しidで参照できる', () => {
     const created = repository.create({
       entryDate: '2026-07-20',
       memo: 'スーパーで食材購入',
@@ -88,11 +88,11 @@ describe('create / findById', () => {
     )
   })
 
-  it('returns null for an id that does not exist', () => {
+  it('存在しないidに対してはnullを返す', () => {
     expect(repository.findById(9999)).toBeNull()
   })
 
-  it('creates a compound entry split across multiple expense accounts', () => {
+  it('複数の費用科目に分割された複合仕訳を作成する', () => {
     const created = repository.create({
       entryDate: '2026-07-21',
       lines: [
@@ -105,7 +105,7 @@ describe('create / findById', () => {
     expect(repository.findById(created.id)?.lines).toHaveLength(3)
   })
 
-  it('round-trips optional projectId/householdMemberId/counterpartyId on a line', () => {
+  it('明細行の任意項目projectId/householdMemberId/counterpartyIdを保存・復元できる', () => {
     const memberId = insertHouseholdMember(db, '夫')
     const projectId = insertProject(db, '旅行2026')
     const revenueAccountId = new SqlJsAccountRepository(db).create({
@@ -144,7 +144,7 @@ describe('create / findById', () => {
 })
 
 describe('貸借バランス検証', () => {
-  it('throws UnbalancedJournalEntryError and writes nothing when creating an unbalanced entry', () => {
+  it('貸借不一致の仕訳作成はUnbalancedJournalEntryErrorをスローし何も書き込まない', () => {
     expect(() =>
       repository.create({
         entryDate: '2026-07-22',
@@ -159,7 +159,7 @@ describe('貸借バランス検証', () => {
     expect(countJournalLines(db)).toBe(0)
   })
 
-  it('throws UnbalancedJournalEntryError and leaves the original lines untouched when updating to an unbalanced set', () => {
+  it('貸借不一致な明細セットへの更新はUnbalancedJournalEntryErrorをスローし元の明細を変更しない', () => {
     const created = repository.create({
       entryDate: '2026-07-22',
       lines: [
@@ -185,7 +185,7 @@ describe('貸借バランス検証', () => {
     ).toBe(3000)
   })
 
-  it('throws UnbalancedJournalEntryError and writes nothing when creating with zero lines (journal.md 1.1: 2件以上の不変条件)', () => {
+  it('明細0件での作成はUnbalancedJournalEntryErrorをスローし何も書き込まない(journal.md 1.1: 2件以上の不変条件)', () => {
     expect(() =>
       repository.create({
         entryDate: '2026-07-27',
@@ -196,7 +196,7 @@ describe('貸借バランス検証', () => {
     expect(repository.findAll()).toHaveLength(0)
   })
 
-  it('throws UnbalancedJournalEntryError and writes nothing when creating with only one line (journal.md 1.1: 2件以上の不変条件)', () => {
+  it('明細1件のみでの作成はUnbalancedJournalEntryErrorをスローし何も書き込まない(journal.md 1.1: 2件以上の不変条件)', () => {
     expect(() =>
       repository.create({
         entryDate: '2026-07-27',
@@ -208,7 +208,7 @@ describe('貸借バランス検証', () => {
     expect(countJournalLines(db)).toBe(0)
   })
 
-  it('throws UnbalancedJournalEntryError and leaves the original lines untouched when updating to zero lines', () => {
+  it('明細0件への更新はUnbalancedJournalEntryErrorをスローし元の明細を変更しない', () => {
     const created = repository.create({
       entryDate: '2026-07-28',
       lines: [
@@ -227,7 +227,7 @@ describe('貸借バランス検証', () => {
     expect(repository.findById(created.id)?.lines).toHaveLength(2)
   })
 
-  it('throws UnbalancedJournalEntryError and leaves the original lines untouched when updating to a single line', () => {
+  it('明細1件のみへの更新はUnbalancedJournalEntryErrorをスローし元の明細を変更しない', () => {
     const created = repository.create({
       entryDate: '2026-07-29',
       lines: [
@@ -252,7 +252,7 @@ describe('貸借バランス検証', () => {
 })
 
 describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.md 1.2)', () => {
-  it('throws RestrictedAccountPostingError and writes nothing when creating a manual entry that posts to an is_reconcilable account', () => {
+  it('is_reconcilable科目に記帳するmanual仕訳の作成はRestrictedAccountPostingErrorをスローし何も書き込まない', () => {
     expect(() =>
       repository.create({
         entryDate: '2026-07-24',
@@ -268,7 +268,7 @@ describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.
     expect(countJournalLines(db)).toBe(0)
   })
 
-  it('throws RestrictedAccountPostingError for recurring_generated entries posting to an is_reconcilable account', () => {
+  it('is_reconcilable科目に記帳するrecurring_generated仕訳もRestrictedAccountPostingErrorをスローする', () => {
     expect(() =>
       repository.create({
         entryDate: '2026-07-24',
@@ -282,7 +282,7 @@ describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.
   })
 
   it.each(['external_import', 'initial_balance', 'balance_adjustment'] as const)(
-    'allows posting to an is_reconcilable account when sourceType is %s',
+    'sourceTypeが%sの場合はis_reconcilable科目への記帳を許可する',
     (sourceType) => {
       const created = repository.create({
         entryDate: '2026-07-24',
@@ -297,7 +297,7 @@ describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.
     },
   )
 
-  it('allows a manual entry that only posts to non-is_reconcilable accounts', () => {
+  it('non-is_reconcilable科目のみに記帳するmanual仕訳は許可される', () => {
     expect(() =>
       repository.create({
         entryDate: '2026-07-24',
@@ -310,7 +310,7 @@ describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.
     ).not.toThrow()
   })
 
-  it('throws RestrictedAccountPostingError and leaves the original lines untouched when updating a manual entry to post to an is_reconcilable account', () => {
+  it('manual仕訳をis_reconcilable科目への記帳に更新するとRestrictedAccountPostingErrorをスローし元の明細を変更しない', () => {
     const created = repository.create({
       entryDate: '2026-07-24',
       sourceType: 'manual',
@@ -338,7 +338,7 @@ describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.
 })
 
 describe('findAll', () => {
-  it('returns every created journal entry', () => {
+  it('作成した全ての仕訳を返す', () => {
     repository.create({
       entryDate: '2026-07-01',
       lines: [
@@ -359,7 +359,7 @@ describe('findAll', () => {
 })
 
 describe('update(明細行の全差し替え)', () => {
-  it('replaces all lines and updates journal_entries.updated_at', () => {
+  it('全明細を差し替えjournal_entries.updated_atを更新する', () => {
     const created = repository.create({
       entryDate: '2026-07-10',
       memo: '当初の内容',
@@ -393,7 +393,7 @@ describe('update(明細行の全差し替え)', () => {
     expect(updated.updatedAt).not.toBe('2000-01-01 00:00:00')
   })
 
-  it('replaces the old journal_lines rows with newly-inserted ones (line ids are not preserved across an update)', () => {
+  it('既存のjournal_lines行を新規挿入行に差し替える(更新をまたいで明細idは保持されない)', () => {
     const created = repository.create({
       entryDate: '2026-07-12',
       lines: [
@@ -431,7 +431,7 @@ describe('update(明細行の全差し替え)', () => {
 })
 
 describe('DB制約違反時のロールバック(FK制約有効化)', () => {
-  it('rolls back the entire transaction when creating with a line that references a non-existent account', () => {
+  it('存在しない科目を参照する明細を含む作成はトランザクション全体をロールバックする', () => {
     expect(() =>
       repository.create({
         entryDate: '2026-07-25',
@@ -446,7 +446,7 @@ describe('DB制約違反時のロールバック(FK制約有効化)', () => {
     expect(countJournalLines(db)).toBe(0)
   })
 
-  it('rolls back the entire transaction when updating with a line that references a non-existent account', () => {
+  it('存在しない科目を参照する明細を含む更新はトランザクション全体をロールバックする', () => {
     const created = repository.create({
       entryDate: '2026-07-26',
       lines: [
@@ -472,7 +472,7 @@ describe('DB制約違反時のロールバック(FK制約有効化)', () => {
 })
 
 describe('delete', () => {
-  it('physically deletes a journal entry and cascades its lines', () => {
+  it('仕訳を物理削除し明細もカスケード削除する', () => {
     const created = repository.create({
       entryDate: '2026-07-05',
       lines: [
@@ -487,7 +487,7 @@ describe('delete', () => {
     expect(countJournalLines(db)).toBe(0)
   })
 
-  it('always allows deleting an external_import entry', () => {
+  it('external_import仕訳の削除は常に許可される', () => {
     const created = repository.create({
       entryDate: '2026-07-06',
       sourceType: 'external_import',
@@ -503,7 +503,7 @@ describe('delete', () => {
 })
 
 describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () => {
-  it('creates a settles link when the settling entry has a matching temporary account line', () => {
+  it('消込仕訳側に一致する一時勘定行がある場合はsettlesリンクを作成する', () => {
     const toEntry = repository.create({
       entryDate: '2026-07-01',
       memo: '家賃(暫定計上)',
@@ -535,7 +535,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
     expect(link.amount).toBe(80000)
   })
 
-  it('throws SettlementTagMismatchError and writes nothing when the settling entry has no matching account line', () => {
+  it('消込仕訳側に一致する科目行がない場合はSettlementTagMismatchErrorをスローし何も書き込まない', () => {
     const toEntry = repository.create({
       entryDate: '2026-07-01',
       lines: [
@@ -564,7 +564,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
     expect(repository.listLinksForEntry(toEntry.id)).toHaveLength(0)
   })
 
-  it('throws SettlementTagMismatchError when project_id/household_member_id do not match', () => {
+  it('project_id/household_member_idが一致しない場合はSettlementTagMismatchErrorをスローする', () => {
     const projectId = insertProject(db, 'スマホ24回')
     const otherProjectId = insertProject(db, 'タブレット12回')
     const toEntry = repository.create({
@@ -593,7 +593,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
     ).toThrow(SettlementTagMismatchError)
   })
 
-  it('throws SettlementTagMismatchError when the matching line amount is less than the link amount', () => {
+  it('一致する行の金額がリンク金額を下回る場合はSettlementTagMismatchErrorをスローする', () => {
     const toEntry = repository.create({
       entryDate: '2026-07-01',
       lines: [
@@ -620,7 +620,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
     ).toThrow(SettlementTagMismatchError)
   })
 
-  it('allows an allocates link without the settles hard validation', () => {
+  it('allocatesリンクはsettlesのハード検証を受けずに許可される', () => {
     const toEntry = repository.create({
       entryDate: '2026-07-01',
       lines: [
@@ -646,7 +646,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
     expect(link.linkType).toBe('allocates')
   })
 
-  it('lists links where the entry is either the from_entry or the to_entry', () => {
+  it('その仕訳がfrom_entry/to_entryいずれかであるリンクを一覧取得する', () => {
     const toEntry = repository.create({
       entryDate: '2026-07-01',
       lines: [
@@ -676,7 +676,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
 })
 
 describe('create(linksオプションによる消込仕訳自体の作成とsettlesリンクの同時書き込み)', () => {
-  it('creates the settling entry and its settles link in a single call when the tags match', () => {
+  it('タグが一致する場合は消込仕訳自体とsettlesリンクを1回の呼び出しで作成する', () => {
     const toEntry = repository.create({
       entryDate: '2026-07-01',
       memo: '家賃(暫定計上)',
@@ -708,7 +708,7 @@ describe('create(linksオプションによる消込仕訳自体の作成とsett
     })
   })
 
-  it('rolls back the entry, its lines, and the link together when the settles hard validation fails', () => {
+  it('settlesのハード検証に失敗した場合は仕訳・明細・リンクをまとめてロールバックする', () => {
     const toEntry = repository.create({
       entryDate: '2026-07-01',
       lines: [

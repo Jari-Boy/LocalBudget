@@ -22,7 +22,7 @@ function listColumnNames(db: Database, table: string): string[] {
 }
 
 describe('runMigrations', () => {
-  it('creates all tables defined across docs/schema/*.sql', async () => {
+  it('docs/schema/*.sqlに定義された全テーブルを作成する', async () => {
     const db = await createTestDatabase()
 
     runMigrations(db)
@@ -51,7 +51,7 @@ describe('runMigrations', () => {
     )
   })
 
-  it('sets PRAGMA user_version to the latest schema version', async () => {
+  it('PRAGMA user_versionを最新のスキーマバージョンに設定する', async () => {
     const db = await createTestDatabase()
 
     runMigrations(db)
@@ -59,7 +59,7 @@ describe('runMigrations', () => {
     expect(getUserVersion(db)).toBe(LATEST_SCHEMA_VERSION)
   })
 
-  it('does not re-apply already-applied migrations when run twice', async () => {
+  it('2回実行しても適用済みのマイグレーションを再適用しない', async () => {
     const db = await createTestDatabase()
     runMigrations(db)
 
@@ -67,7 +67,7 @@ describe('runMigrations', () => {
     expect(getUserVersion(db)).toBe(LATEST_SCHEMA_VERSION)
   })
 
-  it('applies the recurring_transactions.sql ALTER TABLE onto journal_entries', async () => {
+  it('recurring_transactions.sqlのALTER TABLEをjournal_entriesに適用する', async () => {
     const db = await createTestDatabase()
 
     runMigrations(db)
