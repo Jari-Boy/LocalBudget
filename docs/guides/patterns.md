@@ -42,3 +42,10 @@
 **原因**: 不変条件の記述が「貸借バランスの一致」という主要な制約の隣接文脈（同じ節の1文目）に埋め込まれており、主要な制約（バランス一致）のテストを書く際に副次的な制約（最小明細数）を見落としやすい。境界値（0件・1件）は、正常系のテストケースを複製して作る際には想定されにくい。
 **対策**: ドメイン層の検証関数を実装する際は、対応するドキュメント節から「検証すべき不変条件」を箇条書きで洗い出し、各条件について最低1つは境界値（0件・下限-1件等）のテストケースを先に書く。複数の不変条件を同じエラー型で表現する場合（本件では貸借不一致と明細数不足を両方`UnbalancedJournalEntryError`で表現）、原因を混同させない専用メッセージを持たせる（`debitTotal=0, creditTotal=0`のような値だけでは、貸借不一致なのか明細数不足なのか原因が分からないため）。
 **該当箇所（例）**: `src/domain/journal/assertJournalBalance.ts`、`docs/domain/journal.md` 1.1、Issue #7 Review Attempt 1（evaluator指摘、コミットe4d33f4）・Attempt 2に対するHuman Override REJECT（コミット00466b1）
+
+## 概念的に不可分な複数の書き込みを、独立したRepositoryメソッドの連結で実装するとロールバック保証が崩れる
+
+**症状**: 消込仕訳の作成(`JournalEntryRepository.create`)とそれに対応するsettlesリンクの作成(`journal_entry_links`)を、呼び出し元が`create`→`createLink`と2回の独立したメソッド呼び出しとして連結する実装にすると、2回目の`createLink`がsettlesハード検証(`SettlementTagMismatchError`、`docs/domain/settlement.md` 1.8)で失敗しても、1回目の`create`で既にコミット済みの消込仕訳自体は残ってしまう。「検証に失敗したら何も書き込まれない」という設計原則(`docs/domain/journal.md` 1.3の「書き込み直前に検証し、不一致なら書き込みを行わない」パターン)が、2つの独立したトランザクションに分割したことで実質的に崩れる。
+**原因**: `create`・`createLink`という既存の独立したRepositoryメソッドをそのまま呼び出し元(アプリケーション層)で連結するのが自然に見えるため、各メソッドが内部で個別にBEGIN/COMMITする独立したDBトランザクションであること、およびその結果2つの書き込みの間にall-or-nothing保証が働かなくなることに気づきにくい。
+**対策**: ある操作の完了に、別の関連レコードの書き込みが不可分に伴う(両方成功するか両方失敗するかを要求するドメインルールがある)場合は、既存の独立したメソッドを呼び出し元で連結せず、片方の入力(例: `CreateJournalEntryInput.links`)としてもう片方の書き込み内容を受け取り、単一のRepositoryメソッド内の単一トランザクションでまとめて書き込む設計にする。実装・レビューの両方で「この2つの書き込みは同じトランザクションに属する必要があるか」を明示的に確認する。
+**該当箇所（例）**: `src/infrastructure/db/SqlJsJournalEntryRepository.ts`(`create`内の`links`処理)、`docs/domain/settlement.md` 1.8、`docs/decisions.md`「settlesリンクの作成は消込仕訳自体の作成と同一トランザクションにする」、Issue #14 Review（evaluator FAIL指摘、コミット4b71565で修正）
