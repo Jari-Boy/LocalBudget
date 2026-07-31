@@ -21,7 +21,7 @@ beforeEach(async () => {
 })
 
 describe('create / findById', () => {
-  it('creates a project with the default kind (event) when kind is omitted', () => {
+  it('kind省略時はデフォルトのkind(event)でプロジェクトを作成する', () => {
     const created = repository.create({ name: '26年7月アメリカ旅行' })
 
     const found = repository.findById(created.id)
@@ -34,19 +34,19 @@ describe('create / findById', () => {
     })
   })
 
-  it('creates a project with an explicit kind (settlement)', () => {
+  it('kindを明示的に指定(settlement)してプロジェクトを作成する', () => {
     const created = repository.create({ name: 'スマホ24回払い', kind: 'settlement' })
 
     expect(created.kind).toBe('settlement')
   })
 
-  it('returns null for an id that does not exist', () => {
+  it('存在しないidに対してはnullを返す', () => {
     expect(repository.findById(9999)).toBeNull()
   })
 })
 
 describe('findAll', () => {
-  it('returns every created project', () => {
+  it('作成した全てのプロジェクトを返す', () => {
     repository.create({ name: '26年7月アメリカ旅行' })
     repository.create({ name: '妹への貸付', kind: 'settlement' })
 
@@ -59,7 +59,7 @@ describe('findAll', () => {
 })
 
 describe('update', () => {
-  it('changes the name', () => {
+  it('名前を変更する', () => {
     const created = repository.create({ name: '26年7月アメリカ旅行' })
 
     const updated = repository.update(created.id, { name: '26年7月家族旅行' })
@@ -67,7 +67,7 @@ describe('update', () => {
     expect(updated.name).toBe('26年7月家族旅行')
   })
 
-  it('updates updated_at', () => {
+  it('updated_atが更新される', () => {
     const created = repository.create({ name: '更新日時確認用プロジェクト' })
     // 更新によってupdated_atが変わることを、時計を待たずに確認するため
     // 固定の過去日時を直接セットしておく
@@ -80,7 +80,7 @@ describe('update', () => {
 })
 
 describe('delete', () => {
-  it('physically deletes a project with zero journal lines referencing it', () => {
+  it('紐づく仕訳明細が0件のプロジェクトは物理削除できる', () => {
     const created = repository.create({ name: '紐づく仕訳がないプロジェクト' })
 
     repository.delete(created.id)
@@ -88,7 +88,7 @@ describe('delete', () => {
     expect(repository.findById(created.id)).toBeNull()
   })
 
-  it('refuses to delete a project referenced by journal_lines', () => {
+  it('journal_linesから参照されているプロジェクトの削除は拒否される', () => {
     const project = repository.create({ name: '紐づく仕訳があるプロジェクト' })
     const accountId = insertAccount(db, 'expense', 'お土産代')
     db.run(`INSERT INTO journal_entries (entry_date) VALUES ('2026-07-01')`)
@@ -104,7 +104,7 @@ describe('delete', () => {
 })
 
 describe('deactivate', () => {
-  it('marks the project inactive without deleting it', () => {
+  it('プロジェクトを削除せず非アクティブにする', () => {
     const created = repository.create({ name: '旅行が終わったプロジェクト' })
 
     const deactivated = repository.deactivate(created.id)
@@ -113,7 +113,7 @@ describe('deactivate', () => {
     expect(repository.findById(created.id)).not.toBeNull()
   })
 
-  it('deactivates a project regardless of its previous is_active value', () => {
+  it('is_activeの値によらずプロジェクトを非アクティブにできる', () => {
     const created = repository.create({ name: '既に非アクティブなプロジェクト' })
     repository.deactivate(created.id)
 

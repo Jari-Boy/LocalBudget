@@ -20,7 +20,7 @@ beforeEach(async () => {
 })
 
 describe('addGroupMember / findGroupMembers', () => {
-  it('adds individual members to a group and lists them', () => {
+  it('グループに個人メンバーを追加し、所属一覧を取得できる', () => {
     const husband = repository.create({ name: '夫' })
     const wife = repository.create({ name: '妻' })
     const couple = repository.create({ name: '夫婦', isGroup: true })
@@ -33,20 +33,20 @@ describe('addGroupMember / findGroupMembers', () => {
     expect(members.map((m) => m.name)).toEqual(expect.arrayContaining(['夫', '妻']))
   })
 
-  it('returns an empty array for a group with no members', () => {
+  it('所属メンバーが1人もいないグループでは空配列を返す', () => {
     const couple = repository.create({ name: '夫婦', isGroup: true })
 
     expect(repository.findGroupMembers(couple.id)).toEqual([])
   })
 
-  it('rejects nesting a group inside another group', () => {
+  it('グループを別のグループにネストさせようとすると拒否される', () => {
     const innerGroup = repository.create({ name: '内側グループ', isGroup: true })
     const outerGroup = repository.create({ name: '外側グループ', isGroup: true })
 
     expect(() => repository.addGroupMember(outerGroup.id, innerGroup.id)).toThrow()
   })
 
-  it('rejects using a non-group member as the group side', () => {
+  it('グループ側に個人メンバーを指定すると拒否される', () => {
     const husband = repository.create({ name: '夫' })
     const wife = repository.create({ name: '妻' })
 
@@ -55,7 +55,7 @@ describe('addGroupMember / findGroupMembers', () => {
 })
 
 describe('removeGroupMember', () => {
-  it('removes a member from a group', () => {
+  it('グループからメンバーを除去する', () => {
     const husband = repository.create({ name: '夫' })
     const wife = repository.create({ name: '妻' })
     const couple = repository.create({ name: '夫婦', isGroup: true })

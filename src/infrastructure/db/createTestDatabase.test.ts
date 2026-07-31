@@ -9,7 +9,7 @@ import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
 
 describe('createTestDatabase', () => {
-  it('enables foreign key constraint enforcement', async () => {
+  it('外部キー制約の強制を有効化する', async () => {
     const db = await createTestDatabase()
     runMigrations(db)
 

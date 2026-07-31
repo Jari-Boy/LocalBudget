@@ -38,7 +38,7 @@ beforeEach(async () => {
 })
 
 describe('create / findById', () => {
-  it('creates a draft with no fields filled in yet', () => {
+  it('全フィールドが未入力の下書きを作成する', () => {
     const created = repository.create({})
 
     expect(created.purpose).toBe('manual_entry')
@@ -48,7 +48,7 @@ describe('create / findById', () => {
     expect(created.lines).toHaveLength(0)
   })
 
-  it('creates a draft with a partially filled-in line (only debit side entered)', () => {
+  it('一部だけ入力された明細(借方のみ入力済み)を持つ下書きを作成する', () => {
     const created = repository.create({
       entryDate: '2026-07-20',
       lines: [{ accountId: foodExpenseAccountId, side: 'debit', amount: 3000 }],
@@ -64,7 +64,7 @@ describe('create / findById', () => {
     })
   })
 
-  it('creates a draft line with all fields left blank', () => {
+  it('全フィールドが未入力の明細を持つ下書きを作成する', () => {
     const created = repository.create({
       lines: [{}],
     })
@@ -77,13 +77,13 @@ describe('create / findById', () => {
     })
   })
 
-  it('returns null for an id that does not exist', () => {
+  it('存在しないidに対してはnullを返す', () => {
     expect(repository.findById(9999)).toBeNull()
   })
 })
 
 describe('findAll', () => {
-  it('returns every created draft', () => {
+  it('作成した全ての下書きを返す', () => {
     repository.create({ memo: '下書き1' })
     repository.create({ memo: '下書き2' })
 
@@ -92,7 +92,7 @@ describe('findAll', () => {
 })
 
 describe('update(バランス検証なしの全差し替え)', () => {
-  it('replaces the fields and lines without any balance validation', () => {
+  it('バランス検証を一切行わずにフィールド・明細を全差し替えする', () => {
     const created = repository.create({
       memo: '当初の内容',
       lines: [{ accountId: foodExpenseAccountId, side: 'debit', amount: 1000 }],
@@ -114,7 +114,7 @@ describe('update(バランス検証なしの全差し替え)', () => {
 })
 
 describe('delete', () => {
-  it('discards a draft and its lines', () => {
+  it('下書きとその明細を破棄する', () => {
     const created = repository.create({
       lines: [{ accountId: foodExpenseAccountId, side: 'debit', amount: 1000 }],
     })
@@ -126,7 +126,7 @@ describe('delete', () => {
 })
 
 describe('confirm', () => {
-  it('converts a complete draft into a journal entry via JournalEntryRepository and deletes the draft on success', () => {
+  it('完成した下書きをJournalEntryRepository経由で仕訳に変換し、成功時は下書きを削除する', () => {
     const created = repository.create({
       entryDate: '2026-07-22',
       memo: 'スーパーで食材購入',
@@ -144,7 +144,7 @@ describe('confirm', () => {
     expect(repository.findById(created.id)).toBeNull()
   })
 
-  it('throws UnbalancedJournalEntryError and keeps the draft when the draft lines are unbalanced', () => {
+  it('下書きの明細が貸借不一致の場合はUnbalancedJournalEntryErrorをスローし、下書きを残す', () => {
     const created = repository.create({
       entryDate: '2026-07-22',
       lines: [

@@ -22,7 +22,7 @@ beforeEach(async () => {
 })
 
 describe('create / findById', () => {
-  it('creates an individual member (isGroup defaults to false) when isGroup is omitted', () => {
+  it('isGroup省略時はデフォルト(false)の個人メンバーとして作成する', () => {
     const created = repository.create({ name: '夫' })
 
     const found = repository.findById(created.id)
@@ -35,19 +35,19 @@ describe('create / findById', () => {
     })
   })
 
-  it('creates a group member when isGroup is explicitly true', () => {
+  it('isGroupにtrueを明示するとグループメンバーとして作成する', () => {
     const created = repository.create({ name: '夫婦', isGroup: true })
 
     expect(created.isGroup).toBe(true)
   })
 
-  it('returns null for an id that does not exist', () => {
+  it('存在しないidに対してはnullを返す', () => {
     expect(repository.findById(9999)).toBeNull()
   })
 })
 
 describe('findAll', () => {
-  it('returns every created member', () => {
+  it('作成した全てのメンバーを返す', () => {
     repository.create({ name: '夫' })
     repository.create({ name: '妻' })
 
@@ -58,7 +58,7 @@ describe('findAll', () => {
 })
 
 describe('update', () => {
-  it('changes the name', () => {
+  it('名前を変更する', () => {
     const created = repository.create({ name: '夫' })
 
     const updated = repository.update(created.id, { name: '夫(改名)' })
@@ -66,7 +66,7 @@ describe('update', () => {
     expect(updated.name).toBe('夫(改名)')
   })
 
-  it('updates updated_at', () => {
+  it('updated_atが更新される', () => {
     const created = repository.create({ name: '更新日時確認用メンバー' })
     // 更新によってupdated_atが変わることを、時計を待たずに確認するため
     // 固定の過去日時を直接セットしておく
@@ -81,7 +81,7 @@ describe('update', () => {
 })
 
 describe('delete', () => {
-  it('physically deletes a member with zero references', () => {
+  it('紐づく参照が0件のメンバーは物理削除できる', () => {
     const created = repository.create({ name: '紐づく参照がないメンバー' })
 
     repository.delete(created.id)
@@ -89,14 +89,14 @@ describe('delete', () => {
     expect(repository.findById(created.id)).toBeNull()
   })
 
-  it('refuses to delete a member referenced by accounts.household_member_id', () => {
+  it('accounts.household_member_idから参照されているメンバーの削除は拒否される', () => {
     const member = repository.create({ name: '口座名義になっているメンバー' })
     insertAccount(db, 'asset', '普通預金', member.id)
 
     expect(() => repository.delete(member.id)).toThrow()
   })
 
-  it('refuses to delete a member referenced by journal_lines.household_member_id', () => {
+  it('journal_lines.household_member_idから参照されているメンバーの削除は拒否される', () => {
     const member = repository.create({ name: '仕訳明細で参照されているメンバー' })
     const accountId = insertAccount(db, 'expense', '食費')
     db.run(`INSERT INTO journal_entries (entry_date) VALUES ('2026-07-01')`)
@@ -112,7 +112,7 @@ describe('delete', () => {
 })
 
 describe('deactivate', () => {
-  it('marks the member inactive without deleting it', () => {
+  it('メンバーを削除せず非アクティブにする', () => {
     const created = repository.create({ name: '引っ越したメンバー' })
 
     const deactivated = repository.deactivate(created.id)
@@ -121,7 +121,7 @@ describe('deactivate', () => {
     expect(repository.findById(created.id)).not.toBeNull()
   })
 
-  it('deactivates a member regardless of its previous is_active value', () => {
+  it('is_activeの値によらずメンバーを非アクティブにできる', () => {
     const created = repository.create({ name: '既に非アクティブなメンバー' })
     repository.deactivate(created.id)
 
