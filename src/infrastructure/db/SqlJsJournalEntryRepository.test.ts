@@ -163,6 +163,48 @@ describe('貸借バランス検証', () => {
       stillOriginal?.lines.find((l) => l.accountId === foodExpenseAccountId)?.amount,
     ).toBe(3000)
   })
+
+  it('throws UnbalancedJournalEntryError and writes nothing when creating with zero lines (journal.md 1.1: 2件以上の不変条件)', () => {
+    expect(() =>
+      repository.create({
+        entryDate: '2026-07-27',
+        lines: [],
+      }),
+    ).toThrow(UnbalancedJournalEntryError)
+
+    expect(repository.findAll()).toHaveLength(0)
+  })
+
+  it('throws UnbalancedJournalEntryError and writes nothing when creating with only one line (journal.md 1.1: 2件以上の不変条件)', () => {
+    expect(() =>
+      repository.create({
+        entryDate: '2026-07-27',
+        lines: [{ accountId: foodExpenseAccountId, side: 'debit', amount: 1000 }],
+      }),
+    ).toThrow(UnbalancedJournalEntryError)
+
+    expect(repository.findAll()).toHaveLength(0)
+    expect(countJournalLines(db)).toBe(0)
+  })
+
+  it('throws UnbalancedJournalEntryError and leaves the original lines untouched when updating to zero lines', () => {
+    const created = repository.create({
+      entryDate: '2026-07-28',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1500 },
+        { accountId: cashAccountId, side: 'credit', amount: 1500 },
+      ],
+    })
+
+    expect(() =>
+      repository.update(created.id, {
+        entryDate: '2026-07-28',
+        lines: [],
+      }),
+    ).toThrow(UnbalancedJournalEntryError)
+
+    expect(repository.findById(created.id)?.lines).toHaveLength(2)
+  })
 })
 
 describe('findAll', () => {
@@ -219,6 +261,42 @@ describe('update(明細行の全差し替え)', () => {
     )
     expect(updated.lines.some((l) => l.accountId === foodExpenseAccountId)).toBe(false)
     expect(updated.updatedAt).not.toBe('2000-01-01 00:00:00')
+  })
+
+  it('replaces the old journal_lines rows with newly-inserted ones (line ids are not preserved across an update)', () => {
+    const created = repository.create({
+      entryDate: '2026-07-12',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+    // journal_linesテーブルが更新対象の仕訳の行だけで完全に空にならないよう、
+    // 他の仕訳もあらかじめ作成しておく(SQLiteはINTEGER PRIMARY KEYがAUTOINCREMENTでない場合、
+    // テーブルが完全に空になると採番を1から再開するため、他の行が存在しない状態だと
+    // 偶然idが一致してしまい、この検証の意図が成立しない)
+    repository.create({
+      entryDate: '2026-07-13',
+      lines: [
+        { accountId: miscExpenseAccountId, side: 'debit', amount: 500 },
+        { accountId: cashAccountId, side: 'credit', amount: 500 },
+      ],
+    })
+    const originalLineIds = created.lines.map((l) => l.id).sort()
+
+    const updated = repository.update(created.id, {
+      entryDate: '2026-07-12',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+    const newLineIds = updated.lines.map((l) => l.id).sort()
+
+    expect(newLineIds).not.toEqual(originalLineIds)
+    for (const id of originalLineIds) {
+      expect(newLineIds).not.toContain(id)
+    }
   })
 })
 
