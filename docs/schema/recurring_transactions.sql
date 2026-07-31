@@ -38,6 +38,26 @@ CREATE TABLE recurring_transaction_rules (
   )
 );
 
+-- debit_account_id / credit_account_id には is_reconcilable = true の科目を指定不可
+-- (recurring-transactions.md 1.1参照。生成される仕訳のsource_typeはrecurring_generatedで
+--  あり、reconciliation.md 1.2のホワイトリストに含まれないため)
+-- (CHECK制約はサブクエリ不可のためTRIGGERで実装。journal.mdのproject_id/counterparty_id制約と同じ理由)
+CREATE TRIGGER prevent_reconcilable_account_on_rule_insert
+BEFORE INSERT ON recurring_transaction_rules
+WHEN (SELECT is_reconcilable FROM accounts WHERE id = NEW.debit_account_id) IS TRUE
+  OR (SELECT is_reconcilable FROM accounts WHERE id = NEW.credit_account_id) IS TRUE
+BEGIN
+  SELECT RAISE(ABORT, 'debit_account_id/credit_account_id cannot be an is_reconcilable account');
+END;
+
+CREATE TRIGGER prevent_reconcilable_account_on_rule_update
+BEFORE UPDATE ON recurring_transaction_rules
+WHEN (SELECT is_reconcilable FROM accounts WHERE id = NEW.debit_account_id) IS TRUE
+  OR (SELECT is_reconcilable FROM accounts WHERE id = NEW.credit_account_id) IS TRUE
+BEGIN
+  SELECT RAISE(ABORT, 'debit_account_id/credit_account_id cannot be an is_reconcilable account');
+END;
+
 -- 仕訳が紐づくルールの物理削除を禁止
 CREATE TRIGGER prevent_delete_rule_with_journal_entries
 BEFORE DELETE ON recurring_transaction_rules

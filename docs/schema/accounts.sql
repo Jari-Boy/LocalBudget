@@ -43,12 +43,18 @@ BEGIN
   SELECT RAISE(ABORT, 'equity accounts can only be system-managed');
 END;
 
--- 仕訳が紐づく科目の物理削除を禁止
-CREATE TRIGGER prevent_delete_with_journal_lines
+-- 仕訳・予算・定期取引ルールが紐づく科目の物理削除を禁止
+-- (budgets.account_id・recurring_transaction_rules.debit_account_id/credit_account_id は
+--  ON DELETEアクションを持たないFKのため、ここで参照の有無を検証する。
+--  household_membersのprevent_delete_member_with_referencesと同じパターン)
+CREATE TRIGGER prevent_delete_account_with_references
 BEFORE DELETE ON accounts
 WHEN EXISTS (SELECT 1 FROM journal_lines WHERE account_id = OLD.id)
+  OR EXISTS (SELECT 1 FROM budgets WHERE account_id = OLD.id)
+  OR EXISTS (SELECT 1 FROM recurring_transaction_rules
+             WHERE debit_account_id = OLD.id OR credit_account_id = OLD.id)
 BEGIN
-  SELECT RAISE(ABORT, 'cannot delete account with journal lines');
+  SELECT RAISE(ABORT, 'cannot delete account with references');
 END;
 
 -- 勘定科目名は区分内でユニーク(非アクティブは除外)

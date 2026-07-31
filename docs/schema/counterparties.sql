@@ -4,7 +4,7 @@
 CREATE TABLE counterparties (
   id                  INTEGER PRIMARY KEY,
   name                TEXT NOT NULL,
-  default_account_id  INTEGER REFERENCES accounts(id),
+  default_account_id  INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
   is_active           BOOLEAN NOT NULL DEFAULT TRUE,
   created_at          TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at          TEXT NOT NULL DEFAULT (datetime('now'))

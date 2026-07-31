@@ -20,12 +20,8 @@ CREATE UNIQUE INDEX idx_external_txn_refs_dedup
 CREATE INDEX idx_external_txn_refs_entry
   ON external_transaction_refs(journal_entry_id);
 
--- account_id は is_reconcilable = true の科目のみ許可(資産の口座、または負債のクレカ専用未払金)
--- is_reconcilable が NOT NULL なのは asset/liability 区分のみ(accounts.sqlのCHECK制約で保証済み)
--- (CHECK制約はサブクエリ不可のためTRIGGERで実装)
-CREATE TRIGGER prevent_external_ref_on_non_reconcilable_account
-BEFORE INSERT ON external_transaction_refs
-WHEN (SELECT is_reconcilable FROM accounts WHERE id = NEW.account_id) IS NOT TRUE
-BEGIN
-  SELECT RAISE(ABORT, 'external_transaction_refs can only reference reconcilable accounts');
-END;
+-- account_id に is_reconcilable = true を強制するTRIGGERは設けない。
+-- external_transaction_refs は「外部明細の取込対象としてユーザーが選んだ科目」に
+-- 対して機械的に作られるレコードであり、is_reconcilable の値とは無関係に成立する
+-- (asset の銀行口座等だけでなく、liability のクレカ専用未払金も対象になる)。
+-- 詳細は docs/domain/reconciliation.md 2.1「なぜaccount_idにTRIGGER制約を設けないか」参照。
