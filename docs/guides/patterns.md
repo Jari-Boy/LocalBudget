@@ -35,3 +35,10 @@
 **原因**: 最初の集約（Account）の実装時点ではCRUD＋DDL制約への準拠が中心で、DBに依存しない純粋なドメインロジックがまだ存在しなかったため、型定義とSQL実装を1ファイルにまとめても表面上は問題が起きず、2層分離の必要性に気づきにくい。
 **対策**: 新しい集約のRepositoryを実装する計画時点で、`src/domain/<集約名>/<集約名>.ts`（型定義）・`src/domain/<集約名>/<集約名>Repository.ts`（Repositoryインターフェース、インフラ非依存）と、`src/infrastructure/db/SqlJs<集約名>Repository.ts`（上記インターフェースを`implements`するsql.js実装）の2層構成を最初から採用する（`docs/architecture.md` 5.1節参照）。貸借バランス検証等の純粋なドメインロジックはドメイン層に置く。
 **該当箇所（例）**: `src/domain/account/Account.ts`・`src/domain/account/AccountRepository.ts`・`src/infrastructure/db/SqlJsAccountRepository.ts`（Issue #8でIssue #5実装を事後的にリファクタ）
+
+## ドメインドキュメントに明記した不変条件が、アプリケーション層の検証ロジックにも実装漏れしうる
+
+**症状**: `docs/domain/<集約>.md`に明記された不変条件（例: 「1件の仕訳は2件以上の仕訳明細から成る」`journal.md` 1.1）が、対応するアプリケーション層の検証関数（例: `assertJournalBalance`）に実装されないまま先に進む。ハッピーパス（バランスが取れた2行以上の仕訳）のテストは書かれるが、境界値（0件・1件）のテストケースが最初から用意されていないと、実装漏れに実装者自身が気づけない。上記「ドメインドキュメントに明記した不変条件がDDLに反映されないまま実装が進む」と同根の問題が、DDLだけでなくアプリケーションコード（Repository層のバリデーション）側でも起こりうることを示す実例。
+**原因**: 不変条件の記述が「貸借バランスの一致」という主要な制約の隣接文脈（同じ節の1文目）に埋め込まれており、主要な制約（バランス一致）のテストを書く際に副次的な制約（最小明細数）を見落としやすい。境界値（0件・1件）は、正常系のテストケースを複製して作る際には想定されにくい。
+**対策**: ドメイン層の検証関数を実装する際は、対応するドキュメント節から「検証すべき不変条件」を箇条書きで洗い出し、各条件について最低1つは境界値（0件・下限-1件等）のテストケースを先に書く。複数の不変条件を同じエラー型で表現する場合（本件では貸借不一致と明細数不足を両方`UnbalancedJournalEntryError`で表現）、原因を混同させない専用メッセージを持たせる（`debitTotal=0, creditTotal=0`のような値だけでは、貸借不一致なのか明細数不足なのか原因が分からないため）。
+**該当箇所（例）**: `src/domain/journal/assertJournalBalance.ts`、`docs/domain/journal.md` 1.1、Issue #7 Review Attempt 1（evaluator指摘、コミットe4d33f4）・Attempt 2に対するHuman Override REJECT（コミット00466b1）

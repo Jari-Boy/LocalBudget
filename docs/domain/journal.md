@@ -82,6 +82,9 @@
 
 マニュアル起票・外部明細取込いずれの経路でも、最終的にこの`JournalEntryRepository`を経由するため、入力経路によって整合性ルールが分岐することはない([architecture.md](../architecture.md) 12章の方針と一致)。
 
+> **実装上、2件以上の明細数の検証([1.1](#11-仕訳journalentryと仕訳明細journalline))も同じ関数・同じエラー型で表現する**
+> `assertJournalBalance`(純粋関数)は借方合計・貸方合計の比較に加えて、明細が2件未満の場合も同じ`UnbalancedJournalEntryError`をスローする(専用のエラー型を新設しない)。ただしメッセージは省略時の「貸借不一致」を表す文言ではなく、明細数不足であることを明示する専用メッセージ(`at least 2 lines`を含む)を渡す。これにより呼び出し側は`instanceof UnbalancedJournalEntryError`という単一の判定で「有効な仕訳として成立しない」ケースを網羅的に捕捉できる一方、エラーメッセージから貸借不一致と明細数不足のどちらが原因かを区別できる。
+
 ### 1.4 金額と通貨
 
 - 金額は通貨の最小単位(日本円なら1円単位)の整数値として保持する([architecture.md](../architecture.md) 13章の方針を踏襲)。浮動小数点は用いない。
@@ -169,6 +172,9 @@
 | `created_at`          | 作成日時          |                                                                                 |
 
 > 明細行自体には`updated_at`を持たせない。明細の変更は「仕訳ヘッダー配下の行構成をまるごと差し替える」操作としてRepository層が扱い、変更の痕跡は親である`journal_entries.updated_at`側に集約する([1.5](#15-仕訳の編集削除)参照)。
+>
+> **`journal_lines.id`は更新のたびに再採番され、保持されない**
+> `JournalEntryRepository.update`は既存の明細行を全削除してから入力内容を新規行として再挿入する実装(`SqlJsJournalEntryRepository`)であるため、更新後の`JournalLine.id`は更新前の値と一致しない。現時点で`journal_lines.id`を外部から参照するテーブル・機能は存在しないため実害はないが、将来明細行単位で外部参照を持たせる機能を追加する場合はこの前提に注意する必要がある。
 
 ### 2.2 DDL
 
