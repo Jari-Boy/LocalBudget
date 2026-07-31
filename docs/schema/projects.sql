@@ -4,6 +4,8 @@
 CREATE TABLE projects (
   id          INTEGER PRIMARY KEY,
   name        TEXT NOT NULL,
+  kind        TEXT NOT NULL DEFAULT 'event'
+    CHECK (kind IN ('settlement', 'event')),
   is_active   BOOLEAN NOT NULL DEFAULT TRUE,
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at  TEXT NOT NULL DEFAULT (datetime('now'))

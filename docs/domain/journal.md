@@ -7,7 +7,23 @@
 ## 目次
 
 1. [仕訳ドメイン](#1-仕訳ドメイン)
+   - [1.1 仕訳(JournalEntry)と仕訳明細(JournalLine)](#11-仕訳journalentryと仕訳明細journalline)
+   - [1.2 記帳の型(具体例)](#12-記帳の型具体例)
+   - [1.3 貸借バランスの検証](#13-貸借バランスの検証)
+   - [1.4 金額と通貨](#14-金額と通貨)
+   - [1.5 仕訳の編集・削除](#15-仕訳の編集削除)
+   - [1.6 外部明細取込との関係](#16-外部明細取込との関係)
+   - [1.7 作成経路(source_type)](#17-作成経路source_type)
+   - [1.8 仕訳間の関係(journal_entry_links)](#18-仕訳間の関係journal_entry_links)
 2. [仕訳マスタ(journal_entries・journal_lines)](#2-仕訳マスタjournal_entriesjournal_lines)
+   - [2.1 フィールド定義](#21-フィールド定義)
+   - [2.2 DDL](#22-ddl)
+   - [2.3 仕訳間の関係マスタ(journal_entry_links)](#23-仕訳間の関係マスタjournal_entry_links)
+3. [仕訳の下書き(journal_entry_drafts)](#3-仕訳の下書きjournal_entry_drafts)
+   - [3.1 位置づけ](#31-位置づけ)
+   - [3.2 ライフサイクル](#32-ライフサイクル)
+   - [3.3 フィールド定義](#33-フィールド定義)
+   - [3.4 DDL](#34-ddl)
 
 ---
 
@@ -47,7 +63,7 @@
 ```
 
 > **is_reconcilable資産への記帳経路の制約**
-> 「普通預金」のような`is_reconcilable = true`の資産科目を直接使う仕訳は、[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)の通り`source_type`が`external_import`(CSVインポート由来)・`initial_balance`(口座開設時の初期残高)・`balance_adjustment`(残高調整)のいずれかの仕訳に限られる([1.7 作成経路(source_type)](#17-作成経路source_type)参照)。「給与が振り込まれる」の例はCSV到着時にその場で記帳するケースを表す。CSV到着前に先に記帳したい場合は「給与を先に見込み計上」のように未収金・未払金を経由した暫定計上を行い、CSV到着後にそれを消し込む([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)参照)。
+> 「普通預金」のような`is_reconcilable = true`の資産科目を直接使う仕訳は、[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)の通り`source_type`が`external_import`(外部明細取込由来)・`initial_balance`(口座開設時の初期残高)・`balance_adjustment`(残高調整)のいずれかの仕訳に限られる([1.7 作成経路(source_type)](#17-作成経路source_type)参照)。「給与が振り込まれる」の例はCSV到着時にその場で記帳するケースを表す。CSV到着前に先に記帳したい場合は「給与を先に見込み計上」のように未収金・未払金を経由した暫定計上を行い、CSV到着後にそれを消し込む([settlement.md](./settlement.md)参照)。
 
 ### 1.3 貸借バランスの検証
 
@@ -62,7 +78,7 @@
 
 そのため、`JournalEntryRepository`が仕訳を作成・更新する際に、ヘッダーと全ての明細行をまとめて構築し、ひとつのDBトランザクションに書き込む直前にアプリケーションコードとして借方合計・貸方合計の一致を検証する。不一致であれば書き込みを行わず、ドメインエラー(例: `UnbalancedJournalEntryError`)を返す。DB側は単一行として成立しない異常値(`amount <= 0`等)のみCHECK制約で弾き、行をまたぐ整合性はDBに委ねない。
 
-マニュアル起票・CSVインポートいずれの経路でも、最終的にこの`JournalEntryRepository`を経由するため、入力経路によって整合性ルールが分岐することはない([architecture.md](../architecture.md) 12章の方針と一致)。
+マニュアル起票・外部明細取込いずれの経路でも、最終的にこの`JournalEntryRepository`を経由するため、入力経路によって整合性ルールが分岐することはない([architecture.md](../architecture.md) 12章の方針と一致)。
 
 ### 1.4 金額と通貨
 
@@ -78,11 +94,11 @@
 
 **物理削除は常に許可する**([GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)で決着)。取消仕訳(反対仕訳)を挟むことは強制しない。[accounts.md 2.1](./accounts.md#21-操作ルール)の「別科目への実質変更」は反対仕訳([1.8](#18-仕訳間の関係journal_entry_links)の`reverses`)で扱うが、これは科目マスタ側の大量の過去仕訳を一括付け替えする特殊な操作の文脈であり、1件の仕訳を日常的に編集・削除する場面にまで同じ重さを求めると、入力ミスの訂正が煩雑になり[domain.md 1.1 基本方針](../domain.md#11-基本方針)の「会計知識のない一般ユーザーにも使える」という方針に反する。日常的な訂正では`journal_entry_links`を作らず、物理削除・直接編集のみで完結させる。[1.8](#18-仕訳間の関係journal_entry_links)の通り、フィールド単位の変更履歴(何をいつ変更したか)は引き続き持たない。
 
-**`source_type = 'external_import'`の仕訳(CSVインポート由来、[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)参照)も、`is_reconcilable`資産側の`account_id`/`amount`/`side`や`entry_date`を含め編集を許可する**(Issue #1で決着)。ただし編集すると、対応する`external_transaction_refs`が指す元のCSV明細との対応が崩れるため、UI上で警告する。[reconciliation.md 1.3](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)の「CSV由来のみ許可」はあくまで**作成経路(`source_type`)**の制約であり、事後の内容がCSVの生データと一致し続けることまでは保証しない。内容が誤っていた場合、削除して正しい内容で再取込する([reconciliation.md 1.7](./reconciliation.md#17-ライフサイクル)参照)か、その場で編集するかはユーザーの選択に委ねる。
+**`source_type = 'external_import'`の仕訳(外部明細取込由来、[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)参照)も、`is_reconcilable`資産側の`account_id`/`amount`/`side`や`entry_date`を含め編集を許可する**(Issue #1で決着)。ただし編集すると、対応する`external_transaction_refs`が指す元のCSV明細との対応が崩れるため、UI上で警告する。[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)の「CSV由来のみ許可」はあくまで**作成経路(`source_type`)**の制約であり、事後の内容がCSVの生データと一致し続けることまでは保証しない。内容が誤っていた場合、削除して正しい内容で再取込する([reconciliation.md 1.4](./reconciliation.md#14-ライフサイクル)参照)か、その場で編集するかはユーザーの選択に委ねる。
 
-### 1.6 CSVインポートとの関係
+### 1.6 外部明細取込との関係
 
-CSVインポート時の相手勘定科目の自動推定は、取引先マスタを介したサジェスト機能として[counterparties.md 1章](./counterparties.md#1-取引先)で定義する。本章で定義した仕訳・仕訳明細のデータモデルと貸借バランス検証は、CSVインポート経由・マニュアル起票経由のいずれからも共通して使われる土台として位置づける([architecture.md](../architecture.md) 12章の方針の通り)。
+外部明細取込時の相手勘定科目の自動推定は、取引先マスタを介したサジェスト機能として[counterparties.md 1章](./counterparties.md#1-取引先)で定義する。本章で定義した仕訳・仕訳明細のデータモデルと貸借バランス検証は、外部明細取込経由・マニュアル起票経由のいずれからも共通して使われる土台として位置づける([architecture.md](../architecture.md) 12章の方針の通り)。
 
 ### 1.7 作成経路(source_type)
 
@@ -91,27 +107,30 @@ CSVインポート時の相手勘定科目の自動推定は、取引先マス�
 | 値 | 意味 |
 |---|---|
 | `manual` | 手入力(既定値) |
-| `external_import` | 外部データの取り込み(CSVインポート等)のレビュー確定を経て作成された。通常の取引・消込のどちらも含む |
+| `external_import` | 外部明細取込のレビュー確定を経て作成された。通常の取引・消込のどちらも含む |
 | `recurring_generated` | 定期取引([recurring-transactions.md](./recurring-transactions.md))の提案をレビュー確認して作成された |
 | `initial_balance` | 口座/カード開設時の初期残高仕訳([accounts.md 4.3 初期残高の自動仕訳](./accounts.md#43-初期残高の自動仕訳)) |
-| `balance_adjustment` | 残高調整([reconciliation.md 1.9](./reconciliation.md#19-原因不明差異への残高調整)、[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)) |
+| `balance_adjustment` | 残高調整([reconciliation.md 1.6](./reconciliation.md#16-原因不明差異への残高調整)、[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)) |
 
-`source_type`は、[reconciliation.md 1.3 is_reconcilable資産・負債への直接記帳の制限](./reconciliation.md#13-is_reconcilable資産負債への直接記帳の制限)が「この仕訳はis_reconcilable = trueの科目に記帳してよいか」を判定する唯一の根拠になる。
+`source_type`は、[reconciliation.md 1.2 is_reconcilable資産・負債への直接記帳の制限](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)が「この仕訳はis_reconcilable = trueの科目に記帳してよいか」を判定する唯一の根拠になる。
 
 > **なぜ`external_transaction_refs`の存在ではなく`source_type`で判定するか**
-> 以前は「is_reconcilable = trueの科目を使う行に対応する`external_transaction_refs`があるか」を根拠にしていたが、これは「作成経路(この仕訳はどうやって生まれたか)」と「外部データとの照合材料(この科目の残高は外部の何と一致するはずか)」という別々の関心事を1つのテーブルに同居させていた。両者が食い違うケース(クレジットカードの消込で、決済相手のカード科目には対応する外部CSV行が存在しない場合等)で無理が生じていた。`source_type`は前者(作成経路)だけを担い、`external_transaction_refs`([reconciliation.md 2章](./reconciliation.md#2-突合マスタexternal_transaction_refs)参照)は後者(照合材料)だけを担うことで関心事を分離する。仕訳が複数のis_reconcilable = true科目にまたがる場合(消込等)も、仕訳単位の`source_type`が1回チェックされるだけで済み、行ごとに参照の有無を確認する必要がない。
+> 以前は「is_reconcilable = trueの科目を使う行に対応する`external_transaction_refs`があるか」を根拠にしていたが、これは「作成経路(この仕訳はどうやって生まれたか)」と「外部データとの突合材料(この科目の残高は外部の何と一致するはずか)」という別々の関心事を1つのテーブルに同居させていた。両者が食い違うケース(初期残高・残高調整の仕訳のように、is_reconcilable = true科目を使う仕訳でも対応する外部CSV行が存在しない場合等)で無理が生じていた。`source_type`は前者(作成経路)だけを担い、`external_transaction_refs`([reconciliation.md 2章](./reconciliation.md#2-突合マスタexternal_transaction_refs)参照)は後者(突合材料)だけを担うことで関心事を分離する。仕訳が複数のis_reconcilable = true科目にまたがる場合(口座間振替等)も、仕訳単位の`source_type`が1回チェックされるだけで済み、行ごとに参照の有無を確認する必要がない。
 
 ### 1.8 仕訳間の関係(journal_entry_links)
 
 消込・反対仕訳のように、ある仕訳が別の仕訳と関係を持つ場合、その関係を`journal_entry_links`([2.3](#23-仕訳間の関係マスタjournal_entry_links)参照)に記録する。
 
-- `settles`(消込): `from_entry`(消込仕訳)が`to_entry`(未払金・未収金・カード利用明細等の元仕訳)を消し込む。1件の消込が複数の元仕訳を一括で消し込む複合仕訳もあるため、多対一になりうる([reconciliation.md 1.4](./reconciliation.md#14-暫定記帳未払金未収金と消込)参照)。`amount`に消込額を持ち、金額が一致しない部分消込([reconciliation.md 1.4 消込は金額が一致するとは限らない](./reconciliation.md#14-暫定記帳未払金未収金と消込)参照)も表現できる
-- `reverses`(反対仕訳): `from_entry`(反対仕訳)が`to_entry`(訂正対象の元仕訳)を打ち消す。[accounts.md 2.1](./accounts.md#21-操作ルール)の「別科目への実質変更」で使う
+- `settles`(消込): `from_entry`(消込仕訳)が`to_entry`(未払金・未収金・カード利用明細等の元仕訳)を消し込む。1件の消込が複数の元仕訳を一括で消し込む複合仕訳もあれば(多対一)、逆に1件の元仕訳が分割払いのように複数回のCSV取込にまたがって段階的に消し込まれることもある(一対多)。`to_entry_id`にユニーク制約は課さず、いずれの方向の一対多・多対一も同じテーブル構造で表現する([settlement.md](./settlement.md)参照)。`amount`に消込額を持ち、金額が一致しない部分消込([settlement.md 消込は金額が一致するとは限らない](./settlement.md#12-家賃給与の例)参照)や、複数回にわたる分割消込の完了判定([settlement.md 1.6 分割消込](./settlement.md#16-分割消込消込残高による完了判定)参照)も表現できる
+- `allocates`(按分): `from_entry`(割勘仕訳)が`to_entry`(按分対象の元の支出仕訳)の一部を按分する対象であることを示す。元仕訳自体は変更せず、按分は追加の仕訳として積む([expense-splitting.md](./expense-splitting.md)参照)。1回の割勘バッチが複数の元仕訳をまとめて対象にすることもあるため、`settles`と同様に一対多になりうる。`amount`にはその元仕訳に対する按分額を持つ
 
 いずれの関係も、ある仕訳の詳細画面から`from_entry_id = X OR to_entry_id = X`で関連する仕訳を辿れるようにするためのものであり、複式簿記の整合性検証([1.3](#13-貸借バランスの検証))自体には関与しない。
 
 > **監査ログ(何をいつ変更したか)とは別物**
 > [1.5 仕訳の編集・削除](#15-仕訳の編集削除)の通り、フィールド単位の変更履歴(誰が・いつ・何を変更したか)は持たない。`journal_entry_links`が記録するのは「独立した仕訳同士がどう関係するか」であり、1件の仕訳自体の編集履歴ではない。日常的な入力ミスの訂正(物理削除・直接編集)には`journal_entry_links`を作らず、[1.5](#15-仕訳の編集削除)の軽い訂正フローのままにする。
+>
+> **`reverses`(反対仕訳)は持たない**
+> 以前は科目統合([accounts.md 2.1](./accounts.md#21-操作ルール)の「別科目への実質変更」)のために反対仕訳+再計上という方式を想定していたが、これは仕訳件数が最大3倍に膨らむ割に、家計簿アプリの利用者層には監査証跡としての価値が薄いと判断した。科目統合・取引先統合は直接UPDATE+操作ログ([accounts.md 2.2](./accounts.md#22-過去仕訳の付け替え)・[counterparties.md 1.5](./counterparties.md#15-ライフサイクル)参照)に置き換え、`reverses`の唯一の用途が消滅したため設計から削除した。厳密な反対仕訳による訂正をしたいユーザーは、`journal_entry_links`を介さない通常の手入力仕訳として自分で管理すればよい。
 
 ---
 
@@ -138,7 +157,7 @@ CSVインポート時の相手勘定科目の自動推定は、取引先マス�
 | `id`                  | 明細ID          | PK                                                                              |
 | `journal_entry_id`    | 親仕訳ID         | FK、親削除時はCASCADE                                                                 |
 | `account_id`          | 勘定科目ID        | FK                                                                              |
-| `project_id`          | プロジェクトID      | FK、任意。PL科目(revenue/expense)の行にのみ設定可(TRIGGERで強制、[projects.md 1.2](./projects.md#12-紐づけ対象)参照)              |
+| `project_id`          | プロジェクトID      | FK、任意。全区分の行に設定可([projects.md 1.2](./projects.md#12-紐づけ対象)参照)              |
 | `household_member_id` | 世帯メンバーID(上書き) | FK、任意。全区分で設定可。NULL=`accounts.household_member_id`を継承([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照) |
 | `counterparty_id`     | 取引先ID         | FK、任意。PL科目(revenue/expense)の行にのみ設定可(TRIGGERで強制、[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)参照)              |
 | `side`                | 借方/貸方         | ENUM: debit/credit                                                              |
@@ -163,10 +182,10 @@ CSVインポート時の相手勘定科目の自動推定は、取引先マス�
 | カラム | 内容 | 制約・備考 |
 |---|---|---|
 | `id` | ID | PK |
-| `from_entry_id` | 関係の起点となる仕訳 | FK、親削除時CASCADE。消込なら消込仕訳、反対仕訳なら打ち消す側の仕訳 |
-| `to_entry_id` | 関係の対象となる仕訳 | FK、親削除時CASCADE。消込なら元の利用明細等の仕訳、反対仕訳なら訂正対象の仕訳 |
-| `link_type` | 関係の種別 | ENUM: `settles`(消込)/`reverses`(反対仕訳) |
-| `amount` | 関係する金額 | `link_type = 'settles'`のときのみ必須(部分消込の金額を表す)。`reverses`では常にNULL(全額の打ち消しが前提のため) |
+| `from_entry_id` | 関係の起点となる仕訳 | FK、親削除時CASCADE。消込なら消込仕訳、按分なら割勘仕訳 |
+| `to_entry_id` | 関係の対象となる仕訳 | FK、親削除時CASCADE。消込なら元の利用明細等の仕訳、按分なら按分対象の元の支出仕訳 |
+| `link_type` | 関係の種別 | ENUM: `settles`(消込)/`allocates`(按分、[expense-splitting.md](./expense-splitting.md)参照) |
+| `amount` | 関係する金額 | 必須。`settles`は消込額(部分消込を表現できる)、`allocates`はその元仕訳に対する按分額 |
 | `created_at` | 作成日時 | |
 
 **DDL**
@@ -175,3 +194,60 @@ CSVインポート時の相手勘定科目の自動推定は、取引先マス�
 
 > **`journal_entries`が削除されたら関係も消える**
 > `ON DELETE CASCADE`により、`from_entry_id`・`to_entry_id`いずれかの仕訳が削除されると、その関係行も自動的に削除される。[1.5 仕訳の編集・削除](#15-仕訳の編集削除)の通り仕訳の物理削除は常に許可されるため、削除後に関係だけが宙に浮いた状態(存在しない仕訳を指す行)が残ることはない。
+
+---
+
+## 3. 仕訳の下書き(journal_entry_drafts)
+
+### 3.1 位置づけ
+
+マニュアル起票の途中入力(借方だけ入力して貸方が未入力、金額未確定等)をアプリ再起動を跨いで保持したいというニーズに応える、`journal_entries`とは別テーブルの保存領域。
+
+> **なぜ`journal_entries`に`is_draft`フラグを持たせないか**
+> [1.3 貸借バランスの検証](#13-貸借バランスの検証)の通り、`journal_entries`への書き込みは「全明細行が揃った状態でRepository層がバランス検証を行う」ことが前提になっている。下書きは定義上バランスが崩れた状態(借方だけ入力済み等)や必須項目が空の状態を許容する必要があり、これを`journal_entries`側で許容すると「入力経路によって整合性ルールが分岐しない」という[1.3](#13-貸借バランスの検証)の原則([architecture.md](../architecture.md) 12章由来)をis_draftという別軸の分岐で崩すことになる。そのため、バランス制約を一切課さない別テーブルとして持ち、確定操作の際に初めて通常の`JournalEntryRepository`を経由させ、そこで[1.3](#13-貸借バランスの検証)の検証を受けさせる。
+>
+> **なぜ定期取引の生成予定(先読み)をここに含めないか**
+> [recurring-transactions.md 1.2](./recurring-transactions.md#12-自動生成-vs-レビュー確認)の提案は、ルールから都度計算される派生データであり、ユーザーが入力した永続化すべきWIPデータではない。これを`journal_entry_drafts`に保存してしまうと、ルール変更時の追従(再計算して差し替えるか、そのまま残すか)という同期の問題が生じ、[recurring-transactions.md 1.2](./recurring-transactions.md#12-自動生成-vs-レビュー確認)の「なぜ将来分をまとめて事前生成しないか」で一度却下した事前生成のリスクが別の形で再発する。定期取引の見通し表示は、表示のたびにルールから計算し直す(保存しない)方式とし、本テーブルとは無関係に扱う。
+
+`purpose`カラムで用途を区別する。現時点では手入力仕訳の途中保存(`manual_entry`)のみを値として持つが、将来別の「途中保存したいWIPデータ」が増えた場合もこのテーブルにタグを追加する形で使い回す想定。
+
+### 3.2 ライフサイクル
+
+| 操作 | 扱い |
+|---|---|
+| 作成 | ユーザーが仕訳入力フォームを開始した時点、または明示的な「下書き保存」操作で作成 |
+| 更新 | フォームの内容が変わるたびに上書き保存(バランス等の検証は行わない) |
+| 確定 | フォームの内容を`JournalEntryRepository`経由で`journal_entries`/`journal_lines`に変換する。[1.3](#13-貸借バランスの検証)のバランス検証を含む通常の作成経路をそのまま通るため、下書き段階の不整合はここで弾かれる。確定に成功したら下書き行(`journal_entry_drafts`および配下の`journal_entry_draft_lines`)は削除する |
+| 破棄 | ユーザーの明示操作で削除。自動的な期限切れ・自動削除は設けない([1.6](#16-外部明細取込との関係)以下の他ドメインと同様、ユーザー操作に委ねる) |
+
+### 3.3 フィールド定義
+
+**journal_entry_drafts**
+
+| カラム | 内容 | 制約・備考 |
+|---|---|---|
+| `id` | 下書きID | PK |
+| `purpose` | 用途タグ | ENUM、現状`manual_entry`のみ([3.1](#31-位置づけ)参照) |
+| `entry_date` | 取引日 | 任意。未入力の途中状態を許容するためNULL可 |
+| `memo` | 摘要 | 任意 |
+| `currency` | 通貨コード | 任意。未選択状態を許容するためNULL可([2.1](#21-フィールド定義)の`journal_entries.currency`と異なりNOT NULLにしない) |
+| `created_at` | 作成日時 | |
+| `updated_at` | 更新日時 | |
+
+**journal_entry_draft_lines**
+
+| カラム | 内容 | 制約・備考 |
+|---|---|---|
+| `id` | 明細下書きID | PK |
+| `journal_entry_draft_id` | 親下書きID | FK、親削除時CASCADE |
+| `account_id` | 勘定科目ID | FK、任意。未選択状態を許容するためNULL可 |
+| `project_id` | プロジェクトID | FK、任意 |
+| `household_member_id` | 世帯メンバーID | FK、任意 |
+| `counterparty_id` | 取引先ID | FK、任意。[2.1](#21-フィールド定義)の`journal_lines.counterparty_id`と異なり、下書き段階ではPL科目行への限定をTRIGGERで強制しない(確定時に`journal_lines`側のTRIGGERで検証される) |
+| `side` | 借方/貸方 | ENUM: debit/credit、任意。未選択状態を許容するためNULL可 |
+| `amount` | 金額 | 任意。未入力状態を許容するためNULL可、`journal_lines.amount`と異なり`amount > 0`のCHECKは課さない |
+| `created_at` | 作成日時 | |
+
+### 3.4 DDL
+
+実装: [schema/journal.sql](../schema/journal.sql)
