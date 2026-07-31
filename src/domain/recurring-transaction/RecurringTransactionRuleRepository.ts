@@ -6,9 +6,13 @@ import type {
 
 /**
  * 定期取引ルール(recurring_transaction_rules)の永続化を担うRepositoryのポート(インターフェース)。
- * frequencyごとのカラム組み合わせ・is_reconcilable科目を借方/貸方に指定できない制約はDDL側
- * (docs/schema/recurring_transactions.sql)で強制されるため、実装(インフラ層)は制約違反時の
- * 例外をそのまま呼び出し元に伝播させる(docs/domain/recurring-transactions.md参照)。
+ * frequencyごとのカラム組み合わせ検証(assertValidRecurringSchedule)は実装(インフラ層)が
+ * create/update時に書き込み前に必ず呼び出し、違反時はInvalidRecurringScheduleErrorを投げて
+ * DBに一切書き込まない(docs/domain/recurring-transactions.md 1.3、
+ * SqlJsJournalEntryRepositoryのassertJournalBalanceと同じ使い分け)。
+ * is_reconcilable科目を借方/貸方に指定できない制約・生成済み仕訳がある場合の物理削除禁止等、
+ * DBルックアップを要する制約はDDL側(docs/schema/recurring_transactions.sql)で強制されるため、
+ * 実装はそちらの制約違反例外をそのまま呼び出し元に伝播させる。
  * 生成済み件数(max_occurrences判定用)はjournal_entries.generated_from_rule_idのCOUNTから
  * 算出し、専用のカウンタは持たない(2.1節参照)。
  */
