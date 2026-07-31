@@ -6,13 +6,17 @@ import type {
   UpdateRecurringTransactionRuleInput,
 } from '../../domain/recurring-transaction/RecurringTransactionRule'
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
+import { assertValidRecurringSchedule } from '../../domain/recurring-transaction/assertValidRecurringSchedule'
 
 /**
  * RecurringTransactionRuleRepository(ドメイン層のポート)のsql.js実装。
- * frequencyごとのカラム組み合わせCHECK制約・is_reconcilable科目を借方/貸方に指定できない
- * トリガー・生成済み仕訳がある場合の物理削除禁止トリガー等のドメインルールはDDL側
- * (docs/schema/recurring_transactions.sql)で強制されるため、ここでは制約違反時にsql.jsの
- * 例外がそのまま呼び出し元に伝播する(docs/domain/recurring-transactions.md参照)。
+ * frequencyごとのカラム組み合わせは書き込み直前にassertValidRecurringSchedule(DBアクセス
+ * 不要な純粋な整合性検証)で検証し、InvalidRecurringScheduleErrorをスローする
+ * (docs/domain/recurring-transactions.md 1.3、SqlJsJournalEntryRepositoryのassertJournalBalance
+ * と同じ使い分け)。is_reconcilable科目を借方/貸方に指定できないトリガー・生成済み仕訳がある
+ * 場合の物理削除禁止トリガー等、DBルックアップを要する制約はDDL側
+ * (docs/schema/recurring_transactions.sql)に委ね、違反時はsql.jsの例外がそのまま呼び出し元に
+ * 伝播する。
  */
 export class SqlJsRecurringTransactionRuleRepository implements RecurringTransactionRuleRepository {
   private readonly db: Database
@@ -22,6 +26,8 @@ export class SqlJsRecurringTransactionRuleRepository implements RecurringTransac
   }
 
   create(input: CreateRecurringTransactionRuleInput): RecurringTransactionRule {
+    assertValidRecurringSchedule(input)
+
     this.db.run(
       `INSERT INTO recurring_transaction_rules
         (name, debit_account_id, credit_account_id, amount, frequency,
@@ -60,6 +66,8 @@ export class SqlJsRecurringTransactionRuleRepository implements RecurringTransac
   }
 
   update(id: number, input: UpdateRecurringTransactionRuleInput): RecurringTransactionRule {
+    assertValidRecurringSchedule(input)
+
     const current = this.findById(id)
     if (!current) {
       throw new Error(`recurring transaction rule not found: ${id}`)

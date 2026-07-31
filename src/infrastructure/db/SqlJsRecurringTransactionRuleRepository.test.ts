@@ -13,6 +13,7 @@ import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
 import { SqlJsRecurringTransactionRuleRepository } from './SqlJsRecurringTransactionRuleRepository'
+import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
 
 let db: Database
 let repository: SqlJsRecurringTransactionRuleRepository
@@ -75,7 +76,7 @@ describe('create / findById', () => {
     expect(repository.findById(9999)).toBeNull()
   })
 
-  it('frequencyごとのカラム組み合わせに反する作成はDDLのCHECK制約により拒否される', () => {
+  it('frequencyごとのカラム組み合わせに反する作成はassertValidRecurringScheduleにより拒否される', () => {
     expect(() =>
       repository.create({
         name: '不正なルール',
@@ -86,7 +87,7 @@ describe('create / findById', () => {
         dayOfWeek: 1,
         dayOfMonth: 15,
       }),
-    ).toThrow()
+    ).toThrow(InvalidRecurringScheduleError)
   })
 
   it('is_reconcilable=trueの科目を借方に指定した作成はトリガーにより拒否される', () => {
@@ -177,6 +178,29 @@ describe('update', () => {
         dayOfMonth: 1,
       }),
     ).toThrow()
+  })
+
+  it('frequencyごとのカラム組み合わせに反する更新はassertValidRecurringScheduleにより拒否される', () => {
+    const created = repository.create({
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+    })
+
+    expect(() =>
+      repository.update(created.id, {
+        name: '家賃',
+        debitAccountId: expenseAccountId,
+        creditAccountId: liabilityAccountId,
+        amount: 80000,
+        frequency: 'yearly',
+        dayOfMonth: 1,
+        // monthOfYearが無いため yearly として不正
+      }),
+    ).toThrow(InvalidRecurringScheduleError)
   })
 })
 
