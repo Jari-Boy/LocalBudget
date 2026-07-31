@@ -14,9 +14,19 @@ describe('assertJournalBalance', () => {
     expect(() => assertJournalBalance([])).toThrow(UnbalancedJournalEntryError)
   })
 
+  it('明細が0件のときのエラーメッセージは、貸借不一致ではなく明細数不足が原因であることを示す', () => {
+    expect(() => assertJournalBalance([])).toThrow(/at least 2 lines/)
+  })
+
   it('借方1行のみでは2件以上という不変条件(journal.md 1.1)に反するためスローする', () => {
     expect(() => assertJournalBalance([{ side: 'debit', amount: 1000 }])).toThrow(
       UnbalancedJournalEntryError,
+    )
+  })
+
+  it('借方1行のみのときのエラーメッセージも明細数不足が原因であることを示す', () => {
+    expect(() => assertJournalBalance([{ side: 'debit', amount: 1000 }])).toThrow(
+      /at least 2 lines/,
     )
   })
 

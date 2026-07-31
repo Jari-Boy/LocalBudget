@@ -13,7 +13,15 @@ export function assertJournalBalance(
   const debitTotal = sumBySide(lines, 'debit')
   const creditTotal = sumBySide(lines, 'credit')
 
-  if (lines.length < 2 || debitTotal !== creditTotal) {
+  if (lines.length < 2) {
+    throw new UnbalancedJournalEntryError(
+      debitTotal,
+      creditTotal,
+      `journal entry must have at least 2 lines (docs/domain/journal.md 1.1): got ${lines.length}`,
+    )
+  }
+
+  if (debitTotal !== creditTotal) {
     throw new UnbalancedJournalEntryError(debitTotal, creditTotal)
   }
 }

@@ -205,6 +205,29 @@ describe('貸借バランス検証', () => {
 
     expect(repository.findById(created.id)?.lines).toHaveLength(2)
   })
+
+  it('throws UnbalancedJournalEntryError and leaves the original lines untouched when updating to a single line', () => {
+    const created = repository.create({
+      entryDate: '2026-07-29',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1200 },
+        { accountId: cashAccountId, side: 'credit', amount: 1200 },
+      ],
+    })
+
+    expect(() =>
+      repository.update(created.id, {
+        entryDate: '2026-07-29',
+        lines: [{ accountId: foodExpenseAccountId, side: 'debit', amount: 1200 }],
+      }),
+    ).toThrow(UnbalancedJournalEntryError)
+
+    const stillOriginal = repository.findById(created.id)
+    expect(stillOriginal?.lines).toHaveLength(2)
+    expect(stillOriginal?.lines.map((l) => l.accountId)).toEqual(
+      expect.arrayContaining([foodExpenseAccountId, cashAccountId]),
+    )
+  })
 })
 
 describe('findAll', () => {
