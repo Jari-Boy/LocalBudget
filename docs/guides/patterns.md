@@ -28,3 +28,10 @@
 **原因**: ドメインドキュメントの記述量が多く、フィールド定義の一部（例: `is_system_managed`のようなブール値フラグの意味論）に埋め込まれた制約は読み飛ばされやすい。DDL実装時は「既存の類似トリガーを同じパターンで書けば済む箇所」に意識が向きやすく、ドキュメント全文を制約の網羅的チェックリストとして読み直す工程が実装フローに組み込まれていないと抜け落ちる。
 **対策**: DDL・Repositoryを実装する際は、対象テーブルに対応する`docs/domain/<集約>.md`の「フィールド定義」節・「ライフサイクル」節を項目ごとのチェックリストとして読み、各フィールド・各操作（作成/更新/削除/非アクティブ化）について「許可される変更」「禁止される変更」を洗い出してからDDL/テストに落とし込む。特に真偽値フラグ（`is_system_managed`等）は「フラグがTRUEのとき通常のCRUDから除外される操作は何か」を明示的に確認する。evaluatorのレビュー時も、完了条件チェックリストの機械的な充足確認だけでなく、ドメインドキュメントの該当節を読み直して未実装の制約が無いか照合する。
 **該当箇所（例）**: `docs/schema/accounts.sql`（`prevent_delete_system_managed_account`・`prevent_non_name_change_on_system_managed_account`トリガー、コミット5f809e4で追加）、`docs/domain/accounts.md` 3.1、Issue #5 Review Attempt 1（evaluator FAIL指摘、重大度MEDIUM/LOW）
+
+## 新しい集約のRepository実装時にドメイン層とインフラ層を分離し忘れる
+
+**症状**: `docs/architecture.md` 10章はドメインロジックのユニットテストとDBアクセス層（Repository実装）の統合テストを分離する方針を定めているにもかかわらず、実装時にエンティティの型定義・Repositoryインターフェースに相当する形状・sql.jsによるSQL実装を`src/infrastructure/db/<集約名>Repository.ts`という単一ファイルにまとめて実装してしまう。DBアクセスを伴わない純粋なドメインロジック（例: 貸借バランス検証）を後から追加しようとした時に、置き場所がなく後追いでリファクタが必要になる。
+**原因**: 最初の集約（Account）の実装時点ではCRUD＋DDL制約への準拠が中心で、DBに依存しない純粋なドメインロジックがまだ存在しなかったため、型定義とSQL実装を1ファイルにまとめても表面上は問題が起きず、2層分離の必要性に気づきにくい。
+**対策**: 新しい集約のRepositoryを実装する計画時点で、`src/domain/<集約名>/<集約名>.ts`（型定義）・`src/domain/<集約名>/<集約名>Repository.ts`（Repositoryインターフェース、インフラ非依存）と、`src/infrastructure/db/SqlJs<集約名>Repository.ts`（上記インターフェースを`implements`するsql.js実装）の2層構成を最初から採用する（`docs/architecture.md` 5.1節参照）。貸借バランス検証等の純粋なドメインロジックはドメイン層に置く。
+**該当箇所（例）**: `src/domain/account/Account.ts`・`src/domain/account/AccountRepository.ts`・`src/infrastructure/db/SqlJsAccountRepository.ts`（Issue #8でIssue #5実装を事後的にリファクタ）
