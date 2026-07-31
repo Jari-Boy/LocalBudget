@@ -10,6 +10,13 @@ import type {
 } from '../../domain/journal/JournalEntry'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import { assertJournalBalance } from '../../domain/journal/assertJournalBalance'
+import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
+
+const RECONCILABLE_POSTING_WHITELIST: readonly JournalEntrySourceType[] = [
+  'external_import',
+  'initial_balance',
+  'balance_adjustment',
+]
 
 /**
  * JournalEntryRepository(ドメイン層のポート)のsql.js実装。
@@ -30,18 +37,15 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
 
   create(input: CreateJournalEntryInput): JournalEntry {
     assertJournalBalance(input.lines)
+    const sourceType = input.sourceType ?? 'manual'
+    this.assertNoRestrictedAccountPosting(input.lines, sourceType)
 
     this.db.run('BEGIN')
     try {
       this.db.run(
         `INSERT INTO journal_entries (entry_date, memo, currency, source_type)
          VALUES (?, ?, ?, ?)`,
-        [
-          input.entryDate,
-          input.memo ?? null,
-          input.currency ?? 'JPY',
-          input.sourceType ?? 'manual',
-        ],
+        [input.entryDate, input.memo ?? null, input.currency ?? 'JPY', sourceType],
       )
       const entryId = lastInsertRowId(this.db)
       insertLines(this.db, entryId, input.lines)
@@ -80,6 +84,7 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     if (!current) {
       throw new Error(`journal entry not found: ${id}`)
     }
+    this.assertNoRestrictedAccountPosting(input.lines, current.sourceType)
 
     this.db.run('BEGIN')
     try {
@@ -100,6 +105,23 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
 
   delete(id: number): void {
     this.db.run('DELETE FROM journal_entries WHERE id = ?', [id])
+  }
+
+  private assertNoRestrictedAccountPosting(
+    lines: readonly JournalLineInput[],
+    sourceType: JournalEntrySourceType,
+  ): void {
+    if (RECONCILABLE_POSTING_WHITELIST.includes(sourceType)) return
+
+    for (const line of lines) {
+      const [result] = this.db.exec('SELECT is_reconcilable FROM accounts WHERE id = ?', [
+        line.accountId,
+      ])
+      const isReconcilable = result?.values[0]?.[0]
+      if (isReconcilable === 1) {
+        throw new RestrictedAccountPostingError(line.accountId, sourceType)
+      }
+    }
   }
 
   private findLinesByEntryId(entryId: number): JournalLine[] {
