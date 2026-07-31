@@ -8,9 +8,15 @@ import type {
   JournalLineSide,
   UpdateJournalEntryInput,
 } from '../../domain/journal/JournalEntry'
+import type {
+  CreateJournalEntryLinkInput,
+  JournalEntryLink,
+  JournalEntryLinkType,
+} from '../../domain/journal/JournalEntryLink'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import { assertJournalBalance } from '../../domain/journal/assertJournalBalance'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
+import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMismatchError'
 
 const RECONCILABLE_POSTING_WHITELIST: readonly JournalEntrySourceType[] = [
   'external_import',
@@ -107,6 +113,87 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     this.db.run('DELETE FROM journal_entries WHERE id = ?', [id])
   }
 
+  createLink(input: CreateJournalEntryLinkInput): JournalEntryLink {
+    if (input.linkType === 'settles') {
+      this.assertSettlementTagMatch(input)
+    }
+
+    this.db.run(
+      `INSERT INTO journal_entry_links (from_entry_id, to_entry_id, link_type, amount)
+       VALUES (?, ?, ?, ?)`,
+      [input.fromEntryId, input.toEntryId, input.linkType, input.amount],
+    )
+    return this.findLinkById(lastInsertRowId(this.db))!
+  }
+
+  listLinksForEntry(entryId: number): JournalEntryLink[] {
+    const [result] = this.db.exec(
+      'SELECT * FROM journal_entry_links WHERE from_entry_id = ? OR to_entry_id = ? ORDER BY id',
+      [entryId, entryId],
+    )
+    if (!result) return []
+    return result.values.map((values) => mapRowToJournalEntryLink(result.columns, values))
+  }
+
+  private findLinkById(id: number): JournalEntryLink | null {
+    const [result] = this.db.exec('SELECT * FROM journal_entry_links WHERE id = ?', [id])
+    if (!result) return null
+    return mapRowToJournalEntryLink(result.columns, result.values[0])
+  }
+
+  /**
+   * settlesリンク作成時のハード検証(docs/domain/settlement.md 1.8)。
+   * to_entry側の一時勘定行(is_reconcilable=falseのasset/liability科目を使う行)それぞれについて、
+   * from_entry側に同じaccount_id/project_id/household_member_idを持ちamountがリンクのamount以上の
+   * 行が存在するかを確認する。
+   */
+  private assertSettlementTagMatch(input: CreateJournalEntryLinkInput): void {
+    const [toResult] = this.db.exec(
+      `SELECT jl.account_id, jl.project_id, jl.household_member_id
+       FROM journal_lines jl
+       JOIN accounts a ON a.id = jl.account_id
+       WHERE jl.journal_entry_id = ?
+         AND a.category IN ('asset', 'liability')
+         AND a.is_reconcilable = 0`,
+      [input.toEntryId],
+    )
+    const toCandidates = toResult
+      ? toResult.values.map((values) => ({
+          accountId: values[0] as number,
+          projectId: values[1] as number | null,
+          householdMemberId: values[2] as number | null,
+        }))
+      : []
+
+    const [fromResult] = this.db.exec(
+      `SELECT account_id, project_id, household_member_id, amount
+       FROM journal_lines WHERE journal_entry_id = ?`,
+      [input.fromEntryId],
+    )
+    const fromLines = fromResult
+      ? fromResult.values.map((values) => ({
+          accountId: values[0] as number,
+          projectId: values[1] as number | null,
+          householdMemberId: values[2] as number | null,
+          amount: values[3] as number,
+        }))
+      : []
+
+    const hasMatch = toCandidates.some((candidate) =>
+      fromLines.some(
+        (line) =>
+          line.accountId === candidate.accountId &&
+          line.projectId === candidate.projectId &&
+          line.householdMemberId === candidate.householdMemberId &&
+          line.amount >= input.amount,
+      ),
+    )
+
+    if (!hasMatch) {
+      throw new SettlementTagMismatchError(input.fromEntryId, input.toEntryId)
+    }
+  }
+
   private assertNoRestrictedAccountPosting(
     lines: readonly JournalLineInput[],
     sourceType: JournalEntrySourceType,
@@ -168,6 +255,18 @@ function mapRowToJournalEntry(columns: string[], values: unknown[]): JournalEntr
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),
     lines: [],
+  }
+}
+
+function mapRowToJournalEntryLink(columns: string[], values: unknown[]): JournalEntryLink {
+  const get = <T,>(name: string): T => values[columns.indexOf(name)] as T
+  return {
+    id: get<number>('id'),
+    fromEntryId: get<number>('from_entry_id'),
+    toEntryId: get<number>('to_entry_id'),
+    linkType: get<JournalEntryLinkType>('link_type'),
+    amount: get<number>('amount'),
+    createdAt: get<string>('created_at'),
   }
 }
 

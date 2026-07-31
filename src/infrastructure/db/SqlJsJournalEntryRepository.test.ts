@@ -15,6 +15,7 @@ import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
+import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMismatchError'
 
 let db: Database
 let repository: SqlJsJournalEntryRepository
@@ -22,6 +23,8 @@ let cashAccountId: number
 let foodExpenseAccountId: number
 let miscExpenseAccountId: number
 let bankAccountId: number
+let rentExpenseAccountId: number
+let payableAccountId: number
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -44,6 +47,16 @@ beforeEach(async () => {
     category: 'asset',
     name: '普通預金',
     isReconcilable: true,
+  }).id
+  rentExpenseAccountId = accounts.create({
+    category: 'expense',
+    name: '家賃',
+    isReconcilable: null,
+  }).id
+  payableAccountId = accounts.create({
+    category: 'liability',
+    name: '未払金',
+    isReconcilable: false,
   }).id
 })
 
@@ -486,6 +499,179 @@ describe('delete', () => {
 
     expect(() => repository.delete(created.id)).not.toThrow()
     expect(repository.findById(created.id)).toBeNull()
+  })
+})
+
+describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () => {
+  it('creates a settles link when the settling entry has a matching temporary account line', () => {
+    const toEntry = repository.create({
+      entryDate: '2026-07-01',
+      memo: '家賃(暫定計上)',
+      lines: [
+        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
+        { accountId: payableAccountId, side: 'credit', amount: 80000 },
+      ],
+    })
+    const fromEntry = repository.create({
+      entryDate: '2026-07-05',
+      memo: '家賃(消込)',
+      sourceType: 'external_import',
+      lines: [
+        { accountId: payableAccountId, side: 'debit', amount: 80000 },
+        { accountId: bankAccountId, side: 'credit', amount: 80000 },
+      ],
+    })
+
+    const link = repository.createLink({
+      fromEntryId: fromEntry.id,
+      toEntryId: toEntry.id,
+      linkType: 'settles',
+      amount: 80000,
+    })
+
+    expect(link.linkType).toBe('settles')
+    expect(link.fromEntryId).toBe(fromEntry.id)
+    expect(link.toEntryId).toBe(toEntry.id)
+    expect(link.amount).toBe(80000)
+  })
+
+  it('throws SettlementTagMismatchError and writes nothing when the settling entry has no matching account line', () => {
+    const toEntry = repository.create({
+      entryDate: '2026-07-01',
+      lines: [
+        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
+        { accountId: payableAccountId, side: 'credit', amount: 80000 },
+      ],
+    })
+    const fromEntry = repository.create({
+      entryDate: '2026-07-05',
+      sourceType: 'external_import',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 80000 },
+        { accountId: bankAccountId, side: 'credit', amount: 80000 },
+      ],
+    })
+
+    expect(() =>
+      repository.createLink({
+        fromEntryId: fromEntry.id,
+        toEntryId: toEntry.id,
+        linkType: 'settles',
+        amount: 80000,
+      }),
+    ).toThrow(SettlementTagMismatchError)
+
+    expect(repository.listLinksForEntry(toEntry.id)).toHaveLength(0)
+  })
+
+  it('throws SettlementTagMismatchError when project_id/household_member_id do not match', () => {
+    const projectId = insertProject(db, 'スマホ24回')
+    const otherProjectId = insertProject(db, 'タブレット12回')
+    const toEntry = repository.create({
+      entryDate: '2026-07-01',
+      lines: [
+        { accountId: rentExpenseAccountId, side: 'debit', amount: 10000, projectId },
+        { accountId: payableAccountId, side: 'credit', amount: 10000, projectId },
+      ],
+    })
+    const fromEntry = repository.create({
+      entryDate: '2026-07-05',
+      sourceType: 'external_import',
+      lines: [
+        { accountId: payableAccountId, side: 'debit', amount: 10000, projectId: otherProjectId },
+        { accountId: bankAccountId, side: 'credit', amount: 10000 },
+      ],
+    })
+
+    expect(() =>
+      repository.createLink({
+        fromEntryId: fromEntry.id,
+        toEntryId: toEntry.id,
+        linkType: 'settles',
+        amount: 10000,
+      }),
+    ).toThrow(SettlementTagMismatchError)
+  })
+
+  it('throws SettlementTagMismatchError when the matching line amount is less than the link amount', () => {
+    const toEntry = repository.create({
+      entryDate: '2026-07-01',
+      lines: [
+        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
+        { accountId: payableAccountId, side: 'credit', amount: 80000 },
+      ],
+    })
+    const fromEntry = repository.create({
+      entryDate: '2026-07-05',
+      sourceType: 'external_import',
+      lines: [
+        { accountId: payableAccountId, side: 'debit', amount: 5000 },
+        { accountId: bankAccountId, side: 'credit', amount: 5000 },
+      ],
+    })
+
+    expect(() =>
+      repository.createLink({
+        fromEntryId: fromEntry.id,
+        toEntryId: toEntry.id,
+        linkType: 'settles',
+        amount: 80000,
+      }),
+    ).toThrow(SettlementTagMismatchError)
+  })
+
+  it('allows an allocates link without the settles hard validation', () => {
+    const toEntry = repository.create({
+      entryDate: '2026-07-01',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
+        { accountId: cashAccountId, side: 'credit', amount: 3000 },
+      ],
+    })
+    const fromEntry = repository.create({
+      entryDate: '2026-07-02',
+      lines: [
+        { accountId: miscExpenseAccountId, side: 'debit', amount: 1500 },
+        { accountId: cashAccountId, side: 'credit', amount: 1500 },
+      ],
+    })
+
+    const link = repository.createLink({
+      fromEntryId: fromEntry.id,
+      toEntryId: toEntry.id,
+      linkType: 'allocates',
+      amount: 1500,
+    })
+
+    expect(link.linkType).toBe('allocates')
+  })
+
+  it('lists links where the entry is either the from_entry or the to_entry', () => {
+    const toEntry = repository.create({
+      entryDate: '2026-07-01',
+      lines: [
+        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
+        { accountId: payableAccountId, side: 'credit', amount: 80000 },
+      ],
+    })
+    const fromEntry = repository.create({
+      entryDate: '2026-07-05',
+      sourceType: 'external_import',
+      lines: [
+        { accountId: payableAccountId, side: 'debit', amount: 80000 },
+        { accountId: bankAccountId, side: 'credit', amount: 80000 },
+      ],
+    })
+    const link = repository.createLink({
+      fromEntryId: fromEntry.id,
+      toEntryId: toEntry.id,
+      linkType: 'settles',
+      amount: 80000,
+    })
+
+    expect(repository.listLinksForEntry(toEntry.id).map((l) => l.id)).toEqual([link.id])
+    expect(repository.listLinksForEntry(fromEntry.id).map((l) => l.id)).toEqual([link.id])
+    expect(repository.listLinksForEntry(999999)).toHaveLength(0)
   })
 })
 
