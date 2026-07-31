@@ -62,6 +62,33 @@ CREATE UNIQUE INDEX idx_accounts_unique_name_per_category
 ON accounts(category, name)
 WHERE is_active = TRUE;
 
+-- システム管理科目(is_system_managed = TRUE)の削除を禁止
+-- (domain/accounts.md 3.1: 口座ごとの初期残高科目・残高調整などは削除・区分変更・
+--  非アクティブ化を禁止し、nameの変更のみ許可する)
+CREATE TRIGGER prevent_delete_system_managed_account
+BEFORE DELETE ON accounts
+WHEN OLD.is_system_managed = TRUE
+BEGIN
+  SELECT RAISE(ABORT, 'cannot delete a system-managed account');
+END;
+
+-- システム管理科目のname以外のフィールド変更を禁止(非アクティブ化を含む)
+-- 区分(category)の変更はprevent_category_changeで全科目共通に禁止済みのためここでは扱わない
+CREATE TRIGGER prevent_non_name_change_on_system_managed_account
+BEFORE UPDATE ON accounts
+WHEN OLD.is_system_managed = TRUE
+  AND (
+    NEW.is_active IS NOT OLD.is_active OR
+    NEW.household_member_id IS NOT OLD.household_member_id OR
+    NEW.account_group_id IS NOT OLD.account_group_id OR
+    NEW.is_reconcilable IS NOT OLD.is_reconcilable OR
+    NEW.is_system_managed IS NOT OLD.is_system_managed OR
+    NEW.initial_balance_for_account_id IS NOT OLD.initial_balance_for_account_id
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'system-managed accounts can only change name');
+END;
+
 -- updated_at の自動更新
 CREATE TRIGGER accounts_set_updated_at
 AFTER UPDATE ON accounts

@@ -149,6 +149,17 @@ describe('delete', () => {
 
     expect(() => repository.delete(debitAccount.id)).toThrow()
   })
+
+  it('refuses to delete a system-managed account even with zero references', () => {
+    const systemManaged = repository.create({
+      category: 'equity',
+      name: '初期残高(現金)',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+
+    expect(() => repository.delete(systemManaged.id)).toThrow()
+  })
 })
 
 describe('deactivate', () => {
@@ -163,6 +174,46 @@ describe('deactivate', () => {
 
     expect(deactivated.isActive).toBe(false)
     expect(repository.findById(created.id)).not.toBeNull()
+  })
+
+  it('refuses to deactivate a system-managed account', () => {
+    const systemManaged = repository.create({
+      category: 'equity',
+      name: '初期残高(普通預金)',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+
+    expect(() => repository.deactivate(systemManaged.id)).toThrow()
+  })
+})
+
+describe('system-managed科目は name 以外の変更を禁止(domain/accounts.md 3.1)', () => {
+  it('still allows changing the name of a system-managed account', () => {
+    const systemManaged = repository.create({
+      category: 'equity',
+      name: '初期残高(旧名義)',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+
+    const updated = repository.update(systemManaged.id, { name: '初期残高(新名義)' })
+
+    expect(updated.name).toBe('初期残高(新名義)')
+  })
+
+  it('refuses to change householdMemberId on a system-managed account', () => {
+    const member = insertHouseholdMember(db, '夫')
+    const systemManaged = repository.create({
+      category: 'equity',
+      name: '初期残高(証券口座)',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+
+    expect(() =>
+      repository.update(systemManaged.id, { householdMemberId: member }),
+    ).toThrow()
   })
 })
 
@@ -237,4 +288,9 @@ describe('勘定科目名のユニーク制約(区分内・is_active=TRUEのみ)
 
 function lastInsertRowId(database: Database): number {
   return database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
+}
+
+function insertHouseholdMember(database: Database, name: string): number {
+  database.run(`INSERT INTO household_members (name) VALUES (?)`, [name])
+  return lastInsertRowId(database)
 }
