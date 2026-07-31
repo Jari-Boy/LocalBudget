@@ -1,44 +1,19 @@
 import type { Database } from 'sql.js'
-
-export type AccountCategory = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense'
-
-export interface Account {
-  id: number
-  category: AccountCategory
-  name: string
-  isReconcilable: boolean | null
-  isActive: boolean
-  isSystemManaged: boolean
-  householdMemberId: number | null
-  accountGroupId: number | null
-  initialBalanceForAccountId: number | null
-  createdAt: string
-  updatedAt: string
-}
-
-export interface CreateAccountInput {
-  category: AccountCategory
-  name: string
-  isReconcilable: boolean | null
-  isSystemManaged?: boolean
-  householdMemberId?: number | null
-  accountGroupId?: number | null
-  initialBalanceForAccountId?: number | null
-}
-
-export interface UpdateAccountInput {
-  name?: string
-  householdMemberId?: number | null
-  accountGroupId?: number | null
-}
+import type {
+  Account,
+  AccountCategory,
+  CreateAccountInput,
+  UpdateAccountInput,
+} from '../../domain/account/Account'
+import type { AccountRepository } from '../../domain/account/AccountRepository'
 
 /**
- * accounts テーブルに対するCRUD + ライフサイクル操作。
+ * AccountRepository(ドメイン層のポート)のsql.js実装。
  * 区分の変更・equity区分の作成制限・ユニーク制約等のドメインルールはDDL側の
  * CHECK制約/トリガー(docs/schema/accounts.sql)で強制されるため、ここでは
  * 制約違反時にsql.jsの例外がそのまま呼び出し元に伝播する(docs/domain/accounts.md参照)。
  */
-export class AccountRepository {
+export class SqlJsAccountRepository implements AccountRepository {
   private readonly db: Database
 
   constructor(db: Database) {

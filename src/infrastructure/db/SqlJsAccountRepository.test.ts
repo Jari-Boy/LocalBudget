@@ -1,5 +1,5 @@
 /**
- * AccountRepository の統合テスト。
+ * SqlJsAccountRepository の統合テスト。
  * sql.js(SQLite WASM)をNode上で実際に動かし、docs/domain/accounts.md・
  * docs/schema/accounts.sql に定義された勘定科目のライフサイクル(作成・参照・更新・
  * 削除・非アクティブ化)と、DDL側のCHECK制約・トリガーが期待通り機能することを検証する。
@@ -9,15 +9,15 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
-import { AccountRepository } from './AccountRepository'
+import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 
 let db: Database
-let repository: AccountRepository
+let repository: SqlJsAccountRepository
 
 beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
-  repository = new AccountRepository(db)
+  repository = new SqlJsAccountRepository(db)
 })
 
 describe('create / findById', () => {
