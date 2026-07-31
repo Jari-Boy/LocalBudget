@@ -38,3 +38,8 @@
 
 **内容**: `AUTOINCREMENT`を指定していない`INTEGER PRIMARY KEY`列は、暗黙のROWIDとして「テーブル内の現在の最大値+1」を採番する。そのため、対象テーブルに他の行が1件でも残っていれば、ある行を削除して別の行を再INSERTしても、新しく採番されるidが削除前の値と偶然一致することはない。しかし、対象テーブルが完全に空（0行）の状態から採番すると1から再開するため、「削除→再挿入でidが変わることを検証する」テストをテーブルが空の状態（他に仕訳が1件もない状態）で書くと、たまたま元のidと同じ値が採番されてしまい検証の意図が成立しなくなることがある。このようなテストを書く際は、対象以外の行（例: 別の仕訳の明細）がテーブルに存在する状態を用意し、採番される値が本当に「新しい値」であることを保証する必要がある。
 **参考**: `src/infrastructure/db/SqlJsJournalEntryRepository.ts`（`update`の全削除→再挿入実装）、`src/infrastructure/db/SqlJsJournalEntryRepository.test.ts`（コミット3d78bbdのコメント）
+
+## sql.js（SQLite）はデフォルトでautocommitモードであり、複数回の書き込みをまとめるには明示的なBEGIN/COMMITが必要
+
+**内容**: sql.jsの`Database#run`は、明示的に`BEGIN`していない限りautocommitモードで動作し、呼び出しごとに個別にコミットされる。1つのRepositoryメソッド内であっても、複数回`db.run`でINSERT/UPDATEを発行する処理を書いただけでは、all-or-nothing（途中失敗時に先行分もロールバックされる）は保証されない。ロールバック保証が必要な処理では、対象範囲全体を`this.db.run('BEGIN')`〜`try { ...; this.db.run('COMMIT') } catch (error) { this.db.run('ROLLBACK'); throw error }`で明示的に囲む必要がある（`SqlJsJournalEntryRepository.create`/`update`で確立済みの規約）。
+**参考**: `src/infrastructure/db/SqlJsJournalEntryRepository.ts`（`create`/`update`）、`src/infrastructure/db/SqlJsCounterpartyRepository.ts`（`merge`、Issue #16 Review Attempt 1でBEGIN/COMMIT忘れをFAIL指摘、コミット19cee61で修正）、`docs/guides/patterns.md`「新しいRepositoryメソッドが複数回のDB書き込みを伴う場合、確立済みのBEGIN/COMMIT/ROLLBACK規約を適用し忘れる」
