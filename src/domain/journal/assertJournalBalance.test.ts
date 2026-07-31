@@ -1,6 +1,7 @@
 /**
  * assertJournalBalance(貸借バランス検証)の純粋関数としてのユニットテスト。
- * docs/domain/journal.md 1.3の「借方合計=貸方合計」という仕訳の整合性ルールを、
+ * docs/domain/journal.md 1.3の「借方合計=貸方合計」という仕訳の整合性ルールと、
+ * 1.1の「1件の仕訳は2件以上の仕訳明細から成る」という不変条件を、
  * 境界値(明細0件・1件のみ・借方のみ・大量行・ちょうど一致等)を含め検証する。
  * DB非依存、外部依存なし。
  */
@@ -9,14 +10,23 @@ import { assertJournalBalance } from './assertJournalBalance'
 import { UnbalancedJournalEntryError } from './UnbalancedJournalEntryError'
 
 describe('assertJournalBalance', () => {
-  it('明細が0件のときは借方合計・貸方合計とも0で一致するためスローしない', () => {
-    expect(() => assertJournalBalance([])).not.toThrow()
+  it('明細が0件のときは2件以上という不変条件(journal.md 1.1)に反するためスローする', () => {
+    expect(() => assertJournalBalance([])).toThrow(UnbalancedJournalEntryError)
   })
 
-  it('借方1行のみでは貸方合計0との不一致でスローする', () => {
+  it('借方1行のみでは2件以上という不変条件(journal.md 1.1)に反するためスローする', () => {
     expect(() => assertJournalBalance([{ side: 'debit', amount: 1000 }])).toThrow(
       UnbalancedJournalEntryError,
     )
+  })
+
+  it('ちょうど2行(最小構成)で借方合計と貸方合計が一致する場合はスローしない', () => {
+    expect(() =>
+      assertJournalBalance([
+        { side: 'debit', amount: 3000 },
+        { side: 'credit', amount: 3000 },
+      ]),
+    ).not.toThrow()
   })
 
   it('借方のみ複数行(貸方が存在しない)場合はスローする', () => {
