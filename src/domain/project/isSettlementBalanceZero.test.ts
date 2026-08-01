@@ -90,10 +90,14 @@ describe('isSettlementBalanceZero', () => {
     const entries: JournalEntry[] = [
       buildEntry({
         id: 1,
-        lines: [line(1, 1, 1, 'debit', 3000, 100), line(2, 1, 2, 'debit', 3000, 100)],
+        lines: [
+          line(1, 1, 1, 'debit', 3000, 100),
+          line(2, 1, 2, 'debit', 2000, 100),
+          line(3, 1, 2, 'credit', 2000, 100),
+        ],
       }),
     ]
-    // 資産(id1): debit-credit=3000(非ゼロ), 負債(id2): 借方に計上されているため credit-debit=-3000(非ゼロ)
+    // 資産(id1): debit-credit=3000-0=3000(非ゼロ), 負債(id2): credit-debit=2000-2000=0(ゼロ)
 
     expect(isSettlementBalanceZero(project, entries, accounts)).toBe(false)
   })
