@@ -140,6 +140,22 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     this.db.run('DELETE FROM journal_entries WHERE id = ?', [id])
   }
 
+  deleteByProjectId(projectId: number): void {
+    this.db.run('BEGIN')
+    try {
+      this.db.run(
+        `DELETE FROM journal_entries WHERE id IN (
+           SELECT DISTINCT journal_entry_id FROM journal_lines WHERE project_id = ?
+         )`,
+        [projectId],
+      )
+      this.db.run('COMMIT')
+    } catch (error) {
+      this.db.run('ROLLBACK')
+      throw error
+    }
+  }
+
   createLink(input: CreateJournalEntryLinkInput): JournalEntryLink {
     if (input.linkType === 'settles') {
       this.assertSettlementTagMatch(input)

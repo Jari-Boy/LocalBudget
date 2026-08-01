@@ -28,6 +28,14 @@ export interface JournalEntryRepository {
   findAll(): JournalEntry[]
   update(id: number, input: UpdateJournalEntryInput): JournalEntry
   delete(id: number): void
+  /**
+   * project_id(docs/domain/projects.md 1章)にタグ付けされたjournal_linesを持つjournal_entriesを
+   * 単一のDBトランザクションでまとめて物理削除する(all-or-nothing)。誤って投入した割勘バッチ
+   * (docs/domain/expense-splitting.md 1.2)を丸ごと取り消す用途を想定している。対象の仕訳が
+   * 精算済み(settlesリンクを持つ)かどうかによるガードは行わない(docs/domain/journal.md 1.5の
+   * 「物理削除は常に許可する」方針をそのまま踏襲)。該当する仕訳が存在しない場合は何もしない。
+   */
+  deleteByProjectId(projectId: number): void
   createLink(input: CreateJournalEntryLinkInput): JournalEntryLink
   listLinksForEntry(entryId: number): JournalEntryLink[]
 }

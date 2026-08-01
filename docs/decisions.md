@@ -116,6 +116,12 @@
 **決定**: 判定ロジックが類似していることを理由に、既に確定済み・レビュー済みの`assertSettlementTagMatch`をリファクタして共通の純粋関数に切り出すことはせず、`detectSettlementTagMismatch`を独立した新規関数として実装した。結果としてロジックの重複を許容する。
 **影響**: 将来どちらか一方の判定ロジック（例: N:N時の行対応の扱い）を変更する場合、もう一方への反映漏れがないか手動で確認する必要がある（自動では同期されない）。今後、別Issueで既に実装・レビュー済みの確定済みコードと類似したロジックを新しいIssueで実装する場合も、類似性だけを理由に確定済み実装を横断的にリファクタしてスコープを広げるのではなく、そのIssueのスコープ（影響範囲）に実装を限定することを優先する。共通化するかどうかは、あくまで別途の判断（別Issue）として扱う。
 
+## 2026-08-01: project_id単位の一括物理削除(deleteByProjectId)は既存delete(id)のループ呼び出しではなく、専用メソッド+単一トランザクションのDELETE...WHERE IN(SELECT)で実装する
+
+**背景**: Issue #52で、誤って投入した割勘バッチ(`project_id`、`docs/domain/expense-splitting.md` 1.2)をまとめて取り消す機能を検討した。アプリケーション層で既存の`JournalEntryRepository.delete(id)`を対象仕訳の件数分ループ呼び出しする実装も選択肢にあったが、この方式は原子性がなく、途中の1件でエラーが起きると一部だけ削除された中途半端な状態が残りうる。
+**決定**: `JournalEntryRepository`(ポート)に`deleteByProjectId(projectId)`を新設し、`SqlJsJournalEntryRepository`側で`DELETE FROM journal_entries WHERE id IN (SELECT DISTINCT journal_entry_id FROM journal_lines WHERE project_id = ?)`を単一のDBトランザクション(BEGIN〜COMMIT)内で実行するall-or-nothing方式で実装した。対象の特定(どの`journal_entries`を消すか)と削除実行をインフラ層(Repository実装)側で完結させ、`journal_lines`・`journal_entry_links`への波及は既存の`ON DELETE CASCADE`にすべて委ねる(アプリケーション層で子レコードを個別削除するロジックは追加しない)。削除対象に精算済み(`settles`リンクを持つ)仕訳が混在していても、`docs/domain/journal.md` 1.5「物理削除は常に許可する」方針をそのまま踏襲してガードしない(この方針を明示的に固定する回帰テストを追加した)。
+**影響**: 2026-07-31「settlesリンクの作成は消込仕訳自体の作成と同一トランザクションにする」で採用した「不可分な複数レコード操作は単一トランザクションでまとめる」というパターンを、書き込みではなく削除の一括操作にも適用した前例になる。今後、ある集約に紐づく複数レコードをまとめて取り消す機能(例: 他の軸単位での一括削除)が必要になった場合も、アプリケーション層での単発メソッドのループ呼び出しではなく、Repositoryに専用の一括操作メソッドを新設し単一トランザクション内で完結させる設計を優先する。`docs/domain/journal.md` 1.5・`docs/domain/expense-splitting.md` 1.5にも同内容を反映した。
+
 ## 2026-08-01: クロスドメインのimportは「型のみ」に限定せず、DB非依存の純粋関数(ロジック)にも許容する(project→financial-statement)
 
 **背景**: Issue #12で非アクティブ化提案の判定ロジック(`isSettlementBalanceZero`、`docs/domain/projects.md` 1.3節・1.5節)を実装するにあたり、`kind='settlement'`のプロジェクトに紐づく資産・負債科目の残高計算を`financial-statement`ドメインの`summarizeAccountsByCategory`に委ねる必要があった。既存の`settlement`ドメイン(`calculateSettlementBalance`・`findUnsettledEntries`等)は`journal`ドメインの`JournalEntry`・`JournalEntryLink`を`import type`する前例を持つが、いずれも型定義のみのimportであり、他ドメインの実装済み関数(ロジック本体)をそのままimportして呼び出すクロスドメイン利用は今回が初めてだった。
