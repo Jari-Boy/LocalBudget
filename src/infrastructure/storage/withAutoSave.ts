@@ -2,6 +2,16 @@ import type { Database } from 'sql.js'
 import type { StorageAdapter } from './StorageAdapter'
 
 /**
+ * withAutoSaveが返す制御用ハンドル。save()の失敗はfire-and-forgetで実行されるため
+ * (呼び出し元のRepositoryメソッドは既に同期的に処理を終えている)、直近の保存が
+ * 失敗しているかどうかをこのハンドル経由で後から検知できるようにする。
+ */
+export interface AutoSaveController {
+  /** 直近のsave()呼び出しが失敗していればそのエラー、成功していればnull。 */
+  getLastSaveError(): unknown
+}
+
+/**
  * db(sql.js Database)のrun()呼び出しを監視し、DBの変更をStorageAdapterへ即時
  * (デバウンスなしの単純なsave呼び出し。書き込みのデバウンスは計画Issue #58で扱う)
  * 永続化する。BEGIN〜COMMIT/ROLLBACKで囲まれた複数のrun()呼び出しは1つの不可分な
@@ -19,9 +29,15 @@ import type { StorageAdapter } from './StorageAdapter'
  * 中でexport()を呼ぶと直後のlast_insert_rowid()参照が壊れる。呼び出し元(Repositoryの
  * メソッド)は常に同期的に完結する(sql.jsは同期API)ため、マイクロタスクへ逃がせば
  * export()は呼び出し元の処理が完全に終わった後にのみ実行される。
+ *
+ * storageAdapter.save()はfire-and-forgetで呼ぶため、失敗(IndexedDBのクォータ超過等)
+ * してもunhandled rejectionにせずconsole.errorでログに残し、AutoSaveControllerの
+ * getLastSaveError()経由で後から検知できるようにする(UIへの通知配線自体は計画
+ * Issue #25のスコープ外)。
  */
-export function withAutoSave(db: Database, storageAdapter: StorageAdapter): void {
+export function withAutoSave(db: Database, storageAdapter: StorageAdapter): AutoSaveController {
   let transactionDepth = 0
+  let lastSaveError: unknown = null
   const originalRun = db.run.bind(db)
 
   db.run = ((...args: Parameters<Database['run']>) => {
@@ -33,18 +49,30 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): void
     } else if (normalized.startsWith('COMMIT') || normalized.startsWith('ROLLBACK')) {
       transactionDepth = Math.max(0, transactionDepth - 1)
       if (transactionDepth === 0) {
-        scheduleSave(db, storageAdapter)
+        scheduleSave()
       }
     } else if (transactionDepth === 0) {
-      scheduleSave(db, storageAdapter)
+      scheduleSave()
     }
 
     return result
   }) as Database['run']
-}
 
-function scheduleSave(db: Database, storageAdapter: StorageAdapter): void {
-  queueMicrotask(() => {
-    void storageAdapter.save(db.export())
-  })
+  function scheduleSave(): void {
+    queueMicrotask(() => {
+      storageAdapter.save(db.export()).then(
+        () => {
+          lastSaveError = null
+        },
+        (error: unknown) => {
+          lastSaveError = error
+          console.error('StorageAdapterへのDB保存に失敗しました', error)
+        },
+      )
+    })
+  }
+
+  return {
+    getLastSaveError: () => lastSaveError,
+  }
 }

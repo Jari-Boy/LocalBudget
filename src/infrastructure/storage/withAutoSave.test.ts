@@ -5,7 +5,7 @@
  * 統合テストとして書く(docs/architecture.md 10章)。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTestDatabase } from '../db/createTestDatabase'
 import type { StorageAdapter } from './StorageAdapter'
 import { withAutoSave } from './withAutoSave'
@@ -24,6 +24,39 @@ function createRecordingStorageAdapter(): StorageAdapter & {
       return null
     },
     async save(data) {
+      savedSnapshots.push(data)
+    },
+  }
+}
+
+function createFailingStorageAdapter(error: Error): StorageAdapter {
+  return {
+    async load() {
+      return null
+    },
+    async save() {
+      throw error
+    },
+  }
+}
+
+/** 最初のfailTimes回のsave()はerrorをthrowし、それ以降は成功してdataを記録する。 */
+function createFlakyStorageAdapter(
+  failTimes: number,
+  error: Error,
+): StorageAdapter & { savedSnapshots: Uint8Array[] } {
+  let callCount = 0
+  const savedSnapshots: Uint8Array[] = []
+  return {
+    savedSnapshots,
+    async load() {
+      return null
+    },
+    async save(data) {
+      callCount += 1
+      if (callCount <= failTimes) {
+        throw error
+      }
       savedSnapshots.push(data)
     },
   }
@@ -116,5 +149,65 @@ describe('withAutoSave', () => {
     const [result] = db.exec('SELECT last_insert_rowid() AS id')
 
     expect(result.values[0][0]).toBe(1)
+  })
+
+  describe('save()が失敗した場合', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('unhandled rejectionにならず、console.errorでログに残る', async () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const unhandledRejections: unknown[] = []
+      const onUnhandledRejection = (reason: unknown): void => {
+        unhandledRejections.push(reason)
+      }
+      process.on('unhandledRejection', onUnhandledRejection)
+
+      const db = await createTestDatabase()
+      const saveError = new Error('IndexedDB quota exceeded')
+      const storageAdapter = createFailingStorageAdapter(saveError)
+      withAutoSave(db, storageAdapter)
+
+      db.run('CREATE TABLE t (id INTEGER)')
+      await flushMicrotasks()
+
+      process.off('unhandledRejection', onUnhandledRejection)
+      expect(unhandledRejections).toEqual([])
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.any(String), saveError)
+    })
+
+    it('getLastSaveError()で直近の保存失敗を検知できる', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const db = await createTestDatabase()
+      const saveError = new Error('IndexedDB quota exceeded')
+      const storageAdapter = createFailingStorageAdapter(saveError)
+      const controller = withAutoSave(db, storageAdapter)
+
+      expect(controller.getLastSaveError()).toBeNull()
+
+      db.run('CREATE TABLE t (id INTEGER)')
+      await flushMicrotasks()
+
+      expect(controller.getLastSaveError()).toBe(saveError)
+    })
+
+    it('失敗後にsave()が成功すると、getLastSaveError()はnullに戻る', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const db = await createTestDatabase()
+      const saveError = new Error('IndexedDB quota exceeded')
+      const storageAdapter = createFlakyStorageAdapter(1, saveError)
+      const controller = withAutoSave(db, storageAdapter)
+
+      db.run('CREATE TABLE t (id INTEGER)')
+      await flushMicrotasks()
+      expect(controller.getLastSaveError()).toBe(saveError)
+
+      db.run('INSERT INTO t (id) VALUES (1)')
+      await flushMicrotasks()
+
+      expect(controller.getLastSaveError()).toBeNull()
+      expect(storageAdapter.savedSnapshots.length).toBe(1)
+    })
   })
 })
