@@ -205,4 +205,23 @@ test.describe('Web Worker + RPC層', () => {
 
     expect(threwError).toBe(true)
   })
+
+  test('Worker初期化(WASM読み込み)が失敗した場合、createDbClientはハングせずrejectする', async ({
+    page,
+  }) => {
+    await page.route('**/*.wasm', (route) => route.abort())
+    await page.goto('/')
+
+    const result = await page.evaluate(async () => {
+      const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
+      try {
+        await createDbClient()
+        return { rejected: false }
+      } catch (error) {
+        return { rejected: true, message: String(error) }
+      }
+    })
+
+    expect(result.rejected).toBe(true)
+  })
 })
