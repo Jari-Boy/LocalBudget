@@ -54,6 +54,22 @@ export interface CreateJournalEntryInput {
    * 失敗した場合、仕訳・明細・リンクのいずれも書き込まれない。
    */
   links?: JournalEntryLinkTarget[]
+  /**
+   * 外部明細取込(docs/domain/statement-import.md 1.5 手順7)の場合、この仕訳と同一DBトランザクション
+   * で書き込むexternal_transaction_refs(docs/domain/reconciliation.md 2章)のスナップショット。
+   * journalEntryIdは仕訳作成後に確定するため含めない。
+   */
+  externalTransactionRef?: CreateExternalTransactionRefTarget
+}
+
+export interface CreateExternalTransactionRefTarget {
+  accountId: number
+  externalId: string
+  entryDate: string
+  description: string
+  amount: number
+  externalBalanceAfter?: number | null
+  isSettled?: boolean | null
 }
 
 export interface UpdateJournalEntryInput {

@@ -71,7 +71,7 @@
 
 ### 1.3 データモデルの考え方
 
-CSVの1行(またはCSVから生成された仕訳)を「外部取引」として、そこから生成された`journal_entries`への参照を記録する。外部取引を一意に特定するキー(`external_id`)が取得できる金融機関はそれを使い、取得できない場合は日付・金額・摘要から生成した正規化ハッシュで代替する(具体的な正規化ロジックは[statement-import.md](./statement-import.md)側の実装課題、[counterparties.md 1.3](./counterparties.md#13-外部明細取込との関係)の摘要正規化と同様の考え方)。
+CSVの1行(またはCSVから生成された仕訳)を「外部取引」として、そこから生成された`journal_entries`への参照を記録する。外部取引を一意に特定するキー(`external_id`)が取得できる金融機関はそれを使い、取得できない場合は日付・金額・摘要から生成した正規化ハッシュで代替する(具体的な正規化ハッシュのアルゴリズムと同一バッチ内完全一致レコードへの対応は[statement-import.md 1.2](./statement-import.md#12-中間表現importedrecord)・[1.6](./statement-import.md#16-重複防止フロー)参照。[counterparties.md 1.3](./counterparties.md#13-外部明細取込との関係)の摘要正規化と同様の考え方)。
 
 `journal_lines`ではなく仕訳ヘッダー単位で参照する。CSVの1行は通常1仕訳(入出金明細の片側+相手科目、または[settlement.md](./settlement.md)の消込仕訳)に対応するため、[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)の「取引先はPL行単位」とは異なり、突合は仕訳ヘッダー単位で十分と考える。
 

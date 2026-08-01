@@ -56,4 +56,4 @@
 | 消込 | 暫定記帳(未払金・未収金)とCSV到着後の消込という会計処理パターン。 | [domain/settlement.md](./domain/settlement.md) |
 | 割勘 | 複数人で分担する支出の按分(割勘)。立替金(一時勘定)を経由した世帯メンバー間・世帯外の相手との精算。 | [domain/expense-splitting.md](./domain/expense-splitting.md) |
 | 定期取引 | 家賃・サブスク等、繰り返し発生する仕訳のテンプレート化。 | [domain/recurring-transactions.md](./domain/recurring-transactions.md) |
-| 外部明細取込 | 金融機関の明細(CSV等)の取込フロー。マッピング定義・照合機能。**たたき台** | [domain/statement-import.md](./domain/statement-import.md) |
+| 外部明細取込 | 金融機関の明細(CSV等)の取込フロー。マッピング定義・照合機能。 | [domain/statement-import.md](./domain/statement-import.md) |
