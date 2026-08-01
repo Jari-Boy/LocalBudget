@@ -502,6 +502,152 @@ describe('delete', () => {
   })
 })
 
+describe('deleteByProjectId(project_id単位での一括物理削除、expense-splitting.md 1.2)', () => {
+  it('対象project_idにタグ付けされた仕訳が複数件ある場合はまとめて物理削除する', () => {
+    const projectId = insertProject(db, '旅行2026')
+    const entryA = repository.create({
+      entryDate: '2026-07-01',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: payableAccountId, side: 'credit', amount: 1000, projectId },
+      ],
+    })
+    const entryB = repository.create({
+      entryDate: '2026-07-02',
+      lines: [
+        { accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
+        { accountId: payableAccountId, side: 'credit', amount: 2000, projectId },
+      ],
+    })
+
+    repository.deleteByProjectId(projectId)
+
+    expect(repository.findById(entryA.id)).toBeNull()
+    expect(repository.findById(entryB.id)).toBeNull()
+  })
+
+  it('対象project_idを持つ仕訳が0件の場合は何もせず正常終了する', () => {
+    const projectId = insertProject(db, '空プロジェクト')
+    const other = repository.create({
+      entryDate: '2026-07-03',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 300 },
+        { accountId: cashAccountId, side: 'credit', amount: 300 },
+      ],
+    })
+
+    expect(() => repository.deleteByProjectId(projectId)).not.toThrow()
+    expect(repository.findById(other.id)).not.toBeNull()
+  })
+
+  it('削除された仕訳のjournal_entry_links(from_entry/to_entryいずれの向きでも)もCASCADE削除される', () => {
+    const projectId = insertProject(db, '按分対象')
+    const original = repository.create({
+      entryDate: '2026-07-01',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+    const taggedFromEntry = repository.create({
+      entryDate: '2026-07-02',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
+        { accountId: payableAccountId, side: 'credit', amount: 500, projectId },
+      ],
+      links: [{ toEntryId: original.id, linkType: 'allocates', amount: 500 }],
+    })
+
+    const untagged = repository.create({
+      entryDate: '2026-07-03',
+      lines: [
+        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
+        { accountId: payableAccountId, side: 'credit', amount: 80000 },
+      ],
+    })
+    const taggedToEntry = repository.create({
+      entryDate: '2026-07-04',
+      sourceType: 'external_import',
+      lines: [
+        { accountId: payableAccountId, side: 'debit', amount: 80000, projectId },
+        { accountId: bankAccountId, side: 'credit', amount: 80000 },
+      ],
+    })
+    repository.createLink({
+      fromEntryId: untagged.id,
+      toEntryId: taggedToEntry.id,
+      linkType: 'allocates',
+      amount: 80000,
+    })
+
+    repository.deleteByProjectId(projectId)
+
+    expect(repository.findById(taggedFromEntry.id)).toBeNull()
+    expect(repository.findById(taggedToEntry.id)).toBeNull()
+    expect(repository.findById(original.id)).not.toBeNull()
+    expect(repository.findById(untagged.id)).not.toBeNull()
+    expect(repository.listLinksForEntry(original.id)).toHaveLength(0)
+    expect(repository.listLinksForEntry(untagged.id)).toHaveLength(0)
+  })
+
+  it('別のproject_idを持つ仕訳やproject_idが未設定の仕訳は削除されない', () => {
+    const targetProjectId = insertProject(db, '対象プロジェクト')
+    const otherProjectId = insertProject(db, '別プロジェクト')
+
+    const target = repository.create({
+      entryDate: '2026-07-01',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: payableAccountId, side: 'credit', amount: 1000, projectId: targetProjectId },
+      ],
+    })
+    const other = repository.create({
+      entryDate: '2026-07-02',
+      lines: [
+        { accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
+        { accountId: payableAccountId, side: 'credit', amount: 2000, projectId: otherProjectId },
+      ],
+    })
+    const untagged = repository.create({
+      entryDate: '2026-07-03',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 300 },
+        { accountId: cashAccountId, side: 'credit', amount: 300 },
+      ],
+    })
+
+    repository.deleteByProjectId(targetProjectId)
+
+    expect(repository.findById(target.id)).toBeNull()
+    expect(repository.findById(other.id)).not.toBeNull()
+    expect(repository.findById(untagged.id)).not.toBeNull()
+  })
+
+  it('精算済み(settlesリンクを持つ)仕訳が混在していてもガードなくすべて削除される(回帰テスト)', () => {
+    const projectId = insertProject(db, 'スマホ24回')
+    const toEntry = repository.create({
+      entryDate: '2026-07-01',
+      lines: [
+        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
+        { accountId: payableAccountId, side: 'credit', amount: 80000, projectId },
+      ],
+    })
+    const fromEntry = repository.create({
+      entryDate: '2026-07-05',
+      sourceType: 'external_import',
+      lines: [
+        { accountId: payableAccountId, side: 'debit', amount: 80000, projectId },
+        { accountId: bankAccountId, side: 'credit', amount: 80000 },
+      ],
+      links: [{ toEntryId: toEntry.id, linkType: 'settles', amount: 80000 }],
+    })
+
+    expect(() => repository.deleteByProjectId(projectId)).not.toThrow()
+    expect(repository.findById(toEntry.id)).toBeNull()
+    expect(repository.findById(fromEntry.id)).toBeNull()
+  })
+})
+
 describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () => {
   it('消込仕訳側に一致する一時勘定行がある場合はsettlesリンクを作成する', () => {
     const toEntry = repository.create({
