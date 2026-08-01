@@ -733,6 +733,37 @@ describe('create(linksオプションによる消込仕訳自体の作成とsett
     expect(repository.findAll()).toHaveLength(entryCountBefore)
     expect(repository.listLinksForEntry(toEntry.id)).toHaveLength(0)
   })
+
+  it('allocatesリンクも同様に、割勘仕訳自体の作成と1回の呼び出しでまとめて書き込める(docs/domain/expense-splitting.md 1.3節)', () => {
+    const originalEntry = repository.create({
+      entryDate: '2026-07-01',
+      memo: '食費(A)',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    const splitEntry = repository.create({
+      entryDate: '2026-07-15',
+      memo: '食費割勘',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
+        { accountId: cashAccountId, side: 'credit', amount: 500 },
+      ],
+      links: [{ toEntryId: originalEntry.id, linkType: 'allocates', amount: 500 }],
+    })
+
+    expect(splitEntry.lines).toHaveLength(2)
+    const links = repository.listLinksForEntry(splitEntry.id)
+    expect(links).toHaveLength(1)
+    expect(links[0]).toMatchObject({
+      fromEntryId: splitEntry.id,
+      toEntryId: originalEntry.id,
+      linkType: 'allocates',
+      amount: 500,
+    })
+  })
 })
 
 function countJournalLines(database: Database): number {
