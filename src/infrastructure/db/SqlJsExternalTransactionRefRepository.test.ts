@@ -114,3 +114,98 @@ describe('create / findById', () => {
     ).toThrow()
   })
 })
+
+describe('findByAccountAndExternalId', () => {
+  it('同一account_id×external_idの突合レコードが存在すれば返す(重複防止用、docs/domain/reconciliation.md 2.1)', () => {
+    repository.create({
+      accountId: bankAccountId,
+      journalEntryId,
+      externalId: 'HASH-010',
+      entryDate: '2026-08-01',
+      description: 'セブンイレブン',
+      amount: -150,
+    })
+
+    const found = repository.findByAccountAndExternalId(bankAccountId, 'HASH-010')
+
+    expect(found?.externalId).toBe('HASH-010')
+  })
+
+  it('external_idが一致しない場合はnullを返す', () => {
+    repository.create({
+      accountId: bankAccountId,
+      journalEntryId,
+      externalId: 'HASH-011',
+      entryDate: '2026-08-01',
+      description: 'セブンイレブン',
+      amount: -150,
+    })
+
+    expect(repository.findByAccountAndExternalId(bankAccountId, 'HASH-999')).toBeNull()
+  })
+
+  it('external_idが一致してもaccount_idが異なる場合はnullを返す(重複判定は口座単位、2.1)', () => {
+    repository.create({
+      accountId: bankAccountId,
+      journalEntryId,
+      externalId: 'HASH-012',
+      entryDate: '2026-08-01',
+      description: 'セブンイレブン',
+      amount: -150,
+    })
+    const otherAccountId = new SqlJsAccountRepository(db).create({
+      category: 'asset',
+      name: '証券口座',
+      isReconcilable: true,
+    }).id
+
+    expect(repository.findByAccountAndExternalId(otherAccountId, 'HASH-012')).toBeNull()
+  })
+})
+
+describe('findByAccount', () => {
+  it('対象口座の突合レコードを全件返す', () => {
+    repository.create({
+      accountId: bankAccountId,
+      journalEntryId,
+      externalId: 'HASH-020',
+      entryDate: '2026-08-01',
+      description: '1件目',
+      amount: -100,
+    })
+    repository.create({
+      accountId: bankAccountId,
+      journalEntryId,
+      externalId: 'HASH-021',
+      entryDate: '2026-08-02',
+      description: '2件目',
+      amount: -200,
+    })
+
+    const found = repository.findByAccount(bankAccountId)
+
+    expect(found.map((ref) => ref.externalId).sort()).toEqual(['HASH-020', 'HASH-021'])
+  })
+
+  it('他口座のレコードは含めない', () => {
+    repository.create({
+      accountId: bankAccountId,
+      journalEntryId,
+      externalId: 'HASH-030',
+      entryDate: '2026-08-01',
+      description: '対象口座',
+      amount: -100,
+    })
+    const otherAccountId = new SqlJsAccountRepository(db).create({
+      category: 'asset',
+      name: '証券口座',
+      isReconcilable: true,
+    }).id
+
+    expect(repository.findByAccount(otherAccountId)).toEqual([])
+  })
+
+  it('該当レコードが存在しない口座では空配列を返す', () => {
+    expect(repository.findByAccount(bankAccountId)).toEqual([])
+  })
+})
