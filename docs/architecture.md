@@ -44,6 +44,7 @@ Service Worker
 | PWA化 | vite-plugin-pwa（Workbox） | Vite標準的な選択肢、Service Worker生成の自動化 |
 | ローカルDB | sql.js（SQLite WASM） | Node/Vitest上でそのまま動作しTDDと相性が良い |
 | DBアクセス | Repositoryパターン + Web Worker RPC | UIブロッキング回避、永続化方式の差し替え容易性 |
+| RPCプロトコル | Comlink | postMessageの手続き的なやり取りを型安全なProxy関数呼び出しとして扱える。ドメインエラーの伝播は既定の`"throw"` transferHandlerを差し替えて拡張（詳細は`docs/decisions.md`） |
 | テスト | Vitest（ユニット/統合）、Playwright（E2E） | 詳細は「10. テスト戦略」参照 |
 
 ## 4. データ永続化方式・保存先選択（ADR）
@@ -99,7 +100,7 @@ interface StorageAdapter {
 
 ## 5. DBアクセス層とWorker設計
 
-- DBは必ずWeb Worker内で実行し、Reactのメインスレッドはメッセージパッシング（RPC）経由でのみアクセスする。UIをブロックしないことが目的。
+- DBは必ずWeb Worker内で実行し、Reactのメインスレッドはメッセージパッシング（RPC）経由でのみアクセスする。UIをブロックしないことが目的。RPCの実装には`Comlink`を採用する。Worker側（`src/infrastructure/worker/`）で全Repositoryインスタンスを1つのレジストリオブジェクトへ集約して`Comlink.expose()`し、メインスレッド側（`src/infrastructure/rpc/`）は`Comlink.wrap()`した型安全なプロキシとして呼び出す。Worker側の初期化（sql.jsのWASMロード等、非同期）が完了する前にメインスレッドがRPC呼び出しを送ると応答が失われるため、Worker起動完了をメインスレッドが待ち合わせてからRPCクライアントを生成する（Issue #24、詳細は`docs/decisions.md`）。
 - ドメインは複式簿記をベースとするため、Repository層は単純な「取引（Transaction）」ではなく、**勘定科目（Account）・仕訳（JournalEntry）・仕訳明細（借方/貸方の各行）**を中心としたインターフェース（例: `AccountRepository`、`JournalEntryRepository`）で設計する。エンティティの詳細な属性・制約（勘定科目の分類、貸借バランスの検証ルール等）は`docs/domain.md`で別途定義し、本ドキュメントでは扱わない。
 - DBアクセス層のテストはこれらのRepositoryインターフェースに対して書く。sql.jsを採用しているため、Vitest上でそのまま統合テストとして記述できる。
 - 起動時に`PRAGMA user_version`を用いた簡易マイグレーションランナーを実行し、スキーマバージョンを管理する。
@@ -154,7 +155,7 @@ CLAUDE.mdの方針（実装は必ずテストから書く。red→green→refact
 | ---------------------------------------------------------- | -------------------------------------------------------------- | ----------------- |
 | ドメインロジック（集計・カテゴリ分類・予算計算等）                                  | 純粋なTypeScript関数としてのユニットテスト（多数）                                 | Vitest            |
 | DBアクセス層（Repository実装）                                      | sql.jsがNode上で動作するため、そのまま統合テストとして記述                             | Vitest            |
-| Service Worker / マニフェスト / インストール可能性 / File System Access連携 | 少数だが重要なフロー（入力→リロード→データ確認、オフライン起動、エクスポート/インポート往復、フォルダ選択保存の往復）のみ | Playwright（実ブラウザ） |
+| Service Worker / マニフェスト / インストール可能性 / Web Worker起動・RPC / File System Access連携 | 少数だが重要なフロー（入力→リロード→データ確認、オフライン起動、エクスポート/インポート往復、フォルダ選択保存の往復、Worker起動・RPC疎通・ドメインエラーのinstanceof伝播・Worker初期化失敗時の挙動）のみ | Playwright（実ブラウザ） |
 
 ## 11. セキュリティ・プライバシー方針
 
