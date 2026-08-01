@@ -1,7 +1,7 @@
 import * as Comlink from 'comlink'
 import type { RepositoryRegistry } from './createRepositoryRegistry'
 import { registerDomainErrorTransferHandler } from './registerDomainErrorTransferHandler'
-import { waitForWorkerReady } from './waitForWorkerReady'
+import { waitForWorkerReadyOrTerminate } from './waitForWorkerReadyOrTerminate'
 
 /**
  * メインスレッドからWeb Worker(db.worker.ts)を起動し、Comlinkでラップした
@@ -9,10 +9,11 @@ import { waitForWorkerReady } from './waitForWorkerReady'
  * Remote<RepositoryRegistry>の各Repositoryメソッドを通常のPromiseベースAPIとして
  * 呼び出せる。Worker側のDB初期化(sql.jsのWASMロード)は非同期でありComlinkの
  * メッセージリスナー登録より先にRPC呼び出しを送ると応答が失われるため、
- * waitForWorkerReadyでWorker側の準備完了(またはエラー)を待ってからComlink.wrap()する。
- * 初期化に失敗した場合はこのPromiseがrejectされる。ブラウザのWorker/postMessageに
- * 依存するためNode/Vitestでは検証できず、Playwright(実ブラウザ)でテストする
- * (計画Issue #24)。
+ * waitForWorkerReadyOrTerminateでWorker側の準備完了(またはエラー)を待ってから
+ * Comlink.wrap()する。初期化に失敗した場合、生成済みのWorkerはterminate()された
+ * うえでこのPromiseがrejectされる(失敗したWorkerを残さない)。ブラウザのWorker/
+ * postMessageに依存するためNode/Vitestでは検証できず、Playwright(実ブラウザ)で
+ * テストする(計画Issue #24)。
  */
 export async function createDbClient(): Promise<Comlink.Remote<RepositoryRegistry>> {
   registerDomainErrorTransferHandler()
@@ -21,7 +22,7 @@ export async function createDbClient(): Promise<Comlink.Remote<RepositoryRegistr
     type: 'module',
   })
 
-  await waitForWorkerReady(worker)
+  await waitForWorkerReadyOrTerminate(worker)
 
   return Comlink.wrap<RepositoryRegistry>(worker)
 }
