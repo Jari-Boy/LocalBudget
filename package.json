@@ -12,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "comlink": "^4.4.2",
     "papaparse": "^5.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
