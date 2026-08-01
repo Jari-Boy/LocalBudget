@@ -46,6 +46,24 @@ export class SqlJsExternalTransactionRefRepository implements ExternalTransactio
     if (!result) return null
     return mapRowToExternalTransactionRef(result.columns, result.values[0])
   }
+
+  findByAccountAndExternalId(accountId: number, externalId: string): ExternalTransactionRef | null {
+    const [result] = this.db.exec(
+      'SELECT * FROM external_transaction_refs WHERE account_id = ? AND external_id = ?',
+      [accountId, externalId],
+    )
+    if (!result) return null
+    return mapRowToExternalTransactionRef(result.columns, result.values[0])
+  }
+
+  findByAccount(accountId: number): ExternalTransactionRef[] {
+    const [result] = this.db.exec(
+      'SELECT * FROM external_transaction_refs WHERE account_id = ?',
+      [accountId],
+    )
+    if (!result) return []
+    return result.values.map((row) => mapRowToExternalTransactionRef(result.columns, row))
+  }
 }
 
 function boolToSql(value: boolean | null): number | null {
