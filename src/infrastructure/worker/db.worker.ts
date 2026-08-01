@@ -4,12 +4,14 @@ import { createBrowserDatabase } from '../db/createBrowserDatabase'
 import { runMigrations } from '../db/migrations'
 import { createRepositoryRegistry } from '../rpc/createRepositoryRegistry'
 import { registerDomainErrorTransferHandler } from '../rpc/registerDomainErrorTransferHandler'
+import { WORKER_READY_MESSAGE } from '../rpc/workerReadyMessage'
 
 /**
- * Web Workerのエントリポイント(docs/architecture.md 5章)。起動時にsql.jsのDBを初期化し
- * (PRAGMA foreign_keys = ONはcreateBrowserDatabase内で設定)、マイグレーションを適用したうえで
- * 全10種のRepositoryをComlink経由でメインスレッドへ公開する。Worker自体の動作は
- * Node/Vitestでは検証できないため、Playwright(実ブラウザ)でテストする(計画Issue #24)。
+ * Web Workerのエントリポイント(docs/architecture.md 5章)。sql.jsのWASM初期化は非同期のため、
+ * Comlink.exposeによるメッセージリスナー登録が完了する前にメインスレッドからRPC呼び出しが
+ * 届くと、応答されずに失われる(実測で確認済み)。DB初期化・マイグレーション・expose完了後に
+ * WORKER_READY_MESSAGEを送出し、メインスレッド側(createDbClient)はこれを待ってから
+ * Comlink.wrap()する。
  */
 async function main(): Promise<void> {
   registerDomainErrorTransferHandler()
@@ -19,6 +21,8 @@ async function main(): Promise<void> {
 
   const registry = createRepositoryRegistry(db)
   Comlink.expose(registry)
+
+  postMessage(WORKER_READY_MESSAGE)
 }
 
 void main()
