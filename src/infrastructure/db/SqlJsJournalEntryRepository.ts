@@ -17,6 +17,7 @@ import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRe
 import { assertJournalBalance } from '../../domain/journal/assertJournalBalance'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
 import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMismatchError'
+import { SqlJsExternalTransactionRefRepository } from './SqlJsExternalTransactionRefRepository'
 
 const RECONCILABLE_POSTING_WHITELIST: readonly JournalEntrySourceType[] = [
   'external_import',
@@ -70,6 +71,15 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
            VALUES (?, ?, ?, ?)`,
           [entryId, link.toEntryId, link.linkType, link.amount],
         )
+      }
+
+      if (input.externalTransactionRef) {
+        // 単一INSERTのみでBEGIN/COMMITを持たないため、この既存トランザクションへ安全に合流する
+        // (docs/domain/statement-import.md 1.5 手順7の同一トランザクション書き込み要件)。
+        new SqlJsExternalTransactionRefRepository(this.db).create({
+          ...input.externalTransactionRef,
+          journalEntryId: entryId,
+        })
       }
 
       this.db.run('COMMIT')
