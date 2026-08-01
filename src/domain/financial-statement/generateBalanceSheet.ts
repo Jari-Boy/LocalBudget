@@ -1,7 +1,8 @@
 import type { Account, AccountCategory } from '../account/Account'
 import type { JournalEntry, JournalLine } from '../journal/JournalEntry'
-import type { AccountAmount } from './generateProfitAndLoss'
+import type { AccountAmount } from './AccountAmount'
 import { calculateAccountBalance } from './calculateAccountBalance'
+import { summarizeAccountsByCategory } from './summarizeAccountsByCategory'
 
 export interface BalanceSheet {
   asOfDate: string
@@ -12,24 +13,6 @@ export interface BalanceSheet {
   totalAssets: number
   totalLiabilities: number
   totalEquity: number
-}
-
-function summarizeByAccount(
-  lines: readonly JournalLine[],
-  accounts: readonly Account[],
-  category: AccountCategory,
-): AccountAmount[] {
-  return accounts
-    .filter((account) => account.category === category)
-    .map((account) => {
-      const accountLines = lines.filter((line) => line.accountId === account.id)
-      return {
-        accountId: account.id,
-        accountName: account.name,
-        amount: calculateAccountBalance(category, accountLines),
-      }
-    })
-    .filter((accountAmount) => accountAmount.amount !== 0)
 }
 
 function sumCategoryBalance(
@@ -60,9 +43,9 @@ export function generateBalanceSheet(
     .flatMap((entry) => entry.lines)
   const accountsById = new Map(accounts.map((account) => [account.id, account]))
 
-  const assets = summarizeByAccount(linesAsOfDate, accounts, 'asset')
-  const liabilities = summarizeByAccount(linesAsOfDate, accounts, 'liability')
-  const equity = summarizeByAccount(linesAsOfDate, accounts, 'equity')
+  const assets = summarizeAccountsByCategory(linesAsOfDate, accounts, 'asset')
+  const liabilities = summarizeAccountsByCategory(linesAsOfDate, accounts, 'liability')
+  const equity = summarizeAccountsByCategory(linesAsOfDate, accounts, 'equity')
 
   const equityOwnBalance = sumCategoryBalance(linesAsOfDate, accountsById, 'equity')
   const revenueBalance = sumCategoryBalance(linesAsOfDate, accountsById, 'revenue')

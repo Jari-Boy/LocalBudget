@@ -1,12 +1,7 @@
 import type { Account } from '../account/Account'
-import type { JournalEntry, JournalLine } from '../journal/JournalEntry'
-import { calculateAccountBalance } from './calculateAccountBalance'
-
-export interface AccountAmount {
-  accountId: number
-  accountName: string
-  amount: number
-}
+import type { JournalEntry } from '../journal/JournalEntry'
+import type { AccountAmount } from './AccountAmount'
+import { summarizeAccountsByCategory } from './summarizeAccountsByCategory'
 
 export interface ProfitAndLoss {
   periodFrom: string
@@ -16,24 +11,6 @@ export interface ProfitAndLoss {
   totalRevenue: number
   totalExpense: number
   netIncome: number
-}
-
-function summarizeByAccount(
-  lines: readonly JournalLine[],
-  accounts: readonly Account[],
-  category: 'revenue' | 'expense',
-): AccountAmount[] {
-  return accounts
-    .filter((account) => account.category === category)
-    .map((account) => {
-      const accountLines = lines.filter((line) => line.accountId === account.id)
-      return {
-        accountId: account.id,
-        accountName: account.name,
-        amount: calculateAccountBalance(category, accountLines),
-      }
-    })
-    .filter((accountAmount) => accountAmount.amount !== 0)
 }
 
 /**
@@ -52,8 +29,8 @@ export function generateProfitAndLoss(
     .filter((entry) => entry.entryDate >= periodFrom && entry.entryDate <= periodTo)
     .flatMap((entry) => entry.lines)
 
-  const revenues = summarizeByAccount(linesInPeriod, accounts, 'revenue')
-  const expenses = summarizeByAccount(linesInPeriod, accounts, 'expense')
+  const revenues = summarizeAccountsByCategory(linesInPeriod, accounts, 'revenue')
+  const expenses = summarizeAccountsByCategory(linesInPeriod, accounts, 'expense')
   const totalRevenue = revenues.reduce((total, item) => total + item.amount, 0)
   const totalExpense = expenses.reduce((total, item) => total + item.amount, 0)
 
