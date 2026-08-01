@@ -40,6 +40,7 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
       },
       {
         accountId: EXPENSE_ACCOUNT_ID,
+        householdMemberId: MEMBER_A,
         counterpartyId: FRIEND_COUNTERPARTY_ID,
         side: 'credit',
         amount: 500,

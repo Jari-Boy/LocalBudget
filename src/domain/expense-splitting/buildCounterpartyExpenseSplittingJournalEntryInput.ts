@@ -46,6 +46,7 @@ export function buildCounterpartyExpenseSplittingJournalEntryInput(
       },
       {
         accountId: params.expenseAccountId,
+        householdMemberId: params.payerMemberId,
         counterpartyId: params.counterpartyId,
         side: 'credit',
         amount: params.amount,
