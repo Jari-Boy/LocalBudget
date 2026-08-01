@@ -11,6 +11,14 @@ import type { StorageAdapter } from './StorageAdapter'
  * 保存され明細が保存されていない)がStorageAdapter側に残りうる。そのためトランザクション
  * 境界(COMMIT/ROLLBACK完了時、またはトランザクションを伴わない単発のrun())ごとに
  * 1回だけsave()を呼ぶ。
+ *
+ * db.export()はqueueMicrotaskで遅延実行し、run()呼び出しの中で同期的には呼ばない。
+ * db.export()はsql.js内部でSQLiteの`last_insert_rowid()`をリセットする副作用を持ち
+ * (実測で確認済み)、Repositoryのcreate()実装はほぼ全て`this.db.run(INSERT...)`の直後に
+ * `last_insert_rowid()`を読んで挿入したレコードを取得するため、run()の同期的な戻り値の
+ * 中でexport()を呼ぶと直後のlast_insert_rowid()参照が壊れる。呼び出し元(Repositoryの
+ * メソッド)は常に同期的に完結する(sql.jsは同期API)ため、マイクロタスクへ逃がせば
+ * export()は呼び出し元の処理が完全に終わった後にのみ実行される。
  */
 export function withAutoSave(db: Database, storageAdapter: StorageAdapter): void {
   let transactionDepth = 0
@@ -25,12 +33,18 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): void
     } else if (normalized.startsWith('COMMIT') || normalized.startsWith('ROLLBACK')) {
       transactionDepth = Math.max(0, transactionDepth - 1)
       if (transactionDepth === 0) {
-        void storageAdapter.save(db.export())
+        scheduleSave(db, storageAdapter)
       }
     } else if (transactionDepth === 0) {
-      void storageAdapter.save(db.export())
+      scheduleSave(db, storageAdapter)
     }
 
     return result
   }) as Database['run']
+}
+
+function scheduleSave(db: Database, storageAdapter: StorageAdapter): void {
+  queueMicrotask(() => {
+    void storageAdapter.save(db.export())
+  })
 }

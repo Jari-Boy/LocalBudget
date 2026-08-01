@@ -29,6 +29,14 @@ function createRecordingStorageAdapter(): StorageAdapter & {
   }
 }
 
+/**
+ * withAutoSaveはdb.export()の呼び出しをqueueMicrotaskで遅延させるため、
+ * save()が呼ばれたかを確認するにはマイクロタスクキューを空にする必要がある。
+ */
+async function flushMicrotasks(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 describe('withAutoSave', () => {
   it('トランザクションを伴わない単発のrun()呼び出しのたびにsave()が呼ばれる', async () => {
     const db = await createTestDatabase()
@@ -37,6 +45,7 @@ describe('withAutoSave', () => {
 
     db.run('CREATE TABLE t (id INTEGER)')
     db.run('INSERT INTO t (id) VALUES (1)')
+    await flushMicrotasks()
 
     expect(storageAdapter.saveCallCount).toBe(2)
   })
@@ -51,6 +60,7 @@ describe('withAutoSave', () => {
     db.run('INSERT INTO t (id) VALUES (1)')
     db.run('INSERT INTO t (id) VALUES (2)')
     db.run('COMMIT')
+    await flushMicrotasks()
 
     expect(storageAdapter.saveCallCount).toBe(1)
   })
@@ -64,6 +74,7 @@ describe('withAutoSave', () => {
     db.run('BEGIN')
     db.run('INSERT INTO t (id) VALUES (1)')
     db.run('ROLLBACK')
+    await flushMicrotasks()
 
     expect(storageAdapter.saveCallCount).toBe(1)
   })
@@ -76,6 +87,7 @@ describe('withAutoSave', () => {
     withAutoSave(db, storageAdapter)
 
     db.exec('SELECT * FROM t')
+    await flushMicrotasks()
 
     expect(storageAdapter.saveCallCount).toBe(0)
   })
@@ -86,7 +98,23 @@ describe('withAutoSave', () => {
     withAutoSave(db, storageAdapter)
 
     db.run('CREATE TABLE t (id INTEGER)')
+    await flushMicrotasks()
 
     expect(storageAdapter.savedSnapshots[0]).toEqual(db.export())
+  })
+
+  it('run()呼び出し直後にlast_insert_rowid()を参照しても正しい値が取得できる(db.export()の遅延実行を検証)', async () => {
+    // db.export()はsql.js内部でSQLiteのlast_insert_rowid()をリセットする副作用を持つため
+    // (実測で確認済み)、withAutoSaveがrun()の中で同期的にexport()を呼ぶと、直後に
+    // last_insert_rowid()を読むRepositoryのcreate()実装が全て壊れる。
+    const db = await createTestDatabase()
+    db.run('CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)')
+    const storageAdapter = createRecordingStorageAdapter()
+    withAutoSave(db, storageAdapter)
+
+    db.run('INSERT INTO t (name) VALUES (?)', ['a'])
+    const [result] = db.exec('SELECT last_insert_rowid() AS id')
+
+    expect(result.values[0][0]).toBe(1)
   })
 })
