@@ -97,6 +97,8 @@
 
 ### 1.5 割勘の履歴と取り消し
 
+**割勘対象候補の判定**: ある仕訳が`journal_entry_links`の`allocates`リンクの`to_entry`側として1件も登場しない場合、その仕訳は「まだ割勘されていない」とみなす。割勘対象の仕訳選択UIでは、この判定を使って既に割勘済みの仕訳(例: 前月分)を候補一覧から除外する。[settlement.md 1.6 分割消込](./settlement.md#16-分割消込消込残高による完了判定)の「未消込」判定と対称的な考え方である。
+
 **履歴の閲覧**: 割勘仕訳は元仕訳に対して`journal_entry_links`の`allocates`リンクを持つ([journal.md 1.8 仕訳間の関係](./journal.md#18-仕訳間の関係journal_entry_links)参照)。元仕訳の詳細画面から`to_entry_id = 元仕訳 AND link_type = 'allocates'`で割勘仕訳を辿る。さらに`to_entry_id = 割勘仕訳 AND link_type = 'settles'`で精算仕訳を辿れば、「元の支出 → 割勘 → 精算」の一連の流れを追跡できる。また、`project_id`でバッチ全体の仕訳を横断的に一覧することもできる([projects.md 1.4 集計への影響](./projects.md#14-集計への影響)参照)。
 
 **取り消し**: 割勘仕訳・精算仕訳はいずれも通常の手入力仕訳(`source_type = 'manual'`)であり、[journal.md 1.5 仕訳の編集・削除](./journal.md#15-仕訳の編集削除)の既存ルール(物理削除は常に許可)がそのまま適用される。
