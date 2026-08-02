@@ -1,4 +1,4 @@
-const DEFAULT_LOCALE = 'ja-JP'
+import { DEFAULT_LOCALE } from './locale'
 
 /**
  * 日付をロケールに応じた表示用文字列に変換する。ドメイン層・DB層は日付を

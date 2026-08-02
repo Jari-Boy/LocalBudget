@@ -1,4 +1,4 @@
-const DEFAULT_LOCALE = 'ja-JP'
+import { DEFAULT_LOCALE } from './locale'
 
 /**
  * 通貨最小単位(例: JPYなら1円単位、USDなら1セント単位)の整数値を、
