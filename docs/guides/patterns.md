@@ -98,3 +98,17 @@
 **原因**: fire-and-forgetな呼び出し(`void promise`のように意図的に結果を待たない設計)は、呼び出し元へのreject伝播ができないこと自体は設計上正しい判断だが、「reject経路を作れない」ことと「エラーを一切扱わなくてよい」ことは別問題である。この区別が意識されないと、Promiseチェーンの外側にエラーハンドリングの必要性がないと誤解しやすい。
 **対策**: fire-and-forgetな非同期処理を新設する場合も、`.then(onSuccess, onError)`または`.catch()`で必ず失敗を捕捉し、最低限`console.error`等でログに残してunhandled rejectionにしない。加えて、呼び出し元へ同期的に伝播できない以上、直近の失敗を後から検知できる受け口(例: 本件の`AutoSaveController.getLastSaveError()`のような、最後のエラーを保持し取得できるハンドル)を用意することを優先する。UIへの通知配線自体は別途のスコープ判断で省略してよいが、モジュール内でエラーを黙って握りつぶさないことは別問題として扱う。
 **該当箇所（例）**: `src/infrastructure/storage/withAutoSave.ts`(`scheduleSave`、`AutoSaveController.getLastSaveError()`)、`docs/decisions.md`「withAutoSaveのsave()失敗はfire-and-forgetのままログ+AutoSaveController.getLastSaveError()で事後検知できるようにする」、Issue #25 Review Attempt 1(evaluator FAIL指摘、重大度MEDIUM)・Attempt 2で修正
+
+## 新しいStorageAdapter実装が、既存のIndexedDB単一レコード保存パターンを個別実装してしまう(DRY違反)
+
+**症状**: `IndexedDBStorageAdapter`が既に確立していた「IndexedDBの単一object store・単一固定キーに対する get/put(DB open→`onupgradeneeded`でストア作成→get/put→close)」というコードパターンがあるにもかかわらず、新しいIndexedDB永続化の要件(`directoryHandleStore`によるFileSystemDirectoryHandleの保存)を実装する際、DB名・オブジェクトストア名・キー名が異なることを理由に同じ構造のコードをゼロから個別実装してしまう。両者はDB名/ストア名/キー名以外ほぼ同一のコードだった。
+**原因**: 保存する値の型(`Uint8Array` vs `FileSystemDirectoryHandle`)やDB名・ストア名が異なるため、一見「別物」に見え、既存実装が再利用可能な共通パターンであると気づきにくい。特にIndexedDBのAPI(`indexedDB.open`のイベントハンドラ構成)自体が定型的なボイラープレートであるため、「コピーして値だけ変える」実装が自然に見えてしまう。
+**対策**: 新しいIndexedDB永続化ニーズを実装する前に、既存の`src/infrastructure/storage/`配下に類似のIndexedDB操作コードが無いか確認する。「単一のオブジェクトストアに固定キー1件だけを保存する」という同型の要件であれば、DB名・DBバージョン・オブジェクトストア名・レコードキーのみをパラメータ化した共通ヘルパー(`indexedDbSingleRecordStore`)を再利用するか、まだ無い場合はその場で切り出す。evaluatorのレビュー時も、新規追加されたIndexedDB操作コードが既存の同種実装(`IndexedDBStorageAdapter`等)と構造的に重複していないか確認する。
+**該当箇所（例）**: `src/infrastructure/storage/indexedDbSingleRecordStore.ts`(共通ヘルパー、`IndexedDBStorageAdapter`と`directoryHandleStore`の双方をこれに統一)、`docs/decisions.md`「IndexedDBの『単一object store・単一固定キーへのget/put』パターンをindexedDbSingleRecordStoreとして共通ヘルパー化する」、Issue #57 Review Attempt 1(evaluator FAIL指摘)
+
+## try/finally構造でストリームの後始末を書くと、close()失敗時のエラーが元のエラーを上書きしてしまう
+
+**症状**: `FileSystemWritableFileStream`への`write()`が失敗した場合の後始末として、`try { await writable.write(...); await writable.close() } finally { ... }`のような構造で無条件に`close()`を呼ぶ実装にすると、Streams仕様上write失敗後のストリームは既にerrored状態であるため`close()`自体が別の`TypeError`で拒否され、`try`節で本来スローされるべきだった元のエラー(例: ディスク容量不足)が失われ、呼び出し元には無関係な`TypeError`だけが伝播する。
+**原因**: 「成功時も失敗時も後始末としてclose()相当の処理を呼ぶ」という一般的なtry/finallyの直感が、Streams APIのようにストリームの状態(errored)によって後始末の正しい呼び出し方(`close()`ではなく`abort()`)が変わるAPIには当てはまらない。write失敗時にclose()を呼んでも構文上は例外なくエラーになる(気づきにくい二重の失敗)ため、正常系のテストだけでは発覚しない。
+**対策**: Streams API(`WritableStream`/`FileSystemWritableFileStream`等)を扱うコードで書き込み失敗時の後始末を実装する際は、機械的な`try/finally`でclose()を呼ぶのではなく、失敗パス専用に`catch`節を設け`abort()`を呼んでから元のエラーをそのまま`throw`する。実装時はTDDで書き込み失敗を再現するテスト(モックした`write`/`getWriter`等が reject するケース)を先に書き、意図通り元のエラーが伝播することを確認してから実装する。
+**該当箇所（例）**: `src/infrastructure/storage/databaseFileCodec.ts`(`writeDatabaseToFileHandle`)、`docs/decisions.md`「FileSystemWritableFileStreamへのwrite()が失敗した場合、close()ではなくabort()を呼び元のエラーをそのまま伝播させる」、Issue #57 Review Attempt 1(evaluator FAIL指摘)

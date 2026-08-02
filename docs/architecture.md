@@ -82,7 +82,7 @@ interface StorageAdapter {
 ```
 
 - `IndexedDBStorageAdapter`: IndexedDBにバイト列を保存。全ブラウザ対応。
-- `FileSystemAccessStorageAdapter`: ユーザーが選択したディレクトリハンドルに対し、`FileSystemWritableFileStream`で書き込む。ディレクトリハンドルはIndexedDBに保存しておき、次回起動時に`queryPermission`/`requestPermission`で権限を再確認する。
+- `FileSystemAccessStorageAdapter`: ユーザーが選択したディレクトリハンドルに対し、`FileSystemWritableFileStream`で書き込む。ディレクトリハンドルはIndexedDBに保存しておき、次回起動時に`queryPermission`/`requestPermission`で権限を再確認する。Firefox/Safari等の非対応環境では、コンストラクタが明示的なエラー（`FileSystemAccessNotSupportedError`）をスローする。**IndexedDBへの自動フォールバックは行わない**（このStorageAdapterを使うかどうかの選択・非対応環境での代替導線はUI側の責務とする。着手前にユーザーと協議の上での設計判断、詳細は`docs/decisions.md`参照）。
 
 **ブラウザ対応状況（2026年7月時点、Web検索で確認済み）**:
 
@@ -98,7 +98,9 @@ interface StorageAdapter {
 - クラウド同期フォルダへの書き込みは、OS側同期クライアントが同時にファイルを読もうとするタイミングと競合する可能性がある。書き込みはデバウンス（例: 最終更新から一定時間後、またはページ非表示時）し、頻繁な書き込みを避ける。
 - 複数端末が同じ同期フォルダのDBファイルを非同期に編集すると、クラウドサービス側で「競合コピー」が生成されたり、後勝ちで上書きされデータが失われるリスクがある。この方式は「バックアップミラー」であり「リアルタイムマルチデバイス同期」ではないことをユーザーにも明示する（詳細は「9. 既知の制約・将来課題」）。
 
-**実装状況（Issue #25）**: `StorageAdapter`インターフェース・`IndexedDBStorageAdapter`・Web Worker起動時のロードフロー（`IndexedDBStorageAdapter.load()`で復元 → マイグレーション適用 → DB変更の自動永続化開始）を実装済み。`FileSystemAccessStorageAdapter`は未実装（別Issue）。DB変更の自動永続化（`withAutoSave`）は`sql.js`の`Database#run()`を監視し、BEGIN〜COMMIT/ROLLBACKのトランザクション境界単位で`save()`を1回呼ぶ設計（トランザクション途中の保存によるクラッシュ時の不完全な永続化を避けるため）。上記のデバウンスは未実装で、現時点ではデバウンスなしの単純な即時save呼び出しとしている（デバウンス自体は別Issueで扱う）。詳細な設計判断は`docs/decisions.md`を参照。
+**実装状況（Issue #25）**: `StorageAdapter`インターフェース・`IndexedDBStorageAdapter`・Web Worker起動時のロードフロー（`IndexedDBStorageAdapter.load()`で復元 → マイグレーション適用 → DB変更の自動永続化開始）を実装済み。DB変更の自動永続化（`withAutoSave`）は`sql.js`の`Database#run()`を監視し、BEGIN〜COMMIT/ROLLBACKのトランザクション境界単位で`save()`を1回呼ぶ設計（トランザクション途中の保存によるクラッシュ時の不完全な永続化を避けるため）。上記のデバウンスは未実装で、現時点ではデバウンスなしの単純な即時save呼び出しとしている（デバウンス自体は別Issueで扱う）。詳細な設計判断は`docs/decisions.md`を参照。
+
+**実装状況（Issue #57）**: `FileSystemAccessStorageAdapter`・`isFileSystemAccessSupported`（対応環境判定関数）・`FileSystemAccessNotSupportedError`（非対応環境での明示的エラー型）・`databaseFileCodec`（DBバイト列とファイルI/O間の変換ロジック、8章参照）・`ensureReadWritePermission`（`queryPermission`/`requestPermission`による権限確認）・`directoryHandleStore`（`FileSystemDirectoryHandle`のIndexedDB永続化）を実装済み。`showDirectoryPicker`はユーザージェスチャーを要求しWindowでのみ呼び出せるため、ディレクトリの選択（`selectNewDirectory`）・復元（`restoreDirectory`）は`load`/`save`とは独立した明示的な操作として提供し、呼び出しタイミング（初回起動時の選択・起動時の復元）はUI側（別Issue）の責務としている。IndexedDBStorageAdapterと`directoryHandleStore`が個別実装していたIndexedDBの「単一object store・単一固定キーへのget/put」パターンは`indexedDbSingleRecordStore`として共通化した（evaluatorレビューでのDRY違反指摘を受けた事後リファクタ、詳細は`docs/decisions.md`）。動作検証はNode/jsdomにIndexedDB・File System Access APIの実装がないためPlaywright（実ブラウザ）で行う（`e2e/file-system-access-storage-adapter.spec.ts`、10章参照）。
 
 ## 5. DBアクセス層とWorker設計
 
@@ -140,6 +142,8 @@ interface StorageAdapter {
 - **インポート**: ユーザーがファイルを選択し、DBを丸ごと置き換える機能。
 - シリアライズ/デシリアライズのロジックは`FileSystemAccessStorageAdapter`と共通化し、二重実装を避ける。
 - CSV/JSON形式でのトランザクションエクスポートなど、他の表計算ソフトとの相互運用性を高める機能は将来課題とする。
+
+**実装状況（Issue #57）**: 上記の共通化を見据え、DBバイト列⇔ファイルI/O間の変換ロジックを`src/infrastructure/storage/databaseFileCodec.ts`に切り出し済み。`FileSystemAccessStorageAdapter`が使う`FileSystemFileHandle`向けの読み書き（`writeDatabaseToFileHandle`/`readDatabaseFromFileHandle`）と、Blob/File向けの汎用変換（`toDatabaseBlob`/`fromDatabaseFile`）を分離してあり、後者は将来のエクスポート（Blobダウンロード）/インポート（ファイル選択アップロード）機能（#26）からもそのまま再利用できる想定（本体のエクスポート/インポートUI自体は未実装）。
 
 ## 9. 既知の制約・将来課題
 
