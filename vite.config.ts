@@ -13,6 +13,11 @@ export default defineConfig({
       // 自動更新はDB書き込み中の強制リロードでトランザクションを破壊するリスクがあるため
       // 採用せず、ユーザー確認型(prompt for update)とする。
       registerType: 'prompt',
+      // SW登録はsrc/components/UpdateBanner.tsxのuseRegisterSW(virtual:pwa-register/react)
+      // に一本化する。injectRegister: 'auto'(既定)のままだとHTMLに自動注入される
+      // registerSW.js側でも独立にregister()が呼ばれ二重登録となり、useRegisterSW側の
+      // updatefound検出が阻害されることを実機検証で確認したため無効化する。
+      injectRegister: false,
       includeAssets: ['favicon.svg', 'favicon.ico', 'apple-touch-icon-180x180.png'],
       manifest: {
         name: 'LocalBudget',
