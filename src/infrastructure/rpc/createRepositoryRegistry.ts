@@ -1,3 +1,4 @@
+import * as Comlink from 'comlink'
 import type { Database } from 'sql.js'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { BudgetRepository } from '../../domain/budget/BudgetRepository'
@@ -55,8 +56,13 @@ export interface RepositoryRegistry {
   /**
    * DBの永続化制御(計画Issue #58)。Worker側で生成済みのAutoSaveControllerをそのまま
    * 公開し、メインスレッド側がページ非表示時等に`flush()`をRPC越しに呼べるようにする。
+   * Comlinkは既定でネストしたオブジェクトのプロパティを構造化複製可能な値とみなすため
+   * (メソッドを持つオブジェクトは複製できずTypeScriptの型上も`Promise<AutoSaveController>`
+   * に落ちてしまう)、`Comlink.proxy()`でProxyMarkedを付与し、メソッド呼び出しをRPC越しに
+   * 中継する対象であることを明示する(journalEntryDraft.confirmと同種の制約への対応、
+   * docs/decisions.md参照)。
    */
-  autoSave: AutoSaveController
+  autoSave: AutoSaveController & Comlink.ProxyMarked
 }
 
 /**
@@ -91,6 +97,6 @@ export function createRepositoryRegistry(
     },
     project: new SqlJsProjectRepository(db),
     recurringTransactionRule: new SqlJsRecurringTransactionRuleRepository(db),
-    autoSave: autoSaveController,
+    autoSave: Comlink.proxy(autoSaveController),
   }
 }

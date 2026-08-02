@@ -1,9 +1,12 @@
 /**
  * StorageAdapterによる起動時ロード・保存フロー(計画Issue #25)のE2Eテスト。
  * Web Worker起動時にIndexedDBStorageAdapterから既存DBを復元するフロー、および
- * DB変更が(デバウンスなしで)即時永続化されることを、実ブラウザ(Chromium)で
- * ページ再読み込みを挟んで検証する。Node/Vitestでは再現できないブラウザ固有の
- * 統合動作のため、Playwrightで検証する(docs/architecture.md 10章)。
+ * DB変更が永続化される(計画Issue #58でtrailing debounce化されたため、書き込み後
+ * 最大でSAVE_DEBOUNCE_MS(2秒)程度の遅延を見込んでポーリング待機する)ことを、
+ * 実ブラウザ(Chromium)でページ再読み込みを挟んで検証する。Node/Vitestでは
+ * 再現できないブラウザ固有の統合動作のため、Playwrightで検証する
+ * (docs/architecture.md 10章)。デバウンス自体の詳細な検証は
+ * e2e/storage-adapter-debounce.spec.tsで行う。
  */
 import { test, expect } from '@playwright/test'
 
@@ -25,16 +28,20 @@ test.describe('StorageAdapterによる起動時ロード・保存フロー', () 
     })
     expect(createdAccountName).toBe('食費')
 
-    // withAutoSaveの永続化はfire-and-forgetのため、IndexedDBへの書き込み完了を待ってから再読み込みする
+    // withAutoSaveの永続化はfire-and-forgetかつSAVE_DEBOUNCE_MS(2秒)のtrailing debounceを
+    // 挟むため、IndexedDBへの書き込み完了を待ってから再読み込みする(デフォルトのexpect
+    // タイムアウトだとデバウンス分の余裕が少ないため、timeoutを明示的に延長する)
     await expect
-      .poll(() =>
-        page.evaluate(async () => {
-          const { IndexedDBStorageAdapter } = await import(
-            '/src/infrastructure/storage/IndexedDBStorageAdapter.ts'
-          )
-          const data = await new IndexedDBStorageAdapter().load()
-          return data !== null && data.length > 0
-        }),
+      .poll(
+        () =>
+          page.evaluate(async () => {
+            const { IndexedDBStorageAdapter } = await import(
+              '/src/infrastructure/storage/IndexedDBStorageAdapter.ts'
+            )
+            const data = await new IndexedDBStorageAdapter().load()
+            return data !== null && data.length > 0
+          }),
+        { timeout: 10000 },
       )
       .toBe(true)
 
