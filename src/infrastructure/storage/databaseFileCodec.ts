@@ -25,8 +25,13 @@ export async function writeDatabaseToFileHandle(
   const writable = await fileHandle.createWritable()
   try {
     await writable.write(toDatabaseBlob(data))
-  } finally {
     await writable.close()
+  } catch (error) {
+    // write()失敗後のストリームはerrored状態になっており、close()を呼ぶと元のエラーではなく
+    // 別のTypeErrorで拒否される(Streams仕様)。try/finallyだと後者がtry節の例外を上書きして
+    // しまうため、write失敗時はclose()を呼ばずabort()し、元のエラーをそのまま伝播させる。
+    await writable.abort()
+    throw error
   }
 }
 

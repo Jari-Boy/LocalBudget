@@ -51,6 +51,64 @@ function createRecordingFileHandle(initialData?: Uint8Array): FileSystemFileHand
   } as unknown as FileSystemFileHandle & { writable: ReturnType<typeof createRecordingWritable> }
 }
 
+/**
+ * write()が失敗するFileSystemWritableFileStreamのモック。実ブラウザのStreams仕様では
+ * write()が失敗するとストリームはerrored状態になり、以後のclose()はTypeErrorで拒否
+ * される(abort()は成功する)。この挙動を再現し、writeDatabaseToFileHandleが元のエラー
+ * を握りつぶさず伝播できているかを検証する。
+ */
+function createFailingWritable(writeError: Error): FileSystemWritableFileStream & {
+  closeCalled: boolean
+  abortCalled: boolean
+} {
+  let errored = false
+  const state = { closeCalled: false, abortCalled: false }
+  return {
+    get closeCalled() {
+      return state.closeCalled
+    },
+    get abortCalled() {
+      return state.abortCalled
+    },
+    async write() {
+      errored = true
+      throw writeError
+    },
+    async close() {
+      if (errored) {
+        throw new TypeError('Cannot close a writable stream that has been aborted')
+      }
+      state.closeCalled = true
+    },
+    async abort() {
+      state.abortCalled = true
+    },
+    async seek() {},
+    async truncate() {},
+    locked: false,
+    getWriter: () => {
+      throw new Error('not implemented')
+    },
+  } as unknown as FileSystemWritableFileStream & { closeCalled: boolean; abortCalled: boolean }
+}
+
+function createFileHandleWithFailingWrite(
+  writeError: Error,
+): FileSystemFileHandle & { writable: ReturnType<typeof createFailingWritable> } {
+  const writable = createFailingWritable(writeError)
+  return {
+    writable,
+    kind: 'file',
+    name: 'local-budget.sqlite',
+    async createWritable() {
+      return writable
+    },
+    async getFile() {
+      return new File([], 'local-budget.sqlite')
+    },
+  } as unknown as FileSystemFileHandle & { writable: ReturnType<typeof createFailingWritable> }
+}
+
 describe('toDatabaseBlob', () => {
   it('Uint8ArrayをBlobに変換する', async () => {
     const data = new Uint8Array([1, 2, 3])
@@ -82,6 +140,17 @@ describe('writeDatabaseToFileHandle', () => {
     expect(fileHandle.writable.chunks).toHaveLength(1)
     const written = fileHandle.writable.chunks[0] as Blob
     expect(new Uint8Array(await written.arrayBuffer())).toEqual(data)
+  })
+
+  it('write()が失敗した場合、close()ではなくabort()を呼び、元のエラーをそのままスローする', async () => {
+    const writeError = new Error('disk quota exceeded')
+    const fileHandle = createFileHandleWithFailingWrite(writeError)
+
+    await expect(
+      writeDatabaseToFileHandle(fileHandle, new Uint8Array([1, 2, 3])),
+    ).rejects.toThrow(writeError)
+    expect(fileHandle.writable.abortCalled).toBe(true)
+    expect(fileHandle.writable.closeCalled).toBe(false)
   })
 })
 
