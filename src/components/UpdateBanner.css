@@ -3,6 +3,8 @@
   left: 50%;
   bottom: 16px;
   transform: translateX(-50%);
+  /* IosInstallPromptのモーダルオーバーレイ(z-index: 1100)より低くし、
+     両者が同時に表示されうる条件でもモーダルが確実に前面に来るようにする */
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -23,7 +25,7 @@
     border-radius: 5px;
     border: 2px solid transparent;
     color: var(--bg);
-    background: var(--accent);
+    background: var(--accent-contrast);
     cursor: pointer;
 
     &:hover {

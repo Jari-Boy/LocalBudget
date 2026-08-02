@@ -1,7 +1,9 @@
 .ios-install-prompt-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  /* aria-modal="true"のダイアログのため、非モーダルのUpdateBanner(z-index: 1000)
+     より確実に前面に来るよう明示的に上のレイヤーにする */
+  z-index: 1100;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -36,7 +38,7 @@
     border-radius: 5px;
     border: 2px solid transparent;
     color: var(--bg);
-    background: var(--accent);
+    background: var(--accent-contrast);
     cursor: pointer;
 
     &:hover {

@@ -45,6 +45,41 @@ test.describe('iOS誘導ポップアップ', () => {
       await page.reload()
       await expect(page.getByRole('dialog', { name: 'ホーム画面に追加' })).toBeHidden()
     })
+
+    test('表示直後は閉じるボタンにフォーカスが当たる', async ({ page }) => {
+      await page.goto('/')
+      await expect(page.getByRole('dialog', { name: 'ホーム画面に追加' })).toBeVisible()
+
+      await expect(page.getByRole('button', { name: '閉じる' })).toBeFocused()
+    })
+
+    test('Tabキーでのフォーカス移動がダイアログ内に閉じ込められる(最後の要素から次はTabで先頭に戻る)', async ({
+      page,
+    }) => {
+      await page.goto('/')
+      await expect(page.getByRole('dialog', { name: 'ホーム画面に追加' })).toBeVisible()
+
+      const checkbox = page.getByRole('checkbox', { name: '今後表示しない' })
+      const closeButton = page.getByRole('button', { name: '閉じる' })
+
+      await expect(closeButton).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(checkbox).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(closeButton).toBeFocused()
+
+      await page.keyboard.press('Shift+Tab')
+      await expect(checkbox).toBeFocused()
+    })
+
+    test('Escapeキーでポップアップを閉じられる', async ({ page }) => {
+      await page.goto('/')
+      const dialog = page.getByRole('dialog', { name: 'ホーム画面に追加' })
+      await expect(dialog).toBeVisible()
+
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+    })
   })
 
   test('iOS以外のUser-Agentの場合ポップアップは表示されない', async ({ page }) => {
