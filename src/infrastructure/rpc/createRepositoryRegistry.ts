@@ -56,11 +56,13 @@ export interface RepositoryRegistry {
   /**
    * DBの永続化制御(計画Issue #58)。Worker側で生成済みのAutoSaveControllerをそのまま
    * 公開し、メインスレッド側がページ非表示時等に`flush()`をRPC越しに呼べるようにする。
-   * Comlinkは既定でネストしたオブジェクトのプロパティを構造化複製可能な値とみなすため
-   * (メソッドを持つオブジェクトは複製できずTypeScriptの型上も`Promise<AutoSaveController>`
-   * に落ちてしまう)、`Comlink.proxy()`でProxyMarkedを付与し、メソッド呼び出しをRPC越しに
-   * 中継する対象であることを明示する(journalEntryDraft.confirmと同種の制約への対応、
-   * docs/decisions.md参照)。
+   * Comlinkの型定義上、ネストしたオブジェクトのプロパティは既定で構造化複製可能な値
+   * (`Promisify<T>`、TypeScript上は`Promise<AutoSaveController>`)とみなされ、メソッド
+   * 呼び出しの中継対象(`Remote<T>`)としては扱われない。`Comlink.proxy()`でProxyMarkedを
+   * 付与することで後者の扱いになるようにしている。journalEntryDraft.confirmが抱えていた
+   * 「Repositoryインスタンスを引数として構造化複製できない」制約とは問題の所在が異なり
+   * (あちらは縮小シグネチャのラッパーAPIで解消、こちらはComlink.proxy()で解消)、
+   * 解決方法も別物である点に注意(docs/decisions.md参照)。
    */
   autoSave: AutoSaveController & Comlink.ProxyMarked
 }

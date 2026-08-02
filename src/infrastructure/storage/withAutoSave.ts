@@ -46,6 +46,8 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
   let transactionDepth = 0
   let lastSaveError: unknown = null
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  let inFlightSave: Promise<void> | null = null
+  let pendingRerun: Promise<void> | null = null
   const originalRun = db.run.bind(db)
 
   db.run = ((...args: Parameters<Database['run']>) => {
@@ -72,8 +74,37 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
     }
     debounceTimer = setTimeout(() => {
       debounceTimer = null
-      void performSave()
+      void triggerSave()
     }, SAVE_DEBOUNCE_MS)
+  }
+
+  /**
+   * storageAdapter.save()の同時多重実行を防ぐ。documentのvisibilitychange(hidden)と
+   * windowのpagehideはタブを閉じる操作でほぼ同時に発火しうるため、flushOnPageHide経由で
+   * flush()がほぼ同時に2回呼ばれるケース、およびデバウンスタイマーの発火とflush()が
+   * 競合するケースがある。保存が既に進行中の間に新たな保存要求が来た場合は、進行中の
+   * 保存の完了を待ってから1回だけ改めて保存し直す(複数回要求されても再実行は1回に
+   * まとめる)。IndexedDBは同時書き込みを内部で直列化するため実害はないが、将来
+   * FileSystemAccessStorageAdapterを配線した場合、同一ファイルへの並行書き込みは
+   * 破損やエラーの原因になりうるため、StorageAdapterの実装によらず安全にする。
+   */
+  function triggerSave(): Promise<void> {
+    if (inFlightSave !== null) {
+      pendingRerun ??= inFlightSave.then(runOnce)
+      return pendingRerun
+    }
+    return runOnce()
+  }
+
+  function runOnce(): Promise<void> {
+    pendingRerun = null
+    const save = performSave().finally(() => {
+      if (inFlightSave === save) {
+        inFlightSave = null
+      }
+    })
+    inFlightSave = save
+    return save
   }
 
   function performSave(): Promise<void> {
@@ -94,7 +125,7 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
         clearTimeout(debounceTimer)
         debounceTimer = null
       }
-      return performSave()
+      return triggerSave()
     },
     getLastSaveError: () => lastSaveError,
   }

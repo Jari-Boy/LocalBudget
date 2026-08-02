@@ -1,8 +1,10 @@
 /**
  * withAutoSave のユニットテスト。sql.jsのDatabase.run呼び出しを監視し、
  * トランザクション境界(BEGIN〜COMMIT/ROLLBACK)単位での書き込みをSAVE_DEBOUNCE_MS(2秒)の
- * trailing debounceでStorageAdapter.saveへまとめること、およびflush()でデバウンスタイマーを
- * 待たず即座に保存できることを検証する(計画Issue #58)。sql.jsはNode/Vitest上でそのまま
+ * trailing debounceでStorageAdapter.saveへまとめること、flush()でデバウンスタイマーを
+ * 待たず即座に保存できること、および保存が進行中に新たな保存要求(visibilitychangeと
+ * pagehideがほぼ同時に発火するケース等)が重なってもstorageAdapter.save()が同時に
+ * 多重実行されないことを検証する(計画Issue #58)。sql.jsはNode/Vitest上でそのまま
  * 動作するため統合テストとして書く(docs/architecture.md 10章)。
  * 外部依存: sql.js(ネットワークアクセスなし)。タイマーはvitestのfake timerで制御する。
  */
@@ -37,6 +39,50 @@ function createFailingStorageAdapter(error: Error): StorageAdapter {
     },
     async save() {
       throw error
+    },
+  }
+}
+
+/**
+ * save()呼び出しを外部から制御できるStorageAdapter。save()は明示的にresolveAll()を
+ * 呼ぶまで完了しないPromiseを返すため、保存が進行中の状態を意図的に作り出し、
+ * 同時に何回save()が実行中か(activeSaveCount)を検証できる。
+ */
+function createControllableStorageAdapter(): StorageAdapter & {
+  saveCallCount: number
+  maxConcurrentSaveCalls: number
+  resolveAll(): void
+} {
+  let activeSaveCount = 0
+  let maxConcurrentSaveCalls = 0
+  let saveCallCount = 0
+  const pendingResolvers: Array<() => void> = []
+  return {
+    get saveCallCount() {
+      return saveCallCount
+    },
+    get maxConcurrentSaveCalls() {
+      return maxConcurrentSaveCalls
+    },
+    async load() {
+      return null
+    },
+    save() {
+      saveCallCount += 1
+      activeSaveCount += 1
+      maxConcurrentSaveCalls = Math.max(maxConcurrentSaveCalls, activeSaveCount)
+      return new Promise<void>((resolve) => {
+        pendingResolvers.push(() => {
+          activeSaveCount -= 1
+          resolve()
+        })
+      })
+    },
+    resolveAll() {
+      const resolvers = pendingResolvers.splice(0, pendingResolvers.length)
+      resolvers.forEach((resolve) => {
+        resolve()
+      })
     },
   }
 }
@@ -237,6 +283,80 @@ SAVE_DEBOUNCE_MS経過するまでsave()を呼ばない', async () => {
       await controller.flush()
 
       expect(storageAdapter.savedSnapshots[0]).toEqual(db.export())
+    })
+  })
+
+  describe('保存の多重実行防止', () => {
+    it('保存が進行中の状態でflush()がもう一度呼ばれても、save()は同時に多重実行されず、\
+完了後に1回だけ再実行される', async () => {
+      const db = await createTestDatabase()
+      const storageAdapter = createControllableStorageAdapter()
+      const controller = withAutoSave(db, storageAdapter)
+
+      db.run('CREATE TABLE t (id INTEGER)')
+      const firstFlush = controller.flush()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(storageAdapter.saveCallCount).toBe(1)
+
+      // visibilitychangeとpagehideがほぼ同時に発火するケースを想定し、
+      // 1回目のsave()完了前にもう一度flush()を呼ぶ
+      const secondFlush = controller.flush()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(storageAdapter.saveCallCount).toBe(1)
+      expect(storageAdapter.maxConcurrentSaveCalls).toBe(1)
+
+      storageAdapter.resolveAll()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(storageAdapter.saveCallCount).toBe(2)
+      expect(storageAdapter.maxConcurrentSaveCalls).toBe(1)
+
+      storageAdapter.resolveAll()
+      await expect(Promise.all([firstFlush, secondFlush])).resolves.toEqual([undefined, undefined])
+    })
+
+    it('保存が進行中の間に3回以上flush()が重なっても、再実行は1回だけにまとめられる', async () => {
+      const db = await createTestDatabase()
+      const storageAdapter = createControllableStorageAdapter()
+      const controller = withAutoSave(db, storageAdapter)
+
+      db.run('CREATE TABLE t (id INTEGER)')
+      const flushes = [controller.flush(), controller.flush(), controller.flush()]
+      await vi.advanceTimersByTimeAsync(0)
+      expect(storageAdapter.saveCallCount).toBe(1)
+
+      storageAdapter.resolveAll()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(storageAdapter.saveCallCount).toBe(2)
+      expect(storageAdapter.maxConcurrentSaveCalls).toBe(1)
+
+      storageAdapter.resolveAll()
+      await Promise.all(flushes)
+    })
+
+    it('デバウンスタイマーの発火とflush()が競合しても、save()は同時に多重実行されない', async () => {
+      const db = await createTestDatabase()
+      const storageAdapter = createControllableStorageAdapter()
+      const controller = withAutoSave(db, storageAdapter)
+
+      db.run('CREATE TABLE t (id INTEGER)')
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+      expect(storageAdapter.saveCallCount).toBe(1)
+
+      db.run('INSERT INTO t (id) VALUES (1)')
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS - 1)
+      const flush = controller.flush()
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(storageAdapter.maxConcurrentSaveCalls).toBe(1)
+
+      // 1回目(CREATE TABLE分)のsave()完了 → INSERT分を捉える再実行がトリガーされる
+      storageAdapter.resolveAll()
+      await vi.advanceTimersByTimeAsync(0)
+      // 再実行されたsave()を完了させる
+      storageAdapter.resolveAll()
+      await flush
+
+      expect(storageAdapter.maxConcurrentSaveCalls).toBe(1)
     })
   })
 
