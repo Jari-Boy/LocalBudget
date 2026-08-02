@@ -154,3 +154,10 @@
 **原因**: `button`や`link`等の多くのロールは「Name from: contents」（子要素のテキストから自動的にアクセシブルネームが計算される）であるため、`getByRole(role, { name: '...' })`でテキスト内容を指定するテストの書き方に慣れていると、`alert`/`dialog`等の「Name from: author」ロールでも同じ書き方が通用すると誤解しやすい。
 **対策**: `alert`/`dialog`/`status`等「Name from: author」に分類されるロールを持つ要素をE2Eテストで特定する場合は、(1)コンポーネント側で`aria-label`を明示的に付与し`getByRole(role, { name })`で特定する（`IosInstallPrompt`の`role="dialog"`はこちらを採用）、(2)`aria-label`を付与しない場合は`getByRole(role)`でロールのみ特定し、テキスト内容は別途`toHaveText`等で検証する（`UpdateBanner`の`role="alert"`はこちらを採用）、のいずれかを使う。実装するロールがどちらの分類か不明な場合はARIA仕様（WAI-ARIA仕様の各ロール定義の"Name from"欄）を確認する。
 **該当箇所（例）**: `e2e/update-banner.pwa.spec.ts`（`getByRole('alert')`+`toHaveText`）、`src/components/IosInstallPrompt.tsx`（`aria-label="ホーム画面に追加"`付与）、Issue #28実装時に判明（コミットb9d63b1・2a04f0a）
+
+## 意図的なスコープ限定（範囲を広げない判断）がコミットメッセージ・Issueコメントにのみ残り、コード上のコメントとして明記されない
+
+**症状**: `i18n.ts`の`resources`定義が`common`名前空間のみを持つ実装は、「ドメイン別の名前空間(`account.json`等)は各UI実装Issue側が着手時に追加する」という意図的な設計判断の結果だったが、その理由がコミットメッセージ・Issueコメントにしか書かれておらず、コード自体には何のコメントも無かった。コードだけを読む後続の実装者(evaluator含む)には、これが「意図的にスコープを絞った結果」なのか「単なる実装漏れ」なのか判別できない状態だった。
+**原因**: 実装中は自分自身がその場でスコープ限定の背景を把握しているため、コード上に明記しなくても一見問題ないように見える。しかしコミットメッセージ・Issueコメントは将来コードだけを読む場面(他のIssueでの参照時、evaluatorのレビュー時)で必ず参照されるとは限らず、コードから意図が読み取れない。
+**対策**: 「意図的に何かを実装しない」「対応範囲をここまでに絞る」といったスコープに関する設計判断は、コミットメッセージだけでなく、対応するコードの直上にdocstring/コメントとして明記する。実装漏れとの見分けがつくよう、「なぜこれ以上広げないか」の理由もあわせて書く。evaluatorのレビュー時も、スコープが限定されている箇所を見つけたら、それが計画通りの意図的な限定かをコード上のコメントだけで判別できるか確認する。
+**該当箇所（例）**: `src/infrastructure/i18n/i18n.ts`（`resources`定義直上のコメント、コミット7bd25f7で追加）、`docs/decisions.md`「i18nextのリソースファイルは名前空間ごとに分割し、本Issueではcommon.jsonのみを先行用意する」、Issue #29 Review Attempt 1（evaluator指摘）
