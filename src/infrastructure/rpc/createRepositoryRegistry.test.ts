@@ -7,7 +7,9 @@
  * 通常のconfirmフロー(仕訳化・下書き削除)が機能することも合わせて検証する。
  * 呼び出し元(Worker側、`db.worker.ts`)から渡されたAutoSaveControllerが`autoSave`キー
  * としてそのまま公開され、メインスレッドからRPC越しに`flush()`を呼べることも検証する
- * (計画Issue #58)。
+ * (計画Issue #58)。backup.export()がdb.export()と同じ内容を返すことも検証する
+ * (計画Issue #26)。backup.importDatabase()はブラウザ専用のcreateBrowserDatabaseに
+ * 依存するためNode/Vitestでは検証できず、Playwrightで検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -24,6 +26,7 @@ import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
+import type { StorageAdapter } from '../storage/StorageAdapter'
 import type { AutoSaveController } from '../storage/withAutoSave'
 import { createRepositoryRegistry, type RepositoryRegistry } from './createRepositoryRegistry'
 
@@ -34,15 +37,24 @@ function createStubAutoSaveController(): AutoSaveController {
   }
 }
 
+function createStubStorageAdapter(): StorageAdapter {
+  return {
+    load: async () => null,
+    save: async () => {},
+  }
+}
+
 let db: Database
 let registry: RepositoryRegistry
 let autoSaveController: AutoSaveController
+let storageAdapter: StorageAdapter
 
 beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
   autoSaveController = createStubAutoSaveController()
-  registry = createRepositoryRegistry(db, autoSaveController)
+  storageAdapter = createStubStorageAdapter()
+  registry = createRepositoryRegistry(db, autoSaveController, storageAdapter)
 })
 
 describe('createRepositoryRegistry', () => {
@@ -66,6 +78,12 @@ describe('createRepositoryRegistry', () => {
 
   it('autoSaveキーには呼び出し元から渡されたAutoSaveControllerがそのまま割り当てられる', () => {
     expect(registry.autoSave).toBe(autoSaveController)
+  })
+
+  it('backup.export()はdb.export()と同じバイト列を返す', () => {
+    registry.account.create({ category: 'asset', name: '現金', isReconcilable: false })
+
+    expect(registry.backup.export()).toEqual(db.export())
   })
 
   it('同じレジストリ内のaccountとjournalEntryは同一DB接続を共有する(仕訳作成後に同じ接続のaccountから参照可能)', () => {

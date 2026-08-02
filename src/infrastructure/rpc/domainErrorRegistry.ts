@@ -4,6 +4,7 @@ import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMi
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
 import { MappingColumnNotFoundError } from '../../domain/statement-import/MappingColumnNotFoundError'
+import { InvalidBackupFileError } from '../backup/InvalidBackupFileError'
 
 export interface SerializedDomainError {
   name: string
@@ -14,9 +15,10 @@ export interface SerializedDomainError {
 type DomainErrorReviver = (message: string, extra: Record<string, unknown>) => Error
 
 /**
- * ドメインエラーのname(docs/decisions.md「エラー型の使い分け基準」で列挙された6種)から、
- * 元のコンストラクタ引数を復元するレジストリ。新しいドメインエラー型を追加する際は
- * ここに1エントリ追加するだけでよい(RPC層のレジストリパターンと同じ思想)。
+ * ドメインエラーのnameから、元のコンストラクタ引数を復元するレジストリ。新しい
+ * ドメインエラー型を追加する際はここに1エントリ追加するだけでよい(RPC層の
+ * レジストリパターンと同じ思想)。docs/decisions.md「エラー型の使い分け基準」で
+ * 列挙された6種に加え、InvalidBackupFileError(計画Issue #26)を登録済み。
  */
 const DOMAIN_ERROR_REVIVERS: Record<string, DomainErrorReviver> = {
   UnbalancedJournalEntryError: (message, extra) =>
@@ -33,6 +35,7 @@ const DOMAIN_ERROR_REVIVERS: Record<string, DomainErrorReviver> = {
   InvalidRecurringScheduleError: (message) => new InvalidRecurringScheduleError(message),
   MappingColumnNotFoundError: (_message, extra) =>
     new MappingColumnNotFoundError(extra.fieldName as string, extra.columnSpec as string),
+  InvalidBackupFileError: (message) => new InvalidBackupFileError(message),
 }
 
 const NON_EXTRA_KEYS = new Set(['name'])

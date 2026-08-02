@@ -19,7 +19,9 @@ import { withAutoSave } from '../storage/withAutoSave'
  * FileSystemAccessStorageAdapterへの対応・保存先切り替えは別Issue)、マイグレーション適用後
  * withAutoSaveでDB変更をtrailing debounce(計画Issue #58)で永続化する。withAutoSaveが返す
  * AutoSaveControllerはRepositoryRegistryのautoSaveキーとして公開し、メインスレッド側が
- * ページ非表示時等にRPC越しにflush()を呼べるようにする。
+ * ページ非表示時等にRPC越しにflush()を呼べるようにする。同じstorageAdapterインスタンスは
+ * バックアップのインポート(計画Issue #26)がStorageAdapterへの検証済みバイト列の保存にも
+ * 使うため、createRepositoryRegistryへそのまま渡す。
  */
 async function main(): Promise<void> {
   registerDomainErrorTransferHandler()
@@ -31,7 +33,7 @@ async function main(): Promise<void> {
   runMigrations(db)
   const autoSaveController = withAutoSave(db, storageAdapter)
 
-  const registry = createRepositoryRegistry(db, autoSaveController)
+  const registry = createRepositoryRegistry(db, autoSaveController, storageAdapter)
   Comlink.expose(registry)
 
   postMessage(WORKER_READY_MESSAGE)

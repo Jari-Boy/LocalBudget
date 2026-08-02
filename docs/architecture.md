@@ -147,6 +147,10 @@ interface StorageAdapter {
 
 **実装状況（Issue #57）**: 上記の共通化を見据え、DBバイト列⇔ファイルI/O間の変換ロジックを`src/infrastructure/storage/databaseFileCodec.ts`に切り出し済み。`FileSystemAccessStorageAdapter`が使う`FileSystemFileHandle`向けの読み書き（`writeDatabaseToFileHandle`/`readDatabaseFromFileHandle`）と、Blob/File向けの汎用変換（`toDatabaseBlob`/`fromDatabaseFile`）を分離してあり、後者は将来のエクスポート（Blobダウンロード）/インポート（ファイル選択アップロード）機能（#26）からもそのまま再利用できる想定（本体のエクスポート/インポートUI自体は未実装）。
 
+**実装状況（Issue #26）**: 上記のエクスポート/インポート機能自体（`src/infrastructure/backup/`）を実装済み。エクスポートは`downloadDatabaseBackup`が`databaseFileCodec.toDatabaseBlob`をそのまま再利用し、一時的な`<a download>`要素をDOMに追加してクリックすることでブラウザ標準のダウンロードを発火させる。インポートは`importDatabaseBackup`が担い、アップロードされたバイト列から使い捨ての一時`Database`を生成した上で、新設した`assertValidDatabaseSchema`（`sqlite_master`を直接確認し、`docs/schema/*.sql`の9ファイルそれぞれの代表テーブルが揃っているかを判定）で検証してから初めて`storageAdapter.save()`へ永続化する。検証が失敗した場合は`InvalidBackupFileError`（ドメインエラーとして`domainErrorRegistry`に登録済み、Comlink越しでも`instanceof`判定できる）を投げ、既存データへは一切書き込まない。`RepositoryRegistry`には`backup: { export(), importDatabase() }`を追加し、`db.worker.ts`から`storageAdapter`を配線した。E2Eテスト（`e2e/backup-export-import.spec.ts`）は、エクスポート、エクスポート→インポートの往復（`toDatabaseBlob`でBlob化→`File`化→`fromDatabaseFile`で読み戻す経路を経由し、シリアライズ/デシリアライズ双方の再利用を検証）、不正ファイル（パース不能なガベージ、および未マイグレーションの空DB／LocalBudgetと無関係なテーブルしか持たないDB）の拒否を検証している。
+
+**設計上の重要な注意点（実装時に発覚）**: `assertValidDatabaseSchema`は必ず`runMigrations`より先に実行する。`runMigrations`は`PRAGMA user_version`が0（未マイグレーション）のDBに対してLocalBudgetの全テーブルを新規作成してしまうため、先に適用すると空のsql.js DBファイルや無関係なテーブルしか持たないファイルでも検証をすり抜けてしまう（実装当初はこの順序を誤り、evaluatorレビューで実機バイパスとして発覚・修正した。詳細は`docs/decisions.md`参照）。また`importDatabaseBackup`は保存直前に`AutoSaveController.flush()`（4.2節参照）を呼び、インポート直前の編集操作に由来する保留中のデバウンス保存が、インポートの保存より後に発火して上書きしてしまう競合を防いでいる（同じく`docs/decisions.md`参照）。本体のエクスポート/インポートUI（ボタン配置等）・インポート成功後の`window.location.reload()`呼び出しは引き続き別Issue（UIエントリポイント）のスコープとして未実装（前者は元々本節が明記していた前提、後者は`window`がWeb Worker内に存在せずメインスレッド側の責務として残るという設計判断による）。
+
 ## 9. 既知の制約・将来課題
 
 - **マルチデバイス同期は「バックアップミラー」であり「リアルタイム同期」ではない**: クラウド同期フォルダ方式は複数端末の同時編集を想定しておらず、コンフリクト（競合コピー生成やデータ上書き）のリスクがある。基本は1台をメインで使い、他端末からは参照中心、または手動エクスポート/インポートで最新化する運用を前提とする。
