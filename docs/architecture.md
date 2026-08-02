@@ -136,6 +136,8 @@ interface StorageAdapter {
 - 更新戦略は「ユーザー確認型（prompt for update）」を採用する。自動更新はDB書き込み中の強制リロードでトランザクションを破壊するリスクがあるため避ける。
 - Web App Manifestは標準構成（name/short_name/icons/display: standalone/theme_color等）とする。iOS Safariは`beforeinstallprompt`に対応しないため、「ホーム画面に追加」を促す独自UIを用意する。
 
+**実装状況（Issue #28）**: `vite-plugin-pwa`（`strategies: 'generateSW'`、`registerType: 'prompt'`）を`vite.config.ts`に導入し、アプリシェル（HTML/CSS/JS/WASMバイナリ/アイコン）のprecacheとWeb App Manifestの生成を実装済み。`injectRegister: false`を指定し、SW登録は`src/components/UpdateBanner.tsx`が使う`virtual:pwa-register/react`の`useRegisterSW`フックに一本化した（`injectRegister`の既定`'auto'`のままだとHTMLに自動注入される登録スクリプトと`useRegisterSW`側の登録が二重に走り、`updatefound`イベントの検出が阻害されることを実機検証で確認したため、詳細は`docs/decisions.md`・`docs/guides/knowledge.md`参照）。更新確認UIは画面下部固定・非モーダルのバナー（`UpdateBanner`、`needRefresh`検出時のみ表示、「更新する」を選択するまで自動更新しない）として実装した。iOS向け誘導UIは`isIos`（User-Agent判定）・`isStandaloneDisplayMode`（`navigator.standalone`/`display-mode: standalone`判定、既にホーム画面から起動済みなら誘導不要と判定）の純粋関数（`src/infrastructure/pwa/`）と、`aria-modal="true"`のモーダルダイアログ`IosInstallPrompt`（フォーカストラップ・Escapeクローズ実装済み）として実装した。「今後表示しない」を明示的にチェックして閉じない限り、`localStorage`（`iosInstallPromptDismissal.ts`）に永続化せず再訪問のたびに再表示する。`UpdateBanner`（非モーダル、`z-index: 1000`）と`IosInstallPrompt`（モーダル、`z-index: 1100`）は同時に表示されうるため、DOM順ではなくz-indexの数値でモーダル側が常に前面に来ることを明示している（evaluatorレビュー指摘への対応、詳細は`docs/decisions.md`・`docs/guides/patterns.md`）。アイコン一式は`@vite-pwa/assets-generator`で既存の`public/favicon.svg`を唯一のソースとして機械生成した（`pwa-assets.config.ts`、本番デザイン素材は将来差し替え前提）。
+
 ## 8. バックアップ／エクスポート・インポート設計（MVP必須）
 
 保存先選択機能のFirefox/Safari向けフォールバックとして、また全ブラウザ共通のバックアップ手段として、以下をMVPに含める。
@@ -170,7 +172,7 @@ CLAUDE.mdの方針（実装は必ずテストから書く。red→green→refact
 | ---------------------------------------------------------- | -------------------------------------------------------------- | ----------------- |
 | ドメインロジック（集計・カテゴリ分類・予算計算等）                                  | 純粋なTypeScript関数としてのユニットテスト（多数）                                 | Vitest            |
 | DBアクセス層（Repository実装）                                      | sql.jsがNode上で動作するため、そのまま統合テストとして記述                             | Vitest            |
-| Service Worker / マニフェスト / インストール可能性 / Web Worker起動・RPC / File System Access連携 / Storage永続化・クォータ | 少数だが重要なフロー（入力→リロード→データ確認、オフライン起動、エクスポート/インポート往復、フォルダ選択保存の往復、Worker起動・RPC疎通・ドメインエラーのinstanceof伝播・Worker初期化失敗時の挙動、ストレージ永続化リクエスト/クォータ取得がWeb Worker/RPC層に依存せず単独で呼び出せることの確認）のみ | Playwright（実ブラウザ） |
+| Service Worker / マニフェスト / インストール可能性 / Web Worker起動・RPC / File System Access連携 / Storage永続化・クォータ | 少数だが重要なフロー（入力→リロード→データ確認、オフライン起動、エクスポート/インポート往復、フォルダ選択保存の往復、Worker起動・RPC疎通・ドメインエラーのinstanceof伝播・Worker初期化失敗時の挙動、ストレージ永続化リクエスト/クォータ取得がWeb Worker/RPC層に依存せず単独で呼び出せることの確認、更新確認バナー/iOS誘導ポップアップの表示分岐・永続化・フォーカス制御・両者の重なり順）のみ | Playwright（実ブラウザ）。Service Workerが本番ビルドでのみ生成されるためのオフライン起動・更新確認バナー等（`*.pwa.spec.ts`）は、ビルド済み`dist/`をpreviewサーバーで配信する専用の`playwright.pwa.config.ts`で実行し、devサーバー対象の既存e2e（`playwright.config.ts`）とは棲み分ける（Issue #28） |
 
 ## 11. セキュリティ・プライバシー方針
 

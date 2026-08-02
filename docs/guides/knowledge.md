@@ -88,3 +88,18 @@
 
 **内容**: 既知の「Comlink越しにRepositoryインスタンス等『メソッドを持つオブジェクト』を引数として渡すことはできない」制約(前項)とは別に、`Comlink.expose()`する側のオブジェクト(例: `RepositoryRegistry`)自体のネストしたプロパティとして「メソッドを持つオブジェクト」を追加する場合にも、同種の問題が起きる。Comlinkの型定義上、ネストしたプロパティは既定で構造化複製可能な値(`Promisify<T>`、TypeScript上は単に`Promise<T>`)とみなされ、メソッド呼び出しの中継対象(`Remote<T>`)としては扱われない。`Comlink.proxy(value)`で明示的にProxyMarkedを付与したオブジェクトを返すことで、そのプロパティ経由のメソッド呼び出しがRPC越しに中継されるようになる(型も`Remote<T>`相当になる)。この問題は「引数として渡せない」問題と発生条件・症状が似ている(どちらも「メソッドを持つオブジェクトをComlinkでそのまま扱おうとすると壊れる」)ため、対処法(縮小シグネチャのラッパーAPI化 vs. `Comlink.proxy()`付与)を取り違えて比較しないよう注意が必要(実際に本Issueの実装当初、docstringでこの2つを「同種の制約」と誤って説明し、evaluatorレビューで指摘・訂正された)。
 **参考**: `src/infrastructure/rpc/createRepositoryRegistry.ts`(`RepositoryRegistry.autoSave: AutoSaveController & Comlink.ProxyMarked`)、`docs/decisions.md`「RepositoryRegistryにRPC越しに公開するメソッド持ちオブジェクト(AutoSaveController)を追加する際、Comlink.proxy()でProxyMarkedを付与する」、Issue #58 Review Attempt 1(evaluator LOW指摘・Attempt 2で訂正)
+
+## vite-plugin-pwaでinjectRegisterとuseRegisterSWを併用すると二重登録になりupdatefoundが検出できない
+
+**内容**: `vite-plugin-pwa`の`injectRegister`オプションは既定値`'auto'`で、ビルド後のHTMLに独立したService Worker登録スクリプト(`registerSW.js`)を自動注入する。この状態で`virtual:pwa-register/react`の`useRegisterSW`フックをアプリケーションコード側からも呼び出すと、同一オリジンに対してSW登録が2回行われる。実機検証(本番ビルド+`vite preview`)の結果、この二重登録状態では新しいService Workerを検出した際の`updatefound`イベントが`useRegisterSW`側のリスナーで正しく発火せず、`needRefresh`が更新されない(更新確認UIが表示されない)ことを確認した。`useRegisterSW`等アプリケーションコード側でSW登録を明示的に行うフレームワーク統合を使う場合は、`injectRegister: false`を指定してHTMLへの自動注入を無効化し、登録経路を一本化する必要がある。
+**参考**: `vite.config.ts`(`injectRegister: false`)、`src/components/UpdateBanner.tsx`、`docs/decisions.md`「vite-plugin-pwaのSW登録はinjectRegister: falseに固定し、useRegisterSW側に一本化する」、Issue #28
+
+## Service Worker自身のスクリプト取得リクエストはPlaywrightのpage.route/context.routeでインターセプトできない
+
+**内容**: Service Workerが自身の更新チェック(`registration.update()`)のために発行する、SWスクリプト自体(`sw.js`等)への取得リクエストは、ブラウザ内部のService Workerプロセスが直接発行するため、Playwrightの`page.route()`・`context.route()`いずれのネットワークインターセプションの対象にもならない(実機検証で、ルートハンドラの`intercepted`フラグが一度も`true`にならないことを確認した)。SWスクリプトの内容を書き換えて「新しいバージョンがデプロイされた」状態をE2Eテストで模擬する必要がある場合は、ネットワークインターセプトではなく、ビルド済み成果物のファイル(`dist/sw.js`)自体を`fs.writeFileSync`等で直接書き換える方式を使う。`vite preview`のような静的ファイルサーバーはリクエストの都度ファイルシステムから読み直すため、書き換え後に`registration.update()`を呼べば新しいSWとして検出される。
+**参考**: `e2e/update-banner.pwa.spec.ts`・`e2e/pwa-overlay-z-index.pwa.spec.ts`、`docs/decisions.md`「Service Worker新バージョンのE2Eデプロイ模擬はdist/sw.jsの直接書き換え+registration.update()で行う」、Issue #28
+
+## WorkboxのclientsClaimは既定でfalseのため、初回訪問時にService Workerがそのページ自身を制御下に置かない
+
+**内容**: `vite-plugin-pwa`(Workbox)が生成するService Workerは、`workbox.clientsClaim`オプションを明示的に`true`にしない限り既定で`false`となる。この設定では、SWが初めてactivateされても、activate時点で既に開かれているページ(SW登録前から表示されていたページ、すなわち初回訪問時のページ自身)を即座に制御下(`navigator.serviceWorker.controller`)には置かない。制御下に入るのは次のナビゲーション(`page.reload()`等)以降になる。オフライン起動やSW更新をE2Eで検証する際は、`page.goto('/')`の直後ではなく、`navigator.serviceWorker.ready`を待ってから一度`reload()`し、`navigator.serviceWorker.controller !== null`になったことを確認してから本題の検証(オフライン化・SW更新チェック等)に進む必要がある。
+**参考**: `e2e/offline-startup.pwa.spec.ts`・`e2e/update-banner.pwa.spec.ts`(`waitForServiceWorkerController`ヘルパー)、Issue #28
