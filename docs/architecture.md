@@ -156,6 +156,9 @@ interface StorageAdapter {
 - **マルチデバイス同期は「バックアップミラー」であり「リアルタイム同期」ではない**: クラウド同期フォルダ方式は複数端末の同時編集を想定しておらず、コンフリクト（競合コピー生成やデータ上書き）のリスクがある。基本は1台をメインで使い、他端末からは参照中心、または手動エクスポート/インポートで最新化する運用を前提とする。
 - 真のマルチデバイス同期（差分マージ・競合解決ロジックを備えたもの）は将来検討課題とする。5章で触れた`updated_at`カラムの付与は、その際の拡張を見据えたものである。
 - ブラウザの「閲覧データを削除」操作やプライベートブラウジングの終了時クリアにより、IndexedDB保存分のデータは完全に失われうる。`navigator.storage.persist()`によるストレージ永続化リクエストと`navigator.storage.estimate()`によるクォータ表示をMVPに含める。
+
+  **実装状況（Issue #27）**: `navigator.storage.persist()`を呼び出す`requestStoragePersistence()`（`src/infrastructure/storage/requestStoragePersistence.ts`、`Promise<boolean>`で許可/拒否を返す）と、`navigator.storage.estimate()`を呼び出す`getStorageEstimate()`（同ディレクトリの`getStorageEstimate.ts`、`Promise<{ usage, quota } | null>`。仕様上省略されうる`usage`/`quota`は0にフォールバック）を実装済み。両APIはメインスレッド・Web Worker双方から利用できるグローバルAPIであり、sql.jsのDB状態や`StorageAdapter`の選択に一切依存しないため、既存の`RepositoryRegistry`によるWeb Worker RPCパターンには乗せず、独立したモジュールとして実装した。`navigator.storage`非対応環境では機能検出によりそれぞれ`false`/`null`を返す（`persist()`/`estimate()`自体は呼ばない）。`persist()`の許可/拒否はブラウザのヒューリスティック依存でPlaywrightでの拒否パス再現が困難なため、E2E（`e2e/storage-persistence.spec.ts`、10章参照）では戻り値の型のみを確認し、拒否分岐の検証はVitestのモックテストに委ねた。これらをアプリの起動シーケンスに組み込みUIへ結果を表示する統合部分（`src/App.tsx`）は、UI自体がまだVite雛形のままで統合ポイントが未実装のため、将来のUI実装Issueのスコープとして残る。
+
 - マルチタブでの同時利用時の挙動（特にIndexedDBStorageAdapter使用時の書き込み競合）は個別に検討する。
 - 暗号化は現時点で非対応。IndexedDB/ファイルシステムはOSのディスク暗号化に依存するのみで、ブラウザ自体はデータを暗号化しない。共有PCでの利用リスクがあるため、将来的にパスフレーズによるアプリロック機能を検討課題とする。
 
@@ -167,7 +170,7 @@ CLAUDE.mdの方針（実装は必ずテストから書く。red→green→refact
 | ---------------------------------------------------------- | -------------------------------------------------------------- | ----------------- |
 | ドメインロジック（集計・カテゴリ分類・予算計算等）                                  | 純粋なTypeScript関数としてのユニットテスト（多数）                                 | Vitest            |
 | DBアクセス層（Repository実装）                                      | sql.jsがNode上で動作するため、そのまま統合テストとして記述                             | Vitest            |
-| Service Worker / マニフェスト / インストール可能性 / Web Worker起動・RPC / File System Access連携 | 少数だが重要なフロー（入力→リロード→データ確認、オフライン起動、エクスポート/インポート往復、フォルダ選択保存の往復、Worker起動・RPC疎通・ドメインエラーのinstanceof伝播・Worker初期化失敗時の挙動）のみ | Playwright（実ブラウザ） |
+| Service Worker / マニフェスト / インストール可能性 / Web Worker起動・RPC / File System Access連携 / Storage永続化・クォータ | 少数だが重要なフロー（入力→リロード→データ確認、オフライン起動、エクスポート/インポート往復、フォルダ選択保存の往復、Worker起動・RPC疎通・ドメインエラーのinstanceof伝播・Worker初期化失敗時の挙動、ストレージ永続化リクエスト/クォータ取得がWeb Worker/RPC層に依存せず単独で呼び出せることの確認）のみ | Playwright（実ブラウザ） |
 
 ## 11. セキュリティ・プライバシー方針
 
