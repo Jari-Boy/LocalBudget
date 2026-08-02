@@ -12,6 +12,7 @@ import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMi
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
 import { MappingColumnNotFoundError } from '../../domain/statement-import/MappingColumnNotFoundError'
+import { InvalidBackupFileError } from '../backup/InvalidBackupFileError'
 import {
   deserializeDomainError,
   isDomainError,
@@ -19,13 +20,14 @@ import {
 } from './domainErrorRegistry'
 
 describe('isDomainError', () => {
-  it('登録済みの6種のドメインエラーをtrueと判定する', () => {
+  it('登録済みの7種のドメインエラーをtrueと判定する', () => {
     expect(isDomainError(new UnbalancedJournalEntryError(100, 90))).toBe(true)
     expect(isDomainError(new RestrictedAccountPostingError(1, 'manual'))).toBe(true)
     expect(isDomainError(new SettlementTagMismatchError(1, 2))).toBe(true)
     expect(isDomainError(new NoBalanceDiscrepancyError())).toBe(true)
     expect(isDomainError(new InvalidRecurringScheduleError('invalid'))).toBe(true)
     expect(isDomainError(new MappingColumnNotFoundError('date', 'A'))).toBe(true)
+    expect(isDomainError(new InvalidBackupFileError('invalid'))).toBe(true)
   })
 
   it('登録されていない通常のErrorはfalseと判定する', () => {
@@ -105,6 +107,15 @@ describe('serializeDomainError / deserializeDomainError', () => {
     expect(revived).toBeInstanceOf(MappingColumnNotFoundError)
     expect((revived as MappingColumnNotFoundError).fieldName).toBe('entry_date')
     expect((revived as MappingColumnNotFoundError).columnSpec).toBe('日付')
+  })
+
+  it('InvalidBackupFileErrorのmessageを保持して往復する', () => {
+    const original = new InvalidBackupFileError('missing expected tables (journal_entries)')
+
+    const revived = deserializeDomainError(serializeDomainError(original))
+
+    expect(revived).toBeInstanceOf(InvalidBackupFileError)
+    expect(revived.message).toBe('missing expected tables (journal_entries)')
   })
 
   it('未登録のエラー名をdeserializeしようとした場合は例外を投げる', () => {
