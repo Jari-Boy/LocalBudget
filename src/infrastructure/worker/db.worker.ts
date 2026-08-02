@@ -17,8 +17,9 @@ import { withAutoSave } from '../storage/withAutoSave'
  * メッセージを送出し、メインスレッド側のPromiseを無期限にハングさせず確実にrejectさせる。
  * 起動時はIndexedDBStorageAdapterから既存DBのバイト列をロードして復元し(計画Issue #25、
  * FileSystemAccessStorageAdapterへの対応・保存先切り替えは別Issue)、マイグレーション適用後
- * withAutoSaveでDB変更を即時(デバウンスなしの単純なsave呼び出し。デバウンスは計画Issue #58)
- * 永続化する。
+ * withAutoSaveでDB変更をtrailing debounce(計画Issue #58)で永続化する。withAutoSaveが返す
+ * AutoSaveControllerはRepositoryRegistryのautoSaveキーとして公開し、メインスレッド側が
+ * ページ非表示時等にRPC越しにflush()を呼べるようにする。
  */
 async function main(): Promise<void> {
   registerDomainErrorTransferHandler()
@@ -28,9 +29,9 @@ async function main(): Promise<void> {
 
   const db = await createBrowserDatabase(savedData ?? undefined)
   runMigrations(db)
-  withAutoSave(db, storageAdapter)
+  const autoSaveController = withAutoSave(db, storageAdapter)
 
-  const registry = createRepositoryRegistry(db)
+  const registry = createRepositoryRegistry(db, autoSaveController)
   Comlink.expose(registry)
 
   postMessage(WORKER_READY_MESSAGE)

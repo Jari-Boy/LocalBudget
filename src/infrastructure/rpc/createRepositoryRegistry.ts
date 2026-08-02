@@ -24,6 +24,7 @@ import { SqlJsJournalEntryDraftRepository } from '../db/SqlJsJournalEntryDraftRe
 import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
+import type { AutoSaveController } from '../storage/withAutoSave'
 
 /**
  * JournalEntryDraftRepository.confirmはJournalEntryRepositoryインスタンスを引数に
@@ -51,14 +52,24 @@ export interface RepositoryRegistry {
   journalEntryDraft: JournalEntryDraftRpcApi
   project: ProjectRepository
   recurringTransactionRule: RecurringTransactionRuleRepository
+  /**
+   * DBの永続化制御(計画Issue #58)。Worker側で生成済みのAutoSaveControllerをそのまま
+   * 公開し、メインスレッド側がページ非表示時等に`flush()`をRPC越しに呼べるようにする。
+   */
+  autoSave: AutoSaveController
 }
 
 /**
  * Worker側で全10種のRepositoryインスタンスを生成し、1つのレジストリオブジェクトへ
  * まとめる(計画Issue #24のレジストリパターン)。新規Repositoryを追加する際は、
- * このオブジェクトへ1エントリ追加するだけでよい。
+ * このオブジェクトへ1エントリ追加するだけでよい。呼び出し元(`db.worker.ts`)で
+ * `withAutoSave`から得たAutoSaveControllerを`autoSaveController`として受け取り、
+ * `autoSave`キーでそのまま公開する。
  */
-export function createRepositoryRegistry(db: Database): RepositoryRegistry {
+export function createRepositoryRegistry(
+  db: Database,
+  autoSaveController: AutoSaveController,
+): RepositoryRegistry {
   const journalEntryRepository = new SqlJsJournalEntryRepository(db)
   const journalEntryDraftRepository = new SqlJsJournalEntryDraftRepository(db)
 
@@ -80,5 +91,6 @@ export function createRepositoryRegistry(db: Database): RepositoryRegistry {
     },
     project: new SqlJsProjectRepository(db),
     recurringTransactionRule: new SqlJsRecurringTransactionRuleRepository(db),
+    autoSave: autoSaveController,
   }
 }
