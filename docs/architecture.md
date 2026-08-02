@@ -98,6 +98,8 @@ interface StorageAdapter {
 - クラウド同期フォルダへの書き込みは、OS側同期クライアントが同時にファイルを読もうとするタイミングと競合する可能性がある。書き込みはデバウンス（例: 最終更新から一定時間後、またはページ非表示時）し、頻繁な書き込みを避ける。
 - 複数端末が同じ同期フォルダのDBファイルを非同期に編集すると、クラウドサービス側で「競合コピー」が生成されたり、後勝ちで上書きされデータが失われるリスクがある。この方式は「バックアップミラー」であり「リアルタイムマルチデバイス同期」ではないことをユーザーにも明示する（詳細は「9. 既知の制約・将来課題」）。
 
+**実装状況（Issue #25）**: `StorageAdapter`インターフェース・`IndexedDBStorageAdapter`・Web Worker起動時のロードフロー（`IndexedDBStorageAdapter.load()`で復元 → マイグレーション適用 → DB変更の自動永続化開始）を実装済み。`FileSystemAccessStorageAdapter`は未実装（別Issue）。DB変更の自動永続化（`withAutoSave`）は`sql.js`の`Database#run()`を監視し、BEGIN〜COMMIT/ROLLBACKのトランザクション境界単位で`save()`を1回呼ぶ設計（トランザクション途中の保存によるクラッシュ時の不完全な永続化を避けるため）。上記のデバウンスは未実装で、現時点ではデバウンスなしの単純な即時save呼び出しとしている（デバウンス自体は別Issueで扱う）。詳細な設計判断は`docs/decisions.md`を参照。
+
 ## 5. DBアクセス層とWorker設計
 
 - DBは必ずWeb Worker内で実行し、Reactのメインスレッドはメッセージパッシング（RPC）経由でのみアクセスする。UIをブロックしないことが目的。RPCの実装には`Comlink`を採用する。Worker側（`src/infrastructure/worker/`）で全Repositoryインスタンスを1つのレジストリオブジェクトへ集約して`Comlink.expose()`し、メインスレッド側（`src/infrastructure/rpc/`）は`Comlink.wrap()`した型安全なプロキシとして呼び出す。Worker側の初期化（sql.jsのWASMロード等、非同期）が完了する前にメインスレッドがRPC呼び出しを送ると応答が失われるため、Worker起動完了をメインスレッドが待ち合わせてからRPCクライアントを生成する（Issue #24、詳細は`docs/decisions.md`）。
