@@ -63,3 +63,23 @@
 
 **内容**: sql.jsの`Database#export()`(DB全体をシリアライズして`Uint8Array`を返すAPI)を呼び出すと、同一のDB接続上でSQLiteが内部的に保持する`last_insert_rowid()`の値がリセットされる。実機テストで`db.run('INSERT ...')` → `db.export()` → `db.exec('SELECT last_insert_rowid()')`という順に実行すると、直前のINSERTで採番された値ではなく`0`が返ることを確認した。これはsql.js/SQLiteの一般的なドキュメントには明記されていない挙動で、既存のほぼ全Repositoryの`create()`実装が`db.run(INSERT...)`直後に`last_insert_rowid()`を読む規約になっているため、`export()`を書き込み処理の直後に同期的に呼ぶ実装(例: DB変更を監視して自動保存する仕組み)を書くとRepository層が広範囲に壊れる。対策として、`export()`の呼び出しを`queueMicrotask`等でマイクロタスクへ遅延させ、呼び出し元の同期処理(sql.jsのRepositoryメソッドは同期API)が完全に終わった後にのみ実行するようにする。
 **参考**: `src/infrastructure/storage/withAutoSave.ts`、`docs/guides/patterns.md`「sql.jsのdb.export()を書き込み処理の直後に同期的に呼ぶと、last_insert_rowid()に依存する既存コードが壊れる」、`docs/decisions.md`「sql.jsのdb.export()はqueueMicrotaskで遅延実行し、Repositoryのcreate()実装が依存するlast_insert_rowid()を壊さないようにする」、Issue #25
+
+## FileSystemWritableFileStreamは書き込み失敗後にclose()を呼ぶと元のエラーではなく別のTypeErrorで拒否される
+
+**内容**: `FileSystemFileHandle#createWritable()`が返す`FileSystemWritableFileStream`(WHATWG Streams仕様の`WritableStream`を継承)で`write()`が失敗すると、ストリームは内部的にerrored状態になる。この状態で`close()`を呼んでもwrite失敗時の元のエラー(例: ディスク容量不足に相当するエラー)は再送出されず、Streams仕様に基づく別の`TypeError`(「ストリームは既にerrored」の旨)で拒否される。`try { await writable.write(x); await writable.close() } finally {...}`のように無条件でclose()を呼ぶ構造だと、この`TypeError`が本来伝播すべき元のエラーを上書きしてしまう。失敗時は`close()`ではなく`abort()`を呼ぶ必要がある(`abort()`はストリームの状態に関わらず正常に完了する)。
+**参考**: `src/infrastructure/storage/databaseFileCodec.ts`(`writeDatabaseToFileHandle`)、`docs/guides/patterns.md`「try/finally構造でストリームの後始末を書くと、close()失敗時のエラーが元のエラーを上書きしてしまう」、`docs/decisions.md`「FileSystemWritableFileStreamへのwrite()が失敗した場合、close()ではなくabort()を呼び元のエラーをそのまま伝播させる」、Issue #57
+
+## FileSystemDirectoryHandle/FileSystemFileHandleはstructured cloneに対応しておりIndexedDBにそのまま保存できる
+
+**内容**: File System Access APIの`FileSystemDirectoryHandle`・`FileSystemFileHandle`はstructured clone可能なオブジェクトとして仕様上定義されており、`IDBObjectStore#put()`にハンドルオブジェクトをそのまま渡してIndexedDBへ保存できる(JSONシリアライズや独自の永続化フォーマットへの変換は不要)。取り出したハンドルはブラウザ再起動後も引き続き有効(ユーザーが明示的に許可を取り消さない限り)だが、`queryPermission`/`requestPermission`による読み書き権限は毎回のセッションで再確認する必要がある(次項参照)。この性質により、`directoryHandleStore`は`IndexedDBStorageAdapter`と同じ「単一object store・単一固定キーへのget/put」パターン(`indexedDbSingleRecordStore`)をそのまま流用でき、保存対象がバイト列かハンドルオブジェクトかで実装を分岐させる必要がない。
+**参考**: `src/infrastructure/storage/directoryHandleStore.ts`、`src/infrastructure/storage/indexedDbSingleRecordStore.ts`、Issue #57
+
+## FileSystemHandle#queryPermissionが'denied'を返す場合、requestPermissionを呼んでも意味がない
+
+**内容**: MDNのドキュメントによれば、`FileSystemHandle#queryPermission()`が`'denied'`を返した状態では、以後同じハンドルに対する操作は(再度`requestPermission()`を呼んでも)すべて拒否される。`'prompt'`(未確認)の場合のみ`requestPermission()`でユーザーに許可を求める意味がある。この区別をせず`'granted'`以外は常に`requestPermission()`を呼ぶ実装にすると、`'denied'`のケースで不要なAPI呼び出しが発生する(ユーザーへのプロンプトは表示されず即座に`'denied'`が返る点で実害は小さいが、無駄な分岐でありテストでも区別して検証すべき)。
+**参考**: `src/infrastructure/storage/ensureReadWritePermission.ts`、Issue #57
+
+## Playwrightで`showDirectoryPicker`(File System Access API)をテストするにはOrigin Private File Systemのハンドルで差し替える
+
+**内容**: `showDirectoryPicker()`は実際のOSネイティブなディレクトリ選択ダイアログを開きユーザー操作を要求するAPIであり、Playwrightから直接自動操作(ダイアログのクリック等)することはできない。しかし`window.showDirectoryPicker`はテスト内で`page.evaluate()`から任意の関数に差し替え可能な単なるグローバル関数であるため、`window.showDirectoryPicker = async () => navigator.storage.getDirectory()`のようにOrigin Private File System(OPFS)のルートハンドルを返す関数に差し替えることで、ダイアログ操作を経由せずに本物の`FileSystemDirectoryHandle`を取得できる。OPFS由来のハンドルもローカルディスクのハンドルと同一の`FileSystemDirectoryHandle`インターフェース(structured clone対応・`getFileHandle`・`queryPermission`/`requestPermission`等)を実装しているため、ディレクトリ選択(ダイアログ操作)以外の挙動、すなわちIndexedDBへの永続化・実際のファイル読み書き・権限確認フローはすべて実ブラウザのネイティブ実装で検証できる。IndexedDB・File System Access APIともにNode/jsdom環境には実装がないため、この種のテストはPlaywright(実ブラウザ)でのみ再現可能である。
+**参考**: `e2e/file-system-access-storage-adapter.spec.ts`、`docs/architecture.md` 10章、Issue #57

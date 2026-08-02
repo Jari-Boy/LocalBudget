@@ -169,3 +169,27 @@
 **背景**: `withAutoSave`の`scheduleSave`は当初`queueMicrotask(() => { void storageAdapter.save(db.export()) })`という完全なfire-and-forgetで実装されており、`storageAdapter.save()`が失敗(IndexedDBのクォータ超過等)してもunhandled rejectionとして握りつぶされ、呼び出し元(Repositoryのメソッド)は既に同期処理を終えているため失敗を検知・伝播する経路が存在しなかった。Issue #24 Review Attempt 1で指摘・`docs/guides/patterns.md`に明文化済みの「Web Worker等の非同期初期化をPromiseでラップする際、resolveのみ実装しrejectの経路を用意し忘れる」と同種のリスクを、初期化ではなく永続化のホットパスで再導入していたとしてIssue #25 Review Attempt 1でFAIL指摘された。永続化処理は呼び出し元が既に同期的にリターンした後で発火するため、通常の`Promise`のreject伝播やErrorのthrowでは呼び出し元に届けられない構造的な制約がある。
 **決定**: `withAutoSave`の戻り値を`void`から`AutoSaveController`(`{ getLastSaveError(): unknown }`)に変更した。`scheduleSave`内で`storageAdapter.save(db.export())`に`.then(onSuccess, onError)`を付け、失敗時は`console.error`でログに残しつつ直近の保存エラーをクロージャに保持、`getLastSaveError()`から取得できるようにした。成功時は保持したエラーを`null`に戻し、一時的な失敗からの回復も検知できるようにした。
 **影響**: `db.worker.ts`側では`AutoSaveController`の戻り値を現時点では消費していないが、将来UI側で「保存に失敗しています」等の表示を行う際の受け口として利用できる(UIへの通知配線自体は計画Issue #25本文の除外事項でありスコープ外)。今後、呼び出し元が既に同期的にリターンしてしまうfire-and-forget的な非同期処理を新設する場合、Promiseのreject/例外送出による伝播ができない構造上の制約があることを踏まえ、「ログに残す」+「直近の失敗を事後的に取得できるハンドル(コントローラーオブジェクト)を返す」という組み合わせを優先する。
+
+## 2026-08-02: FileSystemAccessStorageAdapterは非対応環境でIndexedDBへ自動フォールバックせず、明示的なエラー型をスローする
+
+**背景**: `docs/architecture.md` 4.2節はFile System Access API（`showDirectoryPicker`）がChromium系のみ対応でFirefox/Safariでは非対応であることを既に明記していたが、`FileSystemAccessStorageAdapter`自体が非対応環境でどう振る舞うか（黙って`IndexedDBStorageAdapter`相当の挙動にフォールバックするのか、エラーにするのか）は未確定だった。計画Issue #57着手前にユーザーと協議し、方針を決定した。
+**決定**: `FileSystemAccessStorageAdapter`のコンストラクタで`isFileSystemAccessSupported()`を用いて対応環境かどうかを判定し、非対応の場合は即座に`FileSystemAccessNotSupportedError`をスローする。`IndexedDBStorageAdapter`への自動フォールバックは行わない。どちらのStorageAdapterをインスタンス化するか（フォールバック先の選択）、および非対応環境向けの警告表示・代替導線は、このクラス自身の責務にせずUI側（別Issue）に委ねる。
+**影響**: `FileSystemAccessStorageAdapter`を呼び出す側（UI層、別Issue）は、インスタンス化前に`isFileSystemAccessSupported()`で事前判定するか、コンストラクタの例外を`instanceof FileSystemAccessNotSupportedError`で捕捉して`IndexedDBStorageAdapter`等の代替へ切り替える設計にする必要がある。StorageAdapterの実装クラス自身に「複数の永続化方式のどれを使うか」を決めさせず、呼び出し側（UI/アプリケーション層）に選択責務を寄せるという方針は、今後StorageAdapterの実装を追加する場合にも踏襲する。
+
+## 2026-08-02: IndexedDBの「単一object store・単一固定キーへのget/put」パターンをindexedDbSingleRecordStoreとして共通ヘルパー化する
+
+**背景**: Issue #57で`directoryHandleStore`（`FileSystemDirectoryHandle`をIndexedDBに保存）を実装した際、既存の`IndexedDBStorageAdapter`（DBバイト列をIndexedDBに保存）とDB名/オブジェクトストア名/キー名以外ほぼ同一の「DB open（`onupgradeneeded`でストア作成）→ get/put → close」というコードを個別に実装してしまい、evaluatorレビュー（Review Attempt 1）でDRY違反として指摘された。
+**決定**: DB名・DBバージョン・オブジェクトストア名・レコードキーをパラメータ化した`createIndexedDbSingleRecordStore<T>()`（`src/infrastructure/storage/indexedDbSingleRecordStore.ts`）を新設し、`IndexedDBStorageAdapter`と`directoryHandleStore`の両方をこのヘルパーを使う実装にリファクタした。ジェネリクス型`T`により、保存する値の型（`Uint8Array`/`FileSystemDirectoryHandle`）が異なっても同じ実装を再利用できる。
+**影響**: 今後、IndexedDBに「単一のオブジェクトストアに固定キー1件だけを保存する」という同型の永続化ニーズが生じた場合（例: 他の設定値の永続化）は、個別にIndexedDB操作を書かず`indexedDbSingleRecordStore`を再利用する。複数レコード・複数キーを扱う要件が生じた場合はこのヘルパーの対象外であり、別途設計が必要。
+
+## 2026-08-02: File System Access APIの型定義として@types/wicg-file-system-accessを採用する
+
+**背景**: `FileSystemAccessStorageAdapter`の実装で`showDirectoryPicker`・`FileSystemDirectoryHandle#queryPermission`/`requestPermission`等のFile System Access API固有の型を使う必要があったが、TypeScript標準の`lib.dom.d.ts`にはこれらの型が含まれていなかった（TC39/WHATWG標準ではなくWICG提案段階のAPIであるため）。
+**決定**: コミュニティメンテナンスの型定義パッケージ`@types/wicg-file-system-access`をdevDependenciesに追加し、`tsconfig.app.json`の`compilerOptions.types`に`wicg-file-system-access`を追加してグローバル型として取り込んだ。
+**影響**: `package.json`に`@types/wicg-file-system-access`が追加された（実行時の依存ではなく型定義のみ、バンドルサイズへの影響なし）。今後、他のWICG提案段階・非標準ブラウザAPIを利用する際も、まずコミュニティの`@types/*`パッケージの有無を確認し、なければ独自の`.d.ts`を書く方針とする。
+
+## 2026-08-02: FileSystemWritableFileStreamへのwrite()が失敗した場合、close()ではなくabort()を呼び元のエラーをそのまま伝播させる
+
+**背景**: `writeDatabaseToFileHandle`の実装当初、`try { await writable.write(...); await writable.close() } finally { ... }`のような構造で、`write()`が失敗した場合でも後始末として`close()`を呼ぶ実装になっていた。しかしStreams仕様上、`write()`失敗後のストリームは既にerrored状態であり、その状態で`close()`を呼ぶと元のエラー（例: ディスク容量不足）ではなく別の`TypeError`で拒否される。`try/finally`構造ではこの`close()`由来の`TypeError`が本来伝播すべき元のエラーを上書きしてしまい、呼び出し元は真の失敗原因を受け取れなくなる問題がevaluatorレビュー（Review Attempt 1）で指摘された。
+**決定**: `writeDatabaseToFileHandle`は`write()`が失敗した場合、`close()`を呼ばず`writable.abort()`を呼んでからストリーム操作由来のエラーではなく元のエラーをそのまま`throw`する構成にした。TDDでこの失敗パスを再現するテストをまずredにしてから修正した。
+**影響**: 今後`FileSystemWritableFileStream`（またはStreams API全般のWritableStream）を扱うコードで書き込み失敗時の後始末を実装する際は、`close()`をtry/finallyで機械的に呼ぶのではなく、失敗パスでは`abort()`を使い元のエラーを保持する設計を優先する。回帰テストは`src/infrastructure/storage/databaseFileCodec.test.ts`に追加済み。
