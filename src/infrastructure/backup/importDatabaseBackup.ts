@@ -15,6 +15,16 @@ import { InvalidBackupFileError } from './InvalidBackupFileError'
  * 一切差し替えない(呼び出し元がこの後ページをリロードし、既存の起動フロー
  * (db.worker.tsのmain())がStorageAdapterから読み込み直すことでDBを反映する)。
  *
+ * assertValidDatabaseSchemaは必ずrunMigrationsより先に実行する。runMigrationsは
+ * PRAGMA user_versionが0の(未マイグレーションの)DBに対してLocalBudgetの全テーブルを
+ * 新規作成してしまうため、先にrunMigrationsを適用すると、空のsql.js DBファイルや
+ * LocalBudgetと無関係なテーブルしか持たないファイルであっても、検証時点では既に
+ * 全テーブルが存在する状態になってしまい、assertValidDatabaseSchemaが常に通過して
+ * しまう(evaluatorレビューで指摘された不備、e2e/backup-export-import.spec.tsに
+ * 回帰テストあり)。先に生のインポートバイト列そのものの構造を検証し、LocalBudgetの
+ * DBだと確認できてから初めてrunMigrations(古いバージョンのバックアップの互換性確認)を
+ * 適用する。
+ *
  * 保存直前にautoSaveController.flush()を呼ぶのは、直前の編集操作に由来する
  * withAutoSaveの保留中デバウンスタイマー(インポートするバイト列とは無関係な、
  * 生きたdbの現在の状態を書き込もうとするタイマー)が、このインポートの保存より
@@ -34,8 +44,8 @@ export async function importDatabaseBackup(
   let scratchDb: Database | undefined
   try {
     scratchDb = await createBrowserDatabase(data)
-    runMigrations(scratchDb)
     assertValidDatabaseSchema(scratchDb)
+    runMigrations(scratchDb)
   } catch (error) {
     if (error instanceof InvalidBackupFileError) {
       throw error
