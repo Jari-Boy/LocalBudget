@@ -126,3 +126,31 @@
 **原因**: 「検証してから本処理(マイグレーション適用)を行う」という直感的な順序と、「検証対象そのものを先に正規化・補完してから検証する方が安全に見える」という直感が両立しがたいことに気づきにくい。特に、検証対象への副作用(テーブルの新規作成)が「まさに検証したい性質(テーブルが揃っているか)」を上書きしてしまうケースでは、副作用の実行結果によって検証が常に成功する状態になり、実装者自身が正常系のテスト(正しいバックアップファイルのインポート)だけを見ていると気づけない。異常系(空ファイル・無関係なファイルの拒否)のテストを先に用意していないと発見が更に遅れる。本件は計画Issue本文が着手前に「懸念点」として明示的に警告していたリスクだったにもかかわらず、実装時にその警告を踏まえた対策を怠り、実際にバイパス可能な状態のまま提出された。
 **対策**: ある入力(ファイル・バイト列・DTO等)を検証する関数を呼び出す直前に、その入力(または入力から生成した検証対象)を書き換えうる処理(正規化・デフォルト値補完・マイグレーション・自動修復等)を挟んでいないか必ず確認する。検証は常に「渡された生の状態」に対して行い、正規化的な処理は検証を通過した後にのみ適用する順序を優先する(本件の修正: 先に`assertValidDatabaseSchema`で生のインポートバイト列を検証し、LocalBudgetのDBだと確認できてから初めて`runMigrations`を適用する)。実装計画の時点で「このデータを壊れている/無効だと拒否できなければならない」という懸念点が明示されている場合は、実装後に検証がバイパスされていないかを実機で意図的に(空ファイル・無関係な構造のファイル等で)確認する回帰テストを必ず追加する。evaluatorのレビュー時も、検証関数の呼び出し位置の前後で検証対象に副作用を持つ処理が挟まっていないかを重点的に確認する。
 **該当箇所（例）**: `src/infrastructure/backup/importDatabaseBackup.ts`(検証の呼び出し順序、コミットa30e205で`assertValidDatabaseSchema`を`runMigrations`より先に修正)、`e2e/backup-export-import.spec.ts`(回帰テスト)、`docs/decisions.md`「バックアップインポートの検証(assertValidDatabaseSchema)は使い捨てDBへのrunMigrations適用より先に実行する」、Issue #26 Implementation Attempt 1 Review(evaluator FAIL指摘、重大度HIGH)・Attempt 2で修正
+
+## 新しいUIコンポーネントを実装する際、色コントラスト比を確認せず既存のアクセントカラーをそのまま流用する
+
+**症状**: `UpdateBanner`/`IosInstallPrompt`のボタンで、既存の`--accent`（紫系アクセントカラー）を`background`に、`--bg`（白系背景色、実質白文字）を`color`にそのまま組み合わせて使ったところ、ライトモードでの実測コントラスト比が約4.39:1となり、WCAG AA基準（通常テキストで4.5:1以上）をわずかに下回っていた。`--accent`は既に他の用途（枠線・淡色背景等、コントラスト比が問題にならない用途）で広く使われていたため、「既存の色変数を使っているから問題ない」という直感が働きやすく、新しい組み合わせ（白文字の背景色として使う）固有のコントラスト要件を見落としやすい。
+**原因**: 色変数（デザイントークン）は「その値自体が常にアクセシブルである」ことを保証しない。同じ色でも組み合わせる相手（背景か文字色か、どの色と組み合わせるか）によってコントラスト比は変わるため、既存の色変数を新しい用途（特に文字色と背景色の組み合わせ）に転用する際は、その組み合わせ固有のコントラスト比を都度確認する必要がある。
+**対策**: 白文字・黒文字等とボタン背景色を組み合わせる新しいUI要素を実装する際は、既存の色変数をそのまま流用せず、実際の組み合わせでのコントラスト比を確認する（WCAG AA基準: 通常テキストで4.5:1以上）。基準を満たさない場合は、既存の色変数を変更して他の用途への影響を広げるのではなく、その用途専用の新しいトークン（例: `--accent-contrast`）を追加する。ダークモード等、配色によっては既存の色のままで基準を満たす場合もあるため、モードごとに個別に確認する。
+**該当箇所（例）**: `src/index.css`（`--accent-contrast`の新設）、`src/components/UpdateBanner.css`・`src/components/IosInstallPrompt.css`、`docs/decisions.md`「ボタン等のアクセントカラー使用箇所にはWCAG AA基準を満たす--accent-contrastを新設し、--accentとは別トークンとして使い分ける」、Issue #28 Implementation Attempt 1 Review(evaluator FAIL指摘、重大度MEDIUM)
+
+## aria-modal="true"のダイアログを実装する際、フォーカストラップ(自動フォーカス・Tab循環・Escapeクローズ)の実装を伴わない
+
+**症状**: `IosInstallPrompt`は`role="dialog"` `aria-modal="true"`をマークアップ上宣言していたが、表示時にフォーカスをダイアログ内へ移動させる処理、Tabキーでダイアログ外の要素へフォーカスが漏れないようにする処理、Escapeキーでの閉じる操作のいずれも実装されていなかった。`aria-modal="true"`はスクリーンリーダー等の支援技術に対する宣言に過ぎず、実際のキーボード操作の挙動をブラウザが自動的に制御してくれるわけではないため、マークアップだけを見ると「モーダルとして正しく振る舞っている」ように誤認しやすい。
+**原因**: `aria-modal`属性を付与すること自体でアクセシビリティ要件が満たされたと錯覚しやすいが、実際にはこの属性は支援技術向けのセマンティクスの宣言のみであり、キーボードでの実際の操作性（フォーカス管理）は別途JavaScriptで実装する必要がある。ハッピーパス（マウス操作での開閉）のみを確認すると、キーボード操作の不備には気づけない。
+**対策**: `aria-modal="true"`を持つダイアログを新設する際は、(1)表示時にダイアログ内の適切な要素（閉じるボタン等）へ自動フォーカスする、(2)Tab/Shift+Tabキー押下時にダイアログ内の先頭/末尾要素間で循環させフォーカスがダイアログ外へ漏れないようにする、(3)Escapeキー押下でダイアログを閉じられるようにする、の3点を必ず実装する。Escapeキー等のハンドラが最新のコンポーネント状態（チェックボックスの選択状態等）を参照する必要がある場合は、`useRef`で最新のクロージャを保持し`useEffect`の依存配列を最小限（例: 表示状態のみ）に絞ることで、状態変化のたびにeffectが再実行されフォーカスが意図せずリセットされる副作用を避ける。E2Eテストでフォーカス位置・Tab循環・Escapeキーでのクローズを直接検証する。
+**該当箇所（例）**: `src/components/IosInstallPrompt.tsx`（`FOCUSABLE_SELECTOR`によるTab循環、`handleCloseRef`による最新状態の参照）、`e2e/ios-install-prompt.spec.ts`、`docs/decisions.md`「IosInstallPromptにフォーカストラップ(自動フォーカス・Tab/Shift+Tab循環・Escapeクローズ)を実装する」、Issue #28 Implementation Attempt 1 Review(evaluator FAIL指摘、重大度MEDIUM)
+
+## 複数のposition: fixedコンポーネントが同時に表示されうる設計で、z-indexをDOM配置順任せにしてしまう
+
+**症状**: `UpdateBanner`（非モーダル）・`IosInstallPrompt`（モーダル）はいずれも独立した`position: fixed`のコンポーネントで、共に`z-index: 1000`のまま実装されていた。両者が同時に表示される条件（例: iOS Safariで新しいService Workerを検出した場合）での重なり順は、z-indexの数値ではなく`App.tsx`内でのDOM配置順にのみ依存する不安定な状態だった。同じz-indexの要素はDOM順で後に配置された方が前面に表示されるため、たまたま意図通りの見た目になっていても、コンポーネントの配置順を変更した途端に重なり順が崩れる。
+**原因**: 個々のコンポーネントを独立に実装する際、z-indexの初期値をひとまず設定しておけば動いて見えるため、「複数のfixed要素が同時に表示されうるか」「その場合どちらが前面に来るべきか」という横断的な検討が漏れやすい。特にモーダル（操作をブロックすべき要素）と非モーダル（操作をブロックしない要素）が混在する場合、モーダルが常に最前面に来るという要件は自明に見えても、実装（z-indexの数値）に反映されているとは限らない。
+**対策**: `position: fixed`の複数コンポーネントが同時に表示されうる設計を追加する際は、それぞれのz-indexをDOM配置順に委ねず、モーダル/非モーダルの区分（またはそれに準じた優先度）に基づいて数値を明示的に割り当てる（例: モーダルは非モーダルより大きい値）。回帰テストは、DOM順に依存する座標ベースの検証（要素の見た目上の重なりをスクリーンショット等で確認する方式）ではz-index実装漏れを検出できないため、`getComputedStyle(el).zIndex`で実際のz-index数値を比較する方式で書く。
+**該当箇所（例）**: `src/components/UpdateBanner.css`・`src/components/IosInstallPrompt.css`（`z-index: 1000`/`1100`）、`e2e/pwa-overlay-z-index.pwa.spec.ts`、`docs/decisions.md`「position: fixedの複数コンポーネントのz-indexはDOM順に依存させず、モーダル/非モーダルの区分に基づき数値を明示する」、Issue #28 Implementation Attempt 1 Review(evaluator FAIL指摘、重大度LOW)
+
+## role="alert"/role="dialog"等「Name from: author」ロールをPlaywrightのgetByRole(role, { name })で特定しようとして失敗する
+
+**症状**: 更新確認バナー(`UpdateBanner`)の`role="alert"`要素をE2Eテストで`page.getByRole('alert', { name: '新しいバージョンが利用可能です' })`のように特定しようとすると、要素が見つからない（アクセシブルネームが空またはロール名自体と一致しない）。ARIA仕様上`alert`ロールは「Name from: author」（開発者が`aria-label`/`aria-labelledby`等で明示的に付与しない限り、子要素のテキストコンテンツから自動的にアクセシブルネームが計算されないロール）に分類されるため、`aria-label`を付けていない場合、`getByRole`の`name`オプションで子要素のテキストを期待通りに照合できない。
+**原因**: `button`や`link`等の多くのロールは「Name from: contents」（子要素のテキストから自動的にアクセシブルネームが計算される）であるため、`getByRole(role, { name: '...' })`でテキスト内容を指定するテストの書き方に慣れていると、`alert`/`dialog`等の「Name from: author」ロールでも同じ書き方が通用すると誤解しやすい。
+**対策**: `alert`/`dialog`/`status`等「Name from: author」に分類されるロールを持つ要素をE2Eテストで特定する場合は、(1)コンポーネント側で`aria-label`を明示的に付与し`getByRole(role, { name })`で特定する（`IosInstallPrompt`の`role="dialog"`はこちらを採用）、(2)`aria-label`を付与しない場合は`getByRole(role)`でロールのみ特定し、テキスト内容は別途`toHaveText`等で検証する（`UpdateBanner`の`role="alert"`はこちらを採用）、のいずれかを使う。実装するロールがどちらの分類か不明な場合はARIA仕様（WAI-ARIA仕様の各ロール定義の"Name from"欄）を確認する。
+**該当箇所（例）**: `e2e/update-banner.pwa.spec.ts`（`getByRole('alert')`+`toHaveText`）、`src/components/IosInstallPrompt.tsx`（`aria-label="ホーム画面に追加"`付与）、Issue #28実装時に判明（コミットb9d63b1・2a04f0a）

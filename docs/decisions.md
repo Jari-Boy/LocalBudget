@@ -223,3 +223,39 @@
 **背景**: `withAutoSave`(Issue #58で導入)はDB変更をtrailing debounce(2秒、`docs/architecture.md` 4.2節)で`StorageAdapter`へ保存する。`importDatabaseBackup`はこの生きたDB接続とは別の一時的な`Database`で検証を行い、検証成功時は`storageAdapter.save(data)`でアップロードされたバイト列をそのまま永続化する設計(`docs/architecture.md` 8章)だが、インポート直前にユーザーが何らかの編集操作を行っていた場合、その編集に由来する`withAutoSave`の保留中デバウンスタイマーが残ったままインポートを実行すると、タイマーが後から発火して生きたdbの(インポート前の)状態を`save()`し、インポートしたバイト列を上書きしてしまう競合が実装時に発見された(計画Issue本文には明記されていなかった)。
 **決定**: `importDatabaseBackup`は`storageAdapter.save(data)`を呼ぶ直前に`autoSaveController.flush()`を呼び、保留中のデバウンスタイマーを解消して即座に保存を確定させてからインポートの保存を行うようにした。これにより、インポートによる書き込みが必ず最後の書き込みになることが保証される。この経路はE2Eの往復テスト(`e2e/backup-export-import.spec.ts`)で検証している。
 **影響**: 今後、`StorageAdapter.save()`を`withAutoSave`の管理下にある生きたdbとは別経路(バックアップインポートのような、生きたdbを介さない直接保存)から呼び出す機能を追加する場合は、保留中のデバウンス保存との書き込み順序競合が起きないか確認し、必要であれば同様に`autoSaveController.flush()`を直接保存の直前に呼ぶ設計を優先する。
+
+## 2026-08-02: vite-plugin-pwaのSW登録はinjectRegister: falseに固定し、useRegisterSW側に一本化する
+
+**背景**: 計画Issue #28で更新確認バナー(`UpdateBanner`)を`virtual:pwa-register/react`の`useRegisterSW`フックで実装するにあたり、`vite-plugin-pwa`の`injectRegister`オプション（既定値`'auto'`）をそのままにしておくと、ビルド後のHTMLに自動注入される独立したSW登録スクリプトと、`useRegisterSW`が内部で行うSW登録が二重に走ることが実機検証（本番ビルド+`playwright.pwa.config.ts`でのpreviewサーバー確認）で判明した。二重登録の状態では、新しいService Workerを検出した際の`updatefound`イベントが`useRegisterSW`側で正しく検出されず、`needRefresh`が更新されない（更新確認バナーが表示されない）不具合が発生した。
+**決定**: `vite.config.ts`の`VitePWA()`設定で`injectRegister: false`を明示し、SW登録を`UpdateBanner`の`useRegisterSW`呼び出しのみに一本化した。HTML側への自動登録スクリプト注入は行わない。
+**影響**: 今後`vite-plugin-pwa`の設定を変更する際、`useRegisterSW`（またはvanilla版の`registerSW`）をアプリケーションコード側で呼び出す構成を維持する限り、`injectRegister`は`false`のままにする必要がある。逆にアプリケーションコード側でSW登録を明示的に呼ばない構成に変える場合は、`injectRegister`を`'auto'`等に戻すことを検討してよい。詳細な技術的背景は`docs/guides/knowledge.md`参照。
+
+## 2026-08-02: Service Worker新バージョンのE2Eデプロイ模擬はdist/sw.jsの直接書き換え+registration.update()で行う
+
+**背景**: 更新確認バナー(`UpdateBanner`)・重なり順(`pwa-overlay-z-index.pwa.spec.ts`)のE2Eテストで、「新しいService Workerがデプロイされた」状況を模擬する必要があった。Playwrightの`page.route`/`context.route`でService Worker自身のスクリプト取得リクエストをインターセプトし新しい内容を返す方式をまず試みたが、Service Workerのスクリプト取得はブラウザ内部（Service Workerプロセス）が直接行うため、Playwrightのネットワークインターセプトの対象にならず機能しないことを実機検証で確認した。
+**決定**: `playwright.pwa.config.ts`経由のE2Eでは、ビルド済み`dist/sw.js`を`readFileSync`/`writeFileSync`で直接書き換えてから、ページ内で`navigator.serviceWorker.getRegistration()` → `registration.update()`を呼ぶ方式を採用した。vite previewサーバーはリクエストの都度ファイルシステムから読み直すため、書き換え後の`update()`呼び出しで新しいSWとして検出される。テスト後は`finally`節で元の内容に書き戻す。
+**影響**: 今後、Service Worker自体の内容を書き換えて新バージョンを模擬するE2Eテストを追加する場合も、ネットワークインターセプトではなくビルド成果物（`dist/sw.js`）を直接書き換える方式を踏襲する。この方式は`playwright.pwa.config.ts`（ビルド済み成果物をpreviewサーバーで配信する構成）であることが前提であり、devサーバー対象の通常のe2e（`playwright.config.ts`）では成立しない点に注意する。
+
+## 2026-08-02: ボタン等のアクセントカラー使用箇所にはWCAG AA基準を満たす--accent-contrastを新設し、--accentとは別トークンとして使い分ける
+
+**背景**: 計画Issue #28 Implementation Attempt 1のevaluatorレビュー（FAIL、重大度MEDIUM）で、`UpdateBanner`/`IosInstallPrompt`のボタンが使っていた`background: var(--accent)` + `color: var(--bg)`（白文字）の組み合わせが、ライトモードで実測コントラスト比約4.39:1となり、WCAG AA基準（通常テキストで4.5:1以上）を満たしていないことが指摘された。`--accent`自体は他の用途（枠線・背景の淡色表現等）で既に多数使われており、この値自体を変更すると既存の見た目に広く影響する。
+**決定**: 白文字との組み合わせで約5.9:1を確保する新しい色`--accent-contrast`（ライトモード`#8f2fd9`）を`src/index.css`に追加し、白文字ボタンの背景色として`--accent`の代わりに使用する方針にした。ダークモードの`--accent`は白文字との組み合わせで既に約6.8:1を満たしていたため、ダークモードの`--accent-contrast`は`--accent`と同値のままとした。
+**影響**: 今後、白文字（`--bg`）と組み合わせるボタン等のUI要素を新設する場合は`--accent`ではなく`--accent-contrast`を使う。`--accent`はコントラスト非依存の用途（枠線・淡色背景等）に限定して使い続ける。この使い分けの基準（コントラストを要求される用途かどうか）を踏まえずに`--accent`を安易に流用しないよう、新規コンポーネント実装時・レビュー時ともに確認する。詳細は`docs/guides/patterns.md`参照。
+
+## 2026-08-02: IosInstallPromptにフォーカストラップ(自動フォーカス・Tab/Shift+Tab循環・Escapeクローズ)を実装する
+
+**背景**: 計画Issue #28 Implementation Attempt 1のevaluatorレビュー（FAIL、重大度MEDIUM）で、`IosInstallPrompt`が`aria-modal="true"`を宣言しているにもかかわらず、実際のフォーカス制御（表示時の自動フォーカス、ダイアログ外へのTab移動の防止、Escapeキーでのクローズ）が一切実装されていないことが指摘された。`aria-modal="true"`はスクリーンリーダー等の支援技術に対する宣言に過ぎず、実際のフォーカス制御はコンポーネント側で実装する必要がある。
+**決定**: 表示時に閉じるボタンへ自動フォーカスし、`keydown`リスナーでTabキー押下時にダイアログ内の先頭/末尾要素間で循環させ（`querySelectorAll(FOCUSABLE_SELECTOR)`で対象を都度取得）、Escapeキー押下時は「今後表示しない」チェック状態を反映した`handleClose`を呼ぶ実装にした。`handleClose`は`useRef`で最新のクロージャを保持し、`useEffect`の依存配列を`[visible]`のみに絞ることで、チェックボックスの操作（`dontShowAgain`の変更）のたびにeffectが再実行され、フォーカスが強制的に閉じるボタンへ戻ってしまう副作用を回避した。
+**影響**: 今後、`aria-modal="true"`を持つモーダルダイアログを新設する場合は、この実装（自動フォーカス・Tab循環・Escapeクローズ・`useRef`で最新のクロージャを保持し依存配列を最小限にする手法）をひな形として踏襲する。回帰テストは`e2e/ios-install-prompt.spec.ts`（フォーカス位置・Tab循環・Escapeの3観点）に追加済み。
+
+## 2026-08-02: position: fixedの複数コンポーネントのz-indexはDOM順に依存させず、モーダル/非モーダルの区分に基づき数値を明示する
+
+**背景**: 計画Issue #28 Implementation Attempt 1のevaluatorレビュー（FAIL、重大度LOW）で、`UpdateBanner`（非モーダル）・`IosInstallPrompt`（モーダル）が共に`z-index: 1000`のままで、両者が同時に表示される条件（iOS Safariで新しいService Workerを検出した場合等）での重なり順が、実質的にApp.tsx内のDOM配置順にのみ依存する不安定な状態だったことが指摘された。
+**決定**: `aria-modal="true"`の`IosInstallPrompt`のオーバーレイを常に`z-index: 1100`とし、非モーダルの`UpdateBanner`（`z-index: 1000`）より確実に前面に来ることを明示した。回帰テスト（`e2e/pwa-overlay-z-index.pwa.spec.ts`）は、DOM順に依存する座標ベースの検証（重なった要素のスクリーンショット比較等）ではz-index実装漏れを検出できないため、`getComputedStyle(el).zIndex`の数値そのものを比較する方式にした（一時的にz-indexを同値に戻すとテストがREDになることを確認済み）。
+**影響**: 今後、`position: fixed`の複数コンポーネントが同時に表示されうる設計を追加する場合は、DOM順（コンポーネントの配置順）に重なり順を委ねず、モーダル/非モーダルの区分（またはそれに準じた優先度）に基づいてz-indexの数値を明示的に割り当てる。回帰テストもDOM順に依存する座標ベースの検証ではなく、computed z-indexの数値比較で書く。詳細は`docs/guides/patterns.md`参照。
+
+## 2026-08-02: @vite-pwa/assets-generatorが依存するsharpの脆弱性対応でpackage.jsonにoverridesを追加する
+
+**背景**: `@vite-pwa/assets-generator`（PWAアイコン一式の機械生成、Issue #28）が依存として引き込む`sharp`のバージョンに既知の脆弱性が含まれており、`npm audit`で検出された。`docs/architecture.md` 11章「サプライチェーンリスク」の方針に沿って対応が必要だった。
+**決定**: `package.json`に`"overrides": { "sharp": "^0.35.0" }`を追加し、`@vite-pwa/assets-generator`が指定する旧バージョンではなく修正済みバージョンの`sharp`を強制的に解決させるようにした。`sharp`はアイコン生成（`npm run generate:pwa-icons`）時にのみ使われる開発時依存であり、アプリのランタイムには含まれない。
+**影響**: 今後、npm依存のトランジティブ依存に脆弱性が見つかった場合、そのパッケージ自体を直接更新できない（間接依存のため）場合は`overrides`での強制バージョン指定を優先的に検討する。`overrides`は依存ツリー全体に影響するため、対象パッケージ（本件では`sharp`）の新バージョンが既存の直接依存側の期待するインターフェースと互換性があるか（`npm run generate:pwa-icons`が正常動作するか等）を確認してから適用する。
