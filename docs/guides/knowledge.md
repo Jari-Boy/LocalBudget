@@ -58,3 +58,8 @@
 
 **内容**: Comlink、および素のpostMessageが使う構造化複製アルゴリズムは、関数を含むオブジェクト(クラスインスタンスのメソッド等)をそのまま複製できない。あるRepositoryインターフェースのメソッドが、別のRepositoryインスタンス自体を引数に取る設計(例: `JournalEntryDraftRepository.confirm(id, journalEntryRepository)`)になっている場合、そのメソッドをそのまま`Comlink.expose()`しても、メインスレッド側から対応するRepositoryインスタンスを引数として渡す手段がない。Comlinkは`Comlink.proxy()`で関数・オブジェクトをリモート参照として明示的に渡す仕組みも提供するが、Worker側が既に当該Repositoryインスタンスを保持している場合は、exposeするAPI自体をWorker内部で結線済みの縮小されたシグネチャ(該当引数を除いたラッパー関数)に置き換える方がシンプルに解決できる。
 **参考**: `src/infrastructure/rpc/createRepositoryRegistry.ts`(`JournalEntryDraftRpcApi`)、`docs/decisions.md`「RPC越しに渡せないRepositoryインスタンス引数は、レジストリ内部で結線した縮小シグネチャのラッパーAPIとして公開する」、Issue #24
+
+## sql.jsのdb.export()はlast_insert_rowid()をリセットする副作用を持つ
+
+**内容**: sql.jsの`Database#export()`(DB全体をシリアライズして`Uint8Array`を返すAPI)を呼び出すと、同一のDB接続上でSQLiteが内部的に保持する`last_insert_rowid()`の値がリセットされる。実機テストで`db.run('INSERT ...')` → `db.export()` → `db.exec('SELECT last_insert_rowid()')`という順に実行すると、直前のINSERTで採番された値ではなく`0`が返ることを確認した。これはsql.js/SQLiteの一般的なドキュメントには明記されていない挙動で、既存のほぼ全Repositoryの`create()`実装が`db.run(INSERT...)`直後に`last_insert_rowid()`を読む規約になっているため、`export()`を書き込み処理の直後に同期的に呼ぶ実装(例: DB変更を監視して自動保存する仕組み)を書くとRepository層が広範囲に壊れる。対策として、`export()`の呼び出しを`queueMicrotask`等でマイクロタスクへ遅延させ、呼び出し元の同期処理(sql.jsのRepositoryメソッドは同期API)が完全に終わった後にのみ実行するようにする。
+**参考**: `src/infrastructure/storage/withAutoSave.ts`、`docs/guides/patterns.md`「sql.jsのdb.export()を書き込み処理の直後に同期的に呼ぶと、last_insert_rowid()に依存する既存コードが壊れる」、`docs/decisions.md`「sql.jsのdb.export()はqueueMicrotaskで遅延実行し、Repositoryのcreate()実装が依存するlast_insert_rowid()を壊さないようにする」、Issue #25
