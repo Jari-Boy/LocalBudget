@@ -7,6 +7,9 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './e2e',
+  // PWA関連(*.pwa.spec.ts)はビルド済み成果物(dist/)をpreviewサーバーで配信する
+  // 専用のplaywright.pwa.config.tsで実行するため、通常のdevサーバー実行対象からは除外する。
+  testIgnore: /.*\.pwa\.spec\.ts/,
   fullyParallel: true,
   reporter: 'list',
   use: {
