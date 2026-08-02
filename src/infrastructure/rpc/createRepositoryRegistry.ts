@@ -25,6 +25,8 @@ import { SqlJsJournalEntryDraftRepository } from '../db/SqlJsJournalEntryDraftRe
 import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
+import { importDatabaseBackup } from '../backup/importDatabaseBackup'
+import type { StorageAdapter } from '../storage/StorageAdapter'
 import type { AutoSaveController } from '../storage/withAutoSave'
 
 /**
@@ -40,6 +42,18 @@ export interface JournalEntryDraftRpcApi {
   update(id: number, input: UpdateJournalEntryDraftInput): JournalEntryDraft
   delete(id: number): void
   confirm(id: number): JournalEntry
+}
+
+/**
+ * バックアップExport/Import(計画Issue #26)のRPC API。exportは現在の生きたDBの
+ * バイト列をそのまま返す(db.export()は常に最新の状態を返すため、事前のflush()等は
+ * 不要)。importDatabaseは検証・保存のみを行い、ページのリロードは行わない
+ * (windowはWeb Worker内に存在しないため、呼び出し元のメインスレッド側が
+ * このRPC呼び出しの成功後にリロードする責務を持つ)。
+ */
+export interface BackupRpcApi {
+  export(): Uint8Array
+  importDatabase(data: Uint8Array): Promise<void>
 }
 
 export interface RepositoryRegistry {
@@ -65,6 +79,7 @@ export interface RepositoryRegistry {
    * 解決方法も別物である点に注意(docs/decisions.md参照)。
    */
   autoSave: AutoSaveController & Comlink.ProxyMarked
+  backup: BackupRpcApi
 }
 
 /**
@@ -72,11 +87,13 @@ export interface RepositoryRegistry {
  * まとめる(計画Issue #24のレジストリパターン)。新規Repositoryを追加する際は、
  * このオブジェクトへ1エントリ追加するだけでよい。呼び出し元(`db.worker.ts`)で
  * `withAutoSave`から得たAutoSaveControllerを`autoSaveController`として受け取り、
- * `autoSave`キーでそのまま公開する。
+ * `autoSave`キーでそのまま公開する。同じく呼び出し元から渡された`storageAdapter`は
+ * `backup.importDatabase`(計画Issue #26)がインポート検証成功後の永続化に使う。
  */
 export function createRepositoryRegistry(
   db: Database,
   autoSaveController: AutoSaveController,
+  storageAdapter: StorageAdapter,
 ): RepositoryRegistry {
   const journalEntryRepository = new SqlJsJournalEntryRepository(db)
   const journalEntryDraftRepository = new SqlJsJournalEntryDraftRepository(db)
@@ -100,5 +117,9 @@ export function createRepositoryRegistry(
     project: new SqlJsProjectRepository(db),
     recurringTransactionRule: new SqlJsRecurringTransactionRuleRepository(db),
     autoSave: Comlink.proxy(autoSaveController),
+    backup: {
+      export: () => db.export(),
+      importDatabase: (data) => importDatabaseBackup(data, storageAdapter, autoSaveController),
+    },
   }
 }
