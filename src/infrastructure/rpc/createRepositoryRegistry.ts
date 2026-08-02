@@ -1,3 +1,4 @@
+import * as Comlink from 'comlink'
 import type { Database } from 'sql.js'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { BudgetRepository } from '../../domain/budget/BudgetRepository'
@@ -24,6 +25,7 @@ import { SqlJsJournalEntryDraftRepository } from '../db/SqlJsJournalEntryDraftRe
 import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
+import type { AutoSaveController } from '../storage/withAutoSave'
 
 /**
  * JournalEntryDraftRepository.confirmはJournalEntryRepositoryインスタンスを引数に
@@ -51,14 +53,31 @@ export interface RepositoryRegistry {
   journalEntryDraft: JournalEntryDraftRpcApi
   project: ProjectRepository
   recurringTransactionRule: RecurringTransactionRuleRepository
+  /**
+   * DBの永続化制御(計画Issue #58)。Worker側で生成済みのAutoSaveControllerをそのまま
+   * 公開し、メインスレッド側がページ非表示時等に`flush()`をRPC越しに呼べるようにする。
+   * Comlinkの型定義上、ネストしたオブジェクトのプロパティは既定で構造化複製可能な値
+   * (`Promisify<T>`、TypeScript上は`Promise<AutoSaveController>`)とみなされ、メソッド
+   * 呼び出しの中継対象(`Remote<T>`)としては扱われない。`Comlink.proxy()`でProxyMarkedを
+   * 付与することで後者の扱いになるようにしている。journalEntryDraft.confirmが抱えていた
+   * 「Repositoryインスタンスを引数として構造化複製できない」制約とは問題の所在が異なり
+   * (あちらは縮小シグネチャのラッパーAPIで解消、こちらはComlink.proxy()で解消)、
+   * 解決方法も別物である点に注意(docs/decisions.md参照)。
+   */
+  autoSave: AutoSaveController & Comlink.ProxyMarked
 }
 
 /**
  * Worker側で全10種のRepositoryインスタンスを生成し、1つのレジストリオブジェクトへ
  * まとめる(計画Issue #24のレジストリパターン)。新規Repositoryを追加する際は、
- * このオブジェクトへ1エントリ追加するだけでよい。
+ * このオブジェクトへ1エントリ追加するだけでよい。呼び出し元(`db.worker.ts`)で
+ * `withAutoSave`から得たAutoSaveControllerを`autoSaveController`として受け取り、
+ * `autoSave`キーでそのまま公開する。
  */
-export function createRepositoryRegistry(db: Database): RepositoryRegistry {
+export function createRepositoryRegistry(
+  db: Database,
+  autoSaveController: AutoSaveController,
+): RepositoryRegistry {
   const journalEntryRepository = new SqlJsJournalEntryRepository(db)
   const journalEntryDraftRepository = new SqlJsJournalEntryDraftRepository(db)
 
@@ -80,5 +99,6 @@ export function createRepositoryRegistry(db: Database): RepositoryRegistry {
     },
     project: new SqlJsProjectRepository(db),
     recurringTransactionRule: new SqlJsRecurringTransactionRuleRepository(db),
+    autoSave: Comlink.proxy(autoSaveController),
   }
 }

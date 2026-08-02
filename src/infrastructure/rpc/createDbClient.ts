@@ -1,5 +1,6 @@
 import * as Comlink from 'comlink'
 import type { RepositoryRegistry } from './createRepositoryRegistry'
+import { flushOnPageHide } from './flushOnPageHide'
 import { registerDomainErrorTransferHandler } from './registerDomainErrorTransferHandler'
 import { waitForWorkerReadyOrTerminate } from './waitForWorkerReadyOrTerminate'
 
@@ -14,6 +15,10 @@ import { waitForWorkerReadyOrTerminate } from './waitForWorkerReadyOrTerminate'
  * うえでこのPromiseがrejectされる(失敗したWorkerを残さない)。ブラウザのWorker/
  * postMessageに依存するためNode/Vitestでは検証できず、Playwright(実ブラウザ)で
  * テストする(計画Issue #24)。
+ *
+ * Worker側のwithAutoSaveはDB変更をtrailing debounce(2秒)で永続化するため(計画Issue #58)、
+ * ページ非表示時にタイマーを待たず確実に保存されるよう、flushOnPageHideでdocument/windowの
+ * visibilitychange/pagehideを監視し、client.autoSave.flush()をRPC越しに呼び出す。
  */
 export async function createDbClient(): Promise<Comlink.Remote<RepositoryRegistry>> {
   registerDomainErrorTransferHandler()
@@ -24,5 +29,8 @@ export async function createDbClient(): Promise<Comlink.Remote<RepositoryRegistr
 
   await waitForWorkerReadyOrTerminate(worker)
 
-  return Comlink.wrap<RepositoryRegistry>(worker)
+  const client = Comlink.wrap<RepositoryRegistry>(worker)
+  flushOnPageHide(client.autoSave, document, window)
+
+  return client
 }

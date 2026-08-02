@@ -5,6 +5,9 @@
  * のconfirmはJournalEntryRepositoryインスタンスを直接引数に取れない(RPC越しに構造化複製
  * できないため)、レジストリ内部でjournalEntryRepositoryと結線されたラッパーになっており、
  * 通常のconfirmフロー(仕訳化・下書き削除)が機能することも合わせて検証する。
+ * 呼び出し元(Worker側、`db.worker.ts`)から渡されたAutoSaveControllerが`autoSave`キー
+ * としてそのまま公開され、メインスレッドからRPC越しに`flush()`を呼べることも検証する
+ * (計画Issue #58)。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -21,15 +24,25 @@ import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
+import type { AutoSaveController } from '../storage/withAutoSave'
 import { createRepositoryRegistry, type RepositoryRegistry } from './createRepositoryRegistry'
+
+function createStubAutoSaveController(): AutoSaveController {
+  return {
+    flush: async () => {},
+    getLastSaveError: () => null,
+  }
+}
 
 let db: Database
 let registry: RepositoryRegistry
+let autoSaveController: AutoSaveController
 
 beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
-  registry = createRepositoryRegistry(db)
+  autoSaveController = createStubAutoSaveController()
+  registry = createRepositoryRegistry(db, autoSaveController)
 })
 
 describe('createRepositoryRegistry', () => {
@@ -49,6 +62,10 @@ describe('createRepositoryRegistry', () => {
     expect(registry.recurringTransactionRule).toBeInstanceOf(
       SqlJsRecurringTransactionRuleRepository,
     )
+  })
+
+  it('autoSaveキーには呼び出し元から渡されたAutoSaveControllerがそのまま割り当てられる', () => {
+    expect(registry.autoSave).toBe(autoSaveController)
   })
 
   it('同じレジストリ内のaccountとjournalEntryは同一DB接続を共有する(仕訳作成後に同じ接続のaccountから参照可能)', () => {
