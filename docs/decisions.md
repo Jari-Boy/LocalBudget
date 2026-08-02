@@ -259,3 +259,21 @@
 **背景**: `@vite-pwa/assets-generator`（PWAアイコン一式の機械生成、Issue #28）が依存として引き込む`sharp`のバージョンに既知の脆弱性が含まれており、`npm audit`で検出された。`docs/architecture.md` 11章「サプライチェーンリスク」の方針に沿って対応が必要だった。
 **決定**: `package.json`に`"overrides": { "sharp": "^0.35.0" }`を追加し、`@vite-pwa/assets-generator`が指定する旧バージョンではなく修正済みバージョンの`sharp`を強制的に解決させるようにした。`sharp`はアイコン生成（`npm run generate:pwa-icons`）時にのみ使われる開発時依存であり、アプリのランタイムには含まれない。
 **影響**: 今後、npm依存のトランジティブ依存に脆弱性が見つかった場合、そのパッケージ自体を直接更新できない（間接依存のため）場合は`overrides`での強制バージョン指定を優先的に検討する。`overrides`は依存ツリー全体に影響するため、対象パッケージ（本件では`sharp`）の新バージョンが既存の直接依存側の期待するインターフェースと互換性があるか（`npm run generate:pwa-icons`が正常動作するか等）を確認してから適用する。
+
+## 2026-08-03: i18nextのリソースファイルは名前空間ごとに分割し、本Issueではcommon.jsonのみを先行用意する
+
+**背景**: 計画Issue #29でi18n基盤(`src/infrastructure/i18n/i18n.ts`)を導入するにあたり、UIラベル・システムメッセージ用のリソースファイル(`src/locales/ja/*.json`、`docs/architecture.md` 13章)をどこまでの範囲で用意するかを検討した。account/journal等ドメイン別の名前空間(`account.json`等)をこの時点で全て空のまま作っておく案もあったが、対応するUI実装(D1〜D10、計画Issue #31〜#40)がまだ着手されておらず、その時点でどのキーが必要になるかも確定していない。
+**決定**: 本Issueでは共通の`common.json`(名前空間`common`、`defaultNS`として設定)のみを先行して用意し、ドメイン別の名前空間は各UI実装Issue側が着手時に`i18n.ts`の`resources.ja`へ追加する方針とした。この方針は`i18n.ts`の`resources`定義直上にコード上のコメントとしても明記した(Review Attempt 1で、コミットメッセージ・Issueコメントにしか存在せずコードから読み取れないと指摘され追記、詳細は`docs/guides/patterns.md`参照)。
+**影響**: 今後D1〜D10各Issueがドメイン別UIを実装する際は、対応する名前空間ファイル(`src/locales/ja/<ドメイン名>.json`)を新規に追加し、`i18n.ts`の`resources.ja`に登録する必要がある。使われない名前空間ファイルを本Issueの時点で先回りして作らない方針は、既存の「使われないコードを先回りして作らない」というプロジェクト全体の方針(YAGNI)と整合する。
+
+## 2026-08-03: formatCurrencyの通貨小数桁数はIntl.NumberFormatのresolvedOptionsから取得し、自前の桁数テーブルを持たない
+
+**背景**: `formatCurrency`(`src/infrastructure/i18n/formatCurrency.ts`)は、ドメイン層が保持する通貨最小単位(例: JPYなら1円単位、USDなら1セント単位)の整数値を表示用の金額文字列に変換する必要があった(`docs/architecture.md` 13章)。最小単位から実際の金額へ変換するには通貨ごとの小数桁数(JPY=0、USD=2等)を知る必要があり、通貨コード→桁数のマッピングテーブルを自前で保持・実装する案もあったが、ISO 4217の全通貨を網羅的かつ正確に維持するコストがかかり、将来通貨を追加するたびに更新が必要になる。
+**決定**: `Intl.NumberFormat(locale, { style: 'currency', currency: currencyCode }).resolvedOptions().maximumFractionDigits`から小数桁数を取得する方式にした。ブラウザ標準の`Intl`が保持する通貨メタデータをそのまま利用するため、自前の桁数テーブルを持たない。型上`maximumFractionDigits`は`undefined`になりうるため、`undefined`の場合は明示的にエラーを投げる防御的なガードを入れた。
+**影響**: 今後、新しい通貨コードへの対応(多通貨対応、`docs/architecture.md` 13章では現時点でスコープ外)を追加する場合も、`formatCurrency`側の桁数テーブルを更新する必要はなく、ISO 4217に準拠した通貨コード文字列を渡すだけで正しい桁数変換が行われる。
+
+## 2026-08-03: DOM描画を伴うコンポーネントテストは、vitest.config.tsのグローバル設定を変えず`// @vitest-environment jsdom`でファイル単位にオーバーライドする
+
+**背景**: 計画Issue #29の完了条件を満たすため、`react-i18next`経由でリソース文字列が実際に画面へ表示されることを検証するテスト(`src/infrastructure/i18n/i18nSample.test.tsx`)が必要になったが、これは本リポジトリで初めてDOM描画(`@testing-library/react`の`render`)を伴うテストだった。既存の`vitest.config.ts`は`environment: 'node'`で全テストファイルを実行しており、sql.js関連の既存テスト(Repository層の統合テスト等)は明示的にNode環境を前提にしている。`environment`をグローバルに`jsdom`へ変更すると、既存のsql.js関連テストへの影響(実行速度・挙動の変化)を確認せず広範囲に踏み込むことになる。
+**決定**: `vitest.config.ts`の`environment: 'node'`は変更せず、DOM描画が必要なテストファイルの先頭に`// @vitest-environment jsdom`コメントを付与し、ファイル単位でjsdom環境を有効化する方式を採用した。
+**影響**: 今後DOM描画を伴うコンポーネントテスト(React Testing Library等を使うもの)を追加する場合も、`vitest.config.ts`のグローバル設定を変更せず、当該テストファイル冒頭に`// @vitest-environment jsdom`を付ける方式を標準パターンとする。`docs/architecture.md` 10章のテスト戦略表にも反映した。
