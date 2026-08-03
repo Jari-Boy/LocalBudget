@@ -129,6 +129,8 @@ interface StorageAdapter {
 - DBを唯一の情報源（Single Source of Truth）とし、Reactの状態管理ライブラリでデータを二重に保持しない。
 - 読み取りクエリのキャッシュ・再検証にはTanStack Query等のキャッシュ層を用い、フィルタやモーダル開閉などUI固有の一時状態は`useState`や軽量な状態管理（Zustand等）で扱う。
 
+**実装状況（Issue #31）**: 本リポジトリ初の業務UI実装（D1、口座登録ウィザード・クレジットカード登録ウィザード）として、5章のWeb Worker RPCクライアント（`createDbClient`）をReactツリーへ供給する`DbClientProvider`/`useDbClient`（`src/infrastructure/rpc/`）を実装した。`DbClientProvider`はマウント時に1回だけ`createDbClient()`を実行し、完了までは子要素の代わりにローディング表示を出す。`App.tsx`はVite雛形のデモ画面から、`DbClientProvider`でラップした最小限のアプリシェル（`Screen`型と`useState`による画面切り替えのみ、ルーティングライブラリは未導入）に置き換えた。画面はトップ画面・口座登録・クレジットカード登録の3つのみで、URL共有やブラウザの戻る/進むボタン対応等ルーティングライブラリが解決する要件が現時点で存在しないための判断であり、画面数が増えた段階で改めて導入を検討する（詳細は`docs/decisions.md`）。実装中、ComlinkのRemoteオブジェクト（内部的に`function(){}`をターゲットとした`Proxy`であり`typeof`演算子で`"function"`と判定される）をReactの`useState`セッターへ直接渡すと、Reactが引数を「更新関数」とみなし誤って呼び出してしまいアプリがクラッシュする重大な不具合を、Playwrightでの実機操作により発見した（`setState(() => value)`という関数でのラップが必要。既存のE2Eテストのメソッドチェーン呼び出しだけでは再現せず、Remoteオブジェクト自体をReact状態として保持する場合に限り顕在化する）。この罠は今後のUI実装（D2〜D10、Issue #32〜#40）でComlinkのRemoteオブジェクトをReact状態として保持する際に共通して踏みうるため、新規コンポーネント実装時は必ず確認すること。詳細な技術的知見は`docs/guides/knowledge.md`、ミスパターンとしての整理は`docs/guides/patterns.md`を参照。
+
 ## 7. PWA構成
 
 - ビルドはVite、PWA化は`vite-plugin-pwa`（Workbox）を用いる。
