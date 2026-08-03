@@ -36,6 +36,7 @@ export function CreditCardRegistrationWizard({
   const [householdMemberId, setHouseholdMemberId] = useState<number | null>(null)
   const [stepIndex, setStepIndex] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     void Promise.resolve(householdMemberRepository.findAll()).then(setHouseholdMembers)
@@ -53,9 +54,14 @@ export function CreditCardRegistrationWizard({
 
   const handleSubmit = async () => {
     setSubmitting(true)
-    const account = await registerCreditCard(accountRepository, { name, householdMemberId })
-    setSubmitting(false)
-    onComplete(account)
+    setError(null)
+    try {
+      const account = await registerCreditCard(accountRepository, { name, householdMemberId })
+      onComplete(account)
+    } catch {
+      setError(t('registrationError'))
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -72,6 +78,7 @@ export function CreditCardRegistrationWizard({
             placeholder={t('namePlaceholder')}
             onChange={(event) => setName(event.target.value)}
           />
+          {error && steps.length === 1 && <p role="alert">{error}</p>}
           <div>
             {steps.length > 1 ? (
               <button type="button" disabled={name === ''} onClick={goNext}>
@@ -106,6 +113,7 @@ export function CreditCardRegistrationWizard({
               {member.name}
             </button>
           ))}
+          {error && <p role="alert">{error}</p>}
           <div>
             <button type="button" onClick={goBack}>
               {t('back')}

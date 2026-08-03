@@ -43,7 +43,9 @@ export async function registerAccount(
     householdMemberId: input.householdMemberId,
   })
 
-  if (input.initialBalance === null) {
+  // journal_lines.amountはCHECK (amount > 0)制約を持つ(docs/schema/journal.sql)ため、
+  // 0または負数の入力は「初期残高なし」として扱い、初期残高科目・仕訳を作成しない。
+  if (input.initialBalance === null || input.initialBalance <= 0) {
     return account
   }
 

@@ -54,6 +54,7 @@ export function AccountRegistrationWizard({
   const [initialBalanceInput, setInitialBalanceInput] = useState('')
   const [stepIndex, setStepIndex] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     void Promise.resolve(householdMemberRepository.findAll()).then(setHouseholdMembers)
@@ -72,16 +73,21 @@ export function AccountRegistrationWizard({
 
   const handleSubmit = async () => {
     setSubmitting(true)
+    setError(null)
     const initialBalance = initialBalanceInput === '' ? null : Number(initialBalanceInput)
-    const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: kind!,
-      name,
-      householdMemberId,
-      initialBalance,
-      entryDate: today ?? new Date().toISOString().slice(0, 10),
-    })
-    setSubmitting(false)
-    onComplete(account)
+    try {
+      const account = await registerAccount(accountRepository, journalEntryRepository, {
+        kind: kind!,
+        name,
+        householdMemberId,
+        initialBalance,
+        entryDate: today ?? new Date().toISOString().slice(0, 10),
+      })
+      onComplete(account)
+    } catch {
+      setError(t('registrationError'))
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -165,9 +171,11 @@ export function AccountRegistrationWizard({
           <input
             id="account-initial-balance"
             type="number"
+            min="0"
             value={initialBalanceInput}
             onChange={(event) => setInitialBalanceInput(event.target.value)}
           />
+          {error && <p role="alert">{error}</p>}
           <div>
             <button type="button" onClick={goBack}>
               {t('back')}

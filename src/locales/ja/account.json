@@ -13,5 +13,6 @@
   "stepBalanceLabel": "初期残高を入力(任意)",
   "next": "次へ",
   "back": "戻る",
-  "register": "登録する"
+  "register": "登録する",
+  "registrationError": "登録に失敗しました。もう一度お試しください。"
 }

@@ -83,4 +83,29 @@ describe('CreditCardRegistrationWizard', () => {
     const createdAccount = accountRepository.findAll()[0]
     expect(createdAccount.householdMemberId).toBe(member.id)
   })
+
+  it('Repository呼び出しが失敗した場合、エラーメッセージを表示し再度登録操作ができる状態に戻す', async () => {
+    const failingAccountRepository = {
+      create: () => Promise.reject(new Error('DB error')),
+    }
+    const onComplete = vi.fn()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <CreditCardRegistrationWizard
+          accountRepository={failingAccountRepository}
+          householdMemberRepository={householdMemberRepository}
+          onComplete={onComplete}
+        />
+      </I18nextProvider>,
+    )
+
+    fireEvent.change(await screen.findByLabelText('名前を付ける'), {
+      target: { value: '楽天カード' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '登録する' }))
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(onComplete).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '登録する' })).toBeEnabled()
+  })
 })

@@ -111,4 +111,31 @@ describe('registerAccount', () => {
       ]),
     )
   })
+
+  it('初期残高に0を指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
+      kind: 'bank',
+      name: '三菱UFJ銀行',
+      householdMemberId: null,
+      initialBalance: 0,
+      entryDate: '2026-08-03',
+    })
+
+    expect(accountRepository.findAll()).toHaveLength(1)
+    expect(journalEntryRepository.findAll()).toHaveLength(0)
+    expect(account.initialBalanceForAccountId).toBeNull()
+  })
+
+  it('初期残高に負数を指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
+    await registerAccount(accountRepository, journalEntryRepository, {
+      kind: 'bank',
+      name: '三菱UFJ銀行',
+      householdMemberId: null,
+      initialBalance: -100,
+      entryDate: '2026-08-03',
+    })
+
+    expect(accountRepository.findAll()).toHaveLength(1)
+    expect(journalEntryRepository.findAll()).toHaveLength(0)
+  })
 })

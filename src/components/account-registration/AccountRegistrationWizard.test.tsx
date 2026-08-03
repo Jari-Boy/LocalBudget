@@ -137,4 +137,53 @@ describe('AccountRegistrationWizard', () => {
       sourceType: 'initial_balance',
     })
   })
+
+  it('初期残高に0を入力した場合、初期残高科目・仕訳は作成されず口座のみ登録される', async () => {
+    const onComplete = vi.fn()
+    renderWizard(onComplete)
+
+    fireEvent.click(await screen.findByRole('button', { name: '銀行口座' }))
+    fireEvent.change(screen.getByLabelText('名前を付ける'), {
+      target: { value: '三菱UFJ銀行' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+
+    fireEvent.change(screen.getByLabelText('初期残高を入力(任意)'), {
+      target: { value: '0' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '登録する' }))
+
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
+    expect(journalEntryRepository.findAll()).toHaveLength(0)
+    expect(accountRepository.findAll()).toHaveLength(1)
+  })
+
+  it('Repository呼び出しが失敗した場合、エラーメッセージを表示し再度登録操作ができる状態に戻す', async () => {
+    const failingAccountRepository = {
+      create: () => Promise.reject(new Error('DB error')),
+    }
+    const onComplete = vi.fn()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AccountRegistrationWizard
+          accountRepository={failingAccountRepository}
+          journalEntryRepository={journalEntryRepository}
+          householdMemberRepository={householdMemberRepository}
+          onComplete={onComplete}
+          today="2026-08-03"
+        />
+      </I18nextProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: '銀行口座' }))
+    fireEvent.change(screen.getByLabelText('名前を付ける'), {
+      target: { value: '三菱UFJ銀行' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    fireEvent.click(screen.getByRole('button', { name: '登録する' }))
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(onComplete).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '登録する' })).toBeEnabled()
+  })
 })

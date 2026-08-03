@@ -10,6 +10,8 @@
   /* --accentは白文字とのコントラスト比が約4.39:1でWCAG AA(4.5:1)未達のため、
      白文字と組み合わせるボタン背景等にはこちらを使う(約5.9:1) */
   --accent-contrast: #8f2fd9;
+  --error: #c0392b;
+  --error-bg: rgba(192, 57, 43, 0.1);
   --social-bg: rgba(244, 243, 236, 0.5);
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
@@ -46,6 +48,8 @@
     /* ダークモードの--accentは--bg文字色との組み合わせで約6.8:1と
        既にWCAG AAを満たすため、ライトモードと異なり--accentと同値でよい */
     --accent-contrast: #c084fc;
+    --error: #f87171;
+    --error-bg: rgba(248, 113, 113, 0.15);
     --social-bg: rgba(47, 48, 58, 0.5);
     --shadow:
       rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
