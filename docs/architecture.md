@@ -181,6 +181,8 @@ CLAUDE.mdの方針（実装は必ずテストから書く。red→green→refact
 - クライアントのみで完結するアプリでは、悪意あるnpm依存関係が直接ユーザーの家計データを外部送信できてしまうため、サプライチェーンリスクが相対的に主要な脅威となる。`npm audit`の定期実行、lockfileの固定、依存追加時のレビューを方針とする。
 - 暗号化については「9. 既知の制約・将来課題」を参照。MVPでは非対応。
 
+**実装状況（Issue #30）**: `index.html`に`Content-Security-Policy`のmetaタグ（`default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'self'`）を追加した。ホスティング先が未定でHTTPヘッダーでのCSP配信ができないため、metaタグを採用している（将来ホスティング先が確定しHTTPヘッダーでの配信に切り替え可能になった場合、`frame-ancestors`等metaタグでは指定できないディレクティブの追加も含めて再検討する）。`script-src`には`'wasm-unsafe-eval'`を含める必要があった。sql.js（SQLite WASM）の`WebAssembly.instantiate`は`script-src 'self'`のみでは`CompileError`でAbortすることを実機検証で確認しており、任意JS文字列の実行を許す`'unsafe-eval'`とは異なりWASM実行のみを許可する`'wasm-unsafe-eval'`であればXSS対策としての厳格さ（任意コード注入の禁止）を損なわずに済む（詳細は`docs/guides/knowledge.md`）。Vite dev serverはCSSモジュールのHMRのため`<style>`タグをJSから動的に注入し、`style-src`未指定によるCSP違反がdev server実行時のみ発生する（本番ビルドでは発生しない）ため、`vite.config.ts`に`command === 'serve'`時のみ`style-src 'self' 'unsafe-inline'`を緩和する`relaxCspForDevServer`プラグインを追加した（詳細は`docs/guides/knowledge.md`・`docs/decisions.md`）。`dangerouslySetInnerHTML`原則禁止は`.oxlintrc.json`に`react/no-danger`・`react/no-danger-with-children`を`error`として追加し、lintで機械的に強制するようにした。動作検証はCSP metaタグの内容検証と、sql.js（WASM）を使ったWorker RPCがCSP制約下でCSP違反を出さずに動作することの両方をPlaywright（実ブラウザ）で行う（`e2e/csp.spec.ts`）。サプライチェーンリスク対策として、GitHub Actionsに`lint-and-typecheck`・`test`・`e2e`・`audit`（`npm audit --audit-level=high`）の4jobからなるCI（`.github/workflows/ci.yml`、push main・pull_requestトリガー）と、依存関係に変更が無い期間も新規脆弱性を検出するための週次スケジュール実行（`.github/workflows/scheduled-audit.yml`、毎週月曜0:00 UTC + `workflow_dispatch`）を追加した。依存関係の管理方針（lockfileの固定・依存追加時のレビュー観点・`npm audit`の自動実行）は`CONTRIBUTING.md`に明文化した。
+
 ## 12. 起票方式（外部明細取込・マニュアル起票）
 
 起票（仕訳の入力）は次の2系統を想定する。
