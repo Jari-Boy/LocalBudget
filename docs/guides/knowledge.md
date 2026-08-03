@@ -103,3 +103,8 @@
 
 **内容**: `vite-plugin-pwa`(Workbox)が生成するService Workerは、`workbox.clientsClaim`オプションを明示的に`true`にしない限り既定で`false`となる。この設定では、SWが初めてactivateされても、activate時点で既に開かれているページ(SW登録前から表示されていたページ、すなわち初回訪問時のページ自身)を即座に制御下(`navigator.serviceWorker.controller`)には置かない。制御下に入るのは次のナビゲーション(`page.reload()`等)以降になる。オフライン起動やSW更新をE2Eで検証する際は、`page.goto('/')`の直後ではなく、`navigator.serviceWorker.ready`を待ってから一度`reload()`し、`navigator.serviceWorker.controller !== null`になったことを確認してから本題の検証(オフライン化・SW更新チェック等)に進む必要がある。
 **参考**: `e2e/offline-startup.pwa.spec.ts`・`e2e/update-banner.pwa.spec.ts`(`waitForServiceWorkerController`ヘルパー)、Issue #28
+
+## TextDecoderは既定では不正なバイト列を置換文字で握りつぶすが、{fatal: true}を指定すると例外を投げる
+
+**内容**: `new TextDecoder('utf-8').decode(bytes)`は既定(`fatal: false`)では、UTF-8として不正なバイト列(例: Shift-JISでエンコードされたバイト列)を渡してもエラーにならず、該当箇所を置換文字(U+FFFD)に置き換えてデコードを継続する。`new TextDecoder('utf-8', { fatal: true }).decode(bytes)`のように`fatal: true`を指定すると、不正なバイト列を検出した時点で`TypeError`を投げるようになる。この挙動の違いを利用し、「UTF-8として厳密デコードできるか(`fatal: true`で例外が出ないか)」だけでCSVの生バイト列がUTF-8かShift-JIS(等の非UTF-8エンコーディング)かを`try/catch`で判定できる(成功すればutf-8、例外が出れば日本の金融機関CSVで一般的なshift-jisにフォールバックする)。ASCIIのみ・空のバイト列はいずれのエンコーディングでも共通のバイト表現になるため常にutf-8側の判定で成功する。
+**参考**: `src/domain/statement-import/inferEncoding.ts`、`src/domain/statement-import/inferEncoding.test.ts`、`docs/domain/statement-import.md` 1.3「例外: ドラフト生成時のエンコーディング自動判定」、Issue #48
