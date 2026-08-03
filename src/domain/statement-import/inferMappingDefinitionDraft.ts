@@ -16,6 +16,13 @@ export interface ColumnCandidate {
  * (候補が1件なら確信度が高い推測、0件ならCSVの内容からは推測できず未設定、2件以上なら
  * 型的に複数列が該当し確定できないことを表す)。label・formatGroupId・isSettledは
  * CSVの中身から判定できないため常にnull(docs/domain/statement-import.md「目標」1.)。
+ *
+ * CreateImportMappingDefinitionInputが持つdateFormat・externalIdColumnは、意図的に
+ * このドラフトのスコープに含めていない(実装漏れではない)。Issue #48の「列マッピングの推測」の
+ * 記述はヘッダーキーワード例(日付・摘要・入金/出金・金額・残高)の範囲に留まり、日付の書式や
+ * 外部取引IDの列は推測対象として言及されていないため。特に外部取引IDは金融機関ごとの表記ゆれが
+ * 大きく、信頼できるキーワード辞書を用意できない。将来これらの推測が必要になった場合は、
+ * 別Issueとしてスコープを検討する。
  */
 export interface ImportMappingDefinitionDraft {
   headerRowCount: number
