@@ -108,3 +108,8 @@
 
 **内容**: `new TextDecoder('utf-8').decode(bytes)`は既定(`fatal: false`)では、UTF-8として不正なバイト列(例: Shift-JISでエンコードされたバイト列)を渡してもエラーにならず、該当箇所を置換文字(U+FFFD)に置き換えてデコードを継続する。`new TextDecoder('utf-8', { fatal: true }).decode(bytes)`のように`fatal: true`を指定すると、不正なバイト列を検出した時点で`TypeError`を投げるようになる。この挙動の違いを利用し、「UTF-8として厳密デコードできるか(`fatal: true`で例外が出ないか)」だけでCSVの生バイト列がUTF-8かShift-JIS(等の非UTF-8エンコーディング)かを`try/catch`で判定できる(成功すればutf-8、例外が出れば日本の金融機関CSVで一般的なshift-jisにフォールバックする)。ASCIIのみ・空のバイト列はいずれのエンコーディングでも共通のバイト表現になるため常にutf-8側の判定で成功する。
 **参考**: `src/domain/statement-import/inferEncoding.ts`、`src/domain/statement-import/inferEncoding.test.ts`、`docs/domain/statement-import.md` 1.3「例外: ドラフト生成時のエンコーディング自動判定」、Issue #48
+
+## 実際の日本の金融機関CSV(楽天カード確定/未確定・PayPayカード・楽天銀行)のヘッダー表記パターン
+
+**内容**: PR #66作成後(マージ前)、ユーザーが実際に保有する明細CSVで`inferMappingDefinitionDraft`を検証した結果、以下のヘッダー表記パターンが判明した。(1) クレジットカード明細では「利用金額」列に加えて「11月支払金額」のような月次内訳列も見出しに「金額」を含むため、キーワード「金額」だけでは複数列に曖昧にマッチする。より具体的な「利用金額」を優先させる必要がある。(2) 日付列は「ご利用日」という敬語接頭辞付きの表記のカードと、接頭辞のない「利用日」表記のカード(例: PayPayカード)が混在する。(3) 摘要列は「利用店名・商品名」という表記も存在する。(4) 銀行明細(楽天銀行)では、入金・出金が別列ではなく単一の符号付き金額列(「入出金(円)」)として提供される形式があり、ヘッダー文言自体には「出金」「入金」いずれのキーワードも含まれないため、ヘッダーマッチングだけでは列の意味を判定できず値の型(数値かどうか)に頼らざるを得ない。この形式では、`debitColumn`・`creditColumn`が(本来存在しないにもかかわらず)型フォールバック等の別経路でそれぞれ解決され、偶然同一列に収束することがある(`docs/guides/patterns.md`「複数フィールドが共通の候補プールから割り当てを行う推測ロジックで、1パスの処理順ベース実装にすると結果が処理順に依存する」の続報参照)。
+**参考**: `src/domain/statement-import/columnKeywordDictionary.ts`、`src/domain/statement-import/inferMappingDefinitionDraft.test.ts`(実データ構造を模した架空fixture、実データ自体はコミットしていない)、`docs/decisions.md`「columnKeywordDictionaryはキーワードの配列ではなく階層(tier)の配列として持ち、より具体的なキーワードを広いキーワードより先に試す」、コミット9ec2454、Issue #48
