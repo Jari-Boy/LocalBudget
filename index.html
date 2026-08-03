@@ -2,6 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      docs/architecture.md 11章: サーバーが存在しないためXSSは即座に全データ漏洩に
+      直結するため、CSPをmetaタグとして厳格に設定する(script-src 'self'・インライン
+      スクリプト禁止)。ホスティング先が未定でHTTPヘッダーでの設定はできないため
+      (計画Issue #30)、metaタグを採用する。object-src/base-uriはXSS対策として
+      広く必須級とされる補強ディレクティブのため合わせて制限する。
+      'wasm-unsafe-eval'はsql.js(SQLite WASM)のWebAssembly.instantiate実行に必須
+      (これがないとWASMコンパイル自体がCSP違反でAbortする、実機検証で確認済み)。
+      任意JS文字列の実行を許す'unsafe-eval'とは異なりWASM実行のみを許可するため、
+      XSS対策としての厳格さ(任意コード注入の禁止)は損なわれない。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'self'"
+    />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
