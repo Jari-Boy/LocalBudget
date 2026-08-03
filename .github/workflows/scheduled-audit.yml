@@ -1,0 +1,21 @@
+name: Scheduled dependency audit
+
+# docs/architecture.md 11章: 悪意あるnpm依存関係によるサプライチェーンリスクに備え、
+# PR時のチェック(ci.yml)とは別に、依存関係が変更されない期間も含めて定期的に
+# npm auditを実行する(計画Issue #30)。新たに公開された脆弱性情報を検出するため。
+on:
+  schedule:
+    - cron: '0 0 * * 1' # 毎週月曜 00:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high

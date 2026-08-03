@@ -113,3 +113,13 @@
 
 **内容**: PR #66作成後(マージ前)、ユーザーが実際に保有する明細CSVで`inferMappingDefinitionDraft`を検証した結果、以下のヘッダー表記パターンが判明した。(1) クレジットカード明細では「利用金額」列に加えて「11月支払金額」のような月次内訳列も見出しに「金額」を含むため、キーワード「金額」だけでは複数列に曖昧にマッチする。より具体的な「利用金額」を優先させる必要がある。(2) 日付列は「ご利用日」という敬語接頭辞付きの表記のカードと、接頭辞のない「利用日」表記のカード(例: PayPayカード)が混在する。(3) 摘要列は「利用店名・商品名」という表記も存在する。(4) 銀行明細(楽天銀行)では、入金・出金が別列ではなく単一の符号付き金額列(「入出金(円)」)として提供される形式があり、ヘッダー文言自体には「出金」「入金」いずれのキーワードも含まれないため、ヘッダーマッチングだけでは列の意味を判定できず値の型(数値かどうか)に頼らざるを得ない。この形式では、`debitColumn`・`creditColumn`が(本来存在しないにもかかわらず)型フォールバック等の別経路でそれぞれ解決され、偶然同一列に収束することがある(`docs/guides/patterns.md`「複数フィールドが共通の候補プールから割り当てを行う推測ロジックで、1パスの処理順ベース実装にすると結果が処理順に依存する」の続報参照)。
 **参考**: `src/domain/statement-import/columnKeywordDictionary.ts`、`src/domain/statement-import/inferMappingDefinitionDraft.test.ts`(実データ構造を模した架空fixture、実データ自体はコミットしていない)、`docs/decisions.md`「columnKeywordDictionaryはキーワードの配列ではなく階層(tier)の配列として持ち、より具体的なキーワードを広いキーワードより先に試す」、コミット9ec2454、Issue #48
+
+## CSPのscript-srcで'wasm-unsafe-eval'を指定しないと、sql.js(WebAssembly.instantiate)がCompileErrorでAbortする
+
+**内容**: Content-Security-Policyで`script-src 'self'`のみを設定した状態でsql.js(SQLite WASM)を初期化すると、`WebAssembly.instantiate`が`CompileError`でAbortし、WASMのコンパイル自体が失敗する。任意のJS文字列の動的実行(`eval`/`new Function`等)を許可する`'unsafe-eval'`とは別に、WASMのコンパイル・実行のみを許可する`'wasm-unsafe-eval'`という専用のCSPソース式が存在し、`script-src`にこれを追加する必要がある。`'wasm-unsafe-eval'`は`'unsafe-eval'`と異なり任意JS文字列の実行を許可しないため、CSPが本来防ぎたい「任意コード注入によるXSS」への防御は保ったままWASM実行だけを許可できる。この挙動は`e2e/backup-export-import.spec.ts`が生成する独立した検証用sql.jsインスタンスの実機テストで発見・再現確認した(既存のCSP無し環境では顕在化せず、CSP metaタグを追加して初めて判明した)。
+**参考**: `index.html`(CSP metaタグ、`script-src 'self' 'wasm-unsafe-eval'`)、`e2e/csp.spec.ts`、`docs/decisions.md`「CSPはHTTPヘッダーではなくindex.htmlのmetaタグとして配信し、script-srcに'wasm-unsafe-eval'を含める」、Issue #30
+
+## Vite dev serverはCSSモジュールのHMRで<style>タグを動的注入するため、style-src未指定のCSPだとdev server実行時のみ違反になる
+
+**内容**: Vite dev server(`vite dev`)は、CSSモジュールのHot Module Replacement(HMR)を実現するため、JavaScriptから`<style>`タグをDOMへ動的に注入する。CSPで`style-src`を明示的に指定していない場合、`default-src 'self'`にフォールバックし`'unsafe-inline'`が許可されないため、このインライン注入がCSP違反として検出される。この挙動は本番ビルド(`vite build`)には存在しない。本番ビルドではCSSがビルド時に外部ファイルとして出力され、HMRの仕組み自体（開発時専用の機能）が含まれないため、`style-src`を指定していないCSPのままでも違反にならない。この非対称性(dev server限定の制約)への対処として、`command === 'serve'`時のみCSPを緩和するViteプラグインを追加し、`vite.config.ts`側でのみ`style-src`を緩めることで、本番ビルドのCSPを厳格なまま保つことができる。
+**参考**: `vite.config.ts`(`relaxCspForDevServer`、`apply: 'serve'`)、`docs/decisions.md`「Vite dev server限定でCSPのstyle-srcを緩和するプラグイン(relaxCspForDevServer)を追加する」、Issue #30
