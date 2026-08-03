@@ -184,3 +184,24 @@
 **原因**: CSPディレクティブの文言（`script-src`・`style-src`等）は仕様書やベストプラクティス集を参照すれば正しく書けるが、それが「既存のアプリが実際に依存している技術（WASMライブラリのコンパイル方式、ビルドツールの開発時専用の仕組み）を制約しないか」は、CSPの仕様書だけを読んでいても分からず、対象のアプリケーションを実機で動作確認して初めて判明する。特にビルドツールの開発モード限定の挙動（HMR等）は本番ビルドの動作確認だけでは再現せず見落としやすい。
 **対策**: CSPのような、アプリ全体に効くグローバルな制約を新規導入・変更する際は、ディレクティブの文言が仕様として正しいかだけでなく、既存の主要な外部依存（WASM・iframe埋め込み・Web Worker等、`script-src`/`worker-src`等の対象になりうるもの）およびビルドツールの開発モードとビルド成果物の両方を実機（Playwright等）で動作確認する。特にWASMを使うライブラリを利用している場合は`'wasm-unsafe-eval'`の要否、開発時専用の仕組み（HMR等）を持つビルドツールを使っている場合はdev server実行時と本番ビルドの両方でCSP違反が出ないかを確認する。
 **該当箇所（例）**: `index.html`(`'wasm-unsafe-eval'`)、`vite.config.ts`(`relaxCspForDevServer`)、`e2e/csp.spec.ts`、`docs/decisions.md`「CSPはHTTPヘッダーではなくindex.htmlのmetaタグとして配信し、script-srcに'wasm-unsafe-eval'を含める」「Vite dev server限定でCSPのstyle-srcを緩和するプラグイン(relaxCspForDevServer)を追加する」、`docs/guides/knowledge.md`、Issue #30(実装中に自己発見、evaluator指摘ではない)
+
+## ComlinkのRemoteオブジェクト(typeofが'function'と判定されるProxy)をReactのuseStateにそのまま渡すと誤動作する
+
+**症状**: `DbClientProvider`が`setClient(createdClient)`のようにComlinkの`Remote<T>`オブジェクトをReactの`useState`セッターへ直接渡すと、Node/Vitestのユニットテストでは問題なく動作するにもかかわらず、実ブラウザ(Playwright)でウィザードを操作すると`rawValue.apply is not a function`という実行時エラーでアプリ全体がクラッシュする。
+**原因**: ComlinkのRemoteオブジェクトは内部的に`function(){}`をターゲットとした`Proxy`であり、`typeof`演算子で`"function"`と判定される。Reactの`useState`セッターは、渡された引数が関数の場合これを「前の状態を受け取り新しい状態を返す更新関数」とみなして`updater(prevState)`の形で呼び出す仕様(functional updates)を持つため、この判定にComlinkプロキシが引っかかり、意図せず`createdClient(prevState)`のような呼び出しが発生、Comlink側で`path=[]`のAPPLYメッセージがWorkerへ送信されるが対応する実体がなく例外になる。既存のE2Eテスト(`worker-rpc.spec.ts`)は`client.account.create(...)`のようなその場でのメソッドチェーンのみを検証しており、Remoteオブジェクト自体をReactの状態として保持するパターンは初めてだったため、モックを使うユニットテストや型チェックでは検出できず、実ブラウザでの操作でのみ顕在化した。
+**対策**: ComlinkのRemote<T>オブジェクト(または内部的に関数をターゲットにしたProxy等、`typeof`が`"function"`になりうる任意の値)をReactの`useState`・`useReducer`の状態として保持する場合は、必ず`setState(() => value)`という関数でラップして渡し、Reactに更新関数として誤呼び出しさせない。この種の実行時限定の不具合は、モックオブジェクトを使うユニットテストだけでは再現できないため、Comlinkのプロキシオブジェクトを新しく状態として扱うコンポーネントを実装した際は、実ブラウザ(Playwright)での動作確認を行う。
+**該当箇所（例）**: `src/infrastructure/rpc/DbClientProvider.tsx`(`setClient(() => createdClient)`)、`src/infrastructure/rpc/DbClientProvider.test.tsx`(関数として呼び出し可能なオブジェクトを渡す回帰テスト)、`docs/decisions.md`「ComlinkのRemoteオブジェクトをReactのuseStateへ渡す際は関数でラップする」、Issue #31(実装中に自己発見、Playwrightでの実機操作で判明)
+
+## ユーザー入力の数値をDDLのCHECK制約に渡す前の検証で、比較演算子だけに頼るとNaNが素通りする
+
+**症状**: `registerAccount`の初期残高ガードで、`input.initialBalance <= 0`という比較演算子のみで「初期残高なし」を判定すると、`<input type="number">`から`Number(value)`で変換した結果がNaNになる入力(数値として解釈できない文字列等)に対して`NaN <= 0`が常に`false`を返すため、ガードをすり抜けて`journal_lines`の`CHECK (amount > 0)`制約違反の例外が発生する。この例外は`accountRepository.create()`で資産科目を作成した後、初期残高科目・仕訳の作成処理の途中で発生するため、対応する初期仕訳を持たない状態がDBに残り、ウィザードはエラー処理も無いままフリーズする(evaluatorのレビューで3回の実装attempt(0以下のガード追加→NaN判定漏れの発覚→Number.isFinite()追加)を経て発覚・修正された)。
+**原因**: JavaScriptの比較演算子(`<`・`<=`・`>`・`>=`)は、オペランドがNaNの場合は常に`false`を返す(NaNはIEEE 754仕様上どの値とも大小関係を持たない)。「0以下なら弾く」という直感的なガードを書く際、NaNという「0以下でも0より大きくもない」特殊値の存在が意識されにくく、正常系のテスト(有効な数値の入力)だけでは見落とされる。
+**対策**: ユーザー入力(特に`<input type="number">`から変換した数値)をDBのCHECK制約や不変条件の検証に使う前は、比較演算子だけに頼らず`Number.isFinite()`で有限の数値であることを必ず確認する(`NaN`・`Infinity`・`-Infinity`のいずれも`Number.isFinite()`は`false`を返す)。境界値のテスト(0・負数・NaN・Infinityそれぞれ)を実装時に用意する。DDL制約違反の例外が複数レコードの作成処理の途中で発生する設計(本件は資産科目→初期残高科目→初期仕訳の順で作成)の場合、それ以前に作成済みのレコードが残る可能性も踏まえ、DDL制約に抵触しうる値はアプリケーション層で事前に弾く設計を優先する。
+**該当箇所（例）**: `src/components/account-registration/registerAccount.ts`(`Number.isFinite(input.initialBalance)`によるガード)、`src/components/account-registration/registerAccount.test.ts`(NaN/Infinityの回帰テスト)、`docs/decisions.md`「registerAccountの初期残高は0以下だけでなくNumber.isFinite()でNaN/Infinityも除外して『初期残高なし』判定する」、Issue #31 Implementation Attempt 1・2 Review(evaluator FAIL指摘)・Attempt 3で修正
+
+## trailing debounceで永続化するデータのE2Eテストで、無関係な既存データの存在だけをポーリング条件にすると保存完了を待てない
+
+**症状**: `e2e/account-registration.spec.ts`でウィザード操作後のDB永続化完了を待つ際、「IndexedDBに何らかのデータが存在する」ことだけをポーリング条件にする実装だと、テストの事前準備(世帯メンバー作成等)の時点で既にその条件を満たしてしまい、後続のウィザード操作(口座作成)による保存完了を待たずにテストが先に進んでしまう。
+**原因**: `withAutoSave`(計画Issue #58)はDB変更をtrailing debounce(2秒)で`StorageAdapter`へ保存するため、ウィザード操作の直後に`createDbClient()`で新しい接続を作って確認しても、保存が完了しているとは限らない。「何らかのデータの有無」のような粗いポーリング条件は、テスト内で先行する別の書き込み(事前準備データ)によって既に真になっている可能性があり、対象の操作(本件のウィザードでの口座作成)による保存が完了したことを正しく検知できない。
+**対策**: DB永続化の完了をE2Eでポーリング待ちする際は、「何らかのデータが存在するか」ではなく、「対象の操作で書き込まれたはずの具体的なデータ(本件では口座名)がRepository経由で実際に確認できるか」をポーリング条件にする。汎用ヘルパーを用意する場合も、確認対象のデータを引数として明示的に受け取る設計にし、「何かが保存されていればOK」という曖昧な条件にしない。
+**該当箇所（例）**: `e2e/account-registration.spec.ts`(`waitForAccountCreated`/`waitForHouseholdMemberCreated`)、`docs/architecture.md` 4.2節(`withAutoSave`のtrailing debounce)、Issue #31(実装中に自己発見、evaluator指摘ではない)

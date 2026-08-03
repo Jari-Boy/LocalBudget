@@ -1,123 +1,82 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import type * as Comlink from 'comlink'
+import { useTranslation } from 'react-i18next'
+import type { AccountRepository } from './domain/account/AccountRepository'
+import type { JournalEntryRepository } from './domain/journal/JournalEntryRepository'
+import type { HouseholdMemberRepository } from './domain/household-member/HouseholdMemberRepository'
+import { DbClientProvider, useDbClient } from './infrastructure/rpc/DbClientProvider'
+import { AccountRegistrationWizard } from './components/account-registration/AccountRegistrationWizard'
+import { CreditCardRegistrationWizard } from './components/account-registration/CreditCardRegistrationWizard'
 import { UpdateBanner } from './components/UpdateBanner'
 import { IosInstallPrompt } from './components/IosInstallPrompt'
 import './App.css'
 
-function App() {
-  const [count, setCount] = useState(0)
+type Screen = 'home' | 'register-account' | 'register-credit-card'
+
+/**
+ * トップ画面からのウィザード起動と、完了後のトップ画面への復帰のみを扱う
+ * 最小限のアプリシェル。画面数がまだ少ないため、ルーティングライブラリは
+ * 導入せずuseStateによる画面切り替えのみで完結させる(計画Issue #31、
+ * 画面数が増えてから本格的なナビゲーション構造を検討する)。
+ */
+function AppContent() {
+  const { t } = useTranslation('account')
+  const client = useDbClient()
+  const [screen, setScreen] = useState<Screen>('home')
+
+  /**
+   * Comlinkの型定義上、RepositoryRegistryのネストしたRepositoryプロパティは
+   * Comlink.proxy()でマークされていないため、型上はPromisify<T>(Remote<T>ではない)
+   * と推論される(createRepositoryRegistry.tsのautoSaveと同じ制約、docs/decisions.md参照)。
+   * 実行時にはExpose対象オブジェクトのプロパティとして正しくRemoteオブジェクトになる
+   * (e2e/worker-rpc.spec.tsで検証済み)ため、Comlink.Remote<T>を経由した型アサーションで
+   * ウィザードコンポーネントが要求する構造的型(AccountCreator等)に合わせる。
+   */
+  const accountRepository = client.account as unknown as Comlink.Remote<AccountRepository>
+  const journalEntryRepository = client.journalEntry as unknown as Comlink.Remote<JournalEntryRepository>
+  const householdMemberRepository =
+    client.householdMember as unknown as Comlink.Remote<HouseholdMemberRepository>
+
+  if (screen === 'register-account') {
+    return (
+      <AccountRegistrationWizard
+        accountRepository={accountRepository}
+        journalEntryRepository={journalEntryRepository}
+        householdMemberRepository={householdMemberRepository}
+        onComplete={() => setScreen('home')}
+      />
+    )
+  }
+
+  if (screen === 'register-credit-card') {
+    return (
+      <CreditCardRegistrationWizard
+        accountRepository={accountRepository}
+        householdMemberRepository={householdMemberRepository}
+        onComplete={() => setScreen('home')}
+      />
+    )
+  }
 
   return (
+    <div className="app-home">
+      <h1>LocalBudget</h1>
+      <button type="button" onClick={() => setScreen('register-account')}>
+        {t('registerAccountTitle')}
+      </button>
+      <button type="button" onClick={() => setScreen('register-credit-card')}>
+        {t('registerCreditCardTitle')}
+      </button>
+    </div>
+  )
+}
+
+function App() {
+  return (
     <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-
+      <DbClientProvider>
+        <AppContent />
+      </DbClientProvider>
       <UpdateBanner />
       <IosInstallPrompt />
     </>

@@ -123,3 +123,13 @@
 
 **内容**: Vite dev server(`vite dev`)は、CSSモジュールのHot Module Replacement(HMR)を実現するため、JavaScriptから`<style>`タグをDOMへ動的に注入する。CSPで`style-src`を明示的に指定していない場合、`default-src 'self'`にフォールバックし`'unsafe-inline'`が許可されないため、このインライン注入がCSP違反として検出される。この挙動は本番ビルド(`vite build`)には存在しない。本番ビルドではCSSがビルド時に外部ファイルとして出力され、HMRの仕組み自体（開発時専用の機能）が含まれないため、`style-src`を指定していないCSPのままでも違反にならない。この非対称性(dev server限定の制約)への対処として、`command === 'serve'`時のみCSPを緩和するViteプラグインを追加し、`vite.config.ts`側でのみ`style-src`を緩めることで、本番ビルドのCSPを厳格なまま保つことができる。
 **参考**: `vite.config.ts`(`relaxCspForDevServer`、`apply: 'serve'`)、`docs/decisions.md`「Vite dev server限定でCSPのstyle-srcを緩和するプラグイン(relaxCspForDevServer)を追加する」、Issue #30
+
+## ComlinkのRemoteオブジェクトはtypeofが'function'と判定されるProxyであり、Reactのstate setterに直接渡すと更新関数として誤呼び出しされる
+
+**内容**: Comlinkの`Comlink.wrap()`が返す`Remote<T>`オブジェクトは、内部実装上`function(){}`をターゲットにした`Proxy`として生成されている(メソッド呼び出し自体を関数呼び出しとして中継できるようにするため)。この結果、`typeof remoteObject === 'function'`は`true`を返す。Reactの`useState`が返すセッター関数は、引数が関数型である場合、それを「直前の状態を受け取り新しい状態を返す更新関数」とみなして`updater(prevState)`のように呼び出す仕様(functional updates)を持つため、Comlinkの`Remote<T>`オブジェクトをそのまま`setState(remoteObject)`のように渡すと、Reactが`remoteObject(prevState)`という意図しない呼び出しを行ってしまう。これはComlink側から見ると、引数無しの関数呼び出し(`path: []`のAPPLYメッセージ)がWorkerへ送信されることに相当し、対応する実体が無いため`rawValue.apply is not a function`のような実行時エラーになる。回避策は`setState(() => remoteObject)`のように関数でラップし、Reactに関数呼び出しをさせず値として保持させること。この問題はモックを使うNode/Vitestのユニットテストでは再現せず、実ブラウザ(Playwright)でComlinkのRemoteオブジェクトを実際に生成し、それを`useState`に保持するコンポーネントを操作して初めて発覚する。
+**参考**: `src/infrastructure/rpc/DbClientProvider.tsx`、`docs/decisions.md`「ComlinkのRemoteオブジェクトをReactのuseStateへ渡す際は関数でラップする(setState(() => value))」、`docs/guides/patterns.md`「ComlinkのRemoteオブジェクト(typeofが'function'と判定されるProxy)をReactのuseStateにそのまま渡すと誤動作する」、Issue #31
+
+## e2e/配下はtsconfig.app.jsonのinclude対象外のため、npm run typecheckの型チェックを受けない
+
+**内容**: `tsconfig.app.json`の`include`は`["src"]`のみであり、`e2e/*.spec.ts`はこの対象に含まれない。`npm run typecheck`(`tsc -p tsconfig.app.json --noEmit`)は`src`配下のみを検査するため、`e2e/`配下のPlaywrightテストコードに存在する型エラーはCIの型チェックでは検出されない(Playwright自体はテストランナーが型注釈を無視して直接実行するため、テストの実行自体には影響しない)。この性質により、例えば`e2e/worker-rpc.spec.ts`の`client.account.create(...)`(Comlinkの型定義上`client.account`は`Comlink.proxy()`が付与されていないため`Promisify<AccountRepository>`= `Promise<AccountRepository>`と推論され、本来`.create`は存在しないはずの型)が、実際にはTypeScriptの型チェックに一度も晒されずに動作し続けている。同じ`RepositoryRegistry`の未`Comlink.proxy()`プロパティ(`account`等)を`src/`配下(型チェック対象)のコンポーネントから初めて呼び出そうとした際(Issue #31の`App.tsx`)に、この型エラーが初めて表面化した。
+**参考**: `tsconfig.app.json`、`playwright.config.ts`、`src/App.tsx`(`Comlink.Remote<T>`型アサーション)、`docs/decisions.md`「App.tsxではRepositoryRegistryの未Comlink.proxy()プロパティをComlink.Remote<T>型アサーションで扱う」、Issue #31
