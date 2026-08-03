@@ -48,4 +48,24 @@ describe('DbClientProvider', () => {
 
     expect(await screen.findByText('client-ready: true')).toBeInTheDocument()
   })
+
+  it('createDbClientが解決する値が関数として呼び出し可能なオブジェクト(Comlinkのプロキシ)であっても、そのまま状態として保持できる', async () => {
+    // ComlinkのRemoteオブジェクトは内部でfunction()をターゲットとしたProxyであり
+    // typeof演算子で"function"と判定される。setState(x)にそのまま渡すとReactが
+    // xを「更新関数」と誤認しx(prevState)のように呼び出してしまう回帰を防ぐテスト。
+    const functionLikeClient = Object.assign(() => {
+      throw new Error('Comlinkのプロキシが関数として呼び出された(setStateの誤動作)')
+    }, { account: {} })
+    createDbClientMock.mockResolvedValue(functionLikeClient)
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <DbClientProvider>
+          <ClientConsumer />
+        </DbClientProvider>
+      </I18nextProvider>,
+    )
+
+    expect(await screen.findByText('client-ready: true')).toBeInTheDocument()
+  })
 })

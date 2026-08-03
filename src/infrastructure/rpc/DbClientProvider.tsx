@@ -21,7 +21,12 @@ export function DbClientProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     void createDbClient().then((createdClient) => {
       if (!cancelled) {
-        setClient(createdClient)
+        // ComlinkのRemoteオブジェクトは内部的にfunction()を対象としたProxyであり
+        // typeof演算子で"function"と判定される。setState(x)にそのまま渡すと、
+        // Reactがxを「更新関数」と誤認しx(prevState)のように呼び出してしまい、
+        // path=[]のAPPLYメッセージがWorkerに送られて例外になる。
+        // setState(() => x)の形で渡し、Reactに関数呼び出しをさせず値として設定する。
+        setClient(() => createdClient)
       }
     })
     return () => {
