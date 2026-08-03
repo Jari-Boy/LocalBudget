@@ -6,13 +6,25 @@ import type { AccountKind } from './accountKind'
 import { registerAccount, type AccountCreator, type JournalEntryCreator } from './registerAccount'
 import './AccountRegistrationWizard.css'
 
-const ACCOUNT_KINDS: AccountKind[] = ['bank', 'cash', 'e_money', 'investment']
 const KIND_LABEL_KEY: Record<AccountKind, string> = {
   bank: 'kindBank',
   cash: 'kindCash',
   e_money: 'kindEMoney',
   investment: 'kindInvestment',
 }
+
+/**
+ * 種類選択ステップの表示グループ(docs/decisions.md参照)。銀行口座・証券口座は
+ * 「口座」、現金・電子マネーは資産である点は同じだがユーザーの感覚上「口座」とは
+ * 異なる(現金はそもそも口座ではない、電子マネーは決済手段としての手触りが
+ * クレジットカードに近い)ため、種類選択の一覧内で視覚的に分けて表示する。
+ * ドメイン上はいずれもcategory = 'asset'で同じ扱い(4.2節)であり、グルーピングは
+ * 表示上の分類に留まる。
+ */
+const ACCOUNT_KIND_GROUPS: { labelKey: string; kinds: AccountKind[] }[] = [
+  { labelKey: 'kindGroupBankAccounts', kinds: ['bank', 'investment'] },
+  { labelKey: 'kindGroupCashLike', kinds: ['cash', 'e_money'] },
+]
 
 interface HouseholdMemberFinder {
   findAll(): HouseholdMember[] | Promise<HouseholdMember[]>
@@ -97,18 +109,25 @@ export function AccountRegistrationWizard({
       {currentStep === 'kind' && (
         <fieldset>
           <legend>{t('stepKindLabel')}</legend>
-          {ACCOUNT_KINDS.map((candidateKind) => (
-            <button
-              key={candidateKind}
-              type="button"
-              aria-pressed={kind === candidateKind}
-              onClick={() => {
-                setKind(candidateKind)
-                goNext()
-              }}
-            >
-              {t(KIND_LABEL_KEY[candidateKind])}
-            </button>
+          {ACCOUNT_KIND_GROUPS.map((group) => (
+            <div key={group.labelKey} className="account-kind-group">
+              <p className="account-kind-group-label">{t(group.labelKey)}</p>
+              <div className="account-kind-group-buttons">
+                {group.kinds.map((candidateKind) => (
+                  <button
+                    key={candidateKind}
+                    type="button"
+                    aria-pressed={kind === candidateKind}
+                    onClick={() => {
+                      setKind(candidateKind)
+                      goNext()
+                    }}
+                  >
+                    {t(KIND_LABEL_KEY[candidateKind])}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </fieldset>
       )}

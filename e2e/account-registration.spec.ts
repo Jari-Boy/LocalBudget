@@ -48,7 +48,7 @@ test.describe('口座登録ウィザード', () => {
   }) => {
     await page.goto('/')
 
-    await page.getByRole('button', { name: '口座を登録する' }).click()
+    await page.getByRole('button', { name: '資産を登録する' }).click()
     await page.getByRole('button', { name: '銀行口座' }).click()
     await page.getByLabel('名前を付ける').fill('三菱UFJ銀行')
     await page.getByRole('button', { name: '次へ' }).click()
@@ -98,7 +98,7 @@ test.describe('口座登録ウィザード', () => {
   test('種類で現金を選ぶとis_reconcilable = falseで口座が作成される', async ({ page }) => {
     await page.goto('/')
 
-    await page.getByRole('button', { name: '口座を登録する' }).click()
+    await page.getByRole('button', { name: '資産を登録する' }).click()
     await page.getByRole('button', { name: '現金' }).click()
     await page.getByLabel('名前を付ける').fill('財布')
     await page.getByRole('button', { name: '次へ' }).click()
@@ -130,7 +130,7 @@ test.describe('口座登録ウィザード', () => {
     await waitForHouseholdMemberCreated(page, '太郎')
     await page.reload()
 
-    await page.getByRole('button', { name: '口座を登録する' }).click()
+    await page.getByRole('button', { name: '資産を登録する' }).click()
     await page.getByRole('button', { name: '銀行口座' }).click()
     await page.getByLabel('名前を付ける').fill('三菱UFJ銀行')
     await page.getByRole('button', { name: '次へ' }).click()

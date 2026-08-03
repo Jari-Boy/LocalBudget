@@ -49,6 +49,20 @@ function renderWizard(onComplete: (account: unknown) => void) {
 }
 
 describe('AccountRegistrationWizard', () => {
+  it('種類選択ステップは「口座」(銀行口座・証券口座)と「現金・電子マネー」のグループに分けて表示される', async () => {
+    const onComplete = vi.fn()
+    renderWizard(onComplete)
+
+    const bankAccountsGroup = (await screen.findByText('口座')).closest('div')!
+    expect(bankAccountsGroup).toHaveTextContent('銀行口座')
+    expect(bankAccountsGroup).toHaveTextContent('証券・投資口座')
+    expect(bankAccountsGroup).not.toHaveTextContent('現金')
+
+    const cashLikeGroup = screen.getByText('現金・電子マネー').closest('div')!
+    expect(cashLikeGroup).toHaveTextContent('現金')
+    expect(cashLikeGroup).toHaveTextContent('電子マネー')
+  })
+
   it('世帯メンバーが未登録の場合、名義選択ステップを経ずに口座を登録できる(初期残高なし)', async () => {
     const onComplete = vi.fn()
     renderWizard(onComplete)
