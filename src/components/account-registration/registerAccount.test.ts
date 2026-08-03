@@ -138,4 +138,30 @@ describe('registerAccount', () => {
     expect(accountRepository.findAll()).toHaveLength(1)
     expect(journalEntryRepository.findAll()).toHaveLength(0)
   })
+
+  it('初期残高にNaN(数値変換に失敗した入力相当)を指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
+    await registerAccount(accountRepository, journalEntryRepository, {
+      kind: 'bank',
+      name: '三菱UFJ銀行',
+      householdMemberId: null,
+      initialBalance: Number.NaN,
+      entryDate: '2026-08-03',
+    })
+
+    expect(accountRepository.findAll()).toHaveLength(1)
+    expect(journalEntryRepository.findAll()).toHaveLength(0)
+  })
+
+  it('初期残高にInfinityを指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
+    await registerAccount(accountRepository, journalEntryRepository, {
+      kind: 'bank',
+      name: '三菱UFJ銀行',
+      householdMemberId: null,
+      initialBalance: Number.POSITIVE_INFINITY,
+      entryDate: '2026-08-03',
+    })
+
+    expect(accountRepository.findAll()).toHaveLength(1)
+    expect(journalEntryRepository.findAll()).toHaveLength(0)
+  })
 })

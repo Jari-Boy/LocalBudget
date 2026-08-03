@@ -44,8 +44,10 @@ export async function registerAccount(
   })
 
   // journal_lines.amountはCHECK (amount > 0)制約を持つ(docs/schema/journal.sql)ため、
-  // 0または負数の入力は「初期残高なし」として扱い、初期残高科目・仕訳を作成しない。
-  if (input.initialBalance === null || input.initialBalance <= 0) {
+  // 0・負数・NaN・Infinityの入力は「初期残高なし」として扱い、初期残高科目・仕訳を
+  // 作成しない。`initialBalance <= 0`だけではNaNが素通りする(`NaN <= 0`は常にfalse)ため、
+  // Number.isFinite()で有限の数値であることも合わせて検証する。
+  if (input.initialBalance === null || !Number.isFinite(input.initialBalance) || input.initialBalance <= 0) {
     return account
   }
 
