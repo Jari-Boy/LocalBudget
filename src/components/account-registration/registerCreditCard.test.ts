@@ -24,8 +24,8 @@ beforeEach(async () => {
 })
 
 describe('registerCreditCard', () => {
-  it('負債科目(is_reconcilable = false固定)が作成される', () => {
-    const account = registerCreditCard(accountRepository, {
+  it('負債科目(is_reconcilable = false固定)が作成される', async () => {
+    const account = await registerCreditCard(accountRepository, {
       name: '楽天カード',
       householdMemberId: null,
     })
@@ -37,10 +37,10 @@ describe('registerCreditCard', () => {
     })
   })
 
-  it('名義(householdMemberId)を指定して作成できる', () => {
+  it('名義(householdMemberId)を指定して作成できる', async () => {
     const member = householdMemberRepository.create({ name: '花子' })
 
-    const account = registerCreditCard(accountRepository, {
+    const account = await registerCreditCard(accountRepository, {
       name: '楽天カード',
       householdMemberId: member.id,
     })

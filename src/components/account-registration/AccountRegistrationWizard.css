@@ -1,0 +1,18 @@
+.account-registration-wizard {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.account-registration-wizard fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: none;
+  padding: 0;
+}
+
+.account-registration-wizard label {
+  display: block;
+  margin-bottom: 0.5rem;
+}

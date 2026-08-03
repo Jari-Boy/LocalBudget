@@ -28,8 +28,8 @@ beforeEach(async () => {
 })
 
 describe('registerAccount', () => {
-  it('初期残高を入力しない場合、資産科目のみが作成される', () => {
-    const account = registerAccount(accountRepository, journalEntryRepository, {
+  it('初期残高を入力しない場合、資産科目のみが作成される', async () => {
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
       kind: 'bank',
       name: '三菱UFJ銀行',
       householdMemberId: null,
@@ -46,8 +46,8 @@ describe('registerAccount', () => {
     expect(accountRepository.findAll()).toHaveLength(1)
   })
 
-  it('種類が現金の場合is_reconcilableはfalseになる', () => {
-    const account = registerAccount(accountRepository, journalEntryRepository, {
+  it('種類が現金の場合is_reconcilableはfalseになる', async () => {
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
       kind: 'cash',
       name: '現金',
       householdMemberId: null,
@@ -58,10 +58,10 @@ describe('registerAccount', () => {
     expect(account.isReconcilable).toBe(false)
   })
 
-  it('名義(householdMemberId)を指定して作成できる', () => {
+  it('名義(householdMemberId)を指定して作成できる', async () => {
     const member = householdMemberRepository.create({ name: '太郎' })
 
-    const account = registerAccount(accountRepository, journalEntryRepository, {
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
       kind: 'bank',
       name: '三菱UFJ銀行',
       householdMemberId: member.id,
@@ -72,8 +72,8 @@ describe('registerAccount', () => {
     expect(account.householdMemberId).toBe(member.id)
   })
 
-  it('初期残高を入力した場合、口座専用の初期残高科目(equity)と初期仕訳が自動生成される', () => {
-    const account = registerAccount(accountRepository, journalEntryRepository, {
+  it('初期残高を入力した場合、口座専用の初期残高科目(equity)と初期仕訳が自動生成される', async () => {
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
       kind: 'bank',
       name: '三菱UFJ銀行',
       householdMemberId: null,
