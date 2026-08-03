@@ -66,31 +66,40 @@ export function inferMappingDefinitionDraft(rows: string[][]): ImportMappingDefi
   const { headerRow, dataRows } = detectHeaderRow(rows)
 
   // 1パス目: ヘッダーキーワードが一意にマッチしたフィールドを先にすべて確定させる。
-  // これにより、後段の型ベースのフォールバック候補生成(2パス目)から、既に確定済みの列を
-  // フィールドの処理順によらず一貫して除外できる。
+  // これにより、後段の候補解決(2パス目)から、既に確定済みの列をフィールドの処理順に
+  // よらず一貫して除外できる。claimedColumnsは各フィールド自身の一意マッチのみから
+  // 決まるため、FIELD_ORDERの並びを変えても結果は変わらない。
   const claimedColumns = new Set<number>()
   const headerMatches = {} as Record<MappingColumnField, ColumnCandidate[]>
-  const confidentHeaderField = {} as Record<MappingColumnField, boolean>
 
   for (const field of FIELD_ORDER) {
     const matches = headerRow ? matchHeaderKeywords(field, headerRow) : []
     headerMatches[field] = matches
-    confidentHeaderField[field] = matches.length === 1
     if (matches.length === 1) {
       claimedColumns.add(matches[0].columnIndex)
     }
   }
 
-  // 2パス目: 未確定のフィールドを型ベースの候補ランキングで解決する。
+  // 2パス目: フィールドごとに以下の優先順位で候補を解決する。
+  //   1. ヘッダーキーワードが一意にマッチ → そのまま確定候補として採用
+  //   2. ヘッダーキーワードが複数列にマッチ(曖昧) → 既に他フィールドが確定済みの列を除外した
+  //      上で、1件に絞れれば確定候補、複数残れば型の一致度でランキング
+  //      (実データ検証: 「入出金内容」「入出金額」が両方とも「出金」を含むケース等で、
+  //      既に別フィールドが確定済みの列を候補から除くことで無関係な候補の混入を防ぐ)
+  //   3. ヘッダーキーワードが1件もマッチしない → 型ベースの候補ランキングにフォールバック
   const resolved = {} as Record<MappingColumnField, ColumnCandidate[]>
   for (const field of FIELD_ORDER) {
     const fallbackType = FIELD_FALLBACK_TYPE[field]
-    if (confidentHeaderField[field]) {
-      resolved[field] = headerMatches[field]
-    } else if (headerMatches[field].length > 1) {
-      resolved[field] = [...headerMatches[field]].sort(
-        (a, b) => typeScore(b.columnIndex, dataRows, fallbackType) - typeScore(a.columnIndex, dataRows, fallbackType),
-      )
+    const matches = headerMatches[field]
+
+    if (matches.length === 1) {
+      resolved[field] = matches
+      continue
+    }
+
+    const unclaimedMatches = matches.filter((match) => !claimedColumns.has(match.columnIndex))
+    if (unclaimedMatches.length > 0) {
+      resolved[field] = rankCandidatesByType(unclaimedMatches, dataRows, fallbackType)
     } else {
       resolved[field] = rankColumnsByType(dataRows, fallbackType, headerRow, claimedColumns)
     }
@@ -100,7 +109,7 @@ export function inferMappingDefinitionDraft(rows: string[][]): ImportMappingDefi
     headerRowCount: headerRow ? 1 : 0,
     dateColumn: resolved.dateColumn,
     descriptionColumn: resolved.descriptionColumn,
-    amountMode: inferAmountMode(confidentHeaderField),
+    amountMode: inferAmountMode(resolved),
     amountColumn: resolved.amountColumn,
     debitColumn: resolved.debitColumn,
     creditColumn: resolved.creditColumn,
@@ -111,9 +120,27 @@ export function inferMappingDefinitionDraft(rows: string[][]): ImportMappingDefi
   }
 }
 
-function inferAmountMode(confidentHeaderField: Record<MappingColumnField, boolean>): AmountMode | null {
-  if (confidentHeaderField.debitColumn && confidentHeaderField.creditColumn) return 'debit_credit_split'
-  if (confidentHeaderField.amountColumn) return 'single_signed'
+/**
+ * amountModeは、各フィールドの最終的な解決結果(候補が1件=一意に絞り込めた)を基準に判定する。
+ * ヘッダーキーワードで一意にマッチした場合だけでなく、型ベースのフォールバックの結果
+ * 候補が1件に絞り込めた場合も「一意」として扱う(実データ検証: 残高列がヘッダーで確定した
+ * 結果、残る数値列が1つだけになり金額列が一意に定まるケース等)。
+ *
+ * debitColumn・creditColumnが同一の列インデックスに絞り込まれた場合はdebit_credit_splitとは
+ * 判定しない。実データ検証(楽天銀行の「入出金(円)」1列)で判明: debitColumn・creditColumnは
+ * それぞれ独立に解決される(ヘッダーの曖昧マッチをclaimedColumnsで絞り込む経路と、型
+ * フォールバックの経路)ため、単一の符号付き金額列が両方から偶然同じ列に解決されることがあり、
+ * その場合は実際には出金・入金の2列ではなく1列の符号付き金額を意味する。
+ */
+function inferAmountMode(resolved: Record<MappingColumnField, ColumnCandidate[]>): AmountMode | null {
+  if (
+    resolved.debitColumn.length === 1 &&
+    resolved.creditColumn.length === 1 &&
+    resolved.debitColumn[0].columnIndex !== resolved.creditColumn[0].columnIndex
+  ) {
+    return 'debit_credit_split'
+  }
+  if (resolved.amountColumn.length === 1) return 'single_signed'
   return null
 }
 
@@ -121,7 +148,7 @@ function detectHeaderRow(rows: string[][]): { headerRow: string[] | null; dataRo
   if (rows.length === 0) return { headerRow: null, dataRows: [] }
 
   const firstRow = rows[0]
-  const allKeywords = Object.values(COLUMN_KEYWORD_DICTIONARY).flat()
+  const allKeywords = Object.values(COLUMN_KEYWORD_DICTIONARY).flatMap((tiers) => tiers.flat())
   const looksLikeHeader = firstRow.some((cell) =>
     allKeywords.some((keyword) => normalizeHeaderCell(cell).includes(keyword)),
   )
@@ -133,16 +160,33 @@ function normalizeHeaderCell(cell: string): string {
   return cell.normalize('NFKC').trim()
 }
 
+/**
+ * フィールドのキーワード階層(tier)を先頭から順に試し、1件でもマッチする階層が
+ * 見つかった時点でそれを返す(columnKeywordDictionary.tsのdocstring参照)。
+ */
 function matchHeaderKeywords(field: MappingColumnField, headerRow: string[]): ColumnCandidate[] {
-  const keywords = COLUMN_KEYWORD_DICTIONARY[field]
-  const candidates: ColumnCandidate[] = []
-  headerRow.forEach((header, columnIndex) => {
-    const normalized = normalizeHeaderCell(header)
-    if (keywords.some((keyword) => normalized.includes(keyword))) {
-      candidates.push({ columnIndex, headerName: header })
-    }
-  })
-  return candidates
+  const tiers = COLUMN_KEYWORD_DICTIONARY[field]
+  for (const keywords of tiers) {
+    const candidates: ColumnCandidate[] = []
+    headerRow.forEach((header, columnIndex) => {
+      const normalized = normalizeHeaderCell(header)
+      if (keywords.some((keyword) => normalized.includes(keyword))) {
+        candidates.push({ columnIndex, headerName: header })
+      }
+    })
+    if (candidates.length > 0) return candidates
+  }
+  return []
+}
+
+function rankCandidatesByType(
+  candidates: ColumnCandidate[],
+  dataRows: string[][],
+  type: ColumnValueType,
+): ColumnCandidate[] {
+  return [...candidates].sort(
+    (a, b) => typeScore(b.columnIndex, dataRows, type) - typeScore(a.columnIndex, dataRows, type),
+  )
 }
 
 interface ColumnStats {

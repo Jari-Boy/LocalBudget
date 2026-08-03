@@ -106,6 +106,74 @@ describe('ヘッダーのキーワードが一意に定まらない場合', () =
   })
 })
 
+describe('クレジットカード明細形式(実データで判明したパターン)', () => {
+  it('「利用金額」と月次内訳列が両方とも「金額」を含み曖昧でも、より具体的なキーワードで一意に確定する', () => {
+    const rows = [
+      ['利用日', '利用店名・商品名', '利用金額', '支払総額', '8月支払金額'],
+      ['2026/07/18', 'AMAZON.CO.JP', '1455', '1455', '1455'],
+      ['2026/07/14', 'コンビニ', '5610', '5610', '5610'],
+    ]
+
+    const draft = inferMappingDefinitionDraft(rows)
+
+    expect(draft.amountColumn).toEqual([{ columnIndex: 2, headerName: '利用金額' }])
+    expect(draft.amountMode).toBe('single_signed')
+  })
+
+  it('「ご利用日」の敬語接頭辞が無い「利用日」ヘッダーも一意に確定する', () => {
+    const rows = [
+      ['利用日', '利用店名・商品名', '利用金額'],
+      ['2026/07/18', 'AMAZON.CO.JP', '1455'],
+    ]
+
+    const draft = inferMappingDefinitionDraft(rows)
+
+    expect(draft.dateColumn).toEqual([{ columnIndex: 0, headerName: '利用日' }])
+  })
+
+  it('「利用店名・商品名」ヘッダーも摘要列として一意に確定する', () => {
+    const rows = [
+      ['利用日', '利用店名・商品名', '利用金額'],
+      ['2026/07/18', 'AMAZON.CO.JP', '1455'],
+    ]
+
+    const draft = inferMappingDefinitionDraft(rows)
+
+    expect(draft.descriptionColumn).toEqual([{ columnIndex: 1, headerName: '利用店名・商品名' }])
+  })
+})
+
+describe('amountModeの判定はヘッダー確定だけでなく型フォールバックの一意な絞り込みも考慮する', () => {
+  it('残高列がヘッダーで確定した結果、残る数値列が1つだけになれば単一符号付きとして確定する', () => {
+    const rows = [
+      ['取引日', '入出金内容', '入出金額', '取引後残高'],
+      ['2026/07/20', 'セブンイレブン', '-150', '9850'],
+      ['2026/07/21', '給与振込', '250000', '259850'],
+    ]
+
+    const draft = inferMappingDefinitionDraft(rows)
+
+    expect(draft.balanceColumn).toEqual([{ columnIndex: 3, headerName: '取引後残高' }])
+    expect(draft.amountColumn).toEqual([{ columnIndex: 2, headerName: '入出金額' }])
+    expect(draft.amountMode).toBe('single_signed')
+    expect(draft.debitColumn).toEqual([])
+    expect(draft.creditColumn).toEqual([])
+  })
+
+  it('金額列のヘッダーが「金額」を含まない場合でも、出金・入金列が同一列に絞り込まれただけでdebit_credit_splitと誤判定しない', () => {
+    const rows = [
+      ['取引日', '入出金内容', '入出金(円)', '取引後残高(円)'],
+      ['2026/07/20', 'セブンイレブン', '-150', '9850'],
+      ['2026/07/21', '給与振込', '250000', '259850'],
+    ]
+
+    const draft = inferMappingDefinitionDraft(rows)
+
+    expect(draft.amountColumn).toEqual([{ columnIndex: 2, headerName: '入出金(円)' }])
+    expect(draft.amountMode).toBe('single_signed')
+  })
+})
+
 describe('label・formatGroupId・isSettled', () => {
   it('CSVの中身から推測せず常にnullのままにする', () => {
     const rows = [
