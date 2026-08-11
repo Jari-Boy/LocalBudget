@@ -199,6 +199,8 @@ CLAUDE.mdの方針（実装は必ずテストから書く。red→green→refact
 - CSVパース処理はファイルサイズが小さいため、まずはメインスレッドで実行する方針とする。パフォーマンス上の問題が出た場合はWeb Workerへ移す。
 - マニュアル起票・外部明細取込いずれの経路でも、最終的にRepository層（5章）の`JournalEntryRepository`を通じて同一のドメインルール（貸借バランス検証等、詳細は`docs/domain/journal.md`）を適用する。入力経路によってドメインの整合性ルールが分岐しないようにする。
 
+**実装状況（Issue #76）**: CSV取込アップロード画面（`StatementImportUploadScreen`）・レビュー一覧画面（`StatementImportReviewScreen`、いずれも`src/components/statement-import/`）を実装した。上記方針の通りCSVパース処理（`readCsv`）はメインスレッド（React UI層）で実行し、Worker越しのRepository呼び出し（対象科目一覧・マッピング定義候補・既存突合レコードの取得）を先に完了させてから同期的にパース・マッピング変換・重複防止判定（`buildStatementImportReview`、`docs/domain/statement-import.md` 1.5〜1.6）まで行う。対象科目のマッピング定義候補は1件のみの場合に限り自動選択し、複数ある場合（楽天カードの確定/速報明細等）はユーザーが`label`で明示的に選ぶ（同1.5手順1）。相手勘定科目の候補は、マニュアル起票用の`isManualEntryEligibleAccount`（`is_reconcilable = true`科目を除外）とは異なる専用の`isStatementImportCounterAccountEligible`を新設して判定する。`docs/domain/reconciliation.md` 1.2の直接記帳制限ホワイトリストは`source_type = 'external_import'`を許可しているため、CSV取込由来の仕訳では口座間振替のように`is_reconcilable = true`科目同士を相手科目として選べる必要があり、マニュアル起票と同じ制約をそのまま流用すると選択できなくなる不具合になる（詳細は`docs/decisions.md`・`docs/guides/patterns.md`参照）。本Issueのスコープは「アップロード〜レビュー一覧表示」までであり、レビュー確定操作（`JournalEntryRepository`への永続化）自体は後続Issueのスコープとして未実装（画面に確定ボタンは無い）。あわせて、`docs/domain/statement-import.md` 2.3節が想定するOSS同梱の組み込みマッピング定義（楽天カード・楽天銀行・PayPayカード）をWorker起動時に投入する仕組み（`seedBuiltInMappingDefinitions`）も本Issueで先行実装した（マッピング定義作成UI自体が未実装で実機検証ができないための前倒し、詳細は`docs/decisions.md`）。
+
 ## 13. 国際化（i18n）方針
 
 多言語化を見据え、当初から日本語をベースとしつつ後から言語追加できる構成とする。

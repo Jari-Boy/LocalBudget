@@ -3,7 +3,7 @@
 [domain.md](../domain.md)(エントリポイント)から分割された、外部明細取込に関する詳細設計。[architecture.md 12章](../architecture.md#12-起票方式外部明細取込マニュアル起票)の方針(取込データのフォーマットの差異をデータ駆動のマッピング定義で吸収する、レビュー画面必須)を具体化する。
 
 > **設計の経緯**
-> [1.7](#17-相手勘定科目サジェストの範囲)は[GitHub Issue #2](https://github.com/Jari-Boy/LocalBudget/issues/2)での議論を経て確定。マッピング定義のデータ駆動化([1.4](#14-マッピング定義データ駆動)・[2章](#2-マッピング定義マスタimport_mapping_definitions))も同Issueでの議論を経て確定。正規化ハッシュのアルゴリズムと同一バッチ内完全一致レコードへの対応([1.2](#12-中間表現importedrecord)・[1.6](#16-重複防止フロー))は、実装に着手する前のレビューで発見された設計上の穴への対応を経て確定した。実装(`src/domain/statement-import/`・`src/domain/reconciliation/`)によって本ファイルの設計は一通り検証済み。
+> [1.7](#17-相手勘定科目サジェストの範囲)は[GitHub Issue #2](https://github.com/Jari-Boy/LocalBudget/issues/2)での議論を経て確定。マッピング定義のデータ駆動化([1.4](#14-マッピング定義データ駆動)・[2章](#2-マッピング定義マスタimport_mapping_definitions))も同Issueでの議論を経て確定。正規化ハッシュのアルゴリズムと同一バッチ内完全一致レコードへの対応([1.2](#12-中間表現importedrecord)・[1.6](#16-重複防止フロー))は、実装に着手する前のレビューで発見された設計上の穴への対応を経て確定した。実装(`src/domain/statement-import/`・`src/domain/reconciliation/`)によって本ファイルの設計は一通り検証済み。計画Issue #76で、CSVアップロード画面・レビュー一覧画面(`src/components/statement-import/`)と[2.3](#23-組み込み定義とユーザー定義)の組み込みマッピング定義(`src/infrastructure/db/builtInMappingDefinitions.ts`)を実装し、CSV読み取り〜マッピング変換〜重複防止判定([1.6](#16-重複防止フロー))〜残高照合([reconciliation.md 1.5](./reconciliation.md#15-残高照合))の一連の流れをUI経由で検証済み(レビュー確定操作(永続化)自体は後続Issueのスコープとして未実装)。
 
 ---
 
@@ -190,6 +190,8 @@ CSV文字列を「行×列」の生データ(セル値の文字列の二次元�
 ### 2.3 組み込み定義とユーザー定義
 
 `account_id`が`NULL`の定義は、特定の科目にまだ紐づいていない汎用の定義を表す。OSSとして主要金融機関向けの定義がアプリに同梱される想定であり([3章 責務分担](#3-責務分担)参照)、これらは`account_id = NULL`のまま提供される。ユーザーが対象科目に対して初めてその定義を使うと([1.5](#15-レコード処理フロー)の手順1で選んだ対象科目の`accounts.id`)、`import_mapping_definitions.account_id`をその科目に更新し、以降は既定の候補として扱う。
+
+計画Issue #76で、楽天カード(確定明細/速報明細)・楽天銀行・PayPayカード(確定明細)の組み込み定義を`src/infrastructure/db/builtInMappingDefinitions.ts`に実装し、`seedBuiltInMappingDefinitions`がWorker起動時(`runMigrations`直後)に`account_id = NULL`のまま冪等投入するようにした(`format_group_id`・`is_settled`の組み合わせで既存定義との重複を判定し、ユーザーが編集・独自作成した定義があれば再投入しない)。列構成・日付形式・エンコーディングは実際のCSVサンプルから確認した値を使用しているが、楽天カードのCSVは末尾に日付列が空の特殊行(未確定明細のキャンセル区分、確定明細のETC利用区間補足行等)を含むことがあり、そのままでは[1.4](#14-マッピング定義データ駆動)の変換処理が日付パースエラーを送出するため、ユーザー側でその範囲を除いてアップロードする必要がある(既知の制約、詳細は`docs/guides/knowledge.md`)。ユーザー自身が新しいマッピング定義を作成するUI自体は計画Issue #76のスコープ外で未実装。
 
 > **削除・更新にライフサイクル制約を設けない理由**
 > `accounts`や`projects`と異なり、`import_mapping_definitions`は仕訳や`external_transaction_refs`から直接参照されない。マッピング定義は取込実行時にのみ使われる一時的な変換ルールであり、取込済みの仕訳データは定義への参照を保持しない。したがって定義を削除・変更しても過去の取込結果には影響せず、[accounts.md 2章](./accounts.md#2-勘定科目のライフサイクル)のような「紐づく仕訳があれば削除不可」という保護は不要である。
