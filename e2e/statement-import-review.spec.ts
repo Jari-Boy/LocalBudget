@@ -7,6 +7,13 @@
  * 表示を検証する。account-registration.spec.ts・journal-entry.spec.tsと同様、
  * 事前データ準備はpage.evaluate内で新規に作成したWorkerで行い、autoSave.flush()で
  * 即座に永続化してからreloadし、アプリ側のWorkerにIndexedDB経由で反映させる。
+ * account・マッピング定義・既存仕訳(重複防止フロー・残高照合の前提データ)は
+ * すべて単一のWorker(page.evaluate呼び出し1回)内でまとめて作成し、reloadも1回だけ
+ * 行う(journal-entry.spec.tsのsetupAccountsAndReloadと同じ「複数レコードを単一Worker
+ * 内でまとめて作成する」パターン)。事前データ作成のためだけに複数のWorkerを順に
+ * 作ってその都度reloadすると、後発のWorkerが先発のWorkerのflush()完了前にIndexedDBを
+ * 読み込みうるタイミング競合(CI環境の低スペックランナーで顕在化しやすい)によって
+ * FOREIGN KEY constraint failedを起こすことが実際に観測されたため、この構成に統一した。
  */
 import { test, expect, type Page } from '@playwright/test'
 
@@ -14,6 +21,7 @@ interface AccountInput {
   category: string
   name: string
   isReconcilable: boolean | null
+  isSystemManaged?: boolean
 }
 
 interface MappingDefinitionInput {
@@ -30,19 +38,44 @@ interface MappingDefinitionInput {
   externalIdColumn?: string
 }
 
+interface JournalEntryLineInput {
+  /** accountsのうち、この明細行が使う科目のインデックス */
+  accountIndex: number
+  side: string
+  amount: number
+}
+
+interface ExternalTransactionRefInput {
+  /** accountsのうち、この突合レコードが紐づく対象科目のインデックス */
+  accountIndex: number
+  externalId: string
+  entryDate: string
+  description: string
+  amount: number
+  isSettled?: boolean
+}
+
+interface JournalEntryInput {
+  entryDate: string
+  memo?: string
+  sourceType: string
+  lines: JournalEntryLineInput[]
+  externalTransactionRef?: ExternalTransactionRefInput
+}
+
 /**
- * 対象科目・相手科目候補・マッピング定義をまとめて1つのWorkerで作成し、flush()で
- * 即座にIndexedDBへ永続化してからreloadする(journal-entry.spec.tsのsetupAccountsAndReloadと
- * 同じ「複数レコードを単一Worker内でまとめて作成する」パターン)。作成した対象科目のidを
- * 返す(相手科目のidが必要な確定版候補・重複データのセットアップで使う)。
+ * 対象科目・相手科目候補・マッピング定義・既存仕訳(重複防止フロー/残高照合の前提データ)を
+ * まとめて1つのWorkerで作成し、flush()で即座にIndexedDBへ永続化してから1回だけreloadする。
+ * 作成した科目のidを返す(テスト側でCSV内容の組み立て等に使う)。
  */
 async function setupAccountsAndMapping(
   page: Page,
   accounts: AccountInput[],
   mapping: MappingDefinitionInput,
+  journalEntries: JournalEntryInput[] = [],
 ): Promise<number[]> {
   const accountIds = await page.evaluate(
-    async ({ accountInputs, mapping }) => {
+    async ({ accountInputs, mapping, journalEntries }) => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
       const ids: number[] = []
@@ -52,10 +85,31 @@ async function setupAccountsAndMapping(
       }
       const { accountIndex, ...mappingFields } = mapping
       await client.importMappingDefinition.create({ ...mappingFields, accountId: ids[accountIndex] })
+      for (const entry of journalEntries) {
+        const { lines, externalTransactionRef, ...entryFields } = entry
+        await client.journalEntry.create({
+          ...entryFields,
+          lines: lines.map((line) => ({
+            accountId: ids[line.accountIndex],
+            side: line.side,
+            amount: line.amount,
+          })),
+          externalTransactionRef: externalTransactionRef
+            ? {
+                accountId: ids[externalTransactionRef.accountIndex],
+                externalId: externalTransactionRef.externalId,
+                entryDate: externalTransactionRef.entryDate,
+                description: externalTransactionRef.description,
+                amount: externalTransactionRef.amount,
+                isSettled: externalTransactionRef.isSettled,
+              }
+            : undefined,
+        })
+      }
       await client.autoSave.flush()
       return ids
     },
-    { accountInputs: accounts, mapping },
+    { accountInputs: accounts, mapping, journalEntries },
   )
   await page.reload()
   await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
@@ -160,7 +214,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    const [targetAccountId, counterAccountId] = await setupAccountsAndMapping(
+    await setupAccountsAndMapping(
       page,
       [
         { category: 'asset', name: '普通預金', isReconcilable: true },
@@ -177,34 +231,25 @@ test.describe('CSV取込〜レビュー一覧', () => {
         amountColumn: '金額',
         externalIdColumn: '取引ID',
       },
-    )
-
-    await page.evaluate(
-      async ({ targetAccountId: accountId, counterAccountId: counterId }) => {
-        const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
-        const client = await createDbClient()
-        await client.journalEntry.create({
+      [
+        {
           entryDate: '2026-07-20',
           memo: 'スーパー',
           sourceType: 'external_import',
           lines: [
-            { accountId, side: 'credit', amount: 3000 },
-            { accountId: counterId, side: 'debit', amount: 3000 },
+            { accountIndex: 0, side: 'credit', amount: 3000 },
+            { accountIndex: 1, side: 'debit', amount: 3000 },
           ],
           externalTransactionRef: {
-            accountId,
+            accountIndex: 0,
             externalId: 'TX-001',
             entryDate: '2026-07-20',
             description: 'スーパー',
             amount: -3000,
           },
-        })
-        await client.autoSave.flush()
-      },
-      { targetAccountId, counterAccountId },
+        },
+      ],
     )
-    await page.reload()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     await startUpload(page, '普通預金', 'テスト銀行 普通預金')
     await page
@@ -230,7 +275,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    const [targetAccountId, counterAccountId] = await setupAccountsAndMapping(
+    await setupAccountsAndMapping(
       page,
       [
         { category: 'asset', name: '楽天カード引落口座', isReconcilable: true },
@@ -246,35 +291,26 @@ test.describe('CSV取込〜レビュー一覧', () => {
         amountMode: 'single_signed',
         amountColumn: '金額',
       },
-    )
-
-    await page.evaluate(
-      async ({ targetAccountId: accountId, counterAccountId: counterId }) => {
-        const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
-        const client = await createDbClient()
-        await client.journalEntry.create({
+      [
+        {
           entryDate: '2026-07-18',
           memo: '海外通販(速報)',
           sourceType: 'external_import',
           lines: [
-            { accountId, side: 'credit', amount: 2990 },
-            { accountId: counterId, side: 'debit', amount: 2990 },
+            { accountIndex: 0, side: 'credit', amount: 2990 },
+            { accountIndex: 1, side: 'debit', amount: 2990 },
           ],
           externalTransactionRef: {
-            accountId,
+            accountIndex: 0,
             externalId: 'TX-PRELIM-1',
             entryDate: '2026-07-18',
             description: '海外通販(速報)',
             amount: -2990,
             isSettled: false,
           },
-        })
-        await client.autoSave.flush()
-      },
-      { targetAccountId, counterAccountId },
+        },
+      ],
     )
-    await page.reload()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     await startUpload(page, '楽天カード引落口座', 'テストカード')
     await page
@@ -303,9 +339,12 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    const [targetAccountId] = await setupAccountsAndMapping(
+    await setupAccountsAndMapping(
       page,
-      [{ category: 'asset', name: '普通預金', isReconcilable: true }],
+      [
+        { category: 'asset', name: '普通預金', isReconcilable: true },
+        { category: 'equity', name: '普通預金の初期残高', isReconcilable: null, isSystemManaged: true },
+      ],
       {
         accountIndex: 0,
         formatGroupId: 'test-bank',
@@ -317,46 +356,34 @@ test.describe('CSV取込〜レビュー一覧', () => {
         amountColumn: '金額',
         balanceColumn: '残高',
       },
-    )
-
-    await page.evaluate(async ({ targetAccountId: accountId }) => {
-      const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
-      const client = await createDbClient()
-      const equityAccount = await client.account.create({
-        category: 'equity',
-        name: '普通預金の初期残高',
-        isReconcilable: null,
-        isSystemManaged: true,
-      })
-      await client.journalEntry.create({
-        entryDate: '2026-07-01',
-        sourceType: 'initial_balance',
-        lines: [
-          { accountId, side: 'debit', amount: 100000 },
-          { accountId: equityAccount.id, side: 'credit', amount: 100000 },
-        ],
-      })
-      await client.journalEntry.create({
-        entryDate: '2026-07-18',
-        memo: '海外通販(速報)',
-        sourceType: 'external_import',
-        lines: [
-          { accountId, side: 'credit', amount: 2990 },
-          { accountId: equityAccount.id, side: 'debit', amount: 2990 },
-        ],
-        externalTransactionRef: {
-          accountId,
-          externalId: 'TX-PRELIM-1',
-          entryDate: '2026-07-18',
-          description: '海外通販(速報)',
-          amount: -2990,
-          isSettled: false,
+      [
+        {
+          entryDate: '2026-07-01',
+          sourceType: 'initial_balance',
+          lines: [
+            { accountIndex: 0, side: 'debit', amount: 100000 },
+            { accountIndex: 1, side: 'credit', amount: 100000 },
+          ],
         },
-      })
-      await client.autoSave.flush()
-    }, { targetAccountId })
-    await page.reload()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+        {
+          entryDate: '2026-07-18',
+          memo: '海外通販(速報)',
+          sourceType: 'external_import',
+          lines: [
+            { accountIndex: 0, side: 'credit', amount: 2990 },
+            { accountIndex: 1, side: 'debit', amount: 2990 },
+          ],
+          externalTransactionRef: {
+            accountIndex: 0,
+            externalId: 'TX-PRELIM-1',
+            entryDate: '2026-07-18',
+            description: '海外通販(速報)',
+            amount: -2990,
+            isSettled: false,
+          },
+        },
+      ],
+    )
 
     await startUpload(page, '普通預金', 'テスト銀行 普通預金')
     await page
@@ -381,9 +408,12 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    const [targetAccountId] = await setupAccountsAndMapping(
+    await setupAccountsAndMapping(
       page,
-      [{ category: 'asset', name: '普通預金', isReconcilable: true }],
+      [
+        { category: 'asset', name: '普通預金', isReconcilable: true },
+        { category: 'equity', name: '普通預金の初期残高', isReconcilable: null, isSystemManaged: true },
+      ],
       {
         accountIndex: 0,
         formatGroupId: 'test-bank',
@@ -395,29 +425,17 @@ test.describe('CSV取込〜レビュー一覧', () => {
         amountColumn: '金額',
         balanceColumn: '残高',
       },
+      [
+        {
+          entryDate: '2026-07-01',
+          sourceType: 'initial_balance',
+          lines: [
+            { accountIndex: 0, side: 'debit', amount: 100000 },
+            { accountIndex: 1, side: 'credit', amount: 100000 },
+          ],
+        },
+      ],
     )
-
-    await page.evaluate(async ({ targetAccountId: accountId }) => {
-      const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
-      const client = await createDbClient()
-      const equityAccount = await client.account.create({
-        category: 'equity',
-        name: '普通預金の初期残高',
-        isReconcilable: null,
-        isSystemManaged: true,
-      })
-      await client.journalEntry.create({
-        entryDate: '2026-07-01',
-        sourceType: 'initial_balance',
-        lines: [
-          { accountId, side: 'debit', amount: 100000 },
-          { accountId: equityAccount.id, side: 'credit', amount: 100000 },
-        ],
-      })
-      await client.autoSave.flush()
-    }, { targetAccountId })
-    await page.reload()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     await startUpload(page, '普通預金', 'テスト銀行 普通預金')
     await page
@@ -439,9 +457,12 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    const [targetAccountId] = await setupAccountsAndMapping(
+    await setupAccountsAndMapping(
       page,
-      [{ category: 'asset', name: '普通預金', isReconcilable: true }],
+      [
+        { category: 'asset', name: '普通預金', isReconcilable: true },
+        { category: 'equity', name: '普通預金の初期残高', isReconcilable: null, isSystemManaged: true },
+      ],
       {
         accountIndex: 0,
         formatGroupId: 'test-bank',
@@ -453,29 +474,17 @@ test.describe('CSV取込〜レビュー一覧', () => {
         amountColumn: '金額',
         balanceColumn: '残高',
       },
+      [
+        {
+          entryDate: '2026-07-01',
+          sourceType: 'initial_balance',
+          lines: [
+            { accountIndex: 0, side: 'debit', amount: 100000 },
+            { accountIndex: 1, side: 'credit', amount: 100000 },
+          ],
+        },
+      ],
     )
-
-    await page.evaluate(async ({ targetAccountId: accountId }) => {
-      const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
-      const client = await createDbClient()
-      const equityAccount = await client.account.create({
-        category: 'equity',
-        name: '普通預金の初期残高',
-        isReconcilable: null,
-        isSystemManaged: true,
-      })
-      await client.journalEntry.create({
-        entryDate: '2026-07-01',
-        sourceType: 'initial_balance',
-        lines: [
-          { accountId, side: 'debit', amount: 100000 },
-          { accountId: equityAccount.id, side: 'credit', amount: 100000 },
-        ],
-      })
-      await client.autoSave.flush()
-    }, { targetAccountId })
-    await page.reload()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     await startUpload(page, '普通預金', 'テスト銀行 普通預金')
     await page
