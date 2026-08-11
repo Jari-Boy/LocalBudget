@@ -1,0 +1,502 @@
+/**
+ * CSV取込〜レビュー一覧の基盤(計画Issue #76、docs/domain/statement-import.md 1.5・1.6、
+ * docs/domain/reconciliation.md 1.5)のE2Eテスト。実ブラウザ(Chromium)でトップ画面から
+ * CSV取込アップロード画面・レビュー一覧画面を操作し、Web Worker + RPC層を経由して
+ * 対象科目・マッピング定義の選択、CSVアップロード→レビュー一覧遷移、列構成不一致時の
+ * エラー表示、外部取引IDの完全一致重複警告、確定版候補の提示・選択、残高照合警告の
+ * 表示を検証する。account-registration.spec.ts・journal-entry.spec.tsと同様、
+ * 事前データ準備はpage.evaluate内で新規に作成したWorkerで行い、autoSave.flush()で
+ * 即座に永続化してからreloadし、アプリ側のWorkerにIndexedDB経由で反映させる。
+ * account・マッピング定義・既存仕訳(重複防止フロー・残高照合の前提データ)は
+ * すべて単一のWorker(page.evaluate呼び出し1回)内でまとめて作成し、reloadも1回だけ
+ * 行う(journal-entry.spec.tsのsetupAccountsAndReloadと同じ「複数レコードを単一Worker
+ * 内でまとめて作成する」パターン)。事前データ作成のためだけに複数のWorkerを順に
+ * 作ってその都度reloadすると、後発のWorkerが先発のWorkerのflush()完了前にIndexedDBを
+ * 読み込みうるタイミング競合(CI環境の低スペックランナーで顕在化しやすい)によって
+ * FOREIGN KEY constraint failedを起こすことが実際に観測されたため、この構成に統一した。
+ */
+import { test, expect, type Page } from '@playwright/test'
+
+interface AccountInput {
+  category: string
+  name: string
+  isReconcilable: boolean | null
+  isSystemManaged?: boolean
+}
+
+interface MappingDefinitionInput {
+  /** accountsのうち、このマッピング定義を紐づける対象科目のインデックス */
+  accountIndex: number
+  formatGroupId: string
+  label: string
+  dateColumn: string
+  dateFormat: string
+  descriptionColumn: string
+  amountMode: string
+  amountColumn?: string
+  balanceColumn?: string
+  externalIdColumn?: string
+}
+
+interface JournalEntryLineInput {
+  /** accountsのうち、この明細行が使う科目のインデックス */
+  accountIndex: number
+  side: string
+  amount: number
+}
+
+interface ExternalTransactionRefInput {
+  /** accountsのうち、この突合レコードが紐づく対象科目のインデックス */
+  accountIndex: number
+  externalId: string
+  entryDate: string
+  description: string
+  amount: number
+  isSettled?: boolean
+}
+
+interface JournalEntryInput {
+  entryDate: string
+  memo?: string
+  sourceType: string
+  lines: JournalEntryLineInput[]
+  externalTransactionRef?: ExternalTransactionRefInput
+}
+
+/**
+ * 対象科目・相手科目候補・マッピング定義・既存仕訳(重複防止フロー/残高照合の前提データ)を
+ * まとめて1つのWorkerで作成し、flush()で即座にIndexedDBへ永続化してから1回だけreloadする。
+ * 作成した科目のidを返す(テスト側でCSV内容の組み立て等に使う)。
+ */
+async function setupAccountsAndMapping(
+  page: Page,
+  accounts: AccountInput[],
+  mapping: MappingDefinitionInput,
+  journalEntries: JournalEntryInput[] = [],
+): Promise<number[]> {
+  const accountIds = await page.evaluate(
+    async ({ accountInputs, mapping, journalEntries }) => {
+      const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
+      const client = await createDbClient()
+      const ids: number[] = []
+      for (const input of accountInputs) {
+        const created = await client.account.create(input)
+        ids.push(created.id)
+      }
+      const { accountIndex, ...mappingFields } = mapping
+      await client.importMappingDefinition.create({ ...mappingFields, accountId: ids[accountIndex] })
+      for (const entry of journalEntries) {
+        const { lines, externalTransactionRef, ...entryFields } = entry
+        await client.journalEntry.create({
+          ...entryFields,
+          lines: lines.map((line) => ({
+            accountId: ids[line.accountIndex],
+            side: line.side,
+            amount: line.amount,
+          })),
+          externalTransactionRef: externalTransactionRef
+            ? {
+                accountId: ids[externalTransactionRef.accountIndex],
+                externalId: externalTransactionRef.externalId,
+                entryDate: externalTransactionRef.entryDate,
+                description: externalTransactionRef.description,
+                amount: externalTransactionRef.amount,
+                isSettled: externalTransactionRef.isSettled,
+              }
+            : undefined,
+        })
+      }
+      await client.autoSave.flush()
+      return ids
+    },
+    { accountInputs: accounts, mapping, journalEntries },
+  )
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+  return accountIds
+}
+
+function csvBuffer(content: string): Buffer {
+  return Buffer.from(content, 'utf-8')
+}
+
+/**
+ * 組み込みマッピング定義(計画Issue #76、docs/domain/statement-import.md 2.3節)がシード
+ * されるようになったため、テストで作成した専用定義以外にも候補が複数存在しうる。
+ * 候補が複数ある場合は自動選択されない(docs/domain/statement-import.md 1.5手順1)ため、
+ * 常にlabelで明示的に選択する。
+ */
+async function startUpload(page: Page, accountName: string, mappingLabel: string) {
+  await page.getByRole('button', { name: '明細を取り込む' }).click()
+  await page.getByLabel('対象科目').selectOption({ label: accountName })
+  await page.getByLabel('マッピング定義').selectOption({ label: mappingLabel })
+}
+
+test.describe('CSV取込〜レビュー一覧', () => {
+  test('対象科目・マッピング定義を選びCSVをアップロードするとレビュー一覧へ遷移し、相手科目を手動選択できる', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    await setupAccountsAndMapping(
+      page,
+      [
+        { category: 'asset', name: '普通預金', isReconcilable: true },
+        { category: 'expense', name: '食費', isReconcilable: null },
+      ],
+      {
+        accountIndex: 0,
+        formatGroupId: 'test-bank',
+        label: 'テスト銀行 普通預金',
+        dateColumn: '日付',
+        dateFormat: 'YYYY/MM/DD',
+        descriptionColumn: '摘要',
+        amountMode: 'single_signed',
+        amountColumn: '金額',
+        balanceColumn: '残高',
+      },
+    )
+
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await expect(page.getByLabel('マッピング定義')).toHaveValue(/.+/)
+
+    await page
+      .getByLabel('CSVファイル')
+      .setInputFiles({
+        name: 'statement.csv',
+        mimeType: 'text/csv',
+        buffer: csvBuffer('日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n'),
+      })
+    await page.getByRole('button', { name: '取り込む' }).click()
+
+    await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
+    const group = page.getByRole('group', { name: '1件目' })
+    await expect(group.getByText('スーパー')).toBeVisible()
+    await group.getByLabel('相手科目').selectOption({ label: '食費' })
+    await expect(group.getByLabel('相手科目')).toHaveValue(/.+/)
+  })
+
+  test('マッピング定義とCSVの列構成が一致しない場合、エラーメッセージが表示され取込が進まない', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    await setupAccountsAndMapping(page, [{ category: 'asset', name: '普通預金', isReconcilable: true }], {
+      accountIndex: 0,
+      formatGroupId: 'test-bank',
+      label: 'テスト銀行 普通預金',
+      dateColumn: '日付',
+      dateFormat: 'YYYY/MM/DD',
+      descriptionColumn: '摘要',
+      amountMode: 'single_signed',
+      amountColumn: '金額',
+    })
+
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await page
+      .getByLabel('CSVファイル')
+      .setInputFiles({
+        name: 'statement.csv',
+        mimeType: 'text/csv',
+        buffer: csvBuffer('違う列1,違う列2\na,b\n'),
+      })
+    await page.getByRole('button', { name: '取り込む' }).click()
+
+    await expect(page.getByRole('alert')).toContainText('列構成が一致しません')
+    await expect(page.getByRole('heading', { name: '明細のレビュー' })).not.toBeVisible()
+  })
+
+  test('外部取引IDが完全一致する明細は取込済みの可能性がある警告が表示され、既定では取込対象外のままである', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    await setupAccountsAndMapping(
+      page,
+      [
+        { category: 'asset', name: '普通預金', isReconcilable: true },
+        { category: 'expense', name: '食費', isReconcilable: null },
+      ],
+      {
+        accountIndex: 0,
+        formatGroupId: 'test-bank',
+        label: 'テスト銀行 普通預金',
+        dateColumn: '日付',
+        dateFormat: 'YYYY/MM/DD',
+        descriptionColumn: '摘要',
+        amountMode: 'single_signed',
+        amountColumn: '金額',
+        externalIdColumn: '取引ID',
+      },
+      [
+        {
+          entryDate: '2026-07-20',
+          memo: 'スーパー',
+          sourceType: 'external_import',
+          lines: [
+            { accountIndex: 0, side: 'credit', amount: 3000 },
+            { accountIndex: 1, side: 'debit', amount: 3000 },
+          ],
+          externalTransactionRef: {
+            accountIndex: 0,
+            externalId: 'TX-001',
+            entryDate: '2026-07-20',
+            description: 'スーパー',
+            amount: -3000,
+          },
+        },
+      ],
+    )
+
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await page
+      .getByLabel('CSVファイル')
+      .setInputFiles({
+        name: 'statement.csv',
+        mimeType: 'text/csv',
+        buffer: csvBuffer('日付,摘要,金額,取引ID\n2026/07/20,スーパー,-3000,TX-001\n'),
+      })
+    await page.getByRole('button', { name: '取り込む' }).click()
+
+    await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
+    const group = page.getByRole('group', { name: '1件目' })
+    await expect(group.getByText('取込済みの可能性がある明細です。')).toBeVisible()
+    await expect(group.getByLabel('それでも取り込む')).not.toBeChecked()
+    await group.getByLabel('それでも取り込む').check()
+    await expect(group.getByLabel('それでも取り込む')).toBeChecked()
+  })
+
+  test('日付・金額が近い既存明細がある場合、確定版候補として提示され「これは確定版です」を選択できる', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    await setupAccountsAndMapping(
+      page,
+      [
+        { category: 'asset', name: '楽天カード引落口座', isReconcilable: true },
+        { category: 'expense', name: '娯楽費', isReconcilable: null },
+      ],
+      {
+        accountIndex: 0,
+        formatGroupId: 'test-card',
+        label: 'テストカード',
+        dateColumn: '日付',
+        dateFormat: 'YYYY/MM/DD',
+        descriptionColumn: '摘要',
+        amountMode: 'single_signed',
+        amountColumn: '金額',
+      },
+      [
+        {
+          entryDate: '2026-07-18',
+          memo: '海外通販(速報)',
+          sourceType: 'external_import',
+          lines: [
+            { accountIndex: 0, side: 'credit', amount: 2990 },
+            { accountIndex: 1, side: 'debit', amount: 2990 },
+          ],
+          externalTransactionRef: {
+            accountIndex: 0,
+            externalId: 'TX-PRELIM-1',
+            entryDate: '2026-07-18',
+            description: '海外通販(速報)',
+            amount: -2990,
+            isSettled: false,
+          },
+        },
+      ],
+    )
+
+    await startUpload(page, '楽天カード引落口座', 'テストカード')
+    await page
+      .getByLabel('CSVファイル')
+      .setInputFiles({
+        name: 'statement.csv',
+        mimeType: 'text/csv',
+        buffer: csvBuffer('日付,摘要,金額\n2026/07/20,海外通販(確定),-3010\n'),
+      })
+    await page.getByRole('button', { name: '取り込む' }).click()
+
+    await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
+    const group = page.getByRole('group', { name: '1件目' })
+    await expect(
+      group.getByText('日付・金額が近い明細が既にあります。確定版の可能性があります。'),
+    ).toBeVisible()
+    await expect(group.getByLabel('これは確定版です')).toBeVisible()
+    await expect(group.getByLabel('別の取引です')).toBeVisible()
+    await group.getByLabel('これは確定版です').check()
+    await expect(group.getByLabel('これは確定版です')).toBeChecked()
+  })
+
+  test('確定版候補で「これは確定版です」を選択すると、置き換え対象の旧仕訳を残高照合の計算から除外し二重計上しない', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    await setupAccountsAndMapping(
+      page,
+      [
+        { category: 'asset', name: '普通預金', isReconcilable: true },
+        { category: 'equity', name: '普通預金の初期残高', isReconcilable: null, isSystemManaged: true },
+      ],
+      {
+        accountIndex: 0,
+        formatGroupId: 'test-bank',
+        label: 'テスト銀行 普通預金',
+        dateColumn: '日付',
+        dateFormat: 'YYYY/MM/DD',
+        descriptionColumn: '摘要',
+        amountMode: 'single_signed',
+        amountColumn: '金額',
+        balanceColumn: '残高',
+      },
+      [
+        {
+          entryDate: '2026-07-01',
+          sourceType: 'initial_balance',
+          lines: [
+            { accountIndex: 0, side: 'debit', amount: 100000 },
+            { accountIndex: 1, side: 'credit', amount: 100000 },
+          ],
+        },
+        {
+          entryDate: '2026-07-18',
+          memo: '海外通販(速報)',
+          sourceType: 'external_import',
+          lines: [
+            { accountIndex: 0, side: 'credit', amount: 2990 },
+            { accountIndex: 1, side: 'debit', amount: 2990 },
+          ],
+          externalTransactionRef: {
+            accountIndex: 0,
+            externalId: 'TX-PRELIM-1',
+            entryDate: '2026-07-18',
+            description: '海外通販(速報)',
+            amount: -2990,
+            isSettled: false,
+          },
+        },
+      ],
+    )
+
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await page
+      .getByLabel('CSVファイル')
+      .setInputFiles({
+        name: 'statement.csv',
+        mimeType: 'text/csv',
+        buffer: csvBuffer('日付,摘要,金額,残高\n2026/07/20,海外通販(確定),-3000,97000\n'),
+      })
+    await page.getByRole('button', { name: '取り込む' }).click()
+
+    await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
+    const group = page.getByRole('group', { name: '1件目' })
+    await group.getByLabel('これは確定版です').check()
+
+    await expect(page.getByRole('status').filter({ hasText: '一致しています' })).toBeVisible()
+  })
+
+  test('CSVに残高列があり帳簿残高と外部残高が一致しない場合、レビュー一覧画面に警告が表示される(取込はブロックしない)', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    await setupAccountsAndMapping(
+      page,
+      [
+        { category: 'asset', name: '普通預金', isReconcilable: true },
+        { category: 'equity', name: '普通預金の初期残高', isReconcilable: null, isSystemManaged: true },
+      ],
+      {
+        accountIndex: 0,
+        formatGroupId: 'test-bank',
+        label: 'テスト銀行 普通預金',
+        dateColumn: '日付',
+        dateFormat: 'YYYY/MM/DD',
+        descriptionColumn: '摘要',
+        amountMode: 'single_signed',
+        amountColumn: '金額',
+        balanceColumn: '残高',
+      },
+      [
+        {
+          entryDate: '2026-07-01',
+          sourceType: 'initial_balance',
+          lines: [
+            { accountIndex: 0, side: 'debit', amount: 100000 },
+            { accountIndex: 1, side: 'credit', amount: 100000 },
+          ],
+        },
+      ],
+    )
+
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await page
+      .getByLabel('CSVファイル')
+      .setInputFiles({
+        name: 'statement.csv',
+        mimeType: 'text/csv',
+        buffer: csvBuffer('日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,90000\n'),
+      })
+    await page.getByRole('button', { name: '取り込む' }).click()
+
+    await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: '帳簿残高' })).toBeVisible()
+  })
+
+  test('今回アップロードしたCSVバッチの内容を含めて計算し、帳簿残高と外部残高が一致する場合は一致している旨が表示される', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    await setupAccountsAndMapping(
+      page,
+      [
+        { category: 'asset', name: '普通預金', isReconcilable: true },
+        { category: 'equity', name: '普通預金の初期残高', isReconcilable: null, isSystemManaged: true },
+      ],
+      {
+        accountIndex: 0,
+        formatGroupId: 'test-bank',
+        label: 'テスト銀行 普通預金',
+        dateColumn: '日付',
+        dateFormat: 'YYYY/MM/DD',
+        descriptionColumn: '摘要',
+        amountMode: 'single_signed',
+        amountColumn: '金額',
+        balanceColumn: '残高',
+      },
+      [
+        {
+          entryDate: '2026-07-01',
+          sourceType: 'initial_balance',
+          lines: [
+            { accountIndex: 0, side: 'debit', amount: 100000 },
+            { accountIndex: 1, side: 'credit', amount: 100000 },
+          ],
+        },
+      ],
+    )
+
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await page
+      .getByLabel('CSVファイル')
+      .setInputFiles({
+        name: 'statement.csv',
+        mimeType: 'text/csv',
+        buffer: csvBuffer('日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n'),
+      })
+    await page.getByRole('button', { name: '取り込む' }).click()
+
+    await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
+    await expect(page.getByRole('status').filter({ hasText: '一致しています' })).toBeVisible()
+  })
+})

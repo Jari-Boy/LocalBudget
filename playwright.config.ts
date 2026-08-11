@@ -11,6 +11,15 @@ export default defineConfig({
   // 専用のplaywright.pwa.config.tsで実行するため、通常のdevサーバー実行対象からは除外する。
   testIgnore: /.*\.pwa\.spec\.ts/,
   fullyParallel: true,
+  /**
+   * CI環境(GitHub Actions)限定でworkers数を1に固定する暫定回避策。複数のE2Eテストが
+   * 固定名のIndexedDBデータベース(IndexedDBStorageAdapter、docs/decisions.md参照)を
+   * 直接操作しており、CI環境の並列実行下でPlaywrightのBrowserContext分離が機能して
+   * いないかのようなデータ競合(タイミング違いの上書き・消失)が実機で複数パターン
+   * 観測された(計画Issue #80で根本原因を調査中)。ローカル開発では並列実行を維持し
+   * フィードバック速度を落とさない。
+   */
+  workers: process.env.CI ? 1 : undefined,
   reporter: 'list',
   use: {
     baseURL: 'http://localhost:5173',
