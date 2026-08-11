@@ -7,11 +7,12 @@ import type { HouseholdMemberRepository } from './domain/household-member/Househ
 import { DbClientProvider, useDbClient } from './infrastructure/rpc/DbClientProvider'
 import { AccountRegistrationWizard } from './components/account-registration/AccountRegistrationWizard'
 import { CreditCardRegistrationWizard } from './components/account-registration/CreditCardRegistrationWizard'
+import { AccountListScreen } from './components/account-list/AccountListScreen'
 import { UpdateBanner } from './components/UpdateBanner'
 import { IosInstallPrompt } from './components/IosInstallPrompt'
 import './App.css'
 
-type Screen = 'home' | 'register-account' | 'register-credit-card'
+type Screen = 'home' | 'register-account' | 'register-credit-card' | 'account-list'
 
 /**
  * トップ画面からのウィザード起動と、完了後のトップ画面への復帰のみを扱う
@@ -58,6 +59,17 @@ function AppContent() {
     )
   }
 
+  if (screen === 'account-list') {
+    return (
+      <AccountListScreen
+        accountRepository={accountRepository}
+        journalEntryRepository={journalEntryRepository}
+        householdMemberRepository={householdMemberRepository}
+        onBack={() => setScreen('home')}
+      />
+    )
+  }
+
   return (
     <div className="app-home">
       <h1>LocalBudget</h1>
@@ -66,6 +78,9 @@ function AppContent() {
       </button>
       <button type="button" onClick={() => setScreen('register-credit-card')}>
         {t('registerCreditCardTitle')}
+      </button>
+      <button type="button" onClick={() => setScreen('account-list')}>
+        {t('viewAccountsTitle')}
       </button>
     </div>
   )
