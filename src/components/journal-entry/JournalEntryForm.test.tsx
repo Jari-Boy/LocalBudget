@@ -175,6 +175,20 @@ describe('JournalEntryForm', () => {
     expect(within(lineGroups[1]).queryByLabelText('取引先(任意)')).not.toBeInTheDocument()
   })
 
+  it('isReconcilable = trueの科目(普通預金等)はマニュアル仕訳では直接記帳できないため科目選択の選択肢に表示されない', async () => {
+    accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const expense = createAccount({ name: '食費', category: 'expense' })
+    void expense
+
+    renderForm()
+    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+
+    const select = within(lineGroups[0]).getByLabelText('科目') as HTMLSelectElement
+    const optionTexts = Array.from(select.options).map((option) => option.textContent)
+    expect(optionTexts).not.toContain('普通預金')
+    expect(optionTexts).toContain('食費')
+  })
+
   it('2行仕訳を入力して確定すると仕訳が作成され、onCompleteが呼ばれる', async () => {
     const expense = createAccount({ name: '食費', category: 'expense' })
     const cash = createAccount({ name: '現金', category: 'asset' })

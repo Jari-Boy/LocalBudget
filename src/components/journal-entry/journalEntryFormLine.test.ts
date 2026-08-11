@@ -10,6 +10,7 @@ import {
   createEmptyJournalEntryFormLine,
   fromJournalEntryDraftLine,
   isCounterpartyEligibleCategory,
+  isManualEntryEligibleAccount,
   toJournalEntryDraftLineInput,
   toJournalLineInput,
 } from './journalEntryFormLine'
@@ -37,6 +38,20 @@ describe('isCounterpartyEligibleCategory', () => {
     expect(isCounterpartyEligibleCategory('asset')).toBe(false)
     expect(isCounterpartyEligibleCategory('liability')).toBe(false)
     expect(isCounterpartyEligibleCategory('equity')).toBe(false)
+  })
+})
+
+describe('isManualEntryEligibleAccount', () => {
+  it('isReconcilable = trueの科目はfalseを返す(マニュアル仕訳では直接記帳できないため選択肢から除外する)', () => {
+    expect(isManualEntryEligibleAccount({ isReconcilable: true })).toBe(false)
+  })
+
+  it('isReconcilable = falseの科目はtrueを返す', () => {
+    expect(isManualEntryEligibleAccount({ isReconcilable: false })).toBe(true)
+  })
+
+  it('isReconcilable = null(PL科目・純資産科目等)の科目はtrueを返す', () => {
+    expect(isManualEntryEligibleAccount({ isReconcilable: null })).toBe(true)
   })
 })
 

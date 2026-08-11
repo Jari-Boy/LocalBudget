@@ -30,6 +30,17 @@ export function createEmptyJournalEntryFormLine(): JournalEntryFormLine {
 }
 
 /**
+ * マニュアル仕訳(source_type = 'manual')ではis_reconcilable = trueの科目(普通預金等)に
+ * 直接記帳できない(docs/domain/reconciliation.md 1.2、is_reconcilable資産・負債への
+ * 直接記帳の制限。許可されるのはexternal_import/initial_balance/balance_adjustmentのみ)。
+ * 選んでも必ずRestrictedAccountPostingErrorになる科目を科目選択の選択肢自体から除外する
+ * ための判定関数。
+ */
+export function isManualEntryEligibleAccount(account: { isReconcilable: boolean | null }): boolean {
+  return account.isReconcilable !== true
+}
+
+/**
  * 取引先入力欄はPL科目(収益/費用)の行にのみ表示する
  * (docs/domain/journal.md 2.1、counterparty_idはDDLトリガーでもPL科目行に限定される)。
  */

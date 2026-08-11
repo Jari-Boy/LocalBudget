@@ -18,6 +18,7 @@ import {
   createEmptyJournalEntryFormLine,
   fromJournalEntryDraftLine,
   isCounterpartyEligibleCategory,
+  isManualEntryEligibleAccount,
   toJournalEntryDraftLineInput,
   toJournalLineInput,
   type JournalEntryFormLine,
@@ -326,7 +327,7 @@ export function JournalEntryForm({
               }}
             >
               <option value="">{t('unselected')}</option>
-              {masterData.accounts.map((account) => (
+              {masterData.accounts.filter(isManualEntryEligibleAccount).map((account) => (
                 <option key={account.id} value={account.id}>
                   {account.name}
                 </option>
