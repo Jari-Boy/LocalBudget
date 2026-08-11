@@ -290,6 +290,84 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await expect(group.getByLabel('これは確定版です')).toBeChecked()
   })
 
+  test('確定版候補で「これは確定版です」を選択すると、置き換え対象の旧仕訳を残高照合の計算から除外し二重計上しない', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    const [targetAccountId] = await setupAccountsAndMapping(
+      page,
+      [{ category: 'asset', name: '普通預金', isReconcilable: true }],
+      {
+        accountIndex: 0,
+        formatGroupId: 'test-bank',
+        label: 'テスト銀行 普通預金',
+        dateColumn: '日付',
+        dateFormat: 'YYYY/MM/DD',
+        descriptionColumn: '摘要',
+        amountMode: 'single_signed',
+        amountColumn: '金額',
+        balanceColumn: '残高',
+      },
+    )
+
+    await page.evaluate(async ({ targetAccountId: accountId }) => {
+      const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
+      const client = await createDbClient()
+      const equityAccount = await client.account.create({
+        category: 'equity',
+        name: '普通預金の初期残高',
+        isReconcilable: null,
+        isSystemManaged: true,
+      })
+      await client.journalEntry.create({
+        entryDate: '2026-07-01',
+        sourceType: 'initial_balance',
+        lines: [
+          { accountId, side: 'debit', amount: 100000 },
+          { accountId: equityAccount.id, side: 'credit', amount: 100000 },
+        ],
+      })
+      await client.journalEntry.create({
+        entryDate: '2026-07-18',
+        memo: '海外通販(速報)',
+        sourceType: 'external_import',
+        lines: [
+          { accountId, side: 'credit', amount: 2990 },
+          { accountId: equityAccount.id, side: 'debit', amount: 2990 },
+        ],
+        externalTransactionRef: {
+          accountId,
+          externalId: 'TX-PRELIM-1',
+          entryDate: '2026-07-18',
+          description: '海外通販(速報)',
+          amount: -2990,
+          isSettled: false,
+        },
+      })
+      await client.autoSave.flush()
+    }, { targetAccountId })
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    await startUpload(page, '普通預金')
+    await page
+      .getByLabel('CSVファイル')
+      .setInputFiles({
+        name: 'statement.csv',
+        mimeType: 'text/csv',
+        buffer: csvBuffer('日付,摘要,金額,残高\n2026/07/20,海外通販(確定),-3000,97000\n'),
+      })
+    await page.getByRole('button', { name: '取り込む' }).click()
+
+    await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
+    const group = page.getByRole('group', { name: '1件目' })
+    await group.getByLabel('これは確定版です').check()
+
+    await expect(page.getByRole('status').filter({ hasText: '一致しています' })).toBeVisible()
+  })
+
   test('CSVに残高列があり帳簿残高と外部残高が一致しない場合、レビュー一覧画面に警告が表示される(取込はブロックしない)', async ({
     page,
   }) => {

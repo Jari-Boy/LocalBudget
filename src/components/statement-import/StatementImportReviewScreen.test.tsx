@@ -9,7 +9,7 @@
  * テストとして検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -354,5 +354,58 @@ describe('StatementImportReviewScreen', () => {
     const group = await screen.findByRole('group', { name: '1件目' })
     const counterSelect = within(group).getByLabelText('相手科目')
     expect(within(counterSelect).queryByText('普通預金')).not.toBeInTheDocument()
+  })
+
+  it('確定版候補で「これは確定版です」を選択すると、置き換え対象の旧仕訳を残高計算から除外し二重計上しない', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    const equityAccount = accountRepository.create({
+      category: 'equity',
+      name: '初期残高',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+    journalEntryRepository.create({
+      entryDate: '2026-07-01',
+      sourceType: 'initial_balance',
+      lines: [
+        { accountId: account.id, side: 'debit', amount: 100000 },
+        { accountId: equityAccount.id, side: 'credit', amount: 100000 },
+      ],
+    })
+    // 速報時点の旧仕訳(海外通販、-2990)。確定後は摘要・金額が変わり-3000になる想定
+    const preliminaryEntry = journalEntryRepository.create({
+      entryDate: '2026-07-18',
+      memo: '海外通販(速報)',
+      sourceType: 'external_import',
+      lines: [
+        { accountId: account.id, side: 'credit', amount: 2990 },
+        { accountId: equityAccount.id, side: 'debit', amount: 2990 },
+      ],
+    })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '海外通販(確定)', amount: -3000, balanceAfter: 97000 }),
+          externalId: 'TX-002',
+          isExactDuplicate: false,
+          approximateCandidates: [
+            { journalEntryId: preliminaryEntry.id, entryDate: '2026-07-18', amount: -2990, isSettled: false },
+          ],
+        },
+      ],
+      latestExternalBalance: 97000,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.click(within(group).getByLabelText('これは確定版です'))
+
+    await screen.findByText('帳簿残高と外部残高は一致しています。')
   })
 })
