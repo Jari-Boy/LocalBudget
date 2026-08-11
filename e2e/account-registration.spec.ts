@@ -9,6 +9,11 @@
  * ことだけを見るpollでは、事前準備(世帯メンバー作成等)の時点で既に条件を
  * 満たしてしまい、後続の口座作成の保存完了を待てないため、対象データの
  * 存在そのものをポーリング条件にする。
+ * page.goto()直後にpage.evaluate()を呼ぶと、CI環境(低スペックなランナー)では
+ * ページの初期ロードが完了しきる前に評価が実行され「Execution context was
+ * destroyed, most likely because of a navigation」で失敗することがあるため、
+ * トップ画面の見出しが表示される(Reactアプリのマウント完了)のを待ってから
+ * evaluateを呼ぶ(account-list.spec.tsと同様の対策)。
  */
 import { test, expect, type Page } from '@playwright/test'
 
@@ -121,6 +126,7 @@ test.describe('口座登録ウィザード', () => {
     page,
   }) => {
     await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
     const memberId = await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
