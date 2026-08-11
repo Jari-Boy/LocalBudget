@@ -21,6 +21,7 @@ import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJourna
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import type { StatementImportReviewResult } from '../../domain/statement-import/buildStatementImportReview'
 import type { ImportedRecord } from '../../domain/statement-import/ImportedRecord'
+import { normalizeDescriptionForMatching } from '../../domain/statement-import/estimateCounterparty'
 import { StatementImportReviewScreen } from './StatementImportReviewScreen'
 
 let db: Database
@@ -667,5 +668,208 @@ describe('StatementImportReviewScreen', () => {
 
     const group1 = screen.getByRole('group', { name: '1件目' })
     expect((within(group1).getByLabelText('相手科目') as HTMLSelectElement).value).toBe(String(foodAccount.id))
+  })
+
+  it('確定操作を行うと、対象レコードの仕訳(journal_entries/journal_lines)が作成される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: 'スーパー', amount: -3000 }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(foodAccount.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+
+    const entries = journalEntryRepository.findAll()
+    expect(entries).toHaveLength(1)
+    expect(entries[0].memo).toBe('スーパー')
+    expect(entries[0].sourceType).toBe('external_import')
+  })
+
+  it('完全一致重複で取込対象外(チェック未選択)のレコードは確定対象から除外される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '取込済み明細' }),
+          externalId: 'TX-001',
+          isExactDuplicate: true,
+          approximateCandidates: [],
+        },
+        {
+          record: importedRecord({ description: 'スーパー', amount: -1500 }),
+          externalId: 'TX-002',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group2 = await screen.findByRole('group', { name: '2件目' })
+    fireEvent.change(within(group2).getByLabelText('相手科目'), { target: { value: String(foodAccount.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+
+    const entries = journalEntryRepository.findAll()
+    expect(entries).toHaveLength(1)
+    expect(entries[0].memo).toBe('スーパー')
+  })
+
+  it('相手科目が未選択のレコードは失敗として報告され、他のレコードの確定は続行される(継続処理方式)', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: 'スーパー', amount: -1000 }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+        {
+          record: importedRecord({ description: '謎の店舗', amount: -2000 }),
+          externalId: 'TX-002',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group1 = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group1).getByLabelText('相手科目'), { target: { value: String(foodAccount.id) } })
+    // 2件目は相手科目未選択のまま確定操作を行う
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(1件失敗)')
+    expect(within(screen.getByRole('alert')).getByText(/2件目/)).toBeInTheDocument()
+
+    const entries = journalEntryRepository.findAll()
+    expect(entries).toHaveLength(1)
+    expect(entries[0].memo).toBe('スーパー')
+  })
+
+  it('取引先が推定できなかったレコードを手動確定すると、取引先パターンが学習される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const counterparty = counterpartyRepository.create({ name: 'イオン', defaultAccountId: foodAccount.id })
+    // 事前にパターンを登録しないため、estimateCounterpartyはnullを返す想定
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: 'イオン○○店' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('取引先'), { target: { value: String(counterparty.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+
+    const learnedPatterns = counterpartyRepository.findByPattern(normalizeDescriptionForMatching('イオン○○店'))
+    expect(learnedPatterns.some((pattern) => pattern.counterpartyId === counterparty.id)).toBe(true)
+  })
+
+  it('取引先が自動推定済みだったレコードを確定しても、取引先パターンは重複登録されない', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const counterparty = counterpartyRepository.create({ name: 'イオン', defaultAccountId: foodAccount.id })
+    counterpartyRepository.addPattern(counterparty.id, 'イオン')
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: 'イオン○○店' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    await screen.findByRole('group', { name: '1件目' })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+
+    const patternsAfter = counterpartyRepository.findByPattern(normalizeDescriptionForMatching('イオン○○店'))
+    expect(patternsAfter).toHaveLength(1)
+  })
+
+  it('「これは確定版です」を選んだレコードを確定すると、置き換え対象の旧仕訳が削除される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const funAccount = accountRepository.create({ category: 'expense', name: '娯楽費', isReconcilable: null })
+    const preliminaryEntry = journalEntryRepository.create({
+      entryDate: '2026-07-18',
+      memo: '海外通販(速報)',
+      sourceType: 'external_import',
+      lines: [
+        { accountId: account.id, side: 'credit', amount: 2990 },
+        { accountId: funAccount.id, side: 'debit', amount: 2990 },
+      ],
+    })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '海外通販(確定)', amount: -3000 }),
+          externalId: 'TX-002',
+          isExactDuplicate: false,
+          approximateCandidates: [
+            { journalEntryId: preliminaryEntry.id, entryDate: '2026-07-18', amount: -2990, isSettled: false },
+          ],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.click(within(group).getByLabelText('これは確定版です'))
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(funAccount.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+
+    const entries = journalEntryRepository.findAll()
+    expect(entries).toHaveLength(1)
+    expect(entries.some((entry) => entry.memo === '海外通販(速報)')).toBe(false)
+    expect(entries.some((entry) => entry.memo === '海外通販(確定)')).toBe(true)
   })
 })

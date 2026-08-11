@@ -28,5 +28,10 @@
   "bulkAssignCounterpartyLabel": "一括割当ての取引先",
   "bulkAssignApply": "まとめて割り当てる",
   "balanceMismatchWarning": "帳簿残高({{bookBalance}})と外部残高({{externalBalance}})が一致しません。差額: {{difference}}",
-  "balanceReconciled": "帳簿残高と外部残高は一致しています。"
+  "balanceReconciled": "帳簿残高と外部残高は一致しています。",
+  "confirmButton": "確定する",
+  "counterAccountRequiredError": "相手科目が未選択です",
+  "confirmError": "確定に失敗しました",
+  "confirmResultSummary": "{{successCount}}件を確定しました({{failureCount}}件失敗)",
+  "confirmFailureItem": "{{index}}件目: {{message}}"
 }

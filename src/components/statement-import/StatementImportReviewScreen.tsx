@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { Counterparty, CounterpartyPattern } from '../../domain/counterparty/Counterparty'
-import type { JournalEntry, JournalLineSide } from '../../domain/journal/JournalEntry'
+import type { CreateJournalEntryInput, JournalEntry, JournalLineSide } from '../../domain/journal/JournalEntry'
 import type { StatementImportReviewResult } from '../../domain/statement-import/buildStatementImportReview'
 import {
   checkBalanceReconciliation,
@@ -21,6 +21,7 @@ import {
   groupUnresolvedRecordsByDescription,
   type UnresolvedRecordGroup,
 } from '../../domain/statement-import/groupUnresolvedRecordsByDescription'
+import { buildConfirmedJournalEntryInput } from '../../domain/statement-import/buildConfirmedJournalEntryInput'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { isStatementImportCounterAccountEligible } from './statementImportEligibility'
 import './StatementImportReviewScreen.css'
@@ -28,19 +29,22 @@ import './StatementImportReviewScreen.css'
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
 }
-interface JournalEntryFinder {
+interface JournalEntryReviewRepository {
   findAll(): JournalEntry[] | Promise<JournalEntry[]>
+  create(input: CreateJournalEntryInput): JournalEntry | Promise<JournalEntry>
+  delete(id: number): void | Promise<void>
 }
 interface CounterpartyEstimationRepository {
   findAll(): Counterparty[] | Promise<Counterparty[]>
   findByPattern(text: string): CounterpartyPattern[] | Promise<CounterpartyPattern[]>
+  addPattern(counterpartyId: number, pattern: string): CounterpartyPattern | Promise<CounterpartyPattern>
 }
 
 export interface StatementImportReviewScreenProps {
   targetAccount: Account
   review: StatementImportReviewResult
   accountRepository: AccountFinder
-  journalEntryRepository: JournalEntryFinder
+  journalEntryRepository: JournalEntryReviewRepository
   counterpartyRepository: CounterpartyEstimationRepository
   onBack: () => void
 }
@@ -52,6 +56,16 @@ interface RecordReviewState {
   counterAccountId: number | null
   /** 相手科目をユーザーが手動編集済みか(dirty flag)。trueの間は取引先変更による自動追従を止める(計画Issue #77設計方針1) */
   counterAccountTouched: boolean
+  /**
+   * 初期表示時(computeInitialRecordStates)にestimateCounterpartyが返した値。ユーザーの編集で
+   * counterpartyIdが変わっても書き換えない。確定時、これがnullなのにcounterpartyIdが
+   * 非nullということは「ユーザーが新たに取引先を特定した」ことを意味し、取引先パターンの
+   * 学習(counterpartyRepository.addPattern)を行うかどうかの判定に使う
+   * (docs/domain/counterparties.md 1.3手順5)。既に自動マッチ済みだった場合は同じパターンを
+   * 重複登録しないようにするための判定であり、教義通り「手動確定=常に学習」ではない
+   * (計画Issueに明示のない実装詳細のため、既存方針から妥当と判断した挙動)。
+   */
+  initialCounterpartyId: number | null
   includeDuplicate: boolean
   approximateDecision: ApproximateDecision
 }
@@ -61,6 +75,7 @@ function createInitialRecordState(counterpartyId: number | null, counterAccountI
     counterpartyId,
     counterAccountId,
     counterAccountTouched: false,
+    initialCounterpartyId: counterpartyId,
     includeDuplicate: false,
     approximateDecision: 'unresolved',
   }
@@ -112,6 +127,11 @@ interface PastAccountLine {
   amount: number
 }
 
+interface ConfirmResult {
+  successCount: number
+  failures: { index: number; message: string }[]
+}
+
 /**
  * CSV取込レビュー一覧画面(計画Issue #76・#77、docs/domain/statement-import.md 1.5手順2〜6)。
  * アップロード済みのレコード一覧を表示し、取引先推定(estimateCounterparty)・相手勘定科目
@@ -139,6 +159,8 @@ export function StatementImportReviewScreen({
   const [recordStates, setRecordStates] = useState<RecordReviewState[] | null>(null)
   /** 一括割当てバナー(正規化後摘要ごと)で選択中の取引先。未選択は空文字 */
   const [bulkAssignSelections, setBulkAssignSelections] = useState<Record<string, string>>({})
+  const [confirming, setConfirming] = useState(false)
+  const [confirmResult, setConfirmResult] = useState<ConfirmResult | null>(null)
 
   useEffect(() => {
     void Promise.resolve(accountRepository.findAll()).then(setAccounts)
@@ -216,13 +238,14 @@ export function StatementImportReviewScreen({
 
   /**
    * 確定版候補(docs/domain/statement-import.md 1.6)で「これは確定版です」を選んだレコードは、
-   * レビュー確定時に置き換え対象の旧仕訳(approximateCandidates)が削除される想定
-   * (1.6「既存の仕訳を削除し、確定後の内容で取り込む」)。本Issueでは実際の削除操作(永続化)は
-   * 行わないが、残高照合の見込み計算ではその旧仕訳の効果を過去分から除外しないと、旧仕訳+
-   * 新レコードが二重計上され誤った不一致警告が出る。1レコードに複数の近似候補がある場合も、
-   * 「これは確定版です」を選べば候補全てを除外扱いにする(候補選定は日付・金額が近いものを
-   * 単純に提示するだけの設計であり、1.6の「メモ: 候補選定ロジックの方向性」の通り複雑な
-   * 一意特定は行わないため、複数候補の中から1件だけを厳密に選ばせるUIは持たない)。
+   * レビュー確定時に置き換え対象の旧仕訳(approximateCandidates)を削除してから新レコードを
+   * 作成する(1.6「既存の仕訳を削除し、確定後の内容で取り込む」、handleConfirm参照)。
+   * 残高照合の見込み計算でも、確定前の時点からその旧仕訳の効果を過去分から除外しないと、
+   * 旧仕訳+新レコードが二重計上され誤った不一致警告が出てしまう。1レコードに複数の近似候補が
+   * ある場合も、「これは確定版です」を選べば候補全てを除外(削除)扱いにする(候補選定は
+   * 日付・金額が近いものを単純に提示するだけの設計であり、1.6の「メモ: 候補選定ロジックの
+   * 方向性」の通り複雑な一意特定は行わないため、複数候補の中から1件だけを厳密に選ばせる
+   * UIは持たない)。
    */
   const replacedJournalEntryIds = new Set(
     review.records.flatMap((record, index) =>
@@ -231,6 +254,82 @@ export function StatementImportReviewScreen({
         : [],
     ),
   )
+
+  /**
+   * 確定対象は、重複除外(isExactDuplicate && !includeDuplicate)されなかった全レコード
+   * (計画Issue #77設計方針2)。相手科目が未選択のレコードは確定対象ではあるが、
+   * handleConfirm内で個別に失敗として扱う(必須項目チェック)。
+   */
+  const confirmableIndices = review.records
+    .map((_, index) => index)
+    .filter((index) => !(review.records[index].isExactDuplicate && !recordStates[index].includeDuplicate))
+  const confirmableRecordStates = recordStates
+
+  /**
+   * レビュー確定操作(docs/domain/statement-import.md 1.5手順7)。継続処理方式を採る
+   * (計画Issue #77設計方針2): 1件が失敗しても処理を止めず、残りのレコードの確定を続行する。
+   * JournalEntryRepository.create()は1回の呼び出し内でトランザクション保証されるため
+   * (docs/architecture.md)、失敗レコードのDB状態が中途半端になる心配はない。複数レコードに
+   * またがる一括確定操作全体のall-or-nothing性は保証されない(計画Issueの制約・懸念点に明記)。
+   */
+  async function handleConfirm(): Promise<void> {
+    setConfirming(true)
+    setConfirmResult(null)
+
+    const deletedJournalEntryIds = new Set<number>()
+    const failures: ConfirmResult['failures'] = []
+    let successCount = 0
+
+    for (const index of confirmableIndices) {
+      const reviewRecord = review.records[index]
+      // recordStatesはコンポーネント関数トップレベルではnullチェック済みでnarrowingされるが、
+      // ネストしたasync関数(handleConfirm)の中では型上narrowingが保持されないため再束縛する
+      const state = confirmableRecordStates[index]
+
+      if (state.counterAccountId === null) {
+        failures.push({ index, message: t('counterAccountRequiredError') })
+        continue
+      }
+
+      try {
+        if (state.approximateDecision === 'confirmed_replacement') {
+          for (const candidate of reviewRecord.approximateCandidates) {
+            if (deletedJournalEntryIds.has(candidate.journalEntryId)) continue
+            await Promise.resolve(journalEntryRepository.delete(candidate.journalEntryId))
+            deletedJournalEntryIds.add(candidate.journalEntryId)
+          }
+        }
+
+        await Promise.resolve(
+          journalEntryRepository.create(
+            buildConfirmedJournalEntryInput({
+              record: reviewRecord.record,
+              externalId: reviewRecord.externalId,
+              targetAccountId: targetAccount.id,
+              targetAccountCategory: targetAccount.category,
+              counterAccountId: state.counterAccountId,
+              counterpartyId: state.counterpartyId,
+            }),
+          ),
+        )
+
+        // 取引先が新たに特定された(初期表示時は未推定だった)レコードのみ学習する
+        // (docs/domain/counterparties.md 1.3手順5、RecordReviewState.initialCounterpartyIdのコメント参照)
+        if (state.initialCounterpartyId === null && state.counterpartyId !== null) {
+          await Promise.resolve(
+            counterpartyRepository.addPattern(state.counterpartyId, reviewRecord.record.description),
+          )
+        }
+
+        successCount++
+      } catch {
+        failures.push({ index, message: t('confirmError') })
+      }
+    }
+
+    setConfirmResult({ successCount, failures })
+    setConfirming(false)
+  }
 
   /**
    * 残高照合(docs/domain/reconciliation.md 1.5)は「確定済みの過去分+今回取り込む分の草案」を
@@ -415,9 +514,36 @@ export function StatementImportReviewScreen({
         })
       )}
 
+      {confirmResult && (
+        <div role={confirmResult.failures.length === 0 ? 'status' : 'alert'}>
+          <p>
+            {t('confirmResultSummary', {
+              successCount: confirmResult.successCount,
+              failureCount: confirmResult.failures.length,
+            })}
+          </p>
+          {confirmResult.failures.length > 0 && (
+            <ul>
+              {confirmResult.failures.map((failure) => (
+                <li key={failure.index}>
+                  {t('confirmFailureItem', { index: failure.index + 1, message: failure.message })}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       <div>
         <button type="button" onClick={onBack}>
           {t('back')}
+        </button>
+        <button
+          type="button"
+          disabled={confirming || confirmableIndices.length === 0}
+          onClick={() => void handleConfirm()}
+        >
+          {t('confirmButton')}
         </button>
       </div>
     </div>
