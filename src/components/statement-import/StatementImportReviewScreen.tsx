@@ -3,9 +3,12 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type { StatementImportReviewResult } from '../../domain/statement-import/buildStatementImportReview'
-import { checkBalanceReconciliation } from '../../domain/reconciliation/checkBalanceReconciliation'
+import {
+  checkBalanceReconciliation,
+  type ReconciliationLine,
+} from '../../domain/reconciliation/checkBalanceReconciliation'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
-import { isManualEntryEligibleAccount } from '../journal-entry/journalEntryFormLine'
+import { isStatementImportCounterAccountEligible } from './statementImportEligibility'
 import './StatementImportReviewScreen.css'
 
 interface AccountFinder {
@@ -54,7 +57,8 @@ export function StatementImportReviewScreen({
   const { t: tCommon } = useTranslation('common')
 
   const [accounts, setAccounts] = useState<Account[] | null>(null)
-  const [bookBalance, setBookBalance] = useState<number | null>(null)
+  /** 対象科目の永続化済み(過去分)のjournal_lines。今回アップロードしたバッチの効果は含まない */
+  const [pastAccountLines, setPastAccountLines] = useState<ReconciliationLine[] | null>(null)
   const [recordStates, setRecordStates] = useState<RecordReviewState[]>(() =>
     review.records.map(() => createInitialRecordState()),
   )
@@ -65,14 +69,15 @@ export function StatementImportReviewScreen({
 
   useEffect(() => {
     if (targetAccount.isReconcilable !== true || review.latestExternalBalance === null) {
-      setBookBalance(null)
+      setPastAccountLines(null)
       return
     }
     void Promise.resolve(journalEntryRepository.findAll()).then((entries) => {
       const accountLines = entries
         .flatMap((entry) => entry.lines)
         .filter((line) => line.accountId === targetAccount.id)
-      setBookBalance(checkBalanceReconciliation(accountLines, review.latestExternalBalance!).bookBalance)
+        .map((line) => ({ side: line.side, amount: line.amount }))
+      setPastAccountLines(accountLines)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetAccount.id, targetAccount.isReconcilable, review.latestExternalBalance, journalEntryRepository])
@@ -85,23 +90,44 @@ export function StatementImportReviewScreen({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const counterAccountCandidates = accounts.filter(isManualEntryEligibleAccount)
-  const showReconciliation = targetAccount.isReconcilable === true && review.latestExternalBalance !== null
+  const counterAccountCandidates = accounts.filter(
+    (account) => account.id !== targetAccount.id && isStatementImportCounterAccountEligible(account),
+  )
   const externalBalance = review.latestExternalBalance
-  const isReconciled = bookBalance !== null && externalBalance !== null ? bookBalance === externalBalance : null
+
+  /**
+   * 残高照合(docs/domain/reconciliation.md 1.5)は「確定済みの過去分+今回取り込む分の草案」を
+   * 積み上げて計算する(過去分のみでは、正しく取り込めるCSVでも誤って不一致警告が出てしまう)。
+   * 重複と判定され、かつユーザーが明示的に取り込むを選択していない行(isExactDuplicate &&
+   * !includeDuplicate)は実際には取り込まれないため積み上げから除外する。is_reconcilable=true
+   * 科目は現状asset区分のみのため、ImportedRecord.amountの符号(正=残高が増える方向)をそのまま
+   * 借方/貸方に変換できる(buildConfirmedJournalEntryInput.tsのdetermineTargetSideと同じ判定)。
+   */
+  const reconciliation =
+    targetAccount.isReconcilable === true && pastAccountLines !== null && externalBalance !== null
+      ? checkBalanceReconciliation(
+          [
+            ...pastAccountLines,
+            ...review.records
+              .filter((record, index) => !(record.isExactDuplicate && !recordStates[index].includeDuplicate))
+              .map((record) => toReconciliationLine(record.record.amount)),
+          ],
+          externalBalance,
+        )
+      : null
 
   return (
     <div className="statement-import-review-screen">
       <h2>{t('reviewTitle')}</h2>
 
-      {showReconciliation && bookBalance !== null && externalBalance !== null && (
-        <p role={isReconciled ? 'status' : 'alert'}>
-          {isReconciled
+      {reconciliation && (
+        <p role={reconciliation.isReconciled ? 'status' : 'alert'}>
+          {reconciliation.isReconciled
             ? t('balanceReconciled')
             : t('balanceMismatchWarning', {
-                bookBalance: formatCurrency(bookBalance, 'JPY'),
-                externalBalance: formatCurrency(externalBalance, 'JPY'),
-                difference: formatCurrency(externalBalance - bookBalance, 'JPY'),
+                bookBalance: formatCurrency(reconciliation.bookBalance, 'JPY'),
+                externalBalance: formatCurrency(reconciliation.externalBalance, 'JPY'),
+                difference: formatCurrency(reconciliation.difference, 'JPY'),
               })}
         </p>
       )}
@@ -200,4 +226,8 @@ export function StatementImportReviewScreen({
       </div>
     </div>
   )
+}
+
+function toReconciliationLine(amount: number): ReconciliationLine {
+  return amount >= 0 ? { side: 'debit', amount } : { side: 'credit', amount: -amount }
 }

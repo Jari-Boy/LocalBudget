@@ -226,4 +226,133 @@ describe('StatementImportReviewScreen', () => {
 
     await screen.findByText('帳簿残高と外部残高は一致しています。')
   })
+
+  it('今回アップロードしたCSVバッチ自身の効果を含めて帳簿残高を計算する(docs/domain/reconciliation.md 1.5「今回取り込む分の草案」)', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    const equityAccount = accountRepository.create({
+      category: 'equity',
+      name: '初期残高',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+    journalEntryRepository.create({
+      entryDate: '2026-07-01',
+      sourceType: 'initial_balance',
+      lines: [
+        { accountId: account.id, side: 'debit', amount: 100000 },
+        { accountId: equityAccount.id, side: 'credit', amount: 100000 },
+      ],
+    })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ amount: -3000, balanceAfter: 97000 }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: 97000,
+    }
+
+    renderScreen(account, review)
+
+    await screen.findByText('帳簿残高と外部残高は一致しています。')
+  })
+
+  it('完全一致重複でチェックが入っていない行は帳簿残高の計算から除外される', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    const equityAccount = accountRepository.create({
+      category: 'equity',
+      name: '初期残高',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+    journalEntryRepository.create({
+      entryDate: '2026-07-01',
+      sourceType: 'initial_balance',
+      lines: [
+        { accountId: account.id, side: 'debit', amount: 100000 },
+        { accountId: equityAccount.id, side: 'credit', amount: 100000 },
+      ],
+    })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ amount: -3000, balanceAfter: 97000 }),
+          externalId: 'TX-001',
+          isExactDuplicate: true,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: 100000,
+    }
+
+    renderScreen(account, review)
+
+    await screen.findByText('帳簿残高と外部残高は一致しています。')
+  })
+
+  it('相手科目の候補にはis_reconcilable=true科目(口座間振替、external_importはis_reconcilable制限のホワイトリストに含まれる)も表示される', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    accountRepository.create({ category: 'asset', name: '証券口座', isReconcilable: true })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord(),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    const counterSelect = within(group).getByLabelText('相手科目')
+    expect(within(counterSelect).getByText('証券口座')).toBeInTheDocument()
+  })
+
+  it('対象科目自身は相手科目の候補から除外される', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord(),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    const counterSelect = within(group).getByLabelText('相手科目')
+    expect(within(counterSelect).queryByText('普通預金')).not.toBeInTheDocument()
+  })
 })

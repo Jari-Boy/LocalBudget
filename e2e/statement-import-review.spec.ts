@@ -347,4 +347,62 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
     await expect(page.getByRole('alert').filter({ hasText: '帳簿残高' })).toBeVisible()
   })
+
+  test('今回アップロードしたCSVバッチの内容を含めて計算し、帳簿残高と外部残高が一致する場合は一致している旨が表示される', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    const [targetAccountId] = await setupAccountsAndMapping(
+      page,
+      [{ category: 'asset', name: '普通預金', isReconcilable: true }],
+      {
+        accountIndex: 0,
+        formatGroupId: 'test-bank',
+        label: 'テスト銀行 普通預金',
+        dateColumn: '日付',
+        dateFormat: 'YYYY/MM/DD',
+        descriptionColumn: '摘要',
+        amountMode: 'single_signed',
+        amountColumn: '金額',
+        balanceColumn: '残高',
+      },
+    )
+
+    await page.evaluate(async ({ targetAccountId: accountId }) => {
+      const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
+      const client = await createDbClient()
+      const equityAccount = await client.account.create({
+        category: 'equity',
+        name: '普通預金の初期残高',
+        isReconcilable: null,
+        isSystemManaged: true,
+      })
+      await client.journalEntry.create({
+        entryDate: '2026-07-01',
+        sourceType: 'initial_balance',
+        lines: [
+          { accountId, side: 'debit', amount: 100000 },
+          { accountId: equityAccount.id, side: 'credit', amount: 100000 },
+        ],
+      })
+      await client.autoSave.flush()
+    }, { targetAccountId })
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    await startUpload(page, '普通預金')
+    await page
+      .getByLabel('CSVファイル')
+      .setInputFiles({
+        name: 'statement.csv',
+        mimeType: 'text/csv',
+        buffer: csvBuffer('日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n'),
+      })
+    await page.getByRole('button', { name: '取り込む' }).click()
+
+    await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
+    await expect(page.getByRole('status').filter({ hasText: '一致しています' })).toBeVisible()
+  })
 })

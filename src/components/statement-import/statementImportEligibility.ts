@@ -16,3 +16,14 @@ export function isStatementImportEligibleAccount(account: {
   const isAssetOrLiability = account.category === 'asset' || account.category === 'liability'
   return isAssetOrLiability && account.isActive && !account.isSystemManaged
 }
+
+/**
+ * CSV取込レビュー画面で相手勘定科目として選択してよいかどうかを判定する。
+ * マニュアル入力(isManualEntryEligibleAccount)と異なり、is_reconcilable = trueの科目
+ * (銀行口座等)も候補に含める。docs/domain/reconciliation.md 1.2の直接記帳制限ホワイトリストに
+ * external_importが含まれているため、CSV取込由来の仕訳では口座間振替のようにis_reconcilable
+ * = true科目同士を相手科目として使うことが許可されている。isSystemManagedな科目のみを除外する。
+ */
+export function isStatementImportCounterAccountEligible(account: { isSystemManaged: boolean }): boolean {
+  return !account.isSystemManaged
+}
