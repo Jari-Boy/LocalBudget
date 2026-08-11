@@ -2,17 +2,29 @@ import { useState } from 'react'
 import type * as Comlink from 'comlink'
 import { useTranslation } from 'react-i18next'
 import type { AccountRepository } from './domain/account/AccountRepository'
+import type { CounterpartyRepository } from './domain/counterparty/CounterpartyRepository'
 import type { JournalEntryRepository } from './domain/journal/JournalEntryRepository'
+import type { JournalEntryDraft } from './domain/journal/JournalEntryDraft'
 import type { HouseholdMemberRepository } from './domain/household-member/HouseholdMemberRepository'
+import type { ProjectRepository } from './domain/project/ProjectRepository'
+import type { JournalEntryDraftRpcApi } from './infrastructure/rpc/createRepositoryRegistry'
 import { DbClientProvider, useDbClient } from './infrastructure/rpc/DbClientProvider'
 import { AccountRegistrationWizard } from './components/account-registration/AccountRegistrationWizard'
 import { CreditCardRegistrationWizard } from './components/account-registration/CreditCardRegistrationWizard'
 import { AccountListScreen } from './components/account-list/AccountListScreen'
+import { JournalEntryDraftListScreen } from './components/journal-entry/JournalEntryDraftListScreen'
+import { JournalEntryForm } from './components/journal-entry/JournalEntryForm'
 import { UpdateBanner } from './components/UpdateBanner'
 import { IosInstallPrompt } from './components/IosInstallPrompt'
 import './App.css'
 
-type Screen = 'home' | 'register-account' | 'register-credit-card' | 'account-list'
+type Screen =
+  | 'home'
+  | 'register-account'
+  | 'register-credit-card'
+  | 'account-list'
+  | 'journal-entry-draft-list'
+  | 'journal-entry-form'
 
 /**
  * トップ画面からのウィザード起動と、完了後のトップ画面への復帰のみを扱う
@@ -22,8 +34,11 @@ type Screen = 'home' | 'register-account' | 'register-credit-card' | 'account-li
  */
 function AppContent() {
   const { t } = useTranslation('account')
+  const { t: tJournal } = useTranslation('journal')
   const client = useDbClient()
   const [screen, setScreen] = useState<Screen>('home')
+  /** 下書き一覧から再開する下書き。新規作成時・未選択時はnull(計画Issue #32)。 */
+  const [activeDraft, setActiveDraft] = useState<JournalEntryDraft | null>(null)
 
   /**
    * Comlinkの型定義上、RepositoryRegistryのネストしたRepositoryプロパティは
@@ -37,6 +52,10 @@ function AppContent() {
   const journalEntryRepository = client.journalEntry as unknown as Comlink.Remote<JournalEntryRepository>
   const householdMemberRepository =
     client.householdMember as unknown as Comlink.Remote<HouseholdMemberRepository>
+  const projectRepository = client.project as unknown as Comlink.Remote<ProjectRepository>
+  const counterpartyRepository = client.counterparty as unknown as Comlink.Remote<CounterpartyRepository>
+  const journalEntryDraftRepository =
+    client.journalEntryDraft as unknown as Comlink.Remote<JournalEntryDraftRpcApi>
 
   if (screen === 'register-account') {
     return (
@@ -70,6 +89,42 @@ function AppContent() {
     )
   }
 
+  if (screen === 'journal-entry-draft-list') {
+    return (
+      <JournalEntryDraftListScreen
+        journalEntryDraftRepository={journalEntryDraftRepository}
+        onResume={(draft) => {
+          setActiveDraft(draft)
+          setScreen('journal-entry-form')
+        }}
+        onNew={() => {
+          setActiveDraft(null)
+          setScreen('journal-entry-form')
+        }}
+        onBack={() => setScreen('home')}
+      />
+    )
+  }
+
+  if (screen === 'journal-entry-form') {
+    return (
+      <JournalEntryForm
+        accountRepository={accountRepository}
+        projectRepository={projectRepository}
+        householdMemberRepository={householdMemberRepository}
+        counterpartyRepository={counterpartyRepository}
+        journalEntryRepository={journalEntryRepository}
+        journalEntryDraftRepository={journalEntryDraftRepository}
+        initialDraft={activeDraft}
+        onComplete={() => {
+          setActiveDraft(null)
+          setScreen('home')
+        }}
+        onBack={() => setScreen('journal-entry-draft-list')}
+      />
+    )
+  }
+
   return (
     <div className="app-home">
       <h1>LocalBudget</h1>
@@ -81,6 +136,9 @@ function AppContent() {
       </button>
       <button type="button" onClick={() => setScreen('account-list')}>
         {t('viewAccountsTitle')}
+      </button>
+      <button type="button" onClick={() => setScreen('journal-entry-draft-list')}>
+        {tJournal('journalEntryMenuTitle')}
       </button>
     </div>
   )
