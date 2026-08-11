@@ -7,6 +7,8 @@ import type { JournalEntryRepository } from './domain/journal/JournalEntryReposi
 import type { JournalEntryDraft } from './domain/journal/JournalEntryDraft'
 import type { HouseholdMemberRepository } from './domain/household-member/HouseholdMemberRepository'
 import type { ProjectRepository } from './domain/project/ProjectRepository'
+import type { ImportMappingDefinitionRepository } from './domain/statement-import/ImportMappingDefinitionRepository'
+import type { ExternalTransactionRefRepository } from './domain/reconciliation/ExternalTransactionRefRepository'
 import type { JournalEntryDraftRpcApi } from './infrastructure/rpc/createRepositoryRegistry'
 import { DbClientProvider, useDbClient } from './infrastructure/rpc/DbClientProvider'
 import { AccountRegistrationWizard } from './components/account-registration/AccountRegistrationWizard'
@@ -14,6 +16,11 @@ import { CreditCardRegistrationWizard } from './components/account-registration/
 import { AccountListScreen } from './components/account-list/AccountListScreen'
 import { JournalEntryDraftListScreen } from './components/journal-entry/JournalEntryDraftListScreen'
 import { JournalEntryForm } from './components/journal-entry/JournalEntryForm'
+import {
+  StatementImportUploadScreen,
+  type StatementImportUploadResult,
+} from './components/statement-import/StatementImportUploadScreen'
+import { StatementImportReviewScreen } from './components/statement-import/StatementImportReviewScreen'
 import { UpdateBanner } from './components/UpdateBanner'
 import { IosInstallPrompt } from './components/IosInstallPrompt'
 import './App.css'
@@ -25,6 +32,8 @@ type Screen =
   | 'account-list'
   | 'journal-entry-draft-list'
   | 'journal-entry-form'
+  | 'statement-import-upload'
+  | 'statement-import-review'
 
 /**
  * トップ画面からのウィザード起動と、完了後のトップ画面への復帰のみを扱う
@@ -35,10 +44,19 @@ type Screen =
 function AppContent() {
   const { t } = useTranslation('account')
   const { t: tJournal } = useTranslation('journal')
+  const { t: tStatementImport } = useTranslation('statementImport')
   const client = useDbClient()
   const [screen, setScreen] = useState<Screen>('home')
   /** 下書き一覧から再開する下書き。新規作成時・未選択時はnull(計画Issue #32)。 */
   const [activeDraft, setActiveDraft] = useState<JournalEntryDraft | null>(null)
+  /**
+   * CSV取込アップロード完了時の結果(計画Issue #76)。RPC越しに返される値は構造化複製された
+   * プレーンオブジェクト(targetAccount/definition/review)であり、ComlinkのRemoteオブジェクト
+   * (Repositoryインスタンス等)は含まないため、useStateへそのまま保持してよい
+   * (docs/architecture.md 6章「実装状況」のuseState更新関数誤認識の罠は、Remoteオブジェクト
+   * 自体を保持する場合に限られる)。
+   */
+  const [uploadResult, setUploadResult] = useState<StatementImportUploadResult | null>(null)
 
   /**
    * Comlinkの型定義上、RepositoryRegistryのネストしたRepositoryプロパティは
@@ -56,6 +74,10 @@ function AppContent() {
   const counterpartyRepository = client.counterparty as unknown as Comlink.Remote<CounterpartyRepository>
   const journalEntryDraftRepository =
     client.journalEntryDraft as unknown as Comlink.Remote<JournalEntryDraftRpcApi>
+  const importMappingDefinitionRepository =
+    client.importMappingDefinition as unknown as Comlink.Remote<ImportMappingDefinitionRepository>
+  const externalTransactionRefRepository =
+    client.externalTransactionRef as unknown as Comlink.Remote<ExternalTransactionRefRepository>
 
   if (screen === 'register-account') {
     return (
@@ -125,6 +147,36 @@ function AppContent() {
     )
   }
 
+  if (screen === 'statement-import-upload') {
+    return (
+      <StatementImportUploadScreen
+        accountRepository={accountRepository}
+        importMappingDefinitionRepository={importMappingDefinitionRepository}
+        externalTransactionRefRepository={externalTransactionRefRepository}
+        onUploaded={(result) => {
+          setUploadResult(result)
+          setScreen('statement-import-review')
+        }}
+        onBack={() => setScreen('home')}
+      />
+    )
+  }
+
+  if (screen === 'statement-import-review' && uploadResult !== null) {
+    return (
+      <StatementImportReviewScreen
+        targetAccount={uploadResult.targetAccount}
+        review={uploadResult.review}
+        accountRepository={accountRepository}
+        journalEntryRepository={journalEntryRepository}
+        onBack={() => {
+          setUploadResult(null)
+          setScreen('statement-import-upload')
+        }}
+      />
+    )
+  }
+
   return (
     <div className="app-home">
       <h1>LocalBudget</h1>
@@ -139,6 +191,9 @@ function AppContent() {
       </button>
       <button type="button" onClick={() => setScreen('journal-entry-draft-list')}>
         {tJournal('journalEntryMenuTitle')}
+      </button>
+      <button type="button" onClick={() => setScreen('statement-import-upload')}>
+        {tStatementImport('statementImportMenuTitle')}
       </button>
     </div>
   )
