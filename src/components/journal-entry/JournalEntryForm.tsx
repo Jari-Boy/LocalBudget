@@ -17,6 +17,7 @@ import { calculateJournalLineTotals } from './journalLineTotals'
 import {
   createEmptyJournalEntryFormLine,
   fromJournalEntryDraftLine,
+  hasNonPositiveAmountInput,
   isCounterpartyEligibleCategory,
   isManualEntryEligibleAccount,
   toJournalEntryDraftLineInput,
@@ -225,6 +226,17 @@ export function JournalEntryForm({
 
   async function handleConfirm(): Promise<void> {
     cancelPendingSave()
+
+    /**
+     * toJournalLineInputは0以下の金額を単に送信対象から除外するだけなので、これを
+     * 挟まないと、残りの行だけでたまたま貸借が一致した場合にマイナス金額の行が
+     * 気づかれないまま確定されてしまう(ユーザー指摘により追加)。専用メッセージで
+     * 確定操作自体をブロックし、Repository呼び出しは行わない。
+     */
+    if (lineStates.some((state) => hasNonPositiveAmountInput(state.line))) {
+      setError(t('negativeAmountError'))
+      return
+    }
 
     setSubmitting(true)
     setError(null)

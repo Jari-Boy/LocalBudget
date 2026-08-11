@@ -98,6 +98,22 @@ export function toJournalLineInput(line: JournalEntryFormLine): JournalLineInput
 }
 
 /**
+ * 金額欄に入力があるにもかかわらず0以下(マイナスまたは0)の場合にtrueを返す。
+ * amount > 0のCHECK制約(docs/domain/journal.md 1.4)に反する入力を、確定操作前に
+ * 専用のエラーメッセージ(negativeAmountError)で明示的に伝えるための判定。
+ * toJournalLineInputは0以下の金額を単に送信対象から除外するだけのため、この判定を
+ * 挟まないと、残りの行だけでたまたま貸借が一致した場合にマイナス金額の行が
+ * 気づかれないまま確定されてしまう(ユーザーからの指摘により追加)。
+ * 未入力(空文字)の行はここでは対象外とし、明細数不足・貸借不一致の判定は
+ * 従来通りRepository層(UnbalancedJournalEntryError)に委ねる。
+ */
+export function hasNonPositiveAmountInput(line: JournalEntryFormLine): boolean {
+  if (line.amountInput === '') return false
+  const amount = Number(line.amountInput)
+  return Number.isFinite(amount) && amount <= 0
+}
+
+/**
  * 下書き一覧から再開する際、保存済みの下書き行をフォーム行に変換する。
  */
 export function fromJournalEntryDraftLine(draftLine: JournalEntryDraftLine): JournalEntryFormLine {

@@ -21,6 +21,7 @@
   "differenceLabel": "差額",
   "confirm": "確定する",
   "back": "戻る",
+  "negativeAmountError": "金額には1以上の整数を入力してください。",
   "unbalancedError": "貸借が一致していません。金額を確認してください。",
   "insufficientLinesError": "仕訳には2行以上の明細が必要です。",
   "restrictedAccountError": "この科目には直接入力できません。外部明細取込等の経路をご利用ください。",

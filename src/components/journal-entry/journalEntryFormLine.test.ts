@@ -9,6 +9,7 @@ import type { JournalEntryDraftLine } from '../../domain/journal/JournalEntryDra
 import {
   createEmptyJournalEntryFormLine,
   fromJournalEntryDraftLine,
+  hasNonPositiveAmountInput,
   isCounterpartyEligibleCategory,
   isManualEntryEligibleAccount,
   toJournalEntryDraftLineInput,
@@ -144,6 +145,26 @@ describe('toJournalLineInput', () => {
     expect(toJournalLineInput({ ...base, amountInput: '0' })).toBeNull()
     expect(toJournalLineInput({ ...base, amountInput: '-100' })).toBeNull()
     expect(toJournalLineInput({ ...base, amountInput: 'abc' })).toBeNull()
+  })
+})
+
+describe('hasNonPositiveAmountInput', () => {
+  const base = { accountId: 1, side: 'debit' as const, projectId: null, householdMemberId: null, counterpartyId: null }
+
+  it('マイナスの金額が入力されている場合trueを返す', () => {
+    expect(hasNonPositiveAmountInput({ ...base, amountInput: '-100' })).toBe(true)
+  })
+
+  it('0が入力されている場合trueを返す', () => {
+    expect(hasNonPositiveAmountInput({ ...base, amountInput: '0' })).toBe(true)
+  })
+
+  it('正の金額が入力されている場合falseを返す', () => {
+    expect(hasNonPositiveAmountInput({ ...base, amountInput: '100' })).toBe(false)
+  })
+
+  it('未入力(空文字)の場合はfalseを返す(明細数不足・貸借不一致の判定はRepository層に委ねる)', () => {
+    expect(hasNonPositiveAmountInput({ ...base, amountInput: '' })).toBe(false)
   })
 })
 

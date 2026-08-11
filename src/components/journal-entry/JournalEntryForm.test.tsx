@@ -261,6 +261,44 @@ describe('JournalEntryForm', () => {
     expect(journalEntryRepository.findAll()).toHaveLength(0)
   })
 
+  it('マイナスの金額を入力して確定すると、専用のエラーメッセージが表示され仕訳は作成されない(残りの行だけで貸借が偶然一致する場合も含む)', async () => {
+    const expense = createAccount({ name: '食費', category: 'expense' })
+    const daily = createAccount({ name: '日用品費', category: 'expense' })
+    const cash = createAccount({ name: '現金', category: 'asset' })
+
+    const { onComplete } = renderForm()
+    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+
+    // 1行目はマイナス金額。2・3行目だけなら貸借が一致してしまうケースを検証する
+    // (マイナス行が黙って無視され確定されてしまわないことを確認する)。
+    selectLineAccount(lineGroups[0], expense.id)
+    fireEvent.change(within(lineGroups[0]).getByLabelText('借方/貸方'), {
+      target: { value: 'debit' },
+    })
+    fireEvent.change(within(lineGroups[0]).getByLabelText('金額'), { target: { value: '-1000' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '行を追加する' }))
+    const updatedLineGroups = screen.getAllByRole('group', { name: /行目/ })
+
+    selectLineAccount(updatedLineGroups[1], daily.id)
+    fireEvent.change(within(updatedLineGroups[1]).getByLabelText('借方/貸方'), {
+      target: { value: 'debit' },
+    })
+    fireEvent.change(within(updatedLineGroups[1]).getByLabelText('金額'), { target: { value: '5000' } })
+
+    selectLineAccount(updatedLineGroups[2], cash.id)
+    fireEvent.change(within(updatedLineGroups[2]).getByLabelText('借方/貸方'), {
+      target: { value: 'credit' },
+    })
+    fireEvent.change(within(updatedLineGroups[2]).getByLabelText('金額'), { target: { value: '5000' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('金額には1以上の整数を入力してください')
+    expect(onComplete).not.toHaveBeenCalled()
+    expect(journalEntryRepository.findAll()).toHaveLength(0)
+  })
+
   it('入力から一定時間(デバウンス)経過すると下書きとして自動保存される', async () => {
     const expense = createAccount({ name: '食費', category: 'expense' })
 
