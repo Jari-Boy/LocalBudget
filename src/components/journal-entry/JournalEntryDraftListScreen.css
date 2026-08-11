@@ -1,12 +1,44 @@
+.journal-entry-draft-list-screen {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
 .journal-entry-draft-list-screen ul {
   list-style: none;
+  margin: 0 0 1rem;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .journal-entry-draft-list-screen li {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid #ddd;
+  gap: 0.75rem;
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+.journal-entry-draft-list-screen button {
+  font-size: 16px;
+  padding: 8px 20px;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background: var(--accent-bg);
+  color: var(--accent-contrast);
+  cursor: pointer;
+  transition: border-color 0.3s;
+
+  &:hover:not(:disabled) {
+    border-color: var(--accent-border);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 }
