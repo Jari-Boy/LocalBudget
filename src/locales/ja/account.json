@@ -1,6 +1,7 @@
 {
   "registerAccountTitle": "資産を登録する",
   "registerCreditCardTitle": "クレジットカードを登録する",
+  "viewAccountsTitle": "登録済みの科目を見る",
   "stepKindLabel": "種類を選ぶ",
   "kindGroupBankAccounts": "口座",
   "kindGroupCashLike": "現金・電子マネー",
@@ -16,5 +17,7 @@
   "next": "次へ",
   "back": "戻る",
   "register": "登録する",
-  "registrationError": "登録に失敗しました。もう一度お試しください。"
+  "registrationError": "登録に失敗しました。もう一度お試しください。",
+  "accountListTitle": "登録済みの科目",
+  "accountListEmpty": "登録済みの科目がありません"
 }
