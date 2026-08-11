@@ -381,3 +381,33 @@
 **背景**: 計画Issue #70（登録済み科目の一覧確認画面）の完了条件は「登録済み全科目を、区分を問わずフラットな一覧として表示する」ことだった。既存の`summarizeAccountsByCategory`（本ファイル2026-08-01「財務諸表の集計はsql.jsのSQL集約クエリではなく...」参照、`src/domain/financial-statement/`）は区分ごとの絞り込みと残高0科目の除外を組み込み済みの集計関数であり、この画面が要求する挙動（区分絞り込みなし・残高0科目も表示）とは異なる。オプション引数（例: 絞り込み・除外の有無を切り替えるフラグ）を追加して既存関数を拡張・共用する案も検討できたが、PL/BS生成という既存の確定済み用途の挙動を変えないよう分岐を増やすと、関数の責務が肥大化し既存呼び出し元への影響確認コストも増える。
 **決定**: `summarizeAccountsByCategory`自体は変更・拡張せず、区分ごとの残高計算式である`calculateAccountBalance`のみを再利用した独立の純粋関数`listAccountBalances`（`src/domain/financial-statement/listAccountBalances.ts`）を新設した。区分による絞り込み・グルーピング・残高0科目の除外はいずれも行わず、渡された`accounts`引数の全件について残高を計算して一覧を返す。並び順は`accounts`引数の順序をそのまま保持する。
 **影響**: 今後、既存の集計関数（`summarizeAccountsByCategory`等）に類似するが絞り込み・除外条件が異なる新しい表示要件が出た場合も、既存の確定済み関数へオプション引数を足して分岐を増やすのではなく、共通する最下層の計算ロジック（`calculateAccountBalance`等）のみを再利用した独立の関数として実装することを優先する。既存関数の挙動・呼び出し元への影響範囲を変えずに済むこの判断は、本ファイル2026-08-01「タグ不整合の事後検知(detectSettlementTagMismatch)は既存の作成時ハード検証とロジックが類似していても実装を共通化せず、独立した関数として実装する」と同種の前例になる。
+
+## 2026-08-11: マニュアル仕訳入力フォームの下書きは、ユーザーが最初にフィールドを変更するまで作成しない(遅延作成)
+
+**背景**: `docs/domain/journal.md` 3.2は下書きの作成タイミングを「ユーザーが仕訳入力フォームを開始した時点、または明示的な『下書き保存』操作で作成」と定めているが、Issue #32で`JournalEntryForm`のマウント時に必ず`journalEntryDraft.create`を呼ぶ実装にすると、フォームを開いただけで何も入力せずに離脱する操作のたびに空の下書きレコードが`journal_entry_drafts`に残り続け、下書き一覧画面(`JournalEntryDraftListScreen`)に中身の無い行が蓄積してしまうことが実装検討中に判明した。
+**決定**: `JournalEntryForm`はマウント時に下書きを作成せず、ユーザーが日付・摘要・明細行のいずれかを変更した時点(`markEdited()`で`hasUserEditedRef`をtrueにする)で初めて、既存のデバウンス自動保存(2000ms)経由で`journalEntryDraft.create`を呼び出す(`draftId`は`useState<number | null>`で管理し、初回作成後は同じIDへの`update`に切り替わる)。ユーザーが何も編集しないまま確定操作を行った場合は下書きが存在しないため、`journalEntryDraftRepository.confirm`ではなく`journalEntryRepository.create`を直接呼び出す分岐にした。
+**影響**: `docs/domain/journal.md` 3.2の「開始した時点」は、本実装ではフォームの表示(マウント)ではなく最初の入力操作を指すものとして解釈することを同節に注記した。今後、下書き・WIPレコードを持つ他の入力フォーム(将来の取込レビュー画面等)を実装する際も、フォーム表示時点で無条件にレコードを作成するのではなく、実際に何らかの入力があった時点まで作成を遅延させることで、空レコードの蓄積を避ける設計を優先する。
+
+## 2026-08-11: マニュアル仕訳入力の科目選択肢はis_reconcilable=true・isSystemManaged=true科目を除外する(isManualEntryEligibleAccount)
+
+**背景**: `docs/domain/reconciliation.md` 1.2により、`is_reconcilable = true`の資産・負債科目(普通預金等)への直接記帳は`source_type`が`external_import`/`initial_balance`/`balance_adjustment`のいずれかに限られ、マニュアル仕訳(`source_type = 'manual'`)から記帳すると`JournalEntryRepository`が`RestrictedAccountPostingError`を投げる(この検証はRepository層に実装済み)。一方`is_system_managed = true`の科目(初期残高科目・残高調整科目等)は、`docs/domain/accounts.md`のライフサイクル制約(削除・区分変更・非アクティブ化の禁止)はDDLトリガーで強制されているものの、「この科目に対する仕訳記帳自体を制限する」制約は`JournalEntryRepository`・DDLトリガーいずれにも存在しないことをIssue #32実装時に確認した。ユーザーがマニュアル仕訳でこれらの科目に誤って記帳すると、前者はRepository層のエラーで防がれるが選択自体はできてしまいエラー体験になる、後者はエラーにすらならずそのまま記帳が成立し初期残高等の整合性が静かに壊れる、という異なる重大度の問題が生じる。
+**決定**: 科目選択の`<select>`要素の選択肢自体から、両条件のいずれかに該当する科目を除外する判定関数`isManualEntryEligibleAccount(account: { isReconcilable, isSystemManaged })`(`account.isReconcilable !== true && !account.isSystemManaged`)を新設し、両方の条件を1つの関数に統合した。`is_reconcilable`側はRepository層のエラーを事前に防ぐ入力支援目的、`isSystemManaged`側はDB/Repositoryいずれにも制約が存在しないためUI側の選択肢除外が事実上唯一の防御手段になる、という前提の違いをコード上のdocstringに明記した。
+**影響**: `is_system_managed`科目への記帳制限がRepository層・DDL側に実装されていないという事実は、今後仕訳を作成する他の経路(将来の外部明細取込レビュー画面・定期取引生成等)を実装する際にも共通して当てはまる潜在的なリスクである。これらの経路を実装する場合も、対象科目の選択元にisSystemManaged科目が含まれないか個別に確認する必要がある(根本的な解決として、将来Repository層に恒久的な制約を追加することも検討の余地があるが、本Issueのスコープでは見送った)。`docs/domain/accounts.md`・`docs/domain/journal.md`のいずれにもこの制約(記帳経路の制限)は明記されていない現状を踏まえ、恒久対応を検討する際は本エントリを起点に参照すること。
+
+## 2026-08-11: フォームの「戻る」操作でも、デバウンス保存中の未確定入力を離脱前に同期的にflushする
+
+**背景**: `JournalEntryForm`のデバウンス自動保存(2000ms、`useEffect`のタイマー)は、`handleConfirm`(確定操作)では保留中の変更を明示的に`saveDraft()`で反映してから確定処理に進む設計になっていたが、Attempt 1時点の「戻る」ボタンは単に`onBack()`を呼ぶだけで、デバウンス中のタイマーをキャンセルするだけの`useEffect`のcleanup関数(保存は行わない)に処理を委ねていた。デバウンス完了(2000ms)前に「戻る」を押すと、直前の入力内容が下書きに保存されないまま失われる不具合がevaluatorレビュー(計画Issue #32 Review Attempt 1)で指摘された。
+**決定**: `cancelPendingSave()`(保留中タイマーのキャンセル)と`saveDraft()`(同期保存)を明示的に呼ぶ`handleBack()`を新設し、「戻る」ボタンのハンドラを`onBack()`の直接呼び出しから`handleBack()`経由に変更した。編集済み(`hasUserEditedRef.current`)の場合のみ`saveDraft()`を待ってから`onBack()`を呼ぶ。`cancelPendingSave()`は`handleConfirm()`と共通化した。
+**影響**: 今後、デバウンス自動保存を持つ他の入力フォームを実装する場合も、「確定」操作だけでなく、画面遷移を伴う全ての離脱経路(戻るボタン・タブ切り替え等)で保留中の変更を明示的にflushする処理が必要になる。useEffectのcleanup関数はタイマー解除の責務のみとし、保存処理はイベントハンドラ側(確定・戻る等、ユーザー操作の文脈が明確な箇所)に一貫して置く設計を優先する。一般化されたミスパターンは`docs/guides/patterns.md`参照。
+
+## 2026-08-11: 新規UI画面(JournalEntryForm・JournalEntryDraftListScreen)のCSSは既存画面のデザイントークンを踏襲する
+
+**背景**: Issue #32のAttempt 1では、`JournalEntryForm.css`・`JournalEntryDraftListScreen.css`が独自の素朴なスタイル(margin調整程度)のみで、既存画面(`AccountRegistrationWizard.css`・`AccountListScreen.css`)が確立していたデザイントークン(`--border`/`--bg`/`--text-h`/`--accent-bg`/`--accent-contrast`/`--error-bg`/`--error`、`src/index.css`定義)・レイアウト規約(ルートコンテナの`max-width: 480px`、input/selectの共通スタイル+`focus-visible`、buttonのhover/focus-visible/disabled状態)を踏襲しておらず、Visual/UXの一貫性が崩れているとevaluatorレビュー(計画Issue #32 Review Attempt 1)で指摘された。
+**決定**: 既存画面と同じデザイントークン・レイアウト規約を新規画面のCSSに追加適用した。ルートコンテナの幅制約、input/selectの`--border`/`--bg`/`--text-h`スタイル+`focus-visible`、buttonの`--accent-bg`/`--accent-contrast`スタイル+hover/focus-visible/disabled、`[role='alert']`の`--error-bg`/`--error`スタイルを`AccountRegistrationWizard.css`等から移植した。
+**影響**: 今後の新規UI画面実装(D3以降)でも、新しいCSSをゼロから書く前に既存画面(`AccountRegistrationWizard.css`・`AccountListScreen.css`)のデザイントークン・レイアウト規約を確認し、独自のスタイルを素朴に書く前にまず踏襲する。一般化されたミスパターンは`docs/guides/patterns.md`参照。
+
+## 2026-08-11: 金額欄がマイナス/ゼロの行がある場合、送信対象から除外するだけでなく確定操作自体をブロックする
+
+**背景**: `docs/architecture.md` 12章の方針により、`JournalEntryForm`の確定操作は必須項目(科目・貸借・正の金額)が欠けた行を個別に検証・ブロックせず、`toJournalLineInput`が送信対象から除外するのみでRepository層の`UnbalancedJournalEntryError`に判定を委ねる設計にしていた。しかしこの設計では、マイナスまたは0の金額が入力された行があっても、残りの行だけで借方合計・貸方合計が偶然一致してしまうケースでは`UnbalancedJournalEntryError`が発生せず、ユーザーが気づかないままマイナス金額の行が欠落した(意図と異なる)仕訳が確定されてしまう欠陥が、evaluator PASS後のユーザーによる実機レビューで指摘された。
+**決定**: `hasNonPositiveAmountInput`(金額欄に入力があるにもかかわらず0以下の行を検知する判定関数)を新設し、`handleConfirm`の冒頭で該当行の有無を確認、該当すれば専用エラーメッセージ(`negativeAmountError`)を表示して確定操作自体をブロックする(Repository呼び出しを行わない)。未入力(空文字)の行はこの判定の対象外とし、従来通り明細数不足・貸借不一致の判定はRepository層に委ねる。
+**影響**: `docs/architecture.md` 12章の「UI側で個別に検証・ブロックせず送信対象から除外してRepository層のエラーに委ねる」という方針は、除外された行が存在してもなお残りの行だけで貸借バランスの整合性チェックが偶然パスしてしまう(＝データが黙って失われたまま確定が成立してしまう)ケースには単純には適用できないことが分かった。今後、同様に「不完全な行を送信対象から除外してRepository層の検証に委ねる」設計を他のフォームで採用する場合も、除外された行の存在が残りの行だけで意図せず整合性チェックを通過させてしまわないかを個別に検討し、必要であれば本件同様に確定操作前の明示的なブロックを追加する。一般化されたミスパターンは`docs/guides/patterns.md`参照。

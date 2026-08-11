@@ -205,3 +205,24 @@
 **原因**: `withAutoSave`(計画Issue #58)はDB変更をtrailing debounce(2秒)で`StorageAdapter`へ保存するため、ウィザード操作の直後に`createDbClient()`で新しい接続を作って確認しても、保存が完了しているとは限らない。「何らかのデータの有無」のような粗いポーリング条件は、テスト内で先行する別の書き込み(事前準備データ)によって既に真になっている可能性があり、対象の操作(本件のウィザードでの口座作成)による保存が完了したことを正しく検知できない。
 **対策**: DB永続化の完了をE2Eでポーリング待ちする際は、「何らかのデータが存在するか」ではなく、「対象の操作で書き込まれたはずの具体的なデータ(本件では口座名)がRepository経由で実際に確認できるか」をポーリング条件にする。汎用ヘルパーを用意する場合も、確認対象のデータを引数として明示的に受け取る設計にし、「何かが保存されていればOK」という曖昧な条件にしない。
 **該当箇所（例）**: `e2e/account-registration.spec.ts`(`waitForAccountCreated`/`waitForHouseholdMemberCreated`)、`docs/architecture.md` 4.2節(`withAutoSave`のtrailing debounce)、Issue #31(実装中に自己発見、evaluator指摘ではない)
+
+## デバウンス自動保存を持つフォームで、確定操作以外の離脱経路(戻るボタン等)のflushを実装し忘れる
+
+**症状**: `JournalEntryForm`のデバウンス自動保存(2000ms)は確定操作(`handleConfirm`)では保留中の変更を明示的に保存してから処理を進めていたが、「戻る」ボタンは単に`onBack()`を呼ぶだけで、デバウンスタイマーの`useEffect`cleanup(タイマーのクリアのみ、保存はしない)に処理が委ねられていた。デバウンス完了(2000ms)前に「戻る」を押すと、直前の入力内容が下書きに保存されないまま失われる。
+**原因**: useEffectのcleanup関数は「エフェクトの後始末(タイマー解除等)」という役割が直感的であり、「保留中の副作用(保存)を代わりに実行する」責務まで持たせるのは不自然に見える。確定操作の実装時には明示的にflush処理を書いたにもかかわらず、離脱経路が複数存在する(確定・戻る等)ことを俯瞰せず、確定操作以外の離脱経路にも同じ配慮が必要であることを見落としやすい。
+**対策**: デバウンス等の遅延書き込みを持つフォームを実装する際は、確定操作だけでなく画面遷移を伴う全ての離脱経路(戻るボタン・キャンセル・タブ切り替え等)を洗い出し、それぞれの経路で保留中の変更を同期的にflushする処理を入れる。useEffectのcleanupにはタイマー解除等の後始末のみを担わせ、保存処理はユーザー操作の文脈が明確なイベントハンドラ側に一貫して置く。
+**該当箇所（例）**: `src/components/journal-entry/JournalEntryForm.tsx`(`handleBack`・`cancelPendingSave`)、`docs/decisions.md`「フォームの『戻る』操作でも、デバウンス保存中の未確定入力を離脱前に同期的にflushする」、Issue #32 Review Attempt 1(evaluator FAIL指摘)
+
+## 新しいUI画面を実装する際、既存画面が確立したデザイントークン・レイアウト規約を確認せず素朴なCSSを書いてしまう
+
+**症状**: `JournalEntryForm.css`・`JournalEntryDraftListScreen.css`のAttempt 1実装は、独自の素朴なマージン調整程度のスタイルのみで、既存画面(`AccountRegistrationWizard.css`・`AccountListScreen.css`)が確立していたデザイントークン(`--border`/`--bg`/`--text-h`/`--accent-bg`/`--accent-contrast`/`--error-bg`/`--error`)・レイアウト規約(ルートコンテナの幅制約、input/selectの共通スタイル+focus-visible、buttonのhover/focus-visible/disabled状態)を一切踏襲しておらず、既存画面と並べるとVisual/UXの一貫性が崩れていた。
+**原因**: 新しいコンポーネントのCSSファイルを新規作成する際、機能要件(フォームが動作すること)は満たせるため、見た目の一貫性という非機能的な観点は個別にレビューされない限り見落とされやすい。特に色変数・レイアウトパターンはコンポーネントごとに再定義しても一見動作する(壊れて見えない)ため、既存画面との比較を意識しないと気づけない。
+**対策**: 新しいUI画面のCSSを実装する際は、ゼロから書く前に既存の確立済み画面(`AccountRegistrationWizard.css`・`AccountListScreen.css`等)のデザイントークン・レイアウト規約(`src/index.css`のCSS変数、ルートコンテナの幅制約、フォーム要素の共通スタイル、ボタンの状態別スタイル、エラー表示のスタイル)を確認し、独自のスタイルではなくまずそれらを踏襲する。evaluatorのレビュー時も、新規画面を既存の同種画面と並べて視覚的な一貫性(配色・余白・フォーカス表示等)を確認する。
+**該当箇所（例）**: `src/components/journal-entry/JournalEntryForm.css`・`JournalEntryDraftListScreen.css`、`docs/decisions.md`「新規UI画面(JournalEntryForm・JournalEntryDraftListScreen)のCSSは既存画面のデザイントークンを踏襲する」、Issue #32 Review Attempt 1(evaluator FAIL指摘)
+
+## 「不完全な入力行を送信対象から除外してRepository層の検証に委ねる」設計で、除外された行の欠落自体が整合性チェックを偶然すり抜けてしまう
+
+**症状**: `docs/architecture.md` 12章の方針に沿って、`JournalEntryForm`の確定操作は必須項目が欠けた行(マイナス/ゼロ金額を含む)を個別に検証せず送信対象から除外し、貸借バランス検証は`JournalEntryRepository`の`UnbalancedJournalEntryError`に委ねる設計にしていた。しかしマイナス金額の行が除外された結果、残りの行だけで借方合計・貸方合計が偶然一致してしまうケースでは`UnbalancedJournalEntryError`が発生せず、ユーザーが意図しない内容(マイナス金額の行が欠落した仕訳)がエラーにもならず黙って確定されてしまう欠陥があった。
+**原因**: 「不完全な行は下流の集約検証(貸借バランス)がいずれ検出してくれる」という前提は、除外された行の欠落自体が集約検証の対象から消えてしまう(貸借比較の対象自体からいなくなる)ケースには当てはまらない。貸借バランス検証は「残った行同士が釣り合っているか」を見るだけで、「何か行が除外されたこと自体」を検出する仕組みではないため、除外後にたまたま釣り合ってしまう入力の組み合わせでは沈黙してしまう。
+**対策**: 「不完全な行を送信対象から除外し、集約的な検証(貸借バランス等)を下流の層に委ねる」設計を採用する場合、除外そのものが下流の検証を偶然パスさせてしまわないか(除外後の残りの入力だけで集約条件が意図せず成立してしまう組み合わせが存在しないか)を個別に検討する。存在する場合は、除外対象となる条件(本件ではマイナス/ゼロ金額)自体を確定操作の前段で明示的に検知し、ブロック+専用エラーメッセージで伝える。実装時はテストで「除外対象の行がある状態で残りの行だけ貸借が偶然一致する」ケースを明示的に用意し、確定がブロックされることを検証する。
+**該当箇所（例）**: `src/components/journal-entry/journalEntryFormLine.ts`(`hasNonPositiveAmountInput`)、`src/components/journal-entry/JournalEntryForm.tsx`(`handleConfirm`冒頭のガード)、`docs/decisions.md`「金額欄がマイナス/ゼロの行がある場合、送信対象から除外するだけでなく確定操作自体をブロックする」、Issue #32(ユーザーレビューでの指摘)
