@@ -7,6 +7,11 @@
  * account-registration.spec.tsと同様、DB書き込みの永続化はwithAutoSaveの
  * trailing debounce(2秒)を挟むため、作成した科目がRepository経由で確認できるまで
  * pollで待ってからreloadし、Reactアプリ側のWorkerにデータを反映させる。
+ * page.goto()直後にpage.evaluate()を呼ぶと、CI環境(低スペックなランナー)では
+ * ページの初期ロードが完了しきる前に評価が実行され「Execution context was
+ * destroyed, most likely because of a navigation」で失敗することがあるため、
+ * トップ画面の見出しが表示される(Reactアプリのマウント完了)のを待ってから
+ * evaluateを呼ぶ。
  */
 import { test, expect, type Page } from '@playwright/test'
 
@@ -30,6 +35,7 @@ test.describe('登録済み科目一覧画面', () => {
     page,
   }) => {
     await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
