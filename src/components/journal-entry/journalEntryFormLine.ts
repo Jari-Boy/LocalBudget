@@ -30,14 +30,21 @@ export function createEmptyJournalEntryFormLine(): JournalEntryFormLine {
 }
 
 /**
- * マニュアル仕訳(source_type = 'manual')ではis_reconcilable = trueの科目(普通預金等)に
- * 直接記帳できない(docs/domain/reconciliation.md 1.2、is_reconcilable資産・負債への
- * 直接記帳の制限。許可されるのはexternal_import/initial_balance/balance_adjustmentのみ)。
- * 選んでも必ずRestrictedAccountPostingErrorになる科目を科目選択の選択肢自体から除外する
- * ための判定関数。
+ * マニュアル仕訳(source_type = 'manual')で選択可能な科目かどうかを判定する。
+ * - isReconcilable = trueの科目(普通預金等)は直接記帳できない(docs/domain/reconciliation.md
+ *   1.2、is_reconcilable資産・負債への直接記帳の制限。許可されるのはexternal_import/
+ *   initial_balance/balance_adjustmentのみ)。選ぶと必ずRestrictedAccountPostingErrorになる。
+ * - isSystemManaged = trueの科目(初期残高科目・残高調整科目等、docs/domain/accounts.md
+ *   フィールド定義)はシステムが内部管理する科目であり、ユーザーが直接選ぶべきではない
+ *   (AccountListScreenが一覧表示から除外するのと同じ理由)。この制約はJournalEntryRepository・
+ *   DDLトリガーいずれにも存在せず、選ぶとそのまま記帳できてしまい初期残高の整合性が壊れうる
+ *   ため、UI側の選択肢除外が事実上唯一の防御手段になる。
  */
-export function isManualEntryEligibleAccount(account: { isReconcilable: boolean | null }): boolean {
-  return account.isReconcilable !== true
+export function isManualEntryEligibleAccount(account: {
+  isReconcilable: boolean | null
+  isSystemManaged: boolean
+}): boolean {
+  return account.isReconcilable !== true && !account.isSystemManaged
 }
 
 /**

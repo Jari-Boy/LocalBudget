@@ -43,15 +43,19 @@ describe('isCounterpartyEligibleCategory', () => {
 
 describe('isManualEntryEligibleAccount', () => {
   it('isReconcilable = trueの科目はfalseを返す(マニュアル仕訳では直接記帳できないため選択肢から除外する)', () => {
-    expect(isManualEntryEligibleAccount({ isReconcilable: true })).toBe(false)
+    expect(isManualEntryEligibleAccount({ isReconcilable: true, isSystemManaged: false })).toBe(false)
   })
 
   it('isReconcilable = falseの科目はtrueを返す', () => {
-    expect(isManualEntryEligibleAccount({ isReconcilable: false })).toBe(true)
+    expect(isManualEntryEligibleAccount({ isReconcilable: false, isSystemManaged: false })).toBe(true)
   })
 
   it('isReconcilable = null(PL科目・純資産科目等)の科目はtrueを返す', () => {
-    expect(isManualEntryEligibleAccount({ isReconcilable: null })).toBe(true)
+    expect(isManualEntryEligibleAccount({ isReconcilable: null, isSystemManaged: false })).toBe(true)
+  })
+
+  it('isSystemManaged = trueの科目(初期残高科目等)はfalseを返す(システム内部管理用であり手入力対象外)', () => {
+    expect(isManualEntryEligibleAccount({ isReconcilable: null, isSystemManaged: true })).toBe(false)
   })
 })
 
