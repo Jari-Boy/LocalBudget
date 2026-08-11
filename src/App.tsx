@@ -169,6 +169,7 @@ function AppContent() {
         review={uploadResult.review}
         accountRepository={accountRepository}
         journalEntryRepository={journalEntryRepository}
+        counterpartyRepository={counterpartyRepository}
         onBack={() => {
           setUploadResult(null)
           setScreen('statement-import-upload')

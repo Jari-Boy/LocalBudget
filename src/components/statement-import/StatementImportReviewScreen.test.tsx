@@ -18,6 +18,7 @@ import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
+import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import type { StatementImportReviewResult } from '../../domain/statement-import/buildStatementImportReview'
 import type { ImportedRecord } from '../../domain/statement-import/ImportedRecord'
 import { StatementImportReviewScreen } from './StatementImportReviewScreen'
@@ -25,12 +26,14 @@ import { StatementImportReviewScreen } from './StatementImportReviewScreen'
 let db: Database
 let accountRepository: SqlJsAccountRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
+let counterpartyRepository: SqlJsCounterpartyRepository
 
 beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
   accountRepository = new SqlJsAccountRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
+  counterpartyRepository = new SqlJsCounterpartyRepository(db)
 })
 
 afterEach(cleanup)
@@ -58,6 +61,7 @@ function renderScreen(
         review={review}
         accountRepository={accountRepository}
         journalEntryRepository={journalEntryRepository}
+        counterpartyRepository={counterpartyRepository}
         onBack={vi.fn()}
       />
     </I18nextProvider>,
@@ -407,5 +411,111 @@ describe('StatementImportReviewScreen', () => {
     fireEvent.click(within(group).getByLabelText('これは確定版です'))
 
     await screen.findByText('帳簿残高と外部残高は一致しています。')
+  })
+
+  it('取引先推定・相手科目サジェストの結果が初期値として表示され、取引先はユーザーが変更できる', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const otherAccount = accountRepository.create({ category: 'expense', name: '娯楽費', isReconcilable: null })
+    const counterparty = counterpartyRepository.create({ name: 'イオン', defaultAccountId: foodAccount.id })
+    counterpartyRepository.addPattern(counterparty.id, 'イオン')
+    const otherCounterparty = counterpartyRepository.create({ name: '映画館' })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: 'イオン○○店' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    const counterpartySelect = within(group).getByLabelText('取引先') as HTMLSelectElement
+    expect(counterpartySelect.value).toBe(String(counterparty.id))
+    const counterAccountSelect = within(group).getByLabelText('相手科目') as HTMLSelectElement
+    expect(counterAccountSelect.value).toBe(String(foodAccount.id))
+
+    fireEvent.change(counterpartySelect, { target: { value: String(otherCounterparty.id) } })
+    expect(counterAccountSelect.value).toBe('')
+
+    fireEvent.change(counterAccountSelect, { target: { value: String(otherAccount.id) } })
+    expect(counterAccountSelect.value).toBe(String(otherAccount.id))
+  })
+
+  it('相手科目を手動編集した後は、取引先を変更しても相手科目が自動上書きされない', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const manualAccount = accountRepository.create({ category: 'expense', name: '日用品', isReconcilable: null })
+    const counterpartyA = counterpartyRepository.create({ name: 'イオン', defaultAccountId: foodAccount.id })
+    counterpartyRepository.addPattern(counterpartyA.id, 'イオン')
+    const counterpartyB = counterpartyRepository.create({ name: 'イトーヨーカドー' })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: 'イオン○○店' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    const counterpartySelect = within(group).getByLabelText('取引先') as HTMLSelectElement
+    const counterAccountSelect = within(group).getByLabelText('相手科目') as HTMLSelectElement
+    expect(counterAccountSelect.value).toBe(String(foodAccount.id))
+
+    fireEvent.change(counterAccountSelect, { target: { value: String(manualAccount.id) } })
+    fireEvent.change(counterpartySelect, { target: { value: String(counterpartyB.id) } })
+
+    expect(counterpartySelect.value).toBe(String(counterpartyB.id))
+    expect(counterAccountSelect.value).toBe(String(manualAccount.id))
+  })
+
+  it('取引先が推定できない場合、取引先・相手科目とも未選択で表示され手動選択できる', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '謎の店舗' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    const counterpartySelect = within(group).getByLabelText('取引先') as HTMLSelectElement
+    const counterAccountSelect = within(group).getByLabelText('相手科目') as HTMLSelectElement
+    expect(counterpartySelect.value).toBe('')
+    expect(counterAccountSelect.value).toBe('')
   })
 })
