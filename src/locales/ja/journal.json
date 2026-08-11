@@ -19,8 +19,17 @@
   "creditTotalLabel": "貸方合計",
   "differenceLabel": "差額",
   "confirm": "確定する",
+  "back": "戻る",
   "unbalancedError": "貸借が一致していません。金額を確認してください。",
   "insufficientLinesError": "仕訳には2行以上の明細が必要です。",
   "restrictedAccountError": "この科目には直接入力できません。外部明細取込等の経路をご利用ください。",
-  "confirmError": "確定に失敗しました。もう一度お試しください。"
+  "confirmError": "確定に失敗しました。もう一度お試しください。",
+  "draftListTitle": "下書き一覧",
+  "draftListEmpty": "保存されている下書きはありません",
+  "newEntry": "新しく入力する",
+  "resumeDraft": "再開する",
+  "deleteDraft": "削除する",
+  "draftNoDate": "日付未入力",
+  "draftNoMemo": "摘要なし",
+  "draftLineCount": "{{count}}行"
 }

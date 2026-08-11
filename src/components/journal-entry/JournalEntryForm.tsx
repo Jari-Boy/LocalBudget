@@ -432,7 +432,7 @@ export function JournalEntryForm({
 
       <div>
         <button type="button" onClick={onBack}>
-          {tCommon('close')}
+          {t('back')}
         </button>
         <button type="button" disabled={submitting} onClick={() => void handleConfirm()}>
           {t('confirm')}

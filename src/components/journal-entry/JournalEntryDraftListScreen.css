@@ -1,0 +1,12 @@
+.journal-entry-draft-list-screen ul {
+  list-style: none;
+  padding: 0;
+}
+
+.journal-entry-draft-list-screen li {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #ddd;
+}
