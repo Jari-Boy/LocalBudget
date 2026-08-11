@@ -66,9 +66,16 @@ function csvBuffer(content: string): Buffer {
   return Buffer.from(content, 'utf-8')
 }
 
-async function startUpload(page: Page, accountName: string) {
+/**
+ * 組み込みマッピング定義(計画Issue #76、docs/domain/statement-import.md 2.3節)がシード
+ * されるようになったため、テストで作成した専用定義以外にも候補が複数存在しうる。
+ * 候補が複数ある場合は自動選択されない(docs/domain/statement-import.md 1.5手順1)ため、
+ * 常にlabelで明示的に選択する。
+ */
+async function startUpload(page: Page, accountName: string, mappingLabel: string) {
   await page.getByRole('button', { name: '明細を取り込む' }).click()
   await page.getByLabel('対象科目').selectOption({ label: accountName })
+  await page.getByLabel('マッピング定義').selectOption({ label: mappingLabel })
 }
 
 test.describe('CSV取込〜レビュー一覧', () => {
@@ -97,7 +104,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
       },
     )
 
-    await startUpload(page, '普通預金')
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
     await expect(page.getByLabel('マッピング定義')).toHaveValue(/.+/)
 
     await page
@@ -133,7 +140,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
       amountColumn: '金額',
     })
 
-    await startUpload(page, '普通預金')
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
     await page
       .getByLabel('CSVファイル')
       .setInputFiles({
@@ -199,7 +206,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await page.reload()
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    await startUpload(page, '普通預金')
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
     await page
       .getByLabel('CSVファイル')
       .setInputFiles({
@@ -269,7 +276,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await page.reload()
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    await startUpload(page, '楽天カード引落口座')
+    await startUpload(page, '楽天カード引落口座', 'テストカード')
     await page
       .getByLabel('CSVファイル')
       .setInputFiles({
@@ -351,7 +358,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await page.reload()
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    await startUpload(page, '普通預金')
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
     await page
       .getByLabel('CSVファイル')
       .setInputFiles({
@@ -412,7 +419,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await page.reload()
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    await startUpload(page, '普通預金')
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
     await page
       .getByLabel('CSVファイル')
       .setInputFiles({
@@ -470,7 +477,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await page.reload()
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    await startUpload(page, '普通預金')
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
     await page
       .getByLabel('CSVファイル')
       .setInputFiles({

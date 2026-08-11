@@ -2,6 +2,7 @@
 import * as Comlink from 'comlink'
 import { createBrowserDatabase } from '../db/createBrowserDatabase'
 import { runMigrations } from '../db/migrations'
+import { seedBuiltInMappingDefinitions } from '../db/seedBuiltInMappingDefinitions'
 import { createRepositoryRegistry } from '../rpc/createRepositoryRegistry'
 import { registerDomainErrorTransferHandler } from '../rpc/registerDomainErrorTransferHandler'
 import { WORKER_READY_MESSAGE, createWorkerInitErrorMessage } from '../rpc/workerLifecycleMessages'
@@ -21,7 +22,10 @@ import { withAutoSave } from '../storage/withAutoSave'
  * AutoSaveControllerはRepositoryRegistryのautoSaveキーとして公開し、メインスレッド側が
  * ページ非表示時等にRPC越しにflush()を呼べるようにする。同じstorageAdapterインスタンスは
  * バックアップのインポート(計画Issue #26)がStorageAdapterへの検証済みバイト列の保存にも
- * 使うため、createRepositoryRegistryへそのまま渡す。
+ * 使うため、createRepositoryRegistryへそのまま渡す。マイグレーション適用直後に
+ * seedBuiltInMappingDefinitions(計画Issue #76、docs/domain/statement-import.md 2.3節)を
+ * 呼び出し、OSS同梱の組み込みマッピング定義(楽天カード・楽天銀行・PayPayカード等)を
+ * account_id = NULLの汎用定義として投入する(冪等、既存定義があれば再投入しない)。
  */
 async function main(): Promise<void> {
   registerDomainErrorTransferHandler()
@@ -31,6 +35,7 @@ async function main(): Promise<void> {
 
   const db = await createBrowserDatabase(savedData ?? undefined)
   runMigrations(db)
+  seedBuiltInMappingDefinitions(db)
   const autoSaveController = withAutoSave(db, storageAdapter)
 
   const registry = createRepositoryRegistry(db, autoSaveController, storageAdapter)

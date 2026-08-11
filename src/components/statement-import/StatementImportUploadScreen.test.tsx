@@ -103,6 +103,78 @@ describe('StatementImportUploadScreen', () => {
     })
   })
 
+  it('マッピング定義の候補が1件のみの場合は自動選択される', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    const definition = importMappingDefinitionRepository.create({
+      accountId: account.id,
+      formatGroupId: 'my-bank',
+      label: 'マイ銀行 普通預金',
+      dateColumn: '日付',
+      dateFormat: 'YYYY/MM/DD',
+      descriptionColumn: '摘要',
+      amountMode: 'single_signed',
+      amountColumn: '金額',
+    })
+
+    renderScreen(vi.fn())
+
+    const accountSelect = await screen.findByLabelText('対象科目')
+    fireEvent.change(accountSelect, { target: { value: String(account.id) } })
+
+    const definitionSelect = await screen.findByLabelText('マッピング定義')
+    await waitFor(() => expect(definitionSelect).toHaveValue(String(definition.id)))
+  })
+
+  it('マッピング定義の候補が複数ある場合は自動選択せず、ユーザーが選ぶまで未選択のままである(docs/domain/statement-import.md 1.5手順1)', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    importMappingDefinitionRepository.create({
+      accountId: account.id,
+      formatGroupId: 'my-bank',
+      isSettled: true,
+      label: 'マイ銀行(確定明細)',
+      dateColumn: '日付',
+      dateFormat: 'YYYY/MM/DD',
+      descriptionColumn: '摘要',
+      amountMode: 'single_signed',
+      amountColumn: '金額',
+    })
+    importMappingDefinitionRepository.create({
+      accountId: account.id,
+      formatGroupId: 'my-bank',
+      isSettled: false,
+      label: 'マイ銀行(速報明細)',
+      dateColumn: '日付',
+      dateFormat: 'YYYY/MM/DD',
+      descriptionColumn: '摘要',
+      amountMode: 'single_signed',
+      amountColumn: '金額',
+    })
+
+    renderScreen(vi.fn())
+
+    const accountSelect = await screen.findByLabelText('対象科目')
+    fireEvent.change(accountSelect, { target: { value: String(account.id) } })
+
+    const definitionSelect = await screen.findByLabelText('マッピング定義')
+    await waitFor(() => {
+      const optionLabels = Array.from(definitionSelect.querySelectorAll('option')).map(
+        (o) => o.textContent,
+      )
+      expect(optionLabels).toContain('マイ銀行(確定明細)')
+      expect(optionLabels).toContain('マイ銀行(速報明細)')
+    })
+    expect(definitionSelect).toHaveValue('')
+    expect(screen.queryByLabelText('CSVファイル')).not.toBeInTheDocument()
+  })
+
   it('CSVファイルをアップロードすると、パース結果と重複判定を含む結果でonUploadedが呼ばれる', async () => {
     const account = accountRepository.create({
       category: 'asset',

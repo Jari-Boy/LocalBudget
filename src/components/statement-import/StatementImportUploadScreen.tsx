@@ -91,7 +91,10 @@ export function StatementImportUploadScreen({
     void Promise.resolve(importMappingDefinitionRepository.findAvailableForAccount(targetAccountId)).then(
       (found) => {
         setDefinitions(found)
-        setDefinitionId(found.length > 0 ? found[0].id : null)
+        // 候補が1件のみの場合に限り自動選択する。複数ある場合(組み込み定義の複数金融機関、
+        // 楽天カードの速報用/確定用等)はユーザーがlabelで明示的に選ぶ
+        // (docs/domain/statement-import.md 1.5手順1)。
+        setDefinitionId(found.length === 1 ? found[0].id : null)
       },
     )
   }, [targetAccountId, importMappingDefinitionRepository])
@@ -181,12 +184,18 @@ export function StatementImportUploadScreen({
               setDefinitionId(event.target.value === '' ? null : Number(event.target.value))
             }
           >
-            {definitions.length === 0 && <option value="">{t('noMappingDefinition')}</option>}
-            {definitions.map((candidate) => (
-              <option key={candidate.id} value={candidate.id}>
-                {candidate.label}
-              </option>
-            ))}
+            {definitions.length === 0 ? (
+              <option value="">{t('noMappingDefinition')}</option>
+            ) : (
+              <>
+                <option value="">{t('unselected')}</option>
+                {definitions.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.label}
+                  </option>
+                ))}
+              </>
+            )}
           </select>
         </div>
       )}
