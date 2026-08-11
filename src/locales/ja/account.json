@@ -16,5 +16,7 @@
   "next": "次へ",
   "back": "戻る",
   "register": "登録する",
-  "registrationError": "登録に失敗しました。もう一度お試しください。"
+  "registrationError": "登録に失敗しました。もう一度お試しください。",
+  "accountListTitle": "登録済みの科目",
+  "accountListEmpty": "登録済みの科目がありません"
 }
