@@ -246,6 +246,43 @@ describe('JournalEntryForm', () => {
     })
   })
 
+  it('デバウンス完了前に戻るボタンを押しても、直前の入力内容が下書きとして保存される', async () => {
+    const expense = createAccount({ name: '食費', category: 'expense' })
+    const onBack = vi.fn()
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <JournalEntryForm
+          accountRepository={accountRepository}
+          projectRepository={projectRepository}
+          householdMemberRepository={householdMemberRepository}
+          counterpartyRepository={counterpartyRepository}
+          journalEntryRepository={journalEntryRepository}
+          journalEntryDraftRepository={journalEntryDraftRepository}
+          onComplete={vi.fn()}
+          onBack={onBack}
+          today="2026-08-11"
+          draftSaveDebounceMs={2000}
+        />
+      </I18nextProvider>,
+    )
+
+    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    selectLineAccount(lineGroups[0], expense.id)
+    fireEvent.change(within(lineGroups[0]).getByLabelText('金額'), { target: { value: '5000' } })
+
+    // デバウンス(2000ms)が発火する前に戻るボタンを押す
+    await vi.advanceTimersByTimeAsync(500)
+    fireEvent.click(screen.getByRole('button', { name: '戻る' }))
+
+    await waitFor(() => {
+      const drafts = journalEntryDraftRepositoryImpl.findAll()
+      expect(drafts).toHaveLength(1)
+      expect(drafts[0].lines[0]?.accountId).toBe(expense.id)
+    })
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
   it('何も入力しない場合、下書きは作成されない', async () => {
     renderForm()
     await screen.findByLabelText('取引日')

@@ -201,11 +201,29 @@ export function JournalEntryForm({
     setLineStates((prev) => (prev.length <= 2 ? prev : prev.filter((state) => state.key !== key)))
   }
 
-  async function handleConfirm(): Promise<void> {
+  function cancelPendingSave(): void {
     if (pendingTimerRef.current !== null) {
       clearTimeout(pendingTimerRef.current)
       pendingTimerRef.current = null
     }
+  }
+
+  /**
+   * 「戻る」操作でフォームがアンマウントされるとデバウンス中のuseEffect cleanupが
+   * タイマーを無条件にキャンセルするだけで保存されないため、保留中の変更があれば
+   * 離脱前に同期的にsaveDraft()を実行してからonBack()を呼ぶ(evaluatorレビュー指摘、
+   * 計画Issue #32 Review Attempt 1対応)。
+   */
+  async function handleBack(): Promise<void> {
+    cancelPendingSave()
+    if (hasUserEditedRef.current) {
+      await saveDraft()
+    }
+    onBack()
+  }
+
+  async function handleConfirm(): Promise<void> {
+    cancelPendingSave()
 
     setSubmitting(true)
     setError(null)
@@ -431,7 +449,7 @@ export function JournalEntryForm({
       {error && <p role="alert">{error}</p>}
 
       <div>
-        <button type="button" onClick={onBack}>
+        <button type="button" onClick={() => void handleBack()}>
           {t('back')}
         </button>
         <button type="button" disabled={submitting} onClick={() => void handleConfirm()}>
