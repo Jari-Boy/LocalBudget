@@ -1,0 +1,19 @@
+.journal-entry-form fieldset {
+  margin-bottom: 1rem;
+}
+
+.journal-entry-form label {
+  display: block;
+  margin-top: 0.5rem;
+}
+
+.journal-entry-totals {
+  display: flex;
+  gap: 1.5rem;
+  margin: 1rem 0;
+}
+
+.journal-entry-totals div {
+  display: flex;
+  flex-direction: column;
+}
