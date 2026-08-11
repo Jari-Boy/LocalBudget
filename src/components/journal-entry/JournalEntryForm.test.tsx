@@ -32,6 +32,10 @@ let journalEntryRepository: SqlJsJournalEntryRepository
 let journalEntryDraftRepositoryImpl: SqlJsJournalEntryDraftRepository
 let journalEntryDraftRepository: JournalEntryDraftClient
 
+// fake timers(shouldAdvanceTime)を使う統合テストは、テストスイート全体を並列実行する際の
+// CPU負荷でデフォルトタイムアウト(5000ms)を超えることがあるため長めに設定する。
+vi.setConfig({ testTimeout: 10000 })
+
 beforeEach(async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   db = await createTestDatabase()
