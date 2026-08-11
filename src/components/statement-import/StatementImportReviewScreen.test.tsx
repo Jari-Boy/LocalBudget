@@ -518,4 +518,154 @@ describe('StatementImportReviewScreen', () => {
     expect(counterpartySelect.value).toBe('')
     expect(counterAccountSelect.value).toBe('')
   })
+
+  it('取引先未特定の同一摘要レコードが複数件ある場合、一括割当てのバナーが表示される', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '謎の店舗', entryDate: '2026-07-20' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+        {
+          record: importedRecord({ description: '謎の店舗', entryDate: '2026-07-21' }),
+          externalId: 'TX-002',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    await screen.findByRole('group', { name: '1件目' })
+    expect(
+      screen.getByText('同じ摘要の明細が2件あります。まとめて取引先/相手科目を割り当てますか?'),
+    ).toBeInTheDocument()
+  })
+
+  it('同じ摘要のレコードが1件のみの場合、一括割当てのバナーは表示されない', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '謎の店舗A' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+        {
+          record: importedRecord({ description: '謎の店舗B' }),
+          externalId: 'TX-002',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    await screen.findByRole('group', { name: '1件目' })
+    expect(screen.queryByText(/まとめて取引先/)).not.toBeInTheDocument()
+  })
+
+  it('一括割当てバナーで取引先を選び適用すると、グループ内の全レコードに反映されバナーが消える', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const counterparty = counterpartyRepository.create({ name: '謎の店舗', defaultAccountId: foodAccount.id })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '謎の店舗', entryDate: '2026-07-20' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+        {
+          record: importedRecord({ description: '謎の店舗', entryDate: '2026-07-21' }),
+          externalId: 'TX-002',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    await screen.findByRole('group', { name: '1件目' })
+    const bulkSelect = screen.getByLabelText('一括割当ての取引先') as HTMLSelectElement
+    fireEvent.change(bulkSelect, { target: { value: String(counterparty.id) } })
+    fireEvent.click(screen.getByRole('button', { name: 'まとめて割り当てる' }))
+
+    const group1 = screen.getByRole('group', { name: '1件目' })
+    const group2 = screen.getByRole('group', { name: '2件目' })
+    expect((within(group1).getByLabelText('取引先') as HTMLSelectElement).value).toBe(String(counterparty.id))
+    expect((within(group1).getByLabelText('相手科目') as HTMLSelectElement).value).toBe(String(foodAccount.id))
+    expect((within(group2).getByLabelText('取引先') as HTMLSelectElement).value).toBe(String(counterparty.id))
+    expect((within(group2).getByLabelText('相手科目') as HTMLSelectElement).value).toBe(String(foodAccount.id))
+    expect(screen.queryByText(/まとめて取引先/)).not.toBeInTheDocument()
+  })
+
+  it('一括割当て適用後も、個別レコードの相手科目を上書き編集できる', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const otherAccount = accountRepository.create({ category: 'expense', name: '娯楽費', isReconcilable: null })
+    const counterparty = counterpartyRepository.create({ name: '謎の店舗', defaultAccountId: foodAccount.id })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '謎の店舗', entryDate: '2026-07-20' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+        {
+          record: importedRecord({ description: '謎の店舗', entryDate: '2026-07-21' }),
+          externalId: 'TX-002',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(screen.getByLabelText('一括割当ての取引先'), { target: { value: String(counterparty.id) } })
+    fireEvent.click(screen.getByRole('button', { name: 'まとめて割り当てる' }))
+
+    const group2 = screen.getByRole('group', { name: '2件目' })
+    const counterAccountSelect2 = within(group2).getByLabelText('相手科目') as HTMLSelectElement
+    fireEvent.change(counterAccountSelect2, { target: { value: String(otherAccount.id) } })
+    expect(counterAccountSelect2.value).toBe(String(otherAccount.id))
+
+    const group1 = screen.getByRole('group', { name: '1件目' })
+    expect((within(group1).getByLabelText('相手科目') as HTMLSelectElement).value).toBe(String(foodAccount.id))
+  })
 })

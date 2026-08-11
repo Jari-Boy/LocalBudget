@@ -24,6 +24,9 @@
   "approximateDuplicateUnresolved": "未確認",
   "approximateDuplicateConfirmedReplacement": "これは確定版です",
   "approximateDuplicateDifferentTransaction": "別の取引です",
+  "bulkAssignPrompt": "同じ摘要の明細が{{count}}件あります。まとめて取引先/相手科目を割り当てますか?",
+  "bulkAssignCounterpartyLabel": "一括割当ての取引先",
+  "bulkAssignApply": "まとめて割り当てる",
   "balanceMismatchWarning": "帳簿残高({{bookBalance}})と外部残高({{externalBalance}})が一致しません。差額: {{difference}}",
   "balanceReconciled": "帳簿残高と外部残高は一致しています。"
 }

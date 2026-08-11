@@ -17,6 +17,10 @@ import {
   suggestCounterpartyAccount,
   type CounterpartyLookup,
 } from '../../domain/statement-import/suggestCounterpartyAccount'
+import {
+  groupUnresolvedRecordsByDescription,
+  type UnresolvedRecordGroup,
+} from '../../domain/statement-import/groupUnresolvedRecordsByDescription'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { isStatementImportCounterAccountEligible } from './statementImportEligibility'
 import './StatementImportReviewScreen.css'
@@ -133,6 +137,8 @@ export function StatementImportReviewScreen({
   const [pastAccountLines, setPastAccountLines] = useState<PastAccountLine[] | null>(null)
   /** 取引先推定・相手科目サジェストの計算(computeInitialRecordStates)が完了するまではnull */
   const [recordStates, setRecordStates] = useState<RecordReviewState[] | null>(null)
+  /** 一括割当てバナー(正規化後摘要ごと)で選択中の取引先。未選択は空文字 */
+  const [bulkAssignSelections, setBulkAssignSelections] = useState<Record<string, string>>({})
 
   useEffect(() => {
     void Promise.resolve(accountRepository.findAll()).then(setAccounts)
@@ -178,6 +184,35 @@ export function StatementImportReviewScreen({
     findById: (id) => counterparties.find((counterparty) => counterparty.id === id) ?? null,
   }
   const externalBalance = review.latestExternalBalance
+
+  /**
+   * 取引先が特定できない(counterpartyId === null)レコードを正規化後の摘要でグルーピングし、
+   * 2件以上のグループのみ一括割当てバナーの対象とする(docs/domain/statement-import.md
+   * 1.5手順6、計画Issue #77設計方針3)。グループの先頭レコードのfieldsetの直前にバナーを表示する。
+   */
+  const unresolvedGroups = groupUnresolvedRecordsByDescription(
+    review.records
+      .map((reviewRecord, index) => ({ index, description: reviewRecord.record.description, state: recordStates[index] }))
+      .filter(({ state }) => state.counterpartyId === null)
+      .map(({ index, description }) => ({ index, description })),
+  )
+  const unresolvedGroupByLeadIndex = new Map(
+    unresolvedGroups.map((group) => [group.recordIndices[0], group] as const),
+  )
+
+  function applyBulkAssignment(group: UnresolvedRecordGroup) {
+    const selected = bulkAssignSelections[group.normalizedDescription]
+    if (selected === undefined || selected === '') return
+    const counterpartyId = Number(selected)
+    const counterAccountId = suggestCounterpartyAccount(counterpartyId, counterpartyLookup)
+    setRecordStates((prev) =>
+      prev === null
+        ? prev
+        : prev.map((state, i) =>
+            group.recordIndices.includes(i) ? { ...state, counterpartyId, counterAccountId } : state,
+          ),
+    )
+  }
 
   /**
    * 確定版候補(docs/domain/statement-import.md 1.6)で「これは確定版です」を選んだレコードは、
@@ -242,9 +277,39 @@ export function StatementImportReviewScreen({
         review.records.map((reviewRecord, index) => {
           const state = recordStates[index]
           const idPrefix = `statement-import-record-${index}`
+          const bulkAssignGroup = unresolvedGroupByLeadIndex.get(index)
 
           return (
-            <fieldset key={reviewRecord.externalId}>
+            <div key={reviewRecord.externalId}>
+              {bulkAssignGroup && (
+                <div className="statement-import-bulk-assign-banner">
+                  <p>{t('bulkAssignPrompt', { count: bulkAssignGroup.recordIndices.length })}</p>
+                  <label htmlFor={`${idPrefix}-bulk-assign-counterparty`}>
+                    {t('bulkAssignCounterpartyLabel')}
+                  </label>
+                  <select
+                    id={`${idPrefix}-bulk-assign-counterparty`}
+                    value={bulkAssignSelections[bulkAssignGroup.normalizedDescription] ?? ''}
+                    onChange={(event) =>
+                      setBulkAssignSelections((prev) => ({
+                        ...prev,
+                        [bulkAssignGroup.normalizedDescription]: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">{t('unselected')}</option>
+                    {counterparties.map((counterparty) => (
+                      <option key={counterparty.id} value={counterparty.id}>
+                        {counterparty.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => applyBulkAssignment(bulkAssignGroup)}>
+                    {t('bulkAssignApply')}
+                  </button>
+                </div>
+              )}
+            <fieldset>
               <legend>{t('recordGroupLabel', { index: index + 1 })}</legend>
 
               <p>{reviewRecord.record.entryDate}</p>
@@ -345,6 +410,7 @@ export function StatementImportReviewScreen({
                 </div>
               )}
             </fieldset>
+            </div>
           )
         })
       )}

@@ -43,6 +43,17 @@
   color: var(--accent-contrast);
 }
 
+.statement-import-bulk-assign-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 8px 12px;
+  border-radius: 5px;
+  background: var(--accent-bg);
+  color: var(--accent-contrast);
+  margin-bottom: 0.75rem;
+}
+
 .statement-import-review-screen button {
   font-size: 16px;
   padding: 8px 20px;
