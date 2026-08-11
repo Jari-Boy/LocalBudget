@@ -8,29 +8,26 @@
  * createDbClient()した別Workerで行うため、Reactアプリが使う既存Workerには
  * 直接は反映されない。作成したデータがRepository経由で確認できるまでpollしてから
  * reloadし、アプリ側のWorkerにIndexedDB経由でデータを反映させてから操作する。
+ * createDbClient()した確認用Workerは起動時にロードしたIndexedDBスナップショットを
+ * 保持し続けるため、Workerを1つだけ使い回すリトライループでは本体アプリ側の後続の
+ * 変更を検知できない(確認したところ、その方式では常に0件のまま検知できず失敗する)。
+ * そのため確認のたびに新しいWorkerを作り直す必要があるが、既知のデバウンス時間
+ * (フォーム側2秒+DB側2秒)が経過する前にpollを始めるとWorker生成が積み重なり、
+ * CI環境(低スペック・2 worker並列)ではそのオーバーヘッドで本体アプリ側の
+ * withAutoSave永続化自体が遅延しflakyになることを実機で確認した。そのため
+ * waitForDraftCountは既知のデバウンス時間をpage.waitForTimeoutでまず待ってから
+ * pollを開始し、Worker生成回数を抑える。条件を満たした直後はRepositoryRegistry.
+ * autoSave.flush()(計画Issue #58で追加済みのAPI)でデバウンスをスキップして
+ * 即座に永続化させる。
  */
 import { test, expect, type Page } from '@playwright/test'
 
-async function waitForAccountCount(page: Page, expectedCount: number) {
-  await expect
-    .poll(
-      () =>
-        page.evaluate(async () => {
-          const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
-          const client = await createDbClient()
-          const accounts = await client.account.findAll()
-          return accounts.length
-        }),
-      { timeout: 10000 },
-    )
-    .toBe(expectedCount)
-}
-
 /**
- * 複数科目を単一のWorker(createDbClient呼び出し1回)内でまとめて作成する。
- * 科目ごとに別々のevaluate呼び出しで別Workerを使うと、各Workerが独立に
- * withAutoSaveのIndexedDB永続化を行い後勝ちで上書きし合ってしまう
- * (docs/architecture.md 9章のマルチタブ書き込み競合と同種の問題)ため避ける。
+ * 複数科目を単一のWorker(createDbClient呼び出し1回)内でまとめて作成し、
+ * flush()で即座にIndexedDBへ永続化してからreloadする。科目ごとに別々のevaluate
+ * 呼び出しで別Workerを使うと、各Workerが独立にwithAutoSaveのIndexedDB永続化を行い
+ * 後勝ちで上書きし合ってしまう(docs/architecture.md 9章のマルチタブ書き込み競合と
+ * 同種の問題)ため避ける。
  */
 async function setupAccountsAndReload(
   page: Page,
@@ -42,40 +39,53 @@ async function setupAccountsAndReload(
     for (const input of accountInputs) {
       await client.account.create(input)
     }
+    await client.autoSave.flush()
   }, inputs)
-  await waitForAccountCount(page, inputs.length)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 }
 
 async function waitForJournalEntryCount(page: Page, expectedCount: number) {
-  await expect
-    .poll(
-      () =>
-        page.evaluate(async () => {
-          const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
-          const client = await createDbClient()
-          const entries = await client.journalEntry.findAll()
-          return entries.length
-        }),
-      { timeout: 10000 },
-    )
-    .toBe(expectedCount)
+  const deadline = Date.now() + 15000
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const count = await page.evaluate(async () => {
+      const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
+      const client = await createDbClient()
+      const entries = await client.journalEntry.findAll()
+      return entries.length
+    })
+    if (count === expectedCount) return
+    if (Date.now() >= deadline) {
+      throw new Error(`timed out waiting for journalEntry count to be ${expectedCount}, got ${count}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
 }
 
+/**
+ * フォーム側デバウンス(2秒)+DB側デバウンス(2秒)の完了を先に待ってからpollを開始し、
+ * Worker生成回数を抑える(既知の待機時間のためpage.waitForTimeoutを使う)。
+ * 条件を満たした直後はautoSave.flush()でIndexedDBへの永続化を強制する。
+ */
 async function waitForDraftCount(page: Page, expectedCount: number) {
-  await expect
-    .poll(
-      () =>
-        page.evaluate(async () => {
-          const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
-          const client = await createDbClient()
-          const drafts = await client.journalEntryDraft.findAll()
-          return drafts.length
-        }),
-      { timeout: 10000 },
-    )
-    .toBe(expectedCount)
+  await page.waitForTimeout(4500)
+  const deadline = Date.now() + 15000
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const count = await page.evaluate(async () => {
+      const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
+      const client = await createDbClient()
+      const drafts = await client.journalEntryDraft.findAll()
+      await client.autoSave.flush()
+      return drafts.length
+    })
+    if (count === expectedCount) return
+    if (Date.now() >= deadline) {
+      throw new Error(`timed out waiting for journalEntryDraft count to be ${expectedCount}, got ${count}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
 }
 
 test.describe('マニュアル仕訳入力', () => {
@@ -144,7 +154,7 @@ test.describe('マニュアル仕訳入力', () => {
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     await page.getByRole('button', { name: '仕訳を入力する' }).click()
-    await expect(page.getByRole('listitem')).toHaveCount(1)
+    await expect(page.getByRole('listitem')).toHaveCount(1, { timeout: 10000 })
 
     await page.getByRole('button', { name: '再開する' }).click()
     const resumedLine1 = page.getByRole('group', { name: '1行目' })
