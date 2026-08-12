@@ -374,48 +374,50 @@ export function CounterpartyManagementScreen({
                     {patterns.length === 0 ? (
                       <p>{t('patternListEmpty')}</p>
                     ) : (
-                      patterns.map((pattern) => (
-                        <div key={pattern.id} className="counterparty-pattern-row">
-                          {editingPatternId === pattern.id ? (
-                            <>
-                              <input
-                                aria-label={t('patternInputLabel')}
-                                type="text"
-                                value={patternInput}
-                                onChange={(event) => setPatternInput(event.target.value)}
-                              />
-                              <button
-                                type="button"
-                                onClick={savePattern}
-                                disabled={patternInput.trim() === '' || isSubmitting}
-                              >
-                                {t('patternSaveSubmit')}
-                              </button>
-                              <button type="button" onClick={cancelPatternEdit} disabled={isSubmitting}>
-                                {t('cancel')}
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <span className="counterparty-pattern-text">{pattern.pattern}</span>
-                              <button
-                                type="button"
-                                onClick={() => startPatternEdit(pattern)}
-                                disabled={isSubmitting}
-                              >
-                                {t('patternEditButton')}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => deletePattern(pattern.id)}
-                                disabled={isSubmitting}
-                              >
-                                {t('patternDeleteButton')}
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      ))
+                      <ul className="counterparty-pattern-list">
+                        {patterns.map((pattern) => (
+                          <li key={pattern.id} className="counterparty-pattern-row">
+                            {editingPatternId === pattern.id ? (
+                              <>
+                                <input
+                                  aria-label={t('patternInputLabel')}
+                                  type="text"
+                                  value={patternInput}
+                                  onChange={(event) => setPatternInput(event.target.value)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={savePattern}
+                                  disabled={patternInput.trim() === '' || isSubmitting}
+                                >
+                                  {t('patternSaveSubmit')}
+                                </button>
+                                <button type="button" onClick={cancelPatternEdit} disabled={isSubmitting}>
+                                  {t('cancel')}
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <span className="counterparty-pattern-text">{pattern.pattern}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => startPatternEdit(pattern)}
+                                  disabled={isSubmitting}
+                                >
+                                  {t('patternEditButton')}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deletePattern(pattern.id)}
+                                  disabled={isSubmitting}
+                                >
+                                  {t('patternDeleteButton')}
+                                </button>
+                              </>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
                     )}
                   </div>
                 )}
