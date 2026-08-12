@@ -25,5 +25,13 @@
   "mergeConfirmSubmit": "統合を確定",
   "mergeResultLabel": "統合結果",
   "mergeResultMessage": "{{target}}に統合しました(統合元: {{sources}})",
-  "mergeError": "統合に失敗しました。もう一度お試しください。"
+  "mergeError": "統合に失敗しました。もう一度お試しください。",
+  "patternCount": "登録済みパターン: {{count}}件",
+  "patternListEmpty": "登録済みのパターンはありません",
+  "patternInputLabel": "パターン文字列",
+  "patternEditButton": "パターンを編集",
+  "patternDeleteButton": "パターンを削除",
+  "patternSaveSubmit": "保存する",
+  "patternSaveError": "パターンの保存に失敗しました。もう一度お試しください。",
+  "patternDeleteError": "パターンの削除に失敗しました。もう一度お試しください。"
 }

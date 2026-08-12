@@ -4,6 +4,7 @@ import type { Account } from '../../domain/account/Account'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type {
   Counterparty,
+  CounterpartyPattern,
   CreateCounterpartyInput,
   UpdateCounterpartyInput,
 } from '../../domain/counterparty/Counterparty'
@@ -34,6 +35,17 @@ interface CounterpartyDeactivator {
 interface CounterpartyMerger {
   merge(targetId: number, sourceIds: number[]): void | Promise<void>
 }
+interface CounterpartyPatternFinder {
+  findPatternsByCounterparty(
+    counterpartyId: number,
+  ): CounterpartyPattern[] | Promise<CounterpartyPattern[]>
+}
+interface CounterpartyPatternUpdater {
+  updatePattern(patternId: number, pattern: string): CounterpartyPattern | Promise<CounterpartyPattern>
+}
+interface CounterpartyPatternDeleter {
+  deletePattern(patternId: number): void | Promise<void>
+}
 
 export interface CounterpartyManagementScreenProps {
   counterpartyRepository: CounterpartyFinder &
@@ -41,7 +53,10 @@ export interface CounterpartyManagementScreenProps {
     CounterpartyUpdater &
     CounterpartyDeleter &
     CounterpartyDeactivator &
-    CounterpartyMerger
+    CounterpartyMerger &
+    CounterpartyPatternFinder &
+    CounterpartyPatternUpdater &
+    CounterpartyPatternDeleter
   accountRepository: AccountFinder
   journalEntryRepository: JournalEntryFinder
   onBack: () => void
@@ -53,6 +68,8 @@ interface LoadedData {
   accountNameById: Map<number, string>
   /** docs/domain/counterparties.md 1.5節の削除可否判定に使う、取引先idごとの紐づく仕訳明細件数 */
   journalLineCountByCounterpartyId: Map<number, number>
+  /** 計画Issue #85: 取引先idごとの登録済み学習パターン(件数表示・展開一覧の両方に使う) */
+  patternsByCounterpartyId: Map<number, CounterpartyPattern[]>
 }
 
 /** nullは非表示、'create'は新規作成フォーム、number(id)は該当取引先の編集フォームを表す */
@@ -84,13 +101,16 @@ export function CounterpartyManagementScreen({
   const [mergeResult, setMergeResult] = useState<{ targetName: string; sourceNames: string[] } | null>(
     null,
   )
+  const [expandedPatternIds, setExpandedPatternIds] = useState<Set<number>>(new Set())
+  const [editingPatternId, setEditingPatternId] = useState<number | null>(null)
+  const [patternInput, setPatternInput] = useState('')
 
   const load = () => {
     void Promise.all([
       Promise.resolve(counterpartyRepository.findAll()),
       Promise.resolve(accountRepository.findAll()),
       Promise.resolve(journalEntryRepository.findAll()),
-    ]).then(([counterparties, accounts, entries]) => {
+    ]).then(async ([counterparties, accounts, entries]) => {
       const journalLineCountByCounterpartyId = new Map<number, number>()
       for (const entry of entries) {
         for (const line of entry.lines) {
@@ -101,11 +121,21 @@ export function CounterpartyManagementScreen({
           )
         }
       }
+      const patternEntries = await Promise.all(
+        counterparties.map(
+          async (counterparty) =>
+            [
+              counterparty.id,
+              await Promise.resolve(counterpartyRepository.findPatternsByCounterparty(counterparty.id)),
+            ] as const,
+        ),
+      )
       setData({
         counterparties,
         eligibleAccounts: accounts.filter((account) => isCounterpartyEligibleCategory(account.category)),
         accountNameById: new Map(accounts.map((account) => [account.id, account.name])),
         journalLineCountByCounterpartyId,
+        patternsByCounterpartyId: new Map(patternEntries),
       })
     })
   }
@@ -226,9 +256,58 @@ export function CounterpartyManagementScreen({
       .finally(() => setIsSubmitting(false))
   }
 
+  const togglePatterns = (counterpartyId: number) => {
+    setExpandedPatternIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(counterpartyId)) {
+        next.delete(counterpartyId)
+      } else {
+        next.add(counterpartyId)
+      }
+      return next
+    })
+  }
+
+  const startPatternEdit = (pattern: CounterpartyPattern) => {
+    setError(null)
+    setEditingPatternId(pattern.id)
+    setPatternInput(pattern.pattern)
+  }
+
+  const cancelPatternEdit = () => {
+    setEditingPatternId(null)
+    setPatternInput('')
+  }
+
+  const savePattern = () => {
+    if (isSubmitting || editingPatternId === null) return
+    setIsSubmitting(true)
+    setError(null)
+    void Promise.resolve(counterpartyRepository.updatePattern(editingPatternId, patternInput))
+      .then(() => {
+        setEditingPatternId(null)
+        setPatternInput('')
+        load()
+      })
+      .catch(() => setError(t('patternSaveError')))
+      .finally(() => setIsSubmitting(false))
+  }
+
+  const deletePattern = (patternId: number) => {
+    if (isSubmitting) return
+    setIsSubmitting(true)
+    setError(null)
+    void Promise.resolve(counterpartyRepository.deletePattern(patternId))
+      .then(load)
+      .catch(() => setError(t('patternDeleteError')))
+      .finally(() => setIsSubmitting(false))
+  }
+
   return (
     <div className="counterparty-management-screen">
       <h2>{t('counterpartyListTitle')}</h2>
+
+      {error !== null && <p role="alert">{error}</p>}
 
       {data.counterparties.length === 0 ? (
         <p>{t('counterpartyListEmpty')}</p>
@@ -236,48 +315,110 @@ export function CounterpartyManagementScreen({
         <ul>
           {data.counterparties.map((counterparty) => {
             const journalLineCount = data.journalLineCountByCounterpartyId.get(counterparty.id) ?? 0
+            const patterns = data.patternsByCounterpartyId.get(counterparty.id) ?? []
+            const patternsExpanded = expandedPatternIds.has(counterparty.id)
             return (
               <li key={counterparty.id}>
-                <input
-                  type="checkbox"
-                  aria-label={counterparty.name}
-                  checked={selectedSourceIds.has(counterparty.id)}
-                  onChange={() => toggleMergeSource(counterparty.id)}
-                />
-                <span className="counterparty-list-name">
-                  {counterparty.name}
-                  {counterparty.defaultAccountId !== null && (
-                    <span className="counterparty-list-default-account">
-                      {data.accountNameById.get(counterparty.defaultAccountId)}
-                    </span>
-                  )}
-                  {!counterparty.isActive && (
-                    <span className="counterparty-list-inactive">{t('inactiveLabel')}</span>
-                  )}
-                </span>
-                <span className="counterparty-list-actions">
-                  <button type="button" onClick={() => openEditForm(counterparty)} disabled={isSubmitting}>
-                    {t('editButton')}
-                  </button>
-                  {journalLineCount === 0 && (
+                <div className="counterparty-list-row">
+                  <input
+                    type="checkbox"
+                    aria-label={counterparty.name}
+                    checked={selectedSourceIds.has(counterparty.id)}
+                    onChange={() => toggleMergeSource(counterparty.id)}
+                  />
+                  <span className="counterparty-list-name">
+                    {counterparty.name}
+                    {counterparty.defaultAccountId !== null && (
+                      <span className="counterparty-list-default-account">
+                        {data.accountNameById.get(counterparty.defaultAccountId)}
+                      </span>
+                    )}
+                    {!counterparty.isActive && (
+                      <span className="counterparty-list-inactive">{t('inactiveLabel')}</span>
+                    )}
+                  </span>
+                  <span className="counterparty-list-actions">
                     <button
                       type="button"
-                      onClick={() => deleteCounterparty(counterparty.id)}
-                      disabled={isSubmitting}
+                      onClick={() => togglePatterns(counterparty.id)}
+                      aria-expanded={patternsExpanded}
                     >
-                      {t('deleteButton')}
+                      {t('patternCount', { count: patterns.length })}
                     </button>
-                  )}
-                  {counterparty.isActive && (
-                    <button
-                      type="button"
-                      onClick={() => deactivateCounterparty(counterparty.id)}
-                      disabled={isSubmitting}
-                    >
-                      {t('deactivateButton')}
+                    <button type="button" onClick={() => openEditForm(counterparty)} disabled={isSubmitting}>
+                      {t('editButton')}
                     </button>
-                  )}
-                </span>
+                    {journalLineCount === 0 && (
+                      <button
+                        type="button"
+                        onClick={() => deleteCounterparty(counterparty.id)}
+                        disabled={isSubmitting}
+                      >
+                        {t('deleteButton')}
+                      </button>
+                    )}
+                    {counterparty.isActive && (
+                      <button
+                        type="button"
+                        onClick={() => deactivateCounterparty(counterparty.id)}
+                        disabled={isSubmitting}
+                      >
+                        {t('deactivateButton')}
+                      </button>
+                    )}
+                  </span>
+                </div>
+
+                {patternsExpanded && (
+                  <div className="counterparty-pattern-panel">
+                    {patterns.length === 0 ? (
+                      <p>{t('patternListEmpty')}</p>
+                    ) : (
+                      patterns.map((pattern) => (
+                        <div key={pattern.id} className="counterparty-pattern-row">
+                          {editingPatternId === pattern.id ? (
+                            <>
+                              <input
+                                aria-label={t('patternInputLabel')}
+                                type="text"
+                                value={patternInput}
+                                onChange={(event) => setPatternInput(event.target.value)}
+                              />
+                              <button
+                                type="button"
+                                onClick={savePattern}
+                                disabled={patternInput.trim() === '' || isSubmitting}
+                              >
+                                {t('patternSaveSubmit')}
+                              </button>
+                              <button type="button" onClick={cancelPatternEdit} disabled={isSubmitting}>
+                                {t('cancel')}
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <span className="counterparty-pattern-text">{pattern.pattern}</span>
+                              <button
+                                type="button"
+                                onClick={() => startPatternEdit(pattern)}
+                                disabled={isSubmitting}
+                              >
+                                {t('patternEditButton')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deletePattern(pattern.id)}
+                                disabled={isSubmitting}
+                              >
+                                {t('patternDeleteButton')}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </li>
             )
           })}
@@ -311,8 +452,6 @@ export function CounterpartyManagementScreen({
               </option>
             ))}
           </select>
-
-          {error !== null && <p role="alert">{error}</p>}
 
           <div className="counterparty-form-actions">
             <button
