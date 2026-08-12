@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
 import type { ExternalTransactionRef } from '../../domain/reconciliation/ExternalTransactionRef'
-import { MappingColumnNotFoundError } from '../../domain/statement-import/MappingColumnNotFoundError'
-import { readCsv } from '../../domain/statement-import/readCsv'
+import {
+  resolveMappingDefinitionCandidates,
+  type MappingDefinitionCandidateMatch,
+} from '../../domain/statement-import/resolveMappingDefinitionCandidates'
 import {
   buildStatementImportReview,
   type StatementImportReviewResult,
@@ -51,13 +53,16 @@ export interface StatementImportUploadScreenProps {
 }
 
 /**
- * CSV取込アップロード画面(計画Issue #76、docs/domain/statement-import.md 1.5手順1)。
- * 対象科目→マッピング定義→CSVファイルの順に選び、「取り込む」操作でCSVパース
- * (readCsv→mapRowsToImportedRecordsを内包するbuildStatementImportReview)と
- * 重複防止フロー(1.6)の判定までをまとめて行う。CSVパース処理はメインスレッドで実行する
- * 方針(docs/architecture.md 12章)のため、Worker越しのRepository呼び出し(対象科目一覧・
- * マッピング定義候補・既存突合レコード)はここで完了させ、パース自体はブラウザのメイン
- * スレッド上で行う。成功したらonUploadedでレビュー一覧画面へ結果を渡す。
+ * CSV取込アップロード画面(計画Issue #76の基盤を計画Issue #78でCSV先選択フローへ改修)。
+ * 対象科目を選んだ後、マッピング定義ではなくCSVファイルを先に選択できる。「取り込む」操作で、
+ * 対象科目で使える全マッピング定義候補それぞれに実際のパースを試み(resolveMappingDefinition
+ * Candidates、readCsv→mapRowsToImportedRecordsをそれぞれ試行してエラーなく成功したものだけを
+ * 残す絞り込み、docs/domain/statement-import.md 1.4・1.5手順1)、成功した候補が1件のみなら
+ * そのまま重複防止フロー判定(buildStatementImportReview)まで行いonUploadedへ結果を渡す。
+ * 成功した候補が複数ある場合はユーザーがlabelで選ぶまで待ち、0件の場合はエラー表示する。
+ * CSVパース処理はメインスレッドで実行する方針(docs/architecture.md 12章)のため、Worker越しの
+ * Repository呼び出し(対象科目一覧・マッピング定義候補・既存突合レコード)はここで完了させ、
+ * パース自体はブラウザのメインスレッド上で行う。
  */
 export function StatementImportUploadScreen({
   accountRepository,
@@ -73,10 +78,14 @@ export function StatementImportUploadScreen({
   const [accounts, setAccounts] = useState<Account[] | null>(null)
   const [targetAccountId, setTargetAccountId] = useState<number | null>(null)
   const [definitions, setDefinitions] = useState<ImportMappingDefinition[]>([])
-  const [definitionId, setDefinitionId] = useState<number | null>(null)
+  const [definitionsLoading, setDefinitionsLoading] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [candidateMatches, setCandidateMatches] = useState<MappingDefinitionCandidateMatch[] | null>(
+    null,
+  )
+  const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null)
 
   useEffect(() => {
     void Promise.resolve(accountRepository.findAll()).then(setAccounts)
@@ -85,16 +94,13 @@ export function StatementImportUploadScreen({
   useEffect(() => {
     if (targetAccountId === null) {
       setDefinitions([])
-      setDefinitionId(null)
       return
     }
+    setDefinitionsLoading(true)
     void Promise.resolve(importMappingDefinitionRepository.findAvailableForAccount(targetAccountId)).then(
       (found) => {
         setDefinitions(found)
-        // 候補が1件のみの場合に限り自動選択する。複数ある場合(組み込み定義の複数金融機関、
-        // 楽天カードの速報用/確定用等)はユーザーがlabelで明示的に選ぶ
-        // (docs/domain/statement-import.md 1.5手順1)。
-        setDefinitionId(found.length === 1 ? found[0].id : null)
+        setDefinitionsLoading(false)
       },
     )
   }, [targetAccountId, importMappingDefinitionRepository])
@@ -105,21 +111,58 @@ export function StatementImportUploadScreen({
 
   const eligibleAccounts = accounts.filter(isStatementImportEligibleAccount)
   const targetAccount = eligibleAccounts.find((account) => account.id === targetAccountId) ?? null
-  const definition = definitions.find((candidate) => candidate.id === definitionId) ?? null
+
+  function resetFileSelection() {
+    setFile(null)
+    setError(null)
+    setCandidateMatches(null)
+    setSelectedCandidateId(null)
+  }
 
   async function handleUpload(): Promise<void> {
-    if (targetAccount === null || definition === null || file === null) return
+    if (targetAccount === null || file === null) return
+    if (candidateMatches !== null && selectedCandidateId === null) return
 
     setSubmitting(true)
     setError(null)
 
+    if (candidateMatches !== null) {
+      const chosen = candidateMatches.find((match) => match.definition.id === selectedCandidateId)
+      if (chosen === undefined) {
+        setSubmitting(false)
+        return
+      }
+      await finalizeUpload(targetAccount, chosen)
+      return
+    }
+
     try {
       const bytes = new Uint8Array(await file.arrayBuffer())
-      const rows = readCsv(bytes, { encoding: definition.encoding, delimiter: definition.delimiter })
+      const matches = resolveMappingDefinitionCandidates(bytes, definitions)
 
-      const existingRefs = await Promise.resolve(
-        externalTransactionRefRepository.findByAccount(targetAccount.id),
-      )
+      if (matches.length === 0) {
+        setError(t('noMappingMatchError'))
+        setSubmitting(false)
+        return
+      }
+
+      if (matches.length === 1) {
+        await finalizeUpload(targetAccount, matches[0])
+        return
+      }
+
+      setCandidateMatches(matches)
+      setSelectedCandidateId(null)
+      setSubmitting(false)
+    } catch {
+      setError(t('uploadError'))
+      setSubmitting(false)
+    }
+  }
+
+  async function finalizeUpload(account: Account, match: MappingDefinitionCandidateMatch): Promise<void> {
+    try {
+      const existingRefs = await Promise.resolve(externalTransactionRefRepository.findByAccount(account.id))
       const existingExternalIds = new Set(existingRefs.map((ref) => ref.externalId))
       const existingTransactions = existingRefs.map((ref) => ({
         journalEntryId: ref.journalEntryId,
@@ -129,25 +172,18 @@ export function StatementImportUploadScreen({
       }))
 
       const review = buildStatementImportReview({
-        rows,
-        definition,
+        rows: match.rows,
+        definition: match.definition,
         existingExternalIds,
         existingTransactions,
         approximateDuplicateOptions: approximateDuplicateOptions ?? DEFAULT_APPROXIMATE_DUPLICATE_OPTIONS,
       })
 
-      onUploaded({ targetAccount, definition, review })
-    } catch (err) {
-      setError(mapErrorToMessage(err))
+      onUploaded({ targetAccount: account, definition: match.definition, review })
+    } catch {
+      setError(t('uploadError'))
       setSubmitting(false)
     }
-  }
-
-  function mapErrorToMessage(err: unknown): string {
-    if (err instanceof MappingColumnNotFoundError) {
-      return t('mappingMismatchError')
-    }
-    return t('uploadError')
   }
 
   return (
@@ -161,8 +197,7 @@ export function StatementImportUploadScreen({
           value={targetAccountId ?? ''}
           onChange={(event) => {
             setTargetAccountId(event.target.value === '' ? null : Number(event.target.value))
-            setFile(null)
-            setError(null)
+            resetFileSelection()
           }}
         >
           <option value="">{t('unselected')}</option>
@@ -174,33 +209,7 @@ export function StatementImportUploadScreen({
         </select>
       </div>
 
-      {targetAccountId !== null && (
-        <div>
-          <label htmlFor="statement-import-definition">{t('mappingDefinitionLabel')}</label>
-          <select
-            id="statement-import-definition"
-            value={definitionId ?? ''}
-            onChange={(event) =>
-              setDefinitionId(event.target.value === '' ? null : Number(event.target.value))
-            }
-          >
-            {definitions.length === 0 ? (
-              <option value="">{t('noMappingDefinition')}</option>
-            ) : (
-              <>
-                <option value="">{t('unselected')}</option>
-                {definitions.map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.label}
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
-        </div>
-      )}
-
-      {definitionId !== null && (
+      {targetAccountId !== null && !definitionsLoading && (
         <div>
           <label htmlFor="statement-import-file">{t('csvFileLabel')}</label>
           <input
@@ -210,8 +219,30 @@ export function StatementImportUploadScreen({
             onChange={(event) => {
               setFile(event.target.files?.[0] ?? null)
               setError(null)
+              setCandidateMatches(null)
+              setSelectedCandidateId(null)
             }}
           />
+        </div>
+      )}
+
+      {candidateMatches !== null && (
+        <div>
+          <label htmlFor="statement-import-definition">{t('mappingDefinitionLabel')}</label>
+          <select
+            id="statement-import-definition"
+            value={selectedCandidateId ?? ''}
+            onChange={(event) =>
+              setSelectedCandidateId(event.target.value === '' ? null : Number(event.target.value))
+            }
+          >
+            <option value="">{t('unselected')}</option>
+            {candidateMatches.map((match) => (
+              <option key={match.definition.id} value={match.definition.id}>
+                {match.definition.label}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 
@@ -223,7 +254,12 @@ export function StatementImportUploadScreen({
         </button>
         <button
           type="button"
-          disabled={submitting || targetAccount === null || definition === null || file === null}
+          disabled={
+            submitting ||
+            targetAccount === null ||
+            file === null ||
+            (candidateMatches !== null && selectedCandidateId === null)
+          }
           onClick={() => void handleUpload()}
         >
           {t('upload')}
