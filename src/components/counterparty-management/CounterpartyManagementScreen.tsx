@@ -76,6 +76,8 @@ export function CounterpartyManagementScreen({
   const [nameInput, setNameInput] = useState('')
   const [defaultAccountInput, setDefaultAccountInput] = useState('')
   const [error, setError] = useState<string | null>(null)
+  /** 作成・編集・削除・非アクティブ化・統合確定のいずれか進行中は全操作ボタンを無効化する(連打による二重実行防止) */
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<number>>(new Set())
   const [mergeTargetId, setMergeTargetId] = useState('')
   const [confirmingMerge, setConfirmingMerge] = useState(false)
@@ -134,6 +136,9 @@ export function CounterpartyManagementScreen({
   }
 
   const submitForm = () => {
+    if (isSubmitting) return
+    setIsSubmitting(true)
+    setError(null)
     const defaultAccountId = defaultAccountInput === '' ? null : Number(defaultAccountInput)
     const request =
       formMode === 'create'
@@ -153,20 +158,27 @@ export function CounterpartyManagementScreen({
         load()
       })
       .catch(() => setError(t('saveError')))
+      .finally(() => setIsSubmitting(false))
   }
 
   const deleteCounterparty = (id: number) => {
+    if (isSubmitting) return
+    setIsSubmitting(true)
     setError(null)
     void Promise.resolve(counterpartyRepository.delete(id))
       .then(load)
       .catch(() => setError(t('deleteError')))
+      .finally(() => setIsSubmitting(false))
   }
 
   const deactivateCounterparty = (id: number) => {
+    if (isSubmitting) return
+    setIsSubmitting(true)
     setError(null)
     void Promise.resolve(counterpartyRepository.deactivate(id))
       .then(load)
       .catch(() => setError(t('deactivateError')))
+      .finally(() => setIsSubmitting(false))
   }
 
   const toggleMergeSource = (id: number) => {
@@ -186,11 +198,13 @@ export function CounterpartyManagementScreen({
   }
 
   const executeMerge = () => {
+    if (isSubmitting) return
     const targetId = Number(mergeTargetId)
     const target = data.counterparties.find((counterparty) => counterparty.id === targetId)
     const sources = data.counterparties.filter((counterparty) => selectedSourceIds.has(counterparty.id))
     if (!target || sources.length === 0) return
 
+    setIsSubmitting(true)
     setError(null)
     void Promise.resolve(
       counterpartyRepository.merge(
@@ -209,6 +223,7 @@ export function CounterpartyManagementScreen({
         setConfirmingMerge(false)
         setError(t('mergeError'))
       })
+      .finally(() => setIsSubmitting(false))
   }
 
   return (
@@ -241,16 +256,24 @@ export function CounterpartyManagementScreen({
                   )}
                 </span>
                 <span className="counterparty-list-actions">
-                  <button type="button" onClick={() => openEditForm(counterparty)}>
+                  <button type="button" onClick={() => openEditForm(counterparty)} disabled={isSubmitting}>
                     {t('editButton')}
                   </button>
                   {journalLineCount === 0 && (
-                    <button type="button" onClick={() => deleteCounterparty(counterparty.id)}>
+                    <button
+                      type="button"
+                      onClick={() => deleteCounterparty(counterparty.id)}
+                      disabled={isSubmitting}
+                    >
                       {t('deleteButton')}
                     </button>
                   )}
                   {counterparty.isActive && (
-                    <button type="button" onClick={() => deactivateCounterparty(counterparty.id)}>
+                    <button
+                      type="button"
+                      onClick={() => deactivateCounterparty(counterparty.id)}
+                      disabled={isSubmitting}
+                    >
                       {t('deactivateButton')}
                     </button>
                   )}
@@ -262,7 +285,7 @@ export function CounterpartyManagementScreen({
       )}
 
       {formMode === null ? (
-        <button type="button" onClick={openCreateForm}>
+        <button type="button" onClick={openCreateForm} disabled={isSubmitting}>
           {t('addButton')}
         </button>
       ) : (
@@ -292,10 +315,14 @@ export function CounterpartyManagementScreen({
           {error !== null && <p role="alert">{error}</p>}
 
           <div className="counterparty-form-actions">
-            <button type="button" onClick={submitForm} disabled={nameInput.trim() === ''}>
+            <button
+              type="button"
+              onClick={submitForm}
+              disabled={nameInput.trim() === '' || isSubmitting}
+            >
               {formMode === 'create' ? t('createSubmit') : t('saveSubmit')}
             </button>
-            <button type="button" onClick={closeForm}>
+            <button type="button" onClick={closeForm} disabled={isSubmitting}>
               {t('cancel')}
             </button>
           </div>
@@ -325,17 +352,17 @@ export function CounterpartyManagementScreen({
             <button
               type="button"
               onClick={() => setConfirmingMerge(true)}
-              disabled={selectedSourceIds.size === 0 || mergeTargetId === ''}
+              disabled={selectedSourceIds.size === 0 || mergeTargetId === '' || isSubmitting}
             >
               {t('mergeSubmit')}
             </button>
           ) : (
             <div className="counterparty-merge-confirm">
               <p>{t('mergeConfirmTitle')}</p>
-              <button type="button" onClick={executeMerge}>
+              <button type="button" onClick={executeMerge} disabled={isSubmitting}>
                 {t('mergeConfirmSubmit')}
               </button>
-              <button type="button" onClick={() => setConfirmingMerge(false)}>
+              <button type="button" onClick={() => setConfirmingMerge(false)} disabled={isSubmitting}>
                 {t('cancel')}
               </button>
             </div>
@@ -352,7 +379,7 @@ export function CounterpartyManagementScreen({
         </div>
       )}
 
-      <button type="button" onClick={onBack}>
+      <button type="button" onClick={onBack} disabled={isSubmitting}>
         {t('back')}
       </button>
     </div>
