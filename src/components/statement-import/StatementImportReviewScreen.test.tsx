@@ -872,4 +872,93 @@ describe('StatementImportReviewScreen', () => {
     expect(entries.some((entry) => entry.memo === '海外通販(速報)')).toBe(false)
     expect(entries.some((entry) => entry.memo === '海外通販(確定)')).toBe(true)
   })
+
+  it('相手科目が未選択、またはPL科目(収益・費用)の場合は取引先セレクトが表示される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: 'スーパー' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    expect(within(group).queryByLabelText('取引先')).toBeInTheDocument()
+
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(foodAccount.id) } })
+    expect(within(group).queryByLabelText('取引先')).toBeInTheDocument()
+  })
+
+  it('相手科目に非PL科目(資産・負債)を選択すると取引先セレクトが非表示になり、取引先の選択はクリアされる', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const savingsAccount = accountRepository.create({ category: 'asset', name: '証券口座', isReconcilable: true })
+    const counterparty = counterpartyRepository.create({ name: 'イオン', defaultAccountId: foodAccount.id })
+    counterpartyRepository.addPattern(counterparty.id, 'イオン')
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: 'イオン○○店' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    expect((within(group).getByLabelText('取引先') as HTMLSelectElement).value).toBe(String(counterparty.id))
+
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(savingsAccount.id) } })
+    expect(within(group).queryByLabelText('取引先')).not.toBeInTheDocument()
+
+    // 資産科目からPL科目へ戻すと取引先セレクトが再表示され、値はクリアされている(暗黙の再選択を防ぐ)
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(foodAccount.id) } })
+    expect((within(group).getByLabelText('取引先') as HTMLSelectElement).value).toBe('')
+  })
+
+  it('取引先が設定された状態で相手科目を非PL科目に変更してから確定すると、取引先なしで仕訳が作成される(TRIGGER違反を起こさない)', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const savingsAccount = accountRepository.create({ category: 'asset', name: '証券口座', isReconcilable: true })
+    const counterparty = counterpartyRepository.create({ name: 'イオン', defaultAccountId: foodAccount.id })
+    counterpartyRepository.addPattern(counterparty.id, 'イオン')
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: 'イオン○○店', amount: -3000 }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(savingsAccount.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+
+    const entries = journalEntryRepository.findAll()
+    expect(entries).toHaveLength(1)
+    expect(entries[0].lines.every((line) => line.counterpartyId === null)).toBe(true)
+  })
 })
