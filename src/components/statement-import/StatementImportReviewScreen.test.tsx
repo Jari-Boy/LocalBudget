@@ -1004,4 +1004,106 @@ describe('StatementImportReviewScreen', () => {
     expect(counterLine?.projectId).toBe(project.id)
     expect(counterLine?.householdMemberId).toBe(member.id)
   })
+
+  it('取引先セレクトでdefault_account_idが非PL科目(資産・負債)の取引先を選択すると、相手科目は追従するが取引先セレクトは非表示になりクリアされる', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const savingsAccount = accountRepository.create({ category: 'asset', name: '証券口座', isReconcilable: true })
+    // docs/domain/counterparties.md 1.4の通りdefault_account_idはあくまで初期値でありPL科目
+    // への制約はドメイン上存在しないため、資産科目を指す取引先も正規のケースとして起こりうる
+    const counterparty = counterpartyRepository.create({ name: '証券会社', defaultAccountId: savingsAccount.id })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '証券会社入金' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('取引先'), { target: { value: String(counterparty.id) } })
+
+    expect((within(group).getByLabelText('相手科目') as HTMLSelectElement).value).toBe(String(savingsAccount.id))
+    expect(within(group).queryByLabelText('取引先')).not.toBeInTheDocument()
+  })
+
+  it('取引先セレクトで非PL科目をdefault_account_idに持つ取引先を選択した状態のまま確定しても、取引先なしで仕訳が作成される(TRIGGER違反を起こさない)', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const savingsAccount = accountRepository.create({ category: 'asset', name: '証券口座', isReconcilable: true })
+    const counterparty = counterpartyRepository.create({ name: '証券会社', defaultAccountId: savingsAccount.id })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '証券会社入金', amount: 5000 }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('取引先'), { target: { value: String(counterparty.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+
+    const entries = journalEntryRepository.findAll()
+    expect(entries).toHaveLength(1)
+    expect(entries[0].lines.every((line) => line.counterpartyId === null)).toBe(true)
+  })
+
+  it('一括割当てでdefault_account_idが非PL科目の取引先を適用すると、相手科目は反映されるが取引先は設定されない', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const savingsAccount = accountRepository.create({ category: 'asset', name: '証券口座', isReconcilable: true })
+    const counterparty = counterpartyRepository.create({ name: '証券会社', defaultAccountId: savingsAccount.id })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '謎の店舗', entryDate: '2026-07-20' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+        {
+          record: importedRecord({ description: '謎の店舗', entryDate: '2026-07-21' }),
+          externalId: 'TX-002',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(screen.getByLabelText('一括割当ての取引先'), { target: { value: String(counterparty.id) } })
+    fireEvent.click(screen.getByRole('button', { name: 'まとめて割り当てる' }))
+
+    const group1 = screen.getByRole('group', { name: '1件目' })
+    const group2 = screen.getByRole('group', { name: '2件目' })
+    expect((within(group1).getByLabelText('相手科目') as HTMLSelectElement).value).toBe(String(savingsAccount.id))
+    expect((within(group2).getByLabelText('相手科目') as HTMLSelectElement).value).toBe(String(savingsAccount.id))
+    expect(within(group1).queryByLabelText('取引先')).not.toBeInTheDocument()
+    expect(within(group2).queryByLabelText('取引先')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+    await screen.findByText('2件を確定しました(0件失敗)')
+
+    const entries = journalEntryRepository.findAll()
+    expect(entries).toHaveLength(2)
+    expect(entries.every((entry) => entry.lines.every((line) => line.counterpartyId === null))).toBe(true)
+  })
 })

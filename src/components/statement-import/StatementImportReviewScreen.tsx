@@ -99,6 +99,28 @@ function createInitialRecordState(counterpartyId: number | null, counterAccountI
 }
 
 /**
+ * counterparty_idはPL科目(収益/費用)の行にのみ設定できる(DDLトリガー、
+ * journal-entry/journalEntryFormLine.tsのisCounterpartyEligibleCategoryと同じ制約)。
+ * counterAccountIdの科目が非PL(資産・負債)ならcounterpartyIdをnullにする。取引先が
+ * 一意に定まらない(候補一覧に見つからない)場合は判定不能なためcounterpartyIdをそのまま返す。
+ * この関数は初期表示計算・取引先セレクト・相手科目セレクト・一括割当て適用のすべての経路で
+ * 共通して呼び出す。1箇所にだけガードを実装して他の経路への移植を忘れる
+ * (計画Issue #77 evaluatorレビューAttempt 2 FAILの指摘)ことを防ぐため、経路ごとに同種の
+ * ロジックを書き直すのではなく必ずこの関数を経由させる。
+ */
+function resolveEligibleCounterpartyId(
+  counterpartyId: number | null,
+  counterAccountId: number | null,
+  accounts: readonly Account[],
+): number | null {
+  const counterAccount = accounts.find((account) => account.id === counterAccountId)
+  if (counterAccount !== undefined && !isCounterpartyEligibleCategory(counterAccount.category)) {
+    return null
+  }
+  return counterpartyId
+}
+
+/**
  * 取引先推定(estimateCounterparty)・相手科目サジェスト(suggestCounterpartyAccount)は
  * 同期的なRepositoryインターフェースを要求する純粋関数(docs/architecture.md 5.1
  * ドメイン層はインフラ非依存)。Web Worker越しのCounterpartyEstimationRepositoryは
@@ -134,15 +156,7 @@ async function computeInitialRecordStates(
   return records.map((reviewRecord) => {
     const counterpartyId = estimateCounterparty(reviewRecord.record.description, patternLookup)
     const counterAccountId = suggestCounterpartyAccount(counterpartyId, counterpartyLookup)
-    // counterparty_idはPL科目(収益/費用)の行にのみ設定できる(DDLトリガー、
-    // journal-entry/journalEntryFormLine.tsのisCounterpartyEligibleCategoryと同じ制約)。
-    // defaultAccountIdが非PL科目に設定されている場合(通常はありえないが防御的に)、
-    // 取引先を初期値としてセットしない
-    const counterAccount = accounts.find((account) => account.id === counterAccountId)
-    const eligibleCounterpartyId =
-      counterAccount !== undefined && !isCounterpartyEligibleCategory(counterAccount.category)
-        ? null
-        : counterpartyId
+    const eligibleCounterpartyId = resolveEligibleCounterpartyId(counterpartyId, counterAccountId, accounts)
     return createInitialRecordState(eligibleCounterpartyId, counterAccountId)
   })
 }
@@ -274,11 +288,14 @@ export function StatementImportReviewScreen({
     if (selected === undefined || selected === '') return
     const counterpartyId = Number(selected)
     const counterAccountId = suggestCounterpartyAccount(counterpartyId, counterpartyLookup)
+    const eligibleCounterpartyId = resolveEligibleCounterpartyId(counterpartyId, counterAccountId, counterAccountCandidates)
     setRecordStates((prev) =>
       prev === null
         ? prev
         : prev.map((state, i) =>
-            group.recordIndices.includes(i) ? { ...state, counterpartyId, counterAccountId } : state,
+            group.recordIndices.includes(i)
+              ? { ...state, counterpartyId: eligibleCounterpartyId, counterAccountId }
+              : state,
           ),
     )
   }
@@ -487,15 +504,24 @@ export function StatementImportReviewScreen({
                         value={state.counterpartyId ?? ''}
                         onChange={(event) => {
                           const counterpartyId = event.target.value === '' ? null : Number(event.target.value)
-                          updateRecordState(index, (prevState) => ({
-                            ...prevState,
-                            counterpartyId,
+                          updateRecordState(index, (prevState) => {
                             // 相手科目が未編集(dirty flag無し)の間は取引先変更のたびに再サジェストして
                             // 追従する。手動編集済みなら上書きしない(計画Issue #77設計方針1)
-                            counterAccountId: prevState.counterAccountTouched
+                            const nextCounterAccountId = prevState.counterAccountTouched
                               ? prevState.counterAccountId
-                              : suggestCounterpartyAccount(counterpartyId, counterpartyLookup),
-                          }))
+                              : suggestCounterpartyAccount(counterpartyId, counterpartyLookup)
+                            return {
+                              ...prevState,
+                              counterAccountId: nextCounterAccountId,
+                              // 選んだ取引先のdefault_account_idが非PL科目の場合、取引先は
+                              // 保持しない(DDLトリガー違反を防ぐ、resolveEligibleCounterpartyId参照)
+                              counterpartyId: resolveEligibleCounterpartyId(
+                                counterpartyId,
+                                nextCounterAccountId,
+                                counterAccountCandidates,
+                              ),
+                            }
+                          })
                         }}
                       >
                         <option value="">{t('unselected')}</option>
@@ -516,18 +542,16 @@ export function StatementImportReviewScreen({
                 value={state.counterAccountId ?? ''}
                 onChange={(event) => {
                   const counterAccountId = event.target.value === '' ? null : Number(event.target.value)
-                  const selectedAccount = counterAccountCandidates.find(
-                    (candidate) => candidate.id === counterAccountId,
-                  )
                   updateRecordState(index, (prevState) => ({
                     ...prevState,
                     counterAccountId,
                     // 非PL科目(資産・負債)を選ぶと取引先欄が非表示になるため、値もクリアする
                     // (DDLトリガー違反によるレビュー確定操作の失敗を防ぐ)
-                    counterpartyId:
-                      selectedAccount !== undefined && !isCounterpartyEligibleCategory(selectedAccount.category)
-                        ? null
-                        : prevState.counterpartyId,
+                    counterpartyId: resolveEligibleCounterpartyId(
+                      prevState.counterpartyId,
+                      counterAccountId,
+                      counterAccountCandidates,
+                    ),
                     counterAccountTouched: true,
                   }))
                 }}
