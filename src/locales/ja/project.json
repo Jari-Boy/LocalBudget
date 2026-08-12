@@ -1,0 +1,21 @@
+{
+  "viewProjectsTitle": "プロジェクトを管理する",
+  "projectListTitle": "プロジェクト管理",
+  "projectListEmpty": "登録済みのプロジェクトがありません",
+  "nameLabel": "名称",
+  "kindLabel": "種別",
+  "kindSettlement": "精算バッチ",
+  "kindEvent": "イベント",
+  "addButton": "プロジェクトを追加",
+  "editButton": "編集",
+  "deleteButton": "削除",
+  "deactivateButton": "非アクティブ化",
+  "inactiveLabel": "非アクティブ",
+  "createSubmit": "作成する",
+  "saveSubmit": "保存する",
+  "cancel": "キャンセル",
+  "back": "戻る",
+  "saveError": "保存に失敗しました。もう一度お試しください。",
+  "deleteError": "削除に失敗しました。もう一度お試しください。",
+  "deactivateError": "非アクティブ化に失敗しました。もう一度お試しください。"
+}
