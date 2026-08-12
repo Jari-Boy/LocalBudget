@@ -429,3 +429,27 @@
 **背景**: `docs/domain/statement-import.md` 2.3節は「OSSとして主要金融機関向けの定義がアプリに同梱される想定」と定めていたが、対応する実装(ユーザーがマッピング定義を新規作成するUI)はIssue #76時点でも未着手だった。組み込み定義が1件も投入されていない状態では、CSV取込アップロード画面(Issue #76の主目的)を実機で検証する手段が無いという実務上の要望を受け、マッピング定義作成UIの着手を待たず、主要金融機関(楽天カード確定/速報明細・楽天銀行・PayPayカード確定明細)向けの定義そのものを先行実装することにした。
 **決定**: `docs/schema/*.sql`への恒久的なデータとしてマイグレーション内にINSERT文を書く方式ではなく、`src/infrastructure/db/builtInMappingDefinitions.ts`(定義データ本体、`CreateImportMappingDefinitionInput[]`)と`seedBuiltInMappingDefinitions(db)`(投入処理)を分離し、`db.worker.ts`の`runMigrations`直後に呼び出す構成にした。冪等性は、`account_id IS NULL`の既存定義から`format_group_id`・`is_settled`の組み合わせキーを集合として求め、同じキーが既に存在すれば再投入しないことで担保する(Worker起動のたびに呼ばれても安全)。ユーザーが定義を編集・独自作成していた場合もキーの一致で保護される(意図せず上書き・重複投入しない)。
 **影響**: マイグレーション(`docs/schema/*.sql`、スキーマ定義)とアプリケーションレベルの初期データ(組み込みマッピング定義)を明確に分離した前例になる。今後、他の「OSS同梱の初期データ」(将来的な組み込み科目グループ・取引先パターン等)を追加する場合も、マイグレーションのDDLに混ぜ込まず、専用のシード関数+冪等性判定キーという同じパターンを踏襲することを優先する。マッピング定義作成UI(ユーザーによる新規追加・編集)自体は引き続き別Issueのスコープとして未実装。
+
+## 2026-08-12: 取引先×非PL科目のガードは全経路共通のresolveEligibleCounterpartyIdへ一元化する
+
+**背景**: `docs/domain/counterparties.md` 1.2は`counterparty_id`をPL科目(収益/費用)の行にのみ設定可能とするDDLトリガー制約を定めている。`JournalEntryForm`(Issue #32)は既に`isCounterpartyEligibleCategory`でこの制約に対応済みだったが、Issue #77の`StatementImportReviewScreen`は当初、相手科目セレクトのonChangeにのみこのガードを実装していた(Attempt 1 FAIL指摘で追加)。続くレビュー(Attempt 2)で、取引先セレクトを直接操作する経路と一括割当てバナーの適用処理という別の2経路には同じガードが実装されておらず、非PL科目を`default_account_id`に持つ取引先を選ぶとDDLトリガー違反によりレビュー確定操作(`JournalEntryRepository.create`)がサイレント失敗する不具合が残っていることが判明した。同一の制約について実装漏れが2回連続で発生した。
+**決定**: 非PL科目選択時に`counterpartyId`をnullへ倒す判定を`resolveEligibleCounterpartyId(counterpartyId, counterAccountId, accounts)`という単一の純粋関数に切り出し、初期表示計算(`computeInitialRecordStates`)・取引先セレクトのonChange・相手科目セレクトのonChange・一括割当て適用(`applyBulkAssignment`)の4経路すべてでこの関数を経由させる実装に統一した。
+**影響**: 同一のドメイン制約(PL科目限定の`counterparty_id`)を複数のUI操作経路(セレクトのonChange・一括操作の適用処理・初期計算)へ実装する場合、各経路に個別のガード条件を書くのではなく、単一の共通関数を新設しすべての経路がそれを呼び出す構成を最初から採用することを優先する。今後同種の画面(相手科目・取引先を独立に変更できる複数の操作経路を持つ画面)を実装する際は、この前例(`resolveEligibleCounterpartyId`)を参照する。一般化されたミスパターンは`docs/guides/patterns.md`参照。
+
+## 2026-08-12: 取引先推定の初期計算は一度きりの実行に制限する(initialEstimationStartedRef)
+
+**背景**: `computeInitialRecordStates`(取引先推定・相手科目サジェストの初期計算)を呼び出す`useEffect`の依存配列に`counterparties`(Repositoryから取得したstate)を含めていたところ、取引先のインライン新規作成(`CounterpartyQuickAddSelect`)で`counterparties`stateが更新されるたびにこのeffectが再発火し、`computeInitialRecordStates`が全レコードを再計算して`setRecordStates`で上書きしてしまうことが判明した(Human Override REJECT対応中に発覚)。これによりユーザーがそれまでに行っていた手動選択・一括割当て結果・新規追加した取引先の選択結果を含む全ての編集内容が、取引先を1件追加するだけで失われる重大な不具合になっていた。
+**決定**: `useRef`(`initialEstimationStartedRef`)で初期計算の実行済みフラグを保持し、`accounts`・`counterparties`が初めて揃った時点で一度だけ`computeInitialRecordStates`を実行するように制限した(`counterparties`はeffectの依存配列に残しつつ`eslint-disable-next-line react-hooks/exhaustive-deps`でlintの再実行推奨を意図的に無視し、実際の再実行はrefガードで防ぐ)。
+**影響**: データ取得・作成系のstateを依存配列に含むuseEffectで、そのstateが後続の別操作(本件は取引先のインライン作成)によって更新されうる場合、そのeffectの再実行がユーザーの既存編集内容を上書きする副作用(本件は`setRecordStates`)を持つかどうかを設計時に確認する必要がある。上書きする副作用を持つ初期計算的なeffectは、依存配列の変化のたびに再実行させず、ref等で「初回のみ実行」に明示的に制限することを優先する。一般化されたミスパターンは`docs/guides/patterns.md`参照。
+
+## 2026-08-12: 取引先のインライン新規作成はモーダルを使わずセレクト内蔵のインライン入力(CounterpartyQuickAddSelect)とし、名前のみの最小実装にする
+
+**背景**: Issue #77のPASS済み実装は、取引先セレクトの選択肢が既存の取引先マスタからの選択に限られ、レビュー画面から新しい取引先をその場で追加する手段を持たなかった。ユーザーによるHuman Override REJECTで、初めて取引先を登録する場合にレビュー画面をいったん離れて別画面で取引先を作成してから戻る必要があり、実運用上の障害になると指摘された。
+**決定**: 取引先セレクトの選択肢に「+ 新規取引先を追加」を追加し、選択するとセレクトの直下に名前入力欄がインライン表示され(モーダルダイアログは使わない、既存の業務UI慣習を踏襲)、その場で`counterpartyRepository.create({ name })`を呼び出して新規取引先を作成・選択できる`CounterpartyQuickAddSelect`コンポーネントを新設した。通常の相手科目行の取引先セレクト・一括割当てバナーの取引先セレクトの両方で共通利用する。この時点では`default_account_id`は設定しない(名前のみの最小実装)。本格的な取引先管理画面(編集・非アクティブ化・統合、`docs/domain/counterparties.md` 1.5・1.5a)は引き続きスコープ外。
+**影響**: 今後、レビュー画面・フォーム等の入力途中で関連マスタ(取引先に限らずプロジェクト・世帯メンバー等)を新規登録したいニーズが出た場合も、別画面への遷移を要求せず、セレクト内蔵のインライン新規作成という同じUIパターンを優先的に検討する。新設したマスタレコードの初期状態は最小限のフィールドのみとし、詳細設定(本件の`default_account_id`等)は別途の管理画面での事後編集に委ねる方針も踏襲する。
+
+## 2026-08-12: 取引先パターンの学習は、レビュー確定時に初期表示で未推定だったレコードに限定する
+
+**背景**: `docs/domain/counterparties.md` 1.3手順5は「ユーザーが手動で取引先を確定させた場合...学習(パターン自動登録)する」と定めるが、「手動で確定させた」の範囲(手順3の自動マッチ結果をそのまま確定した場合を含むか、手順4の未マッチ状態からユーザーが選択した場合に限るか)は文言上一意に定まらなかった。Issue #77のレビュー確定操作(`handleConfirm`)実装にあたり、この解釈を確定する必要があった。
+**決定**: レコードごとに初期表示時点(`computeInitialRecordStates`)で`estimateCounterparty`が返した値を`initialCounterpartyId`として保持し、確定時に`initialCounterpartyId === null`(初期表示で取引先が未推定だった、すなわち1.3手順4のケース)かつ`counterpartyId !== null`(確定時点で取引先が特定されている)の場合のみ`counterpartyRepository.addPattern`を呼び学習する。初期表示で既に自動マッチ済み(手順3)だった取引先をそのまま確定した場合は、既に対応する`pattern`が登録済みであるため学習対象外とする。初期表示で自動マッチ済みだった取引先をユーザーが別の取引先へ手動で修正した場合も、本Issueのスコープでは学習対象に含めない(計画Issueに明示のない実装詳細であり、将来的な拡張の余地はある)。
+**影響**: `docs/domain/counterparties.md` 1.3にこの解釈を明記した。今後、初期表示で自動推定済みの値をユーザーが後から手動修正した場合にも学習させるべきかどうかは、別途ユーザーからの要望が具体化した時点で再検討する。
