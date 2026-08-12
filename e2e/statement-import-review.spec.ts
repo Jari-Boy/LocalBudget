@@ -1,8 +1,10 @@
 /**
  * CSV取込〜レビュー一覧の基盤(計画Issue #76、docs/domain/statement-import.md 1.5・1.6、
- * docs/domain/reconciliation.md 1.5)のE2Eテスト。実ブラウザ(Chromium)でトップ画面から
- * CSV取込アップロード画面・レビュー一覧画面を操作し、Web Worker + RPC層を経由して
- * 対象科目・マッピング定義の選択、CSVアップロード→レビュー一覧遷移、列構成不一致時の
+ * docs/domain/reconciliation.md 1.5)と、CSV先選択フロー(計画Issue #78)のE2Eテスト。
+ * 実ブラウザ(Chromium)でトップ画面からCSV取込アップロード画面・レビュー一覧画面を操作し、
+ * Web Worker + RPC層を経由して、対象科目を選んだ後マッピング定義ではなくCSVファイルを
+ * 先に選択できること、アップロード時に対象科目の候補定義への実パース試行で絞り込まれ
+ * 成功が1件なら自動的にレビュー一覧へ遷移すること、一致するフォーマットが無い場合の
  * エラー表示、外部取引IDの完全一致重複警告、確定版候補の提示・選択、残高照合警告の
  * 表示を検証する。account-registration.spec.ts・journal-entry.spec.tsと同様、
  * 事前データ準備はpage.evaluate内で新規に作成したWorkerで行い、autoSave.flush()で
@@ -75,17 +77,20 @@ interface CounterpartyInput {
  * 対象科目・相手科目候補・マッピング定義・既存仕訳(重複防止フロー/残高照合の前提データ)・
  * 取引先(取引先推定サジェストの前提データ、計画Issue #77)をまとめて1つのWorkerで作成し、
  * flush()で即座にIndexedDBへ永続化してから1回だけreloadする。作成した科目のidを返す
- * (テスト側でCSV内容の組み立て等に使う)。
+ * (テスト側でCSV内容の組み立て等に使う)。mappingは単一のMappingDefinitionInputに加え、
+ * 同一科目に複数のマッピング定義を紐づけたい場合(パース成功候補が複数になるケースの検証、
+ * 計画Issue #78)のため配列でも渡せる。
  */
 async function setupAccountsAndMapping(
   page: Page,
   accounts: AccountInput[],
-  mapping: MappingDefinitionInput,
+  mapping: MappingDefinitionInput | MappingDefinitionInput[],
   journalEntries: JournalEntryInput[] = [],
   counterparties: CounterpartyInput[] = [],
 ): Promise<number[]> {
+  const mappings = Array.isArray(mapping) ? mapping : [mapping]
   const accountIds = await page.evaluate(
-    async ({ accountInputs, mapping, journalEntries, counterparties }) => {
+    async ({ accountInputs, mappings, journalEntries, counterparties }) => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
       const ids: number[] = []
@@ -93,8 +98,10 @@ async function setupAccountsAndMapping(
         const created = await client.account.create(input)
         ids.push(created.id)
       }
-      const { accountIndex, ...mappingFields } = mapping
-      await client.importMappingDefinition.create({ ...mappingFields, accountId: ids[accountIndex] })
+      for (const mapping of mappings) {
+        const { accountIndex, ...mappingFields } = mapping
+        await client.importMappingDefinition.create({ ...mappingFields, accountId: ids[accountIndex] })
+      }
       for (const entry of journalEntries) {
         const { lines, externalTransactionRef, ...entryFields } = entry
         await client.journalEntry.create({
@@ -131,7 +138,7 @@ async function setupAccountsAndMapping(
       await client.autoSave.flush()
       return ids
     },
-    { accountInputs: accounts, mapping, journalEntries, counterparties },
+    { accountInputs: accounts, mappings, journalEntries, counterparties },
   )
   await page.reload()
   await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
@@ -143,19 +150,18 @@ function csvBuffer(content: string): Buffer {
 }
 
 /**
- * 組み込みマッピング定義(計画Issue #76、docs/domain/statement-import.md 2.3節)がシード
- * されるようになったため、テストで作成した専用定義以外にも候補が複数存在しうる。
- * 候補が複数ある場合は自動選択されない(docs/domain/statement-import.md 1.5手順1)ため、
- * 常にlabelで明示的に選択する。
+ * CSV取込アップロード画面(計画Issue #78)で対象科目を選ぶところまでを行う。マッピング定義は
+ * CSVファイルのアップロード時に候補への実パース試行で絞り込まれるため、ここでは選択しない
+ * (組み込みマッピング定義がシードされるようになっているが、実際の列名がテストCSVと
+ * 一致しないため候補には残らず、テストで作成した専用定義のみがパースに成功する)。
  */
-async function startUpload(page: Page, accountName: string, mappingLabel: string) {
+async function startUpload(page: Page, accountName: string) {
   await page.getByRole('button', { name: '明細を取り込む' }).click()
   await page.getByLabel('対象科目').selectOption({ label: accountName })
-  await page.getByLabel('マッピング定義').selectOption({ label: mappingLabel })
 }
 
 test.describe('CSV取込〜レビュー一覧', () => {
-  test('対象科目・マッピング定義を選びCSVをアップロードするとレビュー一覧へ遷移し、相手科目を手動選択できる', async ({
+  test('対象科目を選ぶとマッピング定義ではなくCSVファイルを先に選択でき、アップロードするとレビュー一覧へ遷移し相手科目を手動選択できる', async ({
     page,
   }) => {
     await page.goto('/')
@@ -180,8 +186,11 @@ test.describe('CSV取込〜レビュー一覧', () => {
       },
     )
 
-    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
-    await expect(page.getByLabel('マッピング定義')).toHaveValue(/.+/)
+    await startUpload(page, '普通預金')
+
+    // マッピング定義を選ぶ画面は経由せず、CSVファイルの選択欄がすぐに表示される(計画Issue #78)
+    await expect(page.getByLabel('CSVファイル')).toBeVisible()
+    await expect(page.getByLabel('マッピング定義')).not.toBeVisible()
 
     await page
       .getByLabel('CSVファイル')
@@ -199,7 +208,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await expect(group.getByLabel('相手科目')).toHaveValue(/.+/)
   })
 
-  test('マッピング定義とCSVの列構成が一致しない場合、エラーメッセージが表示され取込が進まない', async ({
+  test('アップロードしたCSVの列構成がどの候補定義とも一致しない場合、エラーメッセージが表示され取込が進まない', async ({
     page,
   }) => {
     await page.goto('/')
@@ -216,7 +225,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
       amountColumn: '金額',
     })
 
-    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await startUpload(page, '普通預金')
     await page
       .getByLabel('CSVファイル')
       .setInputFiles({
@@ -226,8 +235,63 @@ test.describe('CSV取込〜レビュー一覧', () => {
       })
     await page.getByRole('button', { name: '取り込む' }).click()
 
-    await expect(page.getByRole('alert')).toContainText('列構成が一致しません')
+    await expect(page.getByRole('alert')).toContainText('一致するマッピング定義が見つかりませんでした')
     await expect(page.getByRole('heading', { name: '明細のレビュー' })).not.toBeVisible()
+  })
+
+  test('パースに成功する候補定義が複数ある場合、ユーザーが選択でき、選んだ定義でレビュー一覧へ進む', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    await setupAccountsAndMapping(
+      page,
+      [{ category: 'asset', name: '普通預金', isReconcilable: true }],
+      [
+        {
+          accountIndex: 0,
+          formatGroupId: 'bank-a',
+          label: '銀行A形式',
+          dateColumn: '日付',
+          dateFormat: 'YYYY/MM/DD',
+          descriptionColumn: '摘要',
+          amountMode: 'single_signed',
+          amountColumn: '金額',
+        },
+        {
+          accountIndex: 0,
+          formatGroupId: 'bank-b',
+          label: '銀行B形式',
+          dateColumn: '日付',
+          dateFormat: 'YYYY/MM/DD',
+          descriptionColumn: '摘要',
+          amountMode: 'single_signed',
+          amountColumn: '金額',
+        },
+      ],
+    )
+
+    await startUpload(page, '普通預金')
+    await page
+      .getByLabel('CSVファイル')
+      .setInputFiles({
+        name: 'statement.csv',
+        mimeType: 'text/csv',
+        buffer: csvBuffer('日付,摘要,金額\n2026/07/20,スーパー,-3000\n'),
+      })
+    await page.getByRole('button', { name: '取り込む' }).click()
+
+    const definitionSelect = page.getByLabel('マッピング定義')
+    await expect(definitionSelect).toBeVisible()
+    await expect(page.getByRole('heading', { name: '明細のレビュー' })).not.toBeVisible()
+
+    await definitionSelect.selectOption({ label: '銀行B形式' })
+    await page.getByRole('button', { name: '取り込む' }).click()
+
+    await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
+    const group = page.getByRole('group', { name: '1件目' })
+    await expect(group.getByText('スーパー')).toBeVisible()
   })
 
   test('外部取引IDが完全一致する明細は取込済みの可能性がある警告が表示され、既定では取込対象外のままである', async ({
@@ -273,7 +337,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
       ],
     )
 
-    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await startUpload(page, '普通預金')
     await page
       .getByLabel('CSVファイル')
       .setInputFiles({
@@ -334,7 +398,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
       ],
     )
 
-    await startUpload(page, '楽天カード引落口座', 'テストカード')
+    await startUpload(page, '楽天カード引落口座')
     await page
       .getByLabel('CSVファイル')
       .setInputFiles({
@@ -407,7 +471,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
       ],
     )
 
-    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await startUpload(page, '普通預金')
     await page
       .getByLabel('CSVファイル')
       .setInputFiles({
@@ -459,7 +523,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
       ],
     )
 
-    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await startUpload(page, '普通預金')
     await page
       .getByLabel('CSVファイル')
       .setInputFiles({
@@ -508,7 +572,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
       ],
     )
 
-    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await startUpload(page, '普通預金')
     await page
       .getByLabel('CSVファイル')
       .setInputFiles({
@@ -570,7 +634,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
       ],
     )
 
-    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await startUpload(page, '普通預金')
     await page.getByLabel('CSVファイル').setInputFiles({
       name: 'statement.csv',
       mimeType: 'text/csv',
