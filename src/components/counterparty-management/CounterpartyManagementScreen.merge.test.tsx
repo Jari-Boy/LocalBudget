@@ -120,6 +120,12 @@ describe('CounterpartyManagementScreen 取引先統合', () => {
     const [entry] = journalEntryRepository.findAll()
     const movedLine = entry.lines.find((line) => line.accountId === expenseAccount.id)!
     expect(movedLine.counterpartyId).toBe(target.id)
+
+    // 統合先の一覧・件数表示にも付け替え後のパターンが反映される(計画Issue #85)
+    const targetItem = findListItem('ローソン')
+    expect(within(targetItem).getByRole('button', { name: '登録済みパターン: 1件' })).toBeInTheDocument()
+    fireEvent.click(within(targetItem).getByRole('button', { name: '登録済みパターン: 1件' }))
+    expect(within(targetItem).getByText('ローソン東京日本橋')).toBeInTheDocument()
   })
 
   it('統合先には統合元として選択したチェックボックス自身の取引先が選択肢に出ない', async () => {

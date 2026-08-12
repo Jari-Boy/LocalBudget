@@ -282,3 +282,10 @@
 **原因**: 同じマスタデータ(取引先名等)を「一覧表示」と「選択肢」の両方に使う画面では、同一のテキストがDOM上に複数回出現することが構造上避けられない。`getByText`はスコープを指定しない限りdocument全体を対象に検索するため、この種の重複に気づかず素朴に書くと衝突する。
 **対策**: 一覧側の要素を特定したい場合は、`within(screen.getByRole('list'))`のように一覧のコンテナ(`<ul>`等、`role="list"`)へスコープを絞り込んでから`getByText`/`getByRole`を呼ぶ。同名の値がセレクトの選択肢としても存在しうる画面(マスタの一覧+統合/割当のような操作を同一画面に持つUI)を実装する際は、実装当初からこの絞り込みヘルパー(例: `findListItem`)を用意しておく。
 **該当箇所（例）**: `src/components/counterparty-management/CounterpartyManagementScreen.doubleSubmit.test.tsx`・`CounterpartyManagementScreen.merge.test.tsx`(`within(screen.getByRole('list'))`、`findListItem`)、Issue #38(実装中に自己発見)
+
+## 新しいUI要素を既存画面に追加する際、確立済みのスタイル・DOMセマンティクスを継承し忘れる
+
+**症状**: `CounterpartyManagementScreen`に学習済みパターンの編集用`<input>`・展開一覧を追加した実装(Implementation Attempt 1)で、(1)パターン編集用`<input>`に、同じ画面の取引先フォーム(`.counterparty-form input`)が既に持つ角丸・パディング・テーマ色・フォーカスアウトラインのスタイルが適用されておらず素のブラウザ標準スタイルのまま表示されていた、(2)展開したパターン一覧を`<div>`の並びとして実装しており、同じ画面の取引先一覧(`<ul>`/`<li>`)とDOM構造(セマンティクス)が不統一だった。evaluatorのレビュー指摘を受け、`.counterparty-pattern-row input`へ取引先フォームと同一のスタイル定義を追加し、`<div>`を`<ul>`/`<li>`へ変更する修正が必要になった(コミットea924c0)。
+**原因**: 新しいUI要素(本件はパターン編集用input・パターン一覧)を実装する際、機能要件(値の編集・削除ができること)を満たすことに意識が向きやすく、同一画面内に既に確立されている見た目・DOM構造の慣習(フォーム入力欄の共通スタイル、一覧要素の`<ul>`/`<li>`化)を横展開する工程が独立したチェック項目として意識されにくい。機能テスト(Vitest/Testing Library)は要素の存在・値の変更を検証できてもスタイル未適用やセマンティクスの不統一までは検出できないため、見た目のレビュー(evaluatorによる実装確認)まで気づかれにくい。
+**対策**: 既存画面に新しいUI要素(入力欄・一覧・ボタン等)を追加する際は、実装前にその画面内の同種の既存要素(フォーム入力欄、一覧の`<ul>`/`<li>`構造等)を確認し、新要素にも同じCSSクラス構造・DOM要素種別を適用する。同一画面内で同じ役割(例: テキスト入力)の要素が複数箇所に存在する場合、個別にスタイルを重複定義するのではなく、可能であれば共通クラスの再利用を検討する(本件は`.counterparty-form input`と`.counterparty-pattern-row input`が同一のスタイル定義を重複して持っており、将来的な共通化の余地が残る)。一覧を新設する際は、その画面の既存の一覧が`<ul>`/`<li>`を使っているかを確認し、同じセマンティクスに揃える。
+**該当箇所（例）**: `src/components/counterparty-management/CounterpartyManagementScreen.css`(`.counterparty-pattern-row input`、コミットea924c0)、`src/components/counterparty-management/CounterpartyManagementScreen.tsx`(パターン一覧の`<div>`→`<ul>`/`<li>`、同コミット)、Issue #85 実装Attempt 1へのレビュー指摘(コミットea924c0で修正)

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
- * 取引先管理画面(計画Issue #38)の二重送信防止のコンポーネントテスト。
- * 作成・編集・削除・非アクティブ化・統合確定の各非同期操作について、Repository呼び出しの
- * 完了を待つ間は操作ボタンが無効化され、連打による多重実行を防ぐことを検証する
+ * 取引先管理画面(計画Issue #38、計画Issue #85でパターン編集・削除を追加)の
+ * 二重送信防止のコンポーネントテスト。作成・編集・削除・非アクティブ化・統合確定・
+ * パターン編集・パターン削除の各非同期操作について、Repository呼び出しの完了を待つ間は
+ * 操作ボタンが無効化され、連打による多重実行を防ぐことを検証する
  * (StatementImportUploadScreen.test.tsxと同種のテスト手法。Repositoryメソッドの解決タイミングを
  * Proxyで手動制御し、ボタンクリック直後の一時的な無効化状態を観測する)。
  * 外部依存: sql.js(ネットワークアクセスなし)。
@@ -161,5 +162,47 @@ describe('CounterpartyManagementScreen 二重送信防止', () => {
 
     const patterns = counterpartyRepository.findAll()
     expect(patterns.find((c) => c.name === 'ローソン 東京日本橋店')).toBeDefined()
+  })
+
+  it('パターン保存完了を待つ間は保存ボタンが無効化される', async () => {
+    const counterparty = counterpartyRepository.create({ name: 'イオン' })
+    counterpartyRepository.addPattern(counterparty.id, 'AEON')
+    const { repository, release } = withDelayed(counterpartyRepository, 'updatePattern')
+    renderScreen(repository)
+
+    const item = (await screen.findByText('イオン')).closest('li')!
+    fireEvent.click(within(item).getByRole('button', { name: '登録済みパターン: 1件' }))
+    fireEvent.click(within(item).getByRole('button', { name: 'パターンを編集' }))
+    fireEvent.change(within(item).getByLabelText('パターン文字列'), { target: { value: 'AEON MALL' } })
+    const saveButton = within(item).getByRole('button', { name: '保存する' })
+    fireEvent.click(saveButton)
+
+    expect(saveButton).toBeDisabled()
+    fireEvent.click(saveButton)
+
+    release()
+    await waitFor(() => expect(within(item).getByText('AEON MALL')).toBeInTheDocument())
+    expect(counterpartyRepository.findPatternsByCounterparty(counterparty.id)).toHaveLength(1)
+  })
+
+  it('パターン削除完了を待つ間は削除ボタンが無効化され、連打しても1回のみ削除される', async () => {
+    const counterparty = counterpartyRepository.create({ name: 'イオン' })
+    counterpartyRepository.addPattern(counterparty.id, 'AEON')
+    const { repository, release } = withDelayed(counterpartyRepository, 'deletePattern')
+    renderScreen(repository)
+
+    const item = (await screen.findByText('イオン')).closest('li')!
+    fireEvent.click(within(item).getByRole('button', { name: '登録済みパターン: 1件' }))
+    const deleteButton = within(item).getByRole('button', { name: 'パターンを削除' })
+    fireEvent.click(deleteButton)
+
+    expect(deleteButton).toBeDisabled()
+    fireEvent.click(deleteButton)
+
+    release()
+    await waitFor(() =>
+      expect(within(item).getByRole('button', { name: '登録済みパターン: 0件' })).toBeInTheDocument(),
+    )
+    expect(counterpartyRepository.findPatternsByCounterparty(counterparty.id)).toEqual([])
   })
 })

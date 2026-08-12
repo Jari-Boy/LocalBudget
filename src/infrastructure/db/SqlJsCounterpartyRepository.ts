@@ -82,6 +82,24 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
     return result.values.map((values) => mapRowToCounterpartyPattern(result.columns, values))
   }
 
+  findPatternsByCounterparty(counterpartyId: number): CounterpartyPattern[] {
+    const [result] = this.db.exec(
+      'SELECT * FROM counterparty_patterns WHERE counterparty_id = ? ORDER BY id',
+      [counterpartyId],
+    )
+    if (!result) return []
+    return result.values.map((values) => mapRowToCounterpartyPattern(result.columns, values))
+  }
+
+  updatePattern(patternId: number, pattern: string): CounterpartyPattern {
+    this.db.run('UPDATE counterparty_patterns SET pattern = ? WHERE id = ?', [pattern, patternId])
+    return this.findPatternById(patternId)!
+  }
+
+  deletePattern(patternId: number): void {
+    this.db.run('DELETE FROM counterparty_patterns WHERE id = ?', [patternId])
+  }
+
   merge(targetId: number, sourceIds: number[]): void {
     this.db.run('BEGIN')
     try {
