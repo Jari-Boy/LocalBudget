@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 /**
- * CSV取込アップロード画面(計画Issue #76)のコンポーネントテスト。
- * 対象科目・マッピング定義の選択、CSVファイルのアップロード→パース→重複判定を経て
- * onUploadedへ結果を渡すフローと、列構成不一致時のエラー表示を、sql.jsのNode実装
+ * CSV取込アップロード画面(計画Issue #76基盤・計画Issue #78でCSV先選択フローへ改修)の
+ * コンポーネントテスト。対象科目を選んだ後、マッピング定義ではなくCSVファイルを先に選択でき、
+ * アップロード時に対象科目で使える全マッピング定義候補へ実際にパースを試み(resolveMapping
+ * DefinitionCandidates)、成功した候補が1件ならそのままレビュー一覧結果としてonUploadedへ渡し、
+ * 複数あればユーザーに選ばせ、1件もなければエラー表示することを、sql.jsのNode実装
  * (createTestDatabase)を使った統合的なレンダリングテストとして検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
@@ -58,6 +60,16 @@ function csvFile(content: string): File {
   return new File([content], 'statement.csv', { type: 'text/csv' })
 }
 
+async function selectAccountAndUploadFile(accountId: number, content: string): Promise<void> {
+  const accountSelect = await screen.findByLabelText('対象科目')
+  fireEvent.change(accountSelect, { target: { value: String(accountId) } })
+
+  const fileInput = await screen.findByLabelText('CSVファイル')
+  fireEvent.change(fileInput, { target: { files: [csvFile(content)] } })
+
+  fireEvent.click(screen.getByRole('button', { name: '取り込む' }))
+}
+
 describe('StatementImportUploadScreen', () => {
   it('対象科目の選択肢はasset/liabilityのアクティブな非システム管理科目のみ表示する', async () => {
     accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
@@ -71,7 +83,7 @@ describe('StatementImportUploadScreen', () => {
     expect(optionLabels).not.toContain('食費')
   })
 
-  it('対象科目を選ぶと、その科目に使えるマッピング定義が選択肢に表示される', async () => {
+  it('対象科目を選ぶと、マッピング定義ではなくCSVファイルの選択欄が表示される', async () => {
     const account = accountRepository.create({
       category: 'asset',
       name: '普通預金',
@@ -86,7 +98,6 @@ describe('StatementImportUploadScreen', () => {
       descriptionColumn: '摘要',
       amountMode: 'single_signed',
       amountColumn: '金額',
-      balanceColumn: '残高',
     })
 
     renderScreen(vi.fn())
@@ -94,88 +105,11 @@ describe('StatementImportUploadScreen', () => {
     const accountSelect = await screen.findByLabelText('対象科目')
     fireEvent.change(accountSelect, { target: { value: String(account.id) } })
 
-    const definitionSelect = await screen.findByLabelText('マッピング定義')
-    await waitFor(() => {
-      const optionLabels = Array.from(definitionSelect.querySelectorAll('option')).map(
-        (o) => o.textContent,
-      )
-      expect(optionLabels).toContain('マイ銀行 普通預金')
-    })
+    expect(await screen.findByLabelText('CSVファイル')).toBeInTheDocument()
+    expect(screen.queryByLabelText('マッピング定義')).not.toBeInTheDocument()
   })
 
-  it('マッピング定義の候補が1件のみの場合は自動選択される', async () => {
-    const account = accountRepository.create({
-      category: 'asset',
-      name: '普通預金',
-      isReconcilable: true,
-    })
-    const definition = importMappingDefinitionRepository.create({
-      accountId: account.id,
-      formatGroupId: 'my-bank',
-      label: 'マイ銀行 普通預金',
-      dateColumn: '日付',
-      dateFormat: 'YYYY/MM/DD',
-      descriptionColumn: '摘要',
-      amountMode: 'single_signed',
-      amountColumn: '金額',
-    })
-
-    renderScreen(vi.fn())
-
-    const accountSelect = await screen.findByLabelText('対象科目')
-    fireEvent.change(accountSelect, { target: { value: String(account.id) } })
-
-    const definitionSelect = await screen.findByLabelText('マッピング定義')
-    await waitFor(() => expect(definitionSelect).toHaveValue(String(definition.id)))
-  })
-
-  it('マッピング定義の候補が複数ある場合は自動選択せず、ユーザーが選ぶまで未選択のままである(docs/domain/statement-import.md 1.5手順1)', async () => {
-    const account = accountRepository.create({
-      category: 'asset',
-      name: '普通預金',
-      isReconcilable: true,
-    })
-    importMappingDefinitionRepository.create({
-      accountId: account.id,
-      formatGroupId: 'my-bank',
-      isSettled: true,
-      label: 'マイ銀行(確定明細)',
-      dateColumn: '日付',
-      dateFormat: 'YYYY/MM/DD',
-      descriptionColumn: '摘要',
-      amountMode: 'single_signed',
-      amountColumn: '金額',
-    })
-    importMappingDefinitionRepository.create({
-      accountId: account.id,
-      formatGroupId: 'my-bank',
-      isSettled: false,
-      label: 'マイ銀行(速報明細)',
-      dateColumn: '日付',
-      dateFormat: 'YYYY/MM/DD',
-      descriptionColumn: '摘要',
-      amountMode: 'single_signed',
-      amountColumn: '金額',
-    })
-
-    renderScreen(vi.fn())
-
-    const accountSelect = await screen.findByLabelText('対象科目')
-    fireEvent.change(accountSelect, { target: { value: String(account.id) } })
-
-    const definitionSelect = await screen.findByLabelText('マッピング定義')
-    await waitFor(() => {
-      const optionLabels = Array.from(definitionSelect.querySelectorAll('option')).map(
-        (o) => o.textContent,
-      )
-      expect(optionLabels).toContain('マイ銀行(確定明細)')
-      expect(optionLabels).toContain('マイ銀行(速報明細)')
-    })
-    expect(definitionSelect).toHaveValue('')
-    expect(screen.queryByLabelText('CSVファイル')).not.toBeInTheDocument()
-  })
-
-  it('CSVファイルをアップロードすると、パース結果と重複判定を含む結果でonUploadedが呼ばれる', async () => {
+  it('アップロードしたファイルにパース成功する候補が1件のみの場合、自動的にレビュー結果でonUploadedが呼ばれる', async () => {
     const account = accountRepository.create({
       category: 'asset',
       name: '普通預金',
@@ -196,19 +130,10 @@ describe('StatementImportUploadScreen', () => {
     const onUploaded = vi.fn()
     renderScreen(onUploaded)
 
-    const accountSelect = await screen.findByLabelText('対象科目')
-    fireEvent.change(accountSelect, { target: { value: String(account.id) } })
-
-    const definitionSelect = await screen.findByLabelText('マッピング定義')
-    await waitFor(() => {
-      expect(definitionSelect).toHaveValue(String(definition.id))
-    })
-
-    const fileInput = screen.getByLabelText('CSVファイル')
-    const file = csvFile('日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n2026/07/21,給与,250000,347000\n')
-    fireEvent.change(fileInput, { target: { files: [file] } })
-
-    fireEvent.click(screen.getByRole('button', { name: '取り込む' }))
+    await selectAccountAndUploadFile(
+      account.id,
+      '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n2026/07/21,給与,250000,347000\n',
+    )
 
     await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(1))
     const result = onUploaded.mock.calls[0][0] as StatementImportUploadResult
@@ -219,7 +144,55 @@ describe('StatementImportUploadScreen', () => {
     expect(result.review.latestExternalBalance).toBe(347000)
   })
 
-  it('マッピング定義とCSVの列構成が一致しない場合、エラーメッセージを表示しonUploadedを呼ばない', async () => {
+  it('パース成功する候補が複数ある場合、候補を選択でき、選んだ定義でonUploadedが呼ばれる', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    importMappingDefinitionRepository.create({
+      accountId: account.id,
+      formatGroupId: 'bank-a',
+      label: '銀行A形式',
+      dateColumn: '日付',
+      dateFormat: 'YYYY/MM/DD',
+      descriptionColumn: '摘要',
+      amountMode: 'single_signed',
+      amountColumn: '金額',
+    })
+    const definitionB = importMappingDefinitionRepository.create({
+      accountId: account.id,
+      formatGroupId: 'bank-b',
+      label: '銀行B形式',
+      dateColumn: '日付',
+      dateFormat: 'YYYY/MM/DD',
+      descriptionColumn: '摘要',
+      amountMode: 'single_signed',
+      amountColumn: '金額',
+    })
+
+    const onUploaded = vi.fn()
+    renderScreen(onUploaded)
+
+    await selectAccountAndUploadFile(account.id, '日付,摘要,金額\n2026/07/20,スーパー,-3000\n')
+
+    const definitionSelect = await screen.findByLabelText('マッピング定義')
+    const optionLabels = Array.from(definitionSelect.querySelectorAll('option')).map(
+      (o) => o.textContent,
+    )
+    expect(optionLabels).toContain('銀行A形式')
+    expect(optionLabels).toContain('銀行B形式')
+    expect(onUploaded).not.toHaveBeenCalled()
+
+    fireEvent.change(definitionSelect, { target: { value: String(definitionB.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '取り込む' }))
+
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(1))
+    const result = onUploaded.mock.calls[0][0] as StatementImportUploadResult
+    expect(result.definition.id).toBe(definitionB.id)
+  })
+
+  it('パースに成功する候補が1件もない場合、エラーメッセージを表示しonUploadedを呼ばない', async () => {
     const account = accountRepository.create({
       category: 'asset',
       name: '普通預金',
@@ -239,18 +212,29 @@ describe('StatementImportUploadScreen', () => {
     const onUploaded = vi.fn()
     renderScreen(onUploaded)
 
-    const accountSelect = await screen.findByLabelText('対象科目')
-    fireEvent.change(accountSelect, { target: { value: String(account.id) } })
-    await screen.findByLabelText('マッピング定義')
-
-    const fileInput = screen.getByLabelText('CSVファイル')
-    const file = csvFile('違う列1,違う列2\na,b\n')
-    fireEvent.change(fileInput, { target: { files: [file] } })
-
-    fireEvent.click(screen.getByRole('button', { name: '取り込む' }))
+    await selectAccountAndUploadFile(account.id, '違う列1,違う列2\na,b\n')
 
     await expect(screen.findByRole('alert')).resolves.toHaveTextContent(
-      '選択したマッピング定義とファイルの列構成が一致しません',
+      '一致するマッピング定義が見つかりませんでした',
+    )
+    expect(onUploaded).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('マッピング定義')).not.toBeInTheDocument()
+  })
+
+  it('対象科目に使えるマッピング定義が1件も無い場合も、パース成功候補0件と同じエラー表示になる', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+
+    const onUploaded = vi.fn()
+    renderScreen(onUploaded)
+
+    await selectAccountAndUploadFile(account.id, '日付,摘要,金額\n2026/07/20,スーパー,-3000\n')
+
+    await expect(screen.findByRole('alert')).resolves.toHaveTextContent(
+      '一致するマッピング定義が見つかりませんでした',
     )
     expect(onUploaded).not.toHaveBeenCalled()
   })
@@ -261,7 +245,7 @@ describe('StatementImportUploadScreen', () => {
       name: '普通預金',
       isReconcilable: true,
     })
-    const definition = importMappingDefinitionRepository.create({
+    importMappingDefinitionRepository.create({
       accountId: account.id,
       formatGroupId: 'my-bank',
       label: 'マイ銀行 普通預金',
@@ -293,16 +277,7 @@ describe('StatementImportUploadScreen', () => {
     const onUploaded = vi.fn()
     renderScreen(onUploaded)
 
-    const accountSelect = await screen.findByLabelText('対象科目')
-    fireEvent.change(accountSelect, { target: { value: String(account.id) } })
-    const definitionSelect = await screen.findByLabelText('マッピング定義')
-    await waitFor(() => expect(definitionSelect).toHaveValue(String(definition.id)))
-
-    const fileInput = screen.getByLabelText('CSVファイル')
-    const file = csvFile('日付,摘要,金額,取引ID\n2026/07/20,スーパー,-3000,TX-001\n')
-    fireEvent.change(fileInput, { target: { files: [file] } })
-
-    fireEvent.click(screen.getByRole('button', { name: '取り込む' }))
+    await selectAccountAndUploadFile(account.id, '日付,摘要,金額,取引ID\n2026/07/20,スーパー,-3000,TX-001\n')
 
     await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(1))
     const result = onUploaded.mock.calls[0][0] as StatementImportUploadResult
