@@ -132,6 +132,7 @@ function AppContent() {
     return (
       <ProjectManagementScreen
         projectRepository={projectRepository}
+        accountRepository={accountRepository}
         journalEntryRepository={journalEntryRepository}
         onBack={() => setScreen('home')}
       />

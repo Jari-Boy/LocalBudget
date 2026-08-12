@@ -40,6 +40,7 @@ function renderScreen(onBack: () => void = vi.fn()) {
     <I18nextProvider i18n={i18n}>
       <ProjectManagementScreen
         projectRepository={projectRepository}
+        accountRepository={accountRepository}
         journalEntryRepository={journalEntryRepository}
         onBack={onBack}
       />

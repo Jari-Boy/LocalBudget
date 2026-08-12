@@ -17,5 +17,15 @@
   "back": "戻る",
   "saveError": "保存に失敗しました。もう一度お試しください。",
   "deleteError": "削除に失敗しました。もう一度お試しください。",
-  "deactivateError": "非アクティブ化に失敗しました。もう一度お試しください。"
+  "deactivateError": "非アクティブ化に失敗しました。もう一度お試しください。",
+  "detailToggle": "内訳を表示",
+  "detailToggleCollapse": "内訳を閉じる",
+  "balanceAssetsTitle": "資産",
+  "balanceLiabilitiesTitle": "負債",
+  "balanceEquityTitle": "純資産",
+  "balanceRevenuesTitle": "収益",
+  "balanceExpensesTitle": "費用",
+  "balanceEmpty": "残高のある科目がありません",
+  "deactivationProposalMessage": "非アクティブ化しますか?",
+  "deactivationProposalSubmit": "非アクティブ化する"
 }

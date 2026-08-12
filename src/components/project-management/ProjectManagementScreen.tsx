@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { Account } from '../../domain/account/Account'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type {
   CreateProjectInput,
@@ -7,10 +8,19 @@ import type {
   ProjectKind,
   UpdateProjectInput,
 } from '../../domain/project/Project'
+import { isSettlementBalanceZero } from '../../domain/project/isSettlementBalanceZero'
+import {
+  summarizeProjectAccountBalances,
+  type ProjectAccountBalances,
+} from '../../domain/project/summarizeProjectAccountBalances'
+import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import './ProjectManagementScreen.css'
 
 interface JournalEntryFinder {
   findAll(): JournalEntry[] | Promise<JournalEntry[]>
+}
+interface AccountFinder {
+  findAll(): Account[] | Promise<Account[]>
 }
 interface ProjectFinder {
   findAll(): Project[] | Promise<Project[]>
@@ -30,15 +40,29 @@ interface ProjectDeactivator {
 
 export interface ProjectManagementScreenProps {
   projectRepository: ProjectFinder & ProjectCreator & ProjectUpdater & ProjectDeleter & ProjectDeactivator
+  accountRepository: AccountFinder
   journalEntryRepository: JournalEntryFinder
   onBack: () => void
 }
 
 interface LoadedData {
   projects: Project[]
+  entries: JournalEntry[]
+  accounts: Account[]
   /** docs/domain/projects.md 1.3節の削除可否判定に使う、プロジェクトidごとの紐づく仕訳明細件数 */
   journalLineCountByProjectId: Map<number, number>
 }
+
+const BALANCE_CATEGORIES: {
+  key: keyof ProjectAccountBalances
+  titleKey: 'balanceAssetsTitle' | 'balanceLiabilitiesTitle' | 'balanceEquityTitle' | 'balanceRevenuesTitle' | 'balanceExpensesTitle'
+}[] = [
+  { key: 'assets', titleKey: 'balanceAssetsTitle' },
+  { key: 'liabilities', titleKey: 'balanceLiabilitiesTitle' },
+  { key: 'equity', titleKey: 'balanceEquityTitle' },
+  { key: 'revenues', titleKey: 'balanceRevenuesTitle' },
+  { key: 'expenses', titleKey: 'balanceExpensesTitle' },
+]
 
 /** nullは非表示、'create'は新規作成フォーム、number(id)は該当プロジェクトの編集フォームを表す */
 type FormMode = 'create' | number | null
@@ -53,6 +77,7 @@ type FormMode = 'create' | number | null
  */
 export function ProjectManagementScreen({
   projectRepository,
+  accountRepository,
   journalEntryRepository,
   onBack,
 }: ProjectManagementScreenProps) {
@@ -65,12 +90,15 @@ export function ProjectManagementScreen({
   const [error, setError] = useState<string | null>(null)
   /** 作成・編集・削除・非アクティブ化のいずれか進行中は全操作ボタンを無効化する(連打による二重実行防止) */
   const [isSubmitting, setIsSubmitting] = useState(false)
+  /** 「内訳を表示」で展開したプロジェクト別のPL/BS科目残高内訳パネル */
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<number>>(new Set())
 
   const load = () => {
     void Promise.all([
       Promise.resolve(projectRepository.findAll()),
+      Promise.resolve(accountRepository.findAll()),
       Promise.resolve(journalEntryRepository.findAll()),
-    ]).then(([projects, entries]) => {
+    ]).then(([projects, accounts, entries]) => {
       const journalLineCountByProjectId = new Map<number, number>()
       for (const entry of entries) {
         for (const line of entry.lines) {
@@ -81,11 +109,11 @@ export function ProjectManagementScreen({
           )
         }
       }
-      setData({ projects, journalLineCountByProjectId })
+      setData({ projects, entries, accounts, journalLineCountByProjectId })
     })
   }
 
-  useEffect(load, [projectRepository, journalEntryRepository])
+  useEffect(load, [projectRepository, accountRepository, journalEntryRepository])
 
   if (data === null) {
     return <p role="status">{tCommon('loading')}</p>
@@ -147,6 +175,18 @@ export function ProjectManagementScreen({
       .finally(() => setIsSubmitting(false))
   }
 
+  const toggleDetail = (projectId: number) => {
+    setExpandedProjectIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(projectId)) {
+        next.delete(projectId)
+      } else {
+        next.add(projectId)
+      }
+      return next
+    })
+  }
+
   return (
     <div className="project-management-screen">
       <h2>{t('projectListTitle')}</h2>
@@ -159,6 +199,9 @@ export function ProjectManagementScreen({
         <ul>
           {data.projects.map((project) => {
             const journalLineCount = data.journalLineCountByProjectId.get(project.id) ?? 0
+            const detailExpanded = expandedProjectIds.has(project.id)
+            const proposeDeactivation =
+              project.isActive && isSettlementBalanceZero(project, data.entries, data.accounts)
             return (
               <li key={project.id}>
                 <div className="project-list-row">
@@ -170,6 +213,13 @@ export function ProjectManagementScreen({
                     {!project.isActive && <span className="project-list-inactive">{t('inactiveLabel')}</span>}
                   </span>
                   <span className="project-list-actions">
+                    <button
+                      type="button"
+                      onClick={() => toggleDetail(project.id)}
+                      aria-expanded={detailExpanded}
+                    >
+                      {detailExpanded ? t('detailToggleCollapse') : t('detailToggle')}
+                    </button>
                     <button type="button" onClick={() => openEditForm(project)} disabled={isSubmitting}>
                       {t('editButton')}
                     </button>
@@ -185,6 +235,48 @@ export function ProjectManagementScreen({
                     )}
                   </span>
                 </div>
+
+                {proposeDeactivation && (
+                  <div className="project-deactivation-proposal" role="status">
+                    <p>{t('deactivationProposalMessage')}</p>
+                    <button type="button" onClick={() => deactivateProject(project.id)} disabled={isSubmitting}>
+                      {t('deactivationProposalSubmit')}
+                    </button>
+                  </div>
+                )}
+
+                {detailExpanded && (
+                  <div className="project-balance-panel">
+                    {(() => {
+                      const balances = summarizeProjectAccountBalances(data.entries, data.accounts, project.id)
+                      const hasAnyBalance = BALANCE_CATEGORIES.some(
+                        ({ key }) => balances[key].length > 0,
+                      )
+                      if (!hasAnyBalance) {
+                        return <p>{t('balanceEmpty')}</p>
+                      }
+                      return (
+                        <>
+                          {BALANCE_CATEGORIES.filter(({ key }) => balances[key].length > 0).map(
+                            ({ key, titleKey }) => (
+                              <div key={key} className="project-balance-category">
+                                <h4>{t(titleKey)}</h4>
+                                <ul className="project-balance-list">
+                                  {balances[key].map((accountAmount) => (
+                                    <li key={accountAmount.accountId}>
+                                      <span>{accountAmount.accountName}</span>
+                                      <span>{formatCurrency(accountAmount.amount, 'JPY')}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ),
+                          )}
+                        </>
+                      )
+                    })()}
+                  </div>
+                )}
               </li>
             )
           })}
