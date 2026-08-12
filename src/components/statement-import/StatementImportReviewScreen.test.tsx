@@ -1143,4 +1143,135 @@ describe('StatementImportReviewScreen', () => {
     expect(entries).toHaveLength(2)
     expect(entries.every((entry) => entry.lines.every((line) => line.counterpartyId === null))).toBe(true)
   })
+
+  it('取引先セレクトに「+ 新規取引先を追加」の選択肢があり、選ぶと名前入力欄が表示される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '謎の店舗' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    const counterpartySelect = within(group).getByLabelText('取引先') as HTMLSelectElement
+    expect(within(counterpartySelect).getByText('+ 新規取引先を追加')).toBeInTheDocument()
+
+    fireEvent.change(counterpartySelect, { target: { value: '__new__' } })
+
+    expect(within(group).getByLabelText('新しい取引先名')).toBeInTheDocument()
+  })
+
+  it('新しい取引先名を入力して追加すると、その場で作成されレコードの取引先として選択され、DBにも登録される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '謎の店舗' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('取引先'), { target: { value: '__new__' } })
+    fireEvent.change(within(group).getByLabelText('新しい取引先名'), { target: { value: '謎の店舗' } })
+    fireEvent.click(within(group).getByRole('button', { name: '追加' }))
+
+    const counterpartySelect = await within(group).findByLabelText('取引先')
+    await vi.waitFor(() => {
+      expect((counterpartySelect as HTMLSelectElement).value).not.toBe('')
+    })
+
+    const created = counterpartyRepository.findAll().find((c) => c.name === '謎の店舗')
+    expect(created).toBeDefined()
+    expect((counterpartySelect as HTMLSelectElement).value).toBe(String(created!.id))
+  })
+
+  it('新規取引先の追加中にキャンセルすると、入力欄が閉じ元のセレクト表示に戻る', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '謎の店舗' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('取引先'), { target: { value: '__new__' } })
+    expect(within(group).getByLabelText('新しい取引先名')).toBeInTheDocument()
+
+    fireEvent.click(within(group).getByRole('button', { name: 'キャンセル' }))
+
+    expect(within(group).queryByLabelText('新しい取引先名')).not.toBeInTheDocument()
+    expect(within(group).getByLabelText('取引先')).toBeInTheDocument()
+  })
+
+  it('一括割当てバナーの取引先セレクトからも新規取引先を追加でき、適用すると全レコードに反映される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '謎の店舗', entryDate: '2026-07-20' }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+        {
+          record: importedRecord({ description: '謎の店舗', entryDate: '2026-07-21' }),
+          externalId: 'TX-002',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    await screen.findByRole('group', { name: '1件目' })
+    const banner = screen.getByRole('group', {
+      name: '同じ摘要の明細が2件あります。まとめて取引先/相手科目を割り当てますか?',
+    })
+    fireEvent.change(within(banner).getByLabelText('一括割当ての取引先'), { target: { value: '__new__' } })
+    fireEvent.change(within(banner).getByLabelText('新しい取引先名'), { target: { value: '謎の店舗' } })
+    fireEvent.click(within(banner).getByRole('button', { name: '追加' }))
+
+    await vi.waitFor(() => {
+      expect((within(banner).getByLabelText('一括割当ての取引先') as HTMLSelectElement).value).not.toBe('')
+    })
+
+    const created = counterpartyRepository.findAll().find((c) => c.name === '謎の店舗')
+    expect(created).toBeDefined()
+
+    fireEvent.click(within(banner).getByRole('button', { name: 'まとめて割り当てる' }))
+
+    const group1 = screen.getByRole('group', { name: '1件目' })
+    const group2 = screen.getByRole('group', { name: '2件目' })
+    expect((within(group1).getByLabelText('取引先') as HTMLSelectElement).value).toBe(String(created!.id))
+    expect((within(group2).getByLabelText('取引先') as HTMLSelectElement).value).toBe(String(created!.id))
+  })
 })

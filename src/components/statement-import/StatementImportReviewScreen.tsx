@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
-import type { Counterparty, CounterpartyPattern } from '../../domain/counterparty/Counterparty'
+import type { Counterparty, CounterpartyPattern, CreateCounterpartyInput } from '../../domain/counterparty/Counterparty'
 import type { Project } from '../../domain/project/Project'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { CreateJournalEntryInput, JournalEntry, JournalLineSide } from '../../domain/journal/JournalEntry'
@@ -41,6 +41,7 @@ interface CounterpartyEstimationRepository {
   findAll(): Counterparty[] | Promise<Counterparty[]>
   findByPattern(text: string): CounterpartyPattern[] | Promise<CounterpartyPattern[]>
   addPattern(counterpartyId: number, pattern: string): CounterpartyPattern | Promise<CounterpartyPattern>
+  create(input: CreateCounterpartyInput): Counterparty | Promise<Counterparty>
 }
 interface ProjectFinder {
   findAll(): Project[] | Promise<Project[]>
@@ -161,6 +162,113 @@ async function computeInitialRecordStates(
   })
 }
 
+/** 取引先セレクトの「+ 新規取引先を追加」を表す特殊値。取引先idと衝突しない文字列を使う */
+const NEW_COUNTERPARTY_OPTION_VALUE = '__new__'
+
+interface CounterpartyQuickAddSelectProps {
+  id: string
+  label: string
+  value: number | null
+  counterparties: readonly Counterparty[]
+  onChange: (counterpartyId: number | null) => void
+  /** 取引先を新規作成する。作成後の状態(counterparties一覧への追加等)は呼び出し元の責務 */
+  onCreate: (name: string) => Promise<Counterparty>
+}
+
+/**
+ * 取引先セレクト(通常の相手科目選択・一括割当てバナーの両方で共通利用、計画Issue #77
+ * 設計方針5)。既存の取引先マスタからの選択に加え、「+ 新規取引先を追加」を選ぶと
+ * 名前入力欄がインラインで現れ(モーダル不使用、既存の業務UI慣習を踏襲)、その場で
+ * counterpartyRepository.createを呼び出して新規取引先を作成・選択できる。この時点では
+ * default_account_idは設定しない(名前のみの最小実装)。本格的な取引先管理画面
+ * (編集・非アクティブ化・統合)は本Issueのスコープ外。
+ * 2箇所(通常選択・一括割当て)で同じ非PL科目ガード漏れの再発(evaluatorレビュー
+ * Attempt 2 FAIL)を防ぐため、単一のコンポーネントとして共通化している。
+ */
+function CounterpartyQuickAddSelect({
+  id,
+  label,
+  value,
+  counterparties,
+  onChange,
+  onCreate,
+}: CounterpartyQuickAddSelectProps) {
+  const { t } = useTranslation('statementImport')
+  const [adding, setAdding] = useState(false)
+  const [nameInput, setNameInput] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleAdd(): Promise<void> {
+    const trimmedName = nameInput.trim()
+    if (trimmedName === '') return
+    setCreating(true)
+    setError(null)
+    try {
+      const created = await onCreate(trimmedName)
+      onChange(created.id)
+      setAdding(false)
+      setNameInput('')
+    } catch {
+      setError(t('newCounterpartyError'))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  if (adding) {
+    return (
+      <div className="statement-import-counterparty-quick-add">
+        <label htmlFor={`${id}-new-name`}>{t('newCounterpartyNameLabel')}</label>
+        <input
+          id={`${id}-new-name`}
+          type="text"
+          value={nameInput}
+          onChange={(event) => setNameInput(event.target.value)}
+        />
+        <button type="button" disabled={creating || nameInput.trim() === ''} onClick={() => void handleAdd()}>
+          {t('addCounterpartyButton')}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setAdding(false)
+            setNameInput('')
+          }}
+        >
+          {t('cancelButton')}
+        </button>
+        {error && <p role="alert">{error}</p>}
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <label htmlFor={id}>{label}</label>
+      <select
+        id={id}
+        value={value ?? ''}
+        onChange={(event) => {
+          if (event.target.value === NEW_COUNTERPARTY_OPTION_VALUE) {
+            setAdding(true)
+            return
+          }
+          onChange(event.target.value === '' ? null : Number(event.target.value))
+        }}
+      >
+        <option value="">{t('unselected')}</option>
+        {counterparties.map((counterparty) => (
+          <option key={counterparty.id} value={counterparty.id}>
+            {counterparty.name}
+          </option>
+        ))}
+        <option value={NEW_COUNTERPARTY_OPTION_VALUE}>{t('addNewCounterpartyOption')}</option>
+      </select>
+    </>
+  )
+}
+
 /** 対象科目の永続化済み(過去分)のjournal_line。確定版候補の置き換え判定にjournalEntryIdを使う */
 interface PastAccountLine {
   journalEntryId: number
@@ -206,6 +314,8 @@ export function StatementImportReviewScreen({
   const [bulkAssignSelections, setBulkAssignSelections] = useState<Record<string, string>>({})
   const [confirming, setConfirming] = useState(false)
   const [confirmResult, setConfirmResult] = useState<ConfirmResult | null>(null)
+  /** 取引先推定の初期計算(computeInitialRecordStates)を一度きりしか実行しないためのガード */
+  const initialEstimationStartedRef = useRef(false)
 
   useEffect(() => {
     void Promise.resolve(accountRepository.findAll()).then(setAccounts)
@@ -223,8 +333,19 @@ export function StatementImportReviewScreen({
     void Promise.resolve(householdMemberRepository.findAll()).then(setHouseholdMembers)
   }, [householdMemberRepository])
 
+  /**
+   * 取引先推定・相手科目サジェストの初期計算は、accounts・counterpartiesが初めて揃った
+   * タイミングで一度だけ実行する。counterpartiesを依存配列に含めたままだと、取引先の
+   * インライン新規作成(計画Issue #77設計方針5)でcounterpartiesが更新されるたびに
+   * このeffectが再発火し、computeInitialRecordStatesが全レコードを再計算してsetRecordStates
+   * で上書きしてしまう。これによりユーザーがそれまでに行った編集(手動選択・一括割当て・
+   * 新規追加した取引先の選択結果を含む)がすべて失われる重大な不具合が起きていた
+   * (Attempt 4実装中に発覚)。initialEstimationStartedRefで一度きりの実行を保証する。
+   */
   useEffect(() => {
     if (counterparties === null || accounts === null) return
+    if (initialEstimationStartedRef.current) return
+    initialEstimationStartedRef.current = true
     void computeInitialRecordStates(review.records, counterpartyRepository, counterparties, accounts).then(
       setRecordStates,
     )
@@ -282,6 +403,17 @@ export function StatementImportReviewScreen({
   const unresolvedGroupByLeadIndex = new Map(
     unresolvedGroups.map((group) => [group.recordIndices[0], group] as const),
   )
+
+  /**
+   * 取引先セレクトの「+ 新規取引先を追加」から呼ばれる(計画Issue #77設計方針5)。
+   * 作成した取引先をcounterparties一覧に追加し、以降すべてのセレクト(通常選択・
+   * 一括割当てバナー双方)の選択肢に即座に反映されるようにする(再フェッチ不要)。
+   */
+  async function createCounterparty(name: string): Promise<Counterparty> {
+    const created = await Promise.resolve(counterpartyRepository.create({ name }))
+    setCounterparties((prev) => (prev === null ? prev : [...prev, created]))
+    return created
+  }
 
   function applyBulkAssignment(group: UnresolvedRecordGroup) {
     const selected = bulkAssignSelections[group.normalizedDescription]
@@ -468,26 +600,24 @@ export function StatementImportReviewScreen({
                       </li>
                     ))}
                   </ul>
-                  <label htmlFor={`${idPrefix}-bulk-assign-counterparty`}>
-                    {t('bulkAssignCounterpartyLabel')}
-                  </label>
-                  <select
+                  <CounterpartyQuickAddSelect
                     id={`${idPrefix}-bulk-assign-counterparty`}
-                    value={bulkAssignSelections[bulkAssignGroup.normalizedDescription] ?? ''}
-                    onChange={(event) =>
+                    label={t('bulkAssignCounterpartyLabel')}
+                    value={
+                      bulkAssignSelections[bulkAssignGroup.normalizedDescription] === undefined ||
+                      bulkAssignSelections[bulkAssignGroup.normalizedDescription] === ''
+                        ? null
+                        : Number(bulkAssignSelections[bulkAssignGroup.normalizedDescription])
+                    }
+                    counterparties={counterparties}
+                    onChange={(counterpartyId) =>
                       setBulkAssignSelections((prev) => ({
                         ...prev,
-                        [bulkAssignGroup.normalizedDescription]: event.target.value,
+                        [bulkAssignGroup.normalizedDescription]: counterpartyId === null ? '' : String(counterpartyId),
                       }))
                     }
-                  >
-                    <option value="">{t('unselected')}</option>
-                    {counterparties.map((counterparty) => (
-                      <option key={counterparty.id} value={counterparty.id}>
-                        {counterparty.name}
-                      </option>
-                    ))}
-                  </select>
+                    onCreate={createCounterparty}
+                  />
                   <button type="button" onClick={() => applyBulkAssignment(bulkAssignGroup)}>
                     {t('bulkAssignApply')}
                   </button>
@@ -516,41 +646,33 @@ export function StatementImportReviewScreen({
                   selectedCounterAccount === undefined || isCounterpartyEligibleCategory(selectedCounterAccount.category)
                 return (
                   showCounterparty && (
-                    <>
-                      <label htmlFor={`${idPrefix}-counterparty`}>{t('counterpartyLabel')}</label>
-                      <select
-                        id={`${idPrefix}-counterparty`}
-                        value={state.counterpartyId ?? ''}
-                        onChange={(event) => {
-                          const counterpartyId = event.target.value === '' ? null : Number(event.target.value)
-                          updateRecordState(index, (prevState) => {
-                            // 相手科目が未編集(dirty flag無し)の間は取引先変更のたびに再サジェストして
-                            // 追従する。手動編集済みなら上書きしない(計画Issue #77設計方針1)
-                            const nextCounterAccountId = prevState.counterAccountTouched
-                              ? prevState.counterAccountId
-                              : suggestCounterpartyAccount(counterpartyId, counterpartyLookup)
-                            return {
-                              ...prevState,
-                              counterAccountId: nextCounterAccountId,
-                              // 選んだ取引先のdefault_account_idが非PL科目の場合、取引先は
-                              // 保持しない(DDLトリガー違反を防ぐ、resolveEligibleCounterpartyId参照)
-                              counterpartyId: resolveEligibleCounterpartyId(
-                                counterpartyId,
-                                nextCounterAccountId,
-                                counterAccountCandidates,
-                              ),
-                            }
-                          })
-                        }}
-                      >
-                        <option value="">{t('unselected')}</option>
-                        {counterparties.map((counterparty) => (
-                          <option key={counterparty.id} value={counterparty.id}>
-                            {counterparty.name}
-                          </option>
-                        ))}
-                      </select>
-                    </>
+                    <CounterpartyQuickAddSelect
+                      id={`${idPrefix}-counterparty`}
+                      label={t('counterpartyLabel')}
+                      value={state.counterpartyId}
+                      counterparties={counterparties}
+                      onChange={(counterpartyId) => {
+                        updateRecordState(index, (prevState) => {
+                          // 相手科目が未編集(dirty flag無し)の間は取引先変更のたびに再サジェストして
+                          // 追従する。手動編集済みなら上書きしない(計画Issue #77設計方針1)
+                          const nextCounterAccountId = prevState.counterAccountTouched
+                            ? prevState.counterAccountId
+                            : suggestCounterpartyAccount(counterpartyId, counterpartyLookup)
+                          return {
+                            ...prevState,
+                            counterAccountId: nextCounterAccountId,
+                            // 選んだ取引先のdefault_account_idが非PL科目の場合、取引先は
+                            // 保持しない(DDLトリガー違反を防ぐ、resolveEligibleCounterpartyId参照)
+                            counterpartyId: resolveEligibleCounterpartyId(
+                              counterpartyId,
+                              nextCounterAccountId,
+                              counterAccountCandidates,
+                            ),
+                          }
+                        })
+                      }}
+                      onCreate={createCounterparty}
+                    />
                   )
                 )
               })()}
