@@ -268,3 +268,17 @@
 **原因**: 「`setSubmitting(true)`を呼んでボタンを無効化する」という連打防止ガードは、1つの非同期処理の入口に1箇所実装すれば足りるという直感が働きやすい。しかし同じボタン操作から呼ばれる処理が複数の分岐(本件は「新規パース」と「絞り込み済み候補からの確定」)に分かれている場合、各分岐の入口ごとに個別にガードを実装しないと、一部の分岐だけ連打防止が機能しない状態になる。片方の分岐(新規パースの経路)では正しく実装されていたため、レビューでも見落とされやすい非対称な実装漏れになった。
 **対策**: 1つのボタン・操作から呼ばれる非同期処理が、早期リターンや条件分岐によって異なる非同期処理へ進む複数の経路を持つ場合、連打防止用の送信中フラグ(`setSubmitting(true)`等)は各分岐の内部ではなく、分岐が発生する前の関数冒頭で一度だけ設定し、以後の全分岐が確実にその効果を受けるようにする。実装後は、各分岐について「非同期処理が完了するまでボタンが無効化されたままであること」を個別に検証する回帰テストを用意する(片方の分岐だけをテストしていると、もう片方の分岐の実装漏れは検出できない)。
 **該当箇所（例）**: `src/components/statement-import/StatementImportUploadScreen.tsx`(`handleUpload`冒頭への`setSubmitting(true)`移動、コミット6760040)、`src/components/statement-import/StatementImportUploadScreen.test.tsx`(複数候補選択時の連打防止回帰テスト)、Issue #78 Review Attempt 1(evaluator FAIL指摘)・Attempt 2で修正
+
+## 新規UI画面に複数の独立した非同期書き込み操作がある場合、一部の操作にのみ二重送信防止ガード(isSubmitting)を実装してしまう
+
+**症状**: `CounterpartyManagementScreen`(作成・編集・削除・非アクティブ化・統合確定という5つの独立した非同期書き込み操作を1画面に持つ)のImplementation Attempt 1で、`isSubmitting`によるボタン無効化ガードが一部の操作にしか実装されておらず、evaluatorのレビューでFAIL指摘された。`AccountRegistrationWizard`で確立した「処理中はボタンをdisabledにするsubmitting state」規約自体は既知のはずだが、1画面に独立した複数の書き込み操作(ボタン)が存在する場合、各操作ごとに個別にガードを実装し忘れるケースが、上記「1つの操作から呼ばれる非同期処理が複数の分岐に分かれる場合」(単一ハンドラ内の分岐の話)とは別の形で繰り返し発生している。evaluatorのレビューコメントでも、この種の実装漏れが新規UI実装のたびに指摘される既知パターンであることが言及された。
+**原因**: 「submitting stateでボタンを無効化する」という規約自体は認知されていても、1画面内に独立した複数の非同期操作(本件は作成・編集・削除・非アクティブ化・統合確定)が存在する場合、実装時に各操作を個別のイベントハンドラとして書き進める過程で、ガードの実装が全操作に横展開されているかを俯瞰的に確認する工程が抜けやすい。ハッピーパスの動作確認(1回だけ操作する)ではガードの有無に関わらず問題なく動くため、連打(2回目のクリック)を明示的に試すテストが無いと気づけない。
+**対策**: 1画面に複数の独立した非同期書き込み操作(ボタン)を持つUIを実装する際は、実装計画の時点で「この画面にはいくつの独立した非同期操作があるか」を列挙し、各操作について(1)冒頭で`isSubmitting`のガード(早期return)、(2)処理開始時の`setIsSubmitting(true)`、(3)完了時の解除(`finally`)、(4)対応するボタンの`disabled={isSubmitting}`、の4点が揃っているかをチェックリストとして確認する。実装後は、各操作について「Repository呼び出しの完了を待つ間はボタンが無効化され、連打しても1回しか実行されないこと」を検証する回帰テストを操作の数だけ用意する(1操作だけのテストでは他操作の実装漏れを検出できない)。画面全体で単一の`isSubmitting`stateを共有し、いずれかの操作が進行中は全ボタンを無効化する設計(操作ごとに個別のstateを持たない)にすると、実装・確認すべき箇所を1つの変数に集約できチェック漏れを減らせる。
+**該当箇所（例）**: `src/components/counterparty-management/CounterpartyManagementScreen.tsx`(`isSubmitting`、コミット3ce5397で5操作全てに追加)、`CounterpartyManagementScreen.doubleSubmit.test.tsx`(5操作それぞれの回帰テスト)、`docs/decisions.md`「取引先管理画面の二重送信防止は画面全体で共有する単一のisSubmitting stateとする」、Issue #38 Review Attempt 1(evaluator FAIL指摘)・Attempt 2で修正
+
+## 一覧のテキストとセレクトの選択肢テキストが同一DOM上に共存する画面で、getByTextが複数要素にマッチしてテストが失敗する
+
+**症状**: `CounterpartyManagementScreen`のように、取引先一覧の`<li>`内のテキスト(例:「ローソン 東京日本橋店」)と、統合先を選ぶ`<select>`内の`<option>`テキストが同じ文言で同一画面上に共存する構成では、Testing Libraryの`screen.getByText('ローソン 東京日本橋店')`が一覧側・セレクト側の両方にマッチし、「複数要素が見つかった」というエラーでテストが失敗する。
+**原因**: 同じマスタデータ(取引先名等)を「一覧表示」と「選択肢」の両方に使う画面では、同一のテキストがDOM上に複数回出現することが構造上避けられない。`getByText`はスコープを指定しない限りdocument全体を対象に検索するため、この種の重複に気づかず素朴に書くと衝突する。
+**対策**: 一覧側の要素を特定したい場合は、`within(screen.getByRole('list'))`のように一覧のコンテナ(`<ul>`等、`role="list"`)へスコープを絞り込んでから`getByText`/`getByRole`を呼ぶ。同名の値がセレクトの選択肢としても存在しうる画面(マスタの一覧+統合/割当のような操作を同一画面に持つUI)を実装する際は、実装当初からこの絞り込みヘルパー(例: `findListItem`)を用意しておく。
+**該当箇所（例）**: `src/components/counterparty-management/CounterpartyManagementScreen.doubleSubmit.test.tsx`・`CounterpartyManagementScreen.merge.test.tsx`(`within(screen.getByRole('list'))`、`findListItem`)、Issue #38(実装中に自己発見)
