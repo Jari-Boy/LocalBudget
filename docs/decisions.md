@@ -459,3 +459,27 @@
 **背景**: Issue #76時点の`StatementImportUploadScreen`は「対象科目→マッピング定義→CSVファイル」の順に選択させる設計だったが、計画Issue #78で、ユーザーがCSVファイルの中身(速報用/確定用等のフォーマットの違い)を事前に判別できないことが多く、CSVファイルより先にマッピング定義を選ばせるUIは実質的にユーザーへ過大な判断を強いていることが指摘された。CSVの中身(列名・値のパターン)からフォーマットをヒューリスティックに推測して自動選択する案も検討したが、`docs/domain/statement-import.md`の既存方針(フォーマットの自動判定は行わず、どの定義を使うかは常にユーザーが明示的に選ぶ)や、`inferMappingDefinitionDraft`のヒューリスティックな列推測で実データとの精度ギャップが繰り返し発覚した経緯(`docs/guides/patterns.md`「ヒューリスティックな推測ロジックは、evaluatorレビューをPASSしたテストfixtureだけでは実データでの精度不足を検出できないことがある」)を踏まえると、新たに中身推測ロジックを追加する案は誤検知のリスクとメンテナンスコストに見合わないと判断した。
 **決定**: 新規の純粋ドメイン関数`resolveMappingDefinitionCandidates`(`src/domain/statement-import/`)を新設した。対象科目で使える全マッピング定義候補それぞれに対し、実際に[1.3](./domain/statement-import.md#13-csvの読み取りreader)の読み取り(`readCsv`、候補ごとにencoding/delimiterが異なりうるため個別実行)→[1.4](./domain/statement-import.md#14-マッピング定義データ駆動)の変換(`mapRowsToImportedRecords`)を試行し、`MappingColumnNotFoundError`に限らず日付書式不一致・金額パース失敗等の汎用`Error`も含め、例外の種類を問わずスローされた候補は失敗として除外する設計にした。これは列名パターンマッチ等の「ファイルの中身からの推測」ではなく、「実際に変換が成立するかどうか」という事実に基づく絞り込みであり、既存方針(フォーマットの自動判定はしない)と矛盾しない。UIはこの絞り込み結果が1件ならそのまま自動的に使用し、複数あれば`label`でユーザーに選ばせ、0件ならエラー表示する。
 **影響**: 今後、複数の設定候補(マッピング定義に限らず)からどれを使うか絞り込む設計を追加する場合も、ヒューリスティックな内容推測ではなく「実際に処理を試行してエラーなく完了するか」という事実ベースの絞り込みを優先することを踏襲する。`resolveMappingDefinitionCandidates`は例外の種類を区別しない設計のため、将来「特定の失敗理由だけはユーザーに個別のフィードバックを返したい」という要件が出た場合は、この一律except方式を見直す必要がある。詳細は`docs/domain/statement-import.md` 1.4・1.5手順1参照。
+
+## 2026-08-12: 取引先統合の確認はwindow.confirm()を使わず画面内2段階ボタン方式にする
+
+**背景**: `docs/domain/counterparties.md` 1.5aの取引先統合は「この操作は取り消せません」という不可逆な一括更新であり、実行前にユーザーの明示的な確認を挟む必要がある。確認UIの実装方式として、ブラウザ標準の`window.confirm()`を使う案も検討したが、本リポジトリには`window.confirm()`を使う先行実装が存在せず、Playwrightで確認ダイアログを扱うにはネイティブダイアログの自動応答(`page.on('dialog', ...)`)の追加実装が必要になり、既存の他画面のE2Eテスト(通常のDOM操作のみ)と手法が非対称になる。
+**決定**: `window.confirm()`は使わず、`CounterpartyManagementScreen`内に画面内2段階ボタン方式(「統合を実行」ボタン押下→確認メッセージと「統合を確定」/「キャンセル」ボタンを含む確認セクションをインライン表示→「統合を確定」で実際にRepositoryを呼ぶ)を実装した。確認セクションの表示/非表示は`confirmingMerge`のuseStateで管理する。
+**影響**: 今後、不可逆な操作(削除・統合等)の実行前確認UIを実装する場合も、`window.confirm()`のようなネイティブダイアログではなく、画面内の状態遷移(ボタン押下→確認セクション表示→確定/キャンセル)で表現する方式を優先する。Playwrightでのテストがモック不要な通常のDOM操作のみで完結し、既存の他画面のE2Eテスト手法とも一貫する。
+
+## 2026-08-12: 取引先統合の結果表示は実行直後の即時フィードバックに留め、統合履歴の一覧参照機能はスコープ外とする
+
+**背景**: `CounterpartyRepository.merge(targetId, sourceIds)`(計画Issue #16で実装済み)は`counterparty_merge_log`への書き込みは行うが戻り値を持たない(`void`)設計になっている。計画Issue #38は「統合実行と結果表示」を完了条件に含んでいたが、`merge()`自体が統合結果(件数等)を返さないため、UIが結果表示に使える情報源がRepository呼び出しの戻り値には存在しない。
+**決定**: `merge()`呼び出し前にUI側(`CounterpartyManagementScreen`)が既に把握している統合元・統合先の取引先名(選択操作の時点でstateとして保持済み)を使い、`merge()`成功後にその名前を使った即時フィードバック(`role="status"`、「{統合先}に統合しました(統合元: {統合元一覧})」)を表示するに留めた。`counterparty_merge_log`に蓄積された過去の統合履歴を後から一覧参照する機能(ログの取得・表示UI)は本Issueのスコープに含めず、実装しなかった。
+**影響**: 過去の統合履歴を確認したいという要望が具体化した場合は、`CounterpartyRepository`に`counterparty_merge_log`を取得するメソッドを別途新設し、専用の履歴閲覧画面(または本画面への追加セクション)として別Issueで対応する。`merge()`自体の戻り値を`void`から統合結果を返す形に変更するかどうかも、その際にあわせて検討する(現状は呼び出し元がUI側で保持する情報だけで結果表示が完結しているため、変更の必要はない)。
+
+## 2026-08-12: 取引先のdefault_account_id選択肢は既存のisCounterpartyEligibleCategoryを再利用してPL科目に絞り込む
+
+**背景**: `CounterpartyManagementScreen`の新規作成・編集フォームで`default_account_id`(`docs/domain/counterparties.md` 1.4・2.1)の選択肢を勘定科目一覧から絞り込む必要があった。`docs/decisions.md`の別エントリ「CSV取込レビュー画面の相手勘定科目候補は、マニュアル起票用のisManualEntryEligibleAccountを流用せず専用のisStatementImportCounterAccountEligibleを新設する」が示す通り、既存の科目選択可否判定関数を別画面に流用する際は前提となる`source_type`・制約が一致するか確認が必要である。
+**決定**: `default_account_id`は`counterparty_id`と対になる概念(取引先はPL科目の行にのみ設定可能、`docs/domain/counterparties.md` 1.2)であり、`JournalEntryForm`(Issue #32)が既に使っている`isCounterpartyEligibleCategory`(`src/components/journal-entry/journalEntryFormLine.ts`、収益/費用科目のみを許可)と絞り込み条件が完全に一致することを確認した上で、新規の判定関数を作らずそのまま再利用した。
+**影響**: 「既存の判定関数をそのまま再利用してよいか」を判断する際は、絞り込み条件の対象(本件は`account.category`のみに依存し`source_type`には依存しない)を確認し、前提が完全に一致する場合は新設せず再利用することを優先する(前提が異なる場合は上記のCSV取込の前例の通り新設する)。
+
+## 2026-08-12: 取引先管理画面の二重送信防止は画面全体で共有する単一のisSubmitting stateとする
+
+**背景**: `CounterpartyManagementScreen`は作成・編集・削除・非アクティブ化・統合確定という5つの独立した非同期書き込み操作を1画面に持つ。Implementation Attempt 1ではこれらの操作の一部にのみ二重送信防止ガード(`isSubmitting`によるボタンの`disabled`化)が実装されており、evaluatorのレビューでFAIL指摘された(詳細は`docs/guides/patterns.md`参照)。操作ごとに個別の`isSubmitting`state(例: `isCreating`/`isDeleting`/`isMerging`等)を持たせる案も検討したが、5つ分の状態変数と対応するガード処理を個別に管理すると、実装・レビューの両方で「全操作にガードが揃っているか」の確認漏れが起きやすい。
+**決定**: 画面全体で共有する単一の`isSubmitting` state(`useState<boolean>`)を採用し、5つの操作いずれかが進行中は、画面内の全ての操作ボタン(編集・削除・非アクティブ化・追加・フォームの保存/キャンセル・統合実行/確定/キャンセル・戻る)を一律で`disabled={isSubmitting}`にする設計にした。各操作の実装は、処理開始時に`if (isSubmitting) return; setIsSubmitting(true)`で早期returnとガードを行い、`finally`で確実に`setIsSubmitting(false)`する共通パターンに揃えた。
+**影響**: ある操作の実行中は他の操作ボタンも一律で無効化されるため、「削除中に編集を始める」のような操作の並行実行自体が起こらない(UXとしては単純化される一方、同時に複数の異なる操作を許容したい要件が将来出た場合は、単一stateのままでは対応できず操作ごとのstateへの分割が必要になる)。今後、複数の独立した非同期書き込み操作を1画面に持つUIを実装する際は、操作数が少数(本件は5つ)であれば、画面全体で共有する単一の`isSubmitting`stateを優先的に検討する(実装・レビュー双方でのチェック漏れを減らせるため)。
