@@ -447,8 +447,27 @@ export function StatementImportReviewScreen({
           return (
             <div key={reviewRecord.externalId}>
               {bulkAssignGroup && (
-                <div className="statement-import-bulk-assign-banner">
-                  <p>{t('bulkAssignPrompt', { count: bulkAssignGroup.recordIndices.length })}</p>
+                <div
+                  className="statement-import-bulk-assign-banner"
+                  role="group"
+                  aria-labelledby={`${idPrefix}-bulk-assign-heading`}
+                >
+                  <p id={`${idPrefix}-bulk-assign-heading`}>
+                    {t('bulkAssignPrompt', { count: bulkAssignGroup.recordIndices.length })}
+                  </p>
+                  {/*
+                    対象レコードがCSV内で連続して並んでいるとは限らず、他のグループや重複警告
+                    レコードが間に挟まりうるため、件数表示だけでは一括割当ての対象が画面上で
+                    判別できない(ユーザー指摘によりPASS済み実装をリジェクトし追加)。
+                  */}
+                  <ul>
+                    {bulkAssignGroup.recordIndices.map((recordIndex) => (
+                      <li key={recordIndex}>
+                        {review.records[recordIndex].record.entryDate}{' '}
+                        {formatCurrency(review.records[recordIndex].record.amount, 'JPY')}
+                      </li>
+                    ))}
+                  </ul>
                   <label htmlFor={`${idPrefix}-bulk-assign-counterparty`}>
                     {t('bulkAssignCounterpartyLabel')}
                   </label>

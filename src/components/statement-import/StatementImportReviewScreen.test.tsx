@@ -561,6 +561,43 @@ describe('StatementImportReviewScreen', () => {
     ).toBeInTheDocument()
   })
 
+  it('一括割当てバナーに、対象レコードの取引日・金額が列挙され、どの明細が対象か分かる', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '謎の店舗', entryDate: '2026-07-20', amount: -1000 }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+        {
+          record: importedRecord({ description: '謎の店舗', entryDate: '2026-07-25', amount: -1500 }),
+          externalId: 'TX-002',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    await screen.findByRole('group', { name: '1件目' })
+    const banner = screen.getByRole('group', {
+      name: '同じ摘要の明細が2件あります。まとめて取引先/相手科目を割り当てますか?',
+    })
+    expect(within(banner).getByText(/2026-07-20/)).toBeInTheDocument()
+    expect(within(banner).getByText(/-￥1,000/)).toBeInTheDocument()
+    expect(within(banner).getByText(/2026-07-25/)).toBeInTheDocument()
+    expect(within(banner).getByText(/-￥1,500/)).toBeInTheDocument()
+  })
+
   it('同じ摘要のレコードが1件のみの場合、一括割当てのバナーは表示されない', async () => {
     const account = accountRepository.create({
       category: 'asset',
