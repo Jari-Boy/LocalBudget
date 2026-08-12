@@ -20,6 +20,7 @@ import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepo
 import { SqlJsImportMappingDefinitionRepository } from '../../infrastructure/db/SqlJsImportMappingDefinitionRepository'
 import { SqlJsExternalTransactionRefRepository } from '../../infrastructure/db/SqlJsExternalTransactionRefRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
+import type { ExternalTransactionRef } from '../../domain/reconciliation/ExternalTransactionRef'
 import {
   StatementImportUploadScreen,
   type StatementImportUploadResult,
@@ -190,6 +191,70 @@ describe('StatementImportUploadScreen', () => {
     await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(1))
     const result = onUploaded.mock.calls[0][0] as StatementImportUploadResult
     expect(result.definition.id).toBe(definitionB.id)
+  })
+
+  it('複数候補から選択して確定する際、突合レコード取得の完了を待つ間は取り込むボタンが無効化される(連打による二重呼び出し防止)', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    importMappingDefinitionRepository.create({
+      accountId: account.id,
+      formatGroupId: 'bank-a',
+      label: '銀行A形式',
+      dateColumn: '日付',
+      dateFormat: 'YYYY/MM/DD',
+      descriptionColumn: '摘要',
+      amountMode: 'single_signed',
+      amountColumn: '金額',
+    })
+    const definitionB = importMappingDefinitionRepository.create({
+      accountId: account.id,
+      formatGroupId: 'bank-b',
+      label: '銀行B形式',
+      dateColumn: '日付',
+      dateFormat: 'YYYY/MM/DD',
+      descriptionColumn: '摘要',
+      amountMode: 'single_signed',
+      amountColumn: '金額',
+    })
+
+    let resolveFindByAccount: (refs: ExternalTransactionRef[]) => void = () => {}
+    const findByAccountPromise = new Promise<ExternalTransactionRef[]>((resolve) => {
+      resolveFindByAccount = resolve
+    })
+    const delayedExternalTransactionRefRepository = {
+      findByAccount: vi.fn(() => findByAccountPromise),
+    }
+
+    const onUploaded = vi.fn()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <StatementImportUploadScreen
+          accountRepository={accountRepository}
+          importMappingDefinitionRepository={importMappingDefinitionRepository}
+          externalTransactionRefRepository={delayedExternalTransactionRefRepository}
+          onUploaded={onUploaded}
+          onBack={vi.fn()}
+        />
+      </I18nextProvider>,
+    )
+
+    await selectAccountAndUploadFile(account.id, '日付,摘要,金額\n2026/07/20,スーパー,-3000\n')
+
+    const definitionSelect = await screen.findByLabelText('マッピング定義')
+    fireEvent.change(definitionSelect, { target: { value: String(definitionB.id) } })
+
+    const uploadButton = screen.getByRole('button', { name: '取り込む' })
+    fireEvent.click(uploadButton)
+
+    expect(uploadButton).toBeDisabled()
+    fireEvent.click(uploadButton)
+    expect(delayedExternalTransactionRefRepository.findByAccount).toHaveBeenCalledTimes(1)
+
+    resolveFindByAccount([])
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(1))
   })
 
   it('パースに成功する候補が1件もない場合、エラーメッセージを表示しonUploadedを呼ばない', async () => {

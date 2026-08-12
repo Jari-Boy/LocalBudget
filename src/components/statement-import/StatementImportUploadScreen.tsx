@@ -121,16 +121,20 @@ export function StatementImportUploadScreen({
 
   async function handleUpload(): Promise<void> {
     if (targetAccount === null || file === null) return
-
-    if (candidateMatches !== null) {
-      const chosen = candidateMatches.find((match) => match.definition.id === selectedCandidateId)
-      if (chosen === undefined) return
-      await finalizeUpload(targetAccount, chosen)
-      return
-    }
+    if (candidateMatches !== null && selectedCandidateId === null) return
 
     setSubmitting(true)
     setError(null)
+
+    if (candidateMatches !== null) {
+      const chosen = candidateMatches.find((match) => match.definition.id === selectedCandidateId)
+      if (chosen === undefined) {
+        setSubmitting(false)
+        return
+      }
+      await finalizeUpload(targetAccount, chosen)
+      return
+    }
 
     try {
       const bytes = new Uint8Array(await file.arrayBuffer())
