@@ -63,19 +63,29 @@ interface JournalEntryInput {
   externalTransactionRef?: ExternalTransactionRefInput
 }
 
+interface CounterpartyInput {
+  name: string
+  /** accountsのうち、default_account_idに設定する科目のインデックス。省略時はnull */
+  defaultAccountIndex?: number
+  /** 事前登録するcounterparty_patterns(docs/domain/counterparties.md 1.3)。省略時は登録しない */
+  patterns?: string[]
+}
+
 /**
- * 対象科目・相手科目候補・マッピング定義・既存仕訳(重複防止フロー/残高照合の前提データ)を
- * まとめて1つのWorkerで作成し、flush()で即座にIndexedDBへ永続化してから1回だけreloadする。
- * 作成した科目のidを返す(テスト側でCSV内容の組み立て等に使う)。
+ * 対象科目・相手科目候補・マッピング定義・既存仕訳(重複防止フロー/残高照合の前提データ)・
+ * 取引先(取引先推定サジェストの前提データ、計画Issue #77)をまとめて1つのWorkerで作成し、
+ * flush()で即座にIndexedDBへ永続化してから1回だけreloadする。作成した科目のidを返す
+ * (テスト側でCSV内容の組み立て等に使う)。
  */
 async function setupAccountsAndMapping(
   page: Page,
   accounts: AccountInput[],
   mapping: MappingDefinitionInput,
   journalEntries: JournalEntryInput[] = [],
+  counterparties: CounterpartyInput[] = [],
 ): Promise<number[]> {
   const accountIds = await page.evaluate(
-    async ({ accountInputs, mapping, journalEntries }) => {
+    async ({ accountInputs, mapping, journalEntries, counterparties }) => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
       const ids: number[] = []
@@ -106,10 +116,22 @@ async function setupAccountsAndMapping(
             : undefined,
         })
       }
+      for (const counterpartyInput of counterparties) {
+        const created = await client.counterparty.create({
+          name: counterpartyInput.name,
+          defaultAccountId:
+            counterpartyInput.defaultAccountIndex === undefined
+              ? undefined
+              : ids[counterpartyInput.defaultAccountIndex],
+        })
+        for (const pattern of counterpartyInput.patterns ?? []) {
+          await client.counterparty.addPattern(created.id, pattern)
+        }
+      }
       await client.autoSave.flush()
       return ids
     },
-    { accountInputs: accounts, mapping, journalEntries },
+    { accountInputs: accounts, mapping, journalEntries, counterparties },
   )
   await page.reload()
   await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
@@ -498,5 +520,104 @@ test.describe('CSV取込〜レビュー一覧', () => {
 
     await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
     await expect(page.getByRole('status').filter({ hasText: '一致しています' })).toBeVisible()
+  })
+
+  test('CSVアップロードから取引先推定・一括割当て・重複警告を経てレビュー確定するまでの一連のフローが完結する(計画Issue #77)', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    const accountIds = await setupAccountsAndMapping(
+      page,
+      [
+        { category: 'asset', name: '普通預金', isReconcilable: true },
+        { category: 'expense', name: '食費', isReconcilable: null },
+        { category: 'expense', name: '娯楽費', isReconcilable: null },
+      ],
+      {
+        accountIndex: 0,
+        formatGroupId: 'test-bank',
+        label: 'テスト銀行 普通預金',
+        dateColumn: '日付',
+        dateFormat: 'YYYY/MM/DD',
+        descriptionColumn: '摘要',
+        amountMode: 'single_signed',
+        amountColumn: '金額',
+        externalIdColumn: '取引ID',
+      },
+      [
+        {
+          entryDate: '2026-07-15',
+          memo: 'ATM引出',
+          sourceType: 'external_import',
+          lines: [
+            { accountIndex: 0, side: 'credit', amount: 5000 },
+            { accountIndex: 1, side: 'debit', amount: 5000 },
+          ],
+          externalTransactionRef: {
+            accountIndex: 0,
+            externalId: 'TX-DUP',
+            entryDate: '2026-07-15',
+            description: 'ATM引出',
+            amount: -5000,
+          },
+        },
+      ],
+      [
+        { name: 'イオン', defaultAccountIndex: 1, patterns: ['イオン'] },
+        { name: '謎商店', defaultAccountIndex: 2 },
+      ],
+    )
+
+    await startUpload(page, '普通預金', 'テスト銀行 普通預金')
+    await page.getByLabel('CSVファイル').setInputFiles({
+      name: 'statement.csv',
+      mimeType: 'text/csv',
+      buffer: csvBuffer(
+        '日付,摘要,金額,取引ID\n' +
+          '2026/07/15,ATM引出,-5000,TX-DUP\n' +
+          '2026/07/20,イオン渋谷店,-3000,TX-NEW1\n' +
+          '2026/07/21,謎の店舗,-1000,TX-NEW2\n' +
+          '2026/07/22,謎の店舗,-1500,TX-NEW3\n',
+      ),
+    })
+    await page.getByRole('button', { name: '取り込む' }).click()
+    await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
+
+    // 1件目: 完全一致重複(#76) → 既定では取込対象外のまま
+    const group1 = page.getByRole('group', { name: '1件目' })
+    await expect(group1.getByText('取込済みの可能性がある明細です。')).toBeVisible()
+    await expect(group1.getByLabel('それでも取り込む')).not.toBeChecked()
+
+    // 2件目: 取引先パターンに一致 → 取引先・相手科目が自動サジェストされる
+    const group2 = page.getByRole('group', { name: '2件目' })
+    await expect(group2.getByLabel('取引先')).toHaveValue(/.+/)
+    await expect(group2.getByLabel('相手科目')).toHaveValue(String(accountIds[1]))
+
+    // 3・4件目: 取引先未特定の同一摘要 → 一括割当てバナーが表示される
+    await expect(
+      page.getByText('同じ摘要の明細が2件あります。まとめて取引先/相手科目を割り当てますか?'),
+    ).toBeVisible()
+    await page.getByLabel('一括割当ての取引先').selectOption({ label: '謎商店' })
+    await page.getByRole('button', { name: 'まとめて割り当てる' }).click()
+
+    const group3 = page.getByRole('group', { name: '3件目' })
+    const group4 = page.getByRole('group', { name: '4件目' })
+    await expect(group3.getByLabel('相手科目')).toHaveValue(String(accountIds[2]))
+    await expect(group4.getByLabel('相手科目')).toHaveValue(String(accountIds[2]))
+
+    // レビュー確定: 重複除外された1件目を除く3件が確定される(継続処理方式、計画Issue #77設計方針2)
+    await page.getByRole('button', { name: '確定する' }).click()
+    await expect(page.getByText('3件を確定しました(0件失敗)')).toBeVisible()
+
+    // 確定後、仕訳が実際に永続化され登録済み科目一覧の残高に反映されていることを確認する
+    await page.getByRole('button', { name: '戻る' }).click()
+    await page.getByRole('button', { name: '戻る' }).click()
+    await page.getByRole('button', { name: '登録済みの科目を見る' }).click()
+    await expect(page.getByRole('heading', { name: '登録済みの科目' })).toBeVisible()
+    await expect(
+      page.getByRole('listitem').filter({ hasText: '普通預金' }).filter({ hasText: '-￥10,500' }),
+    ).toBeVisible()
   })
 })
