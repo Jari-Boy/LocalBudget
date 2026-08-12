@@ -18,6 +18,8 @@
   "recordAmount": "金額",
   "counterpartyLabel": "取引先",
   "counterAccountLabel": "相手科目",
+  "projectLabel": "プロジェクト",
+  "householdMemberLabel": "世帯メンバー",
   "exactDuplicateWarning": "取込済みの可能性がある明細です。",
   "includeDuplicateLabel": "それでも取り込む",
   "approximateDuplicateWarning": "日付・金額が近い明細が既にあります。確定版の可能性があります。",

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { Counterparty, CounterpartyPattern } from '../../domain/counterparty/Counterparty'
+import type { Project } from '../../domain/project/Project'
+import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { CreateJournalEntryInput, JournalEntry, JournalLineSide } from '../../domain/journal/JournalEntry'
 import type { StatementImportReviewResult } from '../../domain/statement-import/buildStatementImportReview'
 import {
@@ -40,6 +42,12 @@ interface CounterpartyEstimationRepository {
   findByPattern(text: string): CounterpartyPattern[] | Promise<CounterpartyPattern[]>
   addPattern(counterpartyId: number, pattern: string): CounterpartyPattern | Promise<CounterpartyPattern>
 }
+interface ProjectFinder {
+  findAll(): Project[] | Promise<Project[]>
+}
+interface HouseholdMemberFinder {
+  findAll(): HouseholdMember[] | Promise<HouseholdMember[]>
+}
 
 export interface StatementImportReviewScreenProps {
   targetAccount: Account
@@ -47,6 +55,8 @@ export interface StatementImportReviewScreenProps {
   accountRepository: AccountFinder
   journalEntryRepository: JournalEntryReviewRepository
   counterpartyRepository: CounterpartyEstimationRepository
+  projectRepository: ProjectFinder
+  householdMemberRepository: HouseholdMemberFinder
   onBack: () => void
 }
 
@@ -67,6 +77,10 @@ interface RecordReviewState {
    * (計画Issueに明示のない実装詳細のため、既存方針から妥当と判断した挙動)。
    */
   initialCounterpartyId: number | null
+  /** プロジェクト(任意)。docs/domain/projects.md 1.2の通り区分制約は無くどの科目行にも設定できる */
+  projectId: number | null
+  /** 世帯メンバー(任意)。counterparty_idと異なりPL科目限定の制約は無い(docs/schema/journal.sql) */
+  householdMemberId: number | null
   includeDuplicate: boolean
   approximateDecision: ApproximateDecision
 }
@@ -75,6 +89,8 @@ function createInitialRecordState(counterpartyId: number | null, counterAccountI
   return {
     counterpartyId,
     counterAccountId,
+    projectId: null,
+    householdMemberId: null,
     counterAccountTouched: false,
     initialCounterpartyId: counterpartyId,
     includeDuplicate: false,
@@ -157,6 +173,8 @@ export function StatementImportReviewScreen({
   accountRepository,
   journalEntryRepository,
   counterpartyRepository,
+  projectRepository,
+  householdMemberRepository,
   onBack,
 }: StatementImportReviewScreenProps) {
   const { t } = useTranslation('statementImport')
@@ -164,6 +182,8 @@ export function StatementImportReviewScreen({
 
   const [accounts, setAccounts] = useState<Account[] | null>(null)
   const [counterparties, setCounterparties] = useState<Counterparty[] | null>(null)
+  const [projects, setProjects] = useState<Project[] | null>(null)
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[] | null>(null)
   /** 対象科目の永続化済み(過去分)のjournal_lines。今回アップロードしたバッチの効果は含まない */
   const [pastAccountLines, setPastAccountLines] = useState<PastAccountLine[] | null>(null)
   /** 取引先推定・相手科目サジェストの計算(computeInitialRecordStates)が完了するまではnull */
@@ -180,6 +200,14 @@ export function StatementImportReviewScreen({
   useEffect(() => {
     void Promise.resolve(counterpartyRepository.findAll()).then(setCounterparties)
   }, [counterpartyRepository])
+
+  useEffect(() => {
+    void Promise.resolve(projectRepository.findAll()).then(setProjects)
+  }, [projectRepository])
+
+  useEffect(() => {
+    void Promise.resolve(householdMemberRepository.findAll()).then(setHouseholdMembers)
+  }, [householdMemberRepository])
 
   useEffect(() => {
     if (counterparties === null || accounts === null) return
@@ -208,7 +236,13 @@ export function StatementImportReviewScreen({
     setRecordStates((prev) => prev === null ? prev : prev.map((state, i) => (i === index ? updater(state) : state)))
   }
 
-  if (accounts === null || counterparties === null || recordStates === null) {
+  if (
+    accounts === null ||
+    counterparties === null ||
+    projects === null ||
+    householdMembers === null ||
+    recordStates === null
+  ) {
     return <p role="status">{tCommon('loading')}</p>
   }
 
@@ -322,6 +356,8 @@ export function StatementImportReviewScreen({
               targetAccountCategory: targetAccount.category,
               counterAccountId: state.counterAccountId,
               counterpartyId: state.counterpartyId,
+              projectId: state.projectId,
+              householdMemberId: state.householdMemberId,
             }),
           ),
         )
@@ -500,6 +536,44 @@ export function StatementImportReviewScreen({
                 {counterAccountCandidates.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor={`${idPrefix}-project`}>{t('projectLabel')}</label>
+              <select
+                id={`${idPrefix}-project`}
+                value={state.projectId ?? ''}
+                onChange={(event) =>
+                  updateRecordState(index, (prevState) => ({
+                    ...prevState,
+                    projectId: event.target.value === '' ? null : Number(event.target.value),
+                  }))
+                }
+              >
+                <option value="">{t('unselected')}</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor={`${idPrefix}-household-member`}>{t('householdMemberLabel')}</label>
+              <select
+                id={`${idPrefix}-household-member`}
+                value={state.householdMemberId ?? ''}
+                onChange={(event) =>
+                  updateRecordState(index, (prevState) => ({
+                    ...prevState,
+                    householdMemberId: event.target.value === '' ? null : Number(event.target.value),
+                  }))
+                }
+              >
+                <option value="">{t('unselected')}</option>
+                {householdMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
                   </option>
                 ))}
               </select>

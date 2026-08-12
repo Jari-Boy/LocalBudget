@@ -170,6 +170,8 @@ function AppContent() {
         accountRepository={accountRepository}
         journalEntryRepository={journalEntryRepository}
         counterpartyRepository={counterpartyRepository}
+        projectRepository={projectRepository}
+        householdMemberRepository={householdMemberRepository}
         onBack={() => {
           setUploadResult(null)
           setScreen('statement-import-upload')

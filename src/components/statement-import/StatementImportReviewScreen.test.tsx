@@ -19,6 +19,8 @@ import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
+import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
+import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import type { StatementImportReviewResult } from '../../domain/statement-import/buildStatementImportReview'
 import type { ImportedRecord } from '../../domain/statement-import/ImportedRecord'
 import { normalizeDescriptionForMatching } from '../../domain/statement-import/estimateCounterparty'
@@ -28,6 +30,8 @@ let db: Database
 let accountRepository: SqlJsAccountRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
 let counterpartyRepository: SqlJsCounterpartyRepository
+let projectRepository: SqlJsProjectRepository
+let householdMemberRepository: SqlJsHouseholdMemberRepository
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -35,6 +39,8 @@ beforeEach(async () => {
   accountRepository = new SqlJsAccountRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
   counterpartyRepository = new SqlJsCounterpartyRepository(db)
+  projectRepository = new SqlJsProjectRepository(db)
+  householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
 })
 
 afterEach(cleanup)
@@ -63,6 +69,8 @@ function renderScreen(
         accountRepository={accountRepository}
         journalEntryRepository={journalEntryRepository}
         counterpartyRepository={counterpartyRepository}
+        projectRepository={projectRepository}
+        householdMemberRepository={householdMemberRepository}
         onBack={vi.fn()}
       />
     </I18nextProvider>,
@@ -960,5 +968,40 @@ describe('StatementImportReviewScreen', () => {
     const entries = journalEntryRepository.findAll()
     expect(entries).toHaveLength(1)
     expect(entries[0].lines.every((line) => line.counterpartyId === null)).toBe(true)
+  })
+
+  it('プロジェクト・世帯メンバーを確認・修正でき、確定操作でjournal_linesに反映される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const project = projectRepository.create({ name: '沖縄旅行' })
+    const member = householdMemberRepository.create({ name: '太郎' })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: 'スーパー', amount: -3000 }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(foodAccount.id) } })
+    fireEvent.change(within(group).getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(within(group).getByLabelText('世帯メンバー'), { target: { value: String(member.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+
+    const entries = journalEntryRepository.findAll()
+    expect(entries).toHaveLength(1)
+    const counterLine = entries[0].lines.find((line) => line.accountId === foodAccount.id)
+    expect(counterLine?.projectId).toBe(project.id)
+    expect(counterLine?.householdMemberId).toBe(member.id)
   })
 })
