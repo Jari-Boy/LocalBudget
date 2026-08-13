@@ -13,6 +13,7 @@
   "namePlaceholder": "例: 三菱UFJ銀行",
   "stepMemberLabel": "名義を選ぶ",
   "stepBalanceLabel": "初期残高を入力(任意)",
+  "stepBalancePerMemberLabel": "世帯メンバーごとの現金を入力(任意)",
   "next": "次へ",
   "back": "戻る",
   "register": "登録する",
