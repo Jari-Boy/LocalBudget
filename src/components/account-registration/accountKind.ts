@@ -13,3 +13,12 @@ export type AccountKind = 'bank' | 'cash' | 'e_money' | 'investment'
 export function determineIsReconcilable(kind: AccountKind): boolean {
   return kind !== 'cash'
 }
+
+/**
+ * 名義選択ステップを表示するかどうか(docs/domain/accounts.md 4.1節)。
+ * 銀行口座・証券口座・電子マネーは外部に実在し常に誰かに保有される科目のため必須、
+ * 現金は名義の概念自体を持ち込まずステップ自体を常に非表示にする。
+ */
+export function requiresHouseholdMemberSelection(kind: AccountKind): boolean {
+  return kind !== 'cash'
+}

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
  * クレジットカード登録ウィザード(docs/domain/accounts.md 5章)のコンポーネントテスト。
- * 名前入力→名義選択(任意)の2ステップと、世帯メンバー未登録時の名義選択ステップ非表示、
- * 確定時にis_reconcilable = false固定の負債科目が作成されることを、
- * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして検証する。
- * 外部依存: sql.js(ネットワークアクセスなし)。
+ * 名前入力→名義選択(世帯メンバーが1人以上いる場合は必須)の2ステップと、
+ * 世帯メンバー未登録時の名義選択ステップ非表示、確定時にis_reconcilable = false固定の
+ * 負債科目が作成されることを、sql.jsのNode実装(createTestDatabase)を使った統合的な
+ * レンダリングテストとして検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -52,7 +52,7 @@ describe('CreditCardRegistrationWizard', () => {
       target: { value: '楽天カード' },
     })
 
-    expect(screen.queryByText('名義を選ぶ(任意)')).not.toBeInTheDocument()
+    expect(screen.queryByText('名義を選ぶ')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '登録する' }))
 
@@ -65,7 +65,7 @@ describe('CreditCardRegistrationWizard', () => {
     })
   })
 
-  it('世帯メンバーが登録済みの場合、名義選択ステップが表示され選択した名義で登録される', async () => {
+  it('世帯メンバーが登録済みの場合、名義選択ステップが表示され選ぶまで登録できない', async () => {
     const member = householdMemberRepository.create({ name: '花子' })
     const onComplete = vi.fn()
     renderWizard(onComplete)
@@ -75,8 +75,12 @@ describe('CreditCardRegistrationWizard', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
 
-    expect(screen.getByText('名義を選ぶ(任意)')).toBeInTheDocument()
+    expect(screen.getByText('名義を選ぶ')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '世帯共通' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '登録する' })).toBeDisabled()
+
     fireEvent.click(screen.getByRole('button', { name: '花子' }))
+    expect(screen.getByRole('button', { name: '登録する' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: '登録する' }))
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))

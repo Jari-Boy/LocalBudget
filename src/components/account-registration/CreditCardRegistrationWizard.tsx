@@ -20,9 +20,11 @@ type Step = 'name' | 'member'
 
 /**
  * クレジットカード登録ウィザード(docs/domain/accounts.md 5章)。名前入力→
- * 名義選択(任意)の2ステップで、口座登録(4章)と異なり種類選択・初期残高
- * 入力のステップは持たない(5.1節)。世帯メンバーが1人も登録されていない
- * 場合、名義選択ステップは表示しない(口座登録ウィザードと同じ扱い)。
+ * 名義選択の2ステップで、口座登録(4章)と異なり種類選択・初期残高入力の
+ * ステップは持たない(5.1節)。名義はクレジットカードという性質上常に必須
+ * (計画Issue #90)で、世帯メンバーを選ぶまで登録できない。世帯メンバーが
+ * 1人も登録されていない場合のみ、選択肢が無いため名義選択ステップ自体を
+ * 表示しない(口座登録ウィザードと同じ扱い)。
  */
 export function CreditCardRegistrationWizard({
   accountRepository,
@@ -96,13 +98,6 @@ export function CreditCardRegistrationWizard({
       {currentStep === 'member' && (
         <fieldset>
           <legend>{t('stepMemberLabel')}</legend>
-          <button
-            type="button"
-            aria-pressed={householdMemberId === null}
-            onClick={() => setHouseholdMemberId(null)}
-          >
-            {t('memberCommon')}
-          </button>
           {householdMembers.map((member) => (
             <button
               key={member.id}
@@ -118,7 +113,7 @@ export function CreditCardRegistrationWizard({
             <button type="button" onClick={goBack}>
               {t('back')}
             </button>
-            <button type="button" disabled={submitting} onClick={() => void handleSubmit()}>
+            <button type="button" disabled={submitting || householdMemberId === null} onClick={() => void handleSubmit()}>
               {t('register')}
             </button>
           </div>

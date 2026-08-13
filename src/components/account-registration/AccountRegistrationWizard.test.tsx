@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
  * 口座登録ウィザード(docs/domain/accounts.md 4章)のコンポーネントテスト。
- * 種類選択→名前入力→名義選択(任意)→初期残高入力(任意)の4ステップと、
+ * 種類選択→名前入力→名義選択(kind = bank/investment/e_moneyは必須、
+ * cashはステップ自体を非表示)→初期残高入力(任意)のステップ構成と、
  * 世帯メンバー未登録時の名義選択ステップ非表示、確定時のRepository呼び出しを、
  * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
@@ -77,7 +78,7 @@ describe('AccountRegistrationWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
 
     // 名義選択ステップは表示されず、初期残高入力ステップに直接進む
-    expect(screen.queryByText('名義を選ぶ(任意)')).not.toBeInTheDocument()
+    expect(screen.queryByText('名義を選ぶ')).not.toBeInTheDocument()
     expect(screen.getByText('初期残高を入力(任意)')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '登録する' }))
@@ -106,6 +107,40 @@ describe('AccountRegistrationWizard', () => {
     expect(createdAccount.isReconcilable).toBe(false)
   })
 
+  it('現金を選ぶと世帯メンバーが登録済みでも名義選択ステップが表示されない', async () => {
+    householdMemberRepository.create({ name: '太郎' })
+    const onComplete = vi.fn()
+    renderWizard(onComplete)
+
+    fireEvent.click(await screen.findByRole('button', { name: '現金' }))
+    fireEvent.change(screen.getByLabelText('名前を付ける'), { target: { value: '財布' } })
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+
+    // cashは世帯メンバーの登録有無に関わらず名義選択ステップ自体を表示しない(4.1節)
+    expect(screen.queryByText('名義を選ぶ')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('初期残高を入力(任意)')).toBeInTheDocument()
+  })
+
+  it.each(['銀行口座', '証券・投資口座', '電子マネー'])(
+    '%sを選んだ場合、名義選択ステップで世帯メンバーを選ぶまで次のステップに進めない',
+    async (kindLabel) => {
+      householdMemberRepository.create({ name: '太郎' })
+      const onComplete = vi.fn()
+      renderWizard(onComplete)
+
+      fireEvent.click(await screen.findByRole('button', { name: kindLabel }))
+      fireEvent.change(screen.getByLabelText('名前を付ける'), { target: { value: 'テスト口座' } })
+      fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+
+      expect(screen.getByText('名義を選ぶ')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '世帯共通' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled()
+
+      fireEvent.click(screen.getByRole('button', { name: '太郎' }))
+      expect(screen.getByRole('button', { name: '次へ' })).toBeEnabled()
+    },
+  )
+
   it('世帯メンバーが登録済みの場合、名義選択ステップが表示され選択した名義で登録される', async () => {
     const member = householdMemberRepository.create({ name: '太郎' })
     const onComplete = vi.fn()
@@ -117,7 +152,7 @@ describe('AccountRegistrationWizard', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
 
-    expect(screen.getByText('名義を選ぶ(任意)')).toBeInTheDocument()
+    expect(screen.getByText('名義を選ぶ')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '太郎' }))
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
 
@@ -138,7 +173,7 @@ describe('AccountRegistrationWizard', () => {
       target: { value: '三菱UFJ銀行' },
     })
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
-    // 名義選択ステップでは何も選ばず(世帯共通のまま)次へ進む
+    fireEvent.click(screen.getByRole('button', { name: '自分' }))
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
 
     fireEvent.change(screen.getByLabelText('初期残高を入力(任意)'), {
@@ -155,20 +190,19 @@ describe('AccountRegistrationWizard', () => {
     })
   })
 
-  it('世帯メンバーが登録済みで名義を選ばなかった場合、初期仕訳の起票者には世帯メンバーの先頭が使われる(計画Issue #88)', async () => {
+  it('現金を選び名義選択ステップが表示されない場合、初期仕訳の起票者には世帯メンバーの先頭が使われる(計画Issue #88)', async () => {
     const member = householdMemberRepository.create({ name: '太郎' })
     const onComplete = vi.fn()
     renderWizard(onComplete)
 
-    fireEvent.click(await screen.findByRole('button', { name: '銀行口座' }))
+    fireEvent.click(await screen.findByRole('button', { name: '現金' }))
     fireEvent.change(screen.getByLabelText('名前を付ける'), {
-      target: { value: '三菱UFJ銀行' },
+      target: { value: '財布' },
     })
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
 
-    // 名義選択ステップでは何も選ばず(世帯共通のまま)次へ進む
-    expect(screen.getByText('名義を選ぶ(任意)')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    // 名義選択ステップは表示されず、初期残高入力ステップに直接進む
+    expect(screen.queryByText('名義を選ぶ')).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('初期残高を入力(任意)'), {
       target: { value: '100000' },
