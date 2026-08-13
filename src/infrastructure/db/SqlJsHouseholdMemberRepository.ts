@@ -50,10 +50,18 @@ export class SqlJsHouseholdMemberRepository implements HouseholdMemberRepository
       throw new Error(`household member not found: ${id}`)
     }
 
-    this.db.run('UPDATE household_members SET name = ? WHERE id = ?', [
-      input.name ?? current.name,
-      id,
-    ])
+    if (input.isGroup === undefined) {
+      this.db.run('UPDATE household_members SET name = ? WHERE id = ?', [
+        input.name ?? current.name,
+        id,
+      ])
+    } else {
+      this.db.run('UPDATE household_members SET name = ?, is_group = ? WHERE id = ?', [
+        input.name ?? current.name,
+        input.isGroup ? 1 : 0,
+        id,
+      ])
+    }
     return this.findById(id)!
   }
 
