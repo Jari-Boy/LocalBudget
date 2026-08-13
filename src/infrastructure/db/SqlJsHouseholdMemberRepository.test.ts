@@ -66,6 +66,20 @@ describe('update', () => {
     expect(updated.name).toBe('夫(改名)')
   })
 
+  it('isGroupに現在と同じ値を渡した場合は成功する', () => {
+    const created = repository.create({ name: '夫', isGroup: false })
+
+    const updated = repository.update(created.id, { isGroup: false })
+
+    expect(updated.isGroup).toBe(false)
+  })
+
+  it('isGroupを現在と異なる値に変更しようとすると拒否される(is_group変更禁止トリガー、household-members.md 1.5節)', () => {
+    const created = repository.create({ name: '夫', isGroup: false })
+
+    expect(() => repository.update(created.id, { isGroup: true })).toThrow()
+  })
+
   it('updated_atが更新される', () => {
     const created = repository.create({ name: '更新日時確認用メンバー' })
     // 更新によってupdated_atが変わることを、時計を待たずに確認するため

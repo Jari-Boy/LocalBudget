@@ -5,6 +5,7 @@ import account from '../../locales/ja/account.json'
 import journal from '../../locales/ja/journal.json'
 import statementImport from '../../locales/ja/statementImport.json'
 import counterparty from '../../locales/ja/counterparty.json'
+import householdMember from '../../locales/ja/household-member.json'
 import project from '../../locales/ja/project.json'
 
 /**
@@ -14,6 +15,7 @@ import project from '../../locales/ja/project.json'
  * journal名前空間は計画Issue #32(マニュアル仕訳入力UI)で追加した。
  * statementImport名前空間は計画Issue #76(CSV取込〜レビュー一覧の基盤)で追加した。
  * counterparty名前空間は計画Issue #38(取引先管理UI)で追加した。
+ * householdMember名前空間は計画Issue #37(世帯メンバー管理UI)で追加した。
  * project名前空間は計画Issue #36(プロジェクト管理UI)で追加した。
  */
 void i18n.use(initReactI18next).init({
@@ -21,7 +23,7 @@ void i18n.use(initReactI18next).init({
   fallbackLng: 'ja',
   defaultNS: 'common',
   resources: {
-    ja: { common, account, journal, statementImport, counterparty, project },
+    ja: { common, account, journal, statementImport, counterparty, householdMember, project },
   },
   interpolation: {
     escapeValue: false,
