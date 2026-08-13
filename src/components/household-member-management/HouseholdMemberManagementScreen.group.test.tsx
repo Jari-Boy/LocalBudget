@@ -67,6 +67,23 @@ describe('HouseholdMemberManagementScreen グループ所属メンバー管理',
     await waitFor(() => expect(within(groupItem).getByText('夫')).toBeInTheDocument())
   })
 
+  it('既にグループに所属しているメンバーは追加候補のセレクトに表示されない', async () => {
+    const husband = householdMemberRepository.create({ name: '夫' })
+    householdMemberRepository.create({ name: '妻' })
+    const couple = householdMemberRepository.create({ name: '夫婦', isGroup: true })
+    householdMemberRepository.addGroupMember(couple.id, husband.id)
+
+    renderScreen()
+
+    const groupItem = (await screen.findByText('夫婦')).closest('li')!
+    fireEvent.click(within(groupItem).getByRole('button', { name: '所属メンバー: 1人' }))
+    await within(groupItem).findByText('夫', { selector: '.household-member-group-member-name' })
+
+    const select = within(groupItem).getByLabelText('追加するメンバー')
+    expect(within(select).queryByRole('option', { name: '夫' })).not.toBeInTheDocument()
+    expect(within(select).getByRole('option', { name: '妻' })).toBeInTheDocument()
+  })
+
   it('グループから所属メンバーを除去できる', async () => {
     const husband = householdMemberRepository.create({ name: '夫' })
     const couple = householdMemberRepository.create({ name: '夫婦', isGroup: true })

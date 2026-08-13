@@ -270,7 +270,10 @@ export function HouseholdMemberManagementScreen({
               (data.journalLineCountByMemberId.get(member.id) ?? 0)
             const groupMembers = data.groupMembersByGroupId.get(member.id) ?? []
             const groupMembersExpanded = expandedGroupIds.has(member.id)
-            const availableCandidates = data.members.filter((candidate) => candidate.id !== member.id)
+            const groupMemberIds = new Set(groupMembers.map((groupMember) => groupMember.id))
+            const availableCandidates = data.members.filter(
+              (candidate) => candidate.id !== member.id && !groupMemberIds.has(candidate.id),
+            )
 
             return (
               <li key={member.id}>
