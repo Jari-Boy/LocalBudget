@@ -4,7 +4,9 @@
  * トップ画面からウィザードを操作し、Web Worker + RPC層を経由して実際に
  * 勘定科目・仕訳が作成されることを検証する。名義選択ステップは現金以外の
  * 口座種類とクレジットカードで必須(計画Issue #90、「世帯共通」ボタンは廃止)、
- * 現金は常に非表示。DB書き込みの永続化は
+ * 現金は常に非表示。現金はさらに名前入力ステップも経ず科目名は自動的に
+ * 「現金」に固定され、世帯メンバーが1人以上いる場合は世帯メンバーごとの
+ * 初期残高入力に切り替わる(計画Issue #90)。DB書き込みの永続化は
  * withAutoSaveのtrailing debounce(2秒、計画Issue #58)を挟むため、指定した
  * 口座名がRepository経由で確認できるまでpollで待ってから、新しい
  * createDbClient()でDB状態を検証する。IndexedDBに何らかのデータが存在する
@@ -70,36 +72,34 @@ async function deleteDefaultHouseholdMemberViaUi(page: Page) {
 }
 
 test.describe('口座登録ウィザード', () => {
-  test('現金を選ぶと名義選択ステップを経ずに初期残高を入力でき、初期仕訳の起票者は世帯メンバー先頭にフォールバックする(計画Issue #88)', async ({
+  test('現金を選ぶと名前入力・名義選択のステップを経ずに世帯メンバーごとの初期残高を入力でき、初期仕訳の起票者は世帯メンバー先頭にフォールバックする(計画Issue #88・#90)', async ({
     page,
   }) => {
     await page.goto('/')
 
     await page.getByRole('button', { name: '資産を登録する' }).click()
     await page.getByRole('button', { name: '現金' }).click()
-    await page.getByLabel('名前を付ける').fill('財布')
-    await page.getByRole('button', { name: '次へ' }).click()
 
-    // 計画Issue #90により、現金は世帯メンバーの登録有無に関わらず名義選択ステップ
-    // 自体を表示しない。初期残高入力ステップに直接進む。計画Issue #88の
-    // seedDefaultHouseholdMemberにより、Worker起動時にデフォルトメンバー「自分」が
-    // 自動投入されているため、初期仕訳の起票者はAccountRegistrationWizard側で
-    // 世帯メンバー一覧の先頭にフォールバックする。
+    // 計画Issue #90により、現金は名前入力・名義選択のいずれのステップも経ず、
+    // 種類選択の1クリックで初期残高入力ステップへ直接進む。科目名は自動的に
+    // 「現金」に固定される。計画Issue #88のseedDefaultHouseholdMemberにより、
+    // Worker起動時にデフォルトメンバー「自分」が自動投入されているため、
+    // 世帯メンバーごとの初期残高入力欄(「自分」の1件)が表示される。
     await expect(page.getByText('名義を選ぶ')).toBeHidden()
-    await expect(page.getByText('初期残高を入力(任意)')).toBeVisible()
+    await expect(page.getByLabel('自分')).toBeVisible()
 
-    await page.getByLabel('初期残高を入力(任意)').fill('100000')
+    await page.getByLabel('自分').fill('100000')
     await page.getByRole('button', { name: '登録する' }).click()
 
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
-    await waitForAccountCreated(page, '財布')
+    await waitForAccountCreated(page, '現金')
 
     const result = await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
       const accounts = await client.account.findAll()
       const entries = await client.journalEntry.findAll()
-      const account = accounts.find((a) => a.name === '財布')
+      const account = accounts.find((a) => a.name === '現金')
       const initialBalanceAccount = accounts.find(
         (a) => a.initialBalanceForAccountId === account?.id,
       )
@@ -127,25 +127,26 @@ test.describe('口座登録ウィザード', () => {
     ])
   })
 
-  test('種類で現金を選ぶとis_reconcilable = falseで口座が作成される', async ({ page }) => {
+  test('世帯メンバーが未登録の場合、現金を選ぶと単一の初期残高入力にフォールバックし、is_reconcilable = falseで口座が「現金」という名前で作成される', async ({
+    page,
+  }) => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
     await deleteDefaultHouseholdMemberViaUi(page)
 
     await page.getByRole('button', { name: '資産を登録する' }).click()
     await page.getByRole('button', { name: '現金' }).click()
-    await page.getByLabel('名前を付ける').fill('財布')
-    await page.getByRole('button', { name: '次へ' }).click()
+    await expect(page.getByLabel('初期残高を入力(任意)')).toBeVisible()
     await page.getByRole('button', { name: '登録する' }).click()
 
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
-    await waitForAccountCreated(page, '財布')
+    await waitForAccountCreated(page, '現金')
 
     const isReconcilable = await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
       const accounts = await client.account.findAll()
-      return accounts.find((a) => a.name === '財布')?.isReconcilable
+      return accounts.find((a) => a.name === '現金')?.isReconcilable
     })
 
     expect(isReconcilable).toBe(false)
