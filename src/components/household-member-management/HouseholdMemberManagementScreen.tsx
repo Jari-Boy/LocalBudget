@@ -166,9 +166,14 @@ export function HouseholdMemberManagementScreen({
     setError(null)
     const request =
       formMode === 'create'
-        ? Promise.resolve(householdMemberRepository.create({ name: nameInput, isGroup: isGroupInput }))
-        : Promise.resolve(
-            householdMemberRepository.update(formMode as number, { name: nameInput, isGroup: isGroupInput }),
+        ? Promise.resolve().then(() =>
+            householdMemberRepository.create({ name: nameInput, isGroup: isGroupInput }),
+          )
+        : Promise.resolve().then(() =>
+            householdMemberRepository.update(formMode as number, {
+              name: nameInput,
+              isGroup: isGroupInput,
+            }),
           )
 
     void request
@@ -184,7 +189,8 @@ export function HouseholdMemberManagementScreen({
     if (isSubmitting) return
     setIsSubmitting(true)
     setError(null)
-    void Promise.resolve(householdMemberRepository.delete(id))
+    void Promise.resolve()
+      .then(() => householdMemberRepository.delete(id))
       .then(load)
       .catch(() => setError(t('deleteError')))
       .finally(() => setIsSubmitting(false))
@@ -194,7 +200,8 @@ export function HouseholdMemberManagementScreen({
     if (isSubmitting) return
     setIsSubmitting(true)
     setError(null)
-    void Promise.resolve(householdMemberRepository.deactivate(id))
+    void Promise.resolve()
+      .then(() => householdMemberRepository.deactivate(id))
       .then(load)
       .catch(() => setError(t('deactivateError')))
       .finally(() => setIsSubmitting(false))
@@ -226,7 +233,8 @@ export function HouseholdMemberManagementScreen({
     if (value === '') return
     setIsSubmitting(true)
     setError(null)
-    void Promise.resolve(householdMemberRepository.addGroupMember(groupId, Number(value)))
+    void Promise.resolve()
+      .then(() => householdMemberRepository.addGroupMember(groupId, Number(value)))
       .then(() => {
         setGroupMemberInput(groupId, '')
         load()
@@ -239,7 +247,8 @@ export function HouseholdMemberManagementScreen({
     if (isSubmitting) return
     setIsSubmitting(true)
     setError(null)
-    void Promise.resolve(householdMemberRepository.removeGroupMember(groupId, memberId))
+    void Promise.resolve()
+      .then(() => householdMemberRepository.removeGroupMember(groupId, memberId))
       .then(load)
       .catch(() => setError(t('groupMemberRemoveError')))
       .finally(() => setIsSubmitting(false))
