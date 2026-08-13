@@ -483,3 +483,15 @@
 **背景**: `CounterpartyManagementScreen`は作成・編集・削除・非アクティブ化・統合確定という5つの独立した非同期書き込み操作を1画面に持つ。Implementation Attempt 1ではこれらの操作の一部にのみ二重送信防止ガード(`isSubmitting`によるボタンの`disabled`化)が実装されており、evaluatorのレビューでFAIL指摘された(詳細は`docs/guides/patterns.md`参照)。操作ごとに個別の`isSubmitting`state(例: `isCreating`/`isDeleting`/`isMerging`等)を持たせる案も検討したが、5つ分の状態変数と対応するガード処理を個別に管理すると、実装・レビューの両方で「全操作にガードが揃っているか」の確認漏れが起きやすい。
 **決定**: 画面全体で共有する単一の`isSubmitting` state(`useState<boolean>`)を採用し、5つの操作いずれかが進行中は、画面内の全ての操作ボタン(編集・削除・非アクティブ化・追加・フォームの保存/キャンセル・統合実行/確定/キャンセル・戻る)を一律で`disabled={isSubmitting}`にする設計にした。各操作の実装は、処理開始時に`if (isSubmitting) return; setIsSubmitting(true)`で早期returnとガードを行い、`finally`で確実に`setIsSubmitting(false)`する共通パターンに揃えた。
 **影響**: ある操作の実行中は他の操作ボタンも一律で無効化されるため、「削除中に編集を始める」のような操作の並行実行自体が起こらない(UXとしては単純化される一方、同時に複数の異なる操作を許容したい要件が将来出た場合は、単一stateのままでは対応できず操作ごとのstateへの分割が必要になる)。今後、複数の独立した非同期書き込み操作を1画面に持つUIを実装する際は、操作数が少数(本件は5つ)であれば、画面全体で共有する単一の`isSubmitting`stateを優先的に検討する(実装・レビュー双方でのチェック漏れを減らせるため)。
+
+## 2026-08-13: プロジェクト別PL/BS科目残高内訳はaggregateByProjectを拡張せず、isSettlementBalanceZeroと同じパターンの新規関数summarizeProjectAccountBalancesとして実装する
+
+**背景**: 計画Issue #36(プロジェクト管理画面)は、プロジェクトごとの資産・負債・純資産・収益・費用の区分別・科目別残高内訳(`docs/domain/projects.md` 1.4節)を一覧表示する必要があった。既存の`aggregateByProject`(計画Issue #12で実装済み)は全区分を合算した単一の数値を返す設計であり、区分別・科目別の内訳という今回の要求とは戻り値の形が異なる。一方、同じ`project`ドメインの`isSettlementBalanceZero`(同じくIssue #12)は「`entries`から対象`project_id`の`journal_lines`を絞り込み→区分ごとに`summarizeAccountsByCategory`(`financial-statement`ドメイン)を適用」という組み立てを既に確立していた。
+**決定**: `aggregateByProject`自体は変更・拡張せず、`isSettlementBalanceZero`と同じ「project_id絞り込み→区分ごとにsummarizeAccountsByCategoryを適用」パターンを踏襲した新規の純粋関数`summarizeProjectAccountBalances`(`src/domain/project/summarizeProjectAccountBalances.ts`)を追加し、資産・負債・純資産・収益・費用の5区分それぞれの`AccountAmount[]`(科目別内訳)をまとめて返す構成にした。`aggregateByProject`はプロジェクト一覧等で単一の合計値だけを使う既存の呼び出し元向けに変更せず併存させる。
+**影響**: 本ファイル2026-08-11「科目一覧画面向けの残高一覧はsummarizeAccountsByCategoryを拡張せず...専用の純粋関数listAccountBalancesとして新設する」と同種の判断であり、同じ集約内で戻り値の形(集約単一値 vs 区分別内訳)が異なる集計要求が出た場合、既存の確定済み関数にオプション引数を足して分岐させるのではなく、共通する下位のロジック(本件は`summarizeAccountsByCategory`)のみを再利用した独立の関数として実装する方針を`project`ドメインでも踏襲したことになる。今後`project`ドメインに新しい集計要求が出た場合も、まず`isSettlementBalanceZero`・`summarizeProjectAccountBalances`が確立した「project_id絞り込み→区分別集計への委譲」という組み立てを優先的に検討する。
+
+## 2026-08-13: 非アクティブ化可能なマスタの選択欄は、is_activeだけでなく現在選択中の値も含めてフィルタする
+
+**背景**: 計画Issue #36でプロジェクトの非アクティブ化(`is_active = false`)操作を初めて実装したところ、既存の`JournalEntryForm`(計画Issue #32)・`StatementImportReviewScreen`(計画Issue #77)のプロジェクト選択`<select>`が、`docs/domain/projects.md` 1.3節「非アクティブ化: 過去集計はそのまま表示、新規仕訳では選択不可」に反し、`isActive`によるフィルタを一切行わず全プロジェクトを選択肢に表示していたことが判明した(詳細な原因分析は`docs/guides/patterns.md`参照)。単純に`project.isActive`だけで選択肢を絞り込むと、既存の下書き・レビューレコードが既に非アクティブ化されたプロジェクトを参照している場合、選択中の値が選択肢から消え`<select>`の表示が空(未選択)にすり替わってしまう副作用がある。
+**決定**: 選択肢のフィルタ条件を`project.isActive || project.id === 現在の選択値`とし、非アクティブなプロジェクトであっても現在選択中の値であれば選択肢に残す方式を採用した(`JournalEntryForm.tsx`・`StatementImportReviewScreen.tsx`双方に適用、コミット88190fd)。
+**影響**: 今後、`is_active`等のライフサイクルフラグを持つ他のマスタ(勘定科目・取引先・世帯メンバー等)の選択欄を実装・改修する際も、単純な`isActive`絞り込みではなく「アクティブなレコード + 現在選択中の値」という条件を優先的に採用する。

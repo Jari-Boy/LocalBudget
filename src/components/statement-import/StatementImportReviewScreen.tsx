@@ -717,11 +717,13 @@ export function StatementImportReviewScreen({
                 }
               >
                 <option value="">{t('unselected')}</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
+                {projects
+                  .filter((project) => project.isActive || project.id === state.projectId)
+                  .map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
               </select>
 
               <label htmlFor={`${idPrefix}-household-member`}>{t('householdMemberLabel')}</label>

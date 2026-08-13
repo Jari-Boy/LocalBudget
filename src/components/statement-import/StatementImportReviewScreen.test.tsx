@@ -1042,6 +1042,33 @@ describe('StatementImportReviewScreen', () => {
     expect(counterLine?.householdMemberId).toBe(member.id)
   })
 
+  it('非アクティブ化済みのプロジェクトはプロジェクト選択欄の新規選択肢に含まれない(docs/domain/projects.md 1.3節)', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const activeProject = projectRepository.create({ name: '26年7月アメリカ旅行' })
+    const inactiveProject = projectRepository.create({ name: '25年冬の旅行' })
+    projectRepository.deactivate(inactiveProject.id)
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: 'スーパー', amount: -3000 }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    const select = within(group).getByLabelText('プロジェクト')
+
+    expect(within(select).getByText(activeProject.name)).toBeInTheDocument()
+    expect(within(select).queryByText(inactiveProject.name)).not.toBeInTheDocument()
+  })
+
   it('取引先セレクトでdefault_account_idが非PL科目(資産・負債)の取引先を選択すると、相手科目は追従するが取引先セレクトは非表示になりクリアされる', async () => {
     const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
     const savingsAccount = accountRepository.create({ category: 'asset', name: '証券口座', isReconcilable: true })
