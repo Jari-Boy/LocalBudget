@@ -121,6 +121,11 @@ CREATE TABLE journal_entry_drafts (
   entry_date   TEXT,
   memo         TEXT,
   currency     TEXT,
+  -- 起票者(journal_entries.household_member_id相当)。下書き段階では未入力状態を許容する
+  -- ためNULL可(journal_entriesと異なりNOT NULLにしない、docs/domain/journal.md 3章の
+  -- 「バランス制約と同様、必須化の対象外」方針、計画Issue #88)。確定時にNULLのままだと
+  -- journal_entries.household_member_idのNOT NULL制約により確定操作が失敗する。
+  household_member_id INTEGER REFERENCES household_members(id),
   created_at   TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );

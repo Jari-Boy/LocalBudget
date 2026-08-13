@@ -50,9 +50,9 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     this.db.run('BEGIN')
     try {
       this.db.run(
-        `INSERT INTO journal_entries (entry_date, memo, currency, source_type)
-         VALUES (?, ?, ?, ?)`,
-        [input.entryDate, input.memo ?? null, input.currency ?? 'JPY', sourceType],
+        `INSERT INTO journal_entries (entry_date, memo, currency, source_type, household_member_id)
+         VALUES (?, ?, ?, ?, ?)`,
+        [input.entryDate, input.memo ?? null, input.currency ?? 'JPY', sourceType, input.householdMemberId],
       )
       const entryId = lastInsertRowId(this.db)
       insertLines(this.db, entryId, input.lines)
@@ -303,6 +303,7 @@ function mapRowToJournalEntry(columns: string[], values: unknown[]): JournalEntr
     memo: get<string | null>('memo'),
     currency: get<string>('currency'),
     sourceType: get<JournalEntrySourceType>('source_type'),
+    householdMemberId: get<number>('household_member_id'),
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),
     lines: [],
