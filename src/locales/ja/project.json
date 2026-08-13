@@ -4,7 +4,7 @@
   "projectListEmpty": "登録済みのプロジェクトがありません",
   "nameLabel": "名称",
   "kindLabel": "種別",
-  "kindSettlement": "精算バッチ",
+  "kindSettlement": "精算",
   "kindEvent": "イベント",
   "addButton": "プロジェクトを追加",
   "editButton": "編集",

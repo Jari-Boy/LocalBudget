@@ -48,7 +48,7 @@ test.describe('プロジェクト管理画面', () => {
     await page.getByRole('button', { name: '作成する' }).click()
     const settlementItem = page.getByRole('listitem').filter({ hasText: '26/7生活費割勘' })
     await expect(settlementItem).toBeVisible()
-    await expect(settlementItem).toContainText('精算バッチ')
+    await expect(settlementItem).toContainText('精算')
 
     // 編集
     const tripItem = page.getByRole('listitem').filter({ hasText: '26年7月アメリカ旅行' })

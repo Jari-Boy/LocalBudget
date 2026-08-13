@@ -70,7 +70,7 @@ describe('ProjectManagementScreen', () => {
     renderScreen()
 
     const settlementItem = (await screen.findByText('26/7生活費割勘')).closest('li')!
-    expect(settlementItem).toHaveTextContent('精算バッチ')
+    expect(settlementItem).toHaveTextContent('精算')
     const eventItem = (await screen.findByText('26年7月アメリカ旅行')).closest('li')!
     expect(eventItem).toHaveTextContent('イベント')
   })
@@ -98,7 +98,7 @@ describe('ProjectManagementScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: '作成する' }))
 
     const item = (await screen.findByText('26/7生活費割勘')).closest('li')!
-    expect(item).toHaveTextContent('精算バッチ')
+    expect(item).toHaveTextContent('精算')
   })
 
   it('既存プロジェクトの名称を編集できる', async () => {
