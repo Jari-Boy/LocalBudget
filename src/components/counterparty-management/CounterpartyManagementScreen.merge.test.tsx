@@ -19,6 +19,7 @@ import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
+import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { CounterpartyManagementScreen } from './CounterpartyManagementScreen'
 
@@ -26,6 +27,7 @@ let db: Database
 let accountRepository: SqlJsAccountRepository
 let counterpartyRepository: SqlJsCounterpartyRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
+let memberId: number
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -33,6 +35,7 @@ beforeEach(async () => {
   accountRepository = new SqlJsAccountRepository(db)
   counterpartyRepository = new SqlJsCounterpartyRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
+  memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '自分' }).id
 })
 
 afterEach(cleanup)
@@ -94,6 +97,7 @@ describe('CounterpartyManagementScreen 取引先統合', () => {
     const source = counterpartyRepository.create({ name: 'ローソン 東京日本橋店' })
     const target = counterpartyRepository.create({ name: 'ローソン' })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-08-11',
       lines: [
         { accountId: expenseAccount.id, side: 'debit', amount: 500, counterpartyId: source.id },

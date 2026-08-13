@@ -64,6 +64,7 @@ describe('AccountListScreen', () => {
     journalEntryRepository.create({
       entryDate: '2026-08-11',
       sourceType: 'initial_balance',
+      householdMemberId: householdMemberRepository.create({ name: '自分' }).id,
       lines: [
         { accountId: account.id, side: 'debit', amount: 50000 },
         { accountId: equity.id, side: 'credit', amount: 50000 },

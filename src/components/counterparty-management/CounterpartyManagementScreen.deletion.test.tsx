@@ -16,6 +16,7 @@ import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
+import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { CounterpartyManagementScreen } from './CounterpartyManagementScreen'
 
@@ -23,6 +24,7 @@ let db: Database
 let accountRepository: SqlJsAccountRepository
 let counterpartyRepository: SqlJsCounterpartyRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
+let memberId: number
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -30,6 +32,7 @@ beforeEach(async () => {
   accountRepository = new SqlJsAccountRepository(db)
   counterpartyRepository = new SqlJsCounterpartyRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
+  memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '自分' }).id
 })
 
 afterEach(cleanup)
@@ -73,6 +76,7 @@ describe('CounterpartyManagementScreen 削除・非アクティブ化', () => {
     })
     const counterparty = counterpartyRepository.create({ name: 'イオン' })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-08-11',
       lines: [
         { accountId: expenseAccount.id, side: 'debit', amount: 1000, counterpartyId: counterparty.id },
@@ -111,6 +115,7 @@ describe('CounterpartyManagementScreen 削除・非アクティブ化', () => {
     })
     const counterparty = counterpartyRepository.create({ name: 'イオン' })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-08-11',
       lines: [
         { accountId: expenseAccount.id, side: 'debit', amount: 1000, counterpartyId: counterparty.id },

@@ -13,7 +13,11 @@ describe('createTestDatabase', () => {
     const db = await createTestDatabase()
     runMigrations(db)
 
-    db.run(`INSERT INTO journal_entries (entry_date) VALUES ('2026-07-01')`)
+    db.run(`INSERT INTO household_members (name) VALUES ('自分')`)
+    const memberId = db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
+    db.run(`INSERT INTO journal_entries (entry_date, household_member_id) VALUES ('2026-07-01', ?)`, [
+      memberId,
+    ])
     const entryId = db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
 
     expect(() =>

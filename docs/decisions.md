@@ -506,3 +506,16 @@
 **背景**: 計画Issue #36でプロジェクトの非アクティブ化(`is_active = false`)操作を初めて実装したところ、既存の`JournalEntryForm`(計画Issue #32)・`StatementImportReviewScreen`(計画Issue #77)のプロジェクト選択`<select>`が、`docs/domain/projects.md` 1.3節「非アクティブ化: 過去集計はそのまま表示、新規仕訳では選択不可」に反し、`isActive`によるフィルタを一切行わず全プロジェクトを選択肢に表示していたことが判明した(詳細な原因分析は`docs/guides/patterns.md`参照)。単純に`project.isActive`だけで選択肢を絞り込むと、既存の下書き・レビューレコードが既に非アクティブ化されたプロジェクトを参照している場合、選択中の値が選択肢から消え`<select>`の表示が空(未選択)にすり替わってしまう副作用がある。
 **決定**: 選択肢のフィルタ条件を`project.isActive || project.id === 現在の選択値`とし、非アクティブなプロジェクトであっても現在選択中の値であれば選択肢に残す方式を採用した(`JournalEntryForm.tsx`・`StatementImportReviewScreen.tsx`双方に適用、コミット88190fd)。
 **影響**: 今後、`is_active`等のライフサイクルフラグを持つ他のマスタ(勘定科目・取引先・世帯メンバー等)の選択欄を実装・改修する際も、単純な`isActive`絞り込みではなく「アクティブなレコード + 現在選択中の値」という条件を優先的に採用する。
+
+## 2026-08-13: 起票者(journal_entries.household_member_id)を経由しない既存の仕訳生成箇所は、既存の状態から導出できる値に自動フォールバックさせる
+
+**背景**: 計画Issue #88(世帯メンバーの実効メンバー決定ロジック拡張)は、`journal_entries`に起票者を表すNOT NULLの`household_member_id`を新設した。既存の仕訳生成箇所(`registerAccount`の初期残高仕訳、`buildConfirmedJournalEntryInput`のCSV取込確定仕訳、`buildBalanceAdjustmentJournalEntryInput`の残高調整仕訳、`buildHouseholdMemberExpenseSplittingJournalEntryInput`・`buildCounterpartyExpenseSplittingJournalEntryInput`の割勘仕訳)はいずれも「誰が入力したか」というUI上の概念を持たず、計画Issue本文にも解決方法の明記が無かった(`AccountRegistrationWizard.tsx`については「起票者との関係整理…着手時の判断に委ねる」と明記、他の4箇所は明記なし)。全画面に新規の「起票者を選ぶ」UIを追加する案も検討したが、影響範囲が過大(未実装のUIも含め6箇所以上)になり、CLAUDE.mdの「タスクが要求する以上の抽象化を導入しない」方針にも反すると判断した。
+**決定**: 各呼び出し元で、既存の状態から自然に導出できる値へ自動フォールバックさせ、新規UIは追加しなかった。
+- 割勘仕訳(2件): 起票者にはfromMemberId/payerMemberId(割勘を起票した側の世帯メンバー)をそのまま使う。新規パラメータ不要。
+- `buildBalanceAdjustmentJournalEntryInput`: 呼び出し元(未実装)が解決する必須パラメータ`householdMemberId`を新設。
+- `buildConfirmedJournalEntryInput`(CSV取込確定、`StatementImportReviewScreen.tsx`): `entryHouseholdMemberId`を新設し、`state.householdMemberId`(相手科目行の世帯メンバー選択、既存UI) → `targetAccount.householdMemberId`(取込先口座自体の既定名義) → `householdMembers[0]?.id`(世帯メンバー一覧の先頭)の順でフォールバックする。
+- `registerAccount`(口座登録初期仕訳、`AccountRegistrationWizard.tsx`): `journalEntryHouseholdMemberId`を新設し、口座の名義選択(既存UI、`householdMemberId`)→世帯メンバー一覧の先頭の順でフォールバックする。
+- `JournalEntryForm`(マニュアル起票)のみ、ヘッダーに明示的な起票者選択欄を新設した(完了条件で明示的にUIテストが要求されていたため)。世帯メンバー一覧読み込み完了時に先頭を既定値として補い、ユーザーは変更できる。
+
+「世帯メンバー一覧の先頭にフォールバック」という設計は、`seedDefaultHouseholdMember`(同計画Issueで新設、Worker起動時に0件ならデフォルトメンバーを自動投入する)が最低1件の存在を保証することを前提にしている。この前提が崩れる(全メンバーを削除した直後で未再起動、等)場合は`journal_entries.household_member_id`のNOT NULL制約により当該操作(初期残高仕訳の作成等)がエラーになるが、明示的なエラーメッセージは追加していない(発生しない想定の状態のためのエラーハンドリングを追加しない、CLAUDE.mdの方針)。
+**影響**: 今後、起票者概念に触れる新しい仕訳生成箇所(残高調整UIの実装等)を追加する場合、まず「既存の画面状態から自然に導出できる値があるか」を検討し、無い場合のみ新規UI(セレクト欄の追加)を検討する。DDLトリガー(`prevent_household_member_override_on_default_account_line_insert`/`_update`、`docs/schema/journal.sql`)は、`journal_lines.household_member_id`が`NULL`または科目の既定値と同じ値である場合のみ許可し、異なる値を明示指定した場合のみ拒否する設計とした(`counterparty_id`のPL科目限定制約と同じパターン)。これにより、UI側は「科目に既定値がある行の世帯メンバー選択をdisabled化して科目の既定値を表示する」(`JournalEntryForm.tsx`・`StatementImportReviewScreen.tsx`双方に適用)だけで、明細側にNULLを送信する限りDDLトリガー違反を起こさない。

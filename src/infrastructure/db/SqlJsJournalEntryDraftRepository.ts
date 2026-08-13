@@ -30,13 +30,14 @@ export class SqlJsJournalEntryDraftRepository implements JournalEntryDraftReposi
     this.db.run('BEGIN')
     try {
       this.db.run(
-        `INSERT INTO journal_entry_drafts (purpose, entry_date, memo, currency)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT INTO journal_entry_drafts (purpose, entry_date, memo, currency, household_member_id)
+         VALUES (?, ?, ?, ?, ?)`,
         [
           input.purpose ?? 'manual_entry',
           input.entryDate ?? null,
           input.memo ?? null,
           input.currency ?? null,
+          input.householdMemberId ?? null,
         ],
       )
       const draftId = lastInsertRowId(this.db)
@@ -78,11 +79,14 @@ export class SqlJsJournalEntryDraftRepository implements JournalEntryDraftReposi
     this.db.run('BEGIN')
     try {
       this.db.run(
-        `UPDATE journal_entry_drafts SET entry_date = ?, memo = ?, currency = ? WHERE id = ?`,
+        `UPDATE journal_entry_drafts
+         SET entry_date = ?, memo = ?, currency = ?, household_member_id = ?
+         WHERE id = ?`,
         [
           input.entryDate === undefined ? current.entryDate : input.entryDate,
           input.memo === undefined ? current.memo : input.memo,
           input.currency === undefined ? current.currency : input.currency,
+          input.householdMemberId === undefined ? current.householdMemberId : input.householdMemberId,
           id,
         ],
       )
@@ -114,6 +118,7 @@ export class SqlJsJournalEntryDraftRepository implements JournalEntryDraftReposi
       entryDate: draft.entryDate as string,
       memo: draft.memo,
       currency: draft.currency ?? undefined,
+      householdMemberId: draft.householdMemberId as number,
       lines: draft.lines.map((line) => ({
         accountId: line.accountId as number,
         projectId: line.projectId,
@@ -173,6 +178,7 @@ function mapRowToJournalEntryDraft(columns: string[], values: unknown[]): Journa
     entryDate: get<string | null>('entry_date'),
     memo: get<string | null>('memo'),
     currency: get<string | null>('currency'),
+    householdMemberId: get<number | null>('household_member_id'),
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),
     lines: [],

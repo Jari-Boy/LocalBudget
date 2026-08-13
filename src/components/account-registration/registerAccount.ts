@@ -10,6 +10,13 @@ export interface RegisterAccountInput {
   initialBalance: number | null
   /** 初期残高がある場合の初期仕訳の日付(YYYY-MM-DD) */
   entryDate: string
+  /**
+   * 初期残高がある場合に作成される初期仕訳の起票者(CreateJournalEntryInput.householdMemberId、
+   * 計画Issue #88)。口座自体の名義(householdMemberId、null許容)とは別概念であり、解決
+   * (口座の名義があればそれを使う、無ければ既定メンバーにフォールバックする等)は呼び出し側
+   * (AccountRegistrationWizard)の責務とする。
+   */
+  journalEntryHouseholdMemberId: number
 }
 
 /**
@@ -62,6 +69,7 @@ export async function registerAccount(
   await journalEntryRepository.create({
     entryDate: input.entryDate,
     sourceType: 'initial_balance',
+    householdMemberId: input.journalEntryHouseholdMemberId,
     lines: [
       { accountId: account.id, side: 'debit', amount: input.initialBalance },
       { accountId: initialBalanceAccount.id, side: 'credit', amount: input.initialBalance },

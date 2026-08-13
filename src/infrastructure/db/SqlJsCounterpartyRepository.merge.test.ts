@@ -124,7 +124,11 @@ function insertAccount(database: Database, category: string, name: string): numb
 }
 
 function insertJournalEntry(database: Database): number {
-  database.run(`INSERT INTO journal_entries (entry_date) VALUES ('2026-07-01')`)
+  database.run(`INSERT INTO household_members (name) VALUES ('自分')`)
+  const memberId = lastInsertRowId(database)
+  database.run(`INSERT INTO journal_entries (entry_date, household_member_id) VALUES ('2026-07-01', ?)`, [
+    memberId,
+  ])
   return lastInsertRowId(database)
 }
 

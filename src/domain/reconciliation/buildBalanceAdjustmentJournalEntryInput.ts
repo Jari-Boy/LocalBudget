@@ -9,6 +9,8 @@ export interface BuildBalanceAdjustmentJournalEntryInputParams {
   bookBalance: number
   externalBalance: number
   entryDate: string
+  /** 起票者(CreateJournalEntryInput.householdMemberId、計画Issue #88)。解決は呼び出し側の責務 */
+  householdMemberId: number
   memo?: string | null
 }
 
@@ -48,6 +50,7 @@ export function buildBalanceAdjustmentJournalEntryInput(
     entryDate: params.entryDate,
     memo: params.memo ?? null,
     sourceType: 'balance_adjustment',
+    householdMemberId: params.householdMemberId,
     lines,
   }
 }

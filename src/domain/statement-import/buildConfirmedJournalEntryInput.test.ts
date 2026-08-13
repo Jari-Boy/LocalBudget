@@ -30,8 +30,10 @@ describe('資産科目(asset)の場合', () => {
       targetAccountId: 1,
       targetAccountCategory: 'asset',
       counterAccountId: 2,
+      entryHouseholdMemberId: 99,
     })
 
+    expect(input.householdMemberId).toBe(99)
     expect(input.lines).toEqual([
       { accountId: 2, side: 'debit', amount: 150, counterpartyId: null, projectId: null, householdMemberId: null },
       { accountId: 1, side: 'credit', amount: 150 },
@@ -45,6 +47,7 @@ describe('資産科目(asset)の場合', () => {
       targetAccountId: 1,
       targetAccountCategory: 'asset',
       counterAccountId: 3,
+      entryHouseholdMemberId: 99,
     })
 
     expect(input.lines).toEqual([
@@ -62,6 +65,7 @@ describe('負債科目(liability、クレジットカード未払金)の場合',
       targetAccountId: 1,
       targetAccountCategory: 'liability',
       counterAccountId: 4,
+      entryHouseholdMemberId: 99,
     })
 
     expect(input.lines).toEqual([
@@ -79,6 +83,7 @@ describe('共通のヘッダー情報', () => {
       targetAccountId: 1,
       targetAccountCategory: 'asset',
       counterAccountId: 2,
+      entryHouseholdMemberId: 99,
     })
 
     expect(input.entryDate).toBe('2026-08-01')
@@ -99,6 +104,7 @@ describe('共通のヘッダー情報', () => {
       targetAccountId: 1,
       targetAccountCategory: 'asset',
       counterAccountId: 2,
+      entryHouseholdMemberId: 99,
     })
 
     expect(input.externalTransactionRef).toEqual({
@@ -122,6 +128,7 @@ describe('共通のヘッダー情報', () => {
       counterpartyId: 10,
       projectId: 20,
       householdMemberId: 30,
+      entryHouseholdMemberId: 99,
     })
 
     expect(input.lines[0]).toEqual({

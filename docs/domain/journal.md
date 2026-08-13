@@ -33,11 +33,13 @@
 
 取引は「仕訳(JournalEntry)」という単位で記録される。仕訳は日付・摘要を持つヘッダーであり、実際の金額の増減は子レコードである「仕訳明細(JournalLine)」に記録される。1件の仕訳は2件以上の仕訳明細から成り、その合計金額は借方・貸方で必ず一致する(複式簿記の恒等式)。
 
+仕訳ヘッダーは、この仕訳を切った主体を表す「起票者」(`household_member_id`、NOT NULL)を持つ(計画Issue #88)。起票者は仕訳明細の`household_member_id`(明細の上書き、[household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照)とは役割が異なり、科目に既定の世帯メンバーが無く明細側も未指定の行における実効メンバーのフォールバック先として使われる。
+
 仕訳明細は勘定科目に加えて、任意でプロジェクト([projects.md 1章](./projects.md#1-プロジェクト))・世帯メンバー([household-members.md 1章](./household-members.md#1-世帯メンバー))を紐づけられる。
 
 | 概念           | 役割                                         | 例                          |
 | ------------ | ------------------------------------------ | -------------------------- |
-| JournalEntry | 1つの取引のヘッダー。日付・摘要                           | 「2026-07-20 スーパーで食材購入」     |
+| JournalEntry | 1つの取引のヘッダー。日付・摘要・起票者                       | 「2026-07-20 スーパーで食材購入(起票者: 夫)」     |
 | JournalLine  | 仕訳を構成する各行。勘定科目・金額・借方/貸方・(任意で)プロジェクト・世帯メンバー | 「(借)食費 3,000」「(貸)現金 3,000」 |
 
 最もシンプルな仕訳は2行(借方1行・貸方1行)である。1つの支払いを複数の費目にまたがって計上する複合仕訳では3行以上になる。
@@ -159,6 +161,7 @@
 | `memo` | 摘要 | 任意 |
 | `currency` | 通貨コード | ISO 4217、MVPでは`JPY`固定 |
 | `source_type` | 作成経路 | ENUM、既定`manual`([1.7 作成経路(source_type)](#17-作成経路source_type)参照) |
+| `household_member_id` | 起票者 | FK、NOT NULL。この仕訳を切った主体([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照、計画Issue #88) |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
 
@@ -170,7 +173,7 @@
 | `journal_entry_id`    | 親仕訳ID         | FK、親削除時はCASCADE                                                                 |
 | `account_id`          | 勘定科目ID        | FK                                                                              |
 | `project_id`          | プロジェクトID      | FK、任意。全区分の行に設定可([projects.md 1.2](./projects.md#12-紐づけ対象)参照)              |
-| `household_member_id` | 世帯メンバーID(上書き) | FK、任意。全区分で設定可。NULL=`accounts.household_member_id`を継承([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照) |
+| `household_member_id` | 世帯メンバーID(上書き) | FK、任意。全区分で設定可。科目(`accounts.household_member_id`)に既定値がある場合、その値と異なる値は設定できない(TRIGGERで強制)。NULL=科目の既定値、または(科目に既定値が無ければ)ヘッダーの起票者を継承([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照) |
 | `counterparty_id`     | 取引先ID         | FK、任意。PL科目(revenue/expense)の行にのみ設定可(TRIGGERで強制、[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)参照)              |
 | `side`                | 借方/貸方         | ENUM: debit/credit                                                              |
 | `amount`              | 金額            | 通貨最小単位の正の整数                                                                     |
@@ -187,6 +190,9 @@
 
 > **貸借バランスはDBで強制しない**
 > [1.3]の通り、DBでは強制しない。この検証は`JournalEntryRepository`が担う。
+
+> **科目の既定値がある明細行への異なる世帯メンバーの指定はDBトリガーで拒否する**
+> [household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)の通り、科目(`accounts.household_member_id`)に既定値がある場合、その科目を使う`journal_lines.household_member_id`は科目の既定値と異なる値を明示指定できない(`prevent_household_member_override_on_default_account_line_insert`/`_update`トリガー、`counterparty_id`のPL科目限定制約と同じINSERT/UPDATE両対応のTRIGGERパターン)。`NULL`(未指定)または科目の既定値と同じ値は許可する。
 
 ### 2.3 仕訳間の関係マスタ(journal_entry_links)
 
@@ -249,6 +255,7 @@
 | `entry_date` | 取引日 | 任意。未入力の途中状態を許容するためNULL可 |
 | `memo` | 摘要 | 任意 |
 | `currency` | 通貨コード | 任意。未選択状態を許容するためNULL可([2.1](#21-フィールド定義)の`journal_entries.currency`と異なりNOT NULLにしない) |
+| `household_member_id` | 起票者 | FK、任意。[2.1](#21-フィールド定義)の`journal_entries.household_member_id`と異なりNOT NULLにしない(下書き段階では未入力を許容、計画Issue #88)。確定時にNULLのままだと`journal_entries`側のNOT NULL制約により確定操作(3.2)が失敗する |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
 

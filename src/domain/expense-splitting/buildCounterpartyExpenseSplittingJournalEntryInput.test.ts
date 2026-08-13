@@ -30,6 +30,7 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
     })
 
     expect(input.entryDate).toBe('2026-07-15')
+    expect(input.householdMemberId).toBe(MEMBER_A)
     expect(input.lines).toEqual([
       {
         accountId: ADVANCE_ASSET_ACCOUNT_ID,

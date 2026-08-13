@@ -94,6 +94,10 @@ export function AccountRegistrationWizard({
         householdMemberId,
         initialBalance,
         entryDate: today ?? new Date().toISOString().slice(0, 10),
+        // 初期残高がある場合の初期仕訳の起票者(計画Issue #88)。口座の名義(householdMemberId)を
+        // 選んでいればそれを使い、選ばなかった(世帯共通)場合は世帯メンバーの先頭にフォールバックする
+        // (seedDefaultHouseholdMemberにより最低1件は存在する想定、docs/domain/household-members.md 1.2節)。
+        journalEntryHouseholdMemberId: (householdMemberId ?? householdMembers[0]?.id) as number,
       })
       onComplete(account)
     } catch {

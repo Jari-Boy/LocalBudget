@@ -3,6 +3,7 @@ import * as Comlink from 'comlink'
 import { createBrowserDatabase } from '../db/createBrowserDatabase'
 import { runMigrations } from '../db/migrations'
 import { seedBuiltInMappingDefinitions } from '../db/seedBuiltInMappingDefinitions'
+import { seedDefaultHouseholdMember } from '../db/seedDefaultHouseholdMember'
 import { createRepositoryRegistry } from '../rpc/createRepositoryRegistry'
 import { registerDomainErrorTransferHandler } from '../rpc/registerDomainErrorTransferHandler'
 import { WORKER_READY_MESSAGE, createWorkerInitErrorMessage } from '../rpc/workerLifecycleMessages'
@@ -25,7 +26,11 @@ import { withAutoSave } from '../storage/withAutoSave'
  * 使うため、createRepositoryRegistryへそのまま渡す。マイグレーション適用直後に
  * seedBuiltInMappingDefinitions(計画Issue #76、docs/domain/statement-import.md 2.3節)を
  * 呼び出し、OSS同梱の組み込みマッピング定義(楽天カード・楽天銀行・PayPayカード等)を
- * account_id = NULLの汎用定義として投入する(冪等、既存定義があれば再投入しない)。
+ * account_id = NULLの汎用定義として投入する(冪等、既存定義があれば再投入しない)。同様に
+ * seedDefaultHouseholdMember(計画Issue #88、docs/domain/household-members.md 1.2節)を呼び出し、
+ * household_membersが0件ならデフォルトメンバーを1件自動投入する(冪等)。仕訳作成には起票者
+ * (journal_entries.household_member_id)がNOT NULLで必須なため、この投入により口座登録・
+ * 仕訳入力等の初回操作時に世帯メンバーが1件も無く選択できないという状態を避けられる。
  */
 async function main(): Promise<void> {
   registerDomainErrorTransferHandler()
@@ -35,6 +40,7 @@ async function main(): Promise<void> {
 
   const db = await createBrowserDatabase(savedData ?? undefined)
   runMigrations(db)
+  seedDefaultHouseholdMember(db)
   seedBuiltInMappingDefinitions(db)
   const autoSaveController = withAutoSave(db, storageAdapter)
 

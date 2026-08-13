@@ -124,6 +124,14 @@ export function JournalEntryForm({
     () => initialDraft?.entryDate ?? today ?? new Date().toISOString().slice(0, 10),
   )
   const [memoInput, setMemoInput] = useState(() => initialDraft?.memo ?? '')
+  /**
+   * 起票者(docs/domain/journal.md 1.1、計画Issue #88)。初期値はinitialDraftの値を
+   * 引き継ぎ、無ければmasterData読み込み完了時に世帯メンバー一覧の先頭を既定値として
+   * 補う(seedDefaultHouseholdMemberにより最低1件は存在する想定、下記useEffect参照)。
+   */
+  const [headerHouseholdMemberId, setHeaderHouseholdMemberId] = useState<number | null>(
+    () => initialDraft?.householdMemberId ?? null,
+  )
   const [lineStates, setLineStates] = useState<FormLineState[]>(() =>
     initialDraft && initialDraft.lines.length > 0
       ? initialDraft.lines.map((draftLine) => createLineState(fromJournalEntryDraftLine(draftLine)))
@@ -149,6 +157,7 @@ export function JournalEntryForm({
       Promise.resolve(counterpartyRepository.findAll()),
     ]).then(([accounts, projects, householdMembers, counterparties]) => {
       setMasterData({ accounts, projects, householdMembers, counterparties })
+      setHeaderHouseholdMemberId((current) => current ?? householdMembers[0]?.id ?? null)
     })
   }, [accountRepository, projectRepository, householdMemberRepository, counterpartyRepository])
 
@@ -156,6 +165,7 @@ export function JournalEntryForm({
     return {
       entryDate: entryDateInput === '' ? null : entryDateInput,
       memo: memoInput === '' ? null : memoInput,
+      householdMemberId: headerHouseholdMemberId,
       lines: lineStates.map((state) => toJournalEntryDraftLineInput(state.line)),
     }
   }
@@ -171,7 +181,7 @@ export function JournalEntryForm({
 
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entryDateInput, memoInput, lineStates])
+  }, [entryDateInput, memoInput, headerHouseholdMemberId, lineStates])
 
   async function saveDraft(): Promise<void> {
     const input = buildDraftInput()
@@ -251,6 +261,7 @@ export function JournalEntryForm({
         created = await journalEntryRepository.create({
           entryDate: entryDateInput,
           memo: memoInput === '' ? null : memoInput,
+          householdMemberId: headerHouseholdMemberId as number,
           lines,
         })
       } else {
@@ -311,10 +322,41 @@ export function JournalEntryForm({
         />
       </div>
 
+      <div>
+        <label htmlFor="journal-entry-household-member">{t('creatorHouseholdMemberLabel')}</label>
+        <select
+          id="journal-entry-household-member"
+          value={headerHouseholdMemberId ?? ''}
+          onChange={(event) => {
+            markEdited()
+            setHeaderHouseholdMemberId(event.target.value === '' ? null : Number(event.target.value))
+          }}
+        >
+          <option value="">{t('unselected')}</option>
+          {masterData.householdMembers.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {lineStates.map((state, index) => {
         const selectedAccount = masterData.accounts.find((account) => account.id === state.line.accountId)
         const showCounterparty =
           selectedAccount !== undefined && isCounterpartyEligibleCategory(selectedAccount.category)
+        /**
+         * 科目に既定の世帯メンバーがある場合、明細側での上書きはDDLトリガーで禁止される
+         * (docs/schema/journal.sql、計画Issue #88)。UIでも選択欄をdisabled化して
+         * 通常操作では違反が起きないようにし、科目の既定値をそのまま表示する。
+         * 既定値が無い行は、明細側が未選択(null)の間ヘッダーの起票者を初期値として表示し
+         * つつ明細ごとに変更できる(household-members.md 1.2節の新ロジック)。
+         */
+        const accountDefaultMemberId = selectedAccount?.householdMemberId ?? null
+        const isMemberFieldDisabled = accountDefaultMemberId !== null
+        const memberFieldValue = isMemberFieldDisabled
+          ? accountDefaultMemberId
+          : (state.line.householdMemberId ?? headerHouseholdMemberId)
         const idPrefix = `journal-entry-line-${state.key}`
 
         return (
@@ -335,6 +377,13 @@ export function JournalEntryForm({
                     account !== undefined && isCounterpartyEligibleCategory(account.category)
                       ? line.counterpartyId
                       : null,
+                  // 既定値のある科目に切り替えた場合、明細側の上書き値が残っていると
+                  // DDLトリガー違反(household-members.md 1.2節)で確定操作が失敗しうるため、
+                  // 選択欄をdisabled化するのと合わせてここでクリアする
+                  householdMemberId:
+                    account !== undefined && account.householdMemberId !== null
+                      ? null
+                      : line.householdMemberId,
                 }))
               }}
             >
@@ -396,7 +445,8 @@ export function JournalEntryForm({
             <label htmlFor={`${idPrefix}-member`}>{t('lineHouseholdMemberLabel')}</label>
             <select
               id={`${idPrefix}-member`}
-              value={state.line.householdMemberId ?? ''}
+              value={memberFieldValue ?? ''}
+              disabled={isMemberFieldDisabled}
               onChange={(event) =>
                 updateLine(state.key, (line) => ({
                   ...line,

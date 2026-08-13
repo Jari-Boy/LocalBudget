@@ -5,6 +5,10 @@
  * (バランス検証・必須項目チェックなしでの入力途中状態の保存)・破棄、および確定操作
  * (JournalEntryRepository.create経由での通常のバランス検証・is_reconcilable記帳制限を
  * 受けたうえでの仕訳化、成功時の下書き削除・失敗時の下書き非削除)を検証する。
+ * 起票者(household_member_id)は下書き段階では未入力状態を許容するためNULL可だが
+ * (計画Issue #88、journal_entries.household_member_idと異なりバランス制約と同様に
+ * 下書き段階では必須化の対象外、docs/domain/journal.md 3章)、確定時にはJournalEntryRepository
+ * 側のNOT NULL制約により必須となることもあわせて検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -12,6 +16,7 @@ import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
+import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { SqlJsJournalEntryDraftRepository } from './SqlJsJournalEntryDraftRepository'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
@@ -21,6 +26,7 @@ let repository: SqlJsJournalEntryDraftRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
 let foodExpenseAccountId: number
 let cashAccountId: number
+let householdMemberId: number
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -35,6 +41,7 @@ beforeEach(async () => {
     isReconcilable: null,
   }).id
   cashAccountId = accounts.create({ category: 'asset', name: '現金', isReconcilable: false }).id
+  householdMemberId = new SqlJsHouseholdMemberRepository(db).create({ name: '自分' }).id
 })
 
 describe('create / findById', () => {
@@ -45,7 +52,14 @@ describe('create / findById', () => {
     expect(created.entryDate).toBeNull()
     expect(created.memo).toBeNull()
     expect(created.currency).toBeNull()
+    expect(created.householdMemberId).toBeNull()
     expect(created.lines).toHaveLength(0)
+  })
+
+  it('起票者(householdMemberId)を指定して下書きを作成できる', () => {
+    const created = repository.create({ householdMemberId })
+
+    expect(repository.findById(created.id)?.householdMemberId).toBe(householdMemberId)
   })
 
   it('一部だけ入力された明細(借方のみ入力済み)を持つ下書きを作成する', () => {
@@ -101,6 +115,7 @@ describe('update(バランス検証なしの全差し替え)', () => {
     const updated = repository.update(created.id, {
       entryDate: '2026-07-21',
       memo: '更新後の内容',
+      householdMemberId,
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 5000 },
         { accountId: cashAccountId, side: 'credit', amount: 3000 },
@@ -109,6 +124,7 @@ describe('update(バランス検証なしの全差し替え)', () => {
 
     expect(updated.memo).toBe('更新後の内容')
     expect(updated.entryDate).toBe('2026-07-21')
+    expect(updated.householdMemberId).toBe(householdMemberId)
     expect(updated.lines).toHaveLength(2)
   })
 })
@@ -130,6 +146,7 @@ describe('confirm', () => {
     const created = repository.create({
       entryDate: '2026-07-22',
       memo: 'スーパーで食材購入',
+      householdMemberId,
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
         { accountId: cashAccountId, side: 'credit', amount: 3000 },
@@ -139,6 +156,7 @@ describe('confirm', () => {
     const confirmed = repository.confirm(created.id, journalEntryRepository)
 
     expect(confirmed.entryDate).toBe('2026-07-22')
+    expect(confirmed.householdMemberId).toBe(householdMemberId)
     expect(confirmed.lines).toHaveLength(2)
     expect(journalEntryRepository.findById(confirmed.id)).not.toBeNull()
     expect(repository.findById(created.id)).toBeNull()
@@ -147,6 +165,7 @@ describe('confirm', () => {
   it('下書きの明細が貸借不一致の場合はUnbalancedJournalEntryErrorをスローし、下書きを残す', () => {
     const created = repository.create({
       entryDate: '2026-07-22',
+      householdMemberId,
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
         { accountId: cashAccountId, side: 'credit', amount: 2000 },
@@ -156,6 +175,21 @@ describe('confirm', () => {
     expect(() => repository.confirm(created.id, journalEntryRepository)).toThrow(
       UnbalancedJournalEntryError,
     )
+
+    expect(repository.findById(created.id)).not.toBeNull()
+    expect(journalEntryRepository.findAll()).toHaveLength(0)
+  })
+
+  it('起票者(householdMemberId)が未入力のまま確定しようとするとエラーになり、下書きを残す(計画Issue #88)', () => {
+    const created = repository.create({
+      entryDate: '2026-07-22',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
+        { accountId: cashAccountId, side: 'credit', amount: 3000 },
+      ],
+    })
+
+    expect(() => repository.confirm(created.id, journalEntryRepository)).toThrow()
 
     expect(repository.findById(created.id)).not.toBeNull()
     expect(journalEntryRepository.findAll()).toHaveLength(0)

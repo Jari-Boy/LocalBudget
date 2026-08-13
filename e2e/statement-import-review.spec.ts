@@ -102,10 +102,12 @@ async function setupAccountsAndMapping(
         const { accountIndex, ...mappingFields } = mapping
         await client.importMappingDefinition.create({ ...mappingFields, accountId: ids[accountIndex] })
       }
+      const [defaultMember] = await client.householdMember.findAll()
       for (const entry of journalEntries) {
         const { lines, externalTransactionRef, ...entryFields } = entry
         await client.journalEntry.create({
           ...entryFields,
+          householdMemberId: defaultMember.id,
           lines: lines.map((line) => ({
             accountId: ids[line.accountIndex],
             side: line.side,

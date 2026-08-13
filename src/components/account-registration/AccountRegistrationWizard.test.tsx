@@ -129,6 +129,7 @@ describe('AccountRegistrationWizard', () => {
   })
 
   it('初期残高を入力すると、初期残高科目と初期仕訳が自動生成される', async () => {
+    householdMemberRepository.create({ name: '自分' })
     const onComplete = vi.fn()
     renderWizard(onComplete)
 
@@ -136,6 +137,8 @@ describe('AccountRegistrationWizard', () => {
     fireEvent.change(screen.getByLabelText('名前を付ける'), {
       target: { value: '三菱UFJ銀行' },
     })
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    // 名義選択ステップでは何も選ばず(世帯共通のまま)次へ進む
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
 
     fireEvent.change(screen.getByLabelText('初期残高を入力(任意)'), {
@@ -150,6 +153,31 @@ describe('AccountRegistrationWizard', () => {
       entryDate: '2026-08-03',
       sourceType: 'initial_balance',
     })
+  })
+
+  it('世帯メンバーが登録済みで名義を選ばなかった場合、初期仕訳の起票者には世帯メンバーの先頭が使われる(計画Issue #88)', async () => {
+    const member = householdMemberRepository.create({ name: '太郎' })
+    const onComplete = vi.fn()
+    renderWizard(onComplete)
+
+    fireEvent.click(await screen.findByRole('button', { name: '銀行口座' }))
+    fireEvent.change(screen.getByLabelText('名前を付ける'), {
+      target: { value: '三菱UFJ銀行' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+
+    // 名義選択ステップでは何も選ばず(世帯共通のまま)次へ進む
+    expect(screen.getByText('名義を選ぶ(任意)')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+
+    fireEvent.change(screen.getByLabelText('初期残高を入力(任意)'), {
+      target: { value: '100000' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '登録する' }))
+
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
+    const entries = journalEntryRepository.findAll()
+    expect(entries[0].householdMemberId).toBe(member.id)
   })
 
   it('初期残高に0を入力した場合、初期残高科目・仕訳は作成されず口座のみ登録される', async () => {

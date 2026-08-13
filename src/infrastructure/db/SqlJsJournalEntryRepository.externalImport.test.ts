@@ -12,18 +12,21 @@ import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
+import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 
 let db: Database
 let repository: SqlJsJournalEntryRepository
 let bankAccountId: number
 let foodExpenseAccountId: number
+let memberId: number
 
 beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
   const accounts = new SqlJsAccountRepository(db)
   repository = new SqlJsJournalEntryRepository(db)
+  memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '自分' }).id
 
   bankAccountId = accounts.create({
     category: 'asset',
@@ -45,6 +48,7 @@ function countRows(table: string): number {
 describe('externalTransactionRefを渡した場合', () => {
   it('journal_entries/journal_linesとexternal_transaction_refsを同一トランザクションで書き込む', () => {
     const entry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-08-01',
       memo: 'セブンイレブン 日本橋店',
       sourceType: 'external_import',
@@ -74,6 +78,7 @@ describe('externalTransactionRefを渡した場合', () => {
 
   it('external_transaction_refsのUNIQUE制約違反時はjournal_entries/journal_linesも含めてロールバックする', () => {
     repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-08-01',
       memo: '1件目',
       sourceType: 'external_import',
@@ -95,6 +100,7 @@ describe('externalTransactionRefを渡した場合', () => {
 
     expect(() =>
       repository.create({
+        householdMemberId: memberId,
         entryDate: '2026-08-01',
         memo: '2件目(重複external_id)',
         sourceType: 'external_import',
@@ -128,6 +134,7 @@ describe('externalTransactionRefを渡さない場合', () => {
     }).id
 
     repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-08-01',
       memo: '手入力',
       lines: [

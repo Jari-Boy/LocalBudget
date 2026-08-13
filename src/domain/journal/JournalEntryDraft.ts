@@ -20,6 +20,8 @@ export interface JournalEntryDraft {
   entryDate: string | null
   memo: string | null
   currency: string | null
+  /** 起票者(journal_entries.householdMemberId相当)。下書き段階では未入力を許容するためnull可 */
+  householdMemberId: number | null
   createdAt: string
   updatedAt: string
   lines: JournalEntryDraftLine[]
@@ -39,6 +41,7 @@ export interface CreateJournalEntryDraftInput {
   entryDate?: string | null
   memo?: string | null
   currency?: string | null
+  householdMemberId?: number | null
   lines?: JournalEntryDraftLineInput[]
 }
 
@@ -46,5 +49,6 @@ export interface UpdateJournalEntryDraftInput {
   entryDate?: string | null
   memo?: string | null
   currency?: string | null
+  householdMemberId?: number | null
   lines?: JournalEntryDraftLineInput[]
 }

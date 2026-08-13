@@ -32,6 +32,7 @@ describe('buildHouseholdMemberExpenseSplittingJournalEntryInput', () => {
     })
 
     expect(input.entryDate).toBe('2026-07-15')
+    expect(input.householdMemberId).toBe(MEMBER_A)
     expect(input.lines).toEqual([
       {
         accountId: EXPENSE_ACCOUNT_ID,

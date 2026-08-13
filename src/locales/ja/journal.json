@@ -4,6 +4,7 @@
   "entryDateLabel": "取引日",
   "memoLabel": "摘要(任意)",
   "memoPlaceholder": "例: スーパーで食材購入",
+  "creatorHouseholdMemberLabel": "起票者",
   "lineGroupLabel": "{{index}}行目",
   "lineAccountLabel": "科目",
   "unselected": "未選択",

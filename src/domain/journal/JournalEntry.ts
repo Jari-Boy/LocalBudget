@@ -27,6 +27,13 @@ export interface JournalEntry {
   memo: string | null
   currency: string
   sourceType: JournalEntrySourceType
+  /**
+   * 起票者(この仕訳を切った主体、docs/domain/journal.md 1.1)。NOT NULL。
+   * journal_lines.householdMemberId(明細の上書き)とは役割が異なり、科目に既定値が無く
+   * 明細側も未指定の行の実効メンバーのフォールバック先になる(household-members.md 1.2節、
+   * resolveEffectiveHouseholdMemberId参照)。
+   */
+  householdMemberId: number
   createdAt: string
   updatedAt: string
   lines: JournalLine[]
@@ -46,6 +53,8 @@ export interface CreateJournalEntryInput {
   memo?: string | null
   currency?: string
   sourceType?: JournalEntrySourceType
+  /** 起票者(docs/domain/journal.md 1.1「起票者」)。必須、未指定では仕訳を作成できない */
+  householdMemberId: number
   lines: JournalLineInput[]
   /**
    * この仕訳をfrom_entryとして同時に作成するjournal_entry_links(docs/domain/journal.md 1.8)。

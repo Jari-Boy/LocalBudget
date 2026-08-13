@@ -17,6 +17,7 @@ import i18n from '../../infrastructure/i18n/i18n'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
+import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsImportMappingDefinitionRepository } from '../../infrastructure/db/SqlJsImportMappingDefinitionRepository'
 import { SqlJsExternalTransactionRefRepository } from '../../infrastructure/db/SqlJsExternalTransactionRefRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
@@ -31,6 +32,7 @@ let accountRepository: SqlJsAccountRepository
 let importMappingDefinitionRepository: SqlJsImportMappingDefinitionRepository
 let externalTransactionRefRepository: SqlJsExternalTransactionRefRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
+let memberId: number
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -39,6 +41,7 @@ beforeEach(async () => {
   importMappingDefinitionRepository = new SqlJsImportMappingDefinitionRepository(db)
   externalTransactionRefRepository = new SqlJsExternalTransactionRefRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
+  memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '自分' }).id
 })
 
 afterEach(cleanup)
@@ -325,6 +328,7 @@ describe('StatementImportUploadScreen', () => {
       entryDate: '2026-07-20',
       memo: 'スーパー',
       sourceType: 'external_import',
+      householdMemberId: memberId,
       lines: [
         { accountId: account.id, side: 'credit', amount: 3000 },
         { accountId: account.id, side: 'debit', amount: 3000 },
