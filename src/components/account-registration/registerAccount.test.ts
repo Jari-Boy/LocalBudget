@@ -18,6 +18,7 @@ let db: Database
 let accountRepository: SqlJsAccountRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
+let creatorId: number
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -25,6 +26,7 @@ beforeEach(async () => {
   accountRepository = new SqlJsAccountRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
+  creatorId = householdMemberRepository.create({ name: '自分' }).id
 })
 
 describe('registerAccount', () => {
@@ -35,6 +37,7 @@ describe('registerAccount', () => {
       householdMemberId: null,
       initialBalance: null,
       entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
     })
 
     expect(account).toMatchObject({
@@ -53,6 +56,7 @@ describe('registerAccount', () => {
       householdMemberId: null,
       initialBalance: null,
       entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
     })
 
     expect(account.isReconcilable).toBe(false)
@@ -67,6 +71,7 @@ describe('registerAccount', () => {
       householdMemberId: member.id,
       initialBalance: null,
       entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
     })
 
     expect(account.householdMemberId).toBe(member.id)
@@ -79,6 +84,7 @@ describe('registerAccount', () => {
       householdMemberId: null,
       initialBalance: 100000,
       entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
     })
 
     const allAccounts = accountRepository.findAll()
@@ -95,6 +101,7 @@ describe('registerAccount', () => {
     expect(entries[0]).toMatchObject({
       entryDate: '2026-08-03',
       sourceType: 'initial_balance',
+      householdMemberId: creatorId,
     })
     expect(entries[0].lines).toEqual(
       expect.arrayContaining([
@@ -119,6 +126,7 @@ describe('registerAccount', () => {
       householdMemberId: null,
       initialBalance: 0,
       entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
     })
 
     expect(accountRepository.findAll()).toHaveLength(1)
@@ -133,6 +141,7 @@ describe('registerAccount', () => {
       householdMemberId: null,
       initialBalance: -100,
       entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
     })
 
     expect(accountRepository.findAll()).toHaveLength(1)
@@ -146,6 +155,7 @@ describe('registerAccount', () => {
       householdMemberId: null,
       initialBalance: Number.NaN,
       entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
     })
 
     expect(accountRepository.findAll()).toHaveLength(1)
@@ -159,6 +169,7 @@ describe('registerAccount', () => {
       householdMemberId: null,
       initialBalance: Number.POSITIVE_INFINITY,
       entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
     })
 
     expect(accountRepository.findAll()).toHaveLength(1)

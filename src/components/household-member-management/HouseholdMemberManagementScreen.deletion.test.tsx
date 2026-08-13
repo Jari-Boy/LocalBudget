@@ -78,6 +78,7 @@ describe('HouseholdMemberManagementScreen 削除・非アクティブ化', () =>
     const cashAccount = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     journalEntryRepository.create({
       entryDate: '2026-08-11',
+      householdMemberId: member.id,
       lines: [
         { accountId: expenseAccount.id, side: 'debit', amount: 1000, householdMemberId: member.id },
         { accountId: cashAccount.id, side: 'credit', amount: 1000 },

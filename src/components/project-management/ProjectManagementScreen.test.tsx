@@ -16,6 +16,7 @@ import i18n from '../../infrastructure/i18n/i18n'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
+import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { ProjectManagementScreen } from './ProjectManagementScreen'
@@ -24,6 +25,7 @@ let db: Database
 let accountRepository: SqlJsAccountRepository
 let projectRepository: SqlJsProjectRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
+let memberId: number
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -31,6 +33,7 @@ beforeEach(async () => {
   accountRepository = new SqlJsAccountRepository(db)
   projectRepository = new SqlJsProjectRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
+  memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '自分' }).id
 })
 
 afterEach(cleanup)
@@ -142,6 +145,7 @@ describe('ProjectManagementScreen', () => {
     journalEntryRepository.create({
       entryDate: '2026-07-15',
       memo: null,
+      householdMemberId: memberId,
       lines: [
         { accountId: expense.id, side: 'debit', amount: 5000, projectId: project.id },
         { accountId: cash.id, side: 'credit', amount: 5000 },

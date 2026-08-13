@@ -14,6 +14,8 @@ export interface BuildConfirmedJournalEntryInputParams {
   counterpartyId?: number | null
   projectId?: number | null
   householdMemberId?: number | null
+  /** 起票者(CreateJournalEntryInput.householdMemberId、計画Issue #88)。解決は呼び出し側の責務 */
+  entryHouseholdMemberId: number
 }
 
 /**
@@ -46,6 +48,7 @@ export function buildConfirmedJournalEntryInput(
     entryDate: record.entryDate,
     memo: record.description,
     sourceType: 'external_import',
+    householdMemberId: params.entryHouseholdMemberId,
     lines: counterSide === 'debit' ? [counterLine, targetLine] : [targetLine, counterLine],
     externalTransactionRef: {
       accountId: params.targetAccountId,

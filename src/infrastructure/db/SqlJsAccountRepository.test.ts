@@ -102,8 +102,11 @@ describe('delete', () => {
       name: '交通費',
       isReconcilable: null,
     })
+    db.run(`INSERT INTO household_members (name) VALUES ('自分')`)
+    const memberId = lastInsertRowId(db)
     db.run(
-      `INSERT INTO journal_entries (entry_date) VALUES ('2026-07-01')`,
+      `INSERT INTO journal_entries (entry_date, household_member_id) VALUES ('2026-07-01', ?)`,
+      [memberId],
     )
     const entryId = lastInsertRowId(db)
     db.run(

@@ -17,6 +17,7 @@ import i18n from '../../infrastructure/i18n/i18n'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
+import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { ProjectManagementScreen } from './ProjectManagementScreen'
@@ -25,6 +26,7 @@ let db: Database
 let accountRepository: SqlJsAccountRepository
 let projectRepository: SqlJsProjectRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
+let memberId: number
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -32,6 +34,7 @@ beforeEach(async () => {
   accountRepository = new SqlJsAccountRepository(db)
   projectRepository = new SqlJsProjectRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
+  memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '自分' }).id
 })
 
 afterEach(cleanup)
@@ -55,6 +58,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const project = projectRepository.create({ name: '26年7月アメリカ旅行' })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-15',
       memo: null,
       lines: [
@@ -88,6 +92,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const project = projectRepository.create({ name: '26年7月アメリカ旅行', kind: 'event' })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-15',
       memo: null,
       lines: [
@@ -111,6 +116,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const project = projectRepository.create({ name: '26/7生活費割勘', kind: 'settlement' })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       memo: null,
       lines: [
@@ -119,6 +125,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
       ],
     })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-20',
       memo: null,
       lines: [
@@ -145,6 +152,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const project = projectRepository.create({ name: '26/7生活費割勘', kind: 'settlement' })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       memo: null,
       lines: [
@@ -153,6 +161,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
       ],
     })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-20',
       memo: null,
       lines: [
@@ -179,6 +188,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const project = projectRepository.create({ name: '26/7生活費割勘', kind: 'settlement' })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       memo: null,
       lines: [

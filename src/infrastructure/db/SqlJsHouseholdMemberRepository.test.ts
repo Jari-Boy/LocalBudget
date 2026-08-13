@@ -113,7 +113,9 @@ describe('delete', () => {
   it('journal_lines.household_member_idから参照されているメンバーの削除は拒否される', () => {
     const member = repository.create({ name: '仕訳明細で参照されているメンバー' })
     const accountId = insertAccount(db, 'expense', '食費')
-    db.run(`INSERT INTO journal_entries (entry_date) VALUES ('2026-07-01')`)
+    db.run(`INSERT INTO journal_entries (entry_date, household_member_id) VALUES ('2026-07-01', ?)`, [
+      member.id,
+    ])
     const entryId = lastInsertRowId(db)
     db.run(
       `INSERT INTO journal_lines (journal_entry_id, account_id, household_member_id, side, amount)

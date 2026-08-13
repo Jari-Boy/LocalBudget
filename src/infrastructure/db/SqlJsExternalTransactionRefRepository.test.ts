@@ -10,6 +10,7 @@ import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
+import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { SqlJsExternalTransactionRefRepository } from './SqlJsExternalTransactionRefRepository'
 
@@ -24,6 +25,7 @@ beforeEach(async () => {
   const accounts = new SqlJsAccountRepository(db)
   const journalEntries = new SqlJsJournalEntryRepository(db)
   repository = new SqlJsExternalTransactionRefRepository(db)
+  const memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '自分' }).id
 
   bankAccountId = accounts.create({
     category: 'asset',
@@ -40,6 +42,7 @@ beforeEach(async () => {
     entryDate: '2026-08-01',
     memo: 'セブンイレブン',
     sourceType: 'external_import',
+    householdMemberId: memberId,
     lines: [
       { accountId: foodExpenseAccountId, side: 'debit', amount: 150 },
       { accountId: bankAccountId, side: 'credit', amount: 150 },

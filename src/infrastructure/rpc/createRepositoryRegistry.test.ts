@@ -108,8 +108,10 @@ describe('createRepositoryRegistry', () => {
         name: '現金',
         isReconcilable: false,
       }).id
+      const memberId = registry.householdMember.create({ name: '自分' }).id
       const draft = registry.journalEntryDraft.create({
         entryDate: '2026-07-22',
+        householdMemberId: memberId,
         lines: [
           { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
           { accountId: cashAccountId, side: 'credit', amount: 3000 },

@@ -25,12 +25,16 @@ let miscExpenseAccountId: number
 let bankAccountId: number
 let rentExpenseAccountId: number
 let payableAccountId: number
+/** 起票者(計画Issue #88)。本ファイルの大半のテストは起票者自体を検証対象としないため、
+ * 共通の1件を使い回す(科目既定値強制の検証はSqlJsJournalEntryRepository.householdMemberDefault.test.ts参照) */
+let memberId: number
 
 beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
   const accounts = new SqlJsAccountRepository(db)
   repository = new SqlJsJournalEntryRepository(db)
+  memberId = insertHouseholdMember(db, '自分')
 
   cashAccountId = accounts.create({ category: 'asset', name: '現金', isReconcilable: false }).id
   foodExpenseAccountId = accounts.create({
@@ -63,6 +67,7 @@ beforeEach(async () => {
 describe('create / findById', () => {
   it('貸借バランスの取れた仕訳をヘッダー・明細付きで作成しidで参照できる', () => {
     const created = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-20',
       memo: 'スーパーで食材購入',
       lines: [
@@ -94,6 +99,7 @@ describe('create / findById', () => {
 
   it('複数の費用科目に分割された複合仕訳を作成する', () => {
     const created = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-21',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 7000 },
@@ -116,6 +122,7 @@ describe('create / findById', () => {
     const counterpartyId = insertCounterparty(db, '取引先A')
 
     const created = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-23',
       lines: [
         { accountId: cashAccountId, side: 'debit', amount: 5000 },
@@ -147,6 +154,7 @@ describe('貸借バランス検証', () => {
   it('貸借不一致の仕訳作成はUnbalancedJournalEntryErrorをスローし何も書き込まない', () => {
     expect(() =>
       repository.create({
+        householdMemberId: memberId,
         entryDate: '2026-07-22',
         lines: [
           { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
@@ -161,6 +169,7 @@ describe('貸借バランス検証', () => {
 
   it('貸借不一致な明細セットへの更新はUnbalancedJournalEntryErrorをスローし元の明細を変更しない', () => {
     const created = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-22',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
@@ -188,6 +197,7 @@ describe('貸借バランス検証', () => {
   it('明細0件での作成はUnbalancedJournalEntryErrorをスローし何も書き込まない(journal.md 1.1: 2件以上の不変条件)', () => {
     expect(() =>
       repository.create({
+        householdMemberId: memberId,
         entryDate: '2026-07-27',
         lines: [],
       }),
@@ -199,6 +209,7 @@ describe('貸借バランス検証', () => {
   it('明細1件のみでの作成はUnbalancedJournalEntryErrorをスローし何も書き込まない(journal.md 1.1: 2件以上の不変条件)', () => {
     expect(() =>
       repository.create({
+        householdMemberId: memberId,
         entryDate: '2026-07-27',
         lines: [{ accountId: foodExpenseAccountId, side: 'debit', amount: 1000 }],
       }),
@@ -210,6 +221,7 @@ describe('貸借バランス検証', () => {
 
   it('明細0件への更新はUnbalancedJournalEntryErrorをスローし元の明細を変更しない', () => {
     const created = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-28',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 1500 },
@@ -229,6 +241,7 @@ describe('貸借バランス検証', () => {
 
   it('明細1件のみへの更新はUnbalancedJournalEntryErrorをスローし元の明細を変更しない', () => {
     const created = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-29',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 1200 },
@@ -255,6 +268,7 @@ describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.
   it('is_reconcilable科目に記帳するmanual仕訳の作成はRestrictedAccountPostingErrorをスローし何も書き込まない', () => {
     expect(() =>
       repository.create({
+        householdMemberId: memberId,
         entryDate: '2026-07-24',
         sourceType: 'manual',
         lines: [
@@ -271,6 +285,7 @@ describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.
   it('is_reconcilable科目に記帳するrecurring_generated仕訳もRestrictedAccountPostingErrorをスローする', () => {
     expect(() =>
       repository.create({
+        householdMemberId: memberId,
         entryDate: '2026-07-24',
         sourceType: 'recurring_generated',
         lines: [
@@ -285,6 +300,7 @@ describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.
     'sourceTypeが%sの場合はis_reconcilable科目への記帳を許可する',
     (sourceType) => {
       const created = repository.create({
+        householdMemberId: memberId,
         entryDate: '2026-07-24',
         sourceType,
         lines: [
@@ -300,6 +316,7 @@ describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.
   it('non-is_reconcilable科目のみに記帳するmanual仕訳は許可される', () => {
     expect(() =>
       repository.create({
+        householdMemberId: memberId,
         entryDate: '2026-07-24',
         sourceType: 'manual',
         lines: [
@@ -312,6 +329,7 @@ describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.
 
   it('manual仕訳をis_reconcilable科目への記帳に更新するとRestrictedAccountPostingErrorをスローし元の明細を変更しない', () => {
     const created = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-24',
       sourceType: 'manual',
       lines: [
@@ -340,6 +358,7 @@ describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.
 describe('findAll', () => {
   it('作成した全ての仕訳を返す', () => {
     repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
@@ -347,6 +366,7 @@ describe('findAll', () => {
       ],
     })
     repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-02',
       lines: [
         { accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
@@ -361,6 +381,7 @@ describe('findAll', () => {
 describe('update(明細行の全差し替え)', () => {
   it('全明細を差し替えjournal_entries.updated_atを更新する', () => {
     const created = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-10',
       memo: '当初の内容',
       lines: [
@@ -395,6 +416,7 @@ describe('update(明細行の全差し替え)', () => {
 
   it('既存のjournal_lines行を新規挿入行に差し替える(更新をまたいで明細idは保持されない)', () => {
     const created = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-12',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
@@ -406,6 +428,7 @@ describe('update(明細行の全差し替え)', () => {
     // テーブルが完全に空になると採番を1から再開するため、他の行が存在しない状態だと
     // 偶然idが一致してしまい、この検証の意図が成立しない)
     repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-13',
       lines: [
         { accountId: miscExpenseAccountId, side: 'debit', amount: 500 },
@@ -434,6 +457,7 @@ describe('DB制約違反時のロールバック(FK制約有効化)', () => {
   it('存在しない科目を参照する明細を含む作成はトランザクション全体をロールバックする', () => {
     expect(() =>
       repository.create({
+        householdMemberId: memberId,
         entryDate: '2026-07-25',
         lines: [
           { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
@@ -448,6 +472,7 @@ describe('DB制約違反時のロールバック(FK制約有効化)', () => {
 
   it('存在しない科目を参照する明細を含む更新はトランザクション全体をロールバックする', () => {
     const created = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-26',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 2000 },
@@ -474,6 +499,7 @@ describe('DB制約違反時のロールバック(FK制約有効化)', () => {
 describe('delete', () => {
   it('仕訳を物理削除し明細もカスケード削除する', () => {
     const created = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-05',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
@@ -489,6 +515,7 @@ describe('delete', () => {
 
   it('external_import仕訳の削除は常に許可される', () => {
     const created = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-06',
       sourceType: 'external_import',
       lines: [
@@ -506,6 +533,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
   it('対象project_idにタグ付けされた仕訳が複数件ある場合はまとめて物理削除する', () => {
     const projectId = insertProject(db, '旅行2026')
     const entryA = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
@@ -513,6 +541,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       ],
     })
     const entryB = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-02',
       lines: [
         { accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
@@ -529,6 +558,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
   it('対象project_idを持つ仕訳が0件の場合は何もせず正常終了する', () => {
     const projectId = insertProject(db, '空プロジェクト')
     const other = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-03',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 300 },
@@ -543,6 +573,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
   it('削除された仕訳のjournal_entry_links(from_entry/to_entryいずれの向きでも)もCASCADE削除される', () => {
     const projectId = insertProject(db, '按分対象')
     const original = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
@@ -550,6 +581,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       ],
     })
     const taggedFromEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-02',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
@@ -559,6 +591,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
     })
 
     const untagged = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-03',
       lines: [
         { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
@@ -566,6 +599,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       ],
     })
     const taggedToEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-04',
       sourceType: 'external_import',
       lines: [
@@ -595,6 +629,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
     const otherProjectId = insertProject(db, '別プロジェクト')
 
     const target = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
@@ -602,6 +637,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       ],
     })
     const other = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-02',
       lines: [
         { accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
@@ -609,6 +645,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       ],
     })
     const untagged = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-03',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 300 },
@@ -626,6 +663,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
   it('精算済み(settlesリンクを持つ)仕訳が混在していてもガードなくすべて削除される(回帰テスト)', () => {
     const projectId = insertProject(db, 'スマホ24回')
     const toEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
@@ -633,6 +671,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       ],
     })
     const fromEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-05',
       sourceType: 'external_import',
       lines: [
@@ -651,6 +690,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
 describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () => {
   it('消込仕訳側に一致する一時勘定行がある場合はsettlesリンクを作成する', () => {
     const toEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       memo: '家賃(暫定計上)',
       lines: [
@@ -659,6 +699,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
       ],
     })
     const fromEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-05',
       memo: '家賃(消込)',
       sourceType: 'external_import',
@@ -683,6 +724,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
 
   it('消込仕訳側に一致する科目行がない場合はSettlementTagMismatchErrorをスローし何も書き込まない', () => {
     const toEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
@@ -690,6 +732,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
       ],
     })
     const fromEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-05',
       sourceType: 'external_import',
       lines: [
@@ -714,6 +757,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
     const projectId = insertProject(db, 'スマホ24回')
     const otherProjectId = insertProject(db, 'タブレット12回')
     const toEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: rentExpenseAccountId, side: 'debit', amount: 10000, projectId },
@@ -721,6 +765,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
       ],
     })
     const fromEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-05',
       sourceType: 'external_import',
       lines: [
@@ -741,6 +786,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
 
   it('一致する行の金額がリンク金額を下回る場合はSettlementTagMismatchErrorをスローする', () => {
     const toEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
@@ -748,6 +794,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
       ],
     })
     const fromEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-05',
       sourceType: 'external_import',
       lines: [
@@ -768,6 +815,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
 
   it('allocatesリンクはsettlesのハード検証を受けずに許可される', () => {
     const toEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
@@ -775,6 +823,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
       ],
     })
     const fromEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-02',
       lines: [
         { accountId: miscExpenseAccountId, side: 'debit', amount: 1500 },
@@ -794,6 +843,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
 
   it('その仕訳がfrom_entry/to_entryいずれかであるリンクを一覧取得する', () => {
     const toEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
@@ -801,6 +851,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
       ],
     })
     const fromEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-05',
       sourceType: 'external_import',
       lines: [
@@ -824,6 +875,7 @@ describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () =>
 describe('create(linksオプションによる消込仕訳自体の作成とsettlesリンクの同時書き込み)', () => {
   it('タグが一致する場合は消込仕訳自体とsettlesリンクを1回の呼び出しで作成する', () => {
     const toEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       memo: '家賃(暫定計上)',
       lines: [
@@ -833,6 +885,7 @@ describe('create(linksオプションによる消込仕訳自体の作成とsett
     })
 
     const fromEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-05',
       memo: '家賃(消込)',
       sourceType: 'external_import',
@@ -856,6 +909,7 @@ describe('create(linksオプションによる消込仕訳自体の作成とsett
 
   it('settlesのハード検証に失敗した場合は仕訳・明細・リンクをまとめてロールバックする', () => {
     const toEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
@@ -866,6 +920,7 @@ describe('create(linksオプションによる消込仕訳自体の作成とsett
 
     expect(() =>
       repository.create({
+        householdMemberId: memberId,
         entryDate: '2026-07-05',
         sourceType: 'external_import',
         lines: [
@@ -882,6 +937,7 @@ describe('create(linksオプションによる消込仕訳自体の作成とsett
 
   it('allocatesリンクも同様に、割勘仕訳自体の作成と1回の呼び出しでまとめて書き込める(docs/domain/expense-splitting.md 1.3節)', () => {
     const originalEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       memo: '食費(A)',
       lines: [
@@ -891,6 +947,7 @@ describe('create(linksオプションによる消込仕訳自体の作成とsett
     })
 
     const splitEntry = repository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-15',
       memo: '食費割勘',
       lines: [

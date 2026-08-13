@@ -31,7 +31,8 @@ export interface BuildHouseholdMemberExpenseSplittingJournalEntryInputParams {
  * 返り値のlinksに元仕訳へのallocatesリンクを含めることで、割勘仕訳自体の作成と
  * allocatesリンクの作成を単一のDBトランザクションにする(docs/domain/journal.md 1.8の
  * 「settlesリンクは消込仕訳自体の作成と同一トランザクションで書き込まれる」と同じパターンを
- * allocatesにも適用)。
+ * allocatesにも適用)。起票者(CreateJournalEntryInput.householdMemberId)はfromMemberId
+ * (元々の支出者、割勘を起票した側)を使う(計画Issue #88)。
  */
 export function buildHouseholdMemberExpenseSplittingJournalEntryInput(
   params: BuildHouseholdMemberExpenseSplittingJournalEntryInputParams,
@@ -39,6 +40,7 @@ export function buildHouseholdMemberExpenseSplittingJournalEntryInput(
   return {
     entryDate: params.entryDate,
     memo: params.memo ?? null,
+    householdMemberId: params.fromMemberId,
     lines: [
       {
         accountId: params.expenseAccountId,

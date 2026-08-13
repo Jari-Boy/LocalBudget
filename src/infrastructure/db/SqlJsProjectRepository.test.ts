@@ -91,7 +91,11 @@ describe('delete', () => {
   it('journal_linesから参照されているプロジェクトの削除は拒否される', () => {
     const project = repository.create({ name: '紐づく仕訳があるプロジェクト' })
     const accountId = insertAccount(db, 'expense', 'お土産代')
-    db.run(`INSERT INTO journal_entries (entry_date) VALUES ('2026-07-01')`)
+    db.run(`INSERT INTO household_members (name) VALUES ('自分')`)
+    const memberId = lastInsertRowId(db)
+    db.run(`INSERT INTO journal_entries (entry_date, household_member_id) VALUES ('2026-07-01', ?)`, [
+      memberId,
+    ])
     const entryId = lastInsertRowId(db)
     db.run(
       `INSERT INTO journal_lines (journal_entry_id, account_id, project_id, side, amount)

@@ -9,6 +9,8 @@ import { describe, expect, it } from 'vitest'
 import { buildBalanceAdjustmentJournalEntryInput } from './buildBalanceAdjustmentJournalEntryInput'
 import { NoBalanceDiscrepancyError } from './NoBalanceDiscrepancyError'
 
+const HOUSEHOLD_MEMBER_ID = 42
+
 describe('buildBalanceAdjustmentJournalEntryInput', () => {
   it('帳簿残高が外部残高より大きい(超過)場合は資産を貸方に、費用・残高調整を借方に減額計上する', () => {
     // 帳簿10,000円、実際9,200円(financial-statements.md 1.2の例)
@@ -18,10 +20,12 @@ describe('buildBalanceAdjustmentJournalEntryInput', () => {
       bookBalance: 10000,
       externalBalance: 9200,
       entryDate: '2026-08-01',
+      householdMemberId: HOUSEHOLD_MEMBER_ID,
     })
 
     expect(input.sourceType).toBe('balance_adjustment')
     expect(input.entryDate).toBe('2026-08-01')
+    expect(input.householdMemberId).toBe(HOUSEHOLD_MEMBER_ID)
     expect(input.lines).toEqual([
       { accountId: 99, side: 'debit', amount: 800 },
       { accountId: 1, side: 'credit', amount: 800 },
@@ -36,6 +40,7 @@ describe('buildBalanceAdjustmentJournalEntryInput', () => {
       bookBalance: 9700,
       externalBalance: 10000,
       entryDate: '2026-08-01',
+      householdMemberId: HOUSEHOLD_MEMBER_ID,
     })
 
     expect(input.lines).toEqual([
@@ -51,6 +56,7 @@ describe('buildBalanceAdjustmentJournalEntryInput', () => {
       bookBalance: 10000,
       externalBalance: 9200,
       entryDate: '2026-08-01',
+      householdMemberId: HOUSEHOLD_MEMBER_ID,
       memo: '原因不明差異の確定',
     })
 
@@ -65,6 +71,7 @@ describe('buildBalanceAdjustmentJournalEntryInput', () => {
         bookBalance: 10000,
         externalBalance: 10000,
         entryDate: '2026-08-01',
+        householdMemberId: HOUSEHOLD_MEMBER_ID,
       }),
     ).toThrow(NoBalanceDiscrepancyError)
   })
@@ -77,6 +84,7 @@ describe('buildBalanceAdjustmentJournalEntryInput', () => {
       bookBalance: 10000,
       externalBalance: 9200,
       entryDate: '2026-08-01',
+      householdMemberId: HOUSEHOLD_MEMBER_ID,
     })
 
     expect(() => assertJournalBalance(input.lines)).not.toThrow()

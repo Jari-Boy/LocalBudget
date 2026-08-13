@@ -297,9 +297,11 @@ function insertAccount(
 }
 
 function insertGeneratedJournalEntry(database: Database, ruleId: number): void {
+  database.run(`INSERT INTO household_members (name) VALUES ('自分')`)
+  const memberId = database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
   database.run(
-    `INSERT INTO journal_entries (entry_date, source_type, generated_from_rule_id)
-     VALUES ('2026-08-01', 'recurring_generated', ?)`,
-    [ruleId],
+    `INSERT INTO journal_entries (entry_date, source_type, generated_from_rule_id, household_member_id)
+     VALUES ('2026-08-01', 'recurring_generated', ?, ?)`,
+    [ruleId, memberId],
   )
 }

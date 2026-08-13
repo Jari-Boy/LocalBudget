@@ -29,6 +29,8 @@ export interface BuildCounterpartyExpenseSplittingJournalEntryInputParams {
  *
  * 返り値のlinksに元仕訳へのallocatesリンクを含めることで、割勘仕訳自体の作成と
  * allocatesリンクの作成を単一のDBトランザクションにする(docs/domain/journal.md 1.8参照)。
+ * 起票者(CreateJournalEntryInput.householdMemberId)はpayerMemberId(立て替えた世帯メンバー、
+ * 割勘を起票した側)を使う(計画Issue #88)。
  */
 export function buildCounterpartyExpenseSplittingJournalEntryInput(
   params: BuildCounterpartyExpenseSplittingJournalEntryInputParams,
@@ -36,6 +38,7 @@ export function buildCounterpartyExpenseSplittingJournalEntryInput(
   return {
     entryDate: params.entryDate,
     memo: params.memo ?? null,
+    householdMemberId: params.payerMemberId,
     lines: [
       {
         accountId: params.advanceAssetAccountId,
