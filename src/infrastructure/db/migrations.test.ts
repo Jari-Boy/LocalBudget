@@ -76,4 +76,12 @@ describe('runMigrations', () => {
       'generated_from_rule_id',
     )
   })
+
+  it('journal_entriesに起票者を表すhousehold_member_idカラムを追加する(計画Issue #88)', async () => {
+    const db = await createTestDatabase()
+
+    runMigrations(db)
+
+    expect(listColumnNames(db, 'journal_entries')).toContain('household_member_id')
+  })
 })

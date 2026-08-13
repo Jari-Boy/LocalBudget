@@ -1,8 +1,8 @@
 /**
  * resolveEffectiveHouseholdMemberId(実効メンバーの解決)の純粋関数としてのユニットテスト。
- * docs/domain/household-members.md 1.2節の
- * 「実効メンバー = COALESCE(journal_lines.household_member_id, accounts.household_member_id)」
- * という既定値継承ルールを、明細側指定あり・なし・両方NULL・科目未検出の境界値を含め検証する。
+ * 計画Issue #88で改訂された新ロジック(docs/domain/household-members.md 1.2節)
+ * 「科目に既定値があれば強制、無ければ明細の上書き可→(明細も未設定なら)ヘッダーの起票者」
+ * を、科目既定値の有無・明細指定の有無の組み合わせを含め検証する。
  * DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
@@ -27,35 +27,46 @@ function buildAccount(overrides: Partial<Account> = {}): Account {
 }
 
 describe('resolveEffectiveHouseholdMemberId', () => {
-  it('明細側にhouseholdMemberIdが指定されている場合はそれを優先する(上書き)', () => {
+  it('科目に既定値がある場合、明細側の指定によらず科目の既定値を返す(強制)', () => {
     const accountsById = new Map([[1, buildAccount({ id: 1, householdMemberId: 10 })]])
 
     expect(
-      resolveEffectiveHouseholdMemberId({ accountId: 1, householdMemberId: 20 }, accountsById),
-    ).toBe(20)
-  })
-
-  it('明細側がnullの場合は科目の既定値(accounts.householdMemberId)を継承する', () => {
-    const accountsById = new Map([[1, buildAccount({ id: 1, householdMemberId: 10 })]])
-
-    expect(
-      resolveEffectiveHouseholdMemberId({ accountId: 1, householdMemberId: null }, accountsById),
+      resolveEffectiveHouseholdMemberId({ accountId: 1, householdMemberId: 20 }, accountsById, 30),
     ).toBe(10)
   })
 
-  it('明細側・科目側ともにnullの場合は世帯共通としてnullを返す', () => {
+  it('科目に既定値があり明細がnullの場合も科目の既定値を返す', () => {
+    const accountsById = new Map([[1, buildAccount({ id: 1, householdMemberId: 10 })]])
+
+    expect(
+      resolveEffectiveHouseholdMemberId({ accountId: 1, householdMemberId: null }, accountsById, 30),
+    ).toBe(10)
+  })
+
+  it('科目に既定値が無く明細に指定がある場合はその値を返す(上書き)', () => {
     const accountsById = new Map([[1, buildAccount({ id: 1, householdMemberId: null })]])
 
     expect(
-      resolveEffectiveHouseholdMemberId({ accountId: 1, householdMemberId: null }, accountsById),
-    ).toBeNull()
+      resolveEffectiveHouseholdMemberId({ accountId: 1, householdMemberId: 20 }, accountsById, 30),
+    ).toBe(20)
   })
 
-  it('該当する科目がaccountsByIdに存在しない場合はnullとして扱う', () => {
+  it('科目に既定値が無く明細もnullの場合はヘッダーの起票者にフォールバックする', () => {
+    const accountsById = new Map([[1, buildAccount({ id: 1, householdMemberId: null })]])
+
+    expect(
+      resolveEffectiveHouseholdMemberId({ accountId: 1, householdMemberId: null }, accountsById, 30),
+    ).toBe(30)
+  })
+
+  it('該当する科目がaccountsByIdに存在しない場合は科目既定値なしとして扱い、明細→起票者の順にフォールバックする', () => {
     const accountsById = new Map<number, Account>()
 
     expect(
-      resolveEffectiveHouseholdMemberId({ accountId: 999, householdMemberId: null }, accountsById),
-    ).toBeNull()
+      resolveEffectiveHouseholdMemberId({ accountId: 999, householdMemberId: null }, accountsById, 30),
+    ).toBe(30)
+    expect(
+      resolveEffectiveHouseholdMemberId({ accountId: 999, householdMemberId: 20 }, accountsById, 30),
+    ).toBe(20)
   })
 })

@@ -3,9 +3,9 @@
  * docs/domain/household-members.md 1.4節の
  * 「メンバー別合計 = Σ(amount WHERE side=増加側) - Σ(amount WHERE side=減少側)、
  * 実効メンバー = 対象household_member、期間で絞らず全期間が既定」という
- * メンバー軸の集計ルールを検証する。実効メンバーの解決
- * (COALESCE(journal_lines.household_member_id, accounts.household_member_id)、
- * 1.2節)を経由すること、全区分(資産等)にまたがる集計ができることを含む。
+ * メンバー軸の集計ルールを検証する。実効メンバーの解決(計画Issue #88改訂後の
+ * 「科目既定値の強制→明細の上書き→ヘッダーの起票者」フォールバックルール、1.2節)を
+ * 経由すること、全区分(資産等)にまたがる集計ができることを含む。
  * DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
@@ -37,6 +37,7 @@ function buildEntry(overrides: Partial<JournalEntry> & Pick<JournalEntry, 'lines
     memo: null,
     currency: 'JPY',
     sourceType: 'manual',
+    householdMemberId: 999,
     createdAt: '2026-07-01T00:00:00.000Z',
     updatedAt: '2026-07-01T00:00:00.000Z',
     ...overrides,
@@ -79,6 +80,16 @@ describe('aggregateByHouseholdMember', () => {
     const accounts: Account[] = [buildAccount({ id: 1, category: 'expense', householdMemberId: 10 })]
     const entries: JournalEntry[] = [
       buildEntry({ id: 1, lines: [line(1, 1, 1, 'debit', 3000, null)] }),
+    ]
+
+    expect(aggregateByHouseholdMember(entries, accounts, 10)).toBe(3000)
+  })
+
+  it('科目に既定値が無く明細もnullの場合はヘッダーの起票者を実効メンバーとして集計する(計画Issue #88)', () => {
+    const accounts: Account[] = [buildAccount({ id: 1, category: 'expense', householdMemberId: null })]
+    const entries: JournalEntry[] = [
+      buildEntry({ id: 1, householdMemberId: 10, lines: [line(1, 1, 1, 'debit', 3000, null)] }),
+      buildEntry({ id: 2, householdMemberId: 20, lines: [line(2, 2, 1, 'debit', 5000, null)] }),
     ]
 
     expect(aggregateByHouseholdMember(entries, accounts, 10)).toBe(3000)
