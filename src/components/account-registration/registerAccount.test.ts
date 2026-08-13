@@ -3,6 +3,8 @@
  * AccountRepository/JournalEntryRepositoryのsql.js実装(Node上で動作)を用いて、
  * 資産科目の作成・種類選択によるis_reconcilable自動決定・初期残高入力時の
  * 初期残高科目(equity)+初期仕訳(source_type = 'initial_balance')の自動生成を検証する。
+ * 初期残高は世帯メンバーごとの複数行(initialBalanceLines)で指定でき、現金(kind = cash)で
+ * 世帯メンバーが複数いる場合に使う世帯メンバーごとの初期残高入力(計画Issue #90)もここで検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -35,7 +37,7 @@ describe('registerAccount', () => {
       kind: 'bank',
       name: '三菱UFJ銀行',
       householdMemberId: null,
-      initialBalance: null,
+      initialBalanceLines: [{ householdMemberId: null, amount: null }],
       entryDate: '2026-08-03',
       journalEntryHouseholdMemberId: creatorId,
     })
@@ -54,7 +56,7 @@ describe('registerAccount', () => {
       kind: 'cash',
       name: '現金',
       householdMemberId: null,
-      initialBalance: null,
+      initialBalanceLines: [{ householdMemberId: null, amount: null }],
       entryDate: '2026-08-03',
       journalEntryHouseholdMemberId: creatorId,
     })
@@ -69,7 +71,7 @@ describe('registerAccount', () => {
       kind: 'bank',
       name: '三菱UFJ銀行',
       householdMemberId: member.id,
-      initialBalance: null,
+      initialBalanceLines: [{ householdMemberId: null, amount: null }],
       entryDate: '2026-08-03',
       journalEntryHouseholdMemberId: creatorId,
     })
@@ -82,7 +84,7 @@ describe('registerAccount', () => {
       kind: 'bank',
       name: '三菱UFJ銀行',
       householdMemberId: null,
-      initialBalance: 100000,
+      initialBalanceLines: [{ householdMemberId: null, amount: 100000 }],
       entryDate: '2026-08-03',
       journalEntryHouseholdMemberId: creatorId,
     })
@@ -109,6 +111,7 @@ describe('registerAccount', () => {
           accountId: account.id,
           side: 'debit',
           amount: 100000,
+          householdMemberId: null,
         }),
         expect.objectContaining({
           accountId: initialBalanceAccount!.id,
@@ -124,7 +127,7 @@ describe('registerAccount', () => {
       kind: 'bank',
       name: '三菱UFJ銀行',
       householdMemberId: null,
-      initialBalance: 0,
+      initialBalanceLines: [{ householdMemberId: null, amount: 0 }],
       entryDate: '2026-08-03',
       journalEntryHouseholdMemberId: creatorId,
     })
@@ -139,7 +142,7 @@ describe('registerAccount', () => {
       kind: 'bank',
       name: '三菱UFJ銀行',
       householdMemberId: null,
-      initialBalance: -100,
+      initialBalanceLines: [{ householdMemberId: null, amount: -100 }],
       entryDate: '2026-08-03',
       journalEntryHouseholdMemberId: creatorId,
     })
@@ -153,7 +156,7 @@ describe('registerAccount', () => {
       kind: 'bank',
       name: '三菱UFJ銀行',
       householdMemberId: null,
-      initialBalance: Number.NaN,
+      initialBalanceLines: [{ householdMemberId: null, amount: Number.NaN }],
       entryDate: '2026-08-03',
       journalEntryHouseholdMemberId: creatorId,
     })
@@ -167,7 +170,99 @@ describe('registerAccount', () => {
       kind: 'bank',
       name: '三菱UFJ銀行',
       householdMemberId: null,
-      initialBalance: Number.POSITIVE_INFINITY,
+      initialBalanceLines: [{ householdMemberId: null, amount: Number.POSITIVE_INFINITY }],
+      entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
+    })
+
+    expect(accountRepository.findAll()).toHaveLength(1)
+    expect(journalEntryRepository.findAll()).toHaveLength(0)
+  })
+
+  it('世帯メンバーごとの初期残高行を複数指定した場合、メンバーごとの借方明細と合計額の貸方明細を持つ初期仕訳が生成される(計画Issue #90)', async () => {
+    const taro = householdMemberRepository.create({ name: '太郎' })
+    const hanako = householdMemberRepository.create({ name: '花子' })
+
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
+      kind: 'cash',
+      name: '現金',
+      householdMemberId: null,
+      initialBalanceLines: [
+        { householdMemberId: taro.id, amount: 5000 },
+        { householdMemberId: hanako.id, amount: 3000 },
+      ],
+      entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
+    })
+
+    const allAccounts = accountRepository.findAll()
+    const initialBalanceAccount = allAccounts.find(
+      (a) => a.initialBalanceForAccountId === account.id,
+    )
+
+    const entries = journalEntryRepository.findAll()
+    expect(entries).toHaveLength(1)
+    expect(entries[0].lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          accountId: account.id,
+          side: 'debit',
+          amount: 5000,
+          householdMemberId: taro.id,
+        }),
+        expect.objectContaining({
+          accountId: account.id,
+          side: 'debit',
+          amount: 3000,
+          householdMemberId: hanako.id,
+        }),
+        expect.objectContaining({
+          accountId: initialBalanceAccount!.id,
+          side: 'credit',
+          amount: 8000,
+        }),
+      ]),
+    )
+  })
+
+  it('世帯メンバーごとの初期残高行の一部が0円・未入力の場合、その行の借方明細は生成されない', async () => {
+    const taro = householdMemberRepository.create({ name: '太郎' })
+    const hanako = householdMemberRepository.create({ name: '花子' })
+
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
+      kind: 'cash',
+      name: '現金',
+      householdMemberId: null,
+      initialBalanceLines: [
+        { householdMemberId: taro.id, amount: 5000 },
+        { householdMemberId: hanako.id, amount: null },
+      ],
+      entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
+    })
+
+    const entries = journalEntryRepository.findAll()
+    expect(entries[0].lines).toHaveLength(2)
+    expect(entries[0].lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountId: account.id, side: 'debit', householdMemberId: taro.id }),
+      ]),
+    )
+    expect(entries[0].lines.some((line) => line.householdMemberId === hanako.id)).toBe(false)
+  })
+
+  it('世帯メンバーごとの初期残高行がすべて0円・未入力の場合、初期残高科目・仕訳は作成されない', async () => {
+    const taro = householdMemberRepository.create({ name: '太郎' })
+    const hanako = householdMemberRepository.create({ name: '花子' })
+
+    await registerAccount(accountRepository, journalEntryRepository, {
+      kind: 'cash',
+      name: '現金',
+      householdMemberId: null,
+      initialBalanceLines: [
+        { householdMemberId: taro.id, amount: 0 },
+        { householdMemberId: hanako.id, amount: null },
+      ],
       entryDate: '2026-08-03',
       journalEntryHouseholdMemberId: creatorId,
     })

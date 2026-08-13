@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
  * 口座登録ウィザード(docs/domain/accounts.md 4章)のコンポーネントテスト。
- * 種類選択→名前入力→名義選択(任意)→初期残高入力(任意)の4ステップと、
+ * 種類選択→名前入力→名義選択(kind = bank/investment/e_moneyは必須、
+ * cashはステップ自体を非表示)→初期残高入力(任意)のステップ構成と、
  * 世帯メンバー未登録時の名義選択ステップ非表示、確定時のRepository呼び出しを、
  * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
@@ -77,7 +78,7 @@ describe('AccountRegistrationWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
 
     // 名義選択ステップは表示されず、初期残高入力ステップに直接進む
-    expect(screen.queryByText('名義を選ぶ(任意)')).not.toBeInTheDocument()
+    expect(screen.queryByText('名義を選ぶ')).not.toBeInTheDocument()
     expect(screen.getByText('初期残高を入力(任意)')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '登録する' }))
@@ -92,19 +93,56 @@ describe('AccountRegistrationWizard', () => {
     expect(journalEntryRepository.findAll()).toHaveLength(0)
   })
 
-  it('現金を選ぶとis_reconcilableがfalseで登録される', async () => {
+  it('現金を選ぶと名前入力ステップを経ずに科目名が自動的に「現金」でis_reconcilable = falseで登録される', async () => {
     const onComplete = vi.fn()
     renderWizard(onComplete)
 
+    // 現金は名前入力・名義選択のいずれのステップも経ず、種類選択の1クリックで
+    // 初期残高入力ステップへ直接進む(世帯メンバーが未登録のため単一の金額入力、計画Issue #90)
     fireEvent.click(await screen.findByRole('button', { name: '現金' }))
-    fireEvent.change(screen.getByLabelText('名前を付ける'), { target: { value: '財布' } })
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    expect(screen.getByLabelText('初期残高を入力(任意)')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '登録する' }))
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
     const createdAccount = accountRepository.findAll()[0]
+    expect(createdAccount.name).toBe('現金')
     expect(createdAccount.isReconcilable).toBe(false)
   })
+
+  it('現金を選ぶと世帯メンバーが登録済みでも名義選択ステップが表示されず、世帯メンバーごとの初期残高入力に進む', async () => {
+    householdMemberRepository.create({ name: '太郎' })
+    const onComplete = vi.fn()
+    renderWizard(onComplete)
+
+    fireEvent.click(await screen.findByRole('button', { name: '現金' }))
+
+    // cashは世帯メンバーの登録有無に関わらず名義選択ステップ自体を表示しない(4.1節)
+    expect(screen.queryByText('名義を選ぶ')).not.toBeInTheDocument()
+    // 世帯メンバーが1人以上いる場合、単一の初期残高入力ではなく世帯メンバーごとの
+    // 入力欄が表示される(計画Issue #90)
+    expect(screen.queryByLabelText('初期残高を入力(任意)')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('太郎')).toBeInTheDocument()
+  })
+
+  it.each(['銀行口座', '証券・投資口座', '電子マネー'])(
+    '%sを選んだ場合、名義選択ステップで世帯メンバーを選ぶまで次のステップに進めない',
+    async (kindLabel) => {
+      householdMemberRepository.create({ name: '太郎' })
+      const onComplete = vi.fn()
+      renderWizard(onComplete)
+
+      fireEvent.click(await screen.findByRole('button', { name: kindLabel }))
+      fireEvent.change(screen.getByLabelText('名前を付ける'), { target: { value: 'テスト口座' } })
+      fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+
+      expect(screen.getByText('名義を選ぶ')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '世帯共通' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled()
+
+      fireEvent.click(screen.getByRole('button', { name: '太郎' }))
+      expect(screen.getByRole('button', { name: '次へ' })).toBeEnabled()
+    },
+  )
 
   it('世帯メンバーが登録済みの場合、名義選択ステップが表示され選択した名義で登録される', async () => {
     const member = householdMemberRepository.create({ name: '太郎' })
@@ -117,7 +155,7 @@ describe('AccountRegistrationWizard', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
 
-    expect(screen.getByText('名義を選ぶ(任意)')).toBeInTheDocument()
+    expect(screen.getByText('名義を選ぶ')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '太郎' }))
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
 
@@ -138,7 +176,7 @@ describe('AccountRegistrationWizard', () => {
       target: { value: '三菱UFJ銀行' },
     })
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
-    // 名義選択ステップでは何も選ばず(世帯共通のまま)次へ進む
+    fireEvent.click(screen.getByRole('button', { name: '自分' }))
     fireEvent.click(screen.getByRole('button', { name: '次へ' }))
 
     fireEvent.change(screen.getByLabelText('初期残高を入力(任意)'), {
@@ -155,29 +193,28 @@ describe('AccountRegistrationWizard', () => {
     })
   })
 
-  it('世帯メンバーが登録済みで名義を選ばなかった場合、初期仕訳の起票者には世帯メンバーの先頭が使われる(計画Issue #88)', async () => {
-    const member = householdMemberRepository.create({ name: '太郎' })
+  it('現金を選び世帯メンバーが複数登録されている場合、世帯メンバーごとに初期残高を入力でき、それぞれの仕訳明細に反映される(計画Issue #90、起票者は世帯メンバーの先頭にフォールバックする計画Issue #88)', async () => {
+    const taro = householdMemberRepository.create({ name: '太郎' })
+    const hanako = householdMemberRepository.create({ name: '花子' })
     const onComplete = vi.fn()
     renderWizard(onComplete)
 
-    fireEvent.click(await screen.findByRole('button', { name: '銀行口座' }))
-    fireEvent.change(screen.getByLabelText('名前を付ける'), {
-      target: { value: '三菱UFJ銀行' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    fireEvent.click(await screen.findByRole('button', { name: '現金' }))
 
-    // 名義選択ステップでは何も選ばず(世帯共通のまま)次へ進む
-    expect(screen.getByText('名義を選ぶ(任意)')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
-
-    fireEvent.change(screen.getByLabelText('初期残高を入力(任意)'), {
-      target: { value: '100000' },
-    })
+    fireEvent.change(screen.getByLabelText('太郎'), { target: { value: '5000' } })
+    // 花子の欄は未入力のまま登録する
     fireEvent.click(screen.getByRole('button', { name: '登録する' }))
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
+    const account = accountRepository.findAll()[0]
     const entries = journalEntryRepository.findAll()
-    expect(entries[0].householdMemberId).toBe(member.id)
+    expect(entries).toHaveLength(1)
+    expect(entries[0].householdMemberId).toBe(taro.id)
+    const debitLines = entries[0].lines.filter((line) => line.side === 'debit')
+    expect(debitLines).toEqual([
+      expect.objectContaining({ accountId: account.id, amount: 5000, householdMemberId: taro.id }),
+    ])
+    expect(debitLines.some((line) => line.householdMemberId === hanako.id)).toBe(false)
   })
 
   it('初期残高に0を入力した場合、初期残高科目・仕訳は作成されず口座のみ登録される', async () => {

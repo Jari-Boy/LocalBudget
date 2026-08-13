@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
-import type { AccountKind } from './accountKind'
+import { requiresHouseholdMemberSelection, type AccountKind } from './accountKind'
 import { registerAccount, type AccountCreator, type JournalEntryCreator } from './registerAccount'
 import './AccountRegistrationWizard.css'
 
@@ -43,9 +43,15 @@ type Step = 'kind' | 'name' | 'member' | 'balance'
 
 /**
  * 口座登録ウィザード(docs/domain/accounts.md 4章)。種類選択→名前入力→
- * 名義選択(任意)→初期残高入力(任意)の4ステップで、裏側の勘定科目・仕訳の
- * 概念をユーザーに見せずに口座を登録する。世帯メンバーが1人も登録されて
- * いない場合、名義選択ステップは表示しない(4.1節)。
+ * 名義選択→初期残高入力(任意)のステップで、裏側の勘定科目・仕訳の概念を
+ * ユーザーに見せずに口座を登録する。名義選択ステップはkindに応じて出し分ける
+ * (計画Issue #90): 銀行口座・証券口座・電子マネーは世帯メンバーを選ぶまで
+ * 次へ進めない必須ステップ、現金は世帯メンバーの登録有無に関わらずステップ
+ * 自体を表示しない。銀行口座等でも世帯メンバーが1人も登録されていない場合は
+ * ステップ自体を表示しない(選択肢が無いため、4.1節)。現金はさらに名前入力
+ * ステップも経ず、科目名を自動的に「現金」に固定する。初期残高入力も、
+ * 現金かつ世帯メンバーが1人以上いる場合のみ世帯メンバーごとの金額入力に
+ * 切り替わる(それ以外は単一の金額入力、4.1節)。
  */
 export function AccountRegistrationWizard({
   accountRepository,
@@ -64,6 +70,7 @@ export function AccountRegistrationWizard({
   const [name, setName] = useState('')
   const [householdMemberId, setHouseholdMemberId] = useState<number | null>(null)
   const [initialBalanceInput, setInitialBalanceInput] = useState('')
+  const [balanceByMemberId, setBalanceByMemberId] = useState<Record<number, string>>({})
   const [stepIndex, setStepIndex] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -76,8 +83,16 @@ export function AccountRegistrationWizard({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const steps: Step[] =
-    householdMembers.length > 0 ? ['kind', 'name', 'member', 'balance'] : ['kind', 'name', 'balance']
+  const isCash = kind === 'cash'
+  const showMemberStep =
+    kind !== null && requiresHouseholdMemberSelection(kind) && householdMembers.length > 0
+  const perMemberBalance = isCash && householdMembers.length > 0
+  const steps: Step[] = [
+    'kind',
+    ...(isCash ? [] : (['name'] as const)),
+    ...(showMemberStep ? (['member'] as const) : []),
+    'balance',
+  ]
   const currentStep = steps[stepIndex]
 
   const goNext = () => setStepIndex((index) => Math.min(index + 1, steps.length - 1))
@@ -86,16 +101,31 @@ export function AccountRegistrationWizard({
   const handleSubmit = async () => {
     setSubmitting(true)
     setError(null)
-    const initialBalance = initialBalanceInput === '' ? null : Number(initialBalanceInput)
+    const initialBalanceLines = perMemberBalance
+      ? householdMembers.map((member) => ({
+          householdMemberId: member.id,
+          amount:
+            balanceByMemberId[member.id] === undefined || balanceByMemberId[member.id] === ''
+              ? null
+              : Number(balanceByMemberId[member.id]),
+        }))
+      : [
+          {
+            householdMemberId: null,
+            amount: initialBalanceInput === '' ? null : Number(initialBalanceInput),
+          },
+        ]
     try {
       const account = await registerAccount(accountRepository, journalEntryRepository, {
         kind: kind!,
-        name,
+        name: isCash ? t('kindCash') : name,
         householdMemberId,
-        initialBalance,
+        initialBalanceLines,
         entryDate: today ?? new Date().toISOString().slice(0, 10),
         // 初期残高がある場合の初期仕訳の起票者(計画Issue #88)。口座の名義(householdMemberId)を
-        // 選んでいればそれを使い、選ばなかった(世帯共通)場合は世帯メンバーの先頭にフォールバックする
+        // 選んでいればそれを使う。名義選択ステップが必須のkind(bank/investment/e_money、計画Issue #90)
+        // では選択済みのため常に非nullになる。現金(名義選択ステップ自体を非表示)または世帯メンバーが
+        // 1件も無い場合はnullのままのため、世帯メンバーの先頭にフォールバックする
         // (seedDefaultHouseholdMemberにより最低1件は存在する想定、docs/domain/household-members.md 1.2節)。
         journalEntryHouseholdMemberId: (householdMemberId ?? householdMembers[0]?.id) as number,
       })
@@ -160,13 +190,6 @@ export function AccountRegistrationWizard({
       {currentStep === 'member' && (
         <fieldset>
           <legend>{t('stepMemberLabel')}</legend>
-          <button
-            type="button"
-            aria-pressed={householdMemberId === null}
-            onClick={() => setHouseholdMemberId(null)}
-          >
-            {t('memberCommon')}
-          </button>
           {householdMembers.map((member) => (
             <button
               key={member.id}
@@ -181,7 +204,7 @@ export function AccountRegistrationWizard({
             <button type="button" onClick={goBack}>
               {t('back')}
             </button>
-            <button type="button" onClick={goNext}>
+            <button type="button" disabled={householdMemberId === null} onClick={goNext}>
               {t('next')}
             </button>
           </div>
@@ -190,14 +213,36 @@ export function AccountRegistrationWizard({
 
       {currentStep === 'balance' && (
         <div>
-          <label htmlFor="account-initial-balance">{t('stepBalanceLabel')}</label>
-          <input
-            id="account-initial-balance"
-            type="number"
-            min="0"
-            value={initialBalanceInput}
-            onChange={(event) => setInitialBalanceInput(event.target.value)}
-          />
+          {perMemberBalance ? (
+            <fieldset>
+              <legend>{t('stepBalancePerMemberLabel')}</legend>
+              {householdMembers.map((member) => (
+                <div key={member.id}>
+                  <label htmlFor={`account-initial-balance-member-${member.id}`}>{member.name}</label>
+                  <input
+                    id={`account-initial-balance-member-${member.id}`}
+                    type="number"
+                    min="0"
+                    value={balanceByMemberId[member.id] ?? ''}
+                    onChange={(event) =>
+                      setBalanceByMemberId((prev) => ({ ...prev, [member.id]: event.target.value }))
+                    }
+                  />
+                </div>
+              ))}
+            </fieldset>
+          ) : (
+            <>
+              <label htmlFor="account-initial-balance">{t('stepBalanceLabel')}</label>
+              <input
+                id="account-initial-balance"
+                type="number"
+                min="0"
+                value={initialBalanceInput}
+                onChange={(event) => setInitialBalanceInput(event.target.value)}
+              />
+            </>
+          )}
           {error && <p role="alert">{error}</p>}
           <div>
             <button type="button" onClick={goBack}>
