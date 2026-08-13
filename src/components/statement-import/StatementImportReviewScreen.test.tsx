@@ -32,6 +32,7 @@ let journalEntryRepository: SqlJsJournalEntryRepository
 let counterpartyRepository: SqlJsCounterpartyRepository
 let projectRepository: SqlJsProjectRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
+let memberId: number
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -41,6 +42,7 @@ beforeEach(async () => {
   counterpartyRepository = new SqlJsCounterpartyRepository(db)
   projectRepository = new SqlJsProjectRepository(db)
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
+  memberId = householdMemberRepository.create({ name: '自分' }).id
 })
 
 afterEach(cleanup)
@@ -167,6 +169,7 @@ describe('StatementImportReviewScreen', () => {
       isReconcilable: true,
     })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       sourceType: 'initial_balance',
       lines: [
@@ -225,6 +228,7 @@ describe('StatementImportReviewScreen', () => {
       isSystemManaged: true,
     })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       sourceType: 'initial_balance',
       lines: [
@@ -253,6 +257,7 @@ describe('StatementImportReviewScreen', () => {
       isSystemManaged: true,
     })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       sourceType: 'initial_balance',
       lines: [
@@ -291,6 +296,7 @@ describe('StatementImportReviewScreen', () => {
       isSystemManaged: true,
     })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       sourceType: 'initial_balance',
       lines: [
@@ -382,6 +388,7 @@ describe('StatementImportReviewScreen', () => {
       isSystemManaged: true,
     })
     journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-01',
       sourceType: 'initial_balance',
       lines: [
@@ -391,6 +398,7 @@ describe('StatementImportReviewScreen', () => {
     })
     // 速報時点の旧仕訳(海外通販、-2990)。確定後は摘要・金額が変わり-3000になる想定
     const preliminaryEntry = journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-18',
       memo: '海外通販(速報)',
       sourceType: 'external_import',
@@ -880,6 +888,7 @@ describe('StatementImportReviewScreen', () => {
     const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
     const funAccount = accountRepository.create({ category: 'expense', name: '娯楽費', isReconcilable: null })
     const preliminaryEntry = journalEntryRepository.create({
+      householdMemberId: memberId,
       entryDate: '2026-07-18',
       memo: '海外通販(速報)',
       sourceType: 'external_import',
@@ -1040,6 +1049,67 @@ describe('StatementImportReviewScreen', () => {
     const counterLine = entries[0].lines.find((line) => line.accountId === foodAccount.id)
     expect(counterLine?.projectId).toBe(project.id)
     expect(counterLine?.householdMemberId).toBe(member.id)
+  })
+
+  it('相手科目に既定の世帯メンバーが設定されている場合、世帯メンバー選択がdisabledになり科目の既定値が表示される(計画Issue #88)', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const member = householdMemberRepository.create({ name: '太郎' })
+    const wallet = accountRepository.create({
+      category: 'asset',
+      name: '太郎の財布',
+      isReconcilable: false,
+      householdMemberId: member.id,
+    })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: '現金引き出し', amount: -3000 }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(wallet.id) } })
+
+    const memberSelect = within(group).getByLabelText('世帯メンバー')
+    expect(memberSelect).toBeDisabled()
+    expect(memberSelect).toHaveValue(String(member.id))
+  })
+
+  it('相手科目に既定の世帯メンバーが無い場合、確定操作の起票者(journal_entries.household_member_id)には選択した世帯メンバーが使われる(計画Issue #88)', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const foodAccount = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const member = householdMemberRepository.create({ name: '太郎' })
+
+    const review: StatementImportReviewResult = {
+      records: [
+        {
+          record: importedRecord({ description: 'スーパー', amount: -3000 }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+
+    renderScreen(account, review)
+
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(foodAccount.id) } })
+    fireEvent.change(within(group).getByLabelText('世帯メンバー'), { target: { value: String(member.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+
+    expect(journalEntryRepository.findAll()[0].householdMemberId).toBe(member.id)
   })
 
   it('非アクティブ化済みのプロジェクトはプロジェクト選択欄の新規選択肢に含まれない(docs/domain/projects.md 1.3節)', async () => {

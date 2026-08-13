@@ -507,6 +507,12 @@ export function StatementImportReviewScreen({
               counterpartyId: state.counterpartyId,
               projectId: state.projectId,
               householdMemberId: state.householdMemberId,
+              // 起票者(計画Issue #88)。相手科目行の世帯メンバー(選択済みなら)を使い、
+              // 未選択なら対象科目(取込先口座)自体の既定名義、それも無ければ世帯メンバーの
+              // 先頭にフォールバックする(seedDefaultHouseholdMemberにより最低1件は存在する想定)。
+              entryHouseholdMemberId: (state.householdMemberId ??
+                targetAccount.householdMemberId ??
+                householdMembers![0]?.id) as number,
             }),
           ),
         )
@@ -694,6 +700,13 @@ export function StatementImportReviewScreen({
                       counterAccountCandidates,
                     ),
                     counterAccountTouched: true,
+                    // 既定値のある科目に切り替えた場合、明細側の上書き値が残っているとDDLトリガー違反
+                    // (household-members.md 1.2節、計画Issue #88)になりうるため、選択欄のdisabled化と
+                    // 合わせてここでクリアする(journal-entry/JournalEntryForm.tsxと同じガード)
+                    householdMemberId: counterAccountCandidates.find((account) => account.id === counterAccountId)
+                      ?.householdMemberId != null
+                      ? null
+                      : prevState.householdMemberId,
                   }))
                 }}
               >
@@ -726,24 +739,44 @@ export function StatementImportReviewScreen({
                   ))}
               </select>
 
-              <label htmlFor={`${idPrefix}-household-member`}>{t('householdMemberLabel')}</label>
-              <select
-                id={`${idPrefix}-household-member`}
-                value={state.householdMemberId ?? ''}
-                onChange={(event) =>
-                  updateRecordState(index, (prevState) => ({
-                    ...prevState,
-                    householdMemberId: event.target.value === '' ? null : Number(event.target.value),
-                  }))
-                }
-              >
-                <option value="">{t('unselected')}</option>
-                {householdMembers.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name}
-                  </option>
-                ))}
-              </select>
+              {/*
+                科目に既定の世帯メンバーがある場合、明細側での上書きはDDLトリガーで禁止される
+                (docs/schema/journal.sql、計画Issue #88)。JournalEntryFormと同様、選択欄を
+                disabled化して科目の既定値をそのまま表示する。
+              */}
+              {(() => {
+                const selectedCounterAccount = counterAccountCandidates.find(
+                  (candidate) => candidate.id === state.counterAccountId,
+                )
+                const counterAccountDefaultMemberId = selectedCounterAccount?.householdMemberId ?? null
+                const isMemberFieldDisabled = counterAccountDefaultMemberId !== null
+                const memberFieldValue = isMemberFieldDisabled
+                  ? counterAccountDefaultMemberId
+                  : state.householdMemberId
+                return (
+                  <>
+                    <label htmlFor={`${idPrefix}-household-member`}>{t('householdMemberLabel')}</label>
+                    <select
+                      id={`${idPrefix}-household-member`}
+                      value={memberFieldValue ?? ''}
+                      disabled={isMemberFieldDisabled}
+                      onChange={(event) =>
+                        updateRecordState(index, (prevState) => ({
+                          ...prevState,
+                          householdMemberId: event.target.value === '' ? null : Number(event.target.value),
+                        }))
+                      }
+                    >
+                      <option value="">{t('unselected')}</option>
+                      {householdMembers.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.name}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )
+              })()}
 
               {reviewRecord.isExactDuplicate && (
                 <div role="alert">
