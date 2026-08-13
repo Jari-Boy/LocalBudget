@@ -211,6 +211,7 @@ describe('JournalEntryForm', () => {
   it('2行仕訳を入力して確定すると仕訳が作成され、onCompleteが呼ばれる', async () => {
     const expense = createAccount({ name: '食費', category: 'expense' })
     const cash = createAccount({ name: '現金', category: 'asset' })
+    householdMemberRepository.create({ name: '自分' })
 
     const { onComplete } = renderForm()
     const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
@@ -233,6 +234,7 @@ describe('JournalEntryForm', () => {
     const entries = journalEntryRepository.findAll()
     expect(entries).toHaveLength(1)
     expect(entries[0].lines).toHaveLength(2)
+    expect(entries[0].householdMemberId).toBe(householdMemberRepository.findAll()[0].id)
   })
 
   it('貸借が不一致のまま確定すると、エラーメッセージが表示され仕訳は作成されない', async () => {
@@ -366,6 +368,7 @@ describe('JournalEntryForm', () => {
   it('確定成功後、自動保存されていた下書きは削除される', async () => {
     const expense = createAccount({ name: '食費', category: 'expense' })
     const cash = createAccount({ name: '現金', category: 'asset' })
+    householdMemberRepository.create({ name: '自分' })
 
     const { onComplete } = renderForm()
     const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
@@ -474,5 +477,43 @@ describe('JournalEntryForm', () => {
     const select = within(lineGroups[0]).getByLabelText('プロジェクト(任意)')
     expect(select).toHaveValue(String(project.id))
     expect(within(select).getByText('終了した旅行')).toBeInTheDocument()
+  })
+
+  it('ヘッダーの起票者は世帯メンバーの先頭を初期値とし、科目に既定値の無い明細行にはその値がデフォルト表示されつつ、明細ごとに変更できる(計画Issue #88)', async () => {
+    const husband = householdMemberRepository.create({ name: '夫' })
+    const wife = householdMemberRepository.create({ name: '妻' })
+    const expense = createAccount({ name: '食費', category: 'expense' })
+
+    renderForm()
+    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+
+    expect(await screen.findByLabelText('起票者')).toHaveValue(String(husband.id))
+
+    selectLineAccount(lineGroups[0], expense.id)
+    const memberSelect = within(lineGroups[0]).getByLabelText('世帯メンバー(任意)')
+    expect(memberSelect).toHaveValue(String(husband.id))
+    expect(memberSelect).not.toBeDisabled()
+
+    fireEvent.change(memberSelect, { target: { value: String(wife.id) } })
+    expect(memberSelect).toHaveValue(String(wife.id))
+  })
+
+  it('科目に既定の世帯メンバーが設定されている明細行では、世帯メンバー選択がdisabledになり科目の既定値が表示される(計画Issue #88)', async () => {
+    const husband = householdMemberRepository.create({ name: '夫' })
+    const wallet = accountRepository.create({
+      category: 'asset',
+      name: '夫の財布',
+      isReconcilable: false,
+      householdMemberId: husband.id,
+    })
+
+    renderForm()
+    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+
+    selectLineAccount(lineGroups[0], wallet.id)
+    const memberSelect = within(lineGroups[0]).getByLabelText('世帯メンバー(任意)')
+
+    expect(memberSelect).toBeDisabled()
+    expect(memberSelect).toHaveValue(String(husband.id))
   })
 })
