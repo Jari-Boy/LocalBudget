@@ -1,0 +1,175 @@
+.household-member-management-screen {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.household-member-management-screen ul {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.household-member-management-screen li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.household-member-management-screen .household-member-list-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.household-member-management-screen .household-member-list-name {
+  color: var(--text-h);
+}
+
+.household-member-management-screen .household-member-list-type,
+.household-member-management-screen .household-member-list-inactive {
+  margin-left: 0.5em;
+  font-size: 12px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.household-member-management-screen .household-member-list-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+}
+
+.household-member-management-screen .household-member-group-panel {
+  padding: 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.household-member-management-screen .household-member-group-member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.household-member-management-screen .household-member-group-member-row {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.household-member-management-screen .household-member-group-add-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.household-member-management-screen .household-member-group-add-row label {
+  flex-shrink: 0;
+}
+
+.household-member-management-screen .household-member-group-add-row select {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.household-member-management-screen .household-member-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.household-member-management-screen .household-member-form label {
+  display: block;
+}
+
+.household-member-management-screen .household-member-form input[type='text'] {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  box-sizing: border-box;
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-color: var(--accent);
+  }
+}
+
+.household-member-management-screen .household-member-type-fieldset {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 1rem;
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+}
+
+.household-member-management-screen .household-member-type-fieldset label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.household-member-management-screen .household-member-form-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
+.household-member-management-screen button {
+  font-size: 16px;
+  padding: 8px 20px;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background: var(--accent-bg);
+  color: var(--accent-contrast);
+  cursor: pointer;
+  transition: border-color 0.3s;
+
+  &:hover:not(:disabled) {
+    border-color: var(--accent-border);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}

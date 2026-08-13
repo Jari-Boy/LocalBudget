@@ -5,6 +5,7 @@ import account from '../../locales/ja/account.json'
 import journal from '../../locales/ja/journal.json'
 import statementImport from '../../locales/ja/statementImport.json'
 import counterparty from '../../locales/ja/counterparty.json'
+import householdMember from '../../locales/ja/household-member.json'
 
 /**
  * ドメイン別の名前空間(account.json等)は、それぞれのUI実装Issue(D1〜D10、
@@ -13,13 +14,14 @@ import counterparty from '../../locales/ja/counterparty.json'
  * journal名前空間は計画Issue #32(マニュアル仕訳入力UI)で追加した。
  * statementImport名前空間は計画Issue #76(CSV取込〜レビュー一覧の基盤)で追加した。
  * counterparty名前空間は計画Issue #38(取引先管理UI)で追加した。
+ * householdMember名前空間は計画Issue #37(世帯メンバー管理UI)で追加した。
  */
 void i18n.use(initReactI18next).init({
   lng: 'ja',
   fallbackLng: 'ja',
   defaultNS: 'common',
   resources: {
-    ja: { common, account, journal, statementImport, counterparty },
+    ja: { common, account, journal, statementImport, counterparty, householdMember },
   },
   interpolation: {
     escapeValue: false,

@@ -15,6 +15,7 @@ import { AccountRegistrationWizard } from './components/account-registration/Acc
 import { CreditCardRegistrationWizard } from './components/account-registration/CreditCardRegistrationWizard'
 import { AccountListScreen } from './components/account-list/AccountListScreen'
 import { CounterpartyManagementScreen } from './components/counterparty-management/CounterpartyManagementScreen'
+import { HouseholdMemberManagementScreen } from './components/household-member-management/HouseholdMemberManagementScreen'
 import { JournalEntryDraftListScreen } from './components/journal-entry/JournalEntryDraftListScreen'
 import { JournalEntryForm } from './components/journal-entry/JournalEntryForm'
 import {
@@ -32,6 +33,7 @@ type Screen =
   | 'register-credit-card'
   | 'account-list'
   | 'counterparty-management'
+  | 'household-member-management'
   | 'journal-entry-draft-list'
   | 'journal-entry-form'
   | 'statement-import-upload'
@@ -48,6 +50,7 @@ function AppContent() {
   const { t: tJournal } = useTranslation('journal')
   const { t: tStatementImport } = useTranslation('statementImport')
   const { t: tCounterparty } = useTranslation('counterparty')
+  const { t: tHouseholdMember } = useTranslation('householdMember')
   const client = useDbClient()
   const [screen, setScreen] = useState<Screen>('home')
   /** 下書き一覧から再開する下書き。新規作成時・未選択時はnull(計画Issue #32)。 */
@@ -118,6 +121,17 @@ function AppContent() {
     return (
       <CounterpartyManagementScreen
         counterpartyRepository={counterpartyRepository}
+        accountRepository={accountRepository}
+        journalEntryRepository={journalEntryRepository}
+        onBack={() => setScreen('home')}
+      />
+    )
+  }
+
+  if (screen === 'household-member-management') {
+    return (
+      <HouseholdMemberManagementScreen
+        householdMemberRepository={householdMemberRepository}
         accountRepository={accountRepository}
         journalEntryRepository={journalEntryRepository}
         onBack={() => setScreen('home')}
@@ -208,6 +222,9 @@ function AppContent() {
       </button>
       <button type="button" onClick={() => setScreen('counterparty-management')}>
         {tCounterparty('viewCounterpartiesTitle')}
+      </button>
+      <button type="button" onClick={() => setScreen('household-member-management')}>
+        {tHouseholdMember('viewHouseholdMembersTitle')}
       </button>
       <button type="button" onClick={() => setScreen('journal-entry-draft-list')}>
         {tJournal('journalEntryMenuTitle')}
