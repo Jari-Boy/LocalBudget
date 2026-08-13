@@ -135,6 +135,13 @@ function AppContent() {
     return (
       <HouseholdMemberManagementScreen
         householdMemberRepository={householdMemberRepository}
+        accountRepository={accountRepository}
+        journalEntryRepository={journalEntryRepository}
+        onBack={() => setScreen('home')}
+      />
+    )
+  }
+
   if (screen === 'project-management') {
     return (
       <ProjectManagementScreen
@@ -232,6 +239,7 @@ function AppContent() {
       </button>
       <button type="button" onClick={() => setScreen('household-member-management')}>
         {tHouseholdMember('viewHouseholdMembersTitle')}
+      </button>
       <button type="button" onClick={() => setScreen('project-management')}>
         {tProject('viewProjectsTitle')}
       </button>

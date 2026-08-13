@@ -23,8 +23,7 @@ void i18n.use(initReactI18next).init({
   fallbackLng: 'ja',
   defaultNS: 'common',
   resources: {
-    ja: { common, account, journal, statementImport, counterparty, householdMember },
-    ja: { common, account, journal, statementImport, counterparty, project },
+    ja: { common, account, journal, statementImport, counterparty, householdMember, project },
   },
   interpolation: {
     escapeValue: false,
