@@ -49,7 +49,9 @@ test.describe('世帯メンバー管理画面', () => {
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     await page.getByRole('button', { name: '世帯メンバーを管理する' }).click()
-    await expect(page.getByText('登録済みの世帯メンバーがいません')).toBeVisible()
+    // 計画Issue #88のseedDefaultHouseholdMemberにより、Worker起動時に
+    // デフォルトメンバー「自分」が自動投入されているため、初回表示は空状態にならない。
+    await expect(memberItem(page, '自分')).toBeVisible()
 
     // 個人メンバーを2件作成
     await page.getByRole('button', { name: '世帯メンバーを追加' }).click()

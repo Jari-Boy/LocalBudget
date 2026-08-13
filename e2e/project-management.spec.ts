@@ -89,9 +89,11 @@ test.describe('プロジェクト管理画面', () => {
         isReconcilable: false,
       })
       const project = await client.project.create({ name: '記帳済みの旅行' })
+      const [defaultMember] = await client.householdMember.findAll()
       await client.journalEntry.create({
         entryDate: '2026-07-15',
         memo: null,
+        householdMemberId: defaultMember.id,
         lines: [
           { accountId: expenseAccount.id, side: 'debit', amount: 5000, projectId: project.id },
           { accountId: cashAccount.id, side: 'credit', amount: 5000 },

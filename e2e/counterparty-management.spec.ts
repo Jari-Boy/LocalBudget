@@ -132,8 +132,10 @@ test.describe('取引先管理画面', () => {
         isReconcilable: false,
       })
       const counterparty = await client.counterparty.create({ name: 'イオン' })
+      const [defaultMember] = await client.householdMember.findAll()
       await client.journalEntry.create({
         entryDate: '2026-08-11',
+        householdMemberId: defaultMember.id,
         lines: [
           { accountId: expenseAccount.id, side: 'debit', amount: 1000, counterpartyId: counterparty.id },
           { accountId: cashAccount.id, side: 'credit', amount: 1000 },

@@ -47,8 +47,28 @@ async function waitForHouseholdMemberCreated(page: Page, memberName: string) {
     .toBe(true)
 }
 
+/**
+ * 計画Issue #88のseedDefaultHouseholdMemberにより、Worker起動時にデフォルトメンバー
+ * 「自分」が自動投入されるため、「世帯メンバーが1件も無い」状態を検証するテストは
+ * 明示的に削除してから検証する必要がある。page.evaluate内で新規のcreateDbClient()を
+ * 使って削除しreloadすると、reloadによる新しいWorker起動のたびにseedDefaultHouseholdMember
+ * が再度0件を検知してデフォルトメンバーを再投入してしまう(計画Issueの懸念点で言及されている
+ * 挙動そのもの)ため、reloadを挟まずアプリ本体が使う既存Worker上でUI操作により削除する。
+ */
+async function deleteDefaultHouseholdMemberViaUi(page: Page) {
+  await page.getByRole('button', { name: '世帯メンバーを管理する' }).click()
+  const item = page
+    .getByRole('listitem')
+    .filter({ has: page.locator('.household-member-list-name', { hasText: '自分' }) })
+  await expect(item).toBeVisible()
+  await item.getByRole('button', { name: '削除' }).click()
+  await expect(item).toHaveCount(0)
+  await page.getByRole('button', { name: '戻る' }).click()
+  await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+}
+
 test.describe('口座登録ウィザード', () => {
-  test('種類選択→名前→初期残高の一連の入力で口座と初期仕訳が作成される(世帯メンバー未登録時は名義選択ステップが非表示)', async ({
+  test('種類選択→名前→名義スキップ→初期残高の一連の入力で口座と初期仕訳が作成される(起票者は世帯メンバー先頭にフォールバックする、計画Issue #88)', async ({
     page,
   }) => {
     await page.goto('/')
@@ -58,7 +78,13 @@ test.describe('口座登録ウィザード', () => {
     await page.getByLabel('名前を付ける').fill('三菱UFJ銀行')
     await page.getByRole('button', { name: '次へ' }).click()
 
-    await expect(page.getByText('名義を選ぶ(任意)')).toBeHidden()
+    // 計画Issue #88のseedDefaultHouseholdMemberにより、Worker起動時にデフォルトメンバー
+    // 「自分」が自動投入されているため、名義選択ステップは表示される。名義は選ばず
+    // (世帯共通のまま)次へ進む。初期仕訳の起票者はAccountRegistrationWizard側で
+    // 世帯メンバー一覧の先頭にフォールバックする。
+    await expect(page.getByText('名義を選ぶ(任意)')).toBeVisible()
+    await page.getByRole('button', { name: '次へ' }).click()
+
     await expect(page.getByText('初期残高を入力(任意)')).toBeVisible()
 
     await page.getByLabel('初期残高を入力(任意)').fill('100000')
@@ -102,6 +128,8 @@ test.describe('口座登録ウィザード', () => {
 
   test('種類で現金を選ぶとis_reconcilable = falseで口座が作成される', async ({ page }) => {
     await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await deleteDefaultHouseholdMemberViaUi(page)
 
     await page.getByRole('button', { name: '資産を登録する' }).click()
     await page.getByRole('button', { name: '現金' }).click()
@@ -165,6 +193,8 @@ test.describe('クレジットカード登録ウィザード', () => {
     page,
   }) => {
     await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await deleteDefaultHouseholdMemberViaUi(page)
 
     await page.getByRole('button', { name: 'クレジットカードを登録する' }).click()
     await page.getByLabel('名前を付ける').fill('楽天カード')
