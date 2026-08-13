@@ -384,11 +384,13 @@ export function JournalEntryForm({
               }
             >
               <option value="">{t('unselected')}</option>
-              {masterData.projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
+              {masterData.projects
+                .filter((project) => project.isActive || project.id === state.line.projectId)
+                .map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
             </select>
 
             <label htmlFor={`${idPrefix}-member`}>{t('lineHouseholdMemberLabel')}</label>

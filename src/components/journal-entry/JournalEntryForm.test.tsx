@@ -425,4 +425,54 @@ describe('JournalEntryForm', () => {
     const lineGroups = screen.getAllByRole('group', { name: /行目/ })
     expect(within(lineGroups[0]).getByLabelText('金額')).toHaveValue(4000)
   })
+
+  it('非アクティブ化済みのプロジェクトはプロジェクト選択欄の新規選択肢に含まれない(docs/domain/projects.md 1.3節)', async () => {
+    const activeProject = projectRepository.create({ name: '26年7月アメリカ旅行' })
+    const inactiveProject = projectRepository.create({ name: '25年冬の旅行' })
+    projectRepository.deactivate(inactiveProject.id)
+
+    renderForm()
+    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const select = within(lineGroups[0]).getByLabelText('プロジェクト(任意)')
+
+    expect(within(select).getByText(activeProject.name)).toBeInTheDocument()
+    expect(within(select).queryByText(inactiveProject.name)).not.toBeInTheDocument()
+  })
+
+  it('既存下書きが非アクティブ化済みのプロジェクトを参照している場合、選択済みの値は表示から消えない', async () => {
+    const expense = createAccount({ name: '食費', category: 'expense' })
+    const cash = createAccount({ name: '現金', category: 'asset' })
+    const project = projectRepository.create({ name: '終了した旅行' })
+    const draft = journalEntryDraftRepositoryImpl.create({
+      entryDate: '2026-08-01',
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 4000, projectId: project.id },
+        { accountId: cash.id, side: 'credit', amount: 4000 },
+      ],
+    })
+    projectRepository.deactivate(project.id)
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <JournalEntryForm
+          accountRepository={accountRepository}
+          projectRepository={projectRepository}
+          householdMemberRepository={householdMemberRepository}
+          counterpartyRepository={counterpartyRepository}
+          journalEntryRepository={journalEntryRepository}
+          journalEntryDraftRepository={journalEntryDraftRepository}
+          initialDraft={draft}
+          onComplete={vi.fn()}
+          onBack={vi.fn()}
+          today="2026-08-11"
+          draftSaveDebounceMs={2000}
+        />
+      </I18nextProvider>,
+    )
+
+    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const select = within(lineGroups[0]).getByLabelText('プロジェクト(任意)')
+    expect(select).toHaveValue(String(project.id))
+    expect(within(select).getByText('終了した旅行')).toBeInTheDocument()
+  })
 })
