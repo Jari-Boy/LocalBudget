@@ -19,7 +19,7 @@ export interface HouseholdMemberSelectionStepProps {
  * 注入する形で再利用する。このステップが表示される場合は常に世帯メンバーの選択が
  * 必須(「世帯共通」の選択肢は無い)なため、primaryDisabledの計算(選択済みかどうか、
  * 送信中かどうか等)は呼び出し側の責務とする。表示要否の判定は
- * shouldShowHouseholdMemberSelectionStep(./householdMemberSelectionStep.ts)を使う。
+ * shouldShowHouseholdMemberSelectionStep(./shouldShowHouseholdMemberSelectionStep.ts)を使う。
  */
 export function HouseholdMemberSelectionStep({
   householdMembers,
