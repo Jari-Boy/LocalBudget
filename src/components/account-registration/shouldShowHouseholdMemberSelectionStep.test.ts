@@ -1,7 +1,8 @@
 /**
  * shouldShowHouseholdMemberSelectionStep(名義選択ステップの表示要否判定、計画Issue #92)の
- * ユニットテスト。docs/domain/accounts.md 4.1節・5.1節が定める
- * 「世帯メンバー0件なら常に非表示」「表示される場合は常に必須」という判定を検証する。
+ * ユニットテスト。「世帯メンバー0件なら常に非表示」「isApplicableがtrueかつ世帯メンバーが
+ * 1件以上なら表示」という表示要否のみの判定を検証する。必須/任意の切り替え(計画Issue #102)は
+ * この関数の責務外(HouseholdMemberSelectionStep側の`unspecifiedOptionLabel`で表現する)。
  * 外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
@@ -18,7 +19,7 @@ describe('shouldShowHouseholdMemberSelectionStep', () => {
     expect(shouldShowHouseholdMemberSelectionStep([], false)).toBe(false)
   })
 
-  it('世帯メンバーが1件以上でisApplicableがfalseの場合、falseを返す(例:現金のkind、4.1節)', () => {
+  it('世帯メンバーが1件以上でもisApplicableがfalseの場合、falseを返す(このステップが概念として存在しない場合)', () => {
     expect(shouldShowHouseholdMemberSelectionStep([makeMember(1, '太郎')], false)).toBe(false)
   })
 
@@ -26,7 +27,7 @@ describe('shouldShowHouseholdMemberSelectionStep', () => {
     expect(shouldShowHouseholdMemberSelectionStep([makeMember(1, '太郎')], true)).toBe(true)
   })
 
-  it('isApplicableを省略した場合、常に必須(クレジットカード登録ウィザード、5.1節)としてtrueを返す', () => {
+  it('isApplicableを省略した場合、既定値のtrue(このステップが概念として常に存在する呼び出し元向け)として扱われる', () => {
     expect(shouldShowHouseholdMemberSelectionStep([makeMember(1, '太郎')])).toBe(true)
   })
 })
