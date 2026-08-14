@@ -64,7 +64,7 @@ CSV到着後の消込(CSV由来): (借) 資産・普通預金        250,000
 
 ### 1.3 クレジットカード専用未払金との違い
 
-[accounts.md 5章 クレジットカード登録のUX](./accounts.md#5-クレジットカード登録のux)のクレジットカード未払金科目は`is_reconcilable = false`である。ここまでの家賃・給与の例で使った汎用未払金・未収金と同じく、記帳経路の制限は受けない。ただし役割は異なる。汎用未払金は「口座引落を待つ暫定計上」の受け皿として使うのに対し、カード専用未払金は主に**外部明細取込(利用明細CSV)由来の仕訳を直接記帳する対象**として使う。カードの支払い方法は口座振替とは限らないため`is_reconcilable = false`とした経緯は[accounts.md 5.3 なぜis_reconcilable = falseにするか](./accounts.md#53-なぜis_reconcilable--falseにするか)を参照。
+[accounts.md 4章 資産・負債・収益・費用の統合登録フロー](./accounts.md#4-資産負債収益費用の統合登録フロー計画issue-102)で登録するクレジットカード未払金科目は`is_reconcilable = false`である。ここまでの家賃・給与の例で使った汎用未払金・未収金と同じく、記帳経路の制限は受けない。ただし役割は異なる。汎用未払金は「口座引落を待つ暫定計上」の受け皿として使うのに対し、カード専用未払金は主に**外部明細取込(利用明細CSV)由来の仕訳を直接記帳する対象**として使う。カードの支払い方法は口座振替とは限らないため`is_reconcilable = false`とした経緯は[accounts.md 4.5 なぜis_reconcilable = falseにするか](./accounts.md#45-なぜis_reconcilable--falseにするか)を参照。
 
 ```
 例: クレジットカードの利用(カード専用未払金)
@@ -88,7 +88,7 @@ CSV到着後の消込(CSV由来): (借) 資産・普通預金        250,000
 
   `負債・未払金(楽天カード)`と`資産・普通預金`の両方を借方/貸方に使うが、どちらも同じ1つの仕訳の`source_type`で判定されるため、科目ごとに個別の外部参照を用意する必要はない([journal.md 1.7 作成経路(source_type)](./journal.md#17-作成経路source_type)参照)。
 
-- **コンビニ払い等(現金・外部明細を伴わない経路)**: 対応する外部明細が存在しないため、`source_type = 'manual'`で消込仕訳を手入力する。カード未払金が`is_reconcilable = false`であるからこそ、この経路が可能になる([accounts.md 5.3](./accounts.md#53-なぜis_reconcilable--falseにするか)参照)。
+- **コンビニ払い等(現金・外部明細を伴わない経路)**: 対応する外部明細が存在しないため、`source_type = 'manual'`で消込仕訳を手入力する。カード未払金が`is_reconcilable = false`であるからこそ、この経路が可能になる([accounts.md 4.5](./accounts.md#45-なぜis_reconcilable--falseにするか)参照)。
 
 いずれの経路でも、消込仕訳と消し込まれる元の利用明細仕訳との対応関係は、`journal_entry_links`(`link_type = 'settles'`)に記録する([journal.md 1.8 仕訳間の関係](./journal.md#18-仕訳間の関係journal_entry_links)参照)。複数の利用明細をまとめて消し込む複合仕訳では、1件の消込仕訳から複数の元仕訳へのリンクになる。カードの利用明細に対応する`external_transaction_refs`はカード自身のCSVインポート時に作られたものがそのまま残り、消込側で新たに作る必要はない。
 

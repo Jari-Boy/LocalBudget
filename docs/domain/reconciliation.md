@@ -38,10 +38,10 @@
 
 **突合(重複防止、[statement-import.md 1.6](./statement-import.md#16-重複防止フロー))の対象**: 外部明細の取込対象として選ばれた科目であれば、`is_reconcilable`の値によらずすべて対象になる。現状は次の2種類。
 
-- `asset`区分: 銀行口座・電子マネー・証券口座([accounts.md 4.2](./accounts.md#42-種類選択による照合可否の自動決定)参照)。
-- `liability`区分: クレジットカード未払金科目([accounts.md 5章 クレジットカード登録のUX](./accounts.md#5-クレジットカード登録のux)参照、カードごとに1科目)。利用明細CSVを取り込む際の重複防止に使う。
+- `asset`区分: 銀行口座・電子マネー・証券口座など、外部明細に残高情報がある資産([accounts.md 4.2](./accounts.md#42-外部明細と残高情報による照合可否の自動決定)参照)。
+- `liability`区分: クレジットカード未払金科目([accounts.md 4.4 なぜカードごとに専用科目にするか](./accounts.md#44-なぜカードごとに専用科目にするか)参照、カードごとに1科目)。利用明細CSVを取り込む際の重複防止に使う。
 
-**is_reconcilable(記帳経路制限[1.2](#12-is_reconcilable資産負債への直接記帳の制限)・残高照合[1.5](#15-残高照合))の対象**: 「自身の外部明細だけで残高が完結する科目」に限る。銀行口座・電子マネー・証券口座はこれに該当するが、クレジットカード未払金は該当しない。支払い(消込)の経路は口座振替に限らず、コンビニでの現金払いのように外部明細を伴わない経路もあるため、記帳経路を外部明細取込だけに限定できないからである([settlement.md](./settlement.md)、[accounts.md 5.3](./accounts.md#53-なぜis_reconcilable--falseにするか)参照)。将来、支払い経路が外部明細に限定される負債科目(カードローン等)が追加されれば、そちらは対象に含まれうる。
+**is_reconcilable(記帳経路制限[1.2](#12-is_reconcilable資産負債への直接記帳の制限)・残高照合[1.5](#15-残高照合))の対象**: 「自身の外部明細だけで残高が完結する科目」に限る。銀行口座・電子マネー・証券口座はこれに該当するが、クレジットカード未払金は該当しない。支払い(消込)の経路は口座振替に限らず、コンビニでの現金払いのように外部明細を伴わない経路もあるため、記帳経路を外部明細取込だけに限定できないからである([settlement.md](./settlement.md)、[accounts.md 4.5](./accounts.md#45-なぜis_reconcilable--falseにするか)参照)。将来、支払い経路が外部明細に限定される負債科目(カードローン等)が追加されれば、そちらは対象に含まれうる。
 
 `is_reconcilable = false`の現金は同様に対象外([financial-statements.md 1.2 資産の照合可否](./financial-statements.md#12-資産の照合可否)の実残調整で扱う)。家賃等の暫定計上に使う汎用の未払金・未収金も対象外([settlement.md](./settlement.md)参照)。
 
@@ -67,7 +67,7 @@
 > **なぜDBのTRIGGERで強制しないか**
 > `source_type`は仕訳ヘッダー(`journal_entries`)自身の列であり、明細行(`journal_lines`)がINSERTされる時点で既に確定している。そのため、[journal.md 1.3 貸借バランスの検証](./journal.md#13-貸借バランスの検証)がTRIGGER不採用の理由に挙げた「BEFORE INSERT時点では関連レコードがまだ存在しない」という制約はここでは当てはまらず、技術的にはTRIGGERでも実装可能である。それでもRepository層で強制するのは、`UnbalancedJournalEntryError`等の他のドメインエラーと一貫したエラー体験(具体的なメッセージ、アプリケーション例外としての扱い)を保つためである。DB側の`RAISE(ABORT)`よりもRepository層での明示的な検証の方が、このアプリの一貫方針([journal.md 1.3](./journal.md#13-貸借バランスの検証)、[statement-import.md 3章](./statement-import.md#3-責務分担)参照)にも沿う。`JournalEntryRepository`は仕訳を作成する際、明細の科目が`is_reconcilable = true`であるにもかかわらずヘッダーの`source_type`がホワイトリスト外である場合、仕訳の作成を拒否する。
 
-`is_reconcilable`が`NULL`の区分(`equity`・`revenue`・`expense`)、および`is_reconcilable = false`の科目(現金、[settlement.md](./settlement.md)の暫定計上用の汎用未払金・未収金、CSVが取得できない口座)はこのルールの対象外であり、従来どおり自由に手入力できる(`source_type = 'manual'`)。これらは[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)の実残調整、または[settlement.md](./settlement.md)の暫定計上で運用する。クレジットカード未払金も`is_reconcilable = false`のためこのルールの対象外だが、通常は外部明細取込(利用明細CSV)を主な記帳経路としつつ、コンビニ払い等CSVで捕捉できない支払いの手入力も許容する([accounts.md 5.3](./accounts.md#53-なぜis_reconcilable--falseにするか)参照)。
+`is_reconcilable`が`NULL`の区分(`equity`・`revenue`・`expense`)、および`is_reconcilable = false`の科目(現金、[settlement.md](./settlement.md)の暫定計上用の汎用未払金・未収金、CSVが取得できない口座)はこのルールの対象外であり、従来どおり自由に手入力できる(`source_type = 'manual'`)。これらは[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)の実残調整、または[settlement.md](./settlement.md)の暫定計上で運用する。クレジットカード未払金も`is_reconcilable = false`のためこのルールの対象外だが、通常は外部明細取込(利用明細CSV)を主な記帳経路としつつ、コンビニ払い等CSVで捕捉できない支払いの手入力も許容する([accounts.md 4.5](./accounts.md#45-なぜis_reconcilable--falseにするか)参照)。
 
 ### 1.3 データモデルの考え方
 
@@ -130,7 +130,7 @@ CSVに残高列がない金融機関ではこの検証自体ができず、乖�
 | カラム                      | 内容         | 制約・備考                                                                                                                                                                 |
 | ------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                     | ID         | PK                                                                                                                                                                    |
-| `account_id`             | 対象口座/対象カード | FK。外部明細の取込対象として選択された科目を指す([1.1](#11-位置づけ)参照)。`is_reconcilable`の値によらず設定されうる(`asset`の銀行口座等、または`liability`のクレジットカード未払金、[accounts.md 5章](./accounts.md#5-クレジットカード登録のux)参照) |
+| `account_id`             | 対象口座/対象カード | FK。外部明細の取込対象として選択された科目を指す([1.1](#11-位置づけ)参照)。`is_reconcilable`の値によらず設定されうる(`asset`の銀行口座等、または`liability`のクレジットカード未払金、[accounts.md 4章](./accounts.md#4-資産負債収益費用の統合登録フロー計画issue-102)参照) |
 | `journal_entry_id`       | 対応する仕訳     | FK、親削除時CASCADE                                                                                                                                                        |
 | `external_id`            | 外部取引の一意キー  | 金融機関側のトランザクションIDまたは正規化ハッシュ                                                                                                                                            |
 | `entry_date`             | 取引日(スナップショット) | インポート時点で`ImportedRecord.entry_date`([statement-import.md 1.2](./statement-import.md#12-中間表現importedrecord)参照)から複写。書き込み後は不変 |
@@ -143,7 +143,7 @@ CSVに残高列がない金融機関ではこの検証自体ができず、乖�
 同一口座内で`external_id`は重複登録できない(重複防止の要)。
 
 > **なぜ`account_id`にTRIGGER制約を設けないか**
-> 以前は`is_reconcilable = true`の科目のみを許可するTRIGGERを設けていたが、これは不要な制約だった。`external_transaction_refs`は「外部明細の取込対象としてユーザーが選んだ科目」に対して、パーサーを通過した明細を突き合わせた結果として機械的に作られるレコードである。この仕組みは、対象科目が`is_reconcilable = true`かどうかとは無関係に成立する([1.1 用語: 突合と照合](#11-位置づけ)参照)。取込対象として選べる科目自体は、口座登録・クレジットカード登録の各ウィザード([accounts.md 4章](./accounts.md#4-口座登録のux)・[5章](./accounts.md#5-クレジットカード登録のux)参照)によって`asset`または`liability`の実在する外部口座・カードに自然と絞られるため、DB側で重ねて制約する必要はない。
+> 以前は`is_reconcilable = true`の科目のみを許可するTRIGGERを設けていたが、これは不要な制約だった。`external_transaction_refs`は「外部明細の取込対象としてユーザーが選んだ科目」に対して、パーサーを通過した明細を突き合わせた結果として機械的に作られるレコードである。この仕組みは、対象科目が`is_reconcilable = true`かどうかとは無関係に成立する([1.1 用語: 突合と照合](#11-位置づけ)参照)。取込対象として選べる科目自体は、勘定科目の統合登録フロー([accounts.md 4章](./accounts.md#4-資産負債収益費用の統合登録フロー計画issue-102)参照)によって`asset`または`liability`の実在する外部口座・カードに自然と絞られるため、DB側で重ねて制約する必要はない。
 
 > **なぜ`entry_date`/`description`/`amount`のコピーを持つか**
 > `journal_entries`/`journal_lines`は[1.4 ライフサイクル](#14-ライフサイクル)の通り事後編集を許可されており、`entry_date`・`memo`・`amount`はユーザーが後から自由に書き換えられる。一方この3列は、インポートされた瞬間の値を固定して保持する。両者を突き合わせて初めて「CSVは本来こう言っていたのに、今の仕訳はこう変わっている」という具体的な比較ができる。CSVファイル自体は再取込しない限りアプリの外にあるため、この複写がなければ、一度確定した後は「元々CSVが何と言っていたか」をアプリ内で確認する手段が失われる。[1.6 原因不明差異への残高調整](#16-原因不明差異への残高調整)の調査や、[journal.md 1.5](./journal.md#15-仕訳の編集削除)がUI警告に留めている「外部明細との対応が崩れる」を、CSVの再アップロードなしに具体的に(どの値がどう変わったか)提示できるようにするのが狙い。
