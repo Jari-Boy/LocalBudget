@@ -92,4 +92,28 @@ describe('HouseholdMemberSelectionStep', () => {
     renderStep({ error: '登録に失敗しました。もう一度お試しください。' })
     expect(screen.getByRole('alert')).toHaveTextContent('登録に失敗しました。もう一度お試しください。')
   })
+
+  it('unspecifiedOptionLabelを渡さない場合(必須モード)、未選択オプションのボタンは表示されない', () => {
+    renderStep()
+    expect(screen.queryByRole('button', { name: '全員' })).not.toBeInTheDocument()
+  })
+
+  it('unspecifiedOptionLabelを渡した場合(任意モード、計画Issue #102)、そのラベルのボタンが世帯メンバーより前に表示される', () => {
+    renderStep({ unspecifiedOptionLabel: '全員' })
+    const buttons = screen.getAllByRole('button').map((button) => button.textContent)
+    expect(buttons.indexOf('全員')).toBeGreaterThanOrEqual(0)
+    expect(buttons.indexOf('全員')).toBeLessThan(buttons.indexOf('太郎'))
+  })
+
+  it('任意モードで未選択オプションのボタンをクリックするとonSelectにnullが渡される', () => {
+    const { onSelect } = renderStep({ unspecifiedOptionLabel: '全員', selectedId: 1 })
+    fireEvent.click(screen.getByRole('button', { name: '全員' }))
+    expect(onSelect).toHaveBeenCalledWith(null)
+  })
+
+  it('任意モードでselectedId = nullの場合、未選択オプションのボタンのみaria-pressed=trueになる', () => {
+    renderStep({ unspecifiedOptionLabel: '全員', selectedId: null })
+    expect(screen.getByRole('button', { name: '全員' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '太郎' })).toHaveAttribute('aria-pressed', 'false')
+  })
 })
