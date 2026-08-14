@@ -35,6 +35,16 @@ function renderScreen(overrides: Partial<Parameters<typeof AccountCategorySelect
 }
 
 describe('AccountCategorySelectionScreen', () => {
+  it('各選択肢に、対象範囲が伝わる短い説明文が併記される(粒度の異なる選択肢が並ぶことによる混乱を防ぐ)', () => {
+    renderScreen()
+
+    expect(screen.getByText('銀行口座・現金・電子マネー・証券口座')).toBeInTheDocument()
+    expect(screen.getByText('クレジットカード専用の科目を作成します')).toBeInTheDocument()
+    expect(
+      screen.getByText('収益・費用や、未収金・立替金など特殊な資産・負債を追加します'),
+    ).toBeInTheDocument()
+  })
+
   it('「資産を登録する」を選ぶとonSelectAssetが呼ばれる', () => {
     const { onSelectAsset } = renderScreen()
 

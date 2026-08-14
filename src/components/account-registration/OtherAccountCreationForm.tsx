@@ -95,6 +95,7 @@ export function OtherAccountCreationForm({
   return (
     <div className="account-registration-wizard">
       <h2>{t('otherAccountFormTitle')}</h2>
+      <p>{t('otherAccountFormDescription')}</p>
 
       <div>
         <label htmlFor="other-account-category">{t('categoryLabel')}</label>

@@ -62,12 +62,22 @@ describe('OtherAccountCreationForm', () => {
     },
   )
 
-  it('区分選択肢に純資産(equity)は含まれない', async () => {
+  it('区分選択肢に純資産(equity)は含まれない。資産・負債は口座登録ウィザード等との使い分けが伝わる注記付きの文言になっている', async () => {
     renderForm(vi.fn())
 
     const select = await screen.findByLabelText('区分')
     const optionLabels = Array.from(select.querySelectorAll('option')).map((option) => option.textContent)
-    expect(optionLabels).toEqual(['資産', '負債', '収益', '費用'])
+    expect(optionLabels).toEqual(['資産(未収金など)', '負債(ローン・立替金など)', '収益', '費用'])
+  })
+
+  it('画面上部に、銀行口座・クレジットカード等はこのフォームの対象外である旨の説明文が表示される', async () => {
+    renderForm(vi.fn())
+
+    expect(
+      await screen.findByText(
+        '銀行口座・現金・電子マネー・証券口座、クレジットカードはそれぞれ専用の登録画面をご利用ください。ここでは未収金や個人間の立て替えなど特殊な資産・負債、収益・費用の科目を追加できます。',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('資産を選ぶと突合設問が表示され、回答するまで登録ボタンが無効になる', async () => {

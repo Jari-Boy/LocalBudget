@@ -6,6 +6,20 @@
   padding: 32px 20px;
 }
 
+.account-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.account-menu-item-caption {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  text-align: center;
+}
+
 .account-menu-screen button {
   font-size: 16px;
   padding: 12px 24px;

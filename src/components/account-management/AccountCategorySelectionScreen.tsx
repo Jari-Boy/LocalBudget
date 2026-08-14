@@ -27,15 +27,24 @@ export function AccountCategorySelectionScreen({
   return (
     <div className="account-menu-screen">
       <h2>{t('categorySelectionTitle')}</h2>
-      <button type="button" onClick={onSelectAsset}>
-        {t('registerAccountTitle')}
-      </button>
-      <button type="button" onClick={onSelectCreditCard}>
-        {t('registerCreditCardTitle')}
-      </button>
-      <button type="button" onClick={onSelectOther}>
-        {t('otherAccountFormTitle')}
-      </button>
+      <div className="account-menu-item">
+        <button type="button" onClick={onSelectAsset}>
+          {t('registerAccountTitle')}
+        </button>
+        <p className="account-menu-item-caption">{t('categorySelectionAssetCaption')}</p>
+      </div>
+      <div className="account-menu-item">
+        <button type="button" onClick={onSelectCreditCard}>
+          {t('registerCreditCardTitle')}
+        </button>
+        <p className="account-menu-item-caption">{t('categorySelectionCreditCardCaption')}</p>
+      </div>
+      <div className="account-menu-item">
+        <button type="button" onClick={onSelectOther}>
+          {t('otherAccountFormTitle')}
+        </button>
+        <p className="account-menu-item-caption">{t('categorySelectionOtherCaption')}</p>
+      </div>
       <button type="button" onClick={onBack}>
         {t('back')}
       </button>
