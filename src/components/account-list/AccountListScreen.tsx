@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { Account } from '../../domain/account/Account'
+import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { Budget } from '../../domain/budget/Budget'
@@ -39,6 +39,16 @@ interface BudgetFinder {
 
 interface RecurringTransactionRuleFinder {
   findAll(): RecurringTransactionRule[] | Promise<RecurringTransactionRule[]>
+}
+
+/** 一覧の区分表示ラベル(equityはisSystemManaged科目のみのため一覧には表示されないが、
+ * Record<AccountCategory, string>を満たすためのキーとして用意する) */
+const CATEGORY_LABEL_KEY: Record<AccountCategory, string> = {
+  asset: 'listCategoryAsset',
+  liability: 'listCategoryLiability',
+  equity: 'listCategoryAsset',
+  revenue: 'listCategoryRevenue',
+  expense: 'listCategoryExpense',
 }
 
 export interface AccountListScreenProps {
@@ -204,41 +214,49 @@ export function AccountListScreen({
             const canDelete = !data.accountIdsWithReference.has(account.id)
             return (
               <li key={account.id}>
-                <span className="account-list-name">
-                  {account.name}
-                  {account.householdMemberId !== null && (
-                    <span className="account-list-member">
-                      {data.householdMemberNameById.get(account.householdMemberId)}
-                    </span>
-                  )}
-                  {!account.isActive && <span className="account-list-inactive">{t('inactiveLabel')}</span>}
-                </span>
-                <span className="account-list-amount">{formatCurrency(balance?.amount ?? 0, 'JPY')}</span>
-                <span className="account-list-actions">
-                  <button type="button" onClick={() => openEditForm(account)} disabled={isSubmitting}>
-                    {t('editButton')}
-                  </button>
-                  {canDelete && (
-                    <button
-                      type="button"
-                      data-action="delete"
-                      onClick={() => deleteAccount(account.id)}
-                      disabled={isSubmitting}
-                    >
-                      {t('deleteButton')}
+                <div className="account-list-row">
+                  <span className="account-list-name">
+                    {account.name}
+                    <span className="account-list-category">{t(CATEGORY_LABEL_KEY[account.category])}</span>
+                    {!account.isActive && (
+                      <span className="account-list-inactive">{t('inactiveLabel')}</span>
+                    )}
+                  </span>
+                  <span className="account-list-amount">{formatCurrency(balance?.amount ?? 0, 'JPY')}</span>
+                </div>
+                <div className="account-list-row">
+                  <span className="account-list-member">
+                    {t('memberSelectLabel')}:{' '}
+                    {account.householdMemberId !== null
+                      ? data.householdMemberNameById.get(account.householdMemberId)
+                      : t('memberUnspecified')}
+                  </span>
+                  <span className="account-list-actions">
+                    <button type="button" onClick={() => openEditForm(account)} disabled={isSubmitting}>
+                      {t('editButton')}
                     </button>
-                  )}
-                  {account.isActive && (
-                    <button
-                      type="button"
-                      data-action="deactivate"
-                      onClick={() => deactivateAccount(account.id)}
-                      disabled={isSubmitting}
-                    >
-                      {t('deactivateButton')}
-                    </button>
-                  )}
-                </span>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        data-action="delete"
+                        onClick={() => deleteAccount(account.id)}
+                        disabled={isSubmitting}
+                      >
+                        {t('deleteButton')}
+                      </button>
+                    )}
+                    {account.isActive && (
+                      <button
+                        type="button"
+                        data-action="deactivate"
+                        onClick={() => deactivateAccount(account.id)}
+                        disabled={isSubmitting}
+                      >
+                        {t('deactivateButton')}
+                      </button>
+                    )}
+                  </span>
+                </div>
               </li>
             )
           })}

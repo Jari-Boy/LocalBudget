@@ -128,6 +128,43 @@ describe('AccountListScreen', () => {
     expect(sharedItem).not.toHaveTextContent('太郎')
   })
 
+  it.each([
+    ['asset', '資産'],
+    ['liability', '負債'],
+    ['revenue', '収益'],
+    ['expense', '費用'],
+  ])('区分「%s」の科目には一覧に「%s」の区分表示が併記される', async (category, expectedLabel) => {
+    accountRepository.create({
+      category: category as 'asset' | 'liability' | 'revenue' | 'expense',
+      name: 'テスト科目',
+      isReconcilable: category === 'asset' || category === 'liability' ? true : null,
+    })
+
+    renderScreen()
+
+    const item = (await screen.findByText('テスト科目')).closest('li')!
+    expect(item).toHaveTextContent(expectedLabel)
+  })
+
+  it('名義(householdMemberId)が設定されている科目には「名義: 太郎」のように表示され、設定されていない科目には「名義: 全員」と表示される', async () => {
+    const member = householdMemberRepository.create({ name: '太郎' })
+    accountRepository.create({
+      category: 'asset',
+      name: '太郎の口座',
+      isReconcilable: true,
+      householdMemberId: member.id,
+    })
+    accountRepository.create({ category: 'asset', name: '共通口座', isReconcilable: true })
+
+    renderScreen()
+
+    const taroItem = (await screen.findByText('太郎の口座')).closest('li')!
+    expect(taroItem).toHaveTextContent('名義: 太郎')
+
+    const sharedItem = screen.getByText('共通口座').closest('li')!
+    expect(sharedItem).toHaveTextContent('名義: 全員')
+  })
+
   it('登録済み科目が0件の場合はエラーにならず空状態が表示される', async () => {
     renderScreen()
 
