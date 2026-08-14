@@ -28,6 +28,12 @@ export default defineConfig({
     command: 'npm run dev',
     url: 'http://localhost:5173',
     reuseExistingServer: !process.env.CI,
+    // 開発モード限定のダミーサンプルデータ投入(seedDevSampleDataIfDev、計画Issue #101)は
+    // npm run devの手動確認向けの利便性機能であり、E2Eテストが期待する「口座・仕訳が0件」の
+    // クリーンな初期状態と衝突する。VITE_DISABLE_DEV_SEEDはVite起動時にimport.meta.envへ
+    // 伝播するprocess.env由来のVITE_プレフィックス変数であり、これによりE2Eテスト実行中の
+    // 開発サーバーに限りダミーデータ投入を抑制する(通常のnpm run devでの手動起動には影響しない)。
+    env: { VITE_DISABLE_DEV_SEED: 'true' },
   },
   projects: [
     {
