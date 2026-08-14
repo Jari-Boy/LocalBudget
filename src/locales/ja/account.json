@@ -19,5 +19,16 @@
   "register": "登録する",
   "registrationError": "登録に失敗しました。もう一度お試しください。",
   "accountListTitle": "登録済みの科目",
-  "accountListEmpty": "登録済みの科目がありません"
+  "accountListEmpty": "登録済みの科目がありません",
+  "otherAccountFormTitle": "その他の科目を追加する",
+  "categoryLabel": "区分",
+  "categoryAsset": "資産",
+  "categoryLiability": "負債",
+  "categoryRevenue": "収益",
+  "categoryExpense": "費用",
+  "reconciliationQuestionLabel": "外部明細(CSV)と自動で突合しますか?",
+  "reconciliationAnswerMatchesExternalStatement": "自動で突合する",
+  "reconciliationAnswerManualOnly": "自動では突合しない(手入力で管理する)",
+  "memberSelectLabel": "名義",
+  "memberUnspecified": "指定しない(世帯共通)"
 }
