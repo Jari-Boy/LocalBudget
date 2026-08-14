@@ -2,6 +2,8 @@ import { useState } from 'react'
 import type * as Comlink from 'comlink'
 import { useTranslation } from 'react-i18next'
 import type { AccountRepository } from './domain/account/AccountRepository'
+import type { BudgetRepository } from './domain/budget/BudgetRepository'
+import type { RecurringTransactionRuleRepository } from './domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { CounterpartyRepository } from './domain/counterparty/CounterpartyRepository'
 import type { JournalEntryRepository } from './domain/journal/JournalEntryRepository'
 import type { JournalEntryDraft } from './domain/journal/JournalEntryDraft'
@@ -87,6 +89,9 @@ function AppContent() {
     client.importMappingDefinition as unknown as Comlink.Remote<ImportMappingDefinitionRepository>
   const externalTransactionRefRepository =
     client.externalTransactionRef as unknown as Comlink.Remote<ExternalTransactionRefRepository>
+  const budgetRepository = client.budget as unknown as Comlink.Remote<BudgetRepository>
+  const recurringTransactionRuleRepository =
+    client.recurringTransactionRule as unknown as Comlink.Remote<RecurringTransactionRuleRepository>
 
   if (screen === 'register-account') {
     return (
@@ -115,6 +120,8 @@ function AppContent() {
         accountRepository={accountRepository}
         journalEntryRepository={journalEntryRepository}
         householdMemberRepository={householdMemberRepository}
+        budgetRepository={budgetRepository}
+        recurringTransactionRuleRepository={recurringTransactionRuleRepository}
         onBack={() => setScreen('home')}
       />
     )

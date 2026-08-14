@@ -48,6 +48,12 @@ export class SqlJsBudgetRepository implements BudgetRepository {
     return result.values.map((values) => mapRowToBudget(result.columns, values))
   }
 
+  findAll(): Budget[] {
+    const [result] = this.db.exec('SELECT * FROM budgets ORDER BY id')
+    if (!result) return []
+    return result.values.map((values) => mapRowToBudget(result.columns, values))
+  }
+
   update(id: number, input: UpdateBudgetInput): Budget {
     const current = this.findById(id)
     if (!current) {
