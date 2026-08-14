@@ -30,6 +30,15 @@ const CATEGORY_OPTIONS: { value: AccountCategory; labelKey: string }[] = [
   { value: 'expense', labelKey: 'categoryExpense' },
 ]
 
+/** 名前入力ステップのプレースホルダーは区分ごとの具体例にする */
+const NAME_PLACEHOLDER_KEY: Record<AccountCategory, string> = {
+  asset: 'namePlaceholderOtherAsset',
+  liability: 'namePlaceholderOtherLiability',
+  equity: 'namePlaceholder',
+  revenue: 'namePlaceholderRevenue',
+  expense: 'namePlaceholderExpense',
+}
+
 /**
  * 「その他の科目を追加する」フォーム(計画Issue #95)。口座登録・クレジットカード登録
  * ウィザードがカバーしない用途(docs/domain/accounts.md 1.2節の「未収金」、収益・費用科目、
@@ -109,7 +118,7 @@ export function OtherAccountCreationForm({
           id="other-account-name"
           type="text"
           value={name}
-          placeholder={t('namePlaceholder')}
+          placeholder={t(NAME_PLACEHOLDER_KEY[category])}
           onChange={(event) => setName(event.target.value)}
         />
 

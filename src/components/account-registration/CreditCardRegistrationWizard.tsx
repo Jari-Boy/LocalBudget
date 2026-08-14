@@ -81,7 +81,7 @@ export function CreditCardRegistrationWizard({
             id="credit-card-name"
             type="text"
             value={name}
-            placeholder={t('namePlaceholder')}
+            placeholder={t('namePlaceholderCreditCard')}
             onChange={(event) => setName(event.target.value)}
           />
           {error && steps.length === 1 && <p role="alert">{error}</p>}

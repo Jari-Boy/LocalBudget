@@ -64,6 +64,21 @@ describe('AccountRegistrationWizard', () => {
     expect(cashLikeGroup).toHaveTextContent('電子マネー')
   })
 
+  it.each([
+    ['銀行口座', '例: 三菱UFJ銀行'],
+    ['証券・投資口座', '例: SBI証券'],
+    ['電子マネー', '例: 楽天Edy'],
+  ])(
+    '種類「%s」を選ぶと、名前入力欄のプレースホルダーがその種類に応じた例文になる',
+    async (kindLabel, expectedPlaceholder) => {
+      renderWizard(vi.fn())
+
+      fireEvent.click(await screen.findByRole('button', { name: kindLabel }))
+
+      expect(screen.getByLabelText('名前を付ける')).toHaveAttribute('placeholder', expectedPlaceholder)
+    },
+  )
+
   it('世帯メンバーが未登録の場合、名義選択ステップを経ずに口座を登録できる(初期残高なし)', async () => {
     const onComplete = vi.fn()
     renderWizard(onComplete)

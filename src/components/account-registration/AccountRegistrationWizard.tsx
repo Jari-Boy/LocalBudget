@@ -16,6 +16,18 @@ const KIND_LABEL_KEY: Record<AccountKind, string> = {
 }
 
 /**
+ * 名前入力ステップのプレースホルダーは種類ごとの具体例にする(cashは名前入力
+ * ステップ自体を経ないため未使用だが、Record<AccountKind, string>を満たすために
+ * 共通のnamePlaceholderキーを割り当てておく)。
+ */
+const NAME_PLACEHOLDER_KEY: Record<AccountKind, string> = {
+  bank: 'namePlaceholderBank',
+  cash: 'namePlaceholder',
+  e_money: 'namePlaceholderEMoney',
+  investment: 'namePlaceholderInvestment',
+}
+
+/**
  * 種類選択ステップの表示グループ(docs/decisions.md参照)。銀行口座・証券口座は
  * 「口座」、現金・電子マネーは資産である点は同じだがユーザーの感覚上「口座」とは
  * 異なる(現金はそもそも口座ではない、電子マネーは決済手段としての手触りが
@@ -177,7 +189,7 @@ export function AccountRegistrationWizard({
             id="account-name"
             type="text"
             value={name}
-            placeholder={t('namePlaceholder')}
+            placeholder={t(NAME_PLACEHOLDER_KEY[kind!])}
             onChange={(event) => setName(event.target.value)}
           />
           <div>

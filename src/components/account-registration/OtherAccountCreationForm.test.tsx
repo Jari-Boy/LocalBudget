@@ -46,6 +46,22 @@ function renderForm(onComplete: (account: unknown) => void, onBack: () => void =
 }
 
 describe('OtherAccountCreationForm', () => {
+  it.each([
+    ['asset', '例: 未収金'],
+    ['liability', '例: 立替金'],
+    ['revenue', '例: 副業収入'],
+    ['expense', '例: 食費'],
+  ])(
+    '区分「%s」を選ぶと、名前入力欄のプレースホルダーがその区分に応じた例文になり、口座登録ウィザードの「三菱UFJ銀行」は表示されない',
+    async (category, expectedPlaceholder) => {
+      renderForm(vi.fn())
+
+      fireEvent.change(await screen.findByLabelText('区分'), { target: { value: category } })
+
+      expect(screen.getByLabelText('名前を付ける')).toHaveAttribute('placeholder', expectedPlaceholder)
+    },
+  )
+
   it('区分選択肢に純資産(equity)は含まれない', async () => {
     renderForm(vi.fn())
 

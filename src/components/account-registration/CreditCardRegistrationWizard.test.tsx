@@ -44,6 +44,12 @@ function renderWizard(onComplete: (account: unknown) => void) {
 }
 
 describe('CreditCardRegistrationWizard', () => {
+  it('名前入力欄のプレースホルダーがクレジットカードの例文になる(口座登録ウィザードの「三菱UFJ銀行」を流用しない)', async () => {
+    renderWizard(vi.fn())
+
+    expect(await screen.findByLabelText('名前を付ける')).toHaveAttribute('placeholder', '例: 楽天カード')
+  })
+
   it('世帯メンバーが未登録の場合、名義選択ステップを経ずにカードを登録できる', async () => {
     const onComplete = vi.fn()
     renderWizard(onComplete)
