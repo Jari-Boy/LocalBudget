@@ -26,7 +26,7 @@ export const DEV_SAMPLE_JOURNAL_ENTRIES: readonly {
   amount: number
 }[] = [
   { daysAgo: 25, memo: '給与振込', debitAccountName: '普通預金', creditAccountName: '給与収入', amount: 250000 },
-  { daysAgo: 18, memo: 'スーパーで食材購入', debitAccountName: '食費', creditAccountName: '現金', amount: 3200 },
+  { daysAgo: 18, memo: '近所のスーパーで買い物', debitAccountName: '食費', creditAccountName: '現金', amount: 3200 },
   { daysAgo: 12, memo: '電車運賃', debitAccountName: '交通費', creditAccountName: '現金', amount: 1200 },
   { daysAgo: 3, memo: '外食', debitAccountName: '食費', creditAccountName: 'クレジットカード', amount: 4500 },
 ] as const
