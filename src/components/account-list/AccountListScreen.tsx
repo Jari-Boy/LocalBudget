@@ -152,9 +152,13 @@ export function AccountListScreen({
     if (isSubmitting || formMode === null) return
     setIsSubmitting(true)
     setError(null)
-    void Promise.resolve(
-      accountRepository.update(formMode, { name: nameInput, householdMemberId: householdMemberIdInput }),
-    )
+    // Repository呼び出しはPromise.resolve(fn())ではなくPromise.resolve().then(() => fn())で
+    // 開始する。sql.js実装は同期的に例外を投げるため、前者だとfnの同期例外が.catch()に
+    // 届かない(docs/guides/patterns.md参照)。
+    void Promise.resolve()
+      .then(() =>
+        accountRepository.update(formMode, { name: nameInput, householdMemberId: householdMemberIdInput }),
+      )
       .then(() => {
         closeForm()
         load()
@@ -167,7 +171,8 @@ export function AccountListScreen({
     if (isSubmitting) return
     setIsSubmitting(true)
     setError(null)
-    void Promise.resolve(accountRepository.delete(id))
+    void Promise.resolve()
+      .then(() => accountRepository.delete(id))
       .then(load)
       .catch(() => setError(t('deleteError')))
       .finally(() => setIsSubmitting(false))
@@ -177,7 +182,8 @@ export function AccountListScreen({
     if (isSubmitting) return
     setIsSubmitting(true)
     setError(null)
-    void Promise.resolve(accountRepository.deactivate(id))
+    void Promise.resolve()
+      .then(() => accountRepository.deactivate(id))
       .then(load)
       .catch(() => setError(t('deactivateError')))
       .finally(() => setIsSubmitting(false))

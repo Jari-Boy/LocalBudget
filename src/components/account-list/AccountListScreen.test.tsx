@@ -8,7 +8,7 @@
  * として検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -178,6 +178,22 @@ describe('AccountListScreen', () => {
 
       expect(await screen.findByText('交際費')).toBeInTheDocument()
       expect(screen.getByText('交際費').closest('li')).toHaveTextContent('花子')
+    })
+
+    it('同一区分内で既存の別科目と同じ名前に変更しようとすると、UNIQUE制約違反(同期例外)がエラーメッセージとして表示され、操作ボタンが再び有効になる', async () => {
+      accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+      accountRepository.create({ category: 'expense', name: '娯楽費', isReconcilable: null })
+
+      renderScreen()
+      await screen.findByText('娯楽費')
+
+      const item = screen.getByText('娯楽費').closest('li')!
+      fireEvent.click(within(item).getByRole('button', { name: '編集' }))
+      fireEvent.change(screen.getByLabelText('名称'), { target: { value: '食費' } })
+      fireEvent.click(screen.getByRole('button', { name: '保存する' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('保存に失敗しました。もう一度お試しください。')
+      await waitFor(() => expect(screen.getByRole('button', { name: '保存する' })).toBeEnabled())
     })
   })
 
