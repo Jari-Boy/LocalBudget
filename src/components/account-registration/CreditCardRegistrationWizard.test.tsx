@@ -31,19 +31,29 @@ beforeEach(async () => {
 
 afterEach(cleanup)
 
-function renderWizard(onComplete: (account: unknown) => void) {
+function renderWizard(onComplete: (account: unknown) => void, onBack: () => void = vi.fn()) {
   return render(
     <I18nextProvider i18n={i18n}>
       <CreditCardRegistrationWizard
         accountRepository={accountRepository}
         householdMemberRepository={householdMemberRepository}
         onComplete={onComplete}
+        onBack={onBack}
       />
     </I18nextProvider>,
   )
 }
 
 describe('CreditCardRegistrationWizard', () => {
+  it('名前入力ステップ(最初のステップ)に戻るボタンが表示され、押すとonBackが呼ばれる', async () => {
+    const onBack = vi.fn()
+    renderWizard(vi.fn(), onBack)
+
+    fireEvent.click(await screen.findByRole('button', { name: '戻る' }))
+
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
   it('名前入力欄のプレースホルダーがクレジットカードの例文になる(口座登録ウィザードの「三菱UFJ銀行」を流用しない)', async () => {
     renderWizard(vi.fn())
 
@@ -105,6 +115,7 @@ describe('CreditCardRegistrationWizard', () => {
           accountRepository={failingAccountRepository}
           householdMemberRepository={householdMemberRepository}
           onComplete={onComplete}
+          onBack={vi.fn()}
         />
       </I18nextProvider>,
     )

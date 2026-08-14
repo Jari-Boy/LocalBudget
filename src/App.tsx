@@ -127,6 +127,7 @@ function AppContent() {
         journalEntryRepository={journalEntryRepository}
         householdMemberRepository={householdMemberRepository}
         onComplete={() => setScreen('account-management')}
+        onBack={() => setScreen('account-category-selection')}
       />
     )
   }
@@ -137,6 +138,7 @@ function AppContent() {
         accountRepository={accountRepository}
         householdMemberRepository={householdMemberRepository}
         onComplete={() => setScreen('account-management')}
+        onBack={() => setScreen('account-category-selection')}
       />
     )
   }

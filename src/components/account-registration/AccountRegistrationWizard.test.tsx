@@ -35,7 +35,7 @@ beforeEach(async () => {
 
 afterEach(cleanup)
 
-function renderWizard(onComplete: (account: unknown) => void) {
+function renderWizard(onComplete: (account: unknown) => void, onBack: () => void = vi.fn()) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AccountRegistrationWizard
@@ -43,6 +43,7 @@ function renderWizard(onComplete: (account: unknown) => void) {
         journalEntryRepository={journalEntryRepository}
         householdMemberRepository={householdMemberRepository}
         onComplete={onComplete}
+        onBack={onBack}
         today="2026-08-03"
       />
     </I18nextProvider>,
@@ -50,6 +51,15 @@ function renderWizard(onComplete: (account: unknown) => void) {
 }
 
 describe('AccountRegistrationWizard', () => {
+  it('種類選択ステップ(最初のステップ)に戻るボタンが表示され、押すとonBackが呼ばれる', async () => {
+    const onBack = vi.fn()
+    renderWizard(vi.fn(), onBack)
+
+    fireEvent.click(await screen.findByRole('button', { name: '戻る' }))
+
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
   it('種類選択ステップは「口座」(銀行口座・証券口座)と「現金・電子マネー」のグループに分けて表示される', async () => {
     const onComplete = vi.fn()
     renderWizard(onComplete)
@@ -264,6 +274,7 @@ describe('AccountRegistrationWizard', () => {
           journalEntryRepository={journalEntryRepository}
           householdMemberRepository={householdMemberRepository}
           onComplete={onComplete}
+          onBack={vi.fn()}
           today="2026-08-03"
         />
       </I18nextProvider>,

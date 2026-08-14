@@ -49,6 +49,9 @@ export interface AccountRegistrationWizardProps {
   journalEntryRepository: JournalEntryCreator
   householdMemberRepository: HouseholdMemberFinder
   onComplete: (account: Account) => void
+  /** 最初のステップ(種類選択)で「戻る」を押した際に呼ばれる、ウィザード自体を抜ける
+   * コールバック(計画Issue #95、科目カテゴリ選択画面への復帰に使用) */
+  onBack: () => void
   /** 初期残高がある場合の初期仕訳の日付(YYYY-MM-DD)。省略時は本日の日付を使う */
   today?: string
 }
@@ -72,6 +75,7 @@ export function AccountRegistrationWizard({
   journalEntryRepository,
   householdMemberRepository,
   onComplete,
+  onBack,
   today,
 }: AccountRegistrationWizardProps) {
   const { t } = useTranslation('account')
@@ -179,6 +183,11 @@ export function AccountRegistrationWizard({
               </div>
             </div>
           ))}
+          <div>
+            <button type="button" onClick={onBack}>
+              {t('back')}
+            </button>
+          </div>
         </fieldset>
       )}
 
