@@ -123,7 +123,7 @@ test.describe('取引先管理画面', () => {
       const client = await createDbClient()
       const expenseAccount = await client.account.create({
         category: 'expense',
-        name: '食費',
+        name: '雑費',
         isReconcilable: null,
       })
       const cashAccount = await client.account.create({

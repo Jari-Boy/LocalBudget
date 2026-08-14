@@ -44,13 +44,13 @@ test.describe('CSP設定', () => {
       const client = await createDbClient()
       const account = await client.account.create({
         category: 'expense',
-        name: '食費',
+        name: 'CSP検証科目',
         isReconcilable: null,
       })
       return (await client.account.findById(account.id))?.name
     })
 
-    expect(accountName).toBe('食費')
+    expect(accountName).toBe('CSP検証科目')
     expect(cspViolations).toEqual([])
   })
 })

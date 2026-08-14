@@ -8,11 +8,13 @@
  * ページ上で直接呼び出す形で検証する。withAutoSaveの永続化はtrailing debounce(計画Issue #58)
  * のため、リロードを挟む前は`client.autoSave.flush()`で確実にIndexedDBへ反映させてから
  * 次の検証に進む(storage-adapter-boot-restore.spec.tsと同じ配慮)。
- * 各テストが作成する科目名(食費・交通費)で全件一致(toEqual)を検証すると、CI環境の
- * 並列実行下でIndexedDBのタイミング競合により他テストの科目が一時的に混入し
- * flakyになることを実機で確認したため、「このテストが検証すべき対象科目の有無」
- * (対象科目が存在する/取り消されるべき科目が存在しない)のみをtoContain/not.toContainで
- * 検証する形にしている。
+ * 各テストが作成する科目名で全件一致(toEqual)を検証すると、CI環境の並列実行下で
+ * IndexedDBのタイミング競合により他テストの科目が一時的に混入しflakyになることを実機で
+ * 確認したため、「このテストが検証すべき対象科目の有無」(対象科目が存在する/取り消される
+ * べき科目が存在しない)のみをtoContain/not.toContainで検証する形にしている。
+ * また、seedDefaultAccounts(計画Issue #96)によりWorker起動時点でrevenue/expense区分の
+ * 標準科目(食費・交通費等)が既に存在するため、作成する科目名はデフォルトシードのリスト
+ * (defaultAccountSeedData.ts)と衝突しない名前を使う。
  * 外部依存: Playwright(実ブラウザ、ネットワークアクセスなし)。
  */
 import { test, expect } from '@playwright/test'
@@ -29,7 +31,7 @@ test.describe('バックアップExport/Import', () => {
           '/src/infrastructure/backup/downloadDatabaseBackup.ts'
         )
         const client = await createDbClient()
-        await client.account.create({ category: 'expense', name: '食費', isReconcilable: null })
+        await client.account.create({ category: 'expense', name: 'バックアップ対象科目', isReconcilable: null })
         const data = await client.backup.export()
         downloadDatabaseBackup(data, 'local-budget-backup.sqlite')
         return data.length
@@ -52,7 +54,7 @@ test.describe('バックアップExport/Import', () => {
       )
       const client = await createDbClient()
 
-      await client.account.create({ category: 'expense', name: '食費', isReconcilable: null })
+      await client.account.create({ category: 'expense', name: 'バックアップ対象科目', isReconcilable: null })
       const backup = await client.backup.export()
 
       // 実際のUI(別Issue)ではtoDatabaseBlobでダウンロードしたファイルをユーザーが選択し、
@@ -62,8 +64,8 @@ test.describe('バックアップExport/Import', () => {
       const restoredBytes = await fromDatabaseFile(file)
 
       // エクスポート後に別データを追加してから、エクスポート済みのバイト列をインポートし、
-      // エクスポート時点の状態(食費のみ)に戻ることを確認する
-      await client.account.create({ category: 'expense', name: '交通費', isReconcilable: null })
+      // エクスポート時点の状態(バックアップ対象科目のみ)に戻ることを確認する
+      await client.account.create({ category: 'expense', name: '一時科目', isReconcilable: null })
       await client.backup.importDatabase(restoredBytes)
     })
 
@@ -76,8 +78,8 @@ test.describe('バックアップExport/Import', () => {
       return accounts.map((account) => account.name)
     })
 
-    expect(accountNames).toContain('食費')
-    expect(accountNames).not.toContain('交通費')
+    expect(accountNames).toContain('バックアップ対象科目')
+    expect(accountNames).not.toContain('一時科目')
   })
 
   test('不正なファイルをインポートしようとするとInvalidBackupFileErrorが投げられ、既存データは保持される', async ({
@@ -92,7 +94,7 @@ test.describe('バックアップExport/Import', () => {
       )
       const client = await createDbClient()
 
-      await client.account.create({ category: 'expense', name: '食費', isReconcilable: null })
+      await client.account.create({ category: 'expense', name: 'バックアップ対象科目', isReconcilable: null })
       // リロード後の検証まで確実にIndexedDBへ反映させておく(trailing debounce待ちにしない)
       await client.autoSave.flush()
 
@@ -116,7 +118,7 @@ test.describe('バックアップExport/Import', () => {
       return accounts.map((account) => account.name)
     })
 
-    expect(accountNames).toContain('食費')
+    expect(accountNames).toContain('バックアップ対象科目')
   })
 
   test('マイグレーション未適用の空のDB(無関係なsql.jsファイル)をインポートしようとするとInvalidBackupFileErrorを投げ、既存データは保持される', async ({
@@ -134,7 +136,7 @@ test.describe('バックアップExport/Import', () => {
       )
       const client = await createDbClient()
 
-      await client.account.create({ category: 'expense', name: '食費', isReconcilable: null })
+      await client.account.create({ category: 'expense', name: 'バックアップ対象科目', isReconcilable: null })
       await client.autoSave.flush()
 
       // runMigrationsを一切適用していない空のsql.js DB(PRAGMA user_version = 0)。
@@ -164,6 +166,6 @@ test.describe('バックアップExport/Import', () => {
       return accounts.map((account) => account.name)
     })
 
-    expect(accountNames).toContain('食費')
+    expect(accountNames).toContain('バックアップ対象科目')
   })
 })

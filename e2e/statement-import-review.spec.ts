@@ -16,6 +16,9 @@
  * 作ってその都度reloadすると、後発のWorkerが先発のWorkerのflush()完了前にIndexedDBを
  * 読み込みうるタイミング競合(CI環境の低スペックランナーで顕在化しやすい)によって
  * FOREIGN KEY constraint failedを起こすことが実際に観測されたため、この構成に統一した。
+ * seedDefaultAccounts(計画Issue #96)によりWorker起動時点でrevenue/expense区分の標準科目
+ * が既に存在するため、各テストが作成する費用科目名はデフォルトシードのリスト
+ * (defaultAccountSeedData.ts)と衝突しない名前(テスト費目・エンタメ費)を使う。
  */
 import { test, expect, type Page } from '@playwright/test'
 
@@ -173,7 +176,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
       page,
       [
         { category: 'asset', name: '普通預金', isReconcilable: true },
-        { category: 'expense', name: '食費', isReconcilable: null },
+        { category: 'expense', name: 'テスト費目', isReconcilable: null },
       ],
       {
         accountIndex: 0,
@@ -206,7 +209,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await expect(page.getByRole('heading', { name: '明細のレビュー' })).toBeVisible()
     const group = page.getByRole('group', { name: '1件目' })
     await expect(group.getByText('スーパー')).toBeVisible()
-    await group.getByLabel('相手科目').selectOption({ label: '食費' })
+    await group.getByLabel('相手科目').selectOption({ label: 'テスト費目' })
     await expect(group.getByLabel('相手科目')).toHaveValue(/.+/)
   })
 
@@ -306,7 +309,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
       page,
       [
         { category: 'asset', name: '普通預金', isReconcilable: true },
-        { category: 'expense', name: '食費', isReconcilable: null },
+        { category: 'expense', name: 'テスト費目', isReconcilable: null },
       ],
       {
         accountIndex: 0,
@@ -367,7 +370,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
       page,
       [
         { category: 'asset', name: '楽天カード引落口座', isReconcilable: true },
-        { category: 'expense', name: '娯楽費', isReconcilable: null },
+        { category: 'expense', name: 'エンタメ費', isReconcilable: null },
       ],
       {
         accountIndex: 0,
@@ -598,8 +601,8 @@ test.describe('CSV取込〜レビュー一覧', () => {
       page,
       [
         { category: 'asset', name: '普通預金', isReconcilable: true },
-        { category: 'expense', name: '食費', isReconcilable: null },
-        { category: 'expense', name: '娯楽費', isReconcilable: null },
+        { category: 'expense', name: 'テスト費目', isReconcilable: null },
+        { category: 'expense', name: 'エンタメ費', isReconcilable: null },
       ],
       {
         accountIndex: 0,

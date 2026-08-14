@@ -13,6 +13,10 @@
  * destroyed, most likely because of a navigation」で失敗することがあるため、
  * トップ画面の見出しが表示される(Reactアプリのマウント完了)のを待ってから
  * evaluateを呼ぶ。
+ * 「0件時の空状態表示」自体はseedDefaultAccounts(計画Issue #96)により初回Worker起動時点で
+ * revenue・expense区分の標準科目が投入されるため実運用上到達不能になった(空状態のレンダリング
+ * 自体はAccountListScreen.test.tsxでモックrepositoryを使い引き続き検証済み)。代わりに、
+ * ユーザーが何も操作しなくても初回起動時点で標準科目が一覧に表示されることを検証する。
  */
 import { test, expect, type Page } from '@playwright/test'
 
@@ -54,11 +58,14 @@ test.describe('登録済み科目一覧画面', () => {
     await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
   })
 
-  test('登録済み科目が0件の場合は空状態が表示される', async ({ page }) => {
+  test('初回起動時点で標準の収益・費用科目(計画Issue #96)が投入されており、一覧画面に表示される', async ({
+    page,
+  }) => {
     await page.goto('/')
 
     await page.getByRole('button', { name: '科目を管理する' }).click()
     await page.getByRole('button', { name: '科目一覧を見る' }).click()
-    await expect(page.getByText('登録済みの科目がありません')).toBeVisible()
+    await expect(page.getByText('食費')).toBeVisible()
+    await expect(page.getByText('給与収入')).toBeVisible()
   })
 })
