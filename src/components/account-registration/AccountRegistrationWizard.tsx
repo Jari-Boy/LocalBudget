@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
-import { requiresHouseholdMemberSelection, type AccountKind } from './accountKind'
+import { determineIsReconcilable, requiresHouseholdMemberSelection, type AccountKind } from './accountKind'
 import { HouseholdMemberSelectionStep } from './HouseholdMemberSelectionStep'
 import { shouldShowHouseholdMemberSelectionStep } from './shouldShowHouseholdMemberSelectionStep'
 import { registerAccount, type AccountCreator, type JournalEntryCreator } from './registerAccount'
@@ -137,7 +137,8 @@ export function AccountRegistrationWizard({
         ]
     try {
       const account = await registerAccount(accountRepository, journalEntryRepository, {
-        kind: kind!,
+        category: 'asset',
+        isReconcilable: determineIsReconcilable(kind!),
         name: isCash ? t('kindCash') : name,
         householdMemberId,
         initialBalanceLines,

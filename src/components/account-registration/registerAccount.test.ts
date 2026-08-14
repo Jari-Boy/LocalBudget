@@ -34,7 +34,8 @@ beforeEach(async () => {
 describe('registerAccount', () => {
   it('初期残高を入力しない場合、資産科目のみが作成される', async () => {
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: null }],
@@ -51,9 +52,10 @@ describe('registerAccount', () => {
     expect(accountRepository.findAll()).toHaveLength(1)
   })
 
-  it('種類が現金の場合is_reconcilableはfalseになる', async () => {
+  it('isReconcilable = falseを指定した場合、falseで作成される(例: 現金・外部明細なしの資産)', async () => {
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'cash',
+      category: 'asset',
+      isReconcilable: false,
       name: '現金',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: null }],
@@ -64,11 +66,26 @@ describe('registerAccount', () => {
     expect(account.isReconcilable).toBe(false)
   })
 
+  it('category = liabilityを指定した場合、負債科目として作成される(例: クレジットカード未払金)', async () => {
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
+      category: 'liability',
+      isReconcilable: false,
+      name: '楽天カード',
+      householdMemberId: null,
+      initialBalanceLines: [{ householdMemberId: null, amount: null }],
+      entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
+    })
+
+    expect(account).toMatchObject({ category: 'liability', name: '楽天カード', isReconcilable: false })
+  })
+
   it('名義(householdMemberId)を指定して作成できる', async () => {
     const member = householdMemberRepository.create({ name: '太郎' })
 
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: member.id,
       initialBalanceLines: [{ householdMemberId: null, amount: null }],
@@ -81,7 +98,8 @@ describe('registerAccount', () => {
 
   it('初期残高を入力した場合、口座専用の初期残高科目(equity)と初期仕訳が自動生成される', async () => {
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: 100000 }],
@@ -124,7 +142,8 @@ describe('registerAccount', () => {
 
   it('初期残高に0を指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: 0 }],
@@ -139,7 +158,8 @@ describe('registerAccount', () => {
 
   it('初期残高に負数を指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
     await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: -100 }],
@@ -153,7 +173,8 @@ describe('registerAccount', () => {
 
   it('初期残高にNaN(数値変換に失敗した入力相当)を指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
     await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: Number.NaN }],
@@ -167,7 +188,8 @@ describe('registerAccount', () => {
 
   it('初期残高にInfinityを指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
     await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: Number.POSITIVE_INFINITY }],
@@ -184,7 +206,8 @@ describe('registerAccount', () => {
     const hanako = householdMemberRepository.create({ name: '花子' })
 
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'cash',
+      category: 'asset',
+      isReconcilable: false,
       name: '現金',
       householdMemberId: null,
       initialBalanceLines: [
@@ -230,7 +253,8 @@ describe('registerAccount', () => {
     const hanako = householdMemberRepository.create({ name: '花子' })
 
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'cash',
+      category: 'asset',
+      isReconcilable: false,
       name: '現金',
       householdMemberId: null,
       initialBalanceLines: [
@@ -256,7 +280,8 @@ describe('registerAccount', () => {
     const hanako = householdMemberRepository.create({ name: '花子' })
 
     await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'cash',
+      category: 'asset',
+      isReconcilable: false,
       name: '現金',
       householdMemberId: null,
       initialBalanceLines: [

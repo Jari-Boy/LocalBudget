@@ -1,6 +1,5 @@
 import type { Account, CreateAccountInput } from '../../domain/account/Account'
 import type { CreateJournalEntryInput, JournalEntry } from '../../domain/journal/JournalEntry'
-import { determineIsReconcilable, type AccountKind } from './accountKind'
 
 export interface InitialBalanceLine {
   /**
@@ -16,7 +15,13 @@ export interface InitialBalanceLine {
 }
 
 export interface RegisterAccountInput {
-  kind: AccountKind
+  /** 資産・負債のいずれか(計画Issue #102、統合フローの入口で決定される) */
+  category: 'asset' | 'liability'
+  /**
+   * 照合可否。「外部明細(CSV)の有無」×「残高情報の有無」という2軸の設問
+   * (reconciliationQuestion.ts、docs/domain/accounts.md 4.2節)から呼び出し側が計算して渡す。
+   */
+  isReconcilable: boolean
   name: string
   householdMemberId: number | null
   /**
@@ -65,8 +70,8 @@ export interface JournalEntryCreator {
 }
 
 /**
- * 口座登録ウィザードの確定処理(docs/domain/accounts.md 4章)。
- * 資産科目を1件作成し、初期残高が入力されていれば口座専用の初期残高科目
+ * 資産・負債の統合登録フローの確定処理(docs/domain/accounts.md 4章、計画Issue #102)。
+ * 資産または負債科目を1件作成し、初期残高が入力されていれば口座専用の初期残高科目
  * (equity区分・is_system_managed = true)と初期仕訳(source_type = 'initial_balance')を
  * 自動生成する(4.3節)。ユーザーには「区分」「純資産」等の簿記用語を見せない。
  */
@@ -76,9 +81,9 @@ export async function registerAccount(
   input: RegisterAccountInput,
 ): Promise<Account> {
   const account = await accountRepository.create({
-    category: 'asset',
+    category: input.category,
     name: input.name,
-    isReconcilable: determineIsReconcilable(input.kind),
+    isReconcilable: input.isReconcilable,
     householdMemberId: input.householdMemberId,
   })
 
