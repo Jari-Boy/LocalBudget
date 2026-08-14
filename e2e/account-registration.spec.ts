@@ -225,18 +225,18 @@ test.describe('勘定科目の統合登録フロー(計画Issue #102): 収益・
     await page.getByRole('button', { name: '収益' }).click()
 
     await expect(page.getByText('名義を選ぶ')).toBeHidden()
-    await page.getByLabel('名前を付ける').fill('副業収入')
+    await page.getByLabel('名前を付ける').fill('臨時収入')
     await page.getByRole('button', { name: '登録する' }).click()
 
     await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
-    await waitForAccountCreated(page, '副業収入')
+    await waitForAccountCreated(page, '臨時収入')
 
     const result = await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
       const accounts = await client.account.findAll()
       const entries = await client.journalEntry.findAll()
-      const account = accounts.find((a) => a.name === '副業収入')
+      const account = accounts.find((a) => a.name === '臨時収入')
       return {
         account: account && {
           category: account.category,
