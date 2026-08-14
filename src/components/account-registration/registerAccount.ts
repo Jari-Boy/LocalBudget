@@ -5,9 +5,10 @@ export interface InitialBalanceLine {
   /**
    * この金額をjournal_lines.householdMemberIdに反映する世帯メンバー。nullの場合は
    * 明細に明示的な値を設定せず、口座側の名義(household_member_id)継承ルール
-   * (docs/domain/household-members.md 1.2節)に委ねる。通常はnull(単一の初期残高)だが、
-   * 現金(kind = cash)で世帯メンバーが複数登録されている場合のみ、世帯メンバーごとに
-   * 別々の行として複数渡される(計画Issue #90、世帯メンバーごとの初期残高入力)。
+   * (docs/domain/household-members.md 1.2節)に委ねる。世帯メンバーごとに複数行を
+   * 渡す設計(計画Issue #90、現金の世帯メンバーごとの初期残高入力)は計画Issue #102で
+   * 統合フローに一本化された際に廃止されたため、現在の唯一の呼び出し元
+   * (AccountRegistrationFlow)は常に要素1件(householdMemberId: null)の配列を渡す。
    */
   householdMemberId: number | null
   /** 未入力の場合はnull(docs/domain/accounts.md 4.1節、初期残高入力は任意) */
@@ -24,10 +25,7 @@ export interface RegisterAccountInput {
   isReconcilable: boolean
   name: string
   householdMemberId: number | null
-  /**
-   * 初期残高の内訳。通常は要素1件(単一の初期残高)だが、現金で世帯メンバーが
-   * 複数登録されている場合は世帯メンバーごとに複数件になりうる(計画Issue #90)。
-   */
+  /** 初期残高の内訳(InitialBalanceLineのフィールドコメント参照) */
   initialBalanceLines: InitialBalanceLine[]
   /** 初期残高がある場合の初期仕訳の日付(YYYY-MM-DD) */
   entryDate: string
@@ -35,7 +33,7 @@ export interface RegisterAccountInput {
    * 初期残高がある場合に作成される初期仕訳の起票者(CreateJournalEntryInput.householdMemberId、
    * 計画Issue #88)。口座自体の名義(householdMemberId、null許容)とは別概念であり、解決
    * (口座の名義があればそれを使う、無ければ既定メンバーにフォールバックする等)は呼び出し側
-   * (AccountRegistrationWizard)の責務とする。
+   * (AccountRegistrationFlow)の責務とする。
    */
   journalEntryHouseholdMemberId: number
 }

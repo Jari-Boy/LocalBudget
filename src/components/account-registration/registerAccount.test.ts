@@ -1,10 +1,12 @@
 /**
- * 口座登録ウィザードの確定処理(docs/domain/accounts.md 4.1〜4.3節)のユニットテスト。
- * AccountRepository/JournalEntryRepositoryのsql.js実装(Node上で動作)を用いて、
- * 資産科目の作成・種類選択によるis_reconcilable自動決定・初期残高入力時の
+ * 資産・負債の統合登録フローの確定処理(docs/domain/accounts.md 4.1〜4.3節、計画Issue #102)の
+ * ユニットテスト。AccountRepository/JournalEntryRepositoryのsql.js実装(Node上で動作)を用いて、
+ * category(asset/liability)・isReconcilableを直接指定した資産・負債科目の作成、初期残高入力時の
  * 初期残高科目(equity)+初期仕訳(source_type = 'initial_balance')の自動生成を検証する。
- * 初期残高は世帯メンバーごとの複数行(initialBalanceLines)で指定でき、現金(kind = cash)で
- * 世帯メンバーが複数いる場合に使う世帯メンバーごとの初期残高入力(計画Issue #90)もここで検証する。
+ * initialBalanceLinesは世帯メンバーごとの複数行を渡せる汎用的な配列設計だが、現在の呼び出し元
+ * (AccountRegistrationFlow)は常に要素1件を渡すため、複数行のテストケースは関数自体の
+ * 汎用性(過去に現金の世帯メンバーごとの初期残高入力、計画Issue #90で使われていた挙動)の
+ * 回帰防止として残している。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'

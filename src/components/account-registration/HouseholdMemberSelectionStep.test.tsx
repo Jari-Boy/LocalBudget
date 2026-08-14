@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
  * HouseholdMemberSelectionStep(名義選択ステップの共通UI、計画Issue #92)のコンポーネントテスト。
- * AccountRegistrationWizard・CreditCardRegistrationWizardが個別に持っていた
- * 「名義を選ぶ」ステップのUI(ボタン一覧・戻る/主操作ボタン・エラー表示)を、
- * 呼び出し側のprops注入によって両ウィザードの挙動差(主操作の文言・活性条件)を
- * 表現できることを検証する。外部依存: react-i18next(ネットワークアクセスなし)。
+ * 「名義を選ぶ」ステップのUI(ボタン一覧・戻る/主操作ボタン・エラー表示)を、呼び出し側の
+ * props注入によって主操作の文言・活性条件を表現できることに加え、計画Issue #102で追加した
+ * 任意選択モード(unspecifiedOptionLabelを渡すと「全員」相当の未選択オプションが表示され、
+ * 選択でonSelectにnullが渡される)を検証する。外部依存: react-i18next(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'

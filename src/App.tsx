@@ -13,12 +13,9 @@ import type { ImportMappingDefinitionRepository } from './domain/statement-impor
 import type { ExternalTransactionRefRepository } from './domain/reconciliation/ExternalTransactionRefRepository'
 import type { JournalEntryDraftRpcApi } from './infrastructure/rpc/createRepositoryRegistry'
 import { DbClientProvider, useDbClient } from './infrastructure/rpc/DbClientProvider'
-import { AccountRegistrationWizard } from './components/account-registration/AccountRegistrationWizard'
-import { CreditCardRegistrationWizard } from './components/account-registration/CreditCardRegistrationWizard'
-import { OtherAccountCreationForm } from './components/account-registration/OtherAccountCreationForm'
+import { AccountRegistrationFlow } from './components/account-registration/AccountRegistrationFlow'
 import { AccountListScreen } from './components/account-list/AccountListScreen'
 import { AccountManagementScreen } from './components/account-management/AccountManagementScreen'
-import { AccountCategorySelectionScreen } from './components/account-management/AccountCategorySelectionScreen'
 import { CounterpartyManagementScreen } from './components/counterparty-management/CounterpartyManagementScreen'
 import { HouseholdMemberManagementScreen } from './components/household-member-management/HouseholdMemberManagementScreen'
 import { ProjectManagementScreen } from './components/project-management/ProjectManagementScreen'
@@ -36,10 +33,7 @@ import './App.css'
 type Screen =
   | 'home'
   | 'account-management'
-  | 'account-category-selection'
   | 'register-account'
-  | 'register-credit-card'
-  | 'register-other-account'
   | 'account-list'
   | 'counterparty-management'
   | 'household-member-management'
@@ -102,54 +96,21 @@ function AppContent() {
   if (screen === 'account-management') {
     return (
       <AccountManagementScreen
-        onAddAccount={() => setScreen('account-category-selection')}
+        onAddAccount={() => setScreen('register-account')}
         onViewList={() => setScreen('account-list')}
         onBack={() => setScreen('home')}
       />
     )
   }
 
-  if (screen === 'account-category-selection') {
-    return (
-      <AccountCategorySelectionScreen
-        onSelectAsset={() => setScreen('register-account')}
-        onSelectCreditCard={() => setScreen('register-credit-card')}
-        onSelectOther={() => setScreen('register-other-account')}
-        onBack={() => setScreen('account-management')}
-      />
-    )
-  }
-
   if (screen === 'register-account') {
     return (
-      <AccountRegistrationWizard
+      <AccountRegistrationFlow
         accountRepository={accountRepository}
         journalEntryRepository={journalEntryRepository}
         householdMemberRepository={householdMemberRepository}
         onComplete={() => setScreen('account-management')}
-        onBack={() => setScreen('account-category-selection')}
-      />
-    )
-  }
-
-  if (screen === 'register-credit-card') {
-    return (
-      <CreditCardRegistrationWizard
-        accountRepository={accountRepository}
-        householdMemberRepository={householdMemberRepository}
-        onComplete={() => setScreen('account-management')}
-        onBack={() => setScreen('account-category-selection')}
-      />
-    )
-  }
-
-  if (screen === 'register-other-account') {
-    return (
-      <OtherAccountCreationForm
-        accountRepository={accountRepository}
-        householdMemberRepository={householdMemberRepository}
-        onComplete={() => setScreen('account-management')}
-        onBack={() => setScreen('account-category-selection')}
+        onBack={() => setScreen('account-management')}
       />
     )
   }
