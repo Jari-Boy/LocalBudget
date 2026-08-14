@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { AccountCreator } from './registerAccount'
-import { registerOtherAccount } from './registerOtherAccount'
-import type { ReconciliationAnswer } from './reconciliationQuestion'
+import { registerOtherAccount, type LegacyReconciliationAnswer } from './registerOtherAccount'
 import './AccountRegistrationWizard.css'
 
 interface HouseholdMemberFinder {
@@ -57,7 +56,7 @@ export function OtherAccountCreationForm({
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[] | null>(null)
   const [category, setCategory] = useState<AccountCategory>('asset')
   const [name, setName] = useState('')
-  const [reconciliationAnswer, setReconciliationAnswer] = useState<ReconciliationAnswer | null>(null)
+  const [reconciliationAnswer, setReconciliationAnswer] = useState<LegacyReconciliationAnswer | null>(null)
   const [householdMemberId, setHouseholdMemberId] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -82,7 +81,7 @@ export function OtherAccountCreationForm({
         name,
         householdMemberId,
         reconciliationAnswer: requiresReconciliationAnswer
-          ? (reconciliationAnswer as ReconciliationAnswer)
+          ? (reconciliationAnswer as LegacyReconciliationAnswer)
           : undefined,
       })
       onComplete(account)
