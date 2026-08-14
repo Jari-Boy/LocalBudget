@@ -166,6 +166,7 @@ export function OtherAccountCreationForm({
               </option>
             ))}
         </select>
+        <p className="account-registration-hint">{t('memberSelectDescription')}</p>
 
         {error && <p role="alert">{error}</p>}
 

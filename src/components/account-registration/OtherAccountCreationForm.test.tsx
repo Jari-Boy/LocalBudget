@@ -8,7 +8,7 @@
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -120,6 +120,17 @@ describe('OtherAccountCreationForm', () => {
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
     const created = onComplete.mock.calls[0][0]
     expect(created).toMatchObject({ category: 'revenue', name: '副業収入', isReconcilable: null })
+  })
+
+  it('名義欄の未選択時の選択肢は「世帯共通」という専門用語ではなく平易な文言になっており、特定の世帯メンバーを選ぶと以後その人専用になる旨の説明文が表示される', async () => {
+    renderForm(vi.fn())
+
+    const select = await screen.findByLabelText('名義')
+    expect(within(select).getByRole('option', { name: '全員' })).toBeInTheDocument()
+    expect(screen.queryByText(/世帯共通/)).not.toBeInTheDocument()
+    expect(
+      screen.getByText('特定の世帯メンバーを選ぶと、以後の仕訳でその科目はその人のものとして扱われます。'),
+    ).toBeInTheDocument()
   })
 
   it('名義を選択して作成できる', async () => {
