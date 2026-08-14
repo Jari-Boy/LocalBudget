@@ -1,9 +1,10 @@
 /**
  * 登録済み科目一覧確認画面(計画Issue #70)のE2Eテスト。実ブラウザ(Chromium)で
- * トップ画面から一覧画面への遷移・トップ画面への復帰、登録済み科目の表示、
- * 0件時の空状態表示を検証する。表示内容の詳細(残高計算・世帯メンバー名併記等)は
- * コンポーネントテスト(AccountListScreen.test.tsx)側で検証済みのため、ここでは
- * トップ画面からの導線が実際のWeb Worker + RPC層を経由して機能することに絞る。
+ * トップ画面から科目管理ハブ画面(計画Issue #95)を経由した一覧画面への遷移・
+ * ハブ画面への復帰、登録済み科目の表示、0件時の空状態表示を検証する。表示内容の詳細
+ * (残高計算・世帯メンバー名併記・編集・削除・非アクティブ化)はコンポーネントテスト
+ * (AccountListScreen.test.tsx)側で検証済みのため、ここではトップ画面からの導線が
+ * 実際のWeb Worker + RPC層を経由して機能することに絞る。
  * account-registration.spec.tsと同様、DB書き込みの永続化はwithAutoSaveの
  * trailing debounce(2秒)を挟むため、作成した科目がRepository経由で確認できるまで
  * pollで待ってからreloadし、Reactアプリ側のWorkerにデータを反映させる。
@@ -31,7 +32,7 @@ async function waitForAccountCreated(page: Page, accountName: string) {
 }
 
 test.describe('登録済み科目一覧画面', () => {
-  test('トップ画面から一覧画面に遷移でき、登録済み科目が表示される。一覧画面からトップ画面に戻れる', async ({
+  test('トップ画面から科目管理ハブ画面経由で一覧画面に遷移でき、登録済み科目が表示される。一覧画面からハブ画面に戻れる', async ({
     page,
   }) => {
     await page.goto('/')
@@ -45,17 +46,19 @@ test.describe('登録済み科目一覧画面', () => {
     await waitForAccountCreated(page, '普通預金')
     await page.reload()
 
-    await page.getByRole('button', { name: '登録済みの科目を見る' }).click()
+    await page.getByRole('button', { name: '科目を管理する' }).click()
+    await page.getByRole('button', { name: '科目一覧を見る' }).click()
     await expect(page.getByText('普通預金')).toBeVisible()
 
     await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
   })
 
   test('登録済み科目が0件の場合は空状態が表示される', async ({ page }) => {
     await page.goto('/')
 
-    await page.getByRole('button', { name: '登録済みの科目を見る' }).click()
+    await page.getByRole('button', { name: '科目を管理する' }).click()
+    await page.getByRole('button', { name: '科目一覧を見る' }).click()
     await expect(page.getByText('登録済みの科目がありません')).toBeVisible()
   })
 })

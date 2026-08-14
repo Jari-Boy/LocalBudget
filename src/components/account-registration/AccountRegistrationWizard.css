@@ -89,6 +89,12 @@
   }
 }
 
+.account-registration-wizard .account-registration-hint {
+  margin: -0.25rem 0 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
 .account-registration-wizard [role='alert'] {
   padding: 8px 12px;
   border-radius: 5px;

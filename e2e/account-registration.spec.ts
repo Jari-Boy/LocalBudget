@@ -6,9 +6,13 @@
  * 口座種類とクレジットカードで必須(計画Issue #90、「世帯共通」ボタンは廃止)、
  * 現金は常に非表示。現金はさらに名前入力ステップも経ず科目名は自動的に
  * 「現金」に固定され、世帯メンバーが1人以上いる場合は世帯メンバーごとの
- * 初期残高入力に切り替わる(計画Issue #90)。DB書き込みの永続化は
- * withAutoSaveのtrailing debounce(2秒、計画Issue #58)を挟むため、指定した
- * 口座名がRepository経由で確認できるまでpollで待ってから、新しい
+ * 初期残高入力に切り替わる(計画Issue #90)。
+ * 計画Issue #95により、両ウィザードへの導線はトップ画面直下から「科目を管理する」
+ * (科目管理ハブ画面)→「科目を追加する」(カテゴリ選択画面)経由に変わった。登録完了後は
+ * ハブ画面(見出し「科目を管理する」)に戻る(ハブ画面から遷移してきたため、トップ画面
+ * 直下ではない)。
+ * DB書き込みの永続化はwithAutoSaveのtrailing debounce(2秒、計画Issue #58)を挟むため、
+ * 指定した口座名がRepository経由で確認できるまでpollで待ってから、新しい
  * createDbClient()でDB状態を検証する。IndexedDBに何らかのデータが存在する
  * ことだけを見るpollでは、事前準備(世帯メンバー作成等)の時点で既に条件を
  * 満たしてしまい、後続の口座作成の保存完了を待てないため、対象データの
@@ -52,6 +56,15 @@ async function waitForHouseholdMemberCreated(page: Page, memberName: string) {
 }
 
 /**
+ * トップ画面から科目管理ハブ画面(計画Issue #95)を経由して、科目カテゴリ選択画面まで
+ * 遷移する。両ウィザードはこの画面から起動する。
+ */
+async function openAccountCategorySelection(page: Page) {
+  await page.getByRole('button', { name: '科目を管理する' }).click()
+  await page.getByRole('button', { name: '科目を追加する' }).click()
+}
+
+/**
  * 計画Issue #88のseedDefaultHouseholdMemberにより、Worker起動時にデフォルトメンバー
  * 「自分」が自動投入されるため、「世帯メンバーが1件も無い」状態を検証するテストは
  * 明示的に削除してから検証する必要がある。page.evaluate内で新規のcreateDbClient()を
@@ -77,6 +90,7 @@ test.describe('口座登録ウィザード', () => {
   }) => {
     await page.goto('/')
 
+    await openAccountCategorySelection(page)
     await page.getByRole('button', { name: '資産を登録する' }).click()
     await page.getByRole('button', { name: '現金' }).click()
 
@@ -91,7 +105,7 @@ test.describe('口座登録ウィザード', () => {
     await page.getByLabel('自分').fill('100000')
     await page.getByRole('button', { name: '登録する' }).click()
 
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
     await waitForAccountCreated(page, '現金')
 
     const result = await page.evaluate(async () => {
@@ -134,12 +148,13 @@ test.describe('口座登録ウィザード', () => {
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
     await deleteDefaultHouseholdMemberViaUi(page)
 
+    await openAccountCategorySelection(page)
     await page.getByRole('button', { name: '資産を登録する' }).click()
     await page.getByRole('button', { name: '現金' }).click()
     await expect(page.getByLabel('初期残高を入力(任意)')).toBeVisible()
     await page.getByRole('button', { name: '登録する' }).click()
 
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
     await waitForAccountCreated(page, '現金')
 
     const isReconcilable = await page.evaluate(async () => {
@@ -166,6 +181,7 @@ test.describe('口座登録ウィザード', () => {
     await waitForHouseholdMemberCreated(page, '太郎')
     await page.reload()
 
+    await openAccountCategorySelection(page)
     await page.getByRole('button', { name: '資産を登録する' }).click()
     await page.getByRole('button', { name: '銀行口座' }).click()
     await page.getByLabel('名前を付ける').fill('三菱UFJ銀行')
@@ -180,7 +196,7 @@ test.describe('口座登録ウィザード', () => {
     await page.getByRole('button', { name: '次へ' }).click()
     await page.getByRole('button', { name: '登録する' }).click()
 
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
     await waitForAccountCreated(page, '三菱UFJ銀行')
 
     const householdMemberId = await page.evaluate(async () => {
@@ -202,6 +218,7 @@ test.describe('クレジットカード登録ウィザード', () => {
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
     await deleteDefaultHouseholdMemberViaUi(page)
 
+    await openAccountCategorySelection(page)
     await page.getByRole('button', { name: 'クレジットカードを登録する' }).click()
     await page.getByLabel('名前を付ける').fill('楽天カード')
 
@@ -209,7 +226,7 @@ test.describe('クレジットカード登録ウィザード', () => {
 
     await page.getByRole('button', { name: '登録する' }).click()
 
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
     await waitForAccountCreated(page, '楽天カード')
 
     const account = await page.evaluate(async () => {
@@ -237,6 +254,7 @@ test.describe('クレジットカード登録ウィザード', () => {
     await waitForHouseholdMemberCreated(page, '花子')
     await page.reload()
 
+    await openAccountCategorySelection(page)
     await page.getByRole('button', { name: 'クレジットカードを登録する' }).click()
     await page.getByLabel('名前を付ける').fill('楽天カード')
     await page.getByRole('button', { name: '次へ' }).click()
@@ -249,7 +267,7 @@ test.describe('クレジットカード登録ウィザード', () => {
     await expect(page.getByRole('button', { name: '登録する' })).toBeEnabled()
     await page.getByRole('button', { name: '登録する' }).click()
 
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
     await waitForAccountCreated(page, '楽天カード')
 
     const householdMemberId = await page.evaluate(async () => {

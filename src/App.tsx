@@ -2,6 +2,8 @@ import { useState } from 'react'
 import type * as Comlink from 'comlink'
 import { useTranslation } from 'react-i18next'
 import type { AccountRepository } from './domain/account/AccountRepository'
+import type { BudgetRepository } from './domain/budget/BudgetRepository'
+import type { RecurringTransactionRuleRepository } from './domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { CounterpartyRepository } from './domain/counterparty/CounterpartyRepository'
 import type { JournalEntryRepository } from './domain/journal/JournalEntryRepository'
 import type { JournalEntryDraft } from './domain/journal/JournalEntryDraft'
@@ -13,7 +15,10 @@ import type { JournalEntryDraftRpcApi } from './infrastructure/rpc/createReposit
 import { DbClientProvider, useDbClient } from './infrastructure/rpc/DbClientProvider'
 import { AccountRegistrationWizard } from './components/account-registration/AccountRegistrationWizard'
 import { CreditCardRegistrationWizard } from './components/account-registration/CreditCardRegistrationWizard'
+import { OtherAccountCreationForm } from './components/account-registration/OtherAccountCreationForm'
 import { AccountListScreen } from './components/account-list/AccountListScreen'
+import { AccountManagementScreen } from './components/account-management/AccountManagementScreen'
+import { AccountCategorySelectionScreen } from './components/account-management/AccountCategorySelectionScreen'
 import { CounterpartyManagementScreen } from './components/counterparty-management/CounterpartyManagementScreen'
 import { HouseholdMemberManagementScreen } from './components/household-member-management/HouseholdMemberManagementScreen'
 import { ProjectManagementScreen } from './components/project-management/ProjectManagementScreen'
@@ -30,8 +35,11 @@ import './App.css'
 
 type Screen =
   | 'home'
+  | 'account-management'
+  | 'account-category-selection'
   | 'register-account'
   | 'register-credit-card'
+  | 'register-other-account'
   | 'account-list'
   | 'counterparty-management'
   | 'household-member-management'
@@ -87,6 +95,30 @@ function AppContent() {
     client.importMappingDefinition as unknown as Comlink.Remote<ImportMappingDefinitionRepository>
   const externalTransactionRefRepository =
     client.externalTransactionRef as unknown as Comlink.Remote<ExternalTransactionRefRepository>
+  const budgetRepository = client.budget as unknown as Comlink.Remote<BudgetRepository>
+  const recurringTransactionRuleRepository =
+    client.recurringTransactionRule as unknown as Comlink.Remote<RecurringTransactionRuleRepository>
+
+  if (screen === 'account-management') {
+    return (
+      <AccountManagementScreen
+        onAddAccount={() => setScreen('account-category-selection')}
+        onViewList={() => setScreen('account-list')}
+        onBack={() => setScreen('home')}
+      />
+    )
+  }
+
+  if (screen === 'account-category-selection') {
+    return (
+      <AccountCategorySelectionScreen
+        onSelectAsset={() => setScreen('register-account')}
+        onSelectCreditCard={() => setScreen('register-credit-card')}
+        onSelectOther={() => setScreen('register-other-account')}
+        onBack={() => setScreen('account-management')}
+      />
+    )
+  }
 
   if (screen === 'register-account') {
     return (
@@ -94,7 +126,8 @@ function AppContent() {
         accountRepository={accountRepository}
         journalEntryRepository={journalEntryRepository}
         householdMemberRepository={householdMemberRepository}
-        onComplete={() => setScreen('home')}
+        onComplete={() => setScreen('account-management')}
+        onBack={() => setScreen('account-category-selection')}
       />
     )
   }
@@ -104,7 +137,19 @@ function AppContent() {
       <CreditCardRegistrationWizard
         accountRepository={accountRepository}
         householdMemberRepository={householdMemberRepository}
-        onComplete={() => setScreen('home')}
+        onComplete={() => setScreen('account-management')}
+        onBack={() => setScreen('account-category-selection')}
+      />
+    )
+  }
+
+  if (screen === 'register-other-account') {
+    return (
+      <OtherAccountCreationForm
+        accountRepository={accountRepository}
+        householdMemberRepository={householdMemberRepository}
+        onComplete={() => setScreen('account-management')}
+        onBack={() => setScreen('account-category-selection')}
       />
     )
   }
@@ -115,7 +160,9 @@ function AppContent() {
         accountRepository={accountRepository}
         journalEntryRepository={journalEntryRepository}
         householdMemberRepository={householdMemberRepository}
-        onBack={() => setScreen('home')}
+        budgetRepository={budgetRepository}
+        recurringTransactionRuleRepository={recurringTransactionRuleRepository}
+        onBack={() => setScreen('account-management')}
       />
     )
   }
@@ -225,14 +272,8 @@ function AppContent() {
   return (
     <div className="app-home">
       <h1>LocalBudget</h1>
-      <button type="button" onClick={() => setScreen('register-account')}>
-        {t('registerAccountTitle')}
-      </button>
-      <button type="button" onClick={() => setScreen('register-credit-card')}>
-        {t('registerCreditCardTitle')}
-      </button>
-      <button type="button" onClick={() => setScreen('account-list')}>
-        {t('viewAccountsTitle')}
+      <button type="button" onClick={() => setScreen('account-management')}>
+        {t('accountManagementTitle')}
       </button>
       <button type="button" onClick={() => setScreen('counterparty-management')}>
         {tCounterparty('viewCounterpartiesTitle')}

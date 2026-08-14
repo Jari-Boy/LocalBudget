@@ -100,6 +100,25 @@ describe('findByYearMonth', () => {
   })
 })
 
+describe('findAll', () => {
+  it('登録済みの予算を全て返す(全年月・全科目を横断する。計画Issue #95の科目削除可否判定で使用)', () => {
+    const otherExpenseAccountId = insertAccount(db, 'expense', '交通費')
+    repository.create({ accountId: expenseAccountId, yearMonth: '2026-08', amount: 30000 })
+    repository.create({ accountId: otherExpenseAccountId, yearMonth: '2026-09', amount: 10000 })
+
+    const found = repository.findAll()
+
+    expect(found.map((b) => b.accountId)).toEqual(
+      expect.arrayContaining([expenseAccountId, otherExpenseAccountId]),
+    )
+    expect(found).toHaveLength(2)
+  })
+
+  it('登録済みの予算が無い場合は空配列を返す', () => {
+    expect(repository.findAll()).toEqual([])
+  })
+})
+
 describe('update', () => {
   it('金額を変更する', () => {
     const created = repository.create({

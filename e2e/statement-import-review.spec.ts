@@ -678,9 +678,11 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await expect(page.getByText('3件を確定しました(0件失敗)')).toBeVisible()
 
     // 確定後、仕訳が実際に永続化され登録済み科目一覧の残高に反映されていることを確認する
+    // (計画Issue #95により、一覧画面へは科目管理ハブ画面「科目を管理する」を経由する)
     await page.getByRole('button', { name: '戻る' }).click()
     await page.getByRole('button', { name: '戻る' }).click()
-    await page.getByRole('button', { name: '登録済みの科目を見る' }).click()
+    await page.getByRole('button', { name: '科目を管理する' }).click()
+    await page.getByRole('button', { name: '科目一覧を見る' }).click()
     await expect(page.getByRole('heading', { name: '登録済みの科目' })).toBeVisible()
     await expect(
       page.getByRole('listitem').filter({ hasText: '普通預金' }).filter({ hasText: '-￥10,500' }),

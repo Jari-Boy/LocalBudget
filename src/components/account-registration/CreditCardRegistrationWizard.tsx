@@ -16,6 +16,9 @@ export interface CreditCardRegistrationWizardProps {
   accountRepository: AccountCreator
   householdMemberRepository: HouseholdMemberFinder
   onComplete: (account: Account) => void
+  /** 最初のステップ(名前入力)で「戻る」を押した際に呼ばれる、ウィザード自体を抜ける
+   * コールバック(計画Issue #95、科目カテゴリ選択画面への復帰に使用) */
+  onBack: () => void
 }
 
 type Step = 'name' | 'member'
@@ -32,6 +35,7 @@ export function CreditCardRegistrationWizard({
   accountRepository,
   householdMemberRepository,
   onComplete,
+  onBack,
 }: CreditCardRegistrationWizardProps) {
   const { t } = useTranslation('account')
   const { t: tCommon } = useTranslation('common')
@@ -81,11 +85,14 @@ export function CreditCardRegistrationWizard({
             id="credit-card-name"
             type="text"
             value={name}
-            placeholder={t('namePlaceholder')}
+            placeholder={t('namePlaceholderCreditCard')}
             onChange={(event) => setName(event.target.value)}
           />
           {error && steps.length === 1 && <p role="alert">{error}</p>}
           <div>
+            <button type="button" onClick={onBack} disabled={submitting}>
+              {t('back')}
+            </button>
             {steps.length > 1 ? (
               <button type="button" disabled={name === ''} onClick={goNext}>
                 {t('next')}

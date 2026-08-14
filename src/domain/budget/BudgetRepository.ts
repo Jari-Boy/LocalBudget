@@ -12,6 +12,8 @@ export interface BudgetRepository {
   findById(id: number): Budget | null
   findByAccountAndYearMonth(accountId: number, yearMonth: string): Budget | null
   findByYearMonth(yearMonth: string): Budget[]
+  /** 全年月・全科目を横断した全件取得(計画Issue #95、科目の削除可否判定の参照件数集計に使用) */
+  findAll(): Budget[]
   update(id: number, input: UpdateBudgetInput): Budget
   delete(id: number): void
 }

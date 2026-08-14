@@ -15,28 +15,100 @@
 
 .account-list-screen li {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.5rem;
   padding: 8px 12px;
   border-radius: 5px;
   border: 1px solid var(--border);
   background: var(--bg);
 }
 
+.account-list-screen .account-list-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
 .account-list-screen .account-list-name {
   color: var(--text-h);
 }
 
-.account-list-screen .account-list-member {
+.account-list-screen .account-list-category {
   margin-left: 0.5em;
+  font-size: 12px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.account-list-screen .account-list-member {
   font-size: 14px;
   color: var(--text);
+}
+
+.account-list-screen .account-list-inactive {
+  margin-left: 0.5em;
+  font-size: 12px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
 }
 
 .account-list-screen .account-list-amount {
   color: var(--text-h);
   white-space: nowrap;
+}
+
+.account-list-screen .account-list-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+}
+
+.account-list-screen .account-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.account-list-screen .account-edit-form label {
+  display: block;
+}
+
+.account-list-screen .account-edit-form input,
+.account-list-screen .account-edit-form select {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  box-sizing: border-box;
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-color: var(--accent);
+  }
+}
+
+.account-list-screen .account-edit-form-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
+.account-list-screen [role='alert'] {
+  padding: 8px 12px;
+  border-radius: 5px;
+  background: var(--error-bg);
+  color: var(--error);
 }
 
 .account-list-screen button {
@@ -55,5 +127,9 @@
   &:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 }

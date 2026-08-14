@@ -1,0 +1,39 @@
+.account-menu-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 20px;
+}
+
+.account-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.account-menu-item-caption {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  text-align: center;
+}
+
+.account-menu-screen button {
+  font-size: 16px;
+  padding: 12px 24px;
+  border-radius: 5px;
+  color: var(--accent-contrast);
+  background: var(--accent-bg);
+  border: 2px solid transparent;
+  transition: border-color 0.3s;
+
+  &:hover {
+    border-color: var(--accent-border);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}

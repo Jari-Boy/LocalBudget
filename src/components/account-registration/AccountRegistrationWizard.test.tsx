@@ -35,7 +35,7 @@ beforeEach(async () => {
 
 afterEach(cleanup)
 
-function renderWizard(onComplete: (account: unknown) => void) {
+function renderWizard(onComplete: (account: unknown) => void, onBack: () => void = vi.fn()) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AccountRegistrationWizard
@@ -43,6 +43,7 @@ function renderWizard(onComplete: (account: unknown) => void) {
         journalEntryRepository={journalEntryRepository}
         householdMemberRepository={householdMemberRepository}
         onComplete={onComplete}
+        onBack={onBack}
         today="2026-08-03"
       />
     </I18nextProvider>,
@@ -50,6 +51,15 @@ function renderWizard(onComplete: (account: unknown) => void) {
 }
 
 describe('AccountRegistrationWizard', () => {
+  it('種類選択ステップ(最初のステップ)に戻るボタンが表示され、押すとonBackが呼ばれる', async () => {
+    const onBack = vi.fn()
+    renderWizard(vi.fn(), onBack)
+
+    fireEvent.click(await screen.findByRole('button', { name: '戻る' }))
+
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
   it('種類選択ステップは「口座」(銀行口座・証券口座)と「現金・電子マネー」のグループに分けて表示される', async () => {
     const onComplete = vi.fn()
     renderWizard(onComplete)
@@ -63,6 +73,21 @@ describe('AccountRegistrationWizard', () => {
     expect(cashLikeGroup).toHaveTextContent('現金')
     expect(cashLikeGroup).toHaveTextContent('電子マネー')
   })
+
+  it.each([
+    ['銀行口座', '例: 三菱UFJ銀行'],
+    ['証券・投資口座', '例: SBI証券'],
+    ['電子マネー', '例: 楽天Edy'],
+  ])(
+    '種類「%s」を選ぶと、名前入力欄のプレースホルダーがその種類に応じた例文になる',
+    async (kindLabel, expectedPlaceholder) => {
+      renderWizard(vi.fn())
+
+      fireEvent.click(await screen.findByRole('button', { name: kindLabel }))
+
+      expect(screen.getByLabelText('名前を付ける')).toHaveAttribute('placeholder', expectedPlaceholder)
+    },
+  )
 
   it('世帯メンバーが未登録の場合、名義選択ステップを経ずに口座を登録できる(初期残高なし)', async () => {
     const onComplete = vi.fn()
@@ -249,6 +274,7 @@ describe('AccountRegistrationWizard', () => {
           journalEntryRepository={journalEntryRepository}
           householdMemberRepository={householdMemberRepository}
           onComplete={onComplete}
+          onBack={vi.fn()}
           today="2026-08-03"
         />
       </I18nextProvider>,
