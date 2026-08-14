@@ -59,6 +59,9 @@
 | 収益 | `revenue` | PL | 給与収入/副業収入/謝礼収入 |
 | 費用 | `expense` | PL | 食費/住居費/水道光熱費/娯楽費/残高調整(システム管理) … |
 
+> **収益・費用の標準科目は初回起動時に自動投入される(計画Issue #96)**
+> 上表の収益・費用の勘定科目の例は説明用の例示に留まらない。`seedDefaultAccounts`(`src/infrastructure/db/seedDefaultAccounts.ts`、Worker起動時に`runMigrations`直後で呼び出す)が、標準科目一式(収益3件:給与収入/副業収入/謝礼収入、費用12件:食費/住居費/水道光熱費/通信費/交通費/日用品費/被服費/医療費/教育費/交際費/保険料/娯楽費、`src/infrastructure/db/defaultAccountSeedData.ts`)を実際に自動投入する。revenue・expense区分それぞれについて、その区分の科目が1件も存在しない場合にのみ投入する(区分ごとに独立して冪等に判定し、既存の科目が1件でもあれば部分投入はしない)。投入される科目は`is_system_managed = false`・`account_group_id = NULL`・`household_member_id = NULL`・`is_reconcilable = NULL`で作成され、投入後は通常のユーザー作成科目と同様に編集・削除・非アクティブ化できる(投入されたことによる特別扱いは無い)。asset/liability/equity区分の科目、および`is_system_managed = true`の「残高調整」科目はこのシードの対象外。同じ「Worker起動時の冪等シード」という設計は`seedDefaultHouseholdMember`(計画Issue #88)・`seedBuiltInMappingDefinitions`([statement-import.md 2.3](./statement-import.md#23-組み込み定義とユーザー定義)参照)で既に採用されている。
+
 > **資産振替は費用ではない**
 > 貯蓄・投資は、現金という資産が別の資産へ形を変える資産→資産の振替である。したがって費用ではない。PLには影響しない。
 

@@ -3,6 +3,7 @@ import * as Comlink from 'comlink'
 import { createBrowserDatabase } from '../db/createBrowserDatabase'
 import { runMigrations } from '../db/migrations'
 import { seedBuiltInMappingDefinitions } from '../db/seedBuiltInMappingDefinitions'
+import { seedDefaultAccounts } from '../db/seedDefaultAccounts'
 import { seedDefaultHouseholdMember } from '../db/seedDefaultHouseholdMember'
 import { createRepositoryRegistry } from '../rpc/createRepositoryRegistry'
 import { registerDomainErrorTransferHandler } from '../rpc/registerDomainErrorTransferHandler'
@@ -30,7 +31,11 @@ import { withAutoSave } from '../storage/withAutoSave'
  * seedDefaultHouseholdMember(計画Issue #88、docs/domain/household-members.md 1.2節)を呼び出し、
  * household_membersが0件ならデフォルトメンバーを1件自動投入する(冪等)。仕訳作成には起票者
  * (journal_entries.household_member_id)がNOT NULLで必須なため、この投入により口座登録・
- * 仕訳入力等の初回操作時に世帯メンバーが1件も無く選択できないという状態を避けられる。
+ * 仕訳入力等の初回操作時に世帯メンバーが1件も無く選択できないという状態を避けられる。同様に
+ * seedDefaultAccounts(計画Issue #96、docs/domain/accounts.md 1.2節)を呼び出し、revenue・
+ * expense区分それぞれについて1件も科目が存在しなければ標準的な収益・費用科目一式を投入する
+ * (区分ごとに独立して冪等)。口座(資産科目)登録直後から相手科目に困らず仕訳を作成できる状態を
+ * 保証するための投入であり、資産・負債・純資産区分の科目には一切関与しない。
  */
 async function main(): Promise<void> {
   registerDomainErrorTransferHandler()
@@ -42,6 +47,7 @@ async function main(): Promise<void> {
   runMigrations(db)
   seedDefaultHouseholdMember(db)
   seedBuiltInMappingDefinitions(db)
+  seedDefaultAccounts(db)
   const autoSaveController = withAutoSave(db, storageAdapter)
 
   const registry = createRepositoryRegistry(db, autoSaveController, storageAdapter)

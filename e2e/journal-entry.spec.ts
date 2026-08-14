@@ -18,7 +18,10 @@
  * waitForDraftCountは既知のデバウンス時間をpage.waitForTimeoutでまず待ってから
  * pollを開始し、Worker生成回数を抑える。条件を満たした直後はRepositoryRegistry.
  * autoSave.flush()(計画Issue #58で追加済みのAPI)でデバウンスをスキップして
- * 即座に永続化させる。
+ * 即座に永続化させる。seedDefaultAccounts(計画Issue #96)によりWorker起動時点で
+ * revenue/expense区分の標準科目が既に存在するため、各テストが作成する科目名は
+ * デフォルトシードのリスト(defaultAccountSeedData.ts)と衝突しない名前(ランチ代・文房具費)
+ * を使う。
  */
 import { test, expect, type Page } from '@playwright/test'
 
@@ -94,8 +97,8 @@ test.describe('マニュアル仕訳入力', () => {
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     await setupAccountsAndReload(page, [
-      { category: 'expense', name: '食費', isReconcilable: null },
-      { category: 'expense', name: '日用品費', isReconcilable: null },
+      { category: 'expense', name: 'ランチ代', isReconcilable: null },
+      { category: 'expense', name: '文房具費', isReconcilable: null },
       { category: 'asset', name: '現金', isReconcilable: false },
     ])
 
@@ -103,13 +106,13 @@ test.describe('マニュアル仕訳入力', () => {
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
     const line1 = page.getByRole('group', { name: '1行目' })
-    await line1.getByLabel('科目').selectOption({ label: '食費' })
+    await line1.getByLabel('科目').selectOption({ label: 'ランチ代' })
     await line1.getByLabel('借方/貸方').selectOption({ label: '借方' })
     await line1.getByLabel('金額').fill('7000')
 
     await page.getByRole('button', { name: '行を追加する' }).click()
     const line2 = page.getByRole('group', { name: '2行目' })
-    await line2.getByLabel('科目').selectOption({ label: '日用品費' })
+    await line2.getByLabel('科目').selectOption({ label: '文房具費' })
     await line2.getByLabel('借方/貸方').selectOption({ label: '借方' })
     await line2.getByLabel('金額').fill('3000')
 
@@ -138,13 +141,13 @@ test.describe('マニュアル仕訳入力', () => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    await setupAccountsAndReload(page, [{ category: 'expense', name: '食費', isReconcilable: null }])
+    await setupAccountsAndReload(page, [{ category: 'expense', name: 'ランチ代', isReconcilable: null }])
 
     await page.getByRole('button', { name: '仕訳を入力する' }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
     const line1 = page.getByRole('group', { name: '1行目' })
-    await line1.getByLabel('科目').selectOption({ label: '食費' })
+    await line1.getByLabel('科目').selectOption({ label: 'ランチ代' })
     await line1.getByLabel('金額').fill('5000')
 
     // フォーム側のデバウンス(2秒)を経てjournal_entry_draftsへ保存され、さらに
@@ -172,7 +175,7 @@ test.describe('マニュアル仕訳入力', () => {
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     await setupAccountsAndReload(page, [
-      { category: 'expense', name: '食費', isReconcilable: null },
+      { category: 'expense', name: 'ランチ代', isReconcilable: null },
       { category: 'asset', name: '現金', isReconcilable: false },
     ])
 
@@ -180,7 +183,7 @@ test.describe('マニュアル仕訳入力', () => {
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
     const line1 = page.getByRole('group', { name: '1行目' })
-    await line1.getByLabel('科目').selectOption({ label: '食費' })
+    await line1.getByLabel('科目').selectOption({ label: 'ランチ代' })
     await line1.getByLabel('借方/貸方').selectOption({ label: '借方' })
     await line1.getByLabel('金額').fill('3000')
 
@@ -201,7 +204,7 @@ test.describe('マニュアル仕訳入力', () => {
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     await setupAccountsAndReload(page, [
-      { category: 'expense', name: '食費', isReconcilable: null },
+      { category: 'expense', name: 'ランチ代', isReconcilable: null },
       { category: 'asset', name: '現金', isReconcilable: false },
     ])
 
@@ -211,7 +214,7 @@ test.describe('マニュアル仕訳入力', () => {
     const line1 = page.getByRole('group', { name: '1行目' })
     await expect(line1.getByLabel('取引先(任意)')).toHaveCount(0)
 
-    await line1.getByLabel('科目').selectOption({ label: '食費' })
+    await line1.getByLabel('科目').selectOption({ label: 'ランチ代' })
     await expect(line1.getByLabel('取引先(任意)')).toBeVisible()
 
     const line2 = page.getByRole('group', { name: '2行目' })

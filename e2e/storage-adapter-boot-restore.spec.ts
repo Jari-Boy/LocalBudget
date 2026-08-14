@@ -6,7 +6,9 @@
  * 実ブラウザ(Chromium)でページ再読み込みを挟んで検証する。Node/Vitestでは
  * 再現できないブラウザ固有の統合動作のため、Playwrightで検証する
  * (docs/architecture.md 10章)。デバウンス自体の詳細な検証は
- * e2e/storage-adapter-debounce.spec.tsで行う。
+ * e2e/storage-adapter-debounce.spec.tsで行う。seedDefaultAccounts(計画Issue #96)により
+ * Worker起動時点でrevenue/expense区分の標準科目が既に存在するため、作成する科目名は
+ * デフォルトシードのリスト(defaultAccountSeedData.ts)と衝突しない名前を使う。
  */
 import { test, expect } from '@playwright/test'
 
@@ -21,12 +23,12 @@ test.describe('StorageAdapterによる起動時ロード・保存フロー', () 
       const client = await createDbClient()
       const account = await client.account.create({
         category: 'expense',
-        name: '食費',
+        name: 'テスト費目',
         isReconcilable: null,
       })
       return account.name
     })
-    expect(createdAccountName).toBe('食費')
+    expect(createdAccountName).toBe('テスト費目')
 
     // withAutoSaveの永続化はfire-and-forgetかつSAVE_DEBOUNCE_MS(2秒)のtrailing debounceを
     // 挟むため、IndexedDBへの書き込み完了を待ってから再読み込みする(デフォルトのexpect
@@ -47,25 +49,34 @@ test.describe('StorageAdapterによる起動時ロード・保存フロー', () 
 
     await page.reload()
 
-    const restoredAccountName = await page.evaluate(async () => {
+    const restoredAccountNames = await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
       const accounts = await client.account.findAll()
-      return accounts[0]?.name ?? null
+      return accounts.map((account) => account.name)
     })
 
-    expect(restoredAccountName).toBe('食費')
+    expect(restoredAccountNames).toContain('テスト費目')
   })
 
-  test('IndexedDBに保存済みデータがない場合、Worker起動時は空のDBになる', async ({ page }) => {
+  test('IndexedDBに保存済みデータがない場合、Worker起動時は標準の収益・費用科目(計画Issue #96)のみが投入された状態になる', async ({
+    page,
+  }) => {
     await page.goto('/')
 
-    const accounts = await page.evaluate(async () => {
+    const result = await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
+      const { DEFAULT_EXPENSE_ACCOUNT_NAMES, DEFAULT_REVENUE_ACCOUNT_NAMES } = await import(
+        '/src/infrastructure/db/defaultAccountSeedData.ts'
+      )
       const client = await createDbClient()
-      return client.account.findAll()
+      const accounts = await client.account.findAll()
+      return {
+        names: accounts.map((account) => account.name).sort(),
+        expectedNames: [...DEFAULT_REVENUE_ACCOUNT_NAMES, ...DEFAULT_EXPENSE_ACCOUNT_NAMES].sort(),
+      }
     })
 
-    expect(accounts).toEqual([])
+    expect(result.names).toEqual(result.expectedNames)
   })
 })

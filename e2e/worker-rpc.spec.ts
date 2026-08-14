@@ -9,16 +9,25 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('Web Worker + RPC層', () => {
-  test('Worker起動時にDBが初期化されマイグレーションが適用される', async ({ page }) => {
+  test('Worker起動時にDBが初期化されマイグレーションが適用され、標準の収益・費用科目(計画Issue #96)があわせて投入される', async ({
+    page,
+  }) => {
     await page.goto('/')
 
-    const accounts = await page.evaluate(async () => {
+    const result = await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
+      const { DEFAULT_EXPENSE_ACCOUNT_NAMES, DEFAULT_REVENUE_ACCOUNT_NAMES } = await import(
+        '/src/infrastructure/db/defaultAccountSeedData.ts'
+      )
       const client = await createDbClient()
-      return client.account.findAll()
+      const accounts = await client.account.findAll()
+      return {
+        names: accounts.map((account) => account.name).sort(),
+        expectedNames: [...DEFAULT_REVENUE_ACCOUNT_NAMES, ...DEFAULT_EXPENSE_ACCOUNT_NAMES].sort(),
+      }
     })
 
-    expect(accounts).toEqual([])
+    expect(result.names).toEqual(result.expectedNames)
   })
 
   test('メインスレッドからRPC経由で10種類全てのRepositoryの主要メソッドを呼び出せる', async ({
@@ -32,7 +41,7 @@ test.describe('Web Worker + RPC層', () => {
 
       const expenseAccount = await client.account.create({
         category: 'expense',
-        name: '食費',
+        name: 'テスト費目',
         isReconcilable: null,
       })
       const cashAccount = await client.account.create({
@@ -104,7 +113,7 @@ test.describe('Web Worker + RPC層', () => {
     })
 
     expect(result).toEqual({
-      account: '食費',
+      account: 'テスト費目',
       budget: 30000,
       counterparty: 'スーパー',
       householdMember: '太郎',
@@ -134,7 +143,7 @@ test.describe('Web Worker + RPC層', () => {
 
       const expenseAccount = await client.account.create({
         category: 'expense',
-        name: '食費',
+        name: 'テスト費目',
         isReconcilable: null,
       })
       const cashAccount = await client.account.create({

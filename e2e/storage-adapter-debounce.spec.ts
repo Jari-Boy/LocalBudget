@@ -4,6 +4,9 @@
  * イベント(visibilitychange/pagehide)発生時にはデバウンスタイマーを待たず確実に
  * 保存されることを、実ブラウザ(Chromium)で検証する。Node/Vitestでは再現できない
  * ブラウザ固有の統合動作のため、Playwrightで検証する(docs/architecture.md 10章)。
+ * seedDefaultAccounts(計画Issue #96)によりWorker起動時点でrevenue/expense区分の標準科目
+ * (食費・交通費等)が既に存在するため、各テストが作成する科目名はデフォルトシードのリスト
+ * (defaultAccountSeedData.ts)と衝突しない名前を使う。
  */
 import { test, expect } from '@playwright/test'
 
@@ -20,8 +23,8 @@ test.describe('withAutoSaveのデバウンス', () => {
       )
       const client = await createDbClient()
 
-      await client.account.create({ category: 'expense', name: '食費', isReconcilable: null })
-      await client.account.create({ category: 'expense', name: '交通費', isReconcilable: null })
+      await client.account.create({ category: 'expense', name: 'デバウンス用科目A', isReconcilable: null })
+      await client.account.create({ category: 'expense', name: 'デバウンス用科目B', isReconcilable: null })
 
       return new IndexedDBStorageAdapter().load()
     })
@@ -45,9 +48,10 @@ test.describe('withAutoSaveのデバウンス', () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
       const accounts = await client.account.findAll()
-      return accounts.map((a) => a.name).sort()
+      return accounts.map((a) => a.name)
     })
-    expect(accountNames).toEqual(['交通費', '食費'])
+    expect(accountNames).toContain('デバウンス用科目A')
+    expect(accountNames).toContain('デバウンス用科目B')
   })
 
   test('documentのvisibilitychangeでhiddenになると、デバウンス時間を待たずflush()経由で保存される', async ({
@@ -58,7 +62,7 @@ test.describe('withAutoSaveのデバウンス', () => {
     await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
-      await client.account.create({ category: 'expense', name: '食費', isReconcilable: null })
+      await client.account.create({ category: 'expense', name: 'デバウンス用科目', isReconcilable: null })
 
       Object.defineProperty(document, 'visibilityState', {
         configurable: true,
@@ -92,7 +96,7 @@ test.describe('withAutoSaveのデバウンス', () => {
     await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
-      await client.account.create({ category: 'expense', name: '食費', isReconcilable: null })
+      await client.account.create({ category: 'expense', name: 'デバウンス用科目', isReconcilable: null })
 
       window.dispatchEvent(new Event('pagehide'))
     })
