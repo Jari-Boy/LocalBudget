@@ -4,6 +4,8 @@ import type { Account } from '../../domain/account/Account'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { AccountCreator } from './registerAccount'
 import { registerCreditCard } from './registerCreditCard'
+import { HouseholdMemberSelectionStep } from './HouseholdMemberSelectionStep'
+import { shouldShowHouseholdMemberSelectionStep } from './shouldShowHouseholdMemberSelectionStep'
 import './AccountRegistrationWizard.css'
 
 interface HouseholdMemberFinder {
@@ -48,7 +50,9 @@ export function CreditCardRegistrationWizard({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const steps: Step[] = householdMembers.length > 0 ? ['name', 'member'] : ['name']
+  const steps: Step[] = shouldShowHouseholdMemberSelectionStep(householdMembers)
+    ? ['name', 'member']
+    : ['name']
   const currentStep = steps[stepIndex]
 
   const goNext = () => setStepIndex((index) => Math.min(index + 1, steps.length - 1))
@@ -96,28 +100,16 @@ export function CreditCardRegistrationWizard({
       )}
 
       {currentStep === 'member' && (
-        <fieldset>
-          <legend>{t('stepMemberLabel')}</legend>
-          {householdMembers.map((member) => (
-            <button
-              key={member.id}
-              type="button"
-              aria-pressed={householdMemberId === member.id}
-              onClick={() => setHouseholdMemberId(member.id)}
-            >
-              {member.name}
-            </button>
-          ))}
-          {error && <p role="alert">{error}</p>}
-          <div>
-            <button type="button" onClick={goBack}>
-              {t('back')}
-            </button>
-            <button type="button" disabled={submitting || householdMemberId === null} onClick={() => void handleSubmit()}>
-              {t('register')}
-            </button>
-          </div>
-        </fieldset>
+        <HouseholdMemberSelectionStep
+          householdMembers={householdMembers}
+          selectedId={householdMemberId}
+          onSelect={setHouseholdMemberId}
+          onBack={goBack}
+          primaryLabel={t('register')}
+          primaryDisabled={submitting || householdMemberId === null}
+          onPrimaryAction={() => void handleSubmit()}
+          error={error}
+        />
       )}
     </div>
   )

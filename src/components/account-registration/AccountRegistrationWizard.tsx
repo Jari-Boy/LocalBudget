@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import { requiresHouseholdMemberSelection, type AccountKind } from './accountKind'
+import { HouseholdMemberSelectionStep } from './HouseholdMemberSelectionStep'
+import { shouldShowHouseholdMemberSelectionStep } from './shouldShowHouseholdMemberSelectionStep'
 import { registerAccount, type AccountCreator, type JournalEntryCreator } from './registerAccount'
 import './AccountRegistrationWizard.css'
 
@@ -84,8 +86,10 @@ export function AccountRegistrationWizard({
   }
 
   const isCash = kind === 'cash'
-  const showMemberStep =
-    kind !== null && requiresHouseholdMemberSelection(kind) && householdMembers.length > 0
+  const showMemberStep = shouldShowHouseholdMemberSelectionStep(
+    householdMembers,
+    kind !== null && requiresHouseholdMemberSelection(kind),
+  )
   const perMemberBalance = isCash && householdMembers.length > 0
   const steps: Step[] = [
     'kind',
@@ -188,27 +192,15 @@ export function AccountRegistrationWizard({
       )}
 
       {currentStep === 'member' && (
-        <fieldset>
-          <legend>{t('stepMemberLabel')}</legend>
-          {householdMembers.map((member) => (
-            <button
-              key={member.id}
-              type="button"
-              aria-pressed={householdMemberId === member.id}
-              onClick={() => setHouseholdMemberId(member.id)}
-            >
-              {member.name}
-            </button>
-          ))}
-          <div>
-            <button type="button" onClick={goBack}>
-              {t('back')}
-            </button>
-            <button type="button" disabled={householdMemberId === null} onClick={goNext}>
-              {t('next')}
-            </button>
-          </div>
-        </fieldset>
+        <HouseholdMemberSelectionStep
+          householdMembers={householdMembers}
+          selectedId={householdMemberId}
+          onSelect={setHouseholdMemberId}
+          onBack={goBack}
+          primaryLabel={t('next')}
+          primaryDisabled={householdMemberId === null}
+          onPrimaryAction={goNext}
+        />
       )}
 
       {currentStep === 'balance' && (
