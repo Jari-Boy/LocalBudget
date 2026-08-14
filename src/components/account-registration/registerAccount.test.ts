@@ -1,10 +1,12 @@
 /**
- * 口座登録ウィザードの確定処理(docs/domain/accounts.md 4.1〜4.3節)のユニットテスト。
- * AccountRepository/JournalEntryRepositoryのsql.js実装(Node上で動作)を用いて、
- * 資産科目の作成・種類選択によるis_reconcilable自動決定・初期残高入力時の
+ * 資産・負債の統合登録フローの確定処理(docs/domain/accounts.md 4.1〜4.3節、計画Issue #102)の
+ * ユニットテスト。AccountRepository/JournalEntryRepositoryのsql.js実装(Node上で動作)を用いて、
+ * category(asset/liability)・isReconcilableを直接指定した資産・負債科目の作成、初期残高入力時の
  * 初期残高科目(equity)+初期仕訳(source_type = 'initial_balance')の自動生成を検証する。
- * 初期残高は世帯メンバーごとの複数行(initialBalanceLines)で指定でき、現金(kind = cash)で
- * 世帯メンバーが複数いる場合に使う世帯メンバーごとの初期残高入力(計画Issue #90)もここで検証する。
+ * initialBalanceLinesは世帯メンバーごとの複数行を渡せる汎用的な配列設計だが、現在の呼び出し元
+ * (AccountRegistrationFlow)は常に要素1件を渡すため、複数行のテストケースは関数自体の
+ * 汎用性(過去に現金の世帯メンバーごとの初期残高入力、計画Issue #90で使われていた挙動)の
+ * 回帰防止として残している。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -34,7 +36,8 @@ beforeEach(async () => {
 describe('registerAccount', () => {
   it('初期残高を入力しない場合、資産科目のみが作成される', async () => {
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: null }],
@@ -51,9 +54,10 @@ describe('registerAccount', () => {
     expect(accountRepository.findAll()).toHaveLength(1)
   })
 
-  it('種類が現金の場合is_reconcilableはfalseになる', async () => {
+  it('isReconcilable = falseを指定した場合、falseで作成される(例: 現金・外部明細なしの資産)', async () => {
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'cash',
+      category: 'asset',
+      isReconcilable: false,
       name: '現金',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: null }],
@@ -64,11 +68,26 @@ describe('registerAccount', () => {
     expect(account.isReconcilable).toBe(false)
   })
 
+  it('category = liabilityを指定した場合、負債科目として作成される(例: クレジットカード未払金)', async () => {
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
+      category: 'liability',
+      isReconcilable: false,
+      name: '楽天カード',
+      householdMemberId: null,
+      initialBalanceLines: [{ householdMemberId: null, amount: null }],
+      entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
+    })
+
+    expect(account).toMatchObject({ category: 'liability', name: '楽天カード', isReconcilable: false })
+  })
+
   it('名義(householdMemberId)を指定して作成できる', async () => {
     const member = householdMemberRepository.create({ name: '太郎' })
 
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: member.id,
       initialBalanceLines: [{ householdMemberId: null, amount: null }],
@@ -81,7 +100,8 @@ describe('registerAccount', () => {
 
   it('初期残高を入力した場合、口座専用の初期残高科目(equity)と初期仕訳が自動生成される', async () => {
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: 100000 }],
@@ -124,7 +144,8 @@ describe('registerAccount', () => {
 
   it('初期残高に0を指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: 0 }],
@@ -139,7 +160,8 @@ describe('registerAccount', () => {
 
   it('初期残高に負数を指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
     await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: -100 }],
@@ -153,7 +175,8 @@ describe('registerAccount', () => {
 
   it('初期残高にNaN(数値変換に失敗した入力相当)を指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
     await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: Number.NaN }],
@@ -167,7 +190,8 @@ describe('registerAccount', () => {
 
   it('初期残高にInfinityを指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
     await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'bank',
+      category: 'asset',
+      isReconcilable: true,
       name: '三菱UFJ銀行',
       householdMemberId: null,
       initialBalanceLines: [{ householdMemberId: null, amount: Number.POSITIVE_INFINITY }],
@@ -184,7 +208,8 @@ describe('registerAccount', () => {
     const hanako = householdMemberRepository.create({ name: '花子' })
 
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'cash',
+      category: 'asset',
+      isReconcilable: false,
       name: '現金',
       householdMemberId: null,
       initialBalanceLines: [
@@ -230,7 +255,8 @@ describe('registerAccount', () => {
     const hanako = householdMemberRepository.create({ name: '花子' })
 
     const account = await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'cash',
+      category: 'asset',
+      isReconcilable: false,
       name: '現金',
       householdMemberId: null,
       initialBalanceLines: [
@@ -256,7 +282,8 @@ describe('registerAccount', () => {
     const hanako = householdMemberRepository.create({ name: '花子' })
 
     await registerAccount(accountRepository, journalEntryRepository, {
-      kind: 'cash',
+      category: 'asset',
+      isReconcilable: false,
       name: '現金',
       householdMemberId: null,
       initialBalanceLines: [

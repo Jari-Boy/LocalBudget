@@ -1,14 +1,14 @@
 import type { Account, CreateAccountInput } from '../../domain/account/Account'
 import type { CreateJournalEntryInput, JournalEntry } from '../../domain/journal/JournalEntry'
-import { determineIsReconcilable, type AccountKind } from './accountKind'
 
 export interface InitialBalanceLine {
   /**
    * この金額をjournal_lines.householdMemberIdに反映する世帯メンバー。nullの場合は
    * 明細に明示的な値を設定せず、口座側の名義(household_member_id)継承ルール
-   * (docs/domain/household-members.md 1.2節)に委ねる。通常はnull(単一の初期残高)だが、
-   * 現金(kind = cash)で世帯メンバーが複数登録されている場合のみ、世帯メンバーごとに
-   * 別々の行として複数渡される(計画Issue #90、世帯メンバーごとの初期残高入力)。
+   * (docs/domain/household-members.md 1.2節)に委ねる。世帯メンバーごとに複数行を
+   * 渡す設計(計画Issue #90、現金の世帯メンバーごとの初期残高入力)は計画Issue #102で
+   * 統合フローに一本化された際に廃止されたため、現在の唯一の呼び出し元
+   * (AccountRegistrationFlow)は常に要素1件(householdMemberId: null)の配列を渡す。
    */
   householdMemberId: number | null
   /** 未入力の場合はnull(docs/domain/accounts.md 4.1節、初期残高入力は任意) */
@@ -16,13 +16,16 @@ export interface InitialBalanceLine {
 }
 
 export interface RegisterAccountInput {
-  kind: AccountKind
+  /** 資産・負債のいずれか(計画Issue #102、統合フローの入口で決定される) */
+  category: 'asset' | 'liability'
+  /**
+   * 照合可否。「外部明細(CSV)の有無」×「残高情報の有無」という2軸の設問
+   * (reconciliationQuestion.ts、docs/domain/accounts.md 4.2節)から呼び出し側が計算して渡す。
+   */
+  isReconcilable: boolean
   name: string
   householdMemberId: number | null
-  /**
-   * 初期残高の内訳。通常は要素1件(単一の初期残高)だが、現金で世帯メンバーが
-   * 複数登録されている場合は世帯メンバーごとに複数件になりうる(計画Issue #90)。
-   */
+  /** 初期残高の内訳(InitialBalanceLineのフィールドコメント参照) */
   initialBalanceLines: InitialBalanceLine[]
   /** 初期残高がある場合の初期仕訳の日付(YYYY-MM-DD) */
   entryDate: string
@@ -30,7 +33,7 @@ export interface RegisterAccountInput {
    * 初期残高がある場合に作成される初期仕訳の起票者(CreateJournalEntryInput.householdMemberId、
    * 計画Issue #88)。口座自体の名義(householdMemberId、null許容)とは別概念であり、解決
    * (口座の名義があればそれを使う、無ければ既定メンバーにフォールバックする等)は呼び出し側
-   * (AccountRegistrationWizard)の責務とする。
+   * (AccountRegistrationFlow)の責務とする。
    */
   journalEntryHouseholdMemberId: number
 }
@@ -65,8 +68,8 @@ export interface JournalEntryCreator {
 }
 
 /**
- * 口座登録ウィザードの確定処理(docs/domain/accounts.md 4章)。
- * 資産科目を1件作成し、初期残高が入力されていれば口座専用の初期残高科目
+ * 資産・負債の統合登録フローの確定処理(docs/domain/accounts.md 4章、計画Issue #102)。
+ * 資産または負債科目を1件作成し、初期残高が入力されていれば口座専用の初期残高科目
  * (equity区分・is_system_managed = true)と初期仕訳(source_type = 'initial_balance')を
  * 自動生成する(4.3節)。ユーザーには「区分」「純資産」等の簿記用語を見せない。
  */
@@ -76,9 +79,9 @@ export async function registerAccount(
   input: RegisterAccountInput,
 ): Promise<Account> {
   const account = await accountRepository.create({
-    category: 'asset',
+    category: input.category,
     name: input.name,
-    isReconcilable: determineIsReconcilable(input.kind),
+    isReconcilable: input.isReconcilable,
     householdMemberId: input.householdMemberId,
   })
 

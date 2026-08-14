@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
  * HouseholdMemberSelectionStep(名義選択ステップの共通UI、計画Issue #92)のコンポーネントテスト。
- * AccountRegistrationWizard・CreditCardRegistrationWizardが個別に持っていた
- * 「名義を選ぶ」ステップのUI(ボタン一覧・戻る/主操作ボタン・エラー表示)を、
- * 呼び出し側のprops注入によって両ウィザードの挙動差(主操作の文言・活性条件)を
- * 表現できることを検証する。外部依存: react-i18next(ネットワークアクセスなし)。
+ * 「名義を選ぶ」ステップのUI(ボタン一覧・戻る/主操作ボタン・エラー表示)を、呼び出し側の
+ * props注入によって主操作の文言・活性条件を表現できることに加え、計画Issue #102で追加した
+ * 任意選択モード(unspecifiedOptionLabelを渡すと「全員」相当の未選択オプションが表示され、
+ * 選択でonSelectにnullが渡される)を検証する。外部依存: react-i18next(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -91,5 +91,29 @@ describe('HouseholdMemberSelectionStep', () => {
   it('errorを渡した場合、alertとして表示される', () => {
     renderStep({ error: '登録に失敗しました。もう一度お試しください。' })
     expect(screen.getByRole('alert')).toHaveTextContent('登録に失敗しました。もう一度お試しください。')
+  })
+
+  it('unspecifiedOptionLabelを渡さない場合(必須モード)、未選択オプションのボタンは表示されない', () => {
+    renderStep()
+    expect(screen.queryByRole('button', { name: '全員' })).not.toBeInTheDocument()
+  })
+
+  it('unspecifiedOptionLabelを渡した場合(任意モード、計画Issue #102)、そのラベルのボタンが世帯メンバーより前に表示される', () => {
+    renderStep({ unspecifiedOptionLabel: '全員' })
+    const buttons = screen.getAllByRole('button').map((button) => button.textContent)
+    expect(buttons.indexOf('全員')).toBeGreaterThanOrEqual(0)
+    expect(buttons.indexOf('全員')).toBeLessThan(buttons.indexOf('太郎'))
+  })
+
+  it('任意モードで未選択オプションのボタンをクリックするとonSelectにnullが渡される', () => {
+    const { onSelect } = renderStep({ unspecifiedOptionLabel: '全員', selectedId: 1 })
+    fireEvent.click(screen.getByRole('button', { name: '全員' }))
+    expect(onSelect).toHaveBeenCalledWith(null)
+  })
+
+  it('任意モードでselectedId = nullの場合、未選択オプションのボタンのみaria-pressed=trueになる', () => {
+    renderStep({ unspecifiedOptionLabel: '全員', selectedId: null })
+    expect(screen.getByRole('button', { name: '全員' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '太郎' })).toHaveAttribute('aria-pressed', 'false')
   })
 })
