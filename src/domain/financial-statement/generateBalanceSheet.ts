@@ -1,8 +1,8 @@
-import type { Account, AccountCategory } from '../account/Account'
-import type { JournalEntry, JournalLine } from '../journal/JournalEntry'
+import type { Account } from '../account/Account'
+import type { JournalEntry } from '../journal/JournalEntry'
 import type { AccountAmount } from './AccountAmount'
-import { calculateAccountBalance } from './calculateAccountBalance'
 import { summarizeAccountsByCategory } from './summarizeAccountsByCategory'
+import { sumCategoryBalance } from './sumCategoryBalance'
 
 export interface BalanceSheet {
   asOfDate: string
@@ -13,15 +13,6 @@ export interface BalanceSheet {
   totalAssets: number
   totalLiabilities: number
   totalEquity: number
-}
-
-function sumCategoryBalance(
-  lines: readonly JournalLine[],
-  accountsById: ReadonlyMap<number, Account>,
-  category: AccountCategory,
-): number {
-  const categoryLines = lines.filter((line) => accountsById.get(line.accountId)?.category === category)
-  return calculateAccountBalance(category, categoryLines)
 }
 
 /**

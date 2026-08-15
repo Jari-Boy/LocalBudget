@@ -19,6 +19,7 @@ import { AccountManagementScreen } from './components/account-management/Account
 import { CounterpartyManagementScreen } from './components/counterparty-management/CounterpartyManagementScreen'
 import { HouseholdMemberManagementScreen } from './components/household-member-management/HouseholdMemberManagementScreen'
 import { ProjectManagementScreen } from './components/project-management/ProjectManagementScreen'
+import { FinancialStatementScreen } from './components/financial-statement/FinancialStatementScreen'
 import { JournalEntryDraftListScreen } from './components/journal-entry/JournalEntryDraftListScreen'
 import { JournalEntryForm } from './components/journal-entry/JournalEntryForm'
 import {
@@ -38,6 +39,7 @@ type Screen =
   | 'counterparty-management'
   | 'household-member-management'
   | 'project-management'
+  | 'financial-statement'
   | 'journal-entry-draft-list'
   | 'journal-entry-form'
   | 'statement-import-upload'
@@ -56,6 +58,7 @@ function AppContent() {
   const { t: tCounterparty } = useTranslation('counterparty')
   const { t: tHouseholdMember } = useTranslation('householdMember')
   const { t: tProject } = useTranslation('project')
+  const { t: tFinancialStatement } = useTranslation('financialStatement')
   const client = useDbClient()
   const [screen, setScreen] = useState<Screen>('home')
   /** 下書き一覧から再開する下書き。新規作成時・未選択時はnull(計画Issue #32)。 */
@@ -161,6 +164,19 @@ function AppContent() {
     )
   }
 
+  if (screen === 'financial-statement') {
+    return (
+      <FinancialStatementScreen
+        accountRepository={accountRepository}
+        journalEntryRepository={journalEntryRepository}
+        projectRepository={projectRepository}
+        householdMemberRepository={householdMemberRepository}
+        counterpartyRepository={counterpartyRepository}
+        onBack={() => setScreen('home')}
+      />
+    )
+  }
+
   if (screen === 'journal-entry-draft-list') {
     return (
       <JournalEntryDraftListScreen
@@ -244,6 +260,9 @@ function AppContent() {
       </button>
       <button type="button" onClick={() => setScreen('project-management')}>
         {tProject('viewProjectsTitle')}
+      </button>
+      <button type="button" onClick={() => setScreen('financial-statement')}>
+        {tFinancialStatement('viewFinancialStatementsTitle')}
       </button>
       <button type="button" onClick={() => setScreen('journal-entry-draft-list')}>
         {tJournal('journalEntryMenuTitle')}
