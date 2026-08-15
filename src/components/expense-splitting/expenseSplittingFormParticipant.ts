@@ -55,6 +55,8 @@ export function calculateParticipantAmounts(
  * 分担者行から、buildExpenseSplittingJournalEntryInputsへ渡すrecipients配列を組み立てる。
  * targetId未選択または金額が0以下の行は不完全な入力として除外する
  * (JournalEntryFormのtoJournalLineInputと同じ「不完全な行は送信対象から除外する」方針)。
+ * 単一の元仕訳を割勘する場合に使う。amountInput(確定前に手動修正できるプレビュー欄)を
+ * そのまま金額として使うため、ユーザーによる直接編集が確定額に反映される。
  */
 export function toExpenseSplitRecipients(
   participants: readonly ExpenseSplittingParticipantRow[],
@@ -65,6 +67,42 @@ export function toExpenseSplitRecipients(
     if (row.targetId === null) continue
     const amount = Number(row.amountInput)
     if (row.amountInput === '' || !Number.isFinite(amount) || amount <= 0) continue
+
+    if (row.kind === 'householdMember') {
+      if (advanceLiabilityAccountId === null) continue
+      recipients.push({
+        kind: 'householdMember',
+        toMemberId: row.targetId,
+        advanceLiabilityAccountId,
+        amount,
+      })
+    } else {
+      recipients.push({ kind: 'counterparty', counterpartyId: row.targetId, amount })
+    }
+  }
+  return recipients
+}
+
+/**
+ * 複数の元仕訳をまとめて割勘する場合に、分担者行から特定の元仕訳1件分のrecipients配列を
+ * 組み立てる。元仕訳ごとに金額が異なるため、amountInput(複数の元仕訳の合計を表示する
+ * プレビュー欄、ExpenseSplittingForm参照)は使わず、共通の分担者設定(kind/targetId/
+ * ratioInput)をentryAmount(その元仕訳自身の金額)に対してcalculateParticipantAmountsで
+ * 都度計算し直す。手動編集可能なプレビューは単一の元仕訳を割勘する場合のみ提供する
+ * (計画Issue #40、複数元仕訳の一括割勘対応)。
+ */
+export function toExpenseSplitRecipientsForEntryAmount(
+  participants: readonly ExpenseSplittingParticipantRow[],
+  advanceLiabilityAccountId: number | null,
+  entryAmount: number,
+  mode: ExpenseSplittingAllocationMode,
+): ExpenseSplitRecipient[] {
+  const amounts = calculateParticipantAmounts(entryAmount, participants, mode)
+  const recipients: ExpenseSplitRecipient[] = []
+  for (const row of participants) {
+    if (row.targetId === null) continue
+    const amount = amounts.get(String(row.key)) ?? 0
+    if (amount <= 0) continue
 
     if (row.kind === 'householdMember') {
       if (advanceLiabilityAccountId === null) continue

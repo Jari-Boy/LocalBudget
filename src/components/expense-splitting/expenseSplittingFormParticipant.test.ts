@@ -2,13 +2,16 @@
  * expenseSplittingFormParticipant(割勘起票フォームの分担者行ロジック)の
  * 純粋関数としてのユニットテスト。calculateParticipantAmounts(均等割/カスタム比率の
  * 按分計算)・toExpenseSplitRecipients(フォーム行からrecipients配列への変換、
- * 不完全な行の除外)を検証する。DB非依存、外部依存なし。
+ * 不完全な行の除外)・toExpenseSplitRecipientsForEntryAmount(複数の元仕訳をまとめて
+ * 割勘する場合に、共通の分担者設定を元仕訳ごとの金額へ個別に適用する変換、計画Issue #40
+ * 再実装分)を検証する。DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import {
   calculateParticipantAmounts,
   createEmptyParticipantRow,
   toExpenseSplitRecipients,
+  toExpenseSplitRecipientsForEntryAmount,
   type ExpenseSplittingParticipantRow,
 } from './expenseSplittingFormParticipant'
 
@@ -98,5 +101,44 @@ describe('toExpenseSplitRecipients', () => {
     const result = toExpenseSplitRecipients(participants, null)
 
     expect(result).toEqual([{ kind: 'counterparty', counterpartyId: 7, amount: 200 }])
+  })
+})
+
+describe('toExpenseSplitRecipientsForEntryAmount', () => {
+  it('amountInputは使わず、渡された元仕訳自身の金額をもとに按分額を計算してrecipientへ変換する', () => {
+    const participants = [row({ key: 1, kind: 'householdMember', targetId: 101, amountInput: '9999' })]
+
+    const result = toExpenseSplitRecipientsForEntryAmount(participants, 21, 1000, 'equal')
+
+    // amountInput(9999)は無視され、entryAmount(1000)を立替者+分担者1人で均等割った500が使われる
+    expect(result).toEqual([{ kind: 'householdMember', toMemberId: 101, advanceLiabilityAccountId: 21, amount: 500 }])
+  })
+
+  it('カスタム比率モードでは、渡された元仕訳自身の金額に対する比率で按分する', () => {
+    const participants = [row({ key: 1, kind: 'counterparty', targetId: 7, ratioInput: '30' })]
+
+    const result = toExpenseSplitRecipientsForEntryAmount(participants, null, 500, 'ratio')
+
+    expect(result).toEqual([{ kind: 'counterparty', counterpartyId: 7, amount: 150 }])
+  })
+
+  it('相手が未選択の行は除外する', () => {
+    const participants = [row({ key: 1, targetId: null })]
+
+    const result = toExpenseSplitRecipientsForEntryAmount(participants, 21, 1000, 'equal')
+
+    expect(result).toEqual([])
+  })
+
+  it('立替金(負債)科目が未選択の場合、世帯メンバー宛の行は除外する(世帯外相手は影響を受けない)', () => {
+    const participants = [
+      row({ key: 1, kind: 'householdMember', targetId: 101 }),
+      row({ key: 2, kind: 'counterparty', targetId: 7 }),
+    ]
+
+    const result = toExpenseSplitRecipientsForEntryAmount(participants, null, 1000, 'equal')
+
+    // 立替者+分担者2人の均等割: 333円ずつ(端数1円は立替者に寄る)
+    expect(result).toEqual([{ kind: 'counterparty', counterpartyId: 7, amount: 333 }])
   })
 })
