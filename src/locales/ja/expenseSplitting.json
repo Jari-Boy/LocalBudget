@@ -24,6 +24,7 @@
   "back": "戻る",
   "expenseAccountNotFoundError": "元の仕訳から費用科目が見つかりませんでした。",
   "requiredFieldMissingError": "立替金(資産)科目・割勘バッチを選択してください。",
+  "advanceLiabilityAccountRequiredError": "分担者に世帯メンバーが含まれる場合、立替金(負債)科目を選択してください。",
   "noRecipientError": "分担者を1人以上選択してください。",
   "submitError": "割勘の起票に失敗しました。もう一度お試しください。",
   "settlementScreenTitle": "精算する",

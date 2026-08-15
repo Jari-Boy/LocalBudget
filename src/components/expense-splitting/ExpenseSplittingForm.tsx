@@ -152,6 +152,21 @@ export function ExpenseSplittingForm({
       return
     }
 
+    /**
+     * 世帯メンバー分担者はadvanceLiabilityAccountIdが無いと仕訳を組み立てられない
+     * (toExpenseSplitRecipientsが黙って除外する)。ここで事前に検証しないと、
+     * 世帯外相手の行が1件でも有効な場合にnoRecipientErrorをすり抜け、世帯メンバー分の
+     * 割勘だけが無警告で消失したまま確定されてしまう(evaluatorレビュー指摘、
+     * 計画Issue #40 Review Attempt 1対応)。
+     */
+    const hasHouseholdMemberParticipant = participants.some(
+      (row) => row.kind === 'householdMember' && row.targetId !== null,
+    )
+    if (hasHouseholdMemberParticipant && advanceLiabilityAccountId === null) {
+      setError(t('advanceLiabilityAccountRequiredError'))
+      return
+    }
+
     const recipients = toExpenseSplitRecipients(participants, advanceLiabilityAccountId)
     if (recipients.length === 0) {
       setError(t('noRecipientError'))

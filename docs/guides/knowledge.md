@@ -64,6 +64,11 @@
 **内容**: sql.jsの`Database#export()`(DB全体をシリアライズして`Uint8Array`を返すAPI)を呼び出すと、同一のDB接続上でSQLiteが内部的に保持する`last_insert_rowid()`の値がリセットされる。実機テストで`db.run('INSERT ...')` → `db.export()` → `db.exec('SELECT last_insert_rowid()')`という順に実行すると、直前のINSERTで採番された値ではなく`0`が返ることを確認した。これはsql.js/SQLiteの一般的なドキュメントには明記されていない挙動で、既存のほぼ全Repositoryの`create()`実装が`db.run(INSERT...)`直後に`last_insert_rowid()`を読む規約になっているため、`export()`を書き込み処理の直後に同期的に呼ぶ実装(例: DB変更を監視して自動保存する仕組み)を書くとRepository層が広範囲に壊れる。対策として、`export()`の呼び出しを`queueMicrotask`等でマイクロタスクへ遅延させ、呼び出し元の同期処理(sql.jsのRepositoryメソッドは同期API)が完全に終わった後にのみ実行するようにする。
 **参考**: `src/infrastructure/storage/withAutoSave.ts`、`docs/guides/patterns.md`「sql.jsのdb.export()を書き込み処理の直後に同期的に呼ぶと、last_insert_rowid()に依存する既存コードが壊れる」、`docs/decisions.md`「sql.jsのdb.export()はqueueMicrotaskで遅延実行し、Repositoryのcreate()実装が依存するlast_insert_rowid()を壊さないようにする」、Issue #25
 
+## sql.jsのdb.export()はPRAGMA foreign_keysもOFFにリセットする副作用を持つ
+
+**内容**: 上記の`last_insert_rowid()`リセットと同種の副作用として、sql.jsの`Database#export()`を呼び出すと、同一のDB接続の`PRAGMA foreign_keys`設定が`1`(ON)から`0`(OFF)にリセットされることを実機テストで発見した(`PRAGMA foreign_keys = ON` → `db.export()` → `PRAGMA foreign_keys`確認で`0`が返る)。この副作用により、`export()`を書き込みのたびに呼ぶ仕組み(`withAutoSave`)が一度でも実行された後は、`ON DELETE CASCADE`を含む全てのFK制約がアプリ全体で機能しなくなる(Node/Vitestの`createTestDatabase`では`PRAGMA`を1回設定するだけで以降ずっとONのままなので気づきにくく、`db.export()`を実際に実行する統合的なブラウザ環境でのみ顕在化する)。
+**参考**: `src/infrastructure/storage/withAutoSave.ts`(`performSave`)、`docs/guides/patterns.md`「sql.jsのdb.export()を伴う自動保存を実装すると、export()後にPRAGMA foreign_keysがリセットされCASCADE削除が機能しなくなる」、`docs/decisions.md`「sql.jsのdb.export()後はPRAGMA foreign_keysをoriginalRun経由で再設定し、ON DELETE CASCADEを保ち続ける」、計画Issue #40
+
 ## FileSystemWritableFileStreamは書き込み失敗後にclose()を呼ぶと元のエラーではなく別のTypeErrorで拒否される
 
 **内容**: `FileSystemFileHandle#createWritable()`が返す`FileSystemWritableFileStream`(WHATWG Streams仕様の`WritableStream`を継承)で`write()`が失敗すると、ストリームは内部的にerrored状態になる。この状態で`close()`を呼んでもwrite失敗時の元のエラー(例: ディスク容量不足に相当するエラー)は再送出されず、Streams仕様に基づく別の`TypeError`(「ストリームは既にerrored」の旨)で拒否される。`try { await writable.write(x); await writable.close() } finally {...}`のように無条件でclose()を呼ぶ構造だと、この`TypeError`が本来伝播すべき元のエラーを上書きしてしまう。失敗時は`close()`ではなく`abort()`を呼ぶ必要がある(`abort()`はストリームの状態に関わらず正常に完了する)。

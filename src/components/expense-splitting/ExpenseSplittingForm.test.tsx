@@ -299,6 +299,85 @@ describe('ExpenseSplittingForm', () => {
     })
   })
 
+  it('世帯メンバー分担者を選んだ状態で立替金(負債)科目を未選択のまま確定しようとすると、専用のエラーが表示され仕訳は作成されない(世帯メンバー分担者の割勘が無警告で欠落することを防ぐ)', async () => {
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    const memberB = householdMemberRepository.create({ name: 'Bさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+    accountRepository.create({ category: 'liability', name: '立替金', isReconcilable: false })
+    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    const { onComplete } = renderForm(originalEntry)
+    await screen.findByText('スーパーで食材購入')
+
+    // 立替金(資産)科目・割勘バッチは選択するが、立替金(負債)科目はあえて選択しない
+    fireEvent.change(screen.getByLabelText('立替金(資産)科目'), { target: { value: String(advanceAsset.id) } })
+    fireEvent.change(screen.getByLabelText('割勘バッチ'), { target: { value: String(project.id) } })
+
+    const participantRows = screen.getAllByRole('group', { name: /分担者/ })
+    fireEvent.change(within(participantRows[0]).getByLabelText('相手'), { target: { value: String(memberB.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(within(participantRows[0]).getByLabelText('金額')).toHaveValue(500))
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('立替金(負債)科目を選択してください')
+    expect(onComplete).not.toHaveBeenCalled()
+    expect(journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)).toHaveLength(0)
+  })
+
+  it('世帯メンバー・世帯外相手が混在する状態で立替金(負債)科目が未選択のまま確定しようとすると、エラーになり世帯外相手分だけの部分確定も起きない', async () => {
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    const memberB = householdMemberRepository.create({ name: 'Bさん' })
+    const friend = counterpartyRepository.create({ name: '友人Cさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+    accountRepository.create({ category: 'liability', name: '立替金', isReconcilable: false })
+    const project = projectRepository.create({ name: '26/8旅行割勘', kind: 'settlement' })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '旅行の食事代',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm(originalEntry)
+    await screen.findByText('旅行の食事代')
+
+    fireEvent.change(screen.getByLabelText('立替金(資産)科目'), { target: { value: String(advanceAsset.id) } })
+    fireEvent.change(screen.getByLabelText('割勘バッチ'), { target: { value: String(project.id) } })
+
+    let participantRows = screen.getAllByRole('group', { name: /分担者/ })
+    fireEvent.change(within(participantRows[0]).getByLabelText('相手'), { target: { value: String(memberB.id) } })
+
+    fireEvent.click(screen.getByRole('button', { name: '分担者を追加する' }))
+    participantRows = screen.getAllByRole('group', { name: /分担者/ })
+    fireEvent.change(within(participantRows[1]).getByLabelText('相手の種類'), { target: { value: 'counterparty' } })
+    fireEvent.change(within(participantRows[1]).getByLabelText('相手'), { target: { value: String(friend.id) } })
+
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(within(participantRows[0]).getByLabelText('金額')).toHaveValue(333))
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('立替金(負債)科目を選択してください')
+    expect(journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)).toHaveLength(0)
+  })
+
   it('戻るボタンを押すとonBackが呼ばれる', async () => {
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
