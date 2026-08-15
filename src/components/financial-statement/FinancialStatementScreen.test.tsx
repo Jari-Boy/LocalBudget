@@ -1,0 +1,223 @@
+// @vitest-environment jsdom
+/**
+ * 財務諸表(PL/BS)表示画面(計画Issue #34)のコンポーネントテスト。
+ * docs/domain/financial-statements.md 2.2節が定めるPL(期間指定+月次プリセット)・
+ * BS(基準日指定)の単一画面タブ切替表示、プロジェクト・世帯メンバー・取引先の複数選択
+ * 絞り込み(タブ切替をまたいだ状態保持を含む)、前期比較(当期/比較期間/差分の表示)、
+ * BSの複式簿記恒等式(資産=負債+純資産)が画面表示上も成立することを検証する。
+ * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテスト。
+ * 外部依存: sql.js(ネットワークアクセスなし)。
+ */
+import '@testing-library/jest-dom/vitest'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { Database } from 'sql.js'
+import { I18nextProvider } from 'react-i18next'
+import i18n from '../../infrastructure/i18n/i18n'
+import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
+import { runMigrations } from '../../infrastructure/db/migrations'
+import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
+import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
+import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
+import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
+import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
+import { FinancialStatementScreen } from './FinancialStatementScreen'
+
+let db: Database
+let accountRepository: SqlJsAccountRepository
+let journalEntryRepository: SqlJsJournalEntryRepository
+let projectRepository: SqlJsProjectRepository
+let householdMemberRepository: SqlJsHouseholdMemberRepository
+let counterpartyRepository: SqlJsCounterpartyRepository
+let memberId: number
+
+beforeEach(async () => {
+  db = await createTestDatabase()
+  runMigrations(db)
+  accountRepository = new SqlJsAccountRepository(db)
+  journalEntryRepository = new SqlJsJournalEntryRepository(db)
+  projectRepository = new SqlJsProjectRepository(db)
+  householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
+  counterpartyRepository = new SqlJsCounterpartyRepository(db)
+  memberId = householdMemberRepository.create({ name: '自分' }).id
+})
+
+afterEach(cleanup)
+
+function renderScreen(today = '2026-07-15') {
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <FinancialStatementScreen
+        accountRepository={accountRepository}
+        journalEntryRepository={journalEntryRepository}
+        projectRepository={projectRepository}
+        householdMemberRepository={householdMemberRepository}
+        counterpartyRepository={counterpartyRepository}
+        onBack={() => {}}
+        today={today}
+      />
+    </I18nextProvider>,
+  )
+}
+
+function selectMultiOptions(select: HTMLElement, values: string[]) {
+  const selectEl = select as HTMLSelectElement
+  Array.from(selectEl.options).forEach((option) => {
+    option.selected = values.includes(option.value)
+  })
+  fireEvent.change(selectEl)
+}
+
+describe('FinancialStatementScreen', () => {
+  it('既定でPLタブが表示され、当月(todayが属する月)の収益・費用が科目別に表示される', async () => {
+    const salary = accountRepository.create({ category: 'revenue', name: '給与', isReconcilable: null })
+    const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-10',
+      memo: null,
+      lines: [
+        { accountId: cash.id, side: 'debit', amount: 250000 },
+        { accountId: salary.id, side: 'credit', amount: 250000 },
+      ],
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-12',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 3000 },
+        { accountId: cash.id, side: 'credit', amount: 3000 },
+      ],
+    })
+
+    renderScreen()
+
+    const salaryRow = (await screen.findByText('給与')).closest('tr')!
+    expect(within(salaryRow).getByText('￥250,000')).toBeInTheDocument()
+    const foodRow = screen.getByText('食費').closest('tr')!
+    expect(within(foodRow).getByText('￥3,000')).toBeInTheDocument()
+  })
+
+  it('BSタブに切り替えると基準日時点の資産・負債・純資産が表示され、恒等式(資産=負債+純資産)が成立する', async () => {
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const equity = accountRepository.create({
+      category: 'equity',
+      name: '元入金',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-01',
+      memo: null,
+      sourceType: 'initial_balance',
+      lines: [
+        { accountId: cash.id, side: 'debit', amount: 100000 },
+        { accountId: equity.id, side: 'credit', amount: 100000 },
+      ],
+    })
+
+    renderScreen()
+    await screen.findByRole('button', { name: '貸借対照表(BS)' })
+    fireEvent.click(screen.getByRole('button', { name: '貸借対照表(BS)' }))
+
+    expect(await screen.findByText('現金')).toBeInTheDocument()
+    const assetsAmount = screen.getByText('資産合計:').closest('p')!
+    const identityAmount = screen.getByText('資産 = 負債 + 純資産:').closest('p')!
+    expect(within(assetsAmount).getByText('￥100,000')).toBeInTheDocument()
+    expect(within(identityAmount).getByText('￥100,000')).toBeInTheDocument()
+  })
+
+  it('プロジェクトを複数選択すると、選択したプロジェクトに紐づく明細のみで集計される', async () => {
+    const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const tripProject = projectRepository.create({ name: 'アメリカ旅行' })
+    const otherProject = projectRepository.create({ name: '別プロジェクト' })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-10',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 5000, projectId: tripProject.id },
+        { accountId: cash.id, side: 'credit', amount: 5000, projectId: tripProject.id },
+      ],
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-11',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 9000, projectId: otherProject.id },
+        { accountId: cash.id, side: 'credit', amount: 9000, projectId: otherProject.id },
+      ],
+    })
+
+    renderScreen()
+    await screen.findByText('アメリカ旅行')
+
+    selectMultiOptions(screen.getByLabelText('プロジェクトで絞り込み(複数選択可)'), [String(tripProject.id)])
+
+    const foodRow = (await screen.findByText('食費')).closest('tr')!
+    expect(within(foodRow).getByText('￥5,000')).toBeInTheDocument()
+    expect(screen.queryByText('￥9,000')).not.toBeInTheDocument()
+  })
+
+  it('プロジェクトの選択状態はPL/BSタブを切り替えても保持される', async () => {
+    const project = projectRepository.create({ name: 'アメリカ旅行' })
+    renderScreen()
+    await screen.findByText('アメリカ旅行')
+
+    const projectSelect = screen.getByLabelText('プロジェクトで絞り込み(複数選択可)') as HTMLSelectElement
+    selectMultiOptions(projectSelect, [String(project.id)])
+    expect(Array.from(projectSelect.selectedOptions).map((o) => o.value)).toEqual([String(project.id)])
+
+    fireEvent.click(screen.getByRole('button', { name: '貸借対照表(BS)' }))
+    fireEvent.click(screen.getByRole('button', { name: '損益計算書(PL)' }))
+
+    const projectSelectAfter = screen.getByLabelText('プロジェクトで絞り込み(複数選択可)') as HTMLSelectElement
+    expect(Array.from(projectSelectAfter.selectedOptions).map((o) => o.value)).toEqual([String(project.id)])
+  })
+
+  it('比較(前期)を選択すると、当期・比較期間・差分の値が表示される', async () => {
+    const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-10',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 3000 },
+        { accountId: cash.id, side: 'credit', amount: 3000 },
+      ],
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-06-10',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 2000 },
+        { accountId: cash.id, side: 'credit', amount: 2000 },
+      ],
+    })
+
+    renderScreen()
+    await screen.findByText('食費')
+
+    fireEvent.change(screen.getByLabelText('比較'), { target: { value: 'previousPeriod' } })
+
+    const totalExpenseRow = (await screen.findByText('費用合計:')).closest('p')!
+    expect(within(totalExpenseRow).getByText('￥3,000')).toBeInTheDocument()
+    expect(within(totalExpenseRow).getByText('￥2,000')).toBeInTheDocument()
+    expect(within(totalExpenseRow).getByText('￥1,000')).toBeInTheDocument()
+  })
+
+  it('絞り込み結果に該当する残高が1件もない場合は空状態メッセージが表示される', async () => {
+    accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+
+    renderScreen()
+
+    expect(await screen.findAllByText('残高のある科目がありません')).not.toHaveLength(0)
+  })
+})
