@@ -109,6 +109,8 @@ describe('ExpenseSplittingForm', () => {
     const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
     expect(createdEntries).toHaveLength(1)
     expect(createdEntries[0].lines).toHaveLength(4)
+    // 一覧画面で元仕訳と割勘仕訳を区別できるよう、元の摘要から自動生成した摘要を持つ
+    expect(createdEntries[0].memo).toBe('スーパーで食材購入の割勘')
     const links = journalEntryRepository.listLinksForEntry(createdEntries[0].id)
     expect(links).toEqual([
       expect.objectContaining({ fromEntryId: createdEntries[0].id, toEntryId: originalEntry.id, linkType: 'allocates', amount: 500 }),

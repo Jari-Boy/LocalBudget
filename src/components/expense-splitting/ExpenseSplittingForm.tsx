@@ -165,6 +165,7 @@ export function ExpenseSplittingForm({
       fromMemberId: originalEntry.householdMemberId,
       projectId,
       entryDate: today ?? new Date().toISOString().slice(0, 10),
+      memo: originalEntry.memo === null ? null : t('splitMemoTemplate', { memo: originalEntry.memo }),
       recipients,
     })
 

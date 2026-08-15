@@ -125,6 +125,9 @@ describe('SettlementScreen', () => {
       .filter((entry) => entry.lines.some((line) => line.accountId === cashB.id))
     expect(settlementEntries).toHaveLength(1)
     expect(settlementEntries[0].lines).toHaveLength(2)
+    // 精算仕訳自体も一時勘定(立替金)行を持つため、未精算候補の絞り込みに誤って
+    // 混入していないか(=一覧が完全に空になるか)を確認する(空状態メッセージの表示)
+    await waitFor(() => expect(screen.getByText('未精算の割勘はありません')).toBeInTheDocument())
   })
 
   it('未精算の仕訳が0件の場合、空状態メッセージが表示される', async () => {

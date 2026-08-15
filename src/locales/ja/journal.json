@@ -39,6 +39,7 @@
   "entryListEmpty": "確定済みの仕訳はまだありません",
   "entryNoMemo": "摘要なし",
   "viewEntryDetail": "詳細を見る",
+  "startSplitting": "割勘する",
   "entryDetailTitle": "仕訳の詳細",
   "cancelSplitEntry": "この割勘を取り消す",
   "splitCancellationAfterSettlementNotice": "精算後は新しい取引として現実の返金を記録してください",

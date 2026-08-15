@@ -80,7 +80,18 @@ export function SettlementScreen({
           linksByEntryId.set(entry.id, await Promise.resolve(journalEntryRepository.listLinksForEntry(entry.id)))
         }),
       )
-      setUnsettledEntries(findUnsettledEntries(projectEntries, targetSettlementAccountId, linksByEntryId))
+      /**
+       * 精算仕訳自体も一時勘定(立替金)行を持つため、projectEntriesの絞り込み条件
+       * (project_id・accountId一致)だけでは精算対象(割勘仕訳)と精算仕訳自身を
+       * 区別できない。精算仕訳はfrom_entry側でsettlesリンクを持つことを手がかりに
+       * 候補から除外する(findUnallocatedEntriesの「allocatesリンクのfrom_entry側を
+       * 割勘仕訳とみなす」判定と対称的な考え方)。
+       */
+      const settlementTargetCandidates = projectEntries.filter((entry) => {
+        const links = linksByEntryId.get(entry.id) ?? []
+        return !links.some((link) => link.fromEntryId === entry.id && link.linkType === 'settles')
+      })
+      setUnsettledEntries(findUnsettledEntries(settlementTargetCandidates, targetSettlementAccountId, linksByEntryId))
     })
   }
 

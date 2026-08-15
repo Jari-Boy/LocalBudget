@@ -1,5 +1,6 @@
 {
   "formTitle": "割勘を起票する",
+  "splitMemoTemplate": "{{memo}}の割勘",
   "unselected": "未選択",
   "advanceAssetAccountLabel": "立替金(資産)科目",
   "advanceLiabilityAccountLabel": "立替金(負債)科目",

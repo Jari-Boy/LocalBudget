@@ -108,7 +108,15 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
   }
 
   function performSave(): Promise<void> {
-    return storageAdapter.save(db.export()).then(
+    const data = db.export()
+    // db.export()はsql.js内部でPRAGMA foreign_keysをOFFにリセットする副作用を持つ
+    // (last_insert_rowid()のリセットと同種、実測で確認済み)。これを再設定しないと、
+    // 以降のON DELETE CASCADE(journal_entry_links等)が一切機能しなくなる。差し替え後の
+    // db.run(このファイルの上でoriginalRunをラップしたもの)を呼ぶとscheduleSave()が
+    // 再度トリガーされ無限にデバウンスタイマーが再セットされ続けるため、originalRunを
+    // 直接呼ぶ(PRAGMA文はトランザクション境界判定の対象外であり、監視不要な操作)。
+    originalRun('PRAGMA foreign_keys = ON')
+    return storageAdapter.save(data).then(
       () => {
         lastSaveError = null
       },
