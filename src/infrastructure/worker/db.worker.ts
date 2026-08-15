@@ -5,6 +5,7 @@ import { runMigrations } from '../db/migrations'
 import { seedBuiltInMappingDefinitions } from '../db/seedBuiltInMappingDefinitions'
 import { seedDefaultAccounts } from '../db/seedDefaultAccounts'
 import { seedDefaultHouseholdMember } from '../db/seedDefaultHouseholdMember'
+import { seedDevSampleDataIfDev } from '../db/seedDevSampleDataIfDev'
 import { createRepositoryRegistry } from '../rpc/createRepositoryRegistry'
 import { registerDomainErrorTransferHandler } from '../rpc/registerDomainErrorTransferHandler'
 import { WORKER_READY_MESSAGE, createWorkerInitErrorMessage } from '../rpc/workerLifecycleMessages'
@@ -35,7 +36,13 @@ import { withAutoSave } from '../storage/withAutoSave'
  * seedDefaultAccounts(計画Issue #96、docs/domain/accounts.md 1.2節)を呼び出し、revenue・
  * expense区分それぞれについて1件も科目が存在しなければ標準的な収益・費用科目一式を投入する
  * (区分ごとに独立して冪等)。口座(資産科目)登録直後から相手科目に困らず仕訳を作成できる状態を
- * 保証するための投入であり、資産・負債・純資産区分の科目には一切関与しない。
+ * 保証するための投入であり、資産・負債・純資産区分の科目には一切関与しない。最後に
+ * seedDevSampleDataIfDev(計画Issue #101)を呼び出し、開発モード(import.meta.env.DEV)の場合
+ * にのみ、少数の口座(現金・普通預金・クレジットカード)と直近1ヶ月分の数件のダミー仕訳を
+ * journal_entriesが0件の場合に限り自動投入する。相手科目にseedDefaultAccountsが投入した
+ * 標準科目(食費・交通費・給与収入)を使うため、必ずseedDefaultAccounts(db)より後に呼び出す。
+ * 本番ビルドではimport.meta.env.DEVがfalseに静的展開されVite/Rollupのtree-shakingで
+ * バンドルから除去されるため、npm run devの動作確認専用であり本番の挙動には一切影響しない。
  */
 async function main(): Promise<void> {
   registerDomainErrorTransferHandler()
@@ -48,6 +55,7 @@ async function main(): Promise<void> {
   seedDefaultHouseholdMember(db)
   seedBuiltInMappingDefinitions(db)
   seedDefaultAccounts(db)
+  seedDevSampleDataIfDev(db)
   const autoSaveController = withAutoSave(db, storageAdapter)
 
   const registry = createRepositoryRegistry(db, autoSaveController, storageAdapter)
