@@ -24,5 +24,12 @@
   "expenseAccountNotFoundError": "元の仕訳から費用科目が見つかりませんでした。",
   "requiredFieldMissingError": "立替金(資産)科目・割勘バッチを選択してください。",
   "noRecipientError": "分担者を1人以上選択してください。",
-  "submitError": "割勘の起票に失敗しました。もう一度お試しください。"
+  "submitError": "割勘の起票に失敗しました。もう一度お試しください。",
+  "settlementScreenTitle": "精算する",
+  "settlementAccountLabel": "立替金科目",
+  "unsettledEntryListEmpty": "未精算の割勘はありません",
+  "settleButton": "精算する",
+  "counterAccountLabel": "精算元/精算先の口座",
+  "settlementAmountLabel": "精算金額",
+  "confirmSettlement": "精算を確定する"
 }
