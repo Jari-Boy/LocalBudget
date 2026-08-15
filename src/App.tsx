@@ -83,8 +83,10 @@ function AppContent() {
    * 自体を保持する場合に限られる)。
    */
   const [uploadResult, setUploadResult] = useState<StatementImportUploadResult | null>(null)
-  /** 仕訳一覧から選択した、詳細画面・割勘起票フォームの対象仕訳(計画Issue #40) */
+  /** 仕訳一覧から選択した、詳細画面の対象仕訳(計画Issue #40) */
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null)
+  /** 割勘対象選択画面でチェックボックス選択した、割勘起票フォームの対象仕訳(複数、計画Issue #40) */
+  const [splittingEntries, setSplittingEntries] = useState<JournalEntry[]>([])
 
   /**
    * Comlinkの型定義上、RepositoryRegistryのネストしたRepositoryプロパティは
@@ -268,8 +270,8 @@ function AppContent() {
         accountRepository={accountRepository}
         householdMemberRepository={householdMemberRepository}
         projectRepository={projectRepository}
-        onSelectEntry={(entry) => {
-          setSelectedEntry(entry)
+        onSelectEntries={(entries) => {
+          setSplittingEntries(entries)
           setScreen('expense-splitting-form')
         }}
         onBack={() => setScreen('home')}
@@ -277,21 +279,21 @@ function AppContent() {
     )
   }
 
-  if (screen === 'expense-splitting-form' && selectedEntry !== null) {
+  if (screen === 'expense-splitting-form' && splittingEntries.length > 0) {
     return (
       <ExpenseSplittingForm
-        originalEntries={[selectedEntry]}
+        originalEntries={splittingEntries}
         accountRepository={accountRepository}
         projectRepository={projectRepository}
         householdMemberRepository={householdMemberRepository}
         counterpartyRepository={counterpartyRepository}
         journalEntryRepository={journalEntryRepository}
         onComplete={() => {
-          setSelectedEntry(null)
+          setSplittingEntries([])
           setScreen('home')
         }}
         onBack={() => {
-          setSelectedEntry(null)
+          setSplittingEntries([])
           setScreen('expense-splitting-entry-picker')
         }}
       />

@@ -4,9 +4,11 @@
  * (確認用途の汎用画面)から分離した専用の入口画面)のコンポーネントテスト。
  * findUnallocatedEntries(docs/domain/expense-splitting.md 1.5節)による「既に割勘済み
  * の仕訳の除外」と、JournalEntryFilterForm(期間・科目・世帯メンバー・プロジェクト)
- * による追加の絞り込みを組み合わせて対象候補を一覧表示し、選択した仕訳を
- * 割勘起票フォームへ渡す動線を、sql.jsのNode実装(createTestDatabase)を使った
- * 統合的なレンダリングテストとして検証する。外部依存: sql.js(ネットワークアクセスなし)。
+ * による追加の絞り込みを組み合わせて対象候補を一覧表示し、チェックボックスで選択した
+ * 仕訳をまとめて割勘起票フォームへ渡す動線(計画Issue #40 Attempt 4、人間レビューでの
+ * 「複数の元仕訳をまとめて選択して一括で割勘起票したい」との指摘への対応)を、
+ * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして
+ * 検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -41,8 +43,8 @@ beforeEach(async () => {
 
 afterEach(cleanup)
 
-function renderScreen(overrides?: { onSelectEntry?: (entry: JournalEntry) => void; onBack?: () => void }) {
-  const onSelectEntry = overrides?.onSelectEntry ?? vi.fn()
+function renderScreen(overrides?: { onSelectEntries?: (entries: JournalEntry[]) => void; onBack?: () => void }) {
+  const onSelectEntries = overrides?.onSelectEntries ?? vi.fn()
   const onBack = overrides?.onBack ?? vi.fn()
   render(
     <I18nextProvider i18n={i18n}>
@@ -51,12 +53,12 @@ function renderScreen(overrides?: { onSelectEntry?: (entry: JournalEntry) => voi
         accountRepository={accountRepository}
         householdMemberRepository={householdMemberRepository}
         projectRepository={projectRepository}
-        onSelectEntry={onSelectEntry}
+        onSelectEntries={onSelectEntries}
         onBack={onBack}
       />
     </I18nextProvider>,
   )
-  return { onSelectEntry, onBack }
+  return { onSelectEntries, onBack }
 }
 
 describe('ExpenseSplittingEntryPickerScreen', () => {
@@ -147,7 +149,7 @@ describe('ExpenseSplittingEntryPickerScreen', () => {
     expect(screen.queryByText('交通費の支出')).not.toBeInTheDocument()
   })
 
-  it('選択するボタンを押すと、対応する仕訳を引数にonSelectEntryが呼ばれる', async () => {
+  it('チェックボックスで1件選択し「選択した仕訳で割勘する」ボタンを押すと、対応する仕訳を含む配列でonSelectEntriesが呼ばれる', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
@@ -161,13 +163,74 @@ describe('ExpenseSplittingEntryPickerScreen', () => {
       ],
     })
 
-    const { onSelectEntry } = renderScreen()
+    const { onSelectEntries } = renderScreen()
     await screen.findByText('スーパーで食材購入')
 
-    fireEvent.click(screen.getByRole('button', { name: '選択する' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'スーパーで食材購入を選択する' }))
+    fireEvent.click(screen.getByRole('button', { name: '選択した仕訳で割勘する' }))
 
-    expect(onSelectEntry).toHaveBeenCalledTimes(1)
-    expect(onSelectEntry).toHaveBeenCalledWith(expect.objectContaining({ id: entry.id }))
+    expect(onSelectEntries).toHaveBeenCalledTimes(1)
+    expect(onSelectEntries).toHaveBeenCalledWith([expect.objectContaining({ id: entry.id })])
+  })
+
+  it('複数の仕訳をチェックボックスで選択すると、一覧に表示されている順序でonSelectEntriesが呼ばれる', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry1 = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'まとめ選択テスト1',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    const entry2 = journalEntryRepository.create({
+      entryDate: '2026-08-02',
+      memo: 'まとめ選択テスト2',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 500 },
+        { accountId: cash.id, side: 'credit', amount: 500 },
+      ],
+    })
+
+    const { onSelectEntries } = renderScreen()
+    await screen.findByText('まとめ選択テスト1')
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'まとめ選択テスト2を選択する' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'まとめ選択テスト1を選択する' }))
+    fireEvent.click(screen.getByRole('button', { name: '選択した仕訳で割勘する' }))
+
+    expect(onSelectEntries).toHaveBeenCalledWith([
+      expect.objectContaining({ id: entry1.id }),
+      expect.objectContaining({ id: entry2.id }),
+    ])
+  })
+
+  it('仕訳を1件も選択していない間は「選択した仕訳で割勘する」ボタンが無効化される', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderScreen()
+    await screen.findByText('スーパーで食材購入')
+
+    expect(screen.getByRole('button', { name: '選択した仕訳で割勘する' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'スーパーで食材購入を選択する' }))
+
+    expect(screen.getByRole('button', { name: '選択した仕訳で割勘する' })).toBeEnabled()
   })
 
   it('候補が0件の場合、空状態メッセージが表示される', async () => {

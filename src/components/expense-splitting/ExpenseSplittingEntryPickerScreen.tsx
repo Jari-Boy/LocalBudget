@@ -31,7 +31,8 @@ export interface ExpenseSplittingEntryPickerScreenProps {
   accountRepository: AccountFinder
   householdMemberRepository: HouseholdMemberFinder
   projectRepository: ProjectFinder
-  onSelectEntry: (entry: JournalEntry) => void
+  /** チェックボックスで選択された仕訳を、一覧の表示順でまとめて渡す(計画Issue #40の再指摘対応) */
+  onSelectEntries: (entries: JournalEntry[]) => void
   onBack: () => void
 }
 
@@ -54,20 +55,36 @@ function calculateEntryTotal(entry: JournalEntry): number {
  * (ユーザーレビューでのUX見直し)。findUnallocatedEntries(docs/domain/
  * expense-splitting.md 1.5節)で未割勘の仕訳のみを候補にし、共通コンポーネントの
  * JournalEntryFilterForm(期間・科目・世帯メンバー・プロジェクト)による追加の絞り込みを
- * filterJournalEntriesで適用する。選択した仕訳は割勘起票フォームへそのまま渡す。
+ * filterJournalEntriesで適用する。候補はチェックボックスで複数選択でき、「選択した
+ * 仕訳で割勘する」ボタンで選択済みの仕訳をまとめて割勘起票フォームへ渡す(計画Issue #40
+ * Attempt 4、人間レビューでの「複数の元仕訳をまとめて選択して一括起票したい」との
+ * 指摘への対応)。
  */
 export function ExpenseSplittingEntryPickerScreen({
   journalEntryRepository,
   accountRepository,
   householdMemberRepository,
   projectRepository,
-  onSelectEntry,
+  onSelectEntries,
   onBack,
 }: ExpenseSplittingEntryPickerScreenProps) {
   const { t } = useTranslation('expenseSplitting')
   const { t: tCommon } = useTranslation('common')
   const [data, setData] = useState<LoadedData | null>(null)
   const [filter, setFilter] = useState<JournalEntryFilter>({})
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+
+  function toggleSelected(entryId: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(entryId)) {
+        next.delete(entryId)
+      } else {
+        next.add(entryId)
+      }
+      return next
+    })
+  }
 
   useEffect(() => {
     void Promise.all([
@@ -111,18 +128,30 @@ export function ExpenseSplittingEntryPickerScreen({
       {candidates.length === 0 ? (
         <p>{t('entryPickerEmpty')}</p>
       ) : (
-        <ul>
-          {candidates.map((entry) => (
-            <li key={entry.id}>
-              <span>{entry.entryDate}</span>
-              <span>{entry.memo ?? t('entryNoMemo')}</span>
-              <span>{formatCurrency(calculateEntryTotal(entry), 'JPY')}</span>
-              <button type="button" onClick={() => onSelectEntry(entry)}>
-                {t('selectEntry')}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul>
+            {candidates.map((entry) => (
+              <li key={entry.id}>
+                <input
+                  type="checkbox"
+                  aria-label={t('selectEntryCheckboxLabel', { memo: entry.memo ?? t('entryNoMemo') })}
+                  checked={selectedIds.has(entry.id)}
+                  onChange={() => toggleSelected(entry.id)}
+                />
+                <span>{entry.entryDate}</span>
+                <span>{entry.memo ?? t('entryNoMemo')}</span>
+                <span>{formatCurrency(calculateEntryTotal(entry), 'JPY')}</span>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            disabled={selectedIds.size === 0}
+            onClick={() => onSelectEntries(candidates.filter((entry) => selectedIds.has(entry.id)))}
+          >
+            {t('submitEntrySelection')}
+          </button>
+        </>
       )}
 
       <button type="button" onClick={onBack}>

@@ -43,5 +43,6 @@
   "entryPickerTitle": "割勘する仕訳を選ぶ",
   "entryPickerEmpty": "割勘の対象となる仕訳がありません",
   "entryNoMemo": "摘要なし",
-  "selectEntry": "選択する"
+  "selectEntryCheckboxLabel": "{{memo}}を選択する",
+  "submitEntrySelection": "選択した仕訳で割勘する"
 }
