@@ -378,6 +378,60 @@ describe('ExpenseSplittingForm', () => {
     expect(journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)).toHaveLength(0)
   })
 
+  it('割勘バッチをその場で新規作成でき、作成したバッチがそのまま選択された状態で割勘を起票できる', async () => {
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    const memberB = householdMemberRepository.create({ name: 'Bさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+    const advanceLiability = accountRepository.create({
+      category: 'liability',
+      name: '立替金',
+      isReconcilable: false,
+    })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm(originalEntry)
+    await screen.findByText('スーパーで食材購入')
+
+    fireEvent.change(screen.getByLabelText('立替金(資産)科目'), { target: { value: String(advanceAsset.id) } })
+    fireEvent.change(screen.getByLabelText('立替金(負債)科目'), {
+      target: { value: String(advanceLiability.id) },
+    })
+
+    fireEvent.change(screen.getByLabelText('割勘バッチ'), { target: { value: '__new__' } })
+    fireEvent.change(screen.getByLabelText('新しい割勘バッチの名前'), {
+      target: { value: '26/8生活費割勘' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '作成する' }))
+
+    await waitFor(() => expect(screen.queryByLabelText('新しい割勘バッチの名前')).not.toBeInTheDocument())
+    expect(projectRepository.findAll()).toHaveLength(1)
+    expect(projectRepository.findAll()[0]).toMatchObject({ name: '26/8生活費割勘', kind: 'settlement' })
+
+    const participantRows = screen.getAllByRole('group', { name: /分担者/ })
+    fireEvent.change(within(participantRows[0]).getByLabelText('相手', { exact: true }), {
+      target: { value: String(memberB.id) },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(within(participantRows[0]).getByLabelText('金額')).toHaveValue(500))
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    await waitFor(() => {
+      const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      expect(createdEntries).toHaveLength(1)
+    })
+  })
+
   it('戻るボタンを押すとonBackが呼ばれる', async () => {
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })

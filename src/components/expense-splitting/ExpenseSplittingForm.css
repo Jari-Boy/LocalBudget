@@ -45,6 +45,19 @@
   }
 }
 
+.expense-splitting-form .expense-splitting-project-quick-add {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.expense-splitting-form .expense-splitting-project-quick-add input {
+  width: auto;
+  flex: 1;
+}
+
 .expense-splitting-form button {
   font-size: 16px;
   padding: 8px 20px;

@@ -22,6 +22,9 @@ interface AccountFinder {
 interface ProjectFinder {
   findAll(): Project[] | Promise<Project[]>
 }
+interface ProjectCreator {
+  create(input: { name: string; kind?: Project['kind'] }): Project | Promise<Project>
+}
 interface HouseholdMemberFinder {
   findAll(): HouseholdMember[] | Promise<HouseholdMember[]>
 }
@@ -36,7 +39,7 @@ export interface ExpenseSplittingFormProps {
   /** 割勘対象として選択済みの元の支出仕訳 */
   originalEntry: JournalEntry
   accountRepository: AccountFinder
-  projectRepository: ProjectFinder
+  projectRepository: ProjectFinder & ProjectCreator
   householdMemberRepository: HouseholdMemberFinder
   counterpartyRepository: CounterpartyFinder
   journalEntryRepository: JournalEntryCreator
@@ -244,21 +247,18 @@ export function ExpenseSplittingForm({
         </select>
       </div>
 
-      <div>
-        <label htmlFor="expense-splitting-project">{t('projectLabel')}</label>
-        <select
-          id="expense-splitting-project"
-          value={projectId ?? ''}
-          onChange={(event) => setProjectId(event.target.value === '' ? null : Number(event.target.value))}
-        >
-          <option value="">{t('unselected')}</option>
-          {settlementProjects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      <ProjectQuickAddSelect
+        id="expense-splitting-project"
+        label={t('projectLabel')}
+        value={projectId}
+        projects={settlementProjects}
+        onChange={setProjectId}
+        onCreate={async (name) => {
+          const created = await projectRepository.create({ name, kind: 'settlement' })
+          setMasterData((prev) => (prev === null ? prev : { ...prev, projects: [...prev.projects, created] }))
+          return created
+        }}
+      />
 
       <div>
         <label htmlFor="expense-splitting-total-amount">{t('totalAmountLabel')}</label>
@@ -380,6 +380,106 @@ export function ExpenseSplittingForm({
           {t('confirmSplit')}
         </button>
       </div>
+    </div>
+  )
+}
+
+/** 割勘バッチセレクトの「+ 新しい割勘バッチを作成する」を表す特殊値。project idと衝突しない文字列を使う */
+const NEW_PROJECT_OPTION_VALUE = '__new__'
+
+interface ProjectQuickAddSelectProps {
+  id: string
+  label: string
+  value: number | null
+  projects: readonly Project[]
+  onChange: (projectId: number | null) => void
+  /** 割勘バッチ(kind='settlement'のプロジェクト)を新規作成する。作成後のprojects一覧への反映は呼び出し元の責務 */
+  onCreate: (name: string) => Promise<Project>
+}
+
+/**
+ * 割勘バッチ(project、kind='settlement')セレクト(計画Issue #40)。既存の
+ * CounterpartyQuickAddSelect(src/components/statement-import/StatementImportReviewScreen.tsx)
+ * と同じ「その場作成(quick add)」パターンを踏襲し、既存バッチからの選択に加え、
+ * 「+ 新しい割勘バッチを作成する」を選ぶと名前入力欄がインラインで現れ(モーダル不使用)、
+ * その場でprojectRepository.createを呼び出して新規バッチを作成・選択できる
+ * (D6のプロジェクト管理画面へ事前に作成しに行く手間を無くすためのユーザー要望)。
+ * 作成したバッチは既存のDB永続化の仕組みにより精算画面(SettlementScreen)の選択肢にも
+ * 自動的に表示される。
+ */
+function ProjectQuickAddSelect({ id, label, value, projects, onChange, onCreate }: ProjectQuickAddSelectProps) {
+  const { t } = useTranslation('expenseSplitting')
+  const [adding, setAdding] = useState(false)
+  const [nameInput, setNameInput] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleAdd(): Promise<void> {
+    const trimmedName = nameInput.trim()
+    if (trimmedName === '') return
+    setCreating(true)
+    setError(null)
+    try {
+      const created = await onCreate(trimmedName)
+      onChange(created.id)
+      setAdding(false)
+      setNameInput('')
+    } catch {
+      setError(t('newProjectError'))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  if (adding) {
+    return (
+      <div className="expense-splitting-project-quick-add">
+        <label htmlFor={`${id}-new-name`}>{t('newProjectNameLabel')}</label>
+        <input
+          id={`${id}-new-name`}
+          type="text"
+          value={nameInput}
+          onChange={(event) => setNameInput(event.target.value)}
+        />
+        <button type="button" disabled={creating || nameInput.trim() === ''} onClick={() => void handleAdd()}>
+          {t('addProjectButton')}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setAdding(false)
+            setNameInput('')
+          }}
+        >
+          {t('cancelButton')}
+        </button>
+        {error && <p role="alert">{error}</p>}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <label htmlFor={id}>{label}</label>
+      <select
+        id={id}
+        value={value ?? ''}
+        onChange={(event) => {
+          if (event.target.value === NEW_PROJECT_OPTION_VALUE) {
+            setAdding(true)
+            return
+          }
+          onChange(event.target.value === '' ? null : Number(event.target.value))
+        }}
+      >
+        <option value="">{t('unselected')}</option>
+        {projects.map((project) => (
+          <option key={project.id} value={project.id}>
+            {project.name}
+          </option>
+        ))}
+        <option value={NEW_PROJECT_OPTION_VALUE}>{t('addNewProjectOption')}</option>
+      </select>
     </div>
   )
 }

@@ -24,6 +24,7 @@ import { JournalEntryDraftListScreen } from './components/journal-entry/JournalE
 import { JournalEntryForm } from './components/journal-entry/JournalEntryForm'
 import { JournalEntryListScreen } from './components/journal-entry/JournalEntryListScreen'
 import { JournalEntryDetailScreen } from './components/journal-entry/JournalEntryDetailScreen'
+import { ExpenseSplittingEntryPickerScreen } from './components/expense-splitting/ExpenseSplittingEntryPickerScreen'
 import { ExpenseSplittingForm } from './components/expense-splitting/ExpenseSplittingForm'
 import { SettlementScreen } from './components/settlement/SettlementScreen'
 import {
@@ -49,6 +50,7 @@ type Screen =
   | 'journal-entry-form'
   | 'journal-entry-list'
   | 'journal-entry-detail'
+  | 'expense-splitting-entry-picker'
   | 'expense-splitting-form'
   | 'settlement'
   | 'statement-import-upload'
@@ -233,10 +235,6 @@ function AppContent() {
           setSelectedEntry(entry)
           setScreen('journal-entry-detail')
         }}
-        onStartSplitting={(entry) => {
-          setSelectedEntry(entry)
-          setScreen('expense-splitting-form')
-        }}
         onBack={() => setScreen('home')}
       />
     )
@@ -263,6 +261,22 @@ function AppContent() {
     )
   }
 
+  if (screen === 'expense-splitting-entry-picker') {
+    return (
+      <ExpenseSplittingEntryPickerScreen
+        journalEntryRepository={journalEntryRepository}
+        accountRepository={accountRepository}
+        householdMemberRepository={householdMemberRepository}
+        projectRepository={projectRepository}
+        onSelectEntry={(entry) => {
+          setSelectedEntry(entry)
+          setScreen('expense-splitting-form')
+        }}
+        onBack={() => setScreen('home')}
+      />
+    )
+  }
+
   if (screen === 'expense-splitting-form' && selectedEntry !== null) {
     return (
       <ExpenseSplittingForm
@@ -274,11 +288,11 @@ function AppContent() {
         journalEntryRepository={journalEntryRepository}
         onComplete={() => {
           setSelectedEntry(null)
-          setScreen('journal-entry-list')
+          setScreen('home')
         }}
         onBack={() => {
           setSelectedEntry(null)
-          setScreen('journal-entry-list')
+          setScreen('expense-splitting-entry-picker')
         }}
       />
     )
@@ -351,6 +365,9 @@ function AppContent() {
       </button>
       <button type="button" onClick={() => setScreen('journal-entry-list')}>
         {tJournal('entryListTitle')}
+      </button>
+      <button type="button" onClick={() => setScreen('expense-splitting-entry-picker')}>
+        {tExpenseSplitting('entryPickerMenuTitle')}
       </button>
       <button type="button" onClick={() => setScreen('settlement')}>
         {tExpenseSplitting('settlementScreenTitle')}

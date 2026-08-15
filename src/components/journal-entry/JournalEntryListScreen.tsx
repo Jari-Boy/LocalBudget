@@ -1,21 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
-import type { JournalEntryLink } from '../../domain/journal/JournalEntryLink'
-import { findUnallocatedEntries } from '../../domain/expense-splitting/findUnallocatedEntries'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import './JournalEntryListScreen.css'
 
 interface JournalEntryFinder {
   findAll(): JournalEntry[] | Promise<JournalEntry[]>
-  listLinksForEntry(entryId: number): JournalEntryLink[] | Promise<JournalEntryLink[]>
 }
 
 export interface JournalEntryListScreenProps {
   journalEntryRepository: JournalEntryFinder
   onSelectEntry: (entry: JournalEntry) => void
-  /** 未割勘の仕訳に表示する「割勘する」ボタンを押した際に呼ばれる */
-  onStartSplitting: (entry: JournalEntry) => void
   onBack: () => void
 }
 
@@ -27,36 +22,24 @@ function calculateEntryTotal(entry: JournalEntry): number {
 /**
  * 確定済み仕訳一覧画面(計画Issue #40)。journal_entriesを日付・摘要・取引金額で
  * 一覧表示する。借方/貸方・仕訳明細といった複式簿記の概念はUI上に出さない
- * (docs/domain.md 1.1)。「元の支出仕訳を選ぶ」動線として割勘起票フォームからも
- * 再利用される想定。findUnallocatedEntries(docs/domain/expense-splitting.md 1.5節)で
- * 割勘対象候補を絞り込み、未割勘の仕訳にのみ「割勘する」ボタンを表示する。
+ * (docs/domain.md 1.1)。本画面は仕訳確認専用であり、割勘起票への導線は持たない
+ * (ユーザーレビューで割勘対象の選択を専用のExpenseSplittingEntryPickerScreenへ分離した)。
  * 下書き一覧(JournalEntryDraftListScreen)とは別物。
  */
 export function JournalEntryListScreen({
   journalEntryRepository,
   onSelectEntry,
-  onStartSplitting,
   onBack,
 }: JournalEntryListScreenProps) {
   const { t } = useTranslation('journal')
   const { t: tCommon } = useTranslation('common')
   const [entries, setEntries] = useState<JournalEntry[] | null>(null)
-  const [unallocatedEntryIds, setUnallocatedEntryIds] = useState<Set<number> | null>(null)
 
   useEffect(() => {
-    void Promise.resolve(journalEntryRepository.findAll()).then(async (allEntries) => {
-      const linksByEntryId = new Map<number, JournalEntryLink[]>()
-      await Promise.all(
-        allEntries.map(async (entry) => {
-          linksByEntryId.set(entry.id, await Promise.resolve(journalEntryRepository.listLinksForEntry(entry.id)))
-        }),
-      )
-      setEntries(allEntries)
-      setUnallocatedEntryIds(new Set(findUnallocatedEntries(allEntries, linksByEntryId).map((entry) => entry.id)))
-    })
+    void Promise.resolve(journalEntryRepository.findAll()).then(setEntries)
   }, [journalEntryRepository])
 
-  if (entries === null || unallocatedEntryIds === null) {
+  if (entries === null) {
     return <p role="status">{tCommon('loading')}</p>
   }
 
@@ -76,11 +59,6 @@ export function JournalEntryListScreen({
               <button type="button" onClick={() => onSelectEntry(entry)}>
                 {t('viewEntryDetail')}
               </button>
-              {unallocatedEntryIds.has(entry.id) && (
-                <button type="button" onClick={() => onStartSplitting(entry)}>
-                  {t('startSplitting')}
-                </button>
-              )}
             </li>
           ))}
         </ul>

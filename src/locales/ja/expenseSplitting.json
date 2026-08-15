@@ -5,6 +5,11 @@
   "advanceAssetAccountLabel": "立替金(資産)科目",
   "advanceLiabilityAccountLabel": "立替金(負債)科目",
   "projectLabel": "割勘バッチ",
+  "addNewProjectOption": "+ 新しい割勘バッチを作成する",
+  "newProjectNameLabel": "新しい割勘バッチの名前",
+  "addProjectButton": "作成する",
+  "cancelButton": "キャンセル",
+  "newProjectError": "割勘バッチの作成に失敗しました。もう一度お試しください。",
   "totalAmountLabel": "按分する金額",
   "allocationModeLabel": "配分方法",
   "allocationModeEqual": "均等に分ける",
@@ -33,5 +38,10 @@
   "settleButton": "精算する",
   "counterAccountLabel": "精算元/精算先の口座",
   "settlementAmountLabel": "精算金額",
-  "confirmSettlement": "精算を確定する"
+  "confirmSettlement": "精算を確定する",
+  "entryPickerMenuTitle": "割勘する",
+  "entryPickerTitle": "割勘する仕訳を選ぶ",
+  "entryPickerEmpty": "割勘の対象となる仕訳がありません",
+  "entryNoMemo": "摘要なし",
+  "selectEntry": "選択する"
 }
