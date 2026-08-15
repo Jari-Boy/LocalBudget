@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
-import type { CreateJournalEntryInput, JournalEntry } from '../../domain/journal/JournalEntry'
+import type { CreateJournalEntryInput, JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
 import type { Project } from '../../domain/project/Project'
 import { buildExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/buildExpenseSplittingJournalEntryInputs'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
@@ -11,10 +11,16 @@ import {
   calculateParticipantAmounts,
   createEmptyParticipantRow,
   toExpenseSplitRecipients,
+  toExpenseSplitRecipientsForEntryAmount,
   type ExpenseSplittingAllocationMode,
   type ExpenseSplittingParticipantRow,
 } from './expenseSplittingFormParticipant'
 import './ExpenseSplittingForm.css'
+
+/** entryの明細から費用科目の行を探す。単一/複数元仕訳のいずれの表示・計算からも使う */
+function findExpenseLine(entry: JournalEntry, accounts: readonly Account[]): JournalLine | undefined {
+  return entry.lines.find((line) => accounts.find((account) => account.id === line.accountId)?.category === 'expense')
+}
 
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
@@ -36,8 +42,12 @@ interface JournalEntryCreator {
 }
 
 export interface ExpenseSplittingFormProps {
-  /** 割勘対象として選択済みの元の支出仕訳 */
-  originalEntry: JournalEntry
+  /**
+   * 割勘対象として選択済みの元の支出仕訳(1件以上)。複数選択時は、分担者設定
+   * (相手・配分方法)を共通のまま、元仕訳ごとに独立した割勘仕訳をまとめて作成する
+   * (計画Issue #40、人間レビューでの再指摘への対応)。
+   */
+  originalEntries: JournalEntry[]
   accountRepository: AccountFinder
   projectRepository: ProjectFinder & ProjectCreator
   householdMemberRepository: HouseholdMemberFinder
@@ -64,9 +74,18 @@ interface MasterData {
  * (計算結果は確定前に手動修正できる編集可能なプレビュー)。確定操作では、立替者を
  * 除いた分担者ごとにbuildExpenseSplittingJournalEntryInputsで組み立てた仕訳を
  * 1件ずつ作成する(複数人割勘は複数の2者間仕訳として実現する、計画Issue #40の合意事項)。
+ *
+ * 元の支出仕訳(originalEntries)は複数選択できる(計画Issue #40、人間レビューでの
+ * 再指摘への対応)。単一選択時は、分担者ごとの按分額(プレビュー欄)をユーザーが確定前に
+ * 手動修正でき、その値がそのまま使われる(toExpenseSplitRecipients)。複数選択時は
+ * 元仕訳ごとに金額が異なるため、単一の按分額を手動編集する形は成立せず、共通の分担者
+ * 設定(相手・配分方法・比率)を元仕訳ごとの金額に対して個別に計算し直す
+ * (toExpenseSplitRecipientsForEntryAmount)。これに伴い、複数選択時は「按分する金額」欄
+ * (単一選択時のみ意味を持つ)と配分方法「金額を直接指定する」(元仕訳ごとに異なる金額へ
+ * 単一の固定額を割り当てる自然な意味が無い)を非表示にする。
  */
 export function ExpenseSplittingForm({
-  originalEntry,
+  originalEntries,
   accountRepository,
   projectRepository,
   householdMemberRepository,
@@ -78,6 +97,8 @@ export function ExpenseSplittingForm({
 }: ExpenseSplittingFormProps) {
   const { t } = useTranslation('expenseSplitting')
   const { t: tCommon } = useTranslation('common')
+
+  const isBatch = originalEntries.length > 1
 
   const [masterData, setMasterData] = useState<MasterData | null>(null)
   const [advanceAssetAccountId, setAdvanceAssetAccountId] = useState<number | null>(null)
@@ -94,11 +115,6 @@ export function ExpenseSplittingForm({
   }
   const [participants, setParticipants] = useState<ExpenseSplittingParticipantRow[]>(() => [createRow()])
 
-  const originalExpenseLine = masterData
-    ? originalEntry.lines.find(
-        (line) => masterData.accounts.find((account) => account.id === line.accountId)?.category === 'expense',
-      )
-    : undefined
   const [totalAmountInput, setTotalAmountInput] = useState<string>('')
 
   if (masterData === null) {
@@ -108,18 +124,24 @@ export function ExpenseSplittingForm({
       Promise.resolve(householdMemberRepository.findAll()),
       Promise.resolve(counterpartyRepository.findAll()),
     ]).then(([accounts, projects, householdMembers, counterparties]) => {
-      const expenseLine = originalEntry.lines.find(
-        (line) => accounts.find((account) => account.id === line.accountId)?.category === 'expense',
-      )
-      setTotalAmountInput(expenseLine ? String(expenseLine.amount) : '')
+      if (originalEntries.length === 1) {
+        const expenseLine = findExpenseLine(originalEntries[0], accounts)
+        setTotalAmountInput(expenseLine ? String(expenseLine.amount) : '')
+      }
       setMasterData({ accounts, projects, householdMembers, counterparties })
     })
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const assetAccounts = masterData.accounts.filter((account) => account.category === 'asset')
-  const liabilityAccounts = masterData.accounts.filter((account) => account.category === 'liability')
+  // 以降のネストした関数(handleCalculate/handleSubmit)からmasterDataを参照すると、TSの
+  // narrowingがクロージャ境界を越えて効かず"possibly null"エラーになるため、ここで
+  // 非nullであることが確定した参照をローカル変数へ退避しておく。
+  const accounts = masterData.accounts
+  const assetAccounts = accounts.filter((account) => account.category === 'asset')
+  const liabilityAccounts = accounts.filter((account) => account.category === 'liability')
   const settlementProjects = masterData.projects.filter((project) => project.kind === 'settlement')
+  /** 分担者の選択肢から、選択中の元仕訳いずれかの立替者を除外する(自分自身との割勘を防ぐ) */
+  const payerMemberIds = new Set(originalEntries.map((entry) => entry.householdMemberId))
 
   function updateRow(key: number, updater: (row: ExpenseSplittingParticipantRow) => ExpenseSplittingParticipantRow) {
     setParticipants((prev) => prev.map((row) => (row.key === key ? updater(row) : row)))
@@ -134,22 +156,43 @@ export function ExpenseSplittingForm({
   }
 
   function handleCalculate() {
-    const totalAmount = Number(totalAmountInput)
-    if (!Number.isFinite(totalAmount) || totalAmount <= 0) return
-    const amounts = calculateParticipantAmounts(totalAmount, participants, allocationMode)
-    setParticipants((prev) =>
-      prev.map((row) => ({ ...row, amountInput: String(amounts.get(String(row.key)) ?? 0) })),
-    )
+    if (!isBatch) {
+      const totalAmount = Number(totalAmountInput)
+      if (!Number.isFinite(totalAmount) || totalAmount <= 0) return
+      const amounts = calculateParticipantAmounts(totalAmount, participants, allocationMode)
+      setParticipants((prev) =>
+        prev.map((row) => ({ ...row, amountInput: String(amounts.get(String(row.key)) ?? 0) })),
+      )
+      return
+    }
+
+    // 元仕訳ごとに金額が異なるため、元仕訳ごとに個別計算した按分額を合計してプレビューに表示する
+    const totals = new Map<string, number>()
+    for (const entry of originalEntries) {
+      const expenseLine = findExpenseLine(entry, accounts)
+      if (expenseLine === undefined) continue
+      const amounts = calculateParticipantAmounts(expenseLine.amount, participants, allocationMode)
+      for (const [key, amount] of amounts) {
+        totals.set(key, (totals.get(key) ?? 0) + amount)
+      }
+    }
+    setParticipants((prev) => prev.map((row) => ({ ...row, amountInput: String(totals.get(String(row.key)) ?? 0) })))
   }
 
   async function handleSubmit() {
     if (submitting) return
     setError(null)
 
-    if (originalExpenseLine === undefined) {
-      setError(t('expenseAccountNotFoundError'))
-      return
+    const entryLines: { entry: JournalEntry; expenseLine: JournalLine }[] = []
+    for (const entry of originalEntries) {
+      const expenseLine = findExpenseLine(entry, accounts)
+      if (expenseLine === undefined) {
+        setError(t('expenseAccountNotFoundError'))
+        return
+      }
+      entryLines.push({ entry, expenseLine })
     }
+
     if (advanceAssetAccountId === null || projectId === null) {
       setError(t('requiredFieldMissingError'))
       return
@@ -157,10 +200,10 @@ export function ExpenseSplittingForm({
 
     /**
      * 世帯メンバー分担者はadvanceLiabilityAccountIdが無いと仕訳を組み立てられない
-     * (toExpenseSplitRecipientsが黙って除外する)。ここで事前に検証しないと、
-     * 世帯外相手の行が1件でも有効な場合にnoRecipientErrorをすり抜け、世帯メンバー分の
-     * 割勘だけが無警告で消失したまま確定されてしまう(evaluatorレビュー指摘、
-     * 計画Issue #40 Review Attempt 1対応)。
+     * (toExpenseSplitRecipients/toExpenseSplitRecipientsForEntryAmountが黙って除外する)。
+     * ここで事前に検証しないと、世帯外相手の行が1件でも有効な場合にnoRecipientErrorを
+     * すり抜け、世帯メンバー分の割勘だけが無警告で消失したまま確定されてしまう
+     * (evaluatorレビュー指摘、計画Issue #40 Review Attempt 1対応)。
      */
     const hasHouseholdMemberParticipant = participants.some(
       (row) => row.kind === 'householdMember' && row.targetId !== null,
@@ -170,22 +213,29 @@ export function ExpenseSplittingForm({
       return
     }
 
-    const recipients = toExpenseSplitRecipients(participants, advanceLiabilityAccountId)
-    if (recipients.length === 0) {
-      setError(t('noRecipientError'))
-      return
+    const entryDate = today ?? new Date().toISOString().slice(0, 10)
+    const inputs: CreateJournalEntryInput[] = []
+    for (const { entry, expenseLine } of entryLines) {
+      const recipients = isBatch
+        ? toExpenseSplitRecipientsForEntryAmount(participants, advanceLiabilityAccountId, expenseLine.amount, allocationMode)
+        : toExpenseSplitRecipients(participants, advanceLiabilityAccountId)
+      if (recipients.length === 0) {
+        setError(t('noRecipientError'))
+        return
+      }
+      inputs.push(
+        ...buildExpenseSplittingJournalEntryInputs({
+          originalEntryId: entry.id,
+          expenseAccountId: expenseLine.accountId,
+          advanceAssetAccountId,
+          fromMemberId: entry.householdMemberId,
+          projectId,
+          entryDate,
+          memo: entry.memo === null ? null : t('splitMemoTemplate', { memo: entry.memo }),
+          recipients,
+        }),
+      )
     }
-
-    const inputs = buildExpenseSplittingJournalEntryInputs({
-      originalEntryId: originalEntry.id,
-      expenseAccountId: originalExpenseLine.accountId,
-      advanceAssetAccountId,
-      fromMemberId: originalEntry.householdMemberId,
-      projectId,
-      entryDate: today ?? new Date().toISOString().slice(0, 10),
-      memo: originalEntry.memo === null ? null : t('splitMemoTemplate', { memo: originalEntry.memo }),
-      recipients,
-    })
 
     setSubmitting(true)
     try {
@@ -205,11 +255,18 @@ export function ExpenseSplittingForm({
     <div className="expense-splitting-form">
       <h2>{t('formTitle')}</h2>
 
-      <div className="expense-splitting-original-entry">
-        <span>{originalEntry.entryDate}</span>
-        <span>{originalEntry.memo}</span>
-        {originalExpenseLine !== undefined && <span>{formatCurrency(originalExpenseLine.amount, 'JPY')}</span>}
-      </div>
+      <ul className="expense-splitting-original-entries">
+        {originalEntries.map((entry) => {
+          const expenseLine = findExpenseLine(entry, accounts)
+          return (
+            <li key={entry.id}>
+              <span>{entry.entryDate}</span>
+              <span>{entry.memo ?? t('entryNoMemo')}</span>
+              {expenseLine !== undefined && <span>{formatCurrency(expenseLine.amount, 'JPY')}</span>}
+            </li>
+          )
+        })}
+      </ul>
 
       <div>
         <label htmlFor="expense-splitting-advance-asset">{t('advanceAssetAccountLabel')}</label>
@@ -260,15 +317,17 @@ export function ExpenseSplittingForm({
         }}
       />
 
-      <div>
-        <label htmlFor="expense-splitting-total-amount">{t('totalAmountLabel')}</label>
-        <input
-          id="expense-splitting-total-amount"
-          type="number"
-          value={totalAmountInput}
-          onChange={(event) => setTotalAmountInput(event.target.value)}
-        />
-      </div>
+      {!isBatch && (
+        <div>
+          <label htmlFor="expense-splitting-total-amount">{t('totalAmountLabel')}</label>
+          <input
+            id="expense-splitting-total-amount"
+            type="number"
+            value={totalAmountInput}
+            onChange={(event) => setTotalAmountInput(event.target.value)}
+          />
+        </div>
+      )}
 
       <div>
         <label htmlFor="expense-splitting-allocation-mode">{t('allocationModeLabel')}</label>
@@ -279,14 +338,14 @@ export function ExpenseSplittingForm({
         >
           <option value="equal">{t('allocationModeEqual')}</option>
           <option value="ratio">{t('allocationModeRatio')}</option>
-          <option value="amount">{t('allocationModeAmount')}</option>
+          {!isBatch && <option value="amount">{t('allocationModeAmount')}</option>}
         </select>
       </div>
 
       {participants.map((row, index) => {
         const targetOptions =
           row.kind === 'householdMember'
-            ? masterData.householdMembers.filter((member) => member.id !== originalEntry.householdMemberId)
+            ? masterData.householdMembers.filter((member) => !payerMemberIds.has(member.id))
             : masterData.counterparties
         const idPrefix = `expense-splitting-participant-${row.key}`
         return (

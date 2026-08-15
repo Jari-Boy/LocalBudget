@@ -280,7 +280,7 @@ function AppContent() {
   if (screen === 'expense-splitting-form' && selectedEntry !== null) {
     return (
       <ExpenseSplittingForm
-        originalEntry={selectedEntry}
+        originalEntries={[selectedEntry]}
         accountRepository={accountRepository}
         projectRepository={projectRepository}
         householdMemberRepository={householdMemberRepository}
