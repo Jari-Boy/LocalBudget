@@ -96,6 +96,17 @@ test.describe('財務諸表(PL/BS)表示画面', () => {
     await page.getByLabel('プロジェクトで絞り込み(複数選択可)').selectOption({ label: 'E2EプロジェクトA' })
     await expect(foodRow.getByText('￥3,000')).toBeVisible()
 
+    // プロジェクトBも同時選択(2件の複数選択)すると、両方の明細が合算されて表示される
+    await page.getByLabel('プロジェクトで絞り込み(複数選択可)').selectOption([
+      { label: 'E2EプロジェクトA' },
+      { label: 'E2EプロジェクトB' },
+    ])
+    await expect(foodRow.getByText('￥10,000')).toBeVisible()
+
+    // Aのみに戻してからタブ切替の保持を確認する
+    await page.getByLabel('プロジェクトで絞り込み(複数選択可)').selectOption({ label: 'E2EプロジェクトA' })
+    await expect(foodRow.getByText('￥3,000')).toBeVisible()
+
     await page.getByRole('button', { name: '貸借対照表(BS)' }).click()
     await page.getByRole('button', { name: '損益計算書(PL)' }).click()
 
@@ -292,5 +303,9 @@ test.describe('財務諸表(PL/BS)表示画面', () => {
     await page.getByLabel('年月で指定').check()
     await page.getByRole('button', { name: '今年' }).click()
     await expect(foodRow.getByText('￥11,500')).toBeVisible()
+
+    // 「今月」プリセットを押すと、1月分を含まない当月分のみ(￥10,000)の集計に戻る
+    await page.getByRole('button', { name: '今月' }).click()
+    await expect(foodRow.getByText('￥10,000')).toBeVisible()
   })
 })

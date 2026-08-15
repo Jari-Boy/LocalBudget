@@ -162,6 +162,13 @@ describe('FinancialStatementScreen', () => {
     const foodRow = (await screen.findByText('食費')).closest('tr')!
     expect(within(foodRow).getByText('￥5,000')).toBeInTheDocument()
     expect(screen.queryByText('￥9,000')).not.toBeInTheDocument()
+
+    // 2件目のプロジェクトも同時選択(複数選択)すると、両方の明細が合算されて表示される
+    selectMultiOptions(screen.getByLabelText('プロジェクトで絞り込み(複数選択可)'), [
+      String(tripProject.id),
+      String(otherProject.id),
+    ])
+    expect(within(foodRow).getByText('￥14,000')).toBeInTheDocument()
   })
 
   it('世帯メンバーを複数選択すると、選択したメンバーに紐づく明細のみで集計される', async () => {
@@ -285,6 +292,42 @@ describe('FinancialStatementScreen', () => {
 
     const foodRow = (await screen.findByText('食費')).closest('tr')!
     expect(within(foodRow).getByText('￥1,500')).toBeInTheDocument()
+  })
+
+  it('「今年」プリセットで期間を広げた後に「今月」プリセットを押すと、当月分のみの集計に戻る', async () => {
+    const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-01-15',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 1500 },
+        { accountId: cash.id, side: 'credit', amount: 1500 },
+      ],
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-10',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 2000 },
+        { accountId: cash.id, side: 'credit', amount: 2000 },
+      ],
+    })
+
+    renderScreen()
+    await screen.findByText('食費')
+
+    // まず「今年」で1月分・7月分を合算した状態(￥3,500)を作る
+    fireEvent.click(screen.getByRole('button', { name: '今年' }))
+    const foodRow = (await screen.findByText('食費')).closest('tr')!
+    expect(within(foodRow).getByText('￥3,500')).toBeInTheDocument()
+
+    // 「今月」を押すと、当月(7月)分のみの集計(￥2,000)に戻る
+    fireEvent.click(screen.getByRole('button', { name: '今月' }))
+    expect(within(foodRow).getByText('￥2,000')).toBeInTheDocument()
+    expect(within(foodRow).queryByText('￥3,500')).not.toBeInTheDocument()
   })
 
   it('プロジェクトの選択状態はPL/BSタブを切り替えても保持される', async () => {
