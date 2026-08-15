@@ -164,6 +164,129 @@ describe('FinancialStatementScreen', () => {
     expect(screen.queryByText('￥9,000')).not.toBeInTheDocument()
   })
 
+  it('世帯メンバーを複数選択すると、選択したメンバーに紐づく明細のみで集計される', async () => {
+    const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const otherMemberId = householdMemberRepository.create({ name: '配偶者' }).id
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-10',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 4000 },
+        { accountId: cash.id, side: 'credit', amount: 4000 },
+      ],
+    })
+    journalEntryRepository.create({
+      householdMemberId: otherMemberId,
+      entryDate: '2026-07-11',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 6000 },
+        { accountId: cash.id, side: 'credit', amount: 6000 },
+      ],
+    })
+
+    renderScreen()
+    await screen.findByText('配偶者')
+
+    selectMultiOptions(screen.getByLabelText('世帯メンバーで絞り込み(複数選択可)'), [String(otherMemberId)])
+
+    const foodRow = (await screen.findByText('食費')).closest('tr')!
+    expect(within(foodRow).getByText('￥6,000')).toBeInTheDocument()
+    expect(screen.queryByText('￥4,000')).not.toBeInTheDocument()
+  })
+
+  it('取引先を複数選択すると、選択した取引先に紐づく明細のみで集計される', async () => {
+    const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const supermarket = counterpartyRepository.create({ name: 'スーパーA' })
+    const restaurant = counterpartyRepository.create({ name: 'レストランB' })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-10',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 2000, counterpartyId: supermarket.id },
+        { accountId: cash.id, side: 'credit', amount: 2000 },
+      ],
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-11',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 8000, counterpartyId: restaurant.id },
+        { accountId: cash.id, side: 'credit', amount: 8000 },
+      ],
+    })
+
+    renderScreen()
+    await screen.findByText('食費')
+
+    selectMultiOptions(screen.getByLabelText('取引先で絞り込み(複数選択可)'), [String(restaurant.id)])
+
+    const foodRow = (await screen.findByText('食費')).closest('tr')!
+    expect(within(foodRow).getByText('￥8,000')).toBeInTheDocument()
+    expect(screen.queryByText('￥2,000')).not.toBeInTheDocument()
+  })
+
+  it('日付での詳細指定に切り替えて期間を指定すると、その期間の明細でPLが集計される(月の途中で区切れる)', async () => {
+    const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-05',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-20',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 9000 },
+        { accountId: cash.id, side: 'credit', amount: 9000 },
+      ],
+    })
+
+    renderScreen()
+    await screen.findByText('食費')
+
+    fireEvent.click(screen.getByLabelText('日付で指定'))
+    fireEvent.change(screen.getByLabelText('期初'), { target: { value: '2026-07-01' } })
+    fireEvent.change(screen.getByLabelText('期末'), { target: { value: '2026-07-10' } })
+
+    const foodRow = (await screen.findByText('食費')).closest('tr')!
+    expect(within(foodRow).getByText('￥1,000')).toBeInTheDocument()
+    expect(screen.queryByText('￥9,000')).not.toBeInTheDocument()
+  })
+
+  it('「今年」プリセットを押すと、当月以外の月の明細も含めて年間で集計される', async () => {
+    const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-01-15',
+      memo: null,
+      lines: [
+        { accountId: food.id, side: 'debit', amount: 1500 },
+        { accountId: cash.id, side: 'credit', amount: 1500 },
+      ],
+    })
+
+    renderScreen()
+    await screen.findAllByText('残高のある科目がありません')
+
+    fireEvent.click(screen.getByRole('button', { name: '今年' }))
+
+    const foodRow = (await screen.findByText('食費')).closest('tr')!
+    expect(within(foodRow).getByText('￥1,500')).toBeInTheDocument()
+  })
+
   it('プロジェクトの選択状態はPL/BSタブを切り替えても保持される', async () => {
     const project = projectRepository.create({ name: 'アメリカ旅行' })
     renderScreen()

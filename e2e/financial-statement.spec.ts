@@ -216,4 +216,81 @@ test.describe('財務諸表(PL/BS)表示画面', () => {
     await expect(page.getByRole('button', { name: /PDF|CSV|エクスポート/ })).toHaveCount(0)
     await expect(page.getByText(/PDF|CSV/)).toHaveCount(0)
   })
+
+  test('世帯メンバー・取引先の複数選択絞り込みができ、PLの日付詳細指定・年次プリセットが機能する', async ({ page }) => {
+    await page.goto('/')
+    const otherMemberName = await page.evaluate(
+      async ({ currentEntryDate, januaryEntryDate }) => {
+        const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
+        const client = await createDbClient()
+        const food = await client.account.create({ category: 'expense', name: 'E2E食費2', isReconcilable: null })
+        const cash = await client.account.create({ category: 'asset', name: 'E2E現金2', isReconcilable: false })
+        const [member] = await client.householdMember.findAll()
+        const otherMember = await client.householdMember.create({ name: 'E2E配偶者' })
+        const supermarket = await client.counterparty.create({ name: 'E2Eスーパー' })
+        const restaurant = await client.counterparty.create({ name: 'E2Eレストラン' })
+
+        await client.journalEntry.create({
+          entryDate: currentEntryDate,
+          memo: 'FS-E2E-member-self',
+          householdMemberId: member.id,
+          lines: [
+            { accountId: food.id, side: 'debit', amount: 4000, counterpartyId: supermarket.id },
+            { accountId: cash.id, side: 'credit', amount: 4000 },
+          ],
+        })
+        await client.journalEntry.create({
+          entryDate: currentEntryDate,
+          memo: 'FS-E2E-member-other',
+          householdMemberId: otherMember.id,
+          lines: [
+            { accountId: food.id, side: 'debit', amount: 6000, counterpartyId: restaurant.id },
+            { accountId: cash.id, side: 'credit', amount: 6000 },
+          ],
+        })
+        // 年次プリセット確認用に1月の明細も投入する(当月プリセットでは含まれないことの対比)
+        await client.journalEntry.create({
+          entryDate: januaryEntryDate,
+          memo: 'FS-E2E-january',
+          householdMemberId: member.id,
+          lines: [
+            { accountId: food.id, side: 'debit', amount: 1500, counterpartyId: supermarket.id },
+            { accountId: cash.id, side: 'credit', amount: 1500 },
+          ],
+        })
+        return otherMember.name
+      },
+      { currentEntryDate: currentMonthDate(10), januaryEntryDate: `${new Date().getFullYear()}-01-15` },
+    )
+    await waitForJournalEntryMemo(page, 'FS-E2E-january')
+    await page.reload()
+
+    await openFinancialStatementScreen(page)
+    const foodRow = page.getByRole('row').filter({ hasText: 'E2E食費2' })
+
+    // 絞り込みなしでは当月分(4000+6000=10000)のみが対象(1月分はプリセット範囲外)
+    await expect(foodRow.getByText('￥10,000')).toBeVisible()
+
+    // 世帯メンバーで絞り込むと、そのメンバーの明細のみになる
+    await page.getByLabel('世帯メンバーで絞り込み(複数選択可)').selectOption({ label: otherMemberName })
+    await expect(foodRow.getByText('￥6,000')).toBeVisible()
+
+    // 世帯メンバーの絞り込みを解除し、取引先で絞り込む
+    await page.getByLabel('世帯メンバーで絞り込み(複数選択可)').selectOption([])
+    await page.getByLabel('取引先で絞り込み(複数選択可)').selectOption({ label: 'E2Eスーパー' })
+    await expect(foodRow.getByText('￥4,000')).toBeVisible()
+    await page.getByLabel('取引先で絞り込み(複数選択可)').selectOption([])
+
+    // 日付での詳細指定に切り替えて1月を含む範囲を指定すると、1月分も集計に含まれる
+    await page.getByLabel('日付で指定').check()
+    const currentYear = new Date().getFullYear()
+    await page.getByLabel('期初').fill(`${currentYear}-01-01`)
+    await page.getByLabel('期末').fill(currentMonthDate(28))
+    await expect(foodRow.getByText('￥11,500')).toBeVisible()
+
+    // 年月プルダウンに戻し、「今年」プリセットでも1月分を含む年間集計になることを確認する
+    await page.getByLabel('年月で指定').check()
+    await page.getByRole('button', { name: '今年' }).click()
+    await expect(foodRow.getByText('￥11,500')).toBeVisible()
+  })
 })
