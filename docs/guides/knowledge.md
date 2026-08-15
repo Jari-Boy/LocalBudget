@@ -143,3 +143,13 @@
 
 **内容**: `Promise.resolve(fn())`という式では、JavaScriptの評価順序上`fn()`が`Promise.resolve`自体の呼び出しより先に評価される(関数呼び出しの引数は、外側の関数が呼ばれる前に評価される)。`fn`が同期的に例外をthrowすると、`Promise.resolve`が呼ばれることすらなく例外がその場で伝播するため、生成されるはずだったPromiseそのものが存在せず、`.then()`/`.catch()`のいずれのハンドラも呼び出されない。この例外は通常の同期的なJS例外としてそのまま呼び出し元へ伝播する(Reactのイベントハンドラ内であれば、Reactやエラーバウンダリがキャッチしない限り未処理のままになる)。対照的に、`Promise.resolve().then(() => fn())`という書き方であれば、`fn()`の呼び出し自体が`.then()`のコールバックとしてマイクロタスクの中で実行されるため、`fn`が同期的にthrowしても非同期にthrow(reject)しても、必ずそのPromiseチェーンのrejectionとして扱われ`.catch()`で一律に捕捉できる。sql.jsのRepository実装(`SqlJsXxxRepository`)は全メソッドが同期API(`Database#run`/`#exec`を直接呼ぶ)であり、DDLのCHECK制約/TRIGGER違反時は同期的にJSの例外をthrowする設計(`docs/architecture.md` 5.1節)であるため、UI側でRepositoryメソッド呼び出しをPromiseチェーンに乗せる際にこの罠を特に踏みやすい。
 **参考**: `src/components/household-member-management/HouseholdMemberManagementScreen.tsx`(コミットef2f502で`Promise.resolve(fn())`→`Promise.resolve().then(() => fn())`に修正)、`docs/guides/patterns.md`「非同期処理をPromise.resolve(fn())で開始すると、fnが同期的に投げる例外が.catch()で捕捉できない」、`docs/decisions.md`「非同期の書き込み操作は必ずPromise.resolve().then(() => fn())で開始し、Promise.resolve(fn())は使わない」、Issue #37。計画Issue #95(`AccountListScreen.tsx`)でも同型の実装がevaluatorレビューで再度FAIL指摘され、`Promise.resolve().then(() => fn())`へ修正済み(詳細は`docs/guides/patterns.md`の再発例を参照)。
+
+## import.meta.env.DEVは本番ビルド時にfalseへ静的展開され、参照コードごとVite/Rollupのtree-shakingで本番バンドルから除去される
+
+**内容**: Viteは`import.meta.env.DEV`(および`.PROD`)を、開発サーバー実行時こそ動的な値として扱うが、本番ビルド(`vite build`)時にはビルド時点で確定するリテラルなboolean値(本番ビルドでは`DEV: false`)へ静的置換する。この置換により`if (import.meta.env.DEV) { seedDevSampleDataIfDev(db) }`のようなコードは`if (false) { ... }`相当になり、Rollupのtree-shaking(到達不能コード除去)によってthenブロック内で参照しているモジュール(呼び出し先の関数や、そこがインポートするダミーデータの文字列リテラル)ごと本番バンドルの成果物から物理的に除去される。この性質を利用すると、開発環境限定の機能を本番ビルドの成果物(`dist/`)に一切含めないことを、実際に`dist/`配下をテキスト検索してダミーデータの文言が含まれないことを確認する形で実機検証できる。
+**参考**: `src/infrastructure/db/seedDevSampleDataIfDev.ts`、`docs/decisions.md`「開発環境限定のダミーサンプルデータ自動投入(seedDevSampleDataIfDev)は...」、計画Issue #101
+
+## PlaywrightのwebServer.envに設定したVITE_プレフィックス付き環境変数は、Vite dev server経由でimport.meta.envから参照できる
+
+**内容**: Viteはロード時、`process.env`(および`.env`ファイル)のうち`VITE_`プレフィックスを持つ変数のみをクライアントコードへ`import.meta.env.VITE_*`として埋め込む(プレフィックス無しの変数は意図的な情報漏えい防止のため除外される既定仕様)。`playwright.config.ts`の`webServer.env`(Playwrightが`command`で指定した開発サーバー起動コマンドの子プロセスへ渡す環境変数)に`VITE_DISABLE_DEV_SEED: 'true'`のように`VITE_`プレフィックス付きの変数を設定すると、Playwrightが起動する`npm run dev`のViteプロセスがこれを`process.env`から受け取り、アプリケーションコード側から`import.meta.env.VITE_DISABLE_DEV_SEED`として参照できる。これにより、E2Eテスト実行時の開発サーバーに限定した挙動の切り替え(本件では開発専用ダミーデータ投入の抑制)を、テストコード自体や通常の`npm run dev`起動経路を変更せずに実現できる。
+**参考**: `playwright.config.ts`(`webServer.env`)、`src/infrastructure/db/seedDevSampleDataIfDev.ts`、計画Issue #101
