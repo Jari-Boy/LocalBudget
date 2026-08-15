@@ -14,8 +14,7 @@ import { getFirstDayOfMonth } from '../../domain/financial-statement/getFirstDay
 import { getLastDayOfMonth } from '../../domain/financial-statement/getLastDayOfMonth'
 import { getPreviousPeriod } from '../../domain/financial-statement/getPreviousPeriod'
 import { getPreviousYearPeriod } from '../../domain/financial-statement/getPreviousYearPeriod'
-import { shiftDateByMonths } from '../../domain/financial-statement/shiftDateByMonths'
-import { shiftDateByYears } from '../../domain/financial-statement/shiftDateByYears'
+import { getPreviousDay } from '../../domain/financial-statement/getPreviousDay'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import './FinancialStatementScreen.css'
 
@@ -68,8 +67,14 @@ const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1)
  * 2.2節)をタブ間で共有する(フィルタパネルはタブの外側に置き、タブ切替時に
  * アンマウントされないようにすることで選択状態を自然に保持する)。期間・基準日は
  * 年月プルダウン(プリセット、月初/月末に機械的に丸める)または日付の詳細指定の
- * いずれかを選べる。比較(前期・前年同期)を有効にすると、当期・比較期間・差分を
- * 同一テーブル内に表示する(2.2節では任意機能とされるが計画Issue #34でスコープインした)。
+ * いずれかを選べる。比較を有効にすると、当期・比較期間・差分を同一テーブル内に
+ * 表示する(2.2節では任意機能とされるが計画Issue #34でスコープインした)。
+ * PLの比較基準は「前期・前年同期」の自動算出プリセットのみを提供する
+ * (`getPreviousPeriod`/`getPreviousYearPeriod`)。BSの比較基準は自動算出では
+ * なく、期間指定モードと同じ入力方式(年月プルダウン、または基準日より前の
+ * 日付に制約した詳細指定)でユーザーが直接選ぶ(実装レビューでのユーザー指摘、
+ * docs/decisions.md参照)。年月プルダウンで選んだ比較基準年月は、当期の基準日と
+ * 同様に必ず月末日として解決される。
  */
 export function FinancialStatementScreen({
   accountRepository,
@@ -104,6 +109,10 @@ export function FinancialStatementScreen({
   const [bsMonth, setBsMonth] = useState(currentMonth)
   const [bsDateInput, setBsDateInput] = useState(todayDate)
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('none')
+  const [bsComparisonEnabled, setBsComparisonEnabled] = useState(false)
+  const [bsComparisonYear, setBsComparisonYear] = useState(currentYear)
+  const [bsComparisonMonth, setBsComparisonMonth] = useState(currentMonth)
+  const [bsComparisonDateInput, setBsComparisonDateInput] = useState(getPreviousDay(todayDate))
   const [selectedProjectIds, setSelectedProjectIds] = useState<number[]>([])
   const [selectedHouseholdMemberIds, setSelectedHouseholdMemberIds] = useState<number[]>([])
   const [selectedCounterpartyIds, setSelectedCounterpartyIds] = useState<number[]>([])
@@ -155,12 +164,11 @@ export function FinancialStatementScreen({
           filter,
         )
 
-  const bsComparisonAsOfDate =
-    comparisonMode === 'previousPeriod'
-      ? shiftDateByMonths(bsAsOfDate, -1)
-      : comparisonMode === 'previousYear'
-        ? shiftDateByYears(bsAsOfDate, -1)
-        : null
+  const bsComparisonAsOfDate = !bsComparisonEnabled
+    ? null
+    : periodInputMode === 'yearMonth'
+      ? getLastDayOfMonth(bsComparisonYear, bsComparisonMonth)
+      : bsComparisonDateInput
   const bsComparison =
     bsComparisonAsOfDate === null
       ? null
@@ -421,16 +429,74 @@ export function FinancialStatementScreen({
       </div>
 
       <div className="fs-comparison-panel">
-        <label htmlFor="fs-comparison-mode">{t('comparisonLabel')}</label>
-        <select
-          id="fs-comparison-mode"
-          value={comparisonMode}
-          onChange={(e) => setComparisonMode(e.target.value as ComparisonMode)}
-        >
-          <option value="none">{t('comparisonNone')}</option>
-          <option value="previousPeriod">{t('comparisonPreviousPeriod')}</option>
-          <option value="previousYear">{t('comparisonPreviousYear')}</option>
-        </select>
+        {tab === 'pl' ? (
+          <>
+            <label htmlFor="fs-comparison-mode">{t('comparisonLabel')}</label>
+            <select
+              id="fs-comparison-mode"
+              value={comparisonMode}
+              onChange={(e) => setComparisonMode(e.target.value as ComparisonMode)}
+            >
+              <option value="none">{t('comparisonNone')}</option>
+              <option value="previousPeriod">{t('comparisonPreviousPeriod')}</option>
+              <option value="previousYear">{t('comparisonPreviousYear')}</option>
+            </select>
+          </>
+        ) : (
+          <>
+            <label htmlFor="fs-bs-comparison-enabled">
+              <input
+                id="fs-bs-comparison-enabled"
+                type="checkbox"
+                checked={bsComparisonEnabled}
+                onChange={(e) => setBsComparisonEnabled(e.target.checked)}
+              />
+              {t('comparisonEnableLabel')}
+            </label>
+            {bsComparisonEnabled &&
+              (periodInputMode === 'yearMonth' ? (
+                <>
+                  <label htmlFor="fs-bs-comparison-year">{t('comparisonBasisYearMonthLabel')}</label>
+                  <select
+                    id="fs-bs-comparison-year"
+                    value={bsComparisonYear}
+                    onChange={(e) => setBsComparisonYear(Number(e.target.value))}
+                  >
+                    {yearOptions.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                        {t('yearUnit')}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    id="fs-bs-comparison-month"
+                    aria-label={`${t('comparisonBasisYearMonthLabel')}${t('monthUnit')}`}
+                    value={bsComparisonMonth}
+                    onChange={(e) => setBsComparisonMonth(Number(e.target.value))}
+                  >
+                    {MONTH_OPTIONS.map((month) => (
+                      <option key={month} value={month}>
+                        {month}
+                        {t('monthUnit')}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : (
+                <>
+                  <label htmlFor="fs-bs-comparison-date">{t('comparisonBasisDateLabel')}</label>
+                  <input
+                    id="fs-bs-comparison-date"
+                    type="date"
+                    value={bsComparisonDateInput}
+                    max={getPreviousDay(bsAsOfDate)}
+                    onChange={(e) => setBsComparisonDateInput(e.target.value)}
+                  />
+                </>
+              ))}
+          </>
+        )}
       </div>
 
       <div className="fs-content">

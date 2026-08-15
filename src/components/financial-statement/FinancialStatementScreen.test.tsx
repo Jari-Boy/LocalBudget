@@ -130,6 +130,63 @@ describe('FinancialStatementScreen', () => {
     expect(within(identityAmount).getByText('￥100,000')).toBeInTheDocument()
   })
 
+  it('BSで「比較する」を有効にし年月で比較基準を選ぶと、選んだ年月の月末時点の残高と比較される', async () => {
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const equity = accountRepository.create({
+      category: 'equity',
+      name: '元入金',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-06-01',
+      memo: null,
+      sourceType: 'initial_balance',
+      lines: [
+        { accountId: cash.id, side: 'debit', amount: 60000 },
+        { accountId: equity.id, side: 'credit', amount: 60000 },
+      ],
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-05',
+      memo: null,
+      lines: [
+        { accountId: cash.id, side: 'debit', amount: 40000 },
+        { accountId: equity.id, side: 'credit', amount: 40000 },
+      ],
+    })
+
+    renderScreen()
+    await screen.findByRole('button', { name: '貸借対照表(BS)' })
+    fireEvent.click(screen.getByRole('button', { name: '貸借対照表(BS)' }))
+    await screen.findByText('現金')
+
+    fireEvent.click(screen.getByLabelText('比較する'))
+    fireEvent.change(screen.getByLabelText('比較基準年月(月末時点)'), { target: { value: '2026' } })
+    fireEvent.change(screen.getByLabelText('比較基準年月(月末時点)月'), { target: { value: '6' } })
+
+    const totalAssetsRow = screen.getByText('資産合計:').closest('p')!
+    // 当期(7月末)は10万円、比較基準(6月末、月末時点に丸められる)は6万円
+    expect(within(totalAssetsRow).getByText('￥100,000')).toBeInTheDocument()
+    expect(within(totalAssetsRow).getByText('￥60,000')).toBeInTheDocument()
+    expect(within(totalAssetsRow).getByText('￥40,000')).toBeInTheDocument()
+  })
+
+  it('BSで日付指定モードのとき、比較基準日の入力は当期の基準日より前の日付に制約される', async () => {
+    renderScreen()
+    await screen.findByRole('button', { name: '貸借対照表(BS)' })
+    fireEvent.click(screen.getByRole('button', { name: '貸借対照表(BS)' }))
+
+    fireEvent.click(screen.getByLabelText('日付で指定'))
+    fireEvent.change(screen.getByLabelText('基準日'), { target: { value: '2026-07-20' } })
+    fireEvent.click(screen.getByLabelText('比較する'))
+
+    const comparisonDateInput = screen.getByLabelText('比較基準日') as HTMLInputElement
+    expect(comparisonDateInput.max).toBe('2026-07-19')
+  })
+
   it('プロジェクトを複数選択すると、選択したプロジェクトに紐づく明細のみで集計される', async () => {
     const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })

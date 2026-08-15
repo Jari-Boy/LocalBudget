@@ -181,6 +181,71 @@ test.describe('財務諸表(PL/BS)表示画面', () => {
     await assertIdentityHolds()
   })
 
+  test('BSの比較基準は年月選択・日付指定のいずれのモードでもユーザーが直接選べる', async ({ page }) => {
+    await page.goto('/')
+    await page.evaluate(
+      async ({ previousMonthEntryDate, currentMonthEntryDate }) => {
+        const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
+        const client = await createDbClient()
+        const cash = await client.account.create({ category: 'asset', name: 'E2E現金3', isReconcilable: false })
+        const equity = await client.account.create({
+          category: 'equity',
+          name: 'E2E元入金3',
+          isReconcilable: null,
+          isSystemManaged: true,
+        })
+        const [member] = await client.householdMember.findAll()
+        await client.journalEntry.create({
+          entryDate: previousMonthEntryDate,
+          memo: 'FS-E2E-bs-comparison-previous',
+          sourceType: 'initial_balance',
+          householdMemberId: member.id,
+          lines: [
+            { accountId: cash.id, side: 'debit', amount: 60000 },
+            { accountId: equity.id, side: 'credit', amount: 60000 },
+          ],
+        })
+        await client.journalEntry.create({
+          entryDate: currentMonthEntryDate,
+          memo: 'FS-E2E-bs-comparison-current',
+          householdMemberId: member.id,
+          lines: [
+            { accountId: cash.id, side: 'debit', amount: 40000 },
+            { accountId: equity.id, side: 'credit', amount: 40000 },
+          ],
+        })
+      },
+      { previousMonthEntryDate: previousMonthDate(1), currentMonthEntryDate: currentMonthDate(10) },
+    )
+    await waitForJournalEntryMemo(page, 'FS-E2E-bs-comparison-current')
+    await page.reload()
+
+    await openFinancialStatementScreen(page)
+    await page.getByRole('button', { name: '貸借対照表(BS)' }).click()
+    const cashRow = page.getByRole('row').filter({ hasText: 'E2E現金3' })
+    await expect(cashRow.getByText('￥100,000')).toBeVisible()
+
+    // 年月選択モード: 「比較する」を有効にし、比較基準年月として前月を選ぶと、
+    // 前月末時点の残高(￥60,000)・当期との差分(￥40,000)が同じ行に表示される
+    await page.getByLabel('比較する').check()
+    const now = new Date()
+    const previousMonthDateObj = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    await page
+      .getByLabel('比較基準年月(月末時点)', { exact: true })
+      .selectOption(String(previousMonthDateObj.getFullYear()))
+    await page.getByLabel('比較基準年月(月末時点)月').selectOption(String(previousMonthDateObj.getMonth() + 1))
+    await expect(cashRow.getByText('￥60,000')).toBeVisible()
+    await expect(cashRow.getByText('￥40,000')).toBeVisible()
+
+    // 日付指定モード: 比較基準日の入力は当期の基準日より前の日付に制約される
+    await page.getByLabel('日付で指定').check()
+    const currentBasisDate = currentMonthDate(15)
+    await page.getByLabel('基準日', { exact: true }).fill(currentBasisDate)
+    await page.getByLabel('比較する').check()
+    const comparisonDateInput = page.getByLabel('比較基準日')
+    await expect(comparisonDateInput).toHaveAttribute('max', currentMonthDate(14))
+  })
+
   test('前期比較を選択すると当期・比較期間・差分が表示され、PDF/CSVエクスポートに関するUIは存在しない', async ({ page }) => {
     await page.goto('/')
     await page.evaluate(
