@@ -6,7 +6,9 @@
  * findUnallocatedEntriesによる既割勘仕訳の除外、(2)世帯メンバー間・世帯外相手との
  * 割勘起票、(3)比率指定・複数人(3人以上)への割勘、(4)割勘バッチのその場作成、
  * (5)割勘の履歴表示(元の支出→割勘→精算のトレース)、(6)精算(立替金の消込)の起票、
- * (7)精算前の割勘仕訳の取り消し(物理削除)、(8)精算後の取り消し案内。
+ * (7)精算前の割勘仕訳の取り消し(物理削除)、(8)精算後の取り消し案内、(9)複数の元仕訳を
+ * チェックボックスでまとめて選択し、一括で割勘起票できること(計画Issue #40 Attempt 4、
+ * 人間レビューでの「複数の元仕訳をまとめて選択して一括起票したい」との指摘への対応)。
  * ユーザーレビューでの見直しにより、割勘対象の選択は仕訳一覧(確認専用画面)からではなく
  * ホーム画面の独立した「割勘する」入口(割勘対象選択画面)から行う(計画Issue #40)。
  * journal-entry.spec.ts・project-management.spec.tsと同様、事前データ準備は
@@ -132,13 +134,26 @@ function findEntryItem(page: Page, exactMemo: string) {
 }
 
 /**
- * ホーム画面から割勘対象選択画面を開き、対象の摘要を持つ仕訳を選択、立替金科目・
+ * ホーム画面から割勘対象選択画面を開き、指定した摘要の仕訳をチェックボックスで
+ * 選択して「選択した仕訳で割勘する」を押し、割勘起票フォームへ遷移する
+ * (計画Issue #40 Attempt 4、複数選択対応)。
+ */
+async function selectEntriesForSplitting(page: Page, memos: string[]) {
+  await page.getByRole('button', { name: '割勘する' }).click()
+  for (const memo of memos) {
+    await findEntryItem(page, memo)
+      .getByRole('checkbox', { name: `${memo}を選択する` })
+      .check()
+  }
+  await page.getByRole('button', { name: '選択した仕訳で割勘する' }).click()
+}
+
+/**
+ * ホーム画面から割勘対象選択画面を開き、対象の摘要を持つ仕訳を1件選択、立替金科目・
  * 割勘バッチを選択するところまで進める(既存の割勘バッチを使う場合)。
  */
 async function openSplittingForm(page: Page, data: BaseData, originalMemo: string) {
-  await page.getByRole('button', { name: '割勘する' }).click()
-  const item = findEntryItem(page, originalMemo)
-  await item.getByRole('button', { name: '選択する' }).click()
+  await selectEntriesForSplitting(page, [originalMemo])
 
   await page.getByLabel('立替金(資産)科目').selectOption(String(data.advanceAssetAccountId))
   await page.getByLabel('立替金(負債)科目').selectOption(String(data.advanceLiabilityAccountId))
@@ -248,9 +263,7 @@ test.describe('割勘起票', () => {
     const data = await setupBaseData(page, '26/8生活費割勘(その場作成の元データ)')
     await createOriginalExpenseEntry(page, data, 'その場作成テスト用の食事代', 1000)
 
-    await page.getByRole('button', { name: '割勘する' }).click()
-    const item = findEntryItem(page, 'その場作成テスト用の食事代')
-    await item.getByRole('button', { name: '選択する' }).click()
+    await selectEntriesForSplitting(page, ['その場作成テスト用の食事代'])
 
     await page.getByLabel('立替金(資産)科目').selectOption(String(data.advanceAssetAccountId))
     await page.getByLabel('立替金(負債)科目').selectOption(String(data.advanceLiabilityAccountId))
@@ -303,6 +316,41 @@ test.describe('割勘起票', () => {
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     // 立替者を除く2人の分担者それぞれに独立した仕訳が作られる(元仕訳1件+割勘仕訳2件)
     await waitForJournalEntryCount(page, 3)
+  })
+
+  test('複数の元仕訳をチェックボックスでまとめて選択し、一括で割勘を起票できる(計画Issue #40 Attempt 4)', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const data = await setupBaseData(page, '26/8生活費割勘(複数選択)')
+    await createOriginalExpenseEntry(page, data, '複数選択テスト用の食事代1', 1000)
+    await createOriginalExpenseEntry(page, data, '複数選択テスト用の食事代2', 500)
+
+    await selectEntriesForSplitting(page, ['複数選択テスト用の食事代1', '複数選択テスト用の食事代2'])
+    await page.getByLabel('立替金(資産)科目').selectOption(String(data.advanceAssetAccountId))
+    await page.getByLabel('立替金(負債)科目').selectOption(String(data.advanceLiabilityAccountId))
+    await page.getByLabel('割勘バッチ').selectOption(String(data.projectId))
+
+    // 複数選択時は「按分する金額」欄は表示されず、配分方法に「金額を直接指定する」も出ない
+    await expect(page.getByLabel('按分する金額')).not.toBeVisible()
+    await expect(page.getByLabel('配分方法').locator('option', { hasText: '金額を直接指定する' })).toHaveCount(0)
+
+    const participant = page.getByRole('group', { name: '分担者1' })
+    await participant.getByLabel('相手', { exact: true }).selectOption(String(data.memberBId))
+    await page.getByRole('button', { name: '計算する' }).click()
+    // 1000円を2等分した500円 + 500円を2等分した250円 = 750円が、元仕訳ごとに個別計算した
+    // 合計額としてプレビューに表示される
+    await expect(participant.getByLabel('金額')).toHaveValue('750')
+
+    await page.getByRole('button', { name: '割勘を確定する' }).click()
+    // 元仕訳2件+元仕訳ごとに独立して作られる割勘仕訳2件=合計4件
+    await waitForJournalEntryCount(page, 4)
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    // 元仕訳ごとに独立した割勘仕訳が作られ、それぞれの詳細画面から履歴を辿れることを確認
+    await page.getByRole('button', { name: '仕訳一覧' }).click()
+    await expect(findEntryItem(page, '複数選択テスト用の食事代1の割勘')).toBeVisible()
+    await expect(findEntryItem(page, '複数選択テスト用の食事代2の割勘')).toBeVisible()
   })
 })
 
