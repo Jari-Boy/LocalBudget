@@ -4,19 +4,21 @@
  * 割勘起票フォーム・精算画面を操作し、Web Worker + RPC層を経由して以下を検証する:
  * (1)割勘対象選択画面での期間・科目・世帯メンバー・プロジェクトによる絞り込みと
  * findUnallocatedEntriesによる既割勘仕訳の除外、(2)世帯メンバー間・世帯外相手との
- * 割勘起票、(3)比率指定・複数人(3人以上)への割勘、(4)割勘バッチのその場作成、
+ * 割勘起票、(3)比率指定・複数人(3人以上)への割勘、(4)プロジェクトのその場作成、
  * (5)割勘の履歴表示(元の支出→割勘→精算のトレース)、(6)精算(立替金の消込)の起票、
  * (7)精算前の割勘仕訳の取り消し(物理削除)、(8)精算後の取り消し案内、(9)複数の元仕訳を
  * チェックボックスでまとめて選択し、一括で割勘起票できること(計画Issue #40 Attempt 4、
  * 人間レビューでの「複数の元仕訳をまとめて選択して一括起票したい」との指摘への対応)。
  * ユーザーレビューでの見直しにより、割勘対象の選択は仕訳一覧(確認専用画面)からではなく
  * ホーム画面の独立した「割勘する」入口(割勘対象選択画面)から行う(計画Issue #40)。
+ * さらに人間レビューでの追加指摘を受け、立替金(資産/負債)科目はseedAdvanceAccountsが
+ * Worker起動時に自動投入する恒久的な科目を自動解決して使うため、UI上の選択操作は無い
+ * (計画Issue #40)。「割勘バッチ」という独自の呼称も廃止し、既存のプロジェクト管理画面
+ * (D6)と同じ「プロジェクト」に統一した。
  * journal-entry.spec.ts・project-management.spec.tsと同様、事前データ準備は
  * page.evaluate内で新規にcreateDbClient()した別Workerで行い、作成したデータが
  * Repository経由で確認できるまでpollしてからreloadし、本体アプリ側のWorkerに
- * IndexedDB経由でデータを反映させてから操作する。立替金(資産)・立替金(負債)は
- * どちらも科目名が「立替金」で表示上区別できないため、選択操作は名前ではなく
- * setupBaseDataが返す科目idをselectOptionのvalueとして使う。
+ * IndexedDB経由でデータを反映させてから操作する。
  */
 import { test, expect, type Page } from '@playwright/test'
 
@@ -25,16 +27,16 @@ interface BaseData {
   friendId: number
   expenseAccountId: number
   cashAccountId: number
-  advanceAssetAccountId: number
-  advanceLiabilityAccountId: number
   projectId: number
 }
 
 /**
- * 割勘/精算に共通して必要な世帯メンバー・取引先・科目・割勘バッチを1つのWorker内で
+ * 割勘/精算に共通して必要な世帯メンバー・取引先・科目・プロジェクトを1つのWorker内で
  * まとめて作成し、flush()で即座にIndexedDBへ永続化してからreloadする
  * (journal-entry.spec.tsのsetupAccountsAndReloadと同じ、別Workerの後勝ち上書きを避ける方針)。
  * 既定の世帯メンバー(seedDefaultHouseholdMemberで1件自動作成済み)はfromMemberとして使う。
+ * 立替金(資産/負債)科目はWorker起動時にseedAdvanceAccountsが自動投入するため、ここでは
+ * 作成しない(手動で同名の科目を作成すると科目名の一意制約に反する)。
  */
 async function setupBaseData(page: Page, projectName: string): Promise<BaseData> {
   const result = await page.evaluate(async (name) => {
@@ -52,16 +54,6 @@ async function setupBaseData(page: Page, projectName: string): Promise<BaseData>
       name: '割勘用現金',
       isReconcilable: false,
     })
-    const advanceAssetAccount = await client.account.create({
-      category: 'asset',
-      name: '立替金',
-      isReconcilable: false,
-    })
-    const advanceLiabilityAccount = await client.account.create({
-      category: 'liability',
-      name: '立替金',
-      isReconcilable: false,
-    })
     const project = await client.project.create({ name, kind: 'settlement' })
     await client.autoSave.flush()
     return {
@@ -69,8 +61,6 @@ async function setupBaseData(page: Page, projectName: string): Promise<BaseData>
       friendId: friend.id,
       expenseAccountId: expenseAccount.id,
       cashAccountId: cashAccount.id,
-      advanceAssetAccountId: advanceAssetAccount.id,
-      advanceLiabilityAccountId: advanceLiabilityAccount.id,
       projectId: project.id,
     }
   }, projectName)
@@ -149,15 +139,14 @@ async function selectEntriesForSplitting(page: Page, memos: string[]) {
 }
 
 /**
- * ホーム画面から割勘対象選択画面を開き、対象の摘要を持つ仕訳を1件選択、立替金科目・
- * 割勘バッチを選択するところまで進める(既存の割勘バッチを使う場合)。
+ * ホーム画面から割勘対象選択画面を開き、対象の摘要を持つ仕訳を1件選択、プロジェクトを
+ * 選択するところまで進める(既存のプロジェクトを使う場合)。立替金(資産/負債)科目は
+ * 自動解決されるためUI操作は不要。
  */
 async function openSplittingForm(page: Page, data: BaseData, originalMemo: string) {
   await selectEntriesForSplitting(page, [originalMemo])
 
-  await page.getByLabel('立替金(資産)科目').selectOption(String(data.advanceAssetAccountId))
-  await page.getByLabel('立替金(負債)科目').selectOption(String(data.advanceLiabilityAccountId))
-  await page.getByLabel('割勘バッチ').selectOption(String(data.projectId))
+  await page.getByLabel('プロジェクト').selectOption(String(data.projectId))
 }
 
 test.describe('割勘対象選択画面', () => {
@@ -256,7 +245,7 @@ test.describe('割勘起票', () => {
     await waitForJournalEntryCount(page, 2)
   })
 
-  test('割勘起票フォームでその場に新規の割勘バッチを作成でき、精算画面の選択肢にも表示される', async ({
+  test('割勘起票フォームでその場に新規のプロジェクトを作成でき、精算画面の選択肢にも表示される', async ({
     page,
   }) => {
     await page.goto('/')
@@ -265,12 +254,10 @@ test.describe('割勘起票', () => {
 
     await selectEntriesForSplitting(page, ['その場作成テスト用の食事代'])
 
-    await page.getByLabel('立替金(資産)科目').selectOption(String(data.advanceAssetAccountId))
-    await page.getByLabel('立替金(負債)科目').selectOption(String(data.advanceLiabilityAccountId))
-    await page.getByLabel('割勘バッチ').selectOption('__new__')
-    await page.getByLabel('新しい割勘バッチの名前').fill('26/8その場作成バッチ')
+    await page.getByLabel('プロジェクト').selectOption('__new__')
+    await page.getByLabel('新しいプロジェクトの名前').fill('26/8その場作成バッチ')
     await page.getByRole('button', { name: '作成する' }).click()
-    await expect(page.getByLabel('新しい割勘バッチの名前')).not.toBeVisible()
+    await expect(page.getByLabel('新しいプロジェクトの名前')).not.toBeVisible()
 
     const participant = page.getByRole('group', { name: '分担者1' })
     await participant.getByLabel('相手', { exact: true }).selectOption(String(data.memberBId))
@@ -279,7 +266,7 @@ test.describe('割勘起票', () => {
     await waitForJournalEntryCount(page, 2)
 
     await page.getByRole('button', { name: '精算する', exact: true }).click()
-    await expect(page.getByLabel('割勘バッチ').locator('option', { hasText: '26/8その場作成バッチ' })).toHaveCount(
+    await expect(page.getByLabel('プロジェクト').locator('option', { hasText: '26/8その場作成バッチ' })).toHaveCount(
       1,
     )
   })
@@ -327,9 +314,7 @@ test.describe('割勘起票', () => {
     await createOriginalExpenseEntry(page, data, '複数選択テスト用の食事代2', 500)
 
     await selectEntriesForSplitting(page, ['複数選択テスト用の食事代1', '複数選択テスト用の食事代2'])
-    await page.getByLabel('立替金(資産)科目').selectOption(String(data.advanceAssetAccountId))
-    await page.getByLabel('立替金(負債)科目').selectOption(String(data.advanceLiabilityAccountId))
-    await page.getByLabel('割勘バッチ').selectOption(String(data.projectId))
+    await page.getByLabel('プロジェクト').selectOption(String(data.projectId))
 
     // 複数選択時は「按分する金額」欄は表示されず、配分方法に「金額を直接指定する」も出ない
     await expect(page.getByLabel('按分する金額')).not.toBeVisible()
@@ -376,8 +361,8 @@ test.describe('精算・履歴・取り消し', () => {
     const data = await setUpSplitEntryForSettlement(page)
 
     await page.getByRole('button', { name: '精算する', exact: true }).click()
-    await page.getByLabel('割勘バッチ').selectOption(String(data.projectId))
-    await page.getByLabel('立替金科目').selectOption(String(data.advanceLiabilityAccountId))
+    await page.getByLabel('プロジェクト').selectOption(String(data.projectId))
+    await page.getByLabel('精算方向').selectOption('liability')
 
     const unsettledItem = page.getByRole('listitem').filter({ hasText: '￥500' })
     await expect(unsettledItem).toBeVisible()
@@ -417,8 +402,8 @@ test.describe('精算・履歴・取り消し', () => {
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     await page.getByRole('button', { name: '精算する', exact: true }).click()
-    await page.getByLabel('割勘バッチ').selectOption(String(data.projectId))
-    await page.getByLabel('立替金科目').selectOption(String(data.advanceLiabilityAccountId))
+    await page.getByLabel('プロジェクト').selectOption(String(data.projectId))
+    await page.getByLabel('精算方向').selectOption('liability')
     const unsettledItem = page.getByRole('listitem').filter({ hasText: '￥500' })
     await unsettledItem.getByRole('button', { name: '精算する' }).click()
     await unsettledItem.getByLabel('精算元/精算先の口座').selectOption(String(data.cashAccountId))
