@@ -41,6 +41,9 @@
 
 **科目自体は割勘のたびに新規作成しない。** 恒久的な汎用科目として1組だけ用意し、以降のすべての割勘で使い回す。「誰の債権/債務か」は`journal_lines.household_member_id`([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)、全区分に適用可)で区別する。「どの割勘バッチに属する残高か」は`journal_lines.project_id`([projects.md 1.2](./projects.md#12-紐づけ対象)、全区分に適用可)で区別する。
 
+> **立替金科目は初回起動時に自動投入され、ユーザーには選択させない(計画Issue #40)**
+> `seedAdvanceAccounts`(`src/infrastructure/db/seedAdvanceAccounts.ts`、Worker起動時に`seedDefaultAccounts`の直後で呼び出す)が、asset・liability区分それぞれについて`is_system_managed = true`の科目が1件も存在しなければ「立替金」を1件投入する(区分ごとに独立した冪等シード)。`is_system_managed = true`にすることで、削除・区分変更・is_reconcilable変更をDBスキーマのトリガー(`docs/schema/accounts.sql`)で防ぎつつ、科目一覧画面・手動仕訳フォームの選択肢からも除外する([accounts.md 3.1](./accounts.md#31-フィールド定義)の初期残高科目と同じ扱い)。割勘起票フォーム・精算画面は、投入された科目を`category`・`isSystemManaged`で自動解決して使い、ユーザーに科目一覧から選ばせるUIは持たない。当初の実装(Implementation Attempt 1〜4)はこの方針に反し全資産/負債科目から毎回手動選択させるUIになっており、PR作成前のユーザーレビューで指摘され本方針に修正した。詳細は`docs/decisions.md`(2026-08-18)参照。
+
 > **なぜ人・バッチごとに専用科目を作らないか**
 > 検討の初期段階では「未収入金(Aさん)」「未払金(Bさん)」のように人ごとの専用科目や、割勘バッチごとの一時的な科目を都度作成する案も検討したが、いずれも使い捨ての科目で科目一覧が肥大化する。プロジェクト(`project_id`)を「どのバッチか」を表す軸として使えば、科目自体は`household_member_id`と組み合わせた汎用の2科目だけで足りる。
 >
