@@ -75,6 +75,13 @@ interface MasterData {
  * 除いた分担者ごとにbuildExpenseSplittingJournalEntryInputsで組み立てた仕訳を
  * 1件ずつ作成する(複数人割勘は複数の2者間仕訳として実現する、計画Issue #40の合意事項)。
  *
+ * 立替金(資産/負債)科目はユーザーに選択させず、seedAdvanceAccounts(docs/domain/
+ * expense-splitting.md 1.2節「科目自体は割勘のたびに新規作成しない」)が投入した
+ * is_system_managed科目を自動解決して使う(計画Issue #40、人間レビューでの追加指摘への
+ * 対応)。「割勘バッチ」という独自の呼称は使わず、既存のプロジェクト管理画面(D6)と同じ
+ * 「プロジェクト」という用語に統一する(同一エンティティが画面によって別名で呼ばれる
+ * 不整合の解消)。
+ *
  * 元の支出仕訳(originalEntries)は複数選択できる(計画Issue #40、人間レビューでの
  * 再指摘への対応)。単一選択時は、分担者ごとの按分額(プレビュー欄)をユーザーが確定前に
  * 手動修正でき、その値がそのまま使われる(toExpenseSplitRecipients)。複数選択時は
@@ -101,8 +108,6 @@ export function ExpenseSplittingForm({
   const isBatch = originalEntries.length > 1
 
   const [masterData, setMasterData] = useState<MasterData | null>(null)
-  const [advanceAssetAccountId, setAdvanceAssetAccountId] = useState<number | null>(null)
-  const [advanceLiabilityAccountId, setAdvanceLiabilityAccountId] = useState<number | null>(null)
   const [projectId, setProjectId] = useState<number | null>(null)
   const [allocationMode, setAllocationMode] = useState<ExpenseSplittingAllocationMode>('equal')
   const [error, setError] = useState<string | null>(null)
@@ -137,8 +142,15 @@ export function ExpenseSplittingForm({
   // narrowingがクロージャ境界を越えて効かず"possibly null"エラーになるため、ここで
   // 非nullであることが確定した参照をローカル変数へ退避しておく。
   const accounts = masterData.accounts
-  const assetAccounts = accounts.filter((account) => account.category === 'asset')
-  const liabilityAccounts = accounts.filter((account) => account.category === 'liability')
+  /**
+   * 立替金(資産/負債)科目はユーザーに選択させず、seedAdvanceAccounts(db.worker.ts、
+   * docs/domain/expense-splitting.md 1.2節)が投入したis_system_managed科目を自動解決する。
+   * 通常のUI操作ではWorker起動時に必ず投入済みのため常に見つかるが、投入前のテストDB等では
+   * 見つからない場合があり、その場合はnullのままhandleSubmitでエラーとする。
+   */
+  const advanceAssetAccountId = accounts.find((account) => account.category === 'asset' && account.isSystemManaged)?.id ?? null
+  const advanceLiabilityAccountId =
+    accounts.find((account) => account.category === 'liability' && account.isSystemManaged)?.id ?? null
   const settlementProjects = masterData.projects.filter((project) => project.kind === 'settlement')
   /** 分担者の選択肢から、選択中の元仕訳いずれかの立替者を除外する(自分自身との割勘を防ぐ) */
   const payerMemberIds = new Set(originalEntries.map((entry) => entry.householdMemberId))
@@ -267,42 +279,6 @@ export function ExpenseSplittingForm({
           )
         })}
       </ul>
-
-      <div>
-        <label htmlFor="expense-splitting-advance-asset">{t('advanceAssetAccountLabel')}</label>
-        <select
-          id="expense-splitting-advance-asset"
-          value={advanceAssetAccountId ?? ''}
-          onChange={(event) =>
-            setAdvanceAssetAccountId(event.target.value === '' ? null : Number(event.target.value))
-          }
-        >
-          <option value="">{t('unselected')}</option>
-          {assetAccounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label htmlFor="expense-splitting-advance-liability">{t('advanceLiabilityAccountLabel')}</label>
-        <select
-          id="expense-splitting-advance-liability"
-          value={advanceLiabilityAccountId ?? ''}
-          onChange={(event) =>
-            setAdvanceLiabilityAccountId(event.target.value === '' ? null : Number(event.target.value))
-          }
-        >
-          <option value="">{t('unselected')}</option>
-          {liabilityAccounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
-        </select>
-      </div>
 
       <ProjectQuickAddSelect
         id="expense-splitting-project"
@@ -443,7 +419,7 @@ export function ExpenseSplittingForm({
   )
 }
 
-/** 割勘バッチセレクトの「+ 新しい割勘バッチを作成する」を表す特殊値。project idと衝突しない文字列を使う */
+/** プロジェクトセレクトの「+ 新しいプロジェクトを作成する」を表す特殊値。project idと衝突しない文字列を使う */
 const NEW_PROJECT_OPTION_VALUE = '__new__'
 
 interface ProjectQuickAddSelectProps {
@@ -452,19 +428,21 @@ interface ProjectQuickAddSelectProps {
   value: number | null
   projects: readonly Project[]
   onChange: (projectId: number | null) => void
-  /** 割勘バッチ(kind='settlement'のプロジェクト)を新規作成する。作成後のprojects一覧への反映は呼び出し元の責務 */
+  /** プロジェクト(kind='settlement')を新規作成する。作成後のprojects一覧への反映は呼び出し元の責務 */
   onCreate: (name: string) => Promise<Project>
 }
 
 /**
- * 割勘バッチ(project、kind='settlement')セレクト(計画Issue #40)。既存の
+ * プロジェクト(kind='settlement')セレクト(計画Issue #40)。既存の
  * CounterpartyQuickAddSelect(src/components/statement-import/StatementImportReviewScreen.tsx)
- * と同じ「その場作成(quick add)」パターンを踏襲し、既存バッチからの選択に加え、
- * 「+ 新しい割勘バッチを作成する」を選ぶと名前入力欄がインラインで現れ(モーダル不使用)、
- * その場でprojectRepository.createを呼び出して新規バッチを作成・選択できる
+ * と同じ「その場作成(quick add)」パターンを踏襲し、既存プロジェクトからの選択に加え、
+ * 「+ 新しいプロジェクトを作成する」を選ぶと名前入力欄がインラインで現れ(モーダル不使用)、
+ * その場でprojectRepository.createを呼び出して新規プロジェクトを作成・選択できる
  * (D6のプロジェクト管理画面へ事前に作成しに行く手間を無くすためのユーザー要望)。
- * 作成したバッチは既存のDB永続化の仕組みにより精算画面(SettlementScreen)の選択肢にも
- * 自動的に表示される。
+ * 作成したプロジェクトは既存のDB永続化の仕組みにより精算画面(SettlementScreen)の
+ * 選択肢にも自動的に表示される。表示名は既存のプロジェクト管理画面(D6)と同じ
+ * 「プロジェクト」に統一し、「割勘バッチ」という独自の呼称は使わない(人間レビューでの
+ * 指摘、同一エンティティが画面によって別名で呼ばれる不整合の解消)。
  */
 function ProjectQuickAddSelect({ id, label, value, projects, onChange, onCreate }: ProjectQuickAddSelectProps) {
   const { t } = useTranslation('expenseSplitting')
