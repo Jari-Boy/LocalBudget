@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 /**
- * 精算(立替金の消込)画面(計画Issue #40)のコンポーネントテスト。割勘バッチ
- * (kind='settlement'のプロジェクト)・立替金科目を選択すると、A7消込ロジック
- * (findUnsettledEntries)を用いた未精算の仕訳一覧が表示され、精算操作で
+ * 精算(立替金の消込)画面(計画Issue #40)のコンポーネントテスト。プロジェクト
+ * (kind='settlement')・精算方向(受け取る/支払う、立替金の資産/負債の別)を選択すると、
+ * A7消込ロジック(findUnsettledEntries)を用いた未精算の仕訳一覧が表示され、精算操作で
  * 実際の入出金口座・金額を指定して精算仕訳(2行、docs/domain/expense-splitting.md
  * 1.3節の精算1・精算2)を起票できることを、sql.jsのNode実装(createTestDatabase)を
- * 使った統合的なレンダリングテストとして検証する。外部依存: sql.js(ネットワークアクセスなし)。
+ * 使った統合的なレンダリングテストとして検証する。人間レビューでの指摘を受け、立替金
+ * (資産/負債)科目自体はseedAdvanceAccountsで自動投入された恒久的な科目を自動解決し、
+ * ユーザーには「精算方向」という2択のみを選ばせる(資産・負債という科目区分をそのまま
+ * 見せない)ことも検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -15,6 +18,7 @@ import { I18nextProvider } from 'react-i18next'
 import i18n from '../../infrastructure/i18n/i18n'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
+import { seedAdvanceAccounts } from '../../infrastructure/db/seedAdvanceAccounts'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
@@ -54,15 +58,14 @@ function renderScreen() {
 }
 
 function setUpSplitEntry() {
+  seedAdvanceAccounts(db)
+  const advanceAsset = accountRepository.findAll().find((a) => a.category === 'asset' && a.isSystemManaged)!
+  const advanceLiability = accountRepository
+    .findAll()
+    .find((a) => a.category === 'liability' && a.isSystemManaged)!
   const memberA = householdMemberRepository.create({ name: 'Aさん' })
   const memberB = householdMemberRepository.create({ name: 'Bさん' })
   const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
-  const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
-  const advanceLiability = accountRepository.create({
-    category: 'liability',
-    name: '立替金',
-    isReconcilable: false,
-  })
   const cashB = accountRepository.create({ category: 'asset', name: '現金(B)', isReconcilable: false })
   const project = projectRepository.create({ name: '26/7生活費割勘', kind: 'settlement' })
   const original = journalEntryRepository.create({
@@ -91,14 +94,15 @@ function setUpSplitEntry() {
 }
 
 describe('SettlementScreen', () => {
-  it('割勘バッチ・立替金科目を選択すると、未精算の仕訳が一覧表示される', async () => {
-    const { advanceLiability, project, splitEntry } = setUpSplitEntry()
+  it('プロジェクト・精算方向を選択すると、未精算の仕訳が一覧表示される', async () => {
+    const { project, splitEntry } = setUpSplitEntry()
 
     renderScreen()
-    await screen.findByLabelText('割勘バッチ')
+    await screen.findByLabelText('プロジェクト')
 
-    fireEvent.change(screen.getByLabelText('割勘バッチ'), { target: { value: String(project.id) } })
-    fireEvent.change(screen.getByLabelText('立替金科目'), { target: { value: String(advanceLiability.id) } })
+    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    // 割勘の相手(Bさん)側なので、支払う(負債側の立替金)を選ぶ
+    fireEvent.change(screen.getByLabelText('精算方向'), { target: { value: 'liability' } })
 
     const item = (await screen.findByText('割勘')).closest('li')!
     expect(item).toHaveTextContent('￥500')
@@ -106,12 +110,12 @@ describe('SettlementScreen', () => {
   })
 
   it('精算するボタンを押すと精算入力欄が展開し、確定すると精算仕訳が作成され一覧から消える', async () => {
-    const { advanceLiability, cashB, project } = setUpSplitEntry()
+    const { cashB, project } = setUpSplitEntry()
 
     renderScreen()
-    await screen.findByLabelText('割勘バッチ')
-    fireEvent.change(screen.getByLabelText('割勘バッチ'), { target: { value: String(project.id) } })
-    fireEvent.change(screen.getByLabelText('立替金科目'), { target: { value: String(advanceLiability.id) } })
+    await screen.findByLabelText('プロジェクト')
+    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算方向'), { target: { value: 'liability' } })
     const item = (await screen.findByText('割勘')).closest('li') as HTMLElement
 
     fireEvent.click(within(item).getByRole('button', { name: '精算する' }))
@@ -131,17 +135,13 @@ describe('SettlementScreen', () => {
   })
 
   it('未精算の仕訳が0件の場合、空状態メッセージが表示される', async () => {
+    seedAdvanceAccounts(db)
     const project = projectRepository.create({ name: '空のバッチ', kind: 'settlement' })
-    const advanceLiability = accountRepository.create({
-      category: 'liability',
-      name: '立替金',
-      isReconcilable: false,
-    })
 
     renderScreen()
-    await screen.findByLabelText('割勘バッチ')
-    fireEvent.change(screen.getByLabelText('割勘バッチ'), { target: { value: String(project.id) } })
-    fireEvent.change(screen.getByLabelText('立替金科目'), { target: { value: String(advanceLiability.id) } })
+    await screen.findByLabelText('プロジェクト')
+    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算方向'), { target: { value: 'liability' } })
 
     expect(await screen.findByText('未精算の割勘はありません')).toBeInTheDocument()
   })

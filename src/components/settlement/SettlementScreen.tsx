@@ -36,12 +36,21 @@ interface MasterData {
   accounts: Account[]
 }
 
+type SettlementSide = 'asset' | 'liability'
+
 /**
- * 精算(立替金の消込)画面(計画Issue #40)。割勘バッチ(kind='settlement'の
- * プロジェクト)・立替金科目を選択すると、A7消込ロジック(findUnsettledEntries、
+ * 精算(立替金の消込)画面(計画Issue #40)。プロジェクト(kind='settlement')・
+ * 精算方向を選択すると、A7消込ロジック(findUnsettledEntries、
  * calculateSettlementBalance)を用いて未精算の割勘仕訳を一覧表示する。各行の
  * 「精算する」操作で実際の入出金口座・金額を指定し、buildSettlementJournalEntryInput
  * (一時勘定の区分に応じて借方/貸方を決定)で組み立てた精算仕訳を起票する。
+ *
+ * 立替金(資産/負債)科目はユーザーに選択させず、seedAdvanceAccounts(docs/domain/
+ * expense-splitting.md 1.2節)が投入したis_system_managed科目を自動解決して使う
+ * (計画Issue #40、人間レビューでの追加指摘への対応)。ただし精算画面では資産側
+ * (自分が立て替えた分を受け取る)・負債側(自分が立て替えてもらった分を支払う)の
+ * どちらを精算するかという実質的な選択は残るため、科目名ではなく「精算方向」という
+ * 2択(SettlementSide)をユーザーに選ばせ、対応する科目idへ変換する。
  */
 export function SettlementScreen({
   projectRepository,
@@ -55,7 +64,7 @@ export function SettlementScreen({
 
   const [masterData, setMasterData] = useState<MasterData | null>(null)
   const [projectId, setProjectId] = useState<number | null>(null)
-  const [settlementAccountId, setSettlementAccountId] = useState<number | null>(null)
+  const [settlementSide, setSettlementSide] = useState<SettlementSide | null>(null)
   const [unsettledEntries, setUnsettledEntries] = useState<JournalEntry[] | null>(null)
   const [expandedEntryId, setExpandedEntryId] = useState<number | null>(null)
   const [counterAccountId, setCounterAccountId] = useState<number | null>(null)
@@ -100,11 +109,20 @@ export function SettlementScreen({
   }
 
   const settlementProjects = masterData.projects.filter((project) => project.kind === 'settlement')
-  const settlementAccountCandidates = masterData.accounts.filter(
-    (account) => account.category === 'asset' || account.category === 'liability',
-  )
   const counterAccounts = masterData.accounts.filter((account) => account.category === 'asset')
-  const selectedSettlementAccount = masterData.accounts.find((account) => account.id === settlementAccountId) ?? null
+  /**
+   * 立替金(資産/負債)科目はユーザーに科目一覧から選ばせず、seedAdvanceAccountsが
+   * 投入したis_system_managed科目を自動解決する(SettlementScreenのJSDoc参照)。
+   */
+  const advanceAssetAccountId =
+    masterData.accounts.find((account) => account.category === 'asset' && account.isSystemManaged)?.id ?? null
+  const advanceLiabilityAccountId =
+    masterData.accounts.find((account) => account.category === 'liability' && account.isSystemManaged)?.id ?? null
+  const settlementAccountIdBySide: Record<SettlementSide, number | null> = {
+    asset: advanceAssetAccountId,
+    liability: advanceLiabilityAccountId,
+  }
+  const settlementAccountId = settlementSide === null ? null : settlementAccountIdBySide[settlementSide]
 
   function handleSelectProject(nextProjectId: number | null) {
     setProjectId(nextProjectId)
@@ -115,10 +133,11 @@ export function SettlementScreen({
     }
   }
 
-  function handleSelectSettlementAccount(nextAccountId: number | null) {
-    setSettlementAccountId(nextAccountId)
+  function handleSelectSettlementSide(nextSide: SettlementSide | null) {
+    setSettlementSide(nextSide)
     setUnsettledEntries(null)
     setExpandedEntryId(null)
+    const nextAccountId = nextSide === null ? null : settlementAccountIdBySide[nextSide]
     if (projectId !== null && nextAccountId !== null) {
       loadUnsettled(projectId, nextAccountId)
     }
@@ -132,14 +151,14 @@ export function SettlementScreen({
   }
 
   async function handleSettle(targetEntry: JournalEntry) {
-    if (submitting || settlementAccountId === null || selectedSettlementAccount === null) return
+    if (submitting || settlementAccountId === null || settlementSide === null) return
     if (counterAccountId === null) {
-      setError(t('requiredFieldMissingError'))
+      setError(t('settlementFieldMissingError'))
       return
     }
     const amount = Number(amountInput)
     if (amountInput === '' || !Number.isFinite(amount) || amount <= 0) {
-      setError(t('requiredFieldMissingError'))
+      setError(t('settlementFieldMissingError'))
       return
     }
 
@@ -149,7 +168,7 @@ export function SettlementScreen({
     const input = buildSettlementJournalEntryInput({
       targetEntryId: targetEntry.id,
       settlementAccountId,
-      settlementAccountCategory: selectedSettlementAccount.category as 'asset' | 'liability',
+      settlementAccountCategory: settlementSide,
       counterAccountId,
       amount,
       householdMemberId: settlementLine.householdMemberId ?? targetEntry.householdMemberId,
@@ -193,20 +212,17 @@ export function SettlementScreen({
       </div>
 
       <div>
-        <label htmlFor="settlement-account">{t('settlementAccountLabel')}</label>
+        <label htmlFor="settlement-account">{t('settlementSideLabel')}</label>
         <select
           id="settlement-account"
-          value={settlementAccountId ?? ''}
+          value={settlementSide ?? ''}
           onChange={(event) =>
-            handleSelectSettlementAccount(event.target.value === '' ? null : Number(event.target.value))
+            handleSelectSettlementSide(event.target.value === '' ? null : (event.target.value as SettlementSide))
           }
         >
           <option value="">{t('unselected')}</option>
-          {settlementAccountCandidates.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
+          <option value="asset">{t('settlementSideReceive')}</option>
+          <option value="liability">{t('settlementSidePay')}</option>
         </select>
       </div>
 
