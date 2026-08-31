@@ -2,7 +2,8 @@ import type { Database } from 'sql.js'
 import type { AccountCategory } from '../../domain/account/Account'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 
-const ADVANCE_ACCOUNT_NAME = '立替金'
+/** e2eテスト(worker-rpc.spec.ts等)がWorker起動直後の科目一覧を検証する際にも再利用する */
+export const ADVANCE_ACCOUNT_NAME = '立替金'
 
 /**
  * 割勘の一時勘定(立替金)科目を自動投入する(docs/domain/expense-splitting.md 1.2節、
@@ -25,6 +26,17 @@ export function seedAdvanceAccounts(db: Database): void {
   seedIfMissing(repository, accounts, 'liability')
 }
 
+/**
+ * asset/liabilityはequity(prevent_user_created_equity_accountトリガー参照)と異なり
+ * ユーザーが自由に科目を作成できる区分のため、is_system_managedの科目が0件でも「立替金」
+ * という名前の通常科目(is_system_managed = false)を既にユーザーが作成済みの状況が
+ * ありうる(本Issueの旧UIでの手動作成やバックアップ復元経由、Review Attempt 5で
+ * evaluatorが指摘・再現)。その場合はcategory・nameのUNIQUE制約(docs/schema/accounts.sql)
+ * に反して例外が投げられるが、Worker起動処理(db.worker.ts)を丸ごとクラッシュさせず、
+ * その区分の投入だけを諦めて起動を継続する(既存の科目を書き換えたり奪ったりはしない)。
+ * この場合、割勘/精算画面はその区分の立替金科目を解決できず利用できない状態になるが、
+ * アプリ全体が使用不能になるより望ましい(Review Attempt 5 MEDIUM指摘対応)。
+ */
 function seedIfMissing(
   repository: SqlJsAccountRepository,
   existingAccounts: ReturnType<SqlJsAccountRepository['findAll']>,
@@ -32,10 +44,17 @@ function seedIfMissing(
 ): void {
   if (existingAccounts.some((account) => account.category === category && account.isSystemManaged)) return
 
-  repository.create({
-    category,
-    name: ADVANCE_ACCOUNT_NAME,
-    isReconcilable: false,
-    isSystemManaged: true,
-  })
+  try {
+    repository.create({
+      category,
+      name: ADVANCE_ACCOUNT_NAME,
+      isReconcilable: false,
+      isSystemManaged: true,
+    })
+  } catch (error) {
+    console.error(
+      `割勘の一時勘定(立替金、${category})の自動投入に失敗しました。同名の科目が既に存在する可能性があります`,
+      error,
+    )
+  }
 }

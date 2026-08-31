@@ -9,7 +9,7 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('Web Worker + RPC層', () => {
-  test('Worker起動時にDBが初期化されマイグレーションが適用され、標準の収益・費用科目(計画Issue #96)があわせて投入される', async ({
+  test('Worker起動時にDBが初期化されマイグレーションが適用され、標準の収益・費用科目(計画Issue #96)・割勘の一時勘定(立替金、計画Issue #40)があわせて投入される', async ({
     page,
   }) => {
     await page.goto('/')
@@ -19,11 +19,18 @@ test.describe('Web Worker + RPC層', () => {
       const { DEFAULT_EXPENSE_ACCOUNT_NAMES, DEFAULT_REVENUE_ACCOUNT_NAMES } = await import(
         '/src/infrastructure/db/defaultAccountSeedData.ts'
       )
+      const { ADVANCE_ACCOUNT_NAME } = await import('/src/infrastructure/db/seedAdvanceAccounts.ts')
       const client = await createDbClient()
       const accounts = await client.account.findAll()
       return {
         names: accounts.map((account) => account.name).sort(),
-        expectedNames: [...DEFAULT_REVENUE_ACCOUNT_NAMES, ...DEFAULT_EXPENSE_ACCOUNT_NAMES].sort(),
+        // 立替金はasset・liability区分それぞれに1件ずつ投入される(seedAdvanceAccounts)
+        expectedNames: [
+          ...DEFAULT_REVENUE_ACCOUNT_NAMES,
+          ...DEFAULT_EXPENSE_ACCOUNT_NAMES,
+          ADVANCE_ACCOUNT_NAME,
+          ADVANCE_ACCOUNT_NAME,
+        ].sort(),
       }
     })
 

@@ -5,7 +5,9 @@
  * asset・liability区分それぞれについて、is_system_managed = trueの科目が1件も存在しない
  * 場合に「立替金」を1件自動投入すること、区分ごとに独立した冪等シードであることを、
  * seedDefaultAccounts・seedDefaultHouseholdMemberと同じ設計方針で検証する。
- * 外部依存: sql.js(ネットワークアクセスなし)。
+ * Review Attempt 5(evaluator FAIL指摘、計画Issue #40)を受け、既に同名(is_system_managed
+ * = false)の科目が存在する場合にUNIQUE制約違反でWorker起動全体をクラッシュさせないことも
+ * 検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
@@ -67,5 +69,18 @@ describe('seedAdvanceAccounts', () => {
 
     const accounts = repository.findAll()
     expect(accounts.filter((account) => account.isSystemManaged)).toHaveLength(2)
+  })
+
+  it('既に同名(is_system_managed = false)の資産科目が存在する場合、UNIQUE制約違反で例外を投げずに投入をスキップする(Review Attempt 5対応、Worker起動全体のクラッシュを防ぐ)', () => {
+    const existing = repository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+
+    expect(() => seedAdvanceAccounts(db)).not.toThrow()
+
+    const accounts = repository.findAll()
+    const assetAccounts = accounts.filter((account) => account.category === 'asset' && account.name === '立替金')
+    // 既存の科目が意図せず書き換えられたり、同名の重複が作られたりしていないことを確認する
+    expect(assetAccounts).toEqual([expect.objectContaining({ id: existing.id, isSystemManaged: false })])
+    // 資産側が衝突してスキップされても、負債側は独立して投入される
+    expect(accounts.some((account) => account.category === 'liability' && account.isSystemManaged)).toBe(true)
   })
 })
