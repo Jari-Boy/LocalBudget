@@ -42,7 +42,7 @@
 **科目自体は割勘のたびに新規作成しない。** 恒久的な汎用科目として1組だけ用意し、以降のすべての割勘で使い回す。「誰の債権/債務か」は`journal_lines.household_member_id`([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)、全区分に適用可)で区別する。「どの割勘バッチに属する残高か」は`journal_lines.project_id`([projects.md 1.2](./projects.md#12-紐づけ対象)、全区分に適用可)で区別する。
 
 > **立替金科目は初回起動時に自動投入され、ユーザーには選択させない(計画Issue #40)**
-> `seedAdvanceAccounts`(`src/infrastructure/db/seedAdvanceAccounts.ts`、Worker起動時に`seedDefaultAccounts`の直後で呼び出す)が、asset・liability区分それぞれについて`is_system_managed = true`の科目が1件も存在しなければ「立替金」を1件投入する(区分ごとに独立した冪等シード)。`is_system_managed = true`にすることで、削除・区分変更・is_reconcilable変更をDBスキーマのトリガー(`docs/schema/accounts.sql`)で防ぎつつ、科目一覧画面・手動仕訳フォームの選択肢からも除外する([accounts.md 3.1](./accounts.md#31-フィールド定義)の初期残高科目と同じ扱い)。割勘起票フォーム・精算画面は、投入された科目を`category`・`isSystemManaged`で自動解決して使い、ユーザーに科目一覧から選ばせるUIは持たない。当初の実装(Implementation Attempt 1〜4)はこの方針に反し全資産/負債科目から毎回手動選択させるUIになっており、PR作成前のユーザーレビューで指摘され本方針に修正した。詳細は`docs/decisions.md`(2026-08-18)参照。
+> `seedAdvanceAccounts`(`src/infrastructure/db/seedAdvanceAccounts.ts`、Worker起動時に`seedDefaultAccounts`の直後で呼び出す)が、asset・liability区分それぞれについて`is_system_managed = true`の科目が1件も存在しなければ「立替金」を1件投入する(区分ごとに独立した冪等シード)。`is_system_managed = true`にすることで、削除・区分変更・is_reconcilable変更をDBスキーマのトリガー(`docs/schema/accounts.sql`)で防ぎつつ、科目一覧画面・手動仕訳フォームの選択肢からも除外する([accounts.md 3.1](./accounts.md#31-フィールド定義)の初期残高科目と同じ扱い)。割勘起票フォーム・精算画面は、投入された科目を`category`・`isSystemManaged`で自動解決して使い、ユーザーに科目一覧から選ばせるUIは持たない。当初の実装(Implementation Attempt 1〜4)はこの方針に反し全資産/負債科目から毎回手動選択させるUIになっており、PR作成前のユーザーレビューで指摘され本方針に修正した。詳細は`docs/decisions.md`(2026-08-18)参照。既存の同名(`is_system_managed = false`)科目とのUNIQUE制約衝突時は、Worker起動全体をクラッシュさせずログに残すだけでその区分の投入をスキップし、起動を継続する(該当区分の割勘/精算機能のみ利用不可のままになる)。詳細は`docs/decisions.md`(2026-08-31)参照。
 
 > **なぜ人・バッチごとに専用科目を作らないか**
 > 検討の初期段階では「未収入金(Aさん)」「未払金(Bさん)」のように人ごとの専用科目や、割勘バッチごとの一時的な科目を都度作成する案も検討したが、いずれも使い捨ての科目で科目一覧が肥大化する。プロジェクト(`project_id`)を「どのバッチか」を表す軸として使えば、科目自体は`household_member_id`と組み合わせた汎用の2科目だけで足りる。
@@ -97,6 +97,9 @@
 ```
 
 負債側の立替金は発生しない(友人自身の負債を家計簿で管理する意味がないため)。`counterparty_id`は食費(A)の行(PL科目)にのみ設定でき、立替金の行(BS科目)には設定できない([counterparties.md 1.2 紐づけ対象](./counterparties.md#12-紐づけ対象)の通りPL限定のまま変更しない)。
+
+> **3人以上への割勘・複数の元仕訳をまとめた一括割勘(計画Issue #40)**
+> 上記1.3・1.4の例はいずれも立替者と分担者1名の2者間仕訳だが、実際の割勘起票フォームでは分担者を3名以上(世帯メンバー・世帯外相手の混在可)選べるほか、複数の元仕訳をまとめて選択して一括で割勘することもできる。いずれの場合も1.3・1.4の2者間仕訳パターン自体は変更せず、立替者から分担者の人数分・選択した元仕訳の件数分だけ独立した2者間仕訳を繰り返し作成する(可変長の単一仕訳や、複数の元仕訳・分担者を横断する専用のバッチ仕訳構造は導入しない)。総額を人数・比率で按分する際に生じる端数(円未満の丸め)は、常に立替者側の配分額に寄せて吸収する(`allocateExpenseSplitAmounts`)。詳細な設計判断は`docs/decisions.md`(2026-08-15)参照。
 
 ### 1.5 割勘の履歴と取り消し
 

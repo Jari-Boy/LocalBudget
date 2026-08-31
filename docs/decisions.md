@@ -594,6 +594,30 @@
 **決定**: BSの比較基準日を、当期の基準日と同じ`periodInputMode`(年月選択/日付指定)に連動した専用のUI状態(`bsComparisonEnabled`・`bsComparisonYear`/`bsComparisonMonth`・`bsComparisonDateInput`)で直接選べるようにした(`FinancialStatementScreen.tsx`)。年月選択モードでは、当期の基準日と同じく`getLastDayOfMonth`で解決するため、選んだ年月は必ず月末時点になる(ラベルに「(月末時点)」と明記し、この挙動をUI上でも明確にする)。日付指定モードでは、比較基準日の`<input type="date">`に`max`属性(新設した`getPreviousDay`、当期の基準日の前日)を設定し、当期の基準日より前の日付のみを選べるように制約した。PLの比較機能(`comparisonMode`による「前期・前年同期」の自動算出、`getPreviousPeriod`/`getPreviousYearPeriod`)はこのレビューの対象外であり、変更していない。
 **影響**: BSとPLで比較機能のUI・操作方法が異なる(PLはプリセット選択のみ、BSは基準日そのものを選ぶ)非対称な設計になったが、これはBS(単一時点)とPL(期間)の「前期」の定義の曖昧さの違い(前エントリ参照)を反映した意図的な判断であり、統一のための追加の抽象化は行わない。今後、PL側にも「任意の期間を比較基準として直接指定したい」という要件が明確になった場合は、本エントリのBS側の設計(`periodInputMode`に連動した直接選択UI)を参考にできる。
 
+## 2026-08-15: 複数人・複数元仕訳の割勘は既存の2者間仕訳パターンをN×M回繰り返すことで実現し、可変長・バッチ専用の新しい仕訳構造は導入しない
+
+**背景**: 計画Issue #40は、既存の2者間(立替者→分担者1名)割勘パターン(`docs/domain/expense-splitting.md` 1.3・1.4節)を、複数人(3名以上、世帯メンバー・世帯外相手の混在可)への割勘、および複数の元仕訳をまとめて選択した一括割勘の両方に対応させる必要があった。1つの仕訳に分担者の人数分だけ明細行を持たせる可変長の単一仕訳や、複数の元仕訳・分担者をまとめて扱う専用のバッチ仕訳構造を新設する案も考えられたが、いずれも`docs/domain/journal.md` 1.3の貸借バランス検証・`docs/domain/expense-splitting.md` 1.3/1.4が定める既存の仕訳パターン自体の見直しを要し、影響範囲が大きい。
+**決定**: 仕訳パターン自体(1.3・1.4節の2者間仕訳)は変更せず、`buildExpenseSplittingJournalEntryInputs`が分担者(`recipients`)ごとに独立した2者間仕訳を1件ずつ組み立て(分担者N人なら仕訳N件)、`ExpenseSplittingForm`が選択された元仕訳(`originalEntries`)ごとにこれを1回ずつ呼び出す(元仕訳M件ならN×M件の独立した仕訳)構成にした。「複数人」「複数元仕訳」という2つの複数選択軸を、いずれも既存の確立済み仕訳パターンの繰り返し適用として表現し、可変長仕訳・バッチ専用の仕訳構造は導入しない。
+**影響**: 複数人・複数元仕訳の割勘は常に「独立したN×M件の2者間仕訳」として`journal_entries`に記録される。`ExpenseSplittingForm`は`journalEntryRepository.create`をforループで1件ずつ呼び出す実装であり、全件の作成をまとめて成功/失敗させる原子性(all-or-nothing)は保証されない(途中の1件が失敗した場合、それ以前に作成済みの仕訳は残ったままになる)。今後この原子性が要件になった場合は、`CreateJournalEntryInput`の配列を受け取り単一トランザクションで書き込む専用のRepositoryメソッドを追加する必要がある(現時点ではスコープ外)。
+
+## 2026-08-15: allocateExpenseSplitAmountsの端数は常に立替者(payer)側に寄せる
+
+**背景**: 複数人(3名以上)・カスタム比率での割勘按分を実装するにあたり、総額を人数・比率で割ると円未満の端数(`Math.round`の丸め)が生じる場合があった。各分担者の金額を独立に`Math.round`するだけでは、全分担者の金額の合計が総額と一致しないケースが生じることが実装時に判明した(仕訳全体の金額合計が総額と一致しないと、複式簿記の借方合計=貸方合計という不変条件、`docs/domain/journal.md` 1.3、を満たす仕訳を組み立てられない)。
+**決定**: `allocateExpenseSplitAmounts`(`src/domain/expense-splitting/`)は、立替者(`payerKey`)以外の各分担者の金額を先に`Math.round(totalAmount * weight / totalWeight)`で個別に確定させ、立替者の金額は`totalAmount - 他の分担者への配分合計`として残差(丸め誤差の累計)をそのまま引き受ける形にした。分担者間で端数を均等に配り直す・largest remainder法で最も端数の大きい分担者に寄せる、といったより複雑なアルゴリズムは採用しない。
+**影響**: 割勘の合計金額は常に総額と一致することが保証される一方、端数は常に立替者側に寄る(分担者側の金額が本来の比率よりわずかに少なくなることはない)。今後、分担者間で端数の負担を分散させたいという要件が出た場合は、本関数のアルゴリズム自体を再検討する必要がある。回帰テストは`allocateExpenseSplitAmounts.test.ts`に3人・4人以上への按分で合計が総額と一致することを直接検証するケースを含む。
+
+## 2026-08-15: 仕訳の複数軸絞り込みはFinancialStatementFilterとは別型のJournalEntryFilter/filterJournalEntriesとして実装し、仕訳単位で複数画面から再利用する
+
+**背景**: 計画Issue #40は、割勘対象選択画面(`ExpenseSplittingEntryPickerScreen`)で未割勘の仕訳候補をさらに期間・科目・世帯メンバー・プロジェクトで絞り込みたいという要件を持っていた。同種の「複数の軸をANDで組み合わせて絞り込む」要件は、計画Issue #34(FS画面)で`FinancialStatementFilter`+`filterJournalLinesByFinancialStatementFilter`(本ファイル2026-08-15「FS画面の複数軸絞り込みは...」参照)として実装済みだったが、FS版は仕訳明細(`JournalLine`)単位・複数選択(OR結合)の絞り込みであるのに対し、今回必要なのは仕訳(`JournalEntry`)単位(1件の仕訳内のいずれかの明細行が条件に一致すればその仕訳ごと候補に含める)・単一値の絞り込みであり、型・粒度が異なっていた。
+**決定**: `JournalEntryFilter`(`dateFrom`/`dateTo`/`accountId`/`householdMemberId`/`projectId`、いずれもオプショナルな単一値)と、これを適用する純粋関数`filterJournalEntries`(`src/domain/journal/`)を新設した。世帯メンバーの判定は`financial-statement`ドメインの`resolveEffectiveHouseholdMemberId`(科目既定値→明細の上書き→起票者の順のフォールバック)をそのまま再利用する(本ファイル2026-08-01「クロスドメインのimportは...」で確立済みの、ドメイン層の純粋関数同士でのクロスドメイン再利用パターンに従う)。`ExpenseSplittingEntryPickerScreen`専用にはせず、共通UIコンポーネント`JournalEntryFilterForm`とあわせて汎用の仕訳絞り込み機能として実装した。
+**影響**: 今後、仕訳一覧に絞り込みが必要な別の画面(例: 確定済み仕訳一覧`JournalEntryListScreen`への絞り込み追加)を実装する場合も、`JournalEntryFilter`・`filterJournalEntries`・`JournalEntryFilterForm`をそのまま再利用できる。`FinancialStatementFilter`(複数選択・OR結合、明細単位)とは型・粒度が異なる別物であるため、両者を混同して同じ絞り込みロジックを流用しようとしないこと。
+
+## 2026-08-15: 精算対象候補は「タグ(project_id・account_id)一致」だけで絞り込まず、精算仕訳自身(settlesリンクのfrom_entry側)を候補から除外する
+
+**背景**: 精算画面(`SettlementScreen`)は、選択したプロジェクト・精算方向(資産/負債)に対応する一時勘定(立替金)の`account_id`・`project_id`が一致する仕訳を、`findUnsettledEntries`(`docs/domain/settlement.md` 1.6・1.7)へ渡す候補として組み立てる必要があった。しかしこの一時勘定は、精算対象(割勘仕訳、`to_entry`側)だけでなく、過去に作成済みの精算仕訳自身(`from_entry`側。`buildSettlementJournalEntryInput`が組み立てる精算仕訳も同じ`account_id`・`project_id`のタグ付き一時勘定行を持つ、`docs/domain/settlement.md` 1.7の引き継ぎ設計そのものが原因)にも登場する。単純にタグ一致で絞り込んだ仕訳を全て候補として渡すと、精算仕訳自身も候補に紛れ込むことが実装時に判明した。
+**決定**: `SettlementScreen`は、タグ一致で絞り込んだ候補一覧から、`settles`リンクの`from_entry_id`として自分自身が登場する仕訳(=それ自体が精算仕訳であるもの)を除外してから`findUnsettledEntries`に渡すようにした。これは`docs/domain/expense-splitting.md` 1.5の`findUnallocatedEntries`(`allocates`リンクの`from_entry`側を割勘仕訳とみなして判定に使う考え方)と対称的な判定パターンである。
+**影響**: 今後、一時勘定(未払金・未収金・立替金等)を`project_id`・`account_id`等のタグで検索して消込/精算対象の候補一覧を組み立てる実装を追加する場合、タグは対象(`to_entry`)側だけでなく消込/精算仕訳(`from_entry`)側にも同じ値で設定されるため、タグ一致だけで候補を絞り込むと消込/精算仕訳自身が混入しうることを踏まえ、`settles`(または`allocates`)リンクの`from_entry`側であるものを候補から明示的に除外する必要がある。`docs/domain/settlement.md` 1.7にも同内容を反映した。回帰テストは`SettlementScreen.test.tsx`に、精算仕訳が存在する状態でも未精算候補一覧に混入しないことを直接検証するケースを含む。
+
 ## 2026-08-15: sql.jsのdb.export()後はPRAGMA foreign_keysをoriginalRun経由で再設定し、ON DELETE CASCADEを保ち続ける
 
 **背景**: 計画Issue #40(割勘/精算UI)で「精算前の割勘仕訳の取り消し(物理削除)」機能をPlaywright(実ブラウザ)で検証したところ、`journal_entries`を削除しても`journal_entry_links`(`ON DELETE CASCADE`設定済み)がカスケード削除されず残留する不具合が再現した。Node/Vitest(`createTestDatabase`)では同一のDDL・同一シナリオで正しくカスケード削除されるのに、ブラウザのWeb Worker環境(`createBrowserDatabase`)でのみ再現するという差異から調査を進め、`db.export()`を呼んだ直後に`PRAGMA foreign_keys`を確認すると`0`(OFF)にリセットされていることを実機で特定した。これは2026-08-02のエントリで記録した`db.export()`による`last_insert_rowid()`リセットの副作用と同種で、`withAutoSave`のデバウンス保存(`db.export()`)が一度でも実行されると、それ以降アプリ全体で`ON DELETE CASCADE`(`journal_entry_links`・`journal_lines`等)が機能しなくなるという、割勘/精算UI固有ではない既存バグだった。
@@ -607,3 +631,9 @@
 
 あわせて、同じユーザーレビューで「割勘バッチ」という独自の呼称(`docs/domain/expense-splitting.md`・`docs/domain/projects.md`で使われているドメイン内部の用語をそのままUIコピーに転用したもの)が指摘された。実体は`kind = 'settlement'`のプロジェクトであり、既存のプロジェクト管理画面(D6、計画Issue #36)では一貫して「プロジェクト」と呼ばれているため、同一エンティティが画面によって異なる名前で呼ばれる不整合を解消する目的で、割勘/精算画面側の表示を「プロジェクト」に統一した(ドメインドキュメント自体の用語は変更していない)。
 **影響**: `seedDefaultAccounts`が定めた「asset/liability/equity区分の科目自動投入は対象外」という境界(2026-08-14決定)は、本決定により割勘機能の範囲でのみ部分的に踏み込まれた形になる。将来、残高調整UI(計画Issue #96で「未実装」と記載されていた機能)を実装する際、「費用・残高調整」科目についても同様の`is_system_managed`科目自動投入パターンを踏襲するかは実装時に改めて判断すること(ただし`docs/domain/accounts.md` 4.3節の初期残高科目は口座ごとに専用科目を発行する設計であるのに対し、本決定は単一の恒久科目をカテゴリ単位で使い回す設計である点が異なる)。既存のE2Eテスト(`e2e/expense-splitting.spec.ts`)は、手動で「立替金」という名前の科目を作成すると自動投入された同名科目と科目名の一意制約(`idx_accounts_unique_name_per_category`)が衝突するため、`setupBaseData`ヘルパーから立替金科目の手動作成を削除する形で追随した。共有の翻訳キー`requiredFieldMissingError`を`ExpenseSplittingForm`用に書き換えた際、`SettlementScreen`側の別の用途(精算元/精算先の口座・精算金額の必須チェック)にも流用されていたことに気づかず一時的に意味が食い違う状態になっていたため、専用キー`settlementFieldMissingError`に分離した(同じ`expenseSplitting`名前空間を複数コンポーネントで共有する場合は、キー変更時に他の利用箇所への影響を確認すること)。
+
+## 2026-08-31: seedAdvanceAccountsは科目名衝突(UNIQUE制約違反)をログに残すだけでスキップし、Worker起動全体をクラッシュさせない
+
+**背景**: `seedAdvanceAccounts`(2026-08-18決定)は、asset・liability区分それぞれについて`is_system_managed`科目の有無のみで投入要否を判定していた。asset/liabilityはユーザーが自由に科目を作成できる区分であるため、ユーザーが過去に(または他の経路で)同じ区分に同名(「立替金」)の通常科目(`is_system_managed = false`)を既に作成していた場合、投入時の`INSERT`が`category`+`name`のUNIQUE制約(`docs/schema/accounts.sql`)に違反し例外を投げることが、evaluatorレビュー(Review Attempt 5)で実機相当のテストにより指摘・再現された。この例外は`db.worker.ts`の`main()`内で捕捉されておらず、Worker起動処理全体が失敗し、割勘機能だけでなくアプリ全体が起動できなくなる欠陥だった。
+**決定**: `seedAdvanceAccounts`内の投入処理(`repository.create`)を区分ごとに個別の`try/catch`で囲み、UNIQUE制約違反等で失敗した場合は`console.error`でログに残すだけでその区分の投入をスキップし、例外を再スローしない(呼び出し元の`db.worker.ts`側は変更しない)構成にした。既存の科目を書き換えたり、衝突した既存科目を強制的に`is_system_managed`化したりはしない。
+**影響**: 名前衝突が起きた区分では、割勘/精算画面がその区分の立替金科目を解決できず利用できない状態になるが、アプリ全体は正常に起動を継続する(部分的な機能制限を全体クラッシュより優先する)。今後、ユーザーが自由にレコードを作成できるマスタ(区分)に対して特定フラグ(`is_system_managed`等)を持つレコードのみを対象にした冪等シードを追加する場合も、フラグを持たない既存レコードとの一意制約衝突が起こりうることを踏まえ、投入処理を個別にtry/catchで囲みWorker起動シーケンス全体を道連れにしない設計を優先する。`docs/guides/patterns.md`にも同内容を反映した。
