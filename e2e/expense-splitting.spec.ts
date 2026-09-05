@@ -14,7 +14,10 @@
  * さらに人間レビューでの追加指摘を受け、立替金(資産/負債)科目はseedAdvanceAccountsが
  * Worker起動時に自動投入する恒久的な科目を自動解決して使うため、UI上の選択操作は無い
  * (計画Issue #40)。「割勘バッチ」という独自の呼称も廃止し、既存のプロジェクト管理画面
- * (D6)と同じ「プロジェクト」に統一した。
+ * (D6)と同じ「プロジェクト」に統一した。加えて、割勘フォームでの相手選択UIも
+ * 再設計され、世帯メンバーは「相手の種類→相手」という2段階選択ではなく、割り振り
+ * 可能な全員を常時チェックボックスの一覧として表示する方式になった(人間レビューでの
+ * 再指摘、詳細はExpenseSplittingForm.tsxのJSDoc参照)。
  * journal-entry.spec.ts・project-management.spec.tsと同様、事前データ準備は
  * page.evaluate内で新規にcreateDbClient()した別Workerで行い、作成したデータが
  * Repository経由で確認できるまでpollしてからreloadし、本体アプリ側のWorkerに
@@ -23,7 +26,6 @@
 import { test, expect, type Page } from '@playwright/test'
 
 interface BaseData {
-  memberBId: number
   friendId: number
   expenseAccountId: number
   cashAccountId: number
@@ -42,7 +44,7 @@ async function setupBaseData(page: Page, projectName: string): Promise<BaseData>
   const result = await page.evaluate(async (name) => {
     const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
     const client = await createDbClient()
-    const memberB = await client.householdMember.create({ name: '割勘相手Bさん' })
+    await client.householdMember.create({ name: '割勘相手Bさん' })
     const friend = await client.counterparty.create({ name: '割勘相手の友人Cさん' })
     const expenseAccount = await client.account.create({
       category: 'expense',
@@ -57,7 +59,6 @@ async function setupBaseData(page: Page, projectName: string): Promise<BaseData>
     const project = await client.project.create({ name, kind: 'settlement' })
     await client.autoSave.flush()
     return {
-      memberBId: memberB.id,
       friendId: friend.id,
       expenseAccountId: expenseAccount.id,
       cashAccountId: cashAccount.id,
@@ -149,6 +150,20 @@ async function openSplittingForm(page: Page, data: BaseData, originalMemo: strin
   await page.getByLabel('プロジェクト').selectOption(String(data.projectId))
 }
 
+/**
+ * 世帯メンバーをチェックボックスで分担者に選択する(計画Issue #40、人間レビューでの
+ * 再指摘への対応で「相手の種類→相手」の2段階選択から常時一覧チェック方式に変更)。
+ * 名前がそのままチェックボックスのアクセシブルネームになる。
+ */
+async function checkHouseholdMember(page: Page, name: string) {
+  await page.getByRole('checkbox', { name }).check()
+}
+
+/** チェック済みの世帯メンバー行(role=group、aria-label=名前)をスコープする */
+function householdMemberRow(page: Page, name: string) {
+  return page.getByRole('group', { name })
+}
+
 test.describe('割勘対象選択画面', () => {
   test('未割勘の仕訳が候補として表示され、既に割勘済みの仕訳は候補から除外される', async ({ page }) => {
     await page.goto('/')
@@ -156,8 +171,7 @@ test.describe('割勘対象選択画面', () => {
     await createOriginalExpenseEntry(page, data, '絞り込み確認用の食事代', 1000)
 
     await openSplittingForm(page, data, '絞り込み確認用の食事代')
-    const participant = page.getByRole('group', { name: '分担者1' })
-    await participant.getByLabel('相手', { exact: true }).selectOption(String(data.memberBId))
+    await checkHouseholdMember(page, '割勘相手Bさん')
     await page.getByRole('button', { name: '計算する' }).click()
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
@@ -211,10 +225,9 @@ test.describe('割勘起票', () => {
     await createOriginalExpenseEntry(page, data, '世帯メンバー間割勘テスト用の食事代', 1000)
 
     await openSplittingForm(page, data, '世帯メンバー間割勘テスト用の食事代')
-    const participant = page.getByRole('group', { name: '分担者1' })
-    await participant.getByLabel('相手', { exact: true }).selectOption(String(data.memberBId))
+    await checkHouseholdMember(page, '割勘相手Bさん')
     await page.getByRole('button', { name: '計算する' }).click()
-    await expect(participant.getByLabel('金額')).toHaveValue('500')
+    await expect(householdMemberRow(page, '割勘相手Bさん').getByLabel('金額')).toHaveValue('500')
 
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
@@ -235,8 +248,8 @@ test.describe('割勘起票', () => {
     await createOriginalExpenseEntry(page, data, '世帯外割勘テスト用の食事代', 1000)
 
     await openSplittingForm(page, data, '世帯外割勘テスト用の食事代')
+    await page.getByRole('button', { name: '世帯外の相手を追加する' }).click()
     const participant = page.getByRole('group', { name: '分担者1' })
-    await participant.getByLabel('相手の種類').selectOption('counterparty')
     await participant.getByLabel('相手', { exact: true }).selectOption(String(data.friendId))
     await page.getByRole('button', { name: '計算する' }).click()
     await expect(participant.getByLabel('金額')).toHaveValue('500')
@@ -259,8 +272,7 @@ test.describe('割勘起票', () => {
     await page.getByRole('button', { name: '作成する' }).click()
     await expect(page.getByLabel('新しいプロジェクトの名前')).not.toBeVisible()
 
-    const participant = page.getByRole('group', { name: '分担者1' })
-    await participant.getByLabel('相手', { exact: true }).selectOption(String(data.memberBId))
+    await checkHouseholdMember(page, '割勘相手Bさん')
     await page.getByRole('button', { name: '計算する' }).click()
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
@@ -274,12 +286,11 @@ test.describe('割勘起票', () => {
   test('カスタム比率を指定した割勘起票と、3人以上への複数人割勘起票ができる', async ({ page }) => {
     await page.goto('/')
     const data = await setupBaseData(page, '26/8生活費割勘(比率・複数人)')
-    const memberDId = await page.evaluate(async () => {
+    await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
-      const member = await client.householdMember.create({ name: '割勘相手Dさん' })
+      await client.householdMember.create({ name: '割勘相手Dさん' })
       await client.autoSave.flush()
-      return member.id
     })
     await page.reload()
     await createOriginalExpenseEntry(page, data, '比率・複数人割勘テスト用の食事代', 1000)
@@ -287,18 +298,15 @@ test.describe('割勘起票', () => {
     await openSplittingForm(page, data, '比率・複数人割勘テスト用の食事代')
     await page.getByLabel('配分方法').selectOption('ratio')
 
-    const participant1 = page.getByRole('group', { name: '分担者1' })
-    await participant1.getByLabel('相手', { exact: true }).selectOption(String(data.memberBId))
-    await participant1.getByLabel('比率(%)').fill('30')
+    await checkHouseholdMember(page, '割勘相手Bさん')
+    await householdMemberRow(page, '割勘相手Bさん').getByLabel('比率(%)').fill('30')
 
-    await page.getByRole('button', { name: '分担者を追加する' }).click()
-    const participant2 = page.getByRole('group', { name: '分担者2' })
-    await participant2.getByLabel('相手', { exact: true }).selectOption(String(memberDId))
-    await participant2.getByLabel('比率(%)').fill('20')
+    await checkHouseholdMember(page, '割勘相手Dさん')
+    await householdMemberRow(page, '割勘相手Dさん').getByLabel('比率(%)').fill('20')
 
     await page.getByRole('button', { name: '計算する' }).click()
-    await expect(participant1.getByLabel('金額')).toHaveValue('300')
-    await expect(participant2.getByLabel('金額')).toHaveValue('200')
+    await expect(householdMemberRow(page, '割勘相手Bさん').getByLabel('金額')).toHaveValue('300')
+    await expect(householdMemberRow(page, '割勘相手Dさん').getByLabel('金額')).toHaveValue('200')
 
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     // 立替者を除く2人の分担者それぞれに独立した仕訳が作られる(元仕訳1件+割勘仕訳2件)
@@ -320,12 +328,11 @@ test.describe('割勘起票', () => {
     await expect(page.getByLabel('按分する金額')).not.toBeVisible()
     await expect(page.getByLabel('配分方法').locator('option', { hasText: '金額を直接指定する' })).toHaveCount(0)
 
-    const participant = page.getByRole('group', { name: '分担者1' })
-    await participant.getByLabel('相手', { exact: true }).selectOption(String(data.memberBId))
+    await checkHouseholdMember(page, '割勘相手Bさん')
     await page.getByRole('button', { name: '計算する' }).click()
     // 1000円を2等分した500円 + 500円を2等分した250円 = 750円が、元仕訳ごとに個別計算した
     // 合計額としてプレビューに表示される
-    await expect(participant.getByLabel('金額')).toHaveValue('750')
+    await expect(householdMemberRow(page, '割勘相手Bさん').getByLabel('金額')).toHaveValue('750')
 
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     // 元仕訳2件+元仕訳ごとに独立して作られる割勘仕訳2件=合計4件
@@ -347,8 +354,7 @@ test.describe('精算・履歴・取り消し', () => {
     await createOriginalExpenseEntry(page, data, '精算テスト用の食事代', 1000)
 
     await openSplittingForm(page, data, '精算テスト用の食事代')
-    const participant = page.getByRole('group', { name: '分担者1' })
-    await participant.getByLabel('相手', { exact: true }).selectOption(String(data.memberBId))
+    await checkHouseholdMember(page, '割勘相手Bさん')
     await page.getByRole('button', { name: '計算する' }).click()
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
@@ -394,8 +400,7 @@ test.describe('精算・履歴・取り消し', () => {
 
     // 再度割勘してから精算し、精算後は返金案内が表示されることを確認
     await openSplittingForm(page, data, '精算テスト用の食事代')
-    const participant = page.getByRole('group', { name: '分担者1' })
-    await participant.getByLabel('相手', { exact: true }).selectOption(String(data.memberBId))
+    await checkHouseholdMember(page, '割勘相手Bさん')
     await page.getByRole('button', { name: '計算する' }).click()
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
