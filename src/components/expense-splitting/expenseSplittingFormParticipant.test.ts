@@ -9,14 +9,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculateParticipantAmounts,
-  createEmptyParticipantRow,
   toExpenseSplitRecipients,
   toExpenseSplitRecipientsForEntryAmount,
   type ExpenseSplittingParticipantRow,
 } from './expenseSplittingFormParticipant'
 
 function row(overrides: Partial<ExpenseSplittingParticipantRow> & { key: number }): ExpenseSplittingParticipantRow {
-  return { ...createEmptyParticipantRow(overrides.key), ...overrides }
+  return { kind: 'householdMember', targetId: null, ratioInput: '', amountInput: '', ...overrides }
 }
 
 describe('calculateParticipantAmounts', () => {

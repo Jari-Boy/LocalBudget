@@ -4,7 +4,10 @@ import { allocateExpenseSplitAmounts } from '../../domain/expense-splitting/allo
 export type ExpenseSplittingAllocationMode = 'equal' | 'ratio' | 'amount'
 
 /**
- * 割勘起票フォームの分担者1行分の入力状態(計画Issue #40)。
+ * 割勘起票フォームの分担者1行分の入力状態(計画Issue #40)。kindは行の由来
+ * (世帯メンバー一覧のチェックボックスから選ばれたか、世帯外の相手として追加されたか)
+ * によって一意に決まり、ユーザーが「相手の種類」として明示的に選択するものではない
+ * (人間レビューでの指摘、計画Issue #40再実装分。ExpenseSplittingForm参照)。
  * 配分方法(equal/ratio)では計算結果をamountInputへ反映して表示し、amountでは
  * ユーザーが直接amountInputへ入力する(いずれも確定前に手動修正できる)。
  */
@@ -14,10 +17,6 @@ export interface ExpenseSplittingParticipantRow {
   targetId: number | null
   ratioInput: string
   amountInput: string
-}
-
-export function createEmptyParticipantRow(key: number): ExpenseSplittingParticipantRow {
-  return { key, kind: 'householdMember', targetId: null, ratioInput: '', amountInput: '' }
 }
 
 const PAYER_KEY = 'payer'

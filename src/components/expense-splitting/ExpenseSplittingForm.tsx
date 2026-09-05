@@ -9,7 +9,6 @@ import { buildExpenseSplittingJournalEntryInputs } from '../../domain/expense-sp
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import {
   calculateParticipantAmounts,
-  createEmptyParticipantRow,
   toExpenseSplitRecipients,
   toExpenseSplitRecipientsForEntryAmount,
   type ExpenseSplittingAllocationMode,
@@ -69,10 +68,24 @@ interface MasterData {
 /**
  * 割勘起票フォーム(計画Issue #40)。世帯メンバー間(docs/domain/expense-splitting.md
  * 1.3節)・世帯外相手(同1.4節)との割勘を、複式簿記の概念(借方/貸方・仕訳明細)を
- * 見せない単一フォームで起票する。分担者は世帯メンバー・世帯外相手の混在を含め
- * 複数選択でき、配分方法(均等割/カスタム比率/金額直接指定)を選んで按分額を計算する
- * (計算結果は確定前に手動修正できる編集可能なプレビュー)。確定操作では、立替者を
- * 除いた分担者ごとにbuildExpenseSplittingJournalEntryInputsで組み立てた仕訳を
+ * 見せない単一フォームで起票する。ユーザーが入力するのは「元の支出仕訳(originalEntries、
+ * 呼び出し元が選択済み)」「参加する相手(世帯メンバー・世帯外相手の混在可)」
+ * 「配分方法(均等割/カスタム比率/金額直接指定)」の3点のみで、立替者(元仕訳の起票者)・
+ * 費用科目・立替金科目・仕訳の組み立て方(何件の仕訳に分解するか等)はすべて自動的に
+ * 解決する。バックエンドが複数人割勘を複数の2者間仕訳として実現している(下記)という
+ * 内部表現は、UIの入力方式には一切影響しない(人間レビューでの指摘、計画Issue #40
+ * 再実装分: 「元の仕訳・参加メンバー・配分方法さえ決まれば、誰から誰にどの科目で
+ * いくら割り振るかは自動で決まるべきで、内部の仕訳分解方式を理由にUI側へ入力させる
+ * のはナンセンス」)。
+ *
+ * 参加者の選び方: 世帯メンバー(立替者を除く)は、割り振り可能な全員をチェックボックス
+ * の一覧として常時表示する(小規模な既知集合のため、行の追加操作も「相手の種類」
+ * のような分類選択も不要)。世帯外の相手は取引先マスタからの選択が必要な性質上、
+ * 行を追加するインターフェースを維持するが、追加された行は常にkind='counterparty'
+ * であり、ここでも「相手の種類」選択はしない(行の由来自体がkindを一意に決める、
+ * expenseSplittingFormParticipant.ts参照)。配分方法を選ぶと計算結果をamountInputへ
+ * 反映し、確定前に手動修正できる編集可能なプレビューとして提示する。確定操作では、
+ * 立替者を除いた分担者ごとにbuildExpenseSplittingJournalEntryInputsで組み立てた仕訳を
  * 1件ずつ作成する(複数人割勘は複数の2者間仕訳として実現する、計画Issue #40の合意事項)。
  *
  * 立替金(資産/負債)科目はユーザーに選択させず、seedAdvanceAccounts(docs/domain/
@@ -114,11 +127,7 @@ export function ExpenseSplittingForm({
   const [submitting, setSubmitting] = useState(false)
 
   const rowKeyRef = useRef(0)
-  const createRow = () => {
-    rowKeyRef.current += 1
-    return createEmptyParticipantRow(rowKeyRef.current)
-  }
-  const [participants, setParticipants] = useState<ExpenseSplittingParticipantRow[]>(() => [createRow()])
+  const [participants, setParticipants] = useState<ExpenseSplittingParticipantRow[]>(() => [])
 
   const [totalAmountInput, setTotalAmountInput] = useState<string>('')
 
@@ -152,19 +161,42 @@ export function ExpenseSplittingForm({
   const advanceLiabilityAccountId =
     accounts.find((account) => account.category === 'liability' && account.isSystemManaged)?.id ?? null
   const settlementProjects = masterData.projects.filter((project) => project.kind === 'settlement')
-  /** 分担者の選択肢から、選択中の元仕訳いずれかの立替者を除外する(自分自身との割勘を防ぐ) */
+  /** 世帯メンバーの選択肢から、選択中の元仕訳いずれかの立替者を除外する(自分自身との割勘を防ぐ) */
   const payerMemberIds = new Set(originalEntries.map((entry) => entry.householdMemberId))
+  const eligibleHouseholdMembers = masterData.householdMembers.filter((member) => !payerMemberIds.has(member.id))
+  const counterpartyRows = participants.filter((row) => row.kind === 'counterparty')
 
   function updateRow(key: number, updater: (row: ExpenseSplittingParticipantRow) => ExpenseSplittingParticipantRow) {
     setParticipants((prev) => prev.map((row) => (row.key === key ? updater(row) : row)))
   }
 
-  function addRow() {
-    setParticipants((prev) => [...prev, createRow()])
+  /**
+   * 世帯メンバーのチェックボックスを切り替える。チェックすると分担者として追加し、
+   * 外すと除外する。「相手の種類」を選ばせず、チェックボックスの由来自体がkindを決める
+   * (人間レビューでの指摘、コンポーネント先頭のJSDoc参照)。
+   */
+  function toggleHouseholdMember(memberId: number) {
+    setParticipants((prev) => {
+      const existingIndex = prev.findIndex((row) => row.kind === 'householdMember' && row.targetId === memberId)
+      if (existingIndex !== -1) {
+        return prev.filter((_, index) => index !== existingIndex)
+      }
+      rowKeyRef.current += 1
+      return [...prev, { key: rowKeyRef.current, kind: 'householdMember', targetId: memberId, ratioInput: '', amountInput: '' }]
+    })
+  }
+
+  /** 世帯外の相手を分担者として追加する。取引先マスタからの検索が必要なため、行を追加する形を維持する */
+  function addCounterpartyRow() {
+    rowKeyRef.current += 1
+    setParticipants((prev) => [
+      ...prev,
+      { key: rowKeyRef.current, kind: 'counterparty', targetId: null, ratioInput: '', amountInput: '' },
+    ])
   }
 
   function removeRow(key: number) {
-    setParticipants((prev) => (prev.length <= 1 ? prev : prev.filter((row) => row.key !== key)))
+    setParticipants((prev) => prev.filter((row) => row.key !== key))
   }
 
   function handleCalculate() {
@@ -318,86 +350,118 @@ export function ExpenseSplittingForm({
         </select>
       </div>
 
-      {participants.map((row, index) => {
-        const targetOptions =
-          row.kind === 'householdMember'
-            ? masterData.householdMembers.filter((member) => !payerMemberIds.has(member.id))
-            : masterData.counterparties
-        const idPrefix = `expense-splitting-participant-${row.key}`
-        return (
-          <fieldset key={row.key}>
-            <legend>{t('participantGroupLabel', { index: index + 1 })}</legend>
+      <fieldset>
+        <legend>{t('householdMemberParticipantsLabel')}</legend>
+        {eligibleHouseholdMembers.length === 0 ? (
+          <p>{t('noEligibleHouseholdMembers')}</p>
+        ) : (
+          eligibleHouseholdMembers.map((member) => {
+            const row = participants.find((p) => p.kind === 'householdMember' && p.targetId === member.id)
+            const idPrefix = `expense-splitting-household-${member.id}`
+            return (
+              <div key={member.id} role="group" aria-label={member.name} className="expense-splitting-household-member-row">
+                <label>
+                  <input type="checkbox" checked={row !== undefined} onChange={() => toggleHouseholdMember(member.id)} />
+                  {member.name}
+                </label>
 
-            <label htmlFor={`${idPrefix}-kind`}>{t('participantKindLabel')}</label>
-            <select
-              id={`${idPrefix}-kind`}
-              value={row.kind}
-              onChange={(event) =>
-                updateRow(row.key, (current) => ({
-                  ...current,
-                  kind: event.target.value as ExpenseSplittingParticipantRow['kind'],
-                  targetId: null,
-                }))
-              }
-            >
-              <option value="householdMember">{t('participantKindHouseholdMember')}</option>
-              <option value="counterparty">{t('participantKindCounterparty')}</option>
-            </select>
+                {row !== undefined && (
+                  <>
+                    {allocationMode === 'ratio' && (
+                      <>
+                        <label htmlFor={`${idPrefix}-ratio`}>{t('participantRatioLabel')}</label>
+                        <input
+                          id={`${idPrefix}-ratio`}
+                          type="number"
+                          value={row.ratioInput}
+                          onChange={(event) =>
+                            updateRow(row.key, (current) => ({ ...current, ratioInput: event.target.value }))
+                          }
+                        />
+                      </>
+                    )}
 
-            <label htmlFor={`${idPrefix}-target`}>{t('participantTargetLabel')}</label>
-            <select
-              id={`${idPrefix}-target`}
-              value={row.targetId ?? ''}
-              onChange={(event) =>
-                updateRow(row.key, (current) => ({
-                  ...current,
-                  targetId: event.target.value === '' ? null : Number(event.target.value),
-                }))
-              }
-            >
-              <option value="">{t('unselected')}</option>
-              {targetOptions.map((target) => (
-                <option key={target.id} value={target.id}>
-                  {target.name}
-                </option>
-              ))}
-            </select>
+                    <label htmlFor={`${idPrefix}-amount`}>{t('participantAmountLabel')}</label>
+                    <input
+                      id={`${idPrefix}-amount`}
+                      type="number"
+                      value={row.amountInput}
+                      readOnly={allocationMode !== 'amount'}
+                      onChange={(event) =>
+                        updateRow(row.key, (current) => ({ ...current, amountInput: event.target.value }))
+                      }
+                    />
+                  </>
+                )}
+              </div>
+            )
+          })
+        )}
+      </fieldset>
 
-            {allocationMode === 'ratio' && (
-              <>
-                <label htmlFor={`${idPrefix}-ratio`}>{t('participantRatioLabel')}</label>
-                <input
-                  id={`${idPrefix}-ratio`}
-                  type="number"
-                  value={row.ratioInput}
-                  onChange={(event) =>
-                    updateRow(row.key, (current) => ({ ...current, ratioInput: event.target.value }))
-                  }
-                />
-              </>
-            )}
+      <fieldset>
+        <legend>{t('counterpartyParticipantsLabel')}</legend>
+        {counterpartyRows.map((row, index) => {
+          const idPrefix = `expense-splitting-counterparty-${row.key}`
+          return (
+            <fieldset key={row.key}>
+              <legend>{t('counterpartyParticipantGroupLabel', { index: index + 1 })}</legend>
 
-            <label htmlFor={`${idPrefix}-amount`}>{t('participantAmountLabel')}</label>
-            <input
-              id={`${idPrefix}-amount`}
-              type="number"
-              value={row.amountInput}
-              readOnly={allocationMode !== 'amount'}
-              onChange={(event) =>
-                updateRow(row.key, (current) => ({ ...current, amountInput: event.target.value }))
-              }
-            />
+              <label htmlFor={`${idPrefix}-target`}>{t('participantTargetLabel')}</label>
+              <select
+                id={`${idPrefix}-target`}
+                value={row.targetId ?? ''}
+                onChange={(event) =>
+                  updateRow(row.key, (current) => ({
+                    ...current,
+                    targetId: event.target.value === '' ? null : Number(event.target.value),
+                  }))
+                }
+              >
+                <option value="">{t('unselected')}</option>
+                {masterData.counterparties.map((counterparty) => (
+                  <option key={counterparty.id} value={counterparty.id}>
+                    {counterparty.name}
+                  </option>
+                ))}
+              </select>
 
-            <button type="button" onClick={() => removeRow(row.key)} disabled={participants.length <= 1}>
-              {t('removeParticipant')}
-            </button>
-          </fieldset>
-        )
-      })}
+              {allocationMode === 'ratio' && (
+                <>
+                  <label htmlFor={`${idPrefix}-ratio`}>{t('participantRatioLabel')}</label>
+                  <input
+                    id={`${idPrefix}-ratio`}
+                    type="number"
+                    value={row.ratioInput}
+                    onChange={(event) =>
+                      updateRow(row.key, (current) => ({ ...current, ratioInput: event.target.value }))
+                    }
+                  />
+                </>
+              )}
 
-      <button type="button" onClick={addRow}>
-        {t('addParticipant')}
-      </button>
+              <label htmlFor={`${idPrefix}-amount`}>{t('participantAmountLabel')}</label>
+              <input
+                id={`${idPrefix}-amount`}
+                type="number"
+                value={row.amountInput}
+                readOnly={allocationMode !== 'amount'}
+                onChange={(event) =>
+                  updateRow(row.key, (current) => ({ ...current, amountInput: event.target.value }))
+                }
+              />
+
+              <button type="button" onClick={() => removeRow(row.key)}>
+                {t('removeParticipant')}
+              </button>
+            </fieldset>
+          )
+        })}
+
+        <button type="button" onClick={addCounterpartyRow}>
+          {t('addCounterpartyParticipant')}
+        </button>
+      </fieldset>
 
       {allocationMode !== 'amount' && (
         <button type="button" onClick={handleCalculate}>

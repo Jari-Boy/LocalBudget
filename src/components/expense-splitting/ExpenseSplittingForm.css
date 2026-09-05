@@ -53,6 +53,21 @@
   }
 }
 
+.expense-splitting-form .expense-splitting-household-member-row {
+  margin-bottom: 0.75rem;
+}
+
+.expense-splitting-form .expense-splitting-household-member-row label:first-child {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.expense-splitting-form .expense-splitting-household-member-row input[type='checkbox'] {
+  width: auto;
+  margin-bottom: 0;
+}
+
 .expense-splitting-form .expense-splitting-project-quick-add {
   display: flex;
   align-items: center;
