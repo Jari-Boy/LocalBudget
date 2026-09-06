@@ -18,12 +18,17 @@
  * 再設計され、世帯メンバーは「相手の種類→相手」という2段階選択ではなく、割り振り
  * 可能な全員を常時チェックボックスの一覧として表示する方式になった(人間レビューでの
  * 再指摘、詳細はExpenseSplittingForm.tsxのJSDoc参照)。
- * さらに実機レビューで見つかった2件の不具合への対応も検証する: (10)費用科目の行を
+ * さらに実機レビューで見つかった不具合・要望への対応も検証する: (10)費用科目の行を
  * 持たない仕訳(給与/普通預金のような収益・資産のみの仕訳)は割勘対象選択画面の候補から
  * 除外されること、(11)世帯外の相手は取引先マスタからの選択に加えその場での新規取引先
  * 作成(quick add)ができ、相手を選択しないまま確定しようとするとエラーになり無警告での
- * 部分送信が起きないこと(計画Issue #40、詳細はfindExpenseLine.ts・ExpenseSplittingForm.tsx
- * のJSDoc参照)。
+ * 部分送信が起きないこと、(12)割勘によって作られた仕訳自身は割勘対象選択画面の候補から
+ * 除外され「割勘の割勘」ができないこと、(13)分担者数×選択した元仕訳数の組み合わせが
+ * 独立した複数の仕訳ではなく常に1件の複合仕訳にまとまること(逆仕訳を切りやすくする
+ * ための設計変更)、(14)割勘仕訳の摘要は既定値(単一選択時「元の摘要+の割勘」/複数選択時
+ * 「N件の支出の割勘」)が入力された状態の編集可能な欄であること(計画Issue #40、詳細は
+ * findExpenseLine.ts・findUnallocatedEntries.ts・mergeExpenseSplittingJournalEntryInputs.ts・
+ * ExpenseSplittingForm.tsxのJSDoc参照)。
  * journal-entry.spec.ts・project-management.spec.tsと同様、事前データ準備は
  * page.evaluate内で新規にcreateDbClient()した別Workerで行い、作成したデータが
  * Repository経由で確認できるまでpollしてからreloadし、本体アプリ側のWorkerに
@@ -385,8 +390,8 @@ test.describe('割勘起票', () => {
     await expect(householdMemberRow(page, '割勘相手Dさん').getByLabel('金額')).toHaveValue('200')
 
     await page.getByRole('button', { name: '割勘を確定する' }).click()
-    // 立替者を除く2人の分担者それぞれに独立した仕訳が作られる(元仕訳1件+割勘仕訳2件)
-    await waitForJournalEntryCount(page, 3)
+    // 立替者を除く2人の分担者分が、独立した2件ではなく1件の複合仕訳にまとまる(元仕訳1件+割勘仕訳1件)
+    await waitForJournalEntryCount(page, 2)
   })
 
   test('複数の元仕訳をチェックボックスでまとめて選択し、一括で割勘を起票できる(計画Issue #40 Attempt 4)', async ({
@@ -410,15 +415,53 @@ test.describe('割勘起票', () => {
     // 合計額としてプレビューに表示される
     await expect(householdMemberRow(page, '割勘相手Bさん').getByLabel('金額')).toHaveValue('750')
 
+    // 摘要欄には元仕訳が複数選択されたことを示す既定値が入力されている(計画Issue #40、
+    // 人間レビューでの指摘「割勘仕訳のタイトルは任意で設定できるように」への対応)
+    await expect(page.getByLabel('摘要')).toHaveValue('2件の支出の割勘')
+
     await page.getByRole('button', { name: '割勘を確定する' }).click()
-    // 元仕訳2件+元仕訳ごとに独立して作られる割勘仕訳2件=合計4件
-    await waitForJournalEntryCount(page, 4)
+    // 元仕訳2件+選択した元仕訳をまとめた1件の複合仕訳=合計3件(計画Issue #40、人間レビュー
+    // での指摘「割勘の仕訳を作るときは複数明細をまとめて一本で仕訳を切るように」への対応)
+    await waitForJournalEntryCount(page, 3)
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    // 元仕訳ごとに独立した割勘仕訳が作られ、それぞれの詳細画面から履歴を辿れることを確認
+    // 両方の元仕訳の詳細画面から、同じ1件の割勘仕訳への履歴を辿れることを確認
     await page.getByRole('button', { name: '仕訳一覧' }).click()
-    await expect(findEntryItem(page, '複数選択テスト用の食事代1の割勘')).toBeVisible()
-    await expect(findEntryItem(page, '複数選択テスト用の食事代2の割勘')).toBeVisible()
+    const splitItem = findEntryItem(page, '2件の支出の割勘')
+    await expect(splitItem).toBeVisible()
+
+    const entry1Item = findEntryItem(page, '複数選択テスト用の食事代1')
+    await entry1Item.getByRole('button', { name: '詳細を見る' }).click()
+    await expect(page.getByText('この支出から生まれた割勘')).toBeVisible()
+    await expect(page.getByText('2件の支出の割勘', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: '戻る' }).click()
+
+    const entry2Item = findEntryItem(page, '複数選択テスト用の食事代2')
+    await entry2Item.getByRole('button', { name: '詳細を見る' }).click()
+    await expect(page.getByText('この支出から生まれた割勘')).toBeVisible()
+    await expect(page.getByText('2件の支出の割勘', { exact: true })).toBeVisible()
+  })
+
+  test('割勘の割勘はできない(割勘仕訳自身は割勘対象選択画面の候補から除外される)', async ({ page }) => {
+    await page.goto('/')
+    const data = await setupBaseData(page, '26/8生活費割勘(割勘の割勘防止)')
+    await createOriginalExpenseEntry(page, data, '割勘の割勘防止確認用の食事代', 1000)
+
+    await openSplittingForm(page, data, '割勘の割勘防止確認用の食事代')
+    await page.getByRole('button', { name: '世帯外の相手を追加する' }).click()
+    const participant = page.getByRole('group', { name: '分担者1' })
+    await participant.getByLabel('相手', { exact: true }).selectOption(String(data.friendId))
+    await page.getByRole('button', { name: '計算する' }).click()
+    await page.getByRole('button', { name: '割勘を確定する' }).click()
+    await waitForJournalEntryCount(page, 2)
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    // 割勘によって作られた仕訳(世帯外の相手との割勘は費用科目1行のみのため、費用科目
+    // 1件限定の絞り込みだけではすり抜けてしまう)自身が、割勘対象選択画面の候補に
+    // 再び現れないことを確認する
+    await page.getByRole('button', { name: '割勘する' }).click()
+    await expect(page.getByText('割勘の割勘防止確認用の食事代', { exact: true })).not.toBeVisible()
+    await expect(page.getByText('割勘の割勘防止確認用の食事代の割勘', { exact: true })).not.toBeVisible()
   })
 })
 
