@@ -23,11 +23,15 @@
  * 除外されること、(11)世帯外の相手は取引先マスタからの選択に加えその場での新規取引先
  * 作成(quick add)ができ、相手を選択しないまま確定しようとするとエラーになり無警告での
  * 部分送信が起きないこと、(12)割勘によって作られた仕訳自身は割勘対象選択画面の候補から
- * 除外され「割勘の割勘」ができないこと、(13)分担者数×選択した元仕訳数の組み合わせが
- * 独立した複数の仕訳ではなく常に1件の複合仕訳にまとまること(逆仕訳を切りやすくする
- * ための設計変更)、(14)割勘仕訳の摘要は既定値(単一選択時「元の摘要+の割勘」/複数選択時
- * 「N件の支出の割勘」)が入力された状態の編集可能な欄であること(計画Issue #40、詳細は
- * findExpenseLine.ts・findUnallocatedEntries.ts・mergeExpenseSplittingJournalEntryInputs.ts・
+ * 除外され「割勘の割勘」ができないこと、(13)同じ分担者(人)が複数の元仕訳にまたがって
+ * 登場する場合、独立した複数の仕訳ではなく分担者ごとに1件の複合仕訳にまとまること
+ * (逆仕訳を切りやすくするための設計変更。異なる分担者の立替金行を同じ仕訳に混在させると
+ * 精算画面がタグ(account・project・household_member)ごとに残高を区別できなくなる不具合が
+ * 見つかったため、統合の単位は分担者ごとに限定している。3人以上への複数人割勘のように
+ * 異なる分担者が複数いる場合は、従来通り分担者ごとに独立した仕訳になる)、(14)割勘仕訳の
+ * 摘要は既定値(単一選択時「元の摘要+の割勘」/複数選択時「N件の支出の割勘」)が入力された
+ * 状態の編集可能な欄であること(計画Issue #40、詳細はfindExpenseLine.ts・
+ * findUnallocatedEntries.ts・mergeExpenseSplittingJournalEntryInputs.ts・
  * ExpenseSplittingForm.tsxのJSDoc参照)。
  * journal-entry.spec.ts・project-management.spec.tsと同様、事前データ準備は
  * page.evaluate内で新規にcreateDbClient()した別Workerで行い、作成したデータが
@@ -390,8 +394,10 @@ test.describe('割勘起票', () => {
     await expect(householdMemberRow(page, '割勘相手Dさん').getByLabel('金額')).toHaveValue('200')
 
     await page.getByRole('button', { name: '割勘を確定する' }).click()
-    // 立替者を除く2人の分担者分が、独立した2件ではなく1件の複合仕訳にまとまる(元仕訳1件+割勘仕訳1件)
-    await waitForJournalEntryCount(page, 2)
+    // 分担者B・Dは異なる人物のため、それぞれ独立した仕訳になる(元仕訳1件+割勘仕訳2件)。
+    // 異なる分担者の立替金行を同じ仕訳に混在させると精算画面がタグを区別できなくなるため、
+    // 複合仕訳への統合は分担者(人)単位に限定している
+    await waitForJournalEntryCount(page, 3)
   })
 
   test('複数の元仕訳をチェックボックスでまとめて選択し、一括で割勘を起票できる(計画Issue #40 Attempt 4)', async ({

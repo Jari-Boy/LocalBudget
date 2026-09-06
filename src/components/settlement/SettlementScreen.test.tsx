@@ -146,6 +146,79 @@ describe('SettlementScreen', () => {
     expect(await screen.findByText('未精算の割勘はありません')).toBeInTheDocument()
   })
 
+  it('異なる世帯メンバーの割勘仕訳が同じプロジェクトに存在する場合、片方の精算がもう片方の残高に影響しない(計画Issue #40、複数人割勘を分担者ごとに独立した仕訳へ分ける設計の裏付け)', async () => {
+    seedAdvanceAccounts(db)
+    const advanceAsset = accountRepository.findAll().find((a) => a.category === 'asset' && a.isSystemManaged)!
+    const advanceLiability = accountRepository.findAll().find((a) => a.category === 'liability' && a.isSystemManaged)!
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    const memberB = householdMemberRepository.create({ name: 'Bさん' })
+    const memberC = householdMemberRepository.create({ name: 'Cさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cashA = accountRepository.create({ category: 'asset', name: '現金(A)', isReconcilable: false })
+    const cashB = accountRepository.create({ category: 'asset', name: '現金(B)', isReconcilable: false })
+    const project = projectRepository.create({ name: '26/7旅行割勘', kind: 'settlement' })
+    const original = journalEntryRepository.create({
+      entryDate: '2026-07-01',
+      memo: '旅行の食事代',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 800 },
+        { accountId: cashA.id, side: 'credit', amount: 800 },
+      ],
+    })
+    // ExpenseSplittingFormが分担者(B・C)ごとに独立して作成する仕訳を模擬する
+    journalEntryRepository.create(
+      buildHouseholdMemberExpenseSplittingJournalEntryInput({
+        originalEntryId: original.id,
+        expenseAccountId: expense.id,
+        advanceAssetAccountId: advanceAsset.id,
+        advanceLiabilityAccountId: advanceLiability.id,
+        fromMemberId: memberA.id,
+        toMemberId: memberB.id,
+        projectId: project.id,
+        amount: 500,
+        entryDate: '2026-07-15',
+        memo: '旅行の食事代の割勘(Bさん分)',
+      }),
+    )
+    journalEntryRepository.create(
+      buildHouseholdMemberExpenseSplittingJournalEntryInput({
+        originalEntryId: original.id,
+        expenseAccountId: expense.id,
+        advanceAssetAccountId: advanceAsset.id,
+        advanceLiabilityAccountId: advanceLiability.id,
+        fromMemberId: memberA.id,
+        toMemberId: memberC.id,
+        projectId: project.id,
+        amount: 300,
+        entryDate: '2026-07-15',
+        memo: '旅行の食事代の割勘(Cさん分)',
+      }),
+    )
+
+    renderScreen()
+    await screen.findByLabelText('プロジェクト')
+    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算方向'), { target: { value: 'liability' } })
+
+    // BさんとCさんの割勘がそれぞれ独立した行として表示され、金額が混同されていないことを確認する
+    const memberBItem = (await screen.findByText('旅行の食事代の割勘(Bさん分)')).closest('li')!
+    const memberCItem = screen.getByText('旅行の食事代の割勘(Cさん分)').closest('li')!
+    expect(memberBItem).toHaveTextContent('￥500')
+    expect(memberCItem).toHaveTextContent('￥300')
+
+    // Bさんの分だけを精算する
+    fireEvent.click(within(memberBItem).getByRole('button', { name: '精算する' }))
+    fireEvent.change(within(memberBItem).getByLabelText('精算元/精算先の口座'), { target: { value: String(cashB.id) } })
+    fireEvent.change(within(memberBItem).getByLabelText('精算金額'), { target: { value: '500' } })
+    fireEvent.click(within(memberBItem).getByRole('button', { name: '精算を確定する' }))
+
+    // Bさんの割勘は一覧から消えるが、Cさんの割勘(300円)は影響を受けず残り続ける
+    await waitFor(() => expect(screen.queryByText('旅行の食事代の割勘(Bさん分)')).not.toBeInTheDocument())
+    const remainingItem = screen.getByText('旅行の食事代の割勘(Cさん分)').closest('li')!
+    expect(remainingItem).toHaveTextContent('￥300')
+  })
+
   it('戻るボタンが表示される', async () => {
     renderScreen()
     expect(await screen.findByRole('button', { name: '戻る' })).toBeInTheDocument()

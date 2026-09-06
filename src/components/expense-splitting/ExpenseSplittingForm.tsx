@@ -104,10 +104,14 @@ function computeDefaultMemo(
  * expenseSplittingFormParticipant.ts参照)。配分方法を選ぶと計算結果をamountInputへ
  * 反映し、確定前に手動修正できる編集可能なプレビューとして提示する。確定操作では、
  * 立替者を除いた分担者ごとにbuildExpenseSplittingJournalEntryInputsで個別に組み立てた
- * 仕訳(分担者数×選択した元仕訳数)を、mergeExpenseSplittingJournalEntryInputsで
- * 1件の複合仕訳へ統合してから作成する(人間レビューでの指摘「割勘の仕訳を作るときは
- * 複数明細をまとめて一本で仕訳を切るように(逆仕訳が切りやすくなるから)」への対応、
- * 計画Issue #40)。1.3・1.4節の2者間仕訳パターン自体は変更しない。
+ * 仕訳(分担者数×選択した元仕訳数)を、分担者(人)単位でグルーピングした上で
+ * mergeExpenseSplittingJournalEntryInputsに渡し、分担者ごとに1件の複合仕訳へ統合して
+ * から作成する(人間レビューでの指摘「割勘の仕訳を作るときは複数明細をまとめて一本で
+ * 仕訳を切るように(逆仕訳が切りやすくなるから)」への対応、計画Issue #40)。統合の単位を
+ * 「分担者ごと」に限定しているのは、異なる分担者の立替金(負債)行を同じ仕訳に混在させると
+ * 精算画面がタグ(account・project・household_member)ごとに残高を区別できなくなる不具合が
+ * 見つかったため(evaluatorレビュー指摘、handleSubmit内のJSDoc参照)。1.3・1.4節の2者間
+ * 仕訳パターン自体は変更しない。
  *
  * 仕訳の摘要は、1件の元仕訳選択時は「元の摘要+の割勘」、複数選択時は「N件の支出の割勘」を
  * 既定値として摘要欄に表示し、ユーザーが自由に編集できる(人間レビューでの指摘「割勘仕訳の
@@ -299,7 +303,13 @@ export function ExpenseSplittingForm({
     }
 
     const entryDate = today ?? new Date().toISOString().slice(0, 10)
-    const perEntryInputs: CreateJournalEntryInput[] = []
+    /**
+     * 分担者(recipient)ごとに、その分担者が絡む全ての元仕訳分の入力をまとめて保持する。
+     * 「分担者ごとに1件の複合仕訳にまとめ、選択した元仕訳が複数ある場合はその分も同じ
+     * 分担者の仕訳にまとめる」という設計(下記mergeExpenseSplittingJournalEntryInputsの
+     * JSDoc・docs/decisions.md(2026-09-06)参照)のためのグルーピング。
+     */
+    const inputsByRecipientKey = new Map<string, CreateJournalEntryInput[]>()
     for (const { entry, expenseLine } of entryLines) {
       const recipients = isBatch
         ? toExpenseSplitRecipientsForEntryAmount(participants, advanceLiabilityAccountId, expenseLine.amount, allocationMode)
@@ -308,39 +318,57 @@ export function ExpenseSplittingForm({
         setError(t('noRecipientError'))
         return
       }
-      perEntryInputs.push(
-        ...buildExpenseSplittingJournalEntryInputs({
-          originalEntryId: entry.id,
-          expenseAccountId: expenseLine.accountId,
-          advanceAssetAccountId,
-          fromMemberId: entry.householdMemberId,
-          projectId,
-          entryDate,
-          recipients,
-        }),
-      )
+      const inputs = buildExpenseSplittingJournalEntryInputs({
+        originalEntryId: entry.id,
+        expenseAccountId: expenseLine.accountId,
+        advanceAssetAccountId,
+        fromMemberId: entry.householdMemberId,
+        projectId,
+        entryDate,
+        recipients,
+      })
+      recipients.forEach((recipient, index) => {
+        const key = recipient.kind === 'householdMember' ? `householdMember:${recipient.toMemberId}` : `counterparty:${recipient.counterpartyId}`
+        const existing = inputsByRecipientKey.get(key) ?? []
+        existing.push(inputs[index])
+        inputsByRecipientKey.set(key, existing)
+      })
     }
 
     /**
-     * 分担者数×選択した元仕訳数だけ個別に組み立てたCreateJournalEntryInputを、
-     * 1件の複合仕訳へ統合する(人間レビューでの指摘「割勘の仕訳を作るときは複数明細を
-     * まとめて一本で仕訳を切るように(逆仕訳が切りやすくなるから)」への対応、計画Issue #40)。
-     * 摘要はmemoInput(既定値はcomputeDefaultMemo、ユーザーが自由に編集できる)を使い、
-     * 空欄のまま確定した場合はnull(無題)とする。起票者は選択した元仕訳のうち先頭のものの
-     * householdMemberIdを使う(全行に明示的なhousehold_member_idが設定されるため、
-     * 実効メンバーの解決においてこの値がフォールバックとして参照されることはない)。
+     * 分担者ごとに、その分担者分のCreateJournalEntryInput(選択した元仕訳の件数分)を
+     * mergeExpenseSplittingJournalEntryInputsで1件の複合仕訳へ統合する(人間レビューでの
+     * 指摘「割勘の仕訳を作るときは複数明細をまとめて一本で仕訳を切るように(逆仕訳が
+     * 切りやすくなるから)」への対応、計画Issue #40)。統合の単位を「分担者ごと」に
+     * 限定しているのは、異なる分担者(household_member_id)の立替金(負債)行を同じ仕訳に
+     * 混在させると、精算画面がタグ(account・project・household_member)ごとに残高を
+     * 区別できず、ある世帯メンバーの精算操作で無関係な別の世帯メンバーの債務まで無警告で
+     * 消し込まれてしまう不具合が実際に見つかったため(evaluatorレビュー指摘、docs/domain/
+     * settlement.md 1.7の「タグの組み合わせごとに消込対象を一意に特定できる」という
+     * 既存の不変条件に反する状態を作ってしまっていた)。分担者が同じであれば、選択した
+     * 元仕訳が複数あっても常に同じ人物への同じ債務の一部であり、タグの混在は起こらない。
+     * 摘要はmemoInput(既定値はcomputeDefaultMemo、ユーザーが自由に編集できる)を全ての
+     * 仕訳で共通して使い、空欄のまま確定した場合はnull(無題)とする。起票者は選択した
+     * 元仕訳のうち先頭のもののhouseholdMemberIdを使う(全行に明示的なhousehold_member_id
+     * が設定されるため、実効メンバーの解決においてこの値がフォールバックとして参照される
+     * ことはない)。
      */
-    const mergedInput = mergeExpenseSplittingJournalEntryInputs({
-      inputs: perEntryInputs,
-      entryDate,
-      memo: memoInput.trim() === '' ? null : memoInput,
-      householdMemberId: originalEntries[0].householdMemberId,
-    })
+    const mergedInputs = [...inputsByRecipientKey.values()].map((inputs) =>
+      mergeExpenseSplittingJournalEntryInputs({
+        inputs,
+        entryDate,
+        memo: memoInput.trim() === '' ? null : memoInput,
+        householdMemberId: originalEntries[0].householdMemberId,
+      }),
+    )
 
     setSubmitting(true)
     try {
-      const created = await journalEntryRepository.create(mergedInput)
-      onComplete([created])
+      const created: JournalEntry[] = []
+      for (const mergedInput of mergedInputs) {
+        created.push(await journalEntryRepository.create(mergedInput))
+      }
+      onComplete(created)
     } catch {
       setError(t('submitError'))
     } finally {

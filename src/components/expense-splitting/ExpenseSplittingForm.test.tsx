@@ -177,7 +177,7 @@ describe('ExpenseSplittingForm', () => {
     })
   })
 
-  it('世帯メンバー2人をチェックして均等割勘すると、1件の複合仕訳にまとめて作成される(複数人対応、計画Issue #40人間レビューでの「複数明細をまとめて一本で仕訳を切る」指摘への対応)', async () => {
+  it('世帯メンバー2人をチェックして均等割勘すると、分担者ごとに独立した2件の仕訳が作成される(複数人対応。異なる分担者の立替金行を同じ仕訳に混在させると精算画面がタグを区別できなくなるため、統合は分担者単位に限定する)', async () => {
     seedAdvanceAccounts(db)
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
     householdMemberRepository.create({ name: 'Bさん' })
@@ -212,14 +212,18 @@ describe('ExpenseSplittingForm', () => {
 
     await waitFor(() => {
       const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
-      // 分担者2人分(B・C)の割勘が、独立した2件の仕訳ではなく1件の複合仕訳(4行×2=8行)に
-      // まとまる(逆仕訳を切りやすくするための設計、人間レビューでの指摘)
-      expect(createdEntries).toHaveLength(1)
-      expect(createdEntries[0].lines).toHaveLength(8)
-      const links = journalEntryRepository.listLinksForEntry(createdEntries[0].id)
-      expect(links).toEqual([
-        expect.objectContaining({ toEntryId: originalEntry.id, linkType: 'allocates', amount: 666 }),
-      ])
+      // 分担者B・Cはそれぞれ独立した仕訳(4行)になる(異なる分担者の立替金行を
+      // 同じ仕訳に混在させると精算画面がタグを区別できなくなるため統合しない)
+      expect(createdEntries).toHaveLength(2)
+      expect(createdEntries[0].lines).toHaveLength(4)
+      expect(createdEntries[1].lines).toHaveLength(4)
+      const allLinks = createdEntries.flatMap((entry) => journalEntryRepository.listLinksForEntry(entry.id))
+      expect(allLinks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ toEntryId: originalEntry.id, linkType: 'allocates', amount: 333 }),
+          expect.objectContaining({ toEntryId: originalEntry.id, linkType: 'allocates', amount: 333 }),
+        ]),
+      )
     })
   })
 
@@ -565,7 +569,7 @@ describe('ExpenseSplittingForm(相手の選択UI)', () => {
     expect(screen.queryByLabelText('相手の種類')).not.toBeInTheDocument()
   })
 
-  it('世帯メンバーと世帯外の相手を同時に選んで混在させ、均等割勘を1件の複合仕訳として起票できる', async () => {
+  it('世帯メンバーと世帯外の相手を同時に選んで混在させ、均等割勘を起票できる(分担者ごとに独立した仕訳になる)', async () => {
     seedAdvanceAccounts(db)
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
     householdMemberRepository.create({ name: 'Bさん' })
@@ -602,9 +606,10 @@ describe('ExpenseSplittingForm(相手の選択UI)', () => {
 
     await waitFor(() => {
       const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
-      // 世帯メンバー分(4行)+世帯外相手分(2行)が独立した2件の仕訳ではなく1件の複合仕訳にまとまる
-      expect(createdEntries).toHaveLength(1)
-      expect(createdEntries[0].lines).toHaveLength(6)
+      // 世帯メンバー分(4行)・世帯外相手分(2行)は異なる分担者のため独立した2件の仕訳になる
+      expect(createdEntries).toHaveLength(2)
+      const lineCounts = createdEntries.map((entry) => entry.lines.length).sort()
+      expect(lineCounts).toEqual([2, 4])
     })
   })
 
