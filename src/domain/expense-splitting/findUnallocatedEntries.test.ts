@@ -3,7 +3,9 @@
  * 既にallocatesリンク(to_entry_id側)を持つ仕訳を「割勘済み」とみなし、割勘対象の
  * 候補一覧から除外するルールを、src/domain/settlement/findUnsettledEntries.tsと対称的な
  * ケース(リンクなし・allocates済み・別のlinkTypeのみ・複数仕訳からの絞り込み)を含めて
- * 検証する。DB非依存、外部依存なし。
+ * 検証する。さらに、allocatesリンクのfrom_entry側(=割勘によって作られた仕訳自身)も
+ * 候補から除外することを検証する(「割勘の割勘」を防ぐ、人間レビューでの指摘)。
+ * DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import type { JournalEntry } from '../journal/JournalEntry'
@@ -84,5 +86,29 @@ describe('findUnallocatedEntries', () => {
     )
 
     expect(result).toEqual([candidateJulyEntry])
+  })
+
+  it('自分自身が割勘仕訳(allocatesリンクのfrom_entry側)である仕訳は候補から除外する(割勘の割勘を防ぐ)', () => {
+    const originalEntry = buildEntry(1)
+    const splitEntry = buildEntry(2)
+    const link = buildLink(1, splitEntry.id, originalEntry.id, 'allocates')
+    const linksByEntryId = new Map([[splitEntry.id, [link]]])
+
+    const result = findUnallocatedEntries([splitEntry], linksByEntryId)
+
+    expect(result).toEqual([])
+  })
+
+  it('割勘仕訳自身が複数の元仕訳に対するallocatesリンク(from_entry側)を持つ場合でも候補から除外する', () => {
+    const originalEntryA = buildEntry(1)
+    const originalEntryB = buildEntry(2)
+    const splitEntry = buildEntry(3)
+    const linkToA = buildLink(1, splitEntry.id, originalEntryA.id, 'allocates')
+    const linkToB = buildLink(2, splitEntry.id, originalEntryB.id, 'allocates')
+    const linksByEntryId = new Map([[splitEntry.id, [linkToA, linkToB]]])
+
+    const result = findUnallocatedEntries([splitEntry], linksByEntryId)
+
+    expect(result).toEqual([])
   })
 })
