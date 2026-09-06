@@ -8,6 +8,7 @@ import type { Project } from '../../domain/project/Project'
 import { buildExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/buildExpenseSplittingJournalEntryInputs'
 import { findExpenseLine } from '../../domain/expense-splitting/findExpenseLine'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
+import { CounterpartyQuickAddSelect } from '../counterparty-management/CounterpartyQuickAddSelect'
 import {
   calculateParticipantAmounts,
   toExpenseSplitRecipients,
@@ -426,6 +427,7 @@ export function ExpenseSplittingForm({
                 label={t('participantTargetLabel')}
                 value={row.targetId}
                 counterparties={masterData.counterparties}
+                i18nNamespace="expenseSplitting"
                 onChange={(targetId) => updateRow(row.key, (current) => ({ ...current, targetId }))}
                 onCreate={async (name) => {
                   const created = await counterpartyRepository.create({ name })
@@ -508,7 +510,7 @@ interface ProjectQuickAddSelectProps {
 
 /**
  * プロジェクト(kind='settlement')セレクト(計画Issue #40)。既存の
- * CounterpartyQuickAddSelect(src/components/statement-import/StatementImportReviewScreen.tsx)
+ * CounterpartyQuickAddSelect(src/components/counterparty-management/CounterpartyQuickAddSelect.tsx)
  * と同じ「その場作成(quick add)」パターンを踏襲し、既存プロジェクトからの選択に加え、
  * 「+ 新しいプロジェクトを作成する」を選ぶと名前入力欄がインラインで現れ(モーダル不使用)、
  * その場でprojectRepository.createを呼び出して新規プロジェクトを作成・選択できる
@@ -595,109 +597,3 @@ function ProjectQuickAddSelect({ id, label, value, projects, onChange, onCreate 
   )
 }
 
-/** 取引先セレクトの「+ 新しい取引先を作成する」を表す特殊値。取引先idと衝突しない文字列を使う */
-const NEW_COUNTERPARTY_OPTION_VALUE = '__new__'
-
-interface CounterpartyQuickAddSelectProps {
-  id: string
-  label: string
-  value: number | null
-  counterparties: readonly Counterparty[]
-  onChange: (counterpartyId: number | null) => void
-  /** 取引先を新規作成する。作成後のcounterparties一覧への反映は呼び出し元の責務 */
-  onCreate: (name: string) => Promise<Counterparty>
-}
-
-/**
- * 世帯外の相手(取引先)セレクト(計画Issue #40)。既存の
- * CounterpartyQuickAddSelect(src/components/statement-import/StatementImportReviewScreen.tsx)・
- * 本ファイルのProjectQuickAddSelectと同じ「その場作成(quick add)」パターンを踏襲し、
- * 取引先マスタからの選択に加え、「+ 新しい取引先を作成する」を選ぶと名前入力欄が
- * インラインで現れ(モーダル不使用)、その場でcounterpartyRepository.createを呼び出して
- * 新規取引先を作成・選択できる。相手の選択は「取引先マスタから選ぶ、またはその場で
- * 新規作成する」のいずれかを必須とし(handleSubmitのcounterpartyTargetRequiredError参照)、
- * 未選択のまま先に進められる状態を作らない(人間レビューでの指摘、計画Issue #40)。
- */
-function CounterpartyQuickAddSelect({
-  id,
-  label,
-  value,
-  counterparties,
-  onChange,
-  onCreate,
-}: CounterpartyQuickAddSelectProps) {
-  const { t } = useTranslation('expenseSplitting')
-  const [adding, setAdding] = useState(false)
-  const [nameInput, setNameInput] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleAdd(): Promise<void> {
-    const trimmedName = nameInput.trim()
-    if (trimmedName === '') return
-    setCreating(true)
-    setError(null)
-    try {
-      const created = await onCreate(trimmedName)
-      onChange(created.id)
-      setAdding(false)
-      setNameInput('')
-    } catch {
-      setError(t('newCounterpartyError'))
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  if (adding) {
-    return (
-      <div className="expense-splitting-counterparty-quick-add">
-        <label htmlFor={`${id}-new-name`}>{t('newCounterpartyNameLabel')}</label>
-        <input
-          id={`${id}-new-name`}
-          type="text"
-          value={nameInput}
-          onChange={(event) => setNameInput(event.target.value)}
-        />
-        <button type="button" disabled={creating || nameInput.trim() === ''} onClick={() => void handleAdd()}>
-          {t('addCounterpartyButton')}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setAdding(false)
-            setNameInput('')
-          }}
-        >
-          {t('cancelButton')}
-        </button>
-        {error && <p role="alert">{error}</p>}
-      </div>
-    )
-  }
-
-  return (
-    <>
-      <label htmlFor={id}>{label}</label>
-      <select
-        id={id}
-        value={value ?? ''}
-        onChange={(event) => {
-          if (event.target.value === NEW_COUNTERPARTY_OPTION_VALUE) {
-            setAdding(true)
-            return
-          }
-          onChange(event.target.value === '' ? null : Number(event.target.value))
-        }}
-      >
-        <option value="">{t('unselected')}</option>
-        {counterparties.map((counterparty) => (
-          <option key={counterparty.id} value={counterparty.id}>
-            {counterparty.name}
-          </option>
-        ))}
-        <option value={NEW_COUNTERPARTY_OPTION_VALUE}>{t('addNewCounterpartyOption')}</option>
-      </select>
-    </>
-  )
-}

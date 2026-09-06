@@ -25,6 +25,7 @@ import {
 } from '../../domain/statement-import/groupUnresolvedRecordsByDescription'
 import { buildConfirmedJournalEntryInput } from '../../domain/statement-import/buildConfirmedJournalEntryInput'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
+import { CounterpartyQuickAddSelect } from '../counterparty-management/CounterpartyQuickAddSelect'
 import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFormLine'
 import { isStatementImportCounterAccountEligible } from './statementImportEligibility'
 import './StatementImportReviewScreen.css'
@@ -160,113 +161,6 @@ async function computeInitialRecordStates(
     const eligibleCounterpartyId = resolveEligibleCounterpartyId(counterpartyId, counterAccountId, accounts)
     return createInitialRecordState(eligibleCounterpartyId, counterAccountId)
   })
-}
-
-/** 取引先セレクトの「+ 新規取引先を追加」を表す特殊値。取引先idと衝突しない文字列を使う */
-const NEW_COUNTERPARTY_OPTION_VALUE = '__new__'
-
-interface CounterpartyQuickAddSelectProps {
-  id: string
-  label: string
-  value: number | null
-  counterparties: readonly Counterparty[]
-  onChange: (counterpartyId: number | null) => void
-  /** 取引先を新規作成する。作成後の状態(counterparties一覧への追加等)は呼び出し元の責務 */
-  onCreate: (name: string) => Promise<Counterparty>
-}
-
-/**
- * 取引先セレクト(通常の相手科目選択・一括割当てバナーの両方で共通利用、計画Issue #77
- * 設計方針5)。既存の取引先マスタからの選択に加え、「+ 新規取引先を追加」を選ぶと
- * 名前入力欄がインラインで現れ(モーダル不使用、既存の業務UI慣習を踏襲)、その場で
- * counterpartyRepository.createを呼び出して新規取引先を作成・選択できる。この時点では
- * default_account_idは設定しない(名前のみの最小実装)。本格的な取引先管理画面
- * (編集・非アクティブ化・統合)は本Issueのスコープ外。
- * 2箇所(通常選択・一括割当て)で同じ非PL科目ガード漏れの再発(evaluatorレビュー
- * Attempt 2 FAIL)を防ぐため、単一のコンポーネントとして共通化している。
- */
-function CounterpartyQuickAddSelect({
-  id,
-  label,
-  value,
-  counterparties,
-  onChange,
-  onCreate,
-}: CounterpartyQuickAddSelectProps) {
-  const { t } = useTranslation('statementImport')
-  const [adding, setAdding] = useState(false)
-  const [nameInput, setNameInput] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleAdd(): Promise<void> {
-    const trimmedName = nameInput.trim()
-    if (trimmedName === '') return
-    setCreating(true)
-    setError(null)
-    try {
-      const created = await onCreate(trimmedName)
-      onChange(created.id)
-      setAdding(false)
-      setNameInput('')
-    } catch {
-      setError(t('newCounterpartyError'))
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  if (adding) {
-    return (
-      <div className="statement-import-counterparty-quick-add">
-        <label htmlFor={`${id}-new-name`}>{t('newCounterpartyNameLabel')}</label>
-        <input
-          id={`${id}-new-name`}
-          type="text"
-          value={nameInput}
-          onChange={(event) => setNameInput(event.target.value)}
-        />
-        <button type="button" disabled={creating || nameInput.trim() === ''} onClick={() => void handleAdd()}>
-          {t('addCounterpartyButton')}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setAdding(false)
-            setNameInput('')
-          }}
-        >
-          {t('cancelButton')}
-        </button>
-        {error && <p role="alert">{error}</p>}
-      </div>
-    )
-  }
-
-  return (
-    <>
-      <label htmlFor={id}>{label}</label>
-      <select
-        id={id}
-        value={value ?? ''}
-        onChange={(event) => {
-          if (event.target.value === NEW_COUNTERPARTY_OPTION_VALUE) {
-            setAdding(true)
-            return
-          }
-          onChange(event.target.value === '' ? null : Number(event.target.value))
-        }}
-      >
-        <option value="">{t('unselected')}</option>
-        {counterparties.map((counterparty) => (
-          <option key={counterparty.id} value={counterparty.id}>
-            {counterparty.name}
-          </option>
-        ))}
-        <option value={NEW_COUNTERPARTY_OPTION_VALUE}>{t('addNewCounterpartyOption')}</option>
-      </select>
-    </>
-  )
 }
 
 /** 対象科目の永続化済み(過去分)のjournal_line。確定版候補の置き換え判定にjournalEntryIdを使う */
@@ -616,6 +510,7 @@ export function StatementImportReviewScreen({
                         : Number(bulkAssignSelections[bulkAssignGroup.normalizedDescription])
                     }
                     counterparties={counterparties}
+                    i18nNamespace="statementImport"
                     onChange={(counterpartyId) =>
                       setBulkAssignSelections((prev) => ({
                         ...prev,
@@ -657,6 +552,7 @@ export function StatementImportReviewScreen({
                       label={t('counterpartyLabel')}
                       value={state.counterpartyId}
                       counterparties={counterparties}
+                      i18nNamespace="statementImport"
                       onChange={(counterpartyId) => {
                         updateRecordState(index, (prevState) => {
                           // 相手科目が未編集(dirty flag無し)の間は取引先変更のたびに再サジェストして

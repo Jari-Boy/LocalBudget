@@ -1,0 +1,11 @@
+.counterparty-quick-add {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.counterparty-quick-add input {
+  width: auto;
+  flex: 1;
+}
