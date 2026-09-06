@@ -6,6 +6,7 @@ import type { HouseholdMember } from '../../domain/household-member/HouseholdMem
 import type { CreateJournalEntryInput, JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
 import type { Project } from '../../domain/project/Project'
 import { buildExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/buildExpenseSplittingJournalEntryInputs'
+import { findExpenseLine } from '../../domain/expense-splitting/findExpenseLine'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import {
   calculateParticipantAmounts,
@@ -15,11 +16,6 @@ import {
   type ExpenseSplittingParticipantRow,
 } from './expenseSplittingFormParticipant'
 import './ExpenseSplittingForm.css'
-
-/** entryの明細から費用科目の行を探す。単一/複数元仕訳のいずれの表示・計算からも使う */
-function findExpenseLine(entry: JournalEntry, accounts: readonly Account[]): JournalLine | undefined {
-  return entry.lines.find((line) => accounts.find((account) => account.id === line.accountId)?.category === 'expense')
-}
 
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
@@ -36,6 +32,9 @@ interface HouseholdMemberFinder {
 interface CounterpartyFinder {
   findAll(): Counterparty[] | Promise<Counterparty[]>
 }
+interface CounterpartyCreator {
+  create(input: { name: string }): Counterparty | Promise<Counterparty>
+}
 interface JournalEntryCreator {
   create(input: CreateJournalEntryInput): JournalEntry | Promise<JournalEntry>
 }
@@ -50,7 +49,7 @@ export interface ExpenseSplittingFormProps {
   accountRepository: AccountFinder
   projectRepository: ProjectFinder & ProjectCreator
   householdMemberRepository: HouseholdMemberFinder
-  counterpartyRepository: CounterpartyFinder
+  counterpartyRepository: CounterpartyFinder & CounterpartyCreator
   journalEntryRepository: JournalEntryCreator
   onComplete: (createdEntries: JournalEntry[]) => void
   onBack: () => void
@@ -257,6 +256,21 @@ export function ExpenseSplittingForm({
       return
     }
 
+    /**
+     * 世帯外の相手の行はtargetId(取引先)が無いと仕訳を組み立てられない
+     * (toExpenseSplitRecipients/toExpenseSplitRecipientsForEntryAmountが黙って除外する)。
+     * 上記の立替金(負債)科目の検証と同じ理由で、ここで事前に検証しないと、他に有効な
+     * 分担者がいる場合にnoRecipientErrorをすり抜け、相手未選択の行だけが無警告で
+     * 消失したまま確定されてしまう(人間レビューでの指摘、計画Issue #40)。
+     */
+    const hasIncompleteCounterpartyParticipant = participants.some(
+      (row) => row.kind === 'counterparty' && row.targetId === null,
+    )
+    if (hasIncompleteCounterpartyParticipant) {
+      setError(t('counterpartyTargetRequiredError'))
+      return
+    }
+
     const entryDate = today ?? new Date().toISOString().slice(0, 10)
     const inputs: CreateJournalEntryInput[] = []
     for (const { entry, expenseLine } of entryLines) {
@@ -407,24 +421,20 @@ export function ExpenseSplittingForm({
             <fieldset key={row.key}>
               <legend>{t('counterpartyParticipantGroupLabel', { index: index + 1 })}</legend>
 
-              <label htmlFor={`${idPrefix}-target`}>{t('participantTargetLabel')}</label>
-              <select
+              <CounterpartyQuickAddSelect
                 id={`${idPrefix}-target`}
-                value={row.targetId ?? ''}
-                onChange={(event) =>
-                  updateRow(row.key, (current) => ({
-                    ...current,
-                    targetId: event.target.value === '' ? null : Number(event.target.value),
-                  }))
-                }
-              >
-                <option value="">{t('unselected')}</option>
-                {masterData.counterparties.map((counterparty) => (
-                  <option key={counterparty.id} value={counterparty.id}>
-                    {counterparty.name}
-                  </option>
-                ))}
-              </select>
+                label={t('participantTargetLabel')}
+                value={row.targetId}
+                counterparties={masterData.counterparties}
+                onChange={(targetId) => updateRow(row.key, (current) => ({ ...current, targetId }))}
+                onCreate={async (name) => {
+                  const created = await counterpartyRepository.create({ name })
+                  setMasterData((prev) =>
+                    prev === null ? prev : { ...prev, counterparties: [...prev.counterparties, created] },
+                  )
+                  return created
+                }}
+              />
 
               {allocationMode === 'ratio' && (
                 <>
@@ -582,5 +592,112 @@ function ProjectQuickAddSelect({ id, label, value, projects, onChange, onCreate 
         <option value={NEW_PROJECT_OPTION_VALUE}>{t('addNewProjectOption')}</option>
       </select>
     </div>
+  )
+}
+
+/** 取引先セレクトの「+ 新しい取引先を作成する」を表す特殊値。取引先idと衝突しない文字列を使う */
+const NEW_COUNTERPARTY_OPTION_VALUE = '__new__'
+
+interface CounterpartyQuickAddSelectProps {
+  id: string
+  label: string
+  value: number | null
+  counterparties: readonly Counterparty[]
+  onChange: (counterpartyId: number | null) => void
+  /** 取引先を新規作成する。作成後のcounterparties一覧への反映は呼び出し元の責務 */
+  onCreate: (name: string) => Promise<Counterparty>
+}
+
+/**
+ * 世帯外の相手(取引先)セレクト(計画Issue #40)。既存の
+ * CounterpartyQuickAddSelect(src/components/statement-import/StatementImportReviewScreen.tsx)・
+ * 本ファイルのProjectQuickAddSelectと同じ「その場作成(quick add)」パターンを踏襲し、
+ * 取引先マスタからの選択に加え、「+ 新しい取引先を作成する」を選ぶと名前入力欄が
+ * インラインで現れ(モーダル不使用)、その場でcounterpartyRepository.createを呼び出して
+ * 新規取引先を作成・選択できる。相手の選択は「取引先マスタから選ぶ、またはその場で
+ * 新規作成する」のいずれかを必須とし(handleSubmitのcounterpartyTargetRequiredError参照)、
+ * 未選択のまま先に進められる状態を作らない(人間レビューでの指摘、計画Issue #40)。
+ */
+function CounterpartyQuickAddSelect({
+  id,
+  label,
+  value,
+  counterparties,
+  onChange,
+  onCreate,
+}: CounterpartyQuickAddSelectProps) {
+  const { t } = useTranslation('expenseSplitting')
+  const [adding, setAdding] = useState(false)
+  const [nameInput, setNameInput] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleAdd(): Promise<void> {
+    const trimmedName = nameInput.trim()
+    if (trimmedName === '') return
+    setCreating(true)
+    setError(null)
+    try {
+      const created = await onCreate(trimmedName)
+      onChange(created.id)
+      setAdding(false)
+      setNameInput('')
+    } catch {
+      setError(t('newCounterpartyError'))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  if (adding) {
+    return (
+      <div className="expense-splitting-counterparty-quick-add">
+        <label htmlFor={`${id}-new-name`}>{t('newCounterpartyNameLabel')}</label>
+        <input
+          id={`${id}-new-name`}
+          type="text"
+          value={nameInput}
+          onChange={(event) => setNameInput(event.target.value)}
+        />
+        <button type="button" disabled={creating || nameInput.trim() === ''} onClick={() => void handleAdd()}>
+          {t('addCounterpartyButton')}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setAdding(false)
+            setNameInput('')
+          }}
+        >
+          {t('cancelButton')}
+        </button>
+        {error && <p role="alert">{error}</p>}
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <label htmlFor={id}>{label}</label>
+      <select
+        id={id}
+        value={value ?? ''}
+        onChange={(event) => {
+          if (event.target.value === NEW_COUNTERPARTY_OPTION_VALUE) {
+            setAdding(true)
+            return
+          }
+          onChange(event.target.value === '' ? null : Number(event.target.value))
+        }}
+      >
+        <option value="">{t('unselected')}</option>
+        {counterparties.map((counterparty) => (
+          <option key={counterparty.id} value={counterparty.id}>
+            {counterparty.name}
+          </option>
+        ))}
+        <option value={NEW_COUNTERPARTY_OPTION_VALUE}>{t('addNewCounterpartyOption')}</option>
+      </select>
+    </>
   )
 }

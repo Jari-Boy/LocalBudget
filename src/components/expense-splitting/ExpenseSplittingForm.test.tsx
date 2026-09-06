@@ -500,6 +500,86 @@ describe('ExpenseSplittingForm(相手の選択UI)', () => {
       expect(createdEntries).toHaveLength(2)
     })
   })
+
+  it('世帯外の相手をその場で新規に取引先として作成でき、作成した取引先がそのまま選択された状態で割勘を起票できる', async () => {
+    seedAdvanceAccounts(db)
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const project = projectRepository.create({ name: '26/8旅行割勘', kind: 'settlement' })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '旅行の食事代',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm([originalEntry])
+    await screen.findByText('旅行の食事代')
+
+    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '世帯外の相手を追加する' }))
+    const counterpartyRow = screen.getAllByRole('group', { name: /分担者/ })[0]
+
+    fireEvent.change(within(counterpartyRow).getByLabelText('相手', { exact: true }), { target: { value: '__new__' } })
+    fireEvent.change(within(counterpartyRow).getByLabelText('新しい取引先の名前'), {
+      target: { value: '友人Cさん' },
+    })
+    fireEvent.click(within(counterpartyRow).getByRole('button', { name: '作成する' }))
+
+    await waitFor(() => expect(within(counterpartyRow).queryByLabelText('新しい取引先の名前')).not.toBeInTheDocument())
+    expect(counterpartyRepository.findAll()).toHaveLength(1)
+    expect(counterpartyRepository.findAll()[0]).toMatchObject({ name: '友人Cさん' })
+
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(within(counterpartyRow).getByLabelText('金額')).toHaveValue(500))
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    await waitFor(() => {
+      const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      expect(createdEntries).toHaveLength(1)
+    })
+  })
+
+  it('世帯外の相手の行を追加して相手を選択しないまま確定しようとすると、エラーになり仕訳は作成されない(相手未選択の行が無警告で送信対象から除外されることを防ぐ)', async () => {
+    seedAdvanceAccounts(db)
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    householdMemberRepository.create({ name: 'Bさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const project = projectRepository.create({ name: '26/8旅行割勘', kind: 'settlement' })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '旅行の食事代',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    const { onComplete } = renderForm([originalEntry])
+    await screen.findByText('旅行の食事代')
+
+    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    // 世帯メンバー分担者は正しく選ぶが、世帯外の相手の行は「相手」を未選択のまま金額だけ入力する
+    fireEvent.change(screen.getByLabelText('配分方法'), { target: { value: 'amount' } })
+    checkHouseholdMember('Bさん')
+    fireEvent.change(householdMemberRow('Bさん').getByLabelText('金額'), { target: { value: '500' } })
+    fireEvent.click(screen.getByRole('button', { name: '世帯外の相手を追加する' }))
+    const counterpartyRow = screen.getAllByRole('group', { name: /分担者/ })[0]
+    fireEvent.change(within(counterpartyRow).getByLabelText('金額'), { target: { value: '300' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('世帯外の相手を選択または新規作成してください')
+    expect(onComplete).not.toHaveBeenCalled()
+    expect(journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)).toHaveLength(0)
+  })
 })
 
 describe('ExpenseSplittingForm(複数の元仕訳をまとめて割勘する場合)', () => {
