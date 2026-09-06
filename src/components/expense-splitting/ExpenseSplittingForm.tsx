@@ -7,6 +7,7 @@ import type { CreateJournalEntryInput, JournalEntry, JournalLine } from '../../d
 import type { Project } from '../../domain/project/Project'
 import { buildExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/buildExpenseSplittingJournalEntryInputs'
 import { findExpenseLine } from '../../domain/expense-splitting/findExpenseLine'
+import { mergeExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/mergeExpenseSplittingJournalEntryInputs'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { CounterpartyQuickAddSelect } from '../counterparty-management/CounterpartyQuickAddSelect'
 import {
@@ -66,6 +67,23 @@ interface MasterData {
 }
 
 /**
+ * 割勘仕訳の摘要欄の既定値(計画Issue #40、人間レビューでの指摘対応)。1件の元仕訳選択時は
+ * 従来通り「元の摘要+の割勘」(元仕訳に摘要が無ければ空文字、無題のまま確定できる)。
+ * 複数選択時は元仕訳ごとに摘要が異なりうるため、件数ベースの汎用的な既定値にする。
+ * あくまで摘要欄の初期表示値であり、ユーザーが自由に上書きできる。
+ */
+function computeDefaultMemo(
+  entries: readonly JournalEntry[],
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (entries.length === 1) {
+    const memo = entries[0].memo
+    return memo === null ? '' : t('splitMemoTemplate', { memo })
+  }
+  return t('splitMemoTemplateMultiple', { count: entries.length })
+}
+
+/**
  * 割勘起票フォーム(計画Issue #40)。世帯メンバー間(docs/domain/expense-splitting.md
  * 1.3節)・世帯外相手(同1.4節)との割勘を、複式簿記の概念(借方/貸方・仕訳明細)を
  * 見せない単一フォームで起票する。ユーザーが入力するのは「元の支出仕訳(originalEntries、
@@ -85,8 +103,15 @@ interface MasterData {
  * であり、ここでも「相手の種類」選択はしない(行の由来自体がkindを一意に決める、
  * expenseSplittingFormParticipant.ts参照)。配分方法を選ぶと計算結果をamountInputへ
  * 反映し、確定前に手動修正できる編集可能なプレビューとして提示する。確定操作では、
- * 立替者を除いた分担者ごとにbuildExpenseSplittingJournalEntryInputsで組み立てた仕訳を
- * 1件ずつ作成する(複数人割勘は複数の2者間仕訳として実現する、計画Issue #40の合意事項)。
+ * 立替者を除いた分担者ごとにbuildExpenseSplittingJournalEntryInputsで個別に組み立てた
+ * 仕訳(分担者数×選択した元仕訳数)を、mergeExpenseSplittingJournalEntryInputsで
+ * 1件の複合仕訳へ統合してから作成する(人間レビューでの指摘「割勘の仕訳を作るときは
+ * 複数明細をまとめて一本で仕訳を切るように(逆仕訳が切りやすくなるから)」への対応、
+ * 計画Issue #40)。1.3・1.4節の2者間仕訳パターン自体は変更しない。
+ *
+ * 仕訳の摘要は、1件の元仕訳選択時は「元の摘要+の割勘」、複数選択時は「N件の支出の割勘」を
+ * 既定値として摘要欄に表示し、ユーザーが自由に編集できる(人間レビューでの指摘「割勘仕訳の
+ * タイトルは任意で設定できるように。特になければデフォルトの設定が使用される」への対応)。
  *
  * 立替金(資産/負債)科目はユーザーに選択させず、seedAdvanceAccounts(docs/domain/
  * expense-splitting.md 1.2節「科目自体は割勘のたびに新規作成しない」)が投入した
@@ -125,6 +150,7 @@ export function ExpenseSplittingForm({
   const [allocationMode, setAllocationMode] = useState<ExpenseSplittingAllocationMode>('equal')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [memoInput, setMemoInput] = useState(() => computeDefaultMemo(originalEntries, t))
 
   const rowKeyRef = useRef(0)
   const [participants, setParticipants] = useState<ExpenseSplittingParticipantRow[]>(() => [])
@@ -273,7 +299,7 @@ export function ExpenseSplittingForm({
     }
 
     const entryDate = today ?? new Date().toISOString().slice(0, 10)
-    const inputs: CreateJournalEntryInput[] = []
+    const perEntryInputs: CreateJournalEntryInput[] = []
     for (const { entry, expenseLine } of entryLines) {
       const recipients = isBatch
         ? toExpenseSplitRecipientsForEntryAmount(participants, advanceLiabilityAccountId, expenseLine.amount, allocationMode)
@@ -282,7 +308,7 @@ export function ExpenseSplittingForm({
         setError(t('noRecipientError'))
         return
       }
-      inputs.push(
+      perEntryInputs.push(
         ...buildExpenseSplittingJournalEntryInputs({
           originalEntryId: entry.id,
           expenseAccountId: expenseLine.accountId,
@@ -290,19 +316,31 @@ export function ExpenseSplittingForm({
           fromMemberId: entry.householdMemberId,
           projectId,
           entryDate,
-          memo: entry.memo === null ? null : t('splitMemoTemplate', { memo: entry.memo }),
           recipients,
         }),
       )
     }
 
+    /**
+     * 分担者数×選択した元仕訳数だけ個別に組み立てたCreateJournalEntryInputを、
+     * 1件の複合仕訳へ統合する(人間レビューでの指摘「割勘の仕訳を作るときは複数明細を
+     * まとめて一本で仕訳を切るように(逆仕訳が切りやすくなるから)」への対応、計画Issue #40)。
+     * 摘要はmemoInput(既定値はcomputeDefaultMemo、ユーザーが自由に編集できる)を使い、
+     * 空欄のまま確定した場合はnull(無題)とする。起票者は選択した元仕訳のうち先頭のものの
+     * householdMemberIdを使う(全行に明示的なhousehold_member_idが設定されるため、
+     * 実効メンバーの解決においてこの値がフォールバックとして参照されることはない)。
+     */
+    const mergedInput = mergeExpenseSplittingJournalEntryInputs({
+      inputs: perEntryInputs,
+      entryDate,
+      memo: memoInput.trim() === '' ? null : memoInput,
+      householdMemberId: originalEntries[0].householdMemberId,
+    })
+
     setSubmitting(true)
     try {
-      const created: JournalEntry[] = []
-      for (const input of inputs) {
-        created.push(await journalEntryRepository.create(input))
-      }
-      onComplete(created)
+      const created = await journalEntryRepository.create(mergedInput)
+      onComplete([created])
     } catch {
       setError(t('submitError'))
     } finally {
@@ -326,6 +364,16 @@ export function ExpenseSplittingForm({
           )
         })}
       </ul>
+
+      <div>
+        <label htmlFor="expense-splitting-memo">{t('memoLabel')}</label>
+        <input
+          id="expense-splitting-memo"
+          type="text"
+          value={memoInput}
+          onChange={(event) => setMemoInput(event.target.value)}
+        />
+      </div>
 
       <ProjectQuickAddSelect
         id="expense-splitting-project"

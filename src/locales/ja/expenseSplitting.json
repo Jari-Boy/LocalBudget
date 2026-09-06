@@ -1,6 +1,8 @@
 {
   "formTitle": "割勘を起票する",
   "splitMemoTemplate": "{{memo}}の割勘",
+  "splitMemoTemplateMultiple": "{{count}}件の支出の割勘",
+  "memoLabel": "摘要",
   "unselected": "未選択",
   "projectLabel": "プロジェクト",
   "addNewProjectOption": "+ 新しいプロジェクトを作成する",

@@ -177,7 +177,7 @@ describe('ExpenseSplittingForm', () => {
     })
   })
 
-  it('世帯メンバー2人をチェックして均等割勘すると、2件の割勘仕訳が作成される(複数人対応)', async () => {
+  it('世帯メンバー2人をチェックして均等割勘すると、1件の複合仕訳にまとめて作成される(複数人対応、計画Issue #40人間レビューでの「複数明細をまとめて一本で仕訳を切る」指摘への対応)', async () => {
     seedAdvanceAccounts(db)
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
     householdMemberRepository.create({ name: 'Bさん' })
@@ -212,7 +212,14 @@ describe('ExpenseSplittingForm', () => {
 
     await waitFor(() => {
       const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
-      expect(createdEntries).toHaveLength(2)
+      // 分担者2人分(B・C)の割勘が、独立した2件の仕訳ではなく1件の複合仕訳(4行×2=8行)に
+      // まとまる(逆仕訳を切りやすくするための設計、人間レビューでの指摘)
+      expect(createdEntries).toHaveLength(1)
+      expect(createdEntries[0].lines).toHaveLength(8)
+      const links = journalEntryRepository.listLinksForEntry(createdEntries[0].id)
+      expect(links).toEqual([
+        expect.objectContaining({ toEntryId: originalEntry.id, linkType: 'allocates', amount: 666 }),
+      ])
     })
   })
 
@@ -393,6 +400,104 @@ describe('ExpenseSplittingForm', () => {
     })
   })
 
+  it('摘要欄には「元の摘要+の割勘」が既定値として入力されており、変更せず確定するとその既定値が使われる', async () => {
+    seedAdvanceAccounts(db)
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    householdMemberRepository.create({ name: 'Bさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm([originalEntry])
+    await screen.findByText('スーパーで食材購入')
+
+    expect(screen.getByLabelText('摘要')).toHaveValue('スーパーで食材購入の割勘')
+
+    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    checkHouseholdMember('Bさん')
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(householdMemberRow('Bさん').getByLabelText('金額')).toHaveValue(500))
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    await waitFor(() => {
+      const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      expect(createdEntries[0].memo).toBe('スーパーで食材購入の割勘')
+    })
+  })
+
+  it('摘要欄を編集すると、確定時にその入力値が仕訳の摘要として使われる', async () => {
+    seedAdvanceAccounts(db)
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    householdMemberRepository.create({ name: 'Bさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm([originalEntry])
+    await screen.findByText('スーパーで食材購入')
+
+    fireEvent.change(screen.getByLabelText('摘要'), { target: { value: '旅行費用の割勘(自由記述)' } })
+    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    checkHouseholdMember('Bさん')
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(householdMemberRow('Bさん').getByLabelText('金額')).toHaveValue(500))
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    await waitFor(() => {
+      const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      expect(createdEntries[0].memo).toBe('旅行費用の割勘(自由記述)')
+    })
+  })
+
+  it('複数の元仕訳を選択した場合、摘要欄には「N件の支出の割勘」が既定値として入力される', async () => {
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry1 = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '元仕訳1',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    const entry2 = journalEntryRepository.create({
+      entryDate: '2026-08-02',
+      memo: '元仕訳2',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 500 },
+        { accountId: cash.id, side: 'credit', amount: 500 },
+      ],
+    })
+
+    renderForm([entry1, entry2])
+    await screen.findByText('元仕訳1')
+
+    expect(screen.getByLabelText('摘要')).toHaveValue('2件の支出の割勘')
+  })
+
   it('戻るボタンを押すとonBackが呼ばれる', async () => {
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
@@ -460,7 +565,7 @@ describe('ExpenseSplittingForm(相手の選択UI)', () => {
     expect(screen.queryByLabelText('相手の種類')).not.toBeInTheDocument()
   })
 
-  it('世帯メンバーと世帯外の相手を同時に選んで混在させ、均等割勘を起票できる', async () => {
+  it('世帯メンバーと世帯外の相手を同時に選んで混在させ、均等割勘を1件の複合仕訳として起票できる', async () => {
     seedAdvanceAccounts(db)
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
     householdMemberRepository.create({ name: 'Bさん' })
@@ -497,7 +602,9 @@ describe('ExpenseSplittingForm(相手の選択UI)', () => {
 
     await waitFor(() => {
       const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
-      expect(createdEntries).toHaveLength(2)
+      // 世帯メンバー分(4行)+世帯外相手分(2行)が独立した2件の仕訳ではなく1件の複合仕訳にまとまる
+      expect(createdEntries).toHaveLength(1)
+      expect(createdEntries[0].lines).toHaveLength(6)
     })
   })
 
@@ -583,7 +690,7 @@ describe('ExpenseSplittingForm(相手の選択UI)', () => {
 })
 
 describe('ExpenseSplittingForm(複数の元仕訳をまとめて割勘する場合)', () => {
-  it('選択した元仕訳がそれぞれ一覧表示され、均等割勘すると元仕訳ごとに独立した割勘仕訳が作成される(計画Issue #40の人間レビュー指摘への対応)', async () => {
+  it('選択した元仕訳がそれぞれ一覧表示され、均等割勘すると元仕訳ごとの按分を含む1件の複合仕訳にまとめて作成される(計画Issue #40の人間レビュー指摘への対応)', async () => {
     seedAdvanceAccounts(db)
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
     householdMemberRepository.create({ name: 'Bさん' })
@@ -628,15 +735,19 @@ describe('ExpenseSplittingForm(複数の元仕訳をまとめて割勘する場�
     const createdEntries = journalEntryRepository
       .findAll()
       .filter((entry) => entry.id !== entry1.id && entry.id !== entry2.id)
-    expect(createdEntries).toHaveLength(2)
+    // 選択した元仕訳2件分の割勘が、独立した2件の仕訳ではなく1件の複合仕訳(4行×2=8行)にまとまる
+    expect(createdEntries).toHaveLength(1)
+    expect(createdEntries[0].lines).toHaveLength(8)
 
-    const allLinks = createdEntries.flatMap((entry) => journalEntryRepository.listLinksForEntry(entry.id))
-    expect(allLinks).toEqual(
+    const links = journalEntryRepository.listLinksForEntry(createdEntries[0].id)
+    // 元仕訳ごとに独立したallocatesリンクを保持する(1件の仕訳から複数の元仕訳への一対多)
+    expect(links).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ toEntryId: entry1.id, linkType: 'allocates', amount: 500 }),
         expect.objectContaining({ toEntryId: entry2.id, linkType: 'allocates', amount: 250 }),
       ]),
     )
+    expect(links).toHaveLength(2)
   })
 
   it('元仕訳ごとに金額が異なる場合でも、按分比率は共通のまま元仕訳ごとの金額に対して個別に計算される', async () => {
@@ -680,15 +791,17 @@ describe('ExpenseSplittingForm(複数の元仕訳をまとめて割勘する場�
       const createdEntries = journalEntryRepository
         .findAll()
         .filter((entry) => entry.id !== entry1.id && entry.id !== entry2.id)
-      expect(createdEntries).toHaveLength(2)
-      const allLinks = createdEntries.flatMap((entry) => journalEntryRepository.listLinksForEntry(entry.id))
-      // 30%の比率は共通のまま、元仕訳自身の金額(2000円・300円)に対して個別に適用される
-      expect(allLinks).toEqual(
+      expect(createdEntries).toHaveLength(1)
+      const links = journalEntryRepository.listLinksForEntry(createdEntries[0].id)
+      // 30%の比率は共通のまま、元仕訳自身の金額(2000円・300円)に対して個別に適用され、
+      // 元仕訳ごとに独立したallocatesリンクとして1件の仕訳にまとまる
+      expect(links).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ toEntryId: entry1.id, amount: 600 }),
           expect.objectContaining({ toEntryId: entry2.id, amount: 90 }),
         ]),
       )
+      expect(links).toHaveLength(2)
     })
   })
 
