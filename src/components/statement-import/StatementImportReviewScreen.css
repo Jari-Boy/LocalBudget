@@ -30,13 +30,6 @@
   }
 }
 
-.statement-import-counterparty-quick-add {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
 .statement-import-review-screen [role='alert'] {
   padding: 8px 12px;
   border-radius: 5px;

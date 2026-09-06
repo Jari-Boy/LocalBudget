@@ -241,6 +241,32 @@ SAVE_DEBOUNCE_MS経過するまでsave()を呼ばない', async () => {
     expect(result.values[0][0]).toBe(1)
   })
 
+  it('save()実行(db.export())後もPRAGMA foreign_keysがONのままで、ON DELETE CASCADEが機能し続ける(計画Issue #40で発覚)', async () => {
+    // db.export()はsql.js内部でPRAGMA foreign_keysをOFFにリセットする副作用も持つ
+    // (実測で確認済み、last_insert_rowid()のリセットと同種)。これによりsave()が一度でも
+    // 実行された後は、以降のON DELETE CASCADE(journal_entry_links等)が機能しなくなる。
+    const db = await createTestDatabase()
+    db.run(
+      'CREATE TABLE parent (id INTEGER PRIMARY KEY)',
+    )
+    db.run(
+      'CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent(id) ON DELETE CASCADE)',
+    )
+    db.run('INSERT INTO parent (id) VALUES (1)')
+    db.run('INSERT INTO child (id, parent_id) VALUES (1, 1)')
+    const storageAdapter = createRecordingStorageAdapter()
+    withAutoSave(db, storageAdapter)
+
+    db.run('INSERT INTO parent (id) VALUES (2)')
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+    expect(storageAdapter.saveCallCount).toBe(1)
+
+    db.run('DELETE FROM parent WHERE id = 1')
+    const [result] = db.exec('SELECT * FROM child')
+
+    expect(result).toBeUndefined()
+  })
+
   describe('flush()', () => {
     it('保留中のデバウンスタイマーを待たず、呼び出し直後にsave()を実行する', async () => {
       const db = await createTestDatabase()

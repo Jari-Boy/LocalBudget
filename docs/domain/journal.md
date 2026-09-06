@@ -54,6 +54,9 @@
 
 仕訳明細の借方/貸方は、金額を表す`amount`(常に正の整数)と、借方/貸方を表す`side`(`debit`/`credit`)の2列で表現する。1行=1エントリとして扱えるため、口座残高やFSの集計クエリを「`side`に応じて符号を反転して合算する」という単一のロジックで一貫して書ける(詳細は[financial-statements.md 2.1 生成方式](./financial-statements.md#21-生成方式))。
 
+> **仕訳の複数軸絞り込み(JournalEntryFilter、計画Issue #40)**
+> 期間(`entry_date`の範囲)・科目・世帯メンバー(実効メンバー、[household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照)・プロジェクトをANDで組み合わせて仕訳を絞り込む共通の型`JournalEntryFilter`と、これを適用する純粋関数`filterJournalEntries`(`src/domain/journal/`)を持つ。各軸は単一値でOR結合は行わず、いずれかの明細行が条件に一致すればその仕訳(entry単位)を候補に含める(複数選択・OR結合を持つ[financial-statements.md](./financial-statements.md)の`FinancialStatementFilter`とは型・粒度が異なる別物)。割勘対象選択画面([expense-splitting.md 1.5](./expense-splitting.md#15-割勘の履歴と取り消し)参照)を含む複数画面の絞り込みUIから再利用される共通のドメイン関数として設計されている。詳細は`docs/decisions.md`(2026-08-15)参照。
+
 ### 1.2 記帳の型(具体例)
 
 ```

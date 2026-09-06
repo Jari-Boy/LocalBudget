@@ -22,6 +22,11 @@ import { ProjectManagementScreen } from './components/project-management/Project
 import { FinancialStatementScreen } from './components/financial-statement/FinancialStatementScreen'
 import { JournalEntryDraftListScreen } from './components/journal-entry/JournalEntryDraftListScreen'
 import { JournalEntryForm } from './components/journal-entry/JournalEntryForm'
+import { JournalEntryListScreen } from './components/journal-entry/JournalEntryListScreen'
+import { JournalEntryDetailScreen } from './components/journal-entry/JournalEntryDetailScreen'
+import { ExpenseSplittingEntryPickerScreen } from './components/expense-splitting/ExpenseSplittingEntryPickerScreen'
+import { ExpenseSplittingForm } from './components/expense-splitting/ExpenseSplittingForm'
+import { SettlementScreen } from './components/settlement/SettlementScreen'
 import {
   StatementImportUploadScreen,
   type StatementImportUploadResult,
@@ -29,6 +34,7 @@ import {
 import { StatementImportReviewScreen } from './components/statement-import/StatementImportReviewScreen'
 import { UpdateBanner } from './components/UpdateBanner'
 import { IosInstallPrompt } from './components/IosInstallPrompt'
+import type { JournalEntry } from './domain/journal/JournalEntry'
 import './App.css'
 
 type Screen =
@@ -42,6 +48,11 @@ type Screen =
   | 'financial-statement'
   | 'journal-entry-draft-list'
   | 'journal-entry-form'
+  | 'journal-entry-list'
+  | 'journal-entry-detail'
+  | 'expense-splitting-entry-picker'
+  | 'expense-splitting-form'
+  | 'settlement'
   | 'statement-import-upload'
   | 'statement-import-review'
 
@@ -59,6 +70,7 @@ function AppContent() {
   const { t: tHouseholdMember } = useTranslation('householdMember')
   const { t: tProject } = useTranslation('project')
   const { t: tFinancialStatement } = useTranslation('financialStatement')
+  const { t: tExpenseSplitting } = useTranslation('expenseSplitting')
   const client = useDbClient()
   const [screen, setScreen] = useState<Screen>('home')
   /** 下書き一覧から再開する下書き。新規作成時・未選択時はnull(計画Issue #32)。 */
@@ -71,6 +83,10 @@ function AppContent() {
    * 自体を保持する場合に限られる)。
    */
   const [uploadResult, setUploadResult] = useState<StatementImportUploadResult | null>(null)
+  /** 仕訳一覧から選択した、詳細画面の対象仕訳(計画Issue #40) */
+  const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null)
+  /** 割勘対象選択画面でチェックボックス選択した、割勘起票フォームの対象仕訳(複数、計画Issue #40) */
+  const [splittingEntries, setSplittingEntries] = useState<JournalEntry[]>([])
 
   /**
    * Comlinkの型定義上、RepositoryRegistryのネストしたRepositoryプロパティは
@@ -213,6 +229,88 @@ function AppContent() {
     )
   }
 
+  if (screen === 'journal-entry-list') {
+    return (
+      <JournalEntryListScreen
+        journalEntryRepository={journalEntryRepository}
+        onSelectEntry={(entry) => {
+          setSelectedEntry(entry)
+          setScreen('journal-entry-detail')
+        }}
+        onBack={() => setScreen('home')}
+      />
+    )
+  }
+
+  if (screen === 'journal-entry-detail' && selectedEntry !== null) {
+    return (
+      <JournalEntryDetailScreen
+        entryId={selectedEntry.id}
+        journalEntryRepository={journalEntryRepository}
+        accountRepository={accountRepository}
+        projectRepository={projectRepository}
+        householdMemberRepository={householdMemberRepository}
+        counterpartyRepository={counterpartyRepository}
+        onBack={() => {
+          setSelectedEntry(null)
+          setScreen('journal-entry-list')
+        }}
+        onDeleted={() => {
+          setSelectedEntry(null)
+          setScreen('journal-entry-list')
+        }}
+      />
+    )
+  }
+
+  if (screen === 'expense-splitting-entry-picker') {
+    return (
+      <ExpenseSplittingEntryPickerScreen
+        journalEntryRepository={journalEntryRepository}
+        accountRepository={accountRepository}
+        householdMemberRepository={householdMemberRepository}
+        projectRepository={projectRepository}
+        onSelectEntries={(entries) => {
+          setSplittingEntries(entries)
+          setScreen('expense-splitting-form')
+        }}
+        onBack={() => setScreen('home')}
+      />
+    )
+  }
+
+  if (screen === 'expense-splitting-form' && splittingEntries.length > 0) {
+    return (
+      <ExpenseSplittingForm
+        originalEntries={splittingEntries}
+        accountRepository={accountRepository}
+        projectRepository={projectRepository}
+        householdMemberRepository={householdMemberRepository}
+        counterpartyRepository={counterpartyRepository}
+        journalEntryRepository={journalEntryRepository}
+        onComplete={() => {
+          setSplittingEntries([])
+          setScreen('home')
+        }}
+        onBack={() => {
+          setSplittingEntries([])
+          setScreen('expense-splitting-entry-picker')
+        }}
+      />
+    )
+  }
+
+  if (screen === 'settlement') {
+    return (
+      <SettlementScreen
+        projectRepository={projectRepository}
+        accountRepository={accountRepository}
+        journalEntryRepository={journalEntryRepository}
+        onBack={() => setScreen('home')}
+      />
+    )
+  }
+
   if (screen === 'statement-import-upload') {
     return (
       <StatementImportUploadScreen
@@ -266,6 +364,15 @@ function AppContent() {
       </button>
       <button type="button" onClick={() => setScreen('journal-entry-draft-list')}>
         {tJournal('journalEntryMenuTitle')}
+      </button>
+      <button type="button" onClick={() => setScreen('journal-entry-list')}>
+        {tJournal('entryListTitle')}
+      </button>
+      <button type="button" onClick={() => setScreen('expense-splitting-entry-picker')}>
+        {tExpenseSplitting('entryPickerMenuTitle')}
+      </button>
+      <button type="button" onClick={() => setScreen('settlement')}>
+        {tExpenseSplitting('settlementScreenTitle')}
       </button>
       <button type="button" onClick={() => setScreen('statement-import-upload')}>
         {tStatementImport('statementImportMenuTitle')}

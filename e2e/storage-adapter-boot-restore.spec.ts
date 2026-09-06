@@ -7,8 +7,9 @@
  * 再現できないブラウザ固有の統合動作のため、Playwrightで検証する
  * (docs/architecture.md 10章)。デバウンス自体の詳細な検証は
  * e2e/storage-adapter-debounce.spec.tsで行う。seedDefaultAccounts(計画Issue #96)により
- * Worker起動時点でrevenue/expense区分の標準科目が既に存在するため、作成する科目名は
- * デフォルトシードのリスト(defaultAccountSeedData.ts)と衝突しない名前を使う。
+ * Worker起動時点でrevenue/expense区分の標準科目が、seedAdvanceAccounts(計画Issue #40)
+ * によりasset/liability区分の「立替金」が既に存在するため、作成する科目名はこれらの
+ * シードのリスト(defaultAccountSeedData.ts・seedAdvanceAccounts.ts)と衝突しない名前を使う。
  */
 import { test, expect } from '@playwright/test'
 
@@ -59,7 +60,7 @@ test.describe('StorageAdapterによる起動時ロード・保存フロー', () 
     expect(restoredAccountNames).toContain('テスト費目')
   })
 
-  test('IndexedDBに保存済みデータがない場合、Worker起動時は標準の収益・費用科目(計画Issue #96)のみが投入された状態になる', async ({
+  test('IndexedDBに保存済みデータがない場合、Worker起動時は標準の収益・費用科目(計画Issue #96)・割勘の一時勘定(立替金、計画Issue #40)のみが投入された状態になる', async ({
     page,
   }) => {
     await page.goto('/')
@@ -69,11 +70,17 @@ test.describe('StorageAdapterによる起動時ロード・保存フロー', () 
       const { DEFAULT_EXPENSE_ACCOUNT_NAMES, DEFAULT_REVENUE_ACCOUNT_NAMES } = await import(
         '/src/infrastructure/db/defaultAccountSeedData.ts'
       )
+      const { ADVANCE_ACCOUNT_NAME } = await import('/src/infrastructure/db/seedAdvanceAccounts.ts')
       const client = await createDbClient()
       const accounts = await client.account.findAll()
       return {
         names: accounts.map((account) => account.name).sort(),
-        expectedNames: [...DEFAULT_REVENUE_ACCOUNT_NAMES, ...DEFAULT_EXPENSE_ACCOUNT_NAMES].sort(),
+        expectedNames: [
+          ...DEFAULT_REVENUE_ACCOUNT_NAMES,
+          ...DEFAULT_EXPENSE_ACCOUNT_NAMES,
+          ADVANCE_ACCOUNT_NAME,
+          ADVANCE_ACCOUNT_NAME,
+        ].sort(),
       }
     })
 

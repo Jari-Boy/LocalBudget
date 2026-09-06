@@ -513,6 +513,33 @@ describe('delete', () => {
     expect(countJournalLines(db)).toBe(0)
   })
 
+  it('仕訳の削除でjournal_entry_linksもカスケード削除する(from_entry_id側、計画Issue #40で発覚したdb.export()のPRAGMA foreign_keysリセット対応の回帰テスト)', () => {
+    const original = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-05',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
+        { accountId: cashAccountId, side: 'credit', amount: 500 },
+      ],
+    })
+    const splitEntry = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-06',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
+        { accountId: cashAccountId, side: 'credit', amount: 500 },
+      ],
+      links: [{ toEntryId: original.id, linkType: 'allocates', amount: 500 }],
+    })
+
+    expect(repository.listLinksForEntry(original.id)).toHaveLength(1)
+
+    repository.delete(splitEntry.id)
+
+    expect(repository.findById(splitEntry.id)).toBeNull()
+    expect(repository.listLinksForEntry(original.id)).toHaveLength(0)
+  })
+
   it('external_import仕訳の削除は常に許可される', () => {
     const created = repository.create({
       householdMemberId: memberId,

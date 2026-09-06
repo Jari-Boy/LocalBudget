@@ -2,6 +2,7 @@
 import * as Comlink from 'comlink'
 import { createBrowserDatabase } from '../db/createBrowserDatabase'
 import { runMigrations } from '../db/migrations'
+import { seedAdvanceAccounts } from '../db/seedAdvanceAccounts'
 import { seedBuiltInMappingDefinitions } from '../db/seedBuiltInMappingDefinitions'
 import { seedDefaultAccounts } from '../db/seedDefaultAccounts'
 import { seedDefaultHouseholdMember } from '../db/seedDefaultHouseholdMember'
@@ -36,7 +37,11 @@ import { withAutoSave } from '../storage/withAutoSave'
  * seedDefaultAccounts(計画Issue #96、docs/domain/accounts.md 1.2節)を呼び出し、revenue・
  * expense区分それぞれについて1件も科目が存在しなければ標準的な収益・費用科目一式を投入する
  * (区分ごとに独立して冪等)。口座(資産科目)登録直後から相手科目に困らず仕訳を作成できる状態を
- * 保証するための投入であり、資産・負債・純資産区分の科目には一切関与しない。最後に
+ * 保証するための投入であり、資産・負債・純資産区分の科目には一切関与しない。続けて
+ * seedAdvanceAccounts(計画Issue #40、docs/domain/expense-splitting.md 1.2節)を呼び出し、
+ * 割勘の一時勘定(立替金)科目をasset・liability区分それぞれis_system_managed科目が
+ * 0件の場合に1件ずつ自動投入する。seedDefaultAccountsが意図的に対象外としていた
+ * asset/liability区分への投入を割勘機能側で担う(docs/decisions.md参照)。最後に
  * seedDevSampleDataIfDev(計画Issue #101)を呼び出し、開発モード(import.meta.env.DEV)の場合
  * にのみ、少数の口座(現金・普通預金・クレジットカード)と直近1ヶ月分の数件のダミー仕訳を
  * journal_entriesが0件の場合に限り自動投入する。相手科目にseedDefaultAccountsが投入した
@@ -55,6 +60,7 @@ async function main(): Promise<void> {
   seedDefaultHouseholdMember(db)
   seedBuiltInMappingDefinitions(db)
   seedDefaultAccounts(db)
+  seedAdvanceAccounts(db)
   seedDevSampleDataIfDev(db)
   const autoSaveController = withAutoSave(db, storageAdapter)
 
