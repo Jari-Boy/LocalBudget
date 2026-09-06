@@ -18,6 +18,12 @@
  * 再設計され、世帯メンバーは「相手の種類→相手」という2段階選択ではなく、割り振り
  * 可能な全員を常時チェックボックスの一覧として表示する方式になった(人間レビューでの
  * 再指摘、詳細はExpenseSplittingForm.tsxのJSDoc参照)。
+ * さらに実機レビューで見つかった2件の不具合への対応も検証する: (10)費用科目の行を
+ * 持たない仕訳(給与/普通預金のような収益・資産のみの仕訳)は割勘対象選択画面の候補から
+ * 除外されること、(11)世帯外の相手は取引先マスタからの選択に加えその場での新規取引先
+ * 作成(quick add)ができ、相手を選択しないまま確定しようとするとエラーになり無警告での
+ * 部分送信が起きないこと(計画Issue #40、詳細はfindExpenseLine.ts・ExpenseSplittingForm.tsx
+ * のJSDoc参照)。
  * journal-entry.spec.ts・project-management.spec.tsと同様、事前データ準備は
  * page.evaluate内で新規にcreateDbClient()した別Workerで行い、作成したデータが
  * Repository経由で確認できるまでpollしてからreloadし、本体アプリ側のWorkerに
@@ -180,6 +186,41 @@ test.describe('割勘対象選択画面', () => {
     await expect(page.getByText('絞り込み確認用の食事代', { exact: true })).not.toBeVisible()
   })
 
+  test('費用科目の行を持たない仕訳(給与/普通預金のような収益・資産のみの仕訳)は候補から除外される', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const data = await setupBaseData(page, '26/8生活費割勘(費用科目なし除外)')
+    await createOriginalExpenseEntry(page, data, '費用科目あり除外確認用の食事代', 1000)
+    await page.evaluate(async (cashAccountId) => {
+      const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
+      const client = await createDbClient()
+      const salaryAccount = await client.account.create({
+        category: 'revenue',
+        name: '給与収入(除外確認用)',
+        isReconcilable: null,
+      })
+      const [defaultMember] = await client.householdMember.findAll()
+      await client.journalEntry.create({
+        entryDate: '2026-07-21',
+        memo: '給与振込(除外確認用)',
+        householdMemberId: defaultMember.id,
+        lines: [
+          { accountId: cashAccountId, side: 'debit', amount: 250000 },
+          { accountId: salaryAccount.id, side: 'credit', amount: 250000 },
+        ],
+      })
+      await client.autoSave.flush()
+    }, data.cashAccountId)
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    await page.getByRole('button', { name: '割勘する' }).click()
+
+    await expect(page.getByText('費用科目あり除外確認用の食事代')).toBeVisible()
+    await expect(page.getByText('給与振込(除外確認用)')).not.toBeVisible()
+  })
+
   test('科目で絞り込むと、一致しない仕訳が候補から除外される', async ({ page }) => {
     await page.goto('/')
     const data = await setupBaseData(page, '26/8生活費割勘(科目絞り込み)')
@@ -256,6 +297,41 @@ test.describe('割勘起票', () => {
 
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
+  })
+
+  test('世帯外の相手をその場で新規に取引先として作成でき、割勘を起票できる', async ({ page }) => {
+    await page.goto('/')
+    const data = await setupBaseData(page, '26/8生活費割勘(相手のその場作成)')
+    await createOriginalExpenseEntry(page, data, '相手のその場作成テスト用の食事代', 1000)
+
+    await openSplittingForm(page, data, '相手のその場作成テスト用の食事代')
+    await page.getByRole('button', { name: '世帯外の相手を追加する' }).click()
+    const participant = page.getByRole('group', { name: '分担者1' })
+    await participant.getByLabel('相手', { exact: true }).selectOption('__new__')
+    await participant.getByLabel('新しい取引先の名前').fill('その場作成の友人Dさん')
+    await participant.getByRole('button', { name: '作成する' }).click()
+    await expect(participant.getByLabel('新しい取引先の名前')).not.toBeVisible()
+
+    await page.getByRole('button', { name: '計算する' }).click()
+    await expect(participant.getByLabel('金額')).toHaveValue('500')
+
+    await page.getByRole('button', { name: '割勘を確定する' }).click()
+    await waitForJournalEntryCount(page, 2)
+  })
+
+  test('世帯外の相手の行で相手を選択しないまま確定しようとすると、エラーになり仕訳は作成されない', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const data = await setupBaseData(page, '26/8生活費割勘(相手未選択エラー)')
+    await createOriginalExpenseEntry(page, data, '相手未選択エラー確認用の食事代', 1000)
+
+    await openSplittingForm(page, data, '相手未選択エラー確認用の食事代')
+    await page.getByRole('button', { name: '世帯外の相手を追加する' }).click()
+    await page.getByRole('button', { name: '割勘を確定する' }).click()
+
+    await expect(page.getByRole('alert')).toHaveText('世帯外の相手を選択または新規作成してください。')
+    await waitForJournalEntryCount(page, 1)
   })
 
   test('割勘起票フォームでその場に新規のプロジェクトを作成でき、精算画面の選択肢にも表示される', async ({
