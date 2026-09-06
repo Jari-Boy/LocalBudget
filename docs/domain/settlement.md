@@ -195,6 +195,9 @@ CSV到着後の消込(CSV由来): (借) 資産・普通預金        250,000
 > **タグ(project_id・account_id)による候補検索は、消込/精算仕訳自身(from_entry側)を誤って含みうる(計画Issue #40)**
 > 一時勘定の`project_id`・`account_id`は、消込/精算対象(`to_entry`側)だけでなく、本節の引き継ぎにより消込/精算仕訳自身(`from_entry`側)の一時勘定行にも同じ値が設定される。そのため、「このタグが付いた一時勘定行を持つ仕訳」を単純に検索して未消込候補の一覧を組み立てると、過去に作成済みの消込/精算仕訳自身が候補に紛れ込む。呼び出し側は、`settles`リンクの`from_entry_id`として自分自身が登場する仕訳(=それ自体が消込/精算仕訳であるもの)を候補から除外してから[1.6](#16-分割消込消込残高による完了判定)の消込残高計算・`findUnsettledEntries`等に渡す必要がある([expense-splitting.md 1.5](./expense-splitting.md#15-割勘の履歴と取り消し)の`findUnallocatedEntries`(`allocates`リンクの`from_entry`側を割勘仕訳とみなす判定)と対称的な考え方)。詳細は`docs/decisions.md`(2026-08-15)参照。
 
+> **1件のto_entryに対し、household_member_idの異なる複数の一時勘定行を持たせてはいけない(計画Issue #40)**
+> 本節の「タグが異なる元仕訳をまとめて消し込む場合」は、`to_entry`(元仕訳)が複数ある場合に、消込/精算仕訳(`from_entry`)側の一時勘定行をタグの組み合わせの数だけ分けることを定めている。これは`journal_entry_links`が`to_entry_id`ごとに独立した`amount`を持つ(一対多)ことで初めて成立する設計であり、逆に**同じ`to_entry`1件に対して`household_member_id`の異なる複数の一時勘定行を持つ仕訳**は想定していない。既存の`SettlementScreen`(`calculateSettlementBalance`)は未精算残高を`account_id`一致のみで仕訳単位に合算し`household_member_id`を区別しないため、このような仕訳が存在すると異なる世帯メンバーの残高が1つに合算され、一方の精算操作でもう一方の債務まで無警告で消し込まれてしまう。割勘機能([expense-splitting.md](./expense-splitting.md))は当初この制約に気づかず、複数人割勘を「常に1件の複合仕訳にまとめる」設計を試みてevaluatorレビューで実際にこの不具合が再現され、統合単位を「分担者(人)ごと」(=1件の仕訳が持つ一時勘定行のhousehold_member_idタグは常に単一)に限定することで解決した。詳細は`docs/decisions.md`(2026-09-06)参照。今後、一時勘定を経由する新しい機能を設計する際も、1件の仕訳が同一account_id・project_idの一時勘定行を複数持つ場合はhousehold_member_idを揃えるか、精算/消込側をタグ単位で区別できるように改修すること。
+
 ### 1.8 タグ不整合の予防と検知
 
 [1.7](#17-タグ付き一時勘定の消込project_idhousehold_member_idの引き継ぎ)の自動コピーは「選定後にユーザーが手でタグを打ち直して間違える」ケースを防ぐが、それでも次の2つの経路でタグ不整合は起こりうる。
