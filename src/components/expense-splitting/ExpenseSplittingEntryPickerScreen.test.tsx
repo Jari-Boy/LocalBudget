@@ -233,6 +233,58 @@ describe('ExpenseSplittingEntryPickerScreen', () => {
     expect(screen.getByRole('button', { name: '選択した仕訳で割勘する' })).toBeEnabled()
   })
 
+  it('費用科目の行を持たない仕訳(給与/普通預金のような収益・資産のみの仕訳)は候補から除外される', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const bank = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: false })
+    const salary = accountRepository.create({ category: 'revenue', name: '給与収入', isReconcilable: null })
+    journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '食費の支出',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    journalEntryRepository.create({
+      entryDate: '2026-07-21',
+      memo: '給与振込',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: bank.id, side: 'debit', amount: 250000 },
+        { accountId: salary.id, side: 'credit', amount: 250000 },
+      ],
+    })
+
+    renderScreen()
+
+    expect(await screen.findByText('食費の支出')).toBeInTheDocument()
+    expect(screen.queryByText('給与振込')).not.toBeInTheDocument()
+  })
+
+  it('費用科目の行が2件以上ある仕訳は、どの行を付け替え対象にすべきか一意に定まらないため候補から除外される', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const foodExpense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const suppliesExpense = accountRepository.create({ category: 'expense', name: '日用品費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '食費と日用品費の複合仕訳',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: foodExpense.id, side: 'debit', amount: 300 },
+        { accountId: suppliesExpense.id, side: 'debit', amount: 200 },
+        { accountId: cash.id, side: 'credit', amount: 500 },
+      ],
+    })
+
+    renderScreen()
+
+    expect(await screen.findByText('割勘の対象となる仕訳がありません')).toBeInTheDocument()
+  })
+
   it('候補が0件の場合、空状態メッセージが表示される', async () => {
     renderScreen()
 

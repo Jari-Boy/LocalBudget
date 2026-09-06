@@ -8,6 +8,7 @@ import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter
 import type { Project } from '../../domain/project/Project'
 import { filterJournalEntries } from '../../domain/journal/filterJournalEntries'
 import { findUnallocatedEntries } from '../../domain/expense-splitting/findUnallocatedEntries'
+import { findExpenseLine } from '../../domain/expense-splitting/findExpenseLine'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { JournalEntryFilterForm } from '../journal-entry/JournalEntryFilterForm'
 import './ExpenseSplittingEntryPickerScreen.css'
@@ -53,7 +54,10 @@ function calculateEntryTotal(entry: JournalEntry): number {
  * 割勘対象選択画面(計画Issue #40)。仕訳一覧(JournalEntryListScreen、確認用途の
  * 汎用画面)から割勘起票への導線を分離するため、ホーム画面に専用の入口を設ける
  * (ユーザーレビューでのUX見直し)。findUnallocatedEntries(docs/domain/
- * expense-splitting.md 1.5節)で未割勘の仕訳のみを候補にし、共通コンポーネントの
+ * expense-splitting.md 1.5節)で未割勘の仕訳のみを候補にし、さらにfindExpenseLineで
+ * 費用科目の行がちょうど1件存在する仕訳のみに絞り込む(給与/普通預金のような費用科目を
+ * 含まない仕訳や、費用科目の行が複数あり付け替え対象が一意に定まらない仕訳は、そもそも
+ * 割勘の対象になり得ないため候補から除外する。人間レビューでの指摘対応)。共通コンポーネントの
  * JournalEntryFilterForm(期間・科目・世帯メンバー・プロジェクト)による追加の絞り込みを
  * filterJournalEntriesで適用する。候補はチェックボックスで複数選択でき、「選択した
  * 仕訳で割勘する」ボタンで選択済みの仕訳をまとめて割勘起票フォームへ渡す(計画Issue #40
@@ -110,7 +114,9 @@ export function ExpenseSplittingEntryPickerScreen({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const unallocatedEntries = data.entries.filter((entry) => data.unallocatedEntryIds.has(entry.id))
+  const unallocatedEntries = data.entries.filter(
+    (entry) => data.unallocatedEntryIds.has(entry.id) && findExpenseLine(entry, data.accounts) !== undefined,
+  )
   const candidates = filterJournalEntries(unallocatedEntries, data.accounts, filter)
 
   return (
