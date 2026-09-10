@@ -38,6 +38,8 @@
   "categoryExpense": "費用",
   "memberSelectLabel": "名義",
   "memberUnspecified": "全員",
+  "groupSelectLabel": "グループ",
+  "groupUnspecified": "未分類",
   "nameEditLabel": "名称",
   "editButton": "編集",
   "deleteButton": "削除",

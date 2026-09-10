@@ -163,6 +163,7 @@ function AppContent() {
     return (
       <AccountListScreen
         accountRepository={accountRepository}
+        accountGroupRepository={accountGroupRepository}
         journalEntryRepository={journalEntryRepository}
         householdMemberRepository={householdMemberRepository}
         budgetRepository={budgetRepository}
