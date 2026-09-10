@@ -122,6 +122,8 @@ describe('ExpenseSplittingHistoryScreen', () => {
     renderScreen()
 
     expect(await screen.findByText('スーパーで食材購入')).toBeInTheDocument()
+    expect(screen.getByText('2026-08-01')).toBeInTheDocument()
+    expect(screen.queryByText('2026-08-03')).not.toBeInTheDocument()
     expect(screen.getByText('Bさん')).toBeInTheDocument()
     expect(screen.getByText('￥500')).toBeInTheDocument()
     expect(screen.getByText('未精算')).toBeInTheDocument()
@@ -219,6 +221,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     renderScreen()
 
     expect(await screen.findByText('2件の支出')).toBeInTheDocument()
+    expect(screen.getByText('￥750')).toBeInTheDocument()
   })
 
   it('資産側・負債側の両方が精算済みの割勘は、精算済みと表示する', async () => {

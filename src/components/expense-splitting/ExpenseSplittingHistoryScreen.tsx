@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
-import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
+import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type { JournalEntryLink } from '../../domain/journal/JournalEntryLink'
 import type { Project } from '../../domain/project/Project'
 import { listExpenseSplittingHistory } from '../../domain/expense-splitting/listExpenseSplittingHistory'
@@ -49,18 +49,36 @@ interface LoadedData {
   linksByEntryId: Map<number, JournalEntryLink[]>
 }
 
+interface AdvanceLinesSummary {
+  amount: number
+  projectId: number | null
+}
+
 /**
- * 割勘仕訳が持つ立替金(is_system_managed=trueの資産/負債)行を1件返す
- * (docs/domain/expense-splitting.md 1.2節)。金額・所属プロジェクトの表示に使う。
- * 資産側・負債側の両方を持つ場合(世帯メンバー間の割勘)も両者は同額のため、
- * どちらか一方の行から取得すれば足りる。
+ * 割勘仕訳が持つ立替金(is_system_managed=trueの資産/負債)行から、表示用の金額・
+ * 所属プロジェクトを求める(docs/domain/expense-splitting.md 1.2節)。複数の元仕訳を
+ * まとめて1回で割勘した場合(計画Issue #40、mergeExpenseSplittingJournalEntryInputs)、
+ * 1件の仕訳が元仕訳ごとに複数の立替金行(資産側・負債側それぞれ)を持つため、単純に
+ * 最初の1行を採用すると合計額より少ない金額を表示してしまう。資産側の行が1件以上
+ * あればその合計(世帯メンバー間の割勘は資産側・負債側が同額のため資産側で代表できる)、
+ * 無ければ負債側の合計(通常発生しないが安全側)を金額とする。プロジェクトIDは全ての
+ * 立替金行で同一のため(1回の割勘操作は単一のprojectIdに対して行う)、代表の1件から取得する。
  */
-function findAdvanceLine(entry: JournalEntry, accounts: readonly Account[]): JournalLine | undefined {
+function summarizeAdvanceLines(entry: JournalEntry, accounts: readonly Account[]): AdvanceLinesSummary {
   const accountsById = new Map(accounts.map((account) => [account.id, account]))
-  return entry.lines.find((line) => {
-    const account = accountsById.get(line.accountId)
-    return account?.isSystemManaged === true && (account.category === 'asset' || account.category === 'liability')
-  })
+  const linesByCategory = (category: 'asset' | 'liability') =>
+    entry.lines.filter((line) => {
+      const account = accountsById.get(line.accountId)
+      return account?.isSystemManaged === true && account.category === category
+    })
+
+  const assetLines = linesByCategory('asset')
+  const targetLines = assetLines.length > 0 ? assetLines : linesByCategory('liability')
+
+  return {
+    amount: targetLines.reduce((sum, line) => sum + line.amount, 0),
+    projectId: targetLines[0]?.projectId ?? null,
+  }
 }
 
 function resolveParticipantName(
@@ -143,7 +161,7 @@ export function ExpenseSplittingHistoryScreen({
       ) : (
         <ul>
           {historyEntries.map(({ splitEntry, originalEntries }) => {
-            const advanceLine = findAdvanceLine(splitEntry, accounts)
+            const advanceSummary = summarizeAdvanceLines(splitEntry, accounts)
             const participantName = resolveParticipantName(splitEntry, accounts, householdMembers, counterparties)
             const isSettled = isExpenseSplittingEntrySettled(
               splitEntry,
@@ -155,14 +173,14 @@ export function ExpenseSplittingHistoryScreen({
               originalEntries.length === 1
                 ? (originalEntries[0].memo ?? t('entryNoMemo'))
                 : t('historyOriginalEntriesSummary', { count: originalEntries.length })
-            const belongingProjectName = projectName(advanceLine?.projectId ?? null)
+            const belongingProjectName = projectName(advanceSummary.projectId)
 
             return (
               <li key={splitEntry.id}>
-                <span>{splitEntry.entryDate}</span>
+                <span>{originalEntries[0].entryDate}</span>
                 <span>{originalSummary}</span>
                 {participantName !== null && <span>{participantName}</span>}
-                <span>{formatCurrency(advanceLine?.amount ?? 0, 'JPY')}</span>
+                <span>{formatCurrency(advanceSummary.amount, 'JPY')}</span>
                 <span>{isSettled ? t('historySettledLabel') : t('historyUnsettledLabel')}</span>
                 {belongingProjectName !== null && <span>{belongingProjectName}</span>}
                 <button type="button" onClick={() => onSelectEntry(splitEntry)}>

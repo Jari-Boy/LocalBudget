@@ -87,6 +87,14 @@ function AppContent() {
   const [uploadResult, setUploadResult] = useState<StatementImportUploadResult | null>(null)
   /** 仕訳一覧から選択した、詳細画面の対象仕訳(計画Issue #40) */
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null)
+  /**
+   * 仕訳詳細画面の遷移元(計画Issue #110)。詳細画面自体はjournal-entry-list・
+   * expense-splitting-historyの複数箇所から遷移してくるため、「戻る」操作で
+   * 遷移元の画面へ正しく戻れるよう、選択した画面側で更新してから詳細画面へ遷移する。
+   */
+  const [entryDetailReturnScreen, setEntryDetailReturnScreen] = useState<
+    'journal-entry-list' | 'expense-splitting-history'
+  >('journal-entry-list')
   /** 割勘対象選択画面でチェックボックス選択した、割勘起票フォームの対象仕訳(複数、計画Issue #40) */
   const [splittingEntries, setSplittingEntries] = useState<JournalEntry[]>([])
 
@@ -237,6 +245,7 @@ function AppContent() {
         journalEntryRepository={journalEntryRepository}
         onSelectEntry={(entry) => {
           setSelectedEntry(entry)
+          setEntryDetailReturnScreen('journal-entry-list')
           setScreen('journal-entry-detail')
         }}
         onBack={() => setScreen('home')}
@@ -255,11 +264,11 @@ function AppContent() {
         counterpartyRepository={counterpartyRepository}
         onBack={() => {
           setSelectedEntry(null)
-          setScreen('journal-entry-list')
+          setScreen(entryDetailReturnScreen)
         }}
         onDeleted={() => {
           setSelectedEntry(null)
-          setScreen('journal-entry-list')
+          setScreen(entryDetailReturnScreen)
         }}
       />
     )
@@ -312,6 +321,7 @@ function AppContent() {
         counterpartyRepository={counterpartyRepository}
         onSelectEntry={(entry) => {
           setSelectedEntry(entry)
+          setEntryDetailReturnScreen('expense-splitting-history')
           setScreen('journal-entry-detail')
         }}
         onBack={() => setScreen('home')}
