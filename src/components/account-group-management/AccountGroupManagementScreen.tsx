@@ -126,19 +126,18 @@ export function AccountGroupManagementScreen({
     if (isSubmitting) return
     setIsSubmitting(true)
     setError(null)
-    const request =
-      formMode === 'create'
-        ? Promise.resolve(
-            accountGroupRepository.create({ name: nameInput, parentGroupId: parentGroupIdInput }),
-          )
-        : Promise.resolve(
-            accountGroupRepository.update(formMode as number, {
+    // Repository呼び出しはPromise.resolve(fn())ではなくPromise.resolve().then(() => fn())で
+    // 開始する。sql.js実装は同期的に例外を投げるため、前者だとfnの同期例外が.catch()に
+    // 届かない(docs/guides/patterns.md参照)。
+    void Promise.resolve()
+      .then(() =>
+        formMode === 'create'
+          ? accountGroupRepository.create({ name: nameInput, parentGroupId: parentGroupIdInput })
+          : accountGroupRepository.update(formMode as number, {
               name: nameInput,
               parentGroupId: parentGroupIdInput,
             }),
-          )
-
-    void request
+      )
       .then(() => {
         closeForm()
         load()
@@ -151,7 +150,8 @@ export function AccountGroupManagementScreen({
     if (isSubmitting) return
     setIsSubmitting(true)
     setError(null)
-    void Promise.resolve(accountGroupRepository.delete(id))
+    void Promise.resolve()
+      .then(() => accountGroupRepository.delete(id))
       .then(load)
       .catch(() => setError(t('deleteError')))
       .finally(() => setIsSubmitting(false))
@@ -161,7 +161,8 @@ export function AccountGroupManagementScreen({
     if (isSubmitting) return
     setIsSubmitting(true)
     setError(null)
-    void Promise.resolve(accountGroupRepository.deactivate(id))
+    void Promise.resolve()
+      .then(() => accountGroupRepository.deactivate(id))
       .then(load)
       .catch(() => setError(t('deactivateError')))
       .finally(() => setIsSubmitting(false))
