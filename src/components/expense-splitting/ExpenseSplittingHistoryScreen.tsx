@@ -177,6 +177,8 @@ export function ExpenseSplittingHistoryScreen({
 
             return (
               <li key={splitEntry.id}>
+                {/* listExpenseSplittingHistoryがoriginalEntriesを取引日昇順にソート済みのため、
+                    先頭要素は常に「最も古い元の支出」の日付になる(Review Attempt 2指摘対応) */}
                 <span>{originalEntries[0].entryDate}</span>
                 <span>{originalSummary}</span>
                 {participantName !== null && <span>{participantName}</span>}

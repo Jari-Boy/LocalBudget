@@ -13,10 +13,10 @@ import type { JournalEntry } from '../journal/JournalEntry'
 import type { JournalEntryLink } from '../journal/JournalEntryLink'
 import { listExpenseSplittingHistory } from './listExpenseSplittingHistory'
 
-function buildEntry(id: number): JournalEntry {
+function buildEntry(id: number, entryDate = '2026-07-01'): JournalEntry {
   return {
     id,
-    entryDate: '2026-07-01',
+    entryDate,
     memo: null,
     currency: 'JPY',
     sourceType: 'manual',
@@ -84,6 +84,22 @@ describe('listExpenseSplittingHistory', () => {
     expect(result).toHaveLength(1)
     expect(result[0].splitEntry).toEqual(splitEntry)
     expect(result[0].originalEntries).toEqual([smartphoneEntry, tabletEntry])
+  })
+
+  it('複数の元仕訳をまとめて1回で割勘した場合、originalEntriesはentries内の登場順ではなく取引日の昇順で並ぶ(Review Attempt 2指摘: findAll()の返り順=id順に依存しない)', () => {
+    const laterEntry = buildEntry(1, '2026-07-10')
+    const earlierEntry = buildEntry(2, '2026-07-05')
+    const splitEntry = buildEntry(3)
+    const linksByEntryId = new Map([
+      [laterEntry.id, [buildLink(1, splitEntry.id, laterEntry.id, 'allocates')]],
+      [earlierEntry.id, [buildLink(2, splitEntry.id, earlierEntry.id, 'allocates')]],
+    ])
+
+    // entries配列内の登場順はlaterEntryが先だが、取引日はearlierEntryの方が早い
+    const result = listExpenseSplittingHistory([laterEntry, earlierEntry, splitEntry], linksByEntryId)
+
+    expect(result).toHaveLength(1)
+    expect(result[0].originalEntries.map((entry) => entry.id)).toEqual([earlierEntry.id, laterEntry.id])
   })
 
   it('複数件の独立した割勘がある場合、それぞれ別の履歴エントリとして返す', () => {
