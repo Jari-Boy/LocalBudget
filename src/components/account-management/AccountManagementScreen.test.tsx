@@ -18,18 +18,20 @@ afterEach(cleanup)
 function renderScreen(overrides: Partial<Parameters<typeof AccountManagementScreen>[0]> = {}) {
   const onAddAccount = vi.fn()
   const onViewList = vi.fn()
+  const onManageGroups = vi.fn()
   const onBack = vi.fn()
   render(
     <I18nextProvider i18n={i18n}>
       <AccountManagementScreen
         onAddAccount={onAddAccount}
         onViewList={onViewList}
+        onManageGroups={onManageGroups}
         onBack={onBack}
         {...overrides}
       />
     </I18nextProvider>,
   )
-  return { onAddAccount, onViewList, onBack }
+  return { onAddAccount, onViewList, onManageGroups, onBack }
 }
 
 describe('AccountManagementScreen', () => {
@@ -47,6 +49,14 @@ describe('AccountManagementScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: '科目一覧を見る' }))
 
     expect(onViewList).toHaveBeenCalledTimes(1)
+  })
+
+  it('「グループを管理する」ボタンを押すとonManageGroupsが呼ばれる', () => {
+    const { onManageGroups } = renderScreen()
+
+    fireEvent.click(screen.getByRole('button', { name: 'グループを管理する' }))
+
+    expect(onManageGroups).toHaveBeenCalledTimes(1)
   })
 
   it('戻るボタンを押すとonBackが呼ばれる', () => {

@@ -1,0 +1,19 @@
+{
+  "groupListTitle": "勘定科目グループ管理",
+  "groupListEmpty": "登録済みのグループがありません",
+  "nameLabel": "名称",
+  "parentLabel": "親グループ",
+  "parentUnspecified": "最上位(親グループなし)",
+  "addButton": "グループを追加",
+  "editButton": "編集",
+  "deleteButton": "削除",
+  "deactivateButton": "非アクティブ化",
+  "inactiveLabel": "非アクティブ",
+  "createSubmit": "作成する",
+  "saveSubmit": "保存する",
+  "cancel": "キャンセル",
+  "back": "戻る",
+  "saveError": "保存に失敗しました。もう一度お試しください。",
+  "deleteError": "削除に失敗しました。もう一度お試しください。",
+  "deactivateError": "非アクティブ化に失敗しました。もう一度お試しください。"
+}
