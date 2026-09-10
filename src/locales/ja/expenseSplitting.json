@@ -52,5 +52,12 @@
   "entryPickerEmpty": "割勘の対象となる仕訳がありません",
   "entryNoMemo": "摘要なし",
   "selectEntryCheckboxLabel": "{{memo}}を選択する",
-  "submitEntrySelection": "選択した仕訳で割勘する"
+  "submitEntrySelection": "選択した仕訳で割勘する",
+  "historyMenuTitle": "割勘の履歴",
+  "historyTitle": "割勘の履歴",
+  "historyEmpty": "割勘の履歴はありません",
+  "historyOriginalEntriesSummary": "{{count}}件の支出",
+  "historySettledLabel": "精算済み",
+  "historyUnsettledLabel": "未精算",
+  "viewEntryDetail": "詳細を見る"
 }

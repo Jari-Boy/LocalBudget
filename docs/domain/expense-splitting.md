@@ -117,6 +117,14 @@
 
 **履歴の閲覧**: 割勘仕訳は元仕訳に対して`journal_entry_links`の`allocates`リンクを持つ([journal.md 1.8 仕訳間の関係](./journal.md#18-仕訳間の関係journal_entry_links)参照)。複数の元仕訳をまとめて割勘した場合、1件の割勘仕訳が元仕訳ごとに1本ずつの`allocates`リンクを持つ(一対多、[journal.md 1.8](./journal.md#18-仕訳間の関係journal_entry_links)参照)。元仕訳の詳細画面から`to_entry_id = 元仕訳 AND link_type = 'allocates'`で割勘仕訳を辿る。さらに`to_entry_id = 割勘仕訳 AND link_type = 'settles'`で精算仕訳を辿れば、「元の支出 → 割勘 → 精算」の一連の流れを追跡できる。また、`project_id`でバッチ全体の仕訳を横断的に一覧することもできる([projects.md 1.4 集計への影響](./projects.md#14-集計への影響)参照)。
 
+**割勘履歴一覧画面(計画Issue #110)**: 上記のトラバーサル(元仕訳→割勘仕訳→精算仕訳)は`traceExpenseSplittingHistory`として実装されており、特定の元仕訳を起点にした個別の追跡に使う。これとは別に`listExpenseSplittingHistory`は、全仕訳を起点候補として`traceExpenseSplittingHistory`を実行し、結果を割勘仕訳(`splitEntry`)のidでグルーピングし直す合成関数であり、個々の元仕訳を事前に把握していなくても「これまでに行われた割勘」を横断的に一覧できる(新しいリンク走査ロジックは追加しない)。1件の割勘仕訳が複数の元仕訳への一対多の`allocates`リンクを持つ場合(上記「複数の元仕訳をまとめた一括割勘」)、同じ割勘仕訳が起点候補の数だけ重複して見つかるが、グルーピングによって1件の履歴エントリに統合する。一覧の各行の分担者は`resolveExpenseSplittingParticipant`(立替金(負債)行の`household_member_id`、無ければ`counterparty_id`を持つ行から解決、1.3・1.4節の行構成に対応)で、精算状況は`isExpenseSplittingEntrySettled`(下記callout参照)で判定する。UI(`ExpenseSplittingHistoryScreen`)はこれら3関数を組み合わせるだけの薄い層であり、各行から既存の仕訳詳細画面(`JournalEntryDetailScreen`)へ遷移すればそこで上記のトラバーサルによる詳細な追跡ができるため、履歴一覧画面自体は追跡ロジックを再実装しない。
+
+> **originalEntriesは取引日(entryDate)昇順にソートして返す(計画Issue #110)**
+> `listExpenseSplittingHistory`が返す`originalEntries`(1件の割勘仕訳に対応する元仕訳群)は、Repositoryの`findAll()`が返す順序(id採番順=挿入順)をそのまま使わず、`entryDate`の昇順にソートしてから返す。挿入順と取引日順は通常一致するが、外部明細CSVの取込順序によっては一致しないことがある(例: 新しい日付から降順で並ぶ銀行明細CSV)。ソートしないままUI側が「先頭要素の日付」を代表値(最も古い支出日)として使うと、意図しない仕訳の日付を表示してしまう。この並び替えの責務はドメイン層(本関数)に閉じ、UI層は「ソート済みの配列が渡ってくる」ことだけを前提にする。詳細は`docs/decisions.md`(2026-09-11)・`docs/guides/patterns.md`参照。
+
+> **isExpenseSplittingEntrySettledは立替金の科目ごとにcalculateSettlementBalanceを適用する(計画Issue #110)**
+> [settlement.md 1.6](./settlement.md#16-分割消込消込残高による完了判定)の`calculateSettlementBalance`は「1件のto_entryにつき対象の一時勘定は1種類」を前提とした関数である(詳細は同節の注記を参照)。[1.3 世帯メンバー間の割勘](#13-世帯メンバー間の割勘)のように1件の割勘仕訳が資産側・負債側両方の立替金行を持つ場合、`isExpenseSplittingEntrySettled`は資産・負債それぞれの科目ごとに`calculateSettlementBalance`を個別に適用し、両方の残高が0になって初めて「精算済み」と判定する(片方のみの精算を精算済みと誤判定しない)。渡すsettlesリンクも、その精算仕訳(`from_entry`側の実体)が実際に対象科目の行を持っているものだけに事前に絞り込む必要がある。詳細は`docs/decisions.md`(2026-09-11)参照。
+
 **取り消し**: 割勘仕訳・精算仕訳はいずれも通常の手入力仕訳(`source_type = 'manual'`)であり、[journal.md 1.5 仕訳の編集・削除](./journal.md#15-仕訳の編集削除)の既存ルール(物理削除は常に許可)がそのまま適用される。
 
 - **精算前の取り消し**: 割勘仕訳を物理削除すれば元に戻る。`ON DELETE CASCADE`で`allocates`リンクも消え、元仕訳は最初から変更していないため実質的に「なかったこと」になる

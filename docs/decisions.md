@@ -673,3 +673,21 @@
 **背景**: 人間による実機レビューで「割勘の割勘ができるのはおかしいので、割勘でできた仕訳は割勘の対象外にする」との指摘を受けた。`findUnallocatedEntries`(`docs/domain/expense-splitting.md` 1.5節)はこれまで`allocates`リンクの`to_entry`側(=既に割勘済みの元仕訳)のみを除外しており、`from_entry`側(=割勘によって作られた仕訳自身)は除外していなかった。世帯メンバー間の割勘仕訳(1.3節、費用科目の行が2行=デビット・クレジット双方)は`findExpenseLine`の「費用科目の行がちょうど1件」という条件で偶然除外されていたが、世帯外の相手との割勘仕訳(1.4節、費用科目の行は1行のみ)はこの条件をすり抜け、再び割勘対象として選択できてしまっていた。
 **決定**: `findUnallocatedEntries`の判定条件に、`allocates`リンクの`from_entry_id === entry.id`(=自分自身が割勘仕訳である)も除外対象として追加した。`to_entry_id`側・`from_entry_id`側のいずれかにでも`allocates`リンクとして登場する仕訳は、割勘対象候補から除外される。
 **影響**: 割勘によって作られた仕訳(世帯メンバー間・世帯外の相手のいずれも)は、費用科目の行数に関わらず一貫して割勘対象選択画面の候補から除外されるようになった。`findExpenseLine`の「費用科目1件限定」条件による偶発的な除外に依存しない、明示的で意図の分かる除外ルールになっている。
+
+## 2026-09-11: 割勘仕訳の精算判定(isExpenseSplittingEntrySettled)は、settlesリンクを精算仕訳(from_entry)側の実体から科目単位に絞り込んでcalculateSettlementBalanceへ渡す
+
+**背景**: 計画Issue #110(割勘履歴一覧画面)で、割勘仕訳ごとの精算状況を判定する`isExpenseSplittingEntrySettled`を実装する際、当初は`calculateSettlementBalance`(`docs/domain/settlement.md` 1.6)に対象仕訳の全`settles`リンクをそのまま渡す実装にした。しかし世帯メンバー間の割勘(`docs/domain/expense-splitting.md` 1.3)のように1件の仕訳が資産側・負債側両方の立替金行を持つケースで、資産側のみ精算済み・負債側は未精算という状態が誤って「精算済み」と判定されるテスト失敗が発生した。原因は`calculateSettlementBalance`の消込残高計算が`to_entry_id`一致のみでsettlesリンクを合算し、そのリンクがどの一時勘定科目を対象にした精算かを区別しない(`journal_entry_links`自体がaccount_idを持たない)、「1件のto_entryにつき対象の一時勘定は1種類」を暗黙に前提とした実装だったため。
+**決定**: `isExpenseSplittingEntrySettled`は、割勘仕訳が持つ立替金科目(資産・負債それぞれ)ごとに、対応するsettlesリンクを絞り込んでから`calculateSettlementBalance`を個別に呼び出す方式にした。絞り込みは、settlesリンクの`from_entry_id`(精算仕訳の実体)を`entries`から解決し、その精算仕訳が実際に対象科目の行を持っているかで判定する(`buildSettlementJournalEntryInput`が対象の一時勘定科目の行を必ず1本だけ持つ仕訳を組み立てることを利用)。全ての対象科目についてこの絞り込み済み残高が0になって初めて「精算済み」とみなす。
+**影響**: `isExpenseSplittingEntrySettled`のシグネチャは`entries`(仕訳全体、from_entry解決用)を引数に取る。今後、1件の仕訳が複数種類の一時勘定科目(資産・負債等)を同時に持ちうる場面で`calculateSettlementBalance`を呼び出す実装を追加する場合も、settlesリンクを`to_entry_id`だけで絞り込むのではなく、精算仕訳側が実際に使っている科目まで確認してから科目単位で呼び出す必要がある。この前提は`docs/domain/settlement.md` 1.6に注記として追記した。
+
+## 2026-09-11: listExpenseSplittingHistoryのoriginalEntriesはentryDate昇順にソートして返し、findAll()の返り順(id順)に依存しない
+
+**背景**: 計画Issue #110の割勘履歴一覧画面で、複数の元仕訳をまとめて1回で割勘したケース(`docs/domain/expense-splitting.md` 1.4「複数の元仕訳をまとめた一括割勘」)の代表日付として、`listExpenseSplittingHistory`が返す`originalEntries`の先頭要素(`originalEntries[0].entryDate`)をUI側で表示する実装にしていた(Implementation Attempt 2)。しかしevaluatorのレビュー(Review Attempt 2)で、`originalEntries`は`entries`引数(`SqlJsJournalEntryRepository.findAll()`の`ORDER BY id`の結果)の登場順のままpushされているだけでentryDateによるソートを一切行っておらず、「先頭要素」が実際には「最も古い元仕訳」ではなく「DBに先に挿入された(idが小さい)元仕訳」でしかないことが指摘された。外部明細CSVの取込順序と取引日順が一致しない組み合わせ(新しい日付から降順で並ぶ銀行明細CSV等)でまとめて割勘すると、最古でも最新でもない日付が表示されうる未設計の挙動だった。
+**決定**: `listExpenseSplittingHistory`内で、グルーピングが完了した後に各履歴エントリの`originalEntries`を`entryDate`の`localeCompare`昇順にソートしてから返すようにした(ISO 8601形式`YYYY-MM-DD`の文字列比較のため`localeCompare`で辞書順=時系列順になる)。UI側(`ExpenseSplittingHistoryScreen`)は変更せず、「`originalEntries[0]`は常に最も古い元の支出」という前提をコメントで明記した上でそのまま利用する。
+**影響**: 代表日付の決定ロジックはドメイン層(`listExpenseSplittingHistory`)に閉じ、UI層は並び順を意識しない。今後、Repositoryの`findAll()`等が返す配列(挿入順)から複数要素をグルーピングして返す関数を実装する際、その結果から「先頭要素」を代表値として使う呼び出し側が存在しうる場合は、挿入順とは独立に業務上意味のある順序(本件は取引日順)へ明示的にソートしてから返すことを優先する。`docs/guides/patterns.md`に本件を新しいミスパターンとして追記した。
+
+## 2026-09-11: 仕訳詳細画面への遷移元が複数になったため、戻り先をentryDetailReturnScreen状態で切り替える
+
+**背景**: 計画Issue #110で割勘履歴一覧画面(`ExpenseSplittingHistoryScreen`)を追加し、その一覧の行からも既存の`JournalEntryDetailScreen`(仕訳詳細画面)へ遷移できるようにした。従来`JournalEntryDetailScreen`への遷移元は仕訳一覧(`journal-entry-list`)のみで、`onBack`/`onDeleted`は常に`journal-entry-list`へ固定遷移する実装だった(Implementation Attempt 1ではこの制約を変更せずそのままにしていたが、evaluatorレビューのLOW指摘で「割勘履歴一覧から遷移した場合に一覧へ戻れず無関係な仕訳一覧画面に着地する」という導線の不備が指摘された)。
+**決定**: `App.tsx`に`entryDetailReturnScreen`という状態(`'journal-entry-list' | 'expense-splitting-history'`)を追加した。仕訳詳細画面へ遷移する各画面(`JournalEntryListScreen`・`ExpenseSplittingHistoryScreen`)の`onSelectEntry`ハンドラが、`setSelectedEntry`と同時に自分自身の画面名を`entryDetailReturnScreen`にセットしてから`journal-entry-detail`へ遷移する。`JournalEntryDetailScreen`の`onBack`/`onDeleted`は、固定の`journal-entry-list`ではなく`entryDetailReturnScreen`の値へ遷移するように変更した。
+**影響**: 今後、`JournalEntryDetailScreen`(または同様に複数画面から遷移されうる詳細画面)への新しい遷移元を追加する場合は、`entryDetailReturnScreen`の型に遷移元の画面名を追加し、その画面の遷移ハンドラで同様に状態をセットする必要がある。遷移元が今後3つ以上に増える場合、都度`Screen`型のサブセットを列挙する現在の方式が煩雑になる可能性があり、その際は遷移元を汎用的に管理する仕組み(画面遷移スタック等)への切り替えを検討する。
