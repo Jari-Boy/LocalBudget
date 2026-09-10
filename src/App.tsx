@@ -26,6 +26,7 @@ import { JournalEntryListScreen } from './components/journal-entry/JournalEntryL
 import { JournalEntryDetailScreen } from './components/journal-entry/JournalEntryDetailScreen'
 import { ExpenseSplittingEntryPickerScreen } from './components/expense-splitting/ExpenseSplittingEntryPickerScreen'
 import { ExpenseSplittingForm } from './components/expense-splitting/ExpenseSplittingForm'
+import { ExpenseSplittingHistoryScreen } from './components/expense-splitting/ExpenseSplittingHistoryScreen'
 import { SettlementScreen } from './components/settlement/SettlementScreen'
 import {
   StatementImportUploadScreen,
@@ -52,6 +53,7 @@ type Screen =
   | 'journal-entry-detail'
   | 'expense-splitting-entry-picker'
   | 'expense-splitting-form'
+  | 'expense-splitting-history'
   | 'settlement'
   | 'statement-import-upload'
   | 'statement-import-review'
@@ -300,6 +302,23 @@ function AppContent() {
     )
   }
 
+  if (screen === 'expense-splitting-history') {
+    return (
+      <ExpenseSplittingHistoryScreen
+        journalEntryRepository={journalEntryRepository}
+        accountRepository={accountRepository}
+        projectRepository={projectRepository}
+        householdMemberRepository={householdMemberRepository}
+        counterpartyRepository={counterpartyRepository}
+        onSelectEntry={(entry) => {
+          setSelectedEntry(entry)
+          setScreen('journal-entry-detail')
+        }}
+        onBack={() => setScreen('home')}
+      />
+    )
+  }
+
   if (screen === 'settlement') {
     return (
       <SettlementScreen
@@ -373,6 +392,9 @@ function AppContent() {
       </button>
       <button type="button" onClick={() => setScreen('settlement')}>
         {tExpenseSplitting('settlementScreenTitle')}
+      </button>
+      <button type="button" onClick={() => setScreen('expense-splitting-history')}>
+        {tExpenseSplitting('historyMenuTitle')}
       </button>
       <button type="button" onClick={() => setScreen('statement-import-upload')}>
         {tStatementImport('statementImportMenuTitle')}
