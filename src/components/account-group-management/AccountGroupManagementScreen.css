@@ -84,6 +84,29 @@
   gap: 8px;
 }
 
+.account-group-management-screen .account-group-children-select ul {
+  margin: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.account-group-management-screen .account-group-children-select li {
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--text-h);
+}
+
+.account-group-management-screen .account-group-children-select label {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.account-group-management-screen .account-group-children-select input {
+  width: auto;
+}
+
 .account-group-management-screen .account-group-assign-panel {
   display: flex;
   flex-direction: column;

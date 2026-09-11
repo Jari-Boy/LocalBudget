@@ -56,6 +56,17 @@ interface LoadedData {
 type FormMode = 'create' | number | null
 
 /**
+ * 一括割り当てパネルの対象科目の判定(ユーザー指摘への対応)。他グループに属する科目を
+ * この画面から選んでこのグループへ"奪う"ことはできないよう、未分類の科目とこのグループに
+ * 既に属する科目のみを対象とする。他グループへの再分類は科目側(AccountListScreen)の
+ * 編集フォームから行う。is_system_managed科目は常に対象外。
+ */
+function isEligibleForAssignmentPanel(account: Account, groupId: number): boolean {
+  if (account.isSystemManaged) return false
+  return account.accountGroupId === null || account.accountGroupId === groupId
+}
+
+/**
  * 勘定科目グループ管理画面(計画Issue #112)。登録済みグループの一覧表示・新規作成
  * (名称・親グループ)・編集(名称・親グループ)・削除/非アクティブ化を、単一画面+
  * インラインフォームで提供する(docs/domain/accounts.md 3.3節)。入れ子構造は展開/
@@ -67,10 +78,12 @@ type FormMode = 'create' | number | null
  * 親グループ・科目選択欄には、異なる親配下の同名グループを区別できるよう
  * buildAccountGroupPathLabelsによる「親 > 子」形式のパス表示ラベルを用いる
  * (ユーザー指摘への対応)。各グループ行から「科目を割り当てる」を開くと、
- * is_system_managedを除く全科目のチェックリストが表示され、複数科目をまとめて
- * このグループへ割り当てる(または外す)ことができる(グループ側からの一括割り当て、
- * ユーザー指摘への対応)。他グループに属する科目をチェックした場合はそのグループから
- * 外れてこのグループへ移動する(1科目は0または1個のグループにのみ属する制約のため)。
+ * 未分類の科目とこのグループに既に属する科目のチェックリストが表示され、複数科目を
+ * まとめてこのグループへ割り当てる(または外して未分類に戻す)ことができる
+ * (グループ側からの一括割り当て、ユーザー指摘への対応)。他グループに属する科目は
+ * この画面からは選択肢に表示されず、この画面から他グループの科目を"奪う"操作はできない
+ * (isEligibleForAssignmentPanel参照、ユーザー指摘への対応)。他グループへの再分類は
+ * 科目側(AccountListScreen)の編集フォームから行う。is_system_managed科目は常に対象外。
  */
 export function AccountGroupManagementScreen({
   accountGroupRepository,
@@ -83,6 +96,10 @@ export function AccountGroupManagementScreen({
   const [formMode, setFormMode] = useState<FormMode>(null)
   const [nameInput, setNameInput] = useState('')
   const [parentGroupIdInput, setParentGroupIdInput] = useState<number | null>(null)
+  /** 新規作成時のみ使用。既存の最上位・アクティブなグループから、このグループの子にする
+   * ものを選択する(ユーザー指摘への対応: 親を指定して子を作るのではなく、グループ追加時に
+   * 既存グループを子として指定できるようにする)。編集時は空のまま使わない。 */
+  const [childGroupIdsInput, setChildGroupIdsInput] = useState<Set<number>>(new Set())
   const [error, setError] = useState<string | null>(null)
   /** 作成・編集・削除・非アクティブ化のいずれか進行中は全操作ボタンを無効化する(連打による二重実行防止) */
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -122,8 +139,21 @@ export function AccountGroupManagementScreen({
   const openCreateForm = () => {
     setNameInput('')
     setParentGroupIdInput(null)
+    setChildGroupIdsInput(new Set())
     setError(null)
     setFormMode('create')
+  }
+
+  const toggleChildGroupSelection = (groupId: number) => {
+    setChildGroupIdsInput((prev) => {
+      const next = new Set(prev)
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
+      }
+      return next
+    })
   }
 
   const openEditForm = (group: AccountGroup) => {
@@ -154,6 +184,18 @@ export function AccountGroupManagementScreen({
               parentGroupId: parentGroupIdInput,
             }),
       )
+      .then((savedGroup) => {
+        if (formMode !== 'create' || childGroupIdsInput.size === 0) return undefined
+        // 新規作成したグループを親として、選択された既存の最上位グループを子にする。
+        // 作成直後のグループは他のどのグループの子孫にもなり得ないため、循環参照は起こり得ない。
+        return Promise.all(
+          [...childGroupIdsInput].map((childId) =>
+            Promise.resolve().then(() =>
+              accountGroupRepository.update(childId, { parentGroupId: savedGroup.id }),
+            ),
+          ),
+        )
+      })
       .then(() => {
         closeForm()
         load()
@@ -213,7 +255,7 @@ export function AccountGroupManagementScreen({
   const applyAssignments = (groupId: number) => {
     if (isSubmitting) return
     const changes = data.accounts
-      .filter((account) => !account.isSystemManaged)
+      .filter((account) => isEligibleForAssignmentPanel(account, groupId))
       .filter((account) => (account.accountGroupId === groupId) !== assignSelections.has(account.id))
       .map((account) => ({
         id: account.id,
@@ -249,6 +291,12 @@ export function AccountGroupManagementScreen({
     if (typeof formMode === 'number' && isDescendantGroup(data.groups, formMode, group.id)) return false
     return group.isActive || group.id === parentGroupIdInput
   })
+
+  /** 新規作成時のみ「既存のグループを子にする」候補として提示する、既存の最上位・アクティブな
+   * グループ(既に親を持つグループ・非アクティブなグループは対象外)。 */
+  const childGroupCandidates = data.groups.filter(
+    (group) => group.parentGroupId === null && group.isActive,
+  )
 
   return (
     <div className="account-group-management-screen">
@@ -314,7 +362,7 @@ export function AccountGroupManagementScreen({
                   <div className="account-group-assign-panel">
                     <ul className="account-group-assign-list">
                       {data.accounts
-                        .filter((account) => !account.isSystemManaged)
+                        .filter((account) => isEligibleForAssignmentPanel(account, group.id))
                         .map((account) => {
                           const currentLabel =
                             account.accountGroupId === null
@@ -375,6 +423,26 @@ export function AccountGroupManagementScreen({
               </option>
             ))}
           </select>
+
+          {formMode === 'create' && childGroupCandidates.length > 0 && (
+            <div className="account-group-children-select">
+              <span>{t('childGroupsLabel')}</span>
+              <ul>
+                {childGroupCandidates.map((group) => (
+                  <li key={group.id}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={childGroupIdsInput.has(group.id)}
+                        onChange={() => toggleChildGroupSelection(group.id)}
+                      />
+                      {group.name}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="account-group-form-actions">
             <button type="button" onClick={submitForm} disabled={nameInput.trim() === '' || isSubmitting}>

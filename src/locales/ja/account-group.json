@@ -4,6 +4,7 @@
   "nameLabel": "名称",
   "parentLabel": "親グループ",
   "parentUnspecified": "最上位(親グループなし)",
+  "childGroupsLabel": "既存のグループを子にする",
   "addButton": "グループを追加",
   "assignAccountsButton": "科目を割り当てる",
   "assignAccountsToggleCollapse": "科目の割り当てを閉じる",
