@@ -99,6 +99,21 @@ describe('AccountGroupManagementScreen', () => {
     )
   })
 
+  it('親グループ選択欄は、異なる親配下の同名グループを「親 > 子」形式のパス表示で区別できる', async () => {
+    const fixedCost = accountGroupRepository.create({ name: '固定費' })
+    const variableCost = accountGroupRepository.create({ name: '変動費' })
+    accountGroupRepository.create({ name: 'カード', parentGroupId: fixedCost.id })
+    accountGroupRepository.create({ name: 'カード', parentGroupId: variableCost.id })
+
+    renderScreen()
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'グループを追加' }))
+
+    const parentSelect = screen.getByLabelText('親グループ')
+    expect(within(parentSelect).getByText('固定費 > カード')).toBeInTheDocument()
+    expect(within(parentSelect).getByText('変動費 > カード')).toBeInTheDocument()
+  })
+
   it('同一親内で既存の別グループと同じ名前に変更しようとすると、UNIQUE制約違反(同期例外)がエラーメッセージとして表示され、操作ボタンが再び有効になる', async () => {
     accountGroupRepository.create({ name: '水道光熱費' })
     accountGroupRepository.create({ name: '通信費' })
@@ -179,5 +194,100 @@ describe('AccountGroupManagementScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: '戻る' }))
 
     expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
+  describe('科目の一括割り当て', () => {
+    it('「科目を割り当てる」を押すと、is_system_managedを除く全科目がチェックボックスで表示され、現在このグループに属する科目のみ初期チェックされる', async () => {
+      const group = accountGroupRepository.create({ name: '水道光熱費' })
+      accountRepository.create({
+        category: 'expense',
+        name: '電気代',
+        isReconcilable: null,
+        accountGroupId: group.id,
+      })
+      accountRepository.create({ category: 'expense', name: 'ガス代', isReconcilable: null })
+      accountRepository.create({
+        category: 'equity',
+        name: '初期残高(現金)',
+        isReconcilable: null,
+        isSystemManaged: true,
+      })
+
+      renderScreen()
+      const item = (await screen.findByText('水道光熱費')).closest('li')!
+
+      fireEvent.click(within(item).getByRole('button', { name: '科目を割り当てる' }))
+
+      expect(await screen.findByRole('checkbox', { name: /電気代/ })).toBeChecked()
+      expect(screen.getByRole('checkbox', { name: /ガス代/ })).not.toBeChecked()
+      expect(screen.queryByText('初期残高(現金)')).not.toBeInTheDocument()
+    })
+
+    it('チェックを入れて適用すると、その科目がこのグループに割り当てられる', async () => {
+      const group = accountGroupRepository.create({ name: '水道光熱費' })
+      accountRepository.create({ category: 'expense', name: 'ガス代', isReconcilable: null })
+
+      renderScreen()
+      const item = (await screen.findByText('水道光熱費')).closest('li')!
+      fireEvent.click(within(item).getByRole('button', { name: '科目を割り当てる' }))
+
+      fireEvent.click(await screen.findByRole('checkbox', { name: /ガス代/ }))
+      fireEvent.click(screen.getByRole('button', { name: '適用する' }))
+
+      await waitFor(() =>
+        expect(accountRepository.findAll().find((a) => a.name === 'ガス代')?.accountGroupId).toBe(
+          group.id,
+        ),
+      )
+    })
+
+    it('チェックを外して適用すると、その科目が未分類に戻る', async () => {
+      const group = accountGroupRepository.create({ name: '水道光熱費' })
+      accountRepository.create({
+        category: 'expense',
+        name: '電気代',
+        isReconcilable: null,
+        accountGroupId: group.id,
+      })
+
+      renderScreen()
+      const item = (await screen.findByText('水道光熱費')).closest('li')!
+      fireEvent.click(within(item).getByRole('button', { name: '科目を割り当てる' }))
+
+      fireEvent.click(await screen.findByRole('checkbox', { name: /電気代/ }))
+      fireEvent.click(screen.getByRole('button', { name: '適用する' }))
+
+      await waitFor(() =>
+        expect(
+          accountRepository.findAll().find((a) => a.name === '電気代')?.accountGroupId,
+        ).toBeNull(),
+      )
+    })
+
+    it('他のグループに属する科目をチェックして適用すると、そのグループから外れてこのグループに移動する', async () => {
+      const oldGroup = accountGroupRepository.create({ name: '通信費' })
+      const newGroup = accountGroupRepository.create({ name: '水道光熱費' })
+      accountRepository.create({
+        category: 'expense',
+        name: 'スマホ代',
+        isReconcilable: null,
+        accountGroupId: oldGroup.id,
+      })
+
+      renderScreen()
+      const item = (await screen.findByText('水道光熱費')).closest('li')!
+      fireEvent.click(within(item).getByRole('button', { name: '科目を割り当てる' }))
+
+      const checkbox = await screen.findByRole('checkbox', { name: /スマホ代/ })
+      expect(checkbox.closest('label')).toHaveTextContent('通信費')
+      fireEvent.click(checkbox)
+      fireEvent.click(screen.getByRole('button', { name: '適用する' }))
+
+      await waitFor(() =>
+        expect(accountRepository.findAll().find((a) => a.name === 'スマホ代')?.accountGroupId).toBe(
+          newGroup.id,
+        ),
+      )
+    })
   })
 })

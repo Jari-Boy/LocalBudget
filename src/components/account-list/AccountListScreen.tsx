@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
+import { buildAccountGroupPathLabels } from '../../domain/account-group/buildAccountGroupPathLabels'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { Budget } from '../../domain/budget/Budget'
@@ -226,6 +227,8 @@ export function AccountListScreen({
       .finally(() => setIsSubmitting(false))
   }
 
+  const groupPathLabelByGroupId = buildAccountGroupPathLabels(data.accountGroups)
+
   return (
     <div className="account-list-screen">
       <h2>{t('accountListTitle')}</h2>
@@ -331,7 +334,7 @@ export function AccountListScreen({
               .filter((group) => group.isActive || group.id === accountGroupIdInput)
               .map((group) => (
                 <option key={group.id} value={group.id}>
-                  {group.name}
+                  {groupPathLabelByGroupId.get(group.id) ?? group.name}
                 </option>
               ))}
           </select>

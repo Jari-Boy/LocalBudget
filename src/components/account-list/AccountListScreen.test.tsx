@@ -369,6 +369,22 @@ describe('AccountListScreen', () => {
       expect(screen.getByLabelText('グループ')).toHaveValue(String(group.id))
       expect(within(screen.getByLabelText('グループ')).getByText('水道光熱費')).toBeInTheDocument()
     })
+
+    it('グループ選択欄は、異なる親配下の同名グループを「親 > 子」形式のパス表示で区別できる', async () => {
+      const fixedCost = accountGroupRepository.create({ name: '固定費' })
+      const variableCost = accountGroupRepository.create({ name: '変動費' })
+      accountGroupRepository.create({ name: 'カード', parentGroupId: fixedCost.id })
+      accountGroupRepository.create({ name: 'カード', parentGroupId: variableCost.id })
+      accountRepository.create({ category: 'expense', name: '電気代', isReconcilable: null })
+
+      renderScreen()
+      await screen.findByText('電気代')
+      fireEvent.click(screen.getByRole('button', { name: '編集' }))
+
+      const groupSelect = screen.getByLabelText('グループ')
+      expect(within(groupSelect).getByText('固定費 > カード')).toBeInTheDocument()
+      expect(within(groupSelect).getByText('変動費 > カード')).toBeInTheDocument()
+    })
   })
 
   describe('非アクティブ化', () => {

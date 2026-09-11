@@ -6,6 +6,7 @@ import type {
   CreateAccountGroupInput,
   UpdateAccountGroupInput,
 } from '../../domain/account-group/AccountGroup'
+import { buildAccountGroupPathLabels } from '../../domain/account-group/buildAccountGroupPathLabels'
 import { flattenAccountGroupTree } from '../../domain/account-group/flattenAccountGroupTree'
 import { isDescendantGroup } from '../../domain/account-group/isDescendantGroup'
 import './AccountGroupManagementScreen.css'
@@ -28,6 +29,9 @@ interface AccountGroupDeactivator {
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
 }
+interface AccountUpdater {
+  update(id: number, input: { accountGroupId: number | null }): Account | Promise<Account>
+}
 
 export interface AccountGroupManagementScreenProps {
   accountGroupRepository: AccountGroupFinder &
@@ -35,12 +39,13 @@ export interface AccountGroupManagementScreenProps {
     AccountGroupUpdater &
     AccountGroupDeleter &
     AccountGroupDeactivator
-  accountRepository: AccountFinder
+  accountRepository: AccountFinder & AccountUpdater
   onBack: () => void
 }
 
 interface LoadedData {
   groups: AccountGroup[]
+  accounts: Account[]
   /** docs/schema/accounts.sqlのprevent_delete_account_group_with_childrenと同じ判定基準 */
   childCountByGroupId: Map<number, number>
   /** docs/schema/accounts.sqlのprevent_delete_account_group_with_accountsと同じ判定基準 */
@@ -59,6 +64,13 @@ type FormMode = 'create' | number | null
  * 0件の場合のみ許可し、循環参照(親グループの変更で自分自身の子孫を親に指定する操作)は
  * Repository層(isDescendantGroupを用いたSqlJsAccountGroupRepository)で最終的に
  * 拒否されるが、UI側の親グループ選択欄でも編集対象の子孫を事前に選択肢から除外する。
+ * 親グループ・科目選択欄には、異なる親配下の同名グループを区別できるよう
+ * buildAccountGroupPathLabelsによる「親 > 子」形式のパス表示ラベルを用いる
+ * (ユーザー指摘への対応)。各グループ行から「科目を割り当てる」を開くと、
+ * is_system_managedを除く全科目のチェックリストが表示され、複数科目をまとめて
+ * このグループへ割り当てる(または外す)ことができる(グループ側からの一括割り当て、
+ * ユーザー指摘への対応)。他グループに属する科目をチェックした場合はそのグループから
+ * 外れてこのグループへ移動する(1科目は0または1個のグループにのみ属する制約のため)。
  */
 export function AccountGroupManagementScreen({
   accountGroupRepository,
@@ -74,6 +86,10 @@ export function AccountGroupManagementScreen({
   const [error, setError] = useState<string | null>(null)
   /** 作成・編集・削除・非アクティブ化のいずれか進行中は全操作ボタンを無効化する(連打による二重実行防止) */
   const [isSubmitting, setIsSubmitting] = useState(false)
+  /** 科目の一括割り当てパネルを開いているグループ(null = 全パネル非表示、計画Issue #112後続対応) */
+  const [assignPanelGroupId, setAssignPanelGroupId] = useState<number | null>(null)
+  /** 一括割り当てパネルでチェックが入っている科目id(パネルを開いた時点の所属状況で初期化する) */
+  const [assignSelections, setAssignSelections] = useState<Set<number>>(new Set())
 
   const load = () => {
     void Promise.all([
@@ -93,7 +109,7 @@ export function AccountGroupManagementScreen({
           (accountCountByGroupId.get(account.accountGroupId) ?? 0) + 1,
         )
       }
-      setData({ groups, childCountByGroupId, accountCountByGroupId })
+      setData({ groups, accounts, childCountByGroupId, accountCountByGroupId })
     })
   }
 
@@ -168,6 +184,66 @@ export function AccountGroupManagementScreen({
       .finally(() => setIsSubmitting(false))
   }
 
+  const toggleAssignPanel = (group: AccountGroup) => {
+    if (assignPanelGroupId === group.id) {
+      setAssignPanelGroupId(null)
+      return
+    }
+    setAssignSelections(
+      new Set(
+        data.accounts.filter((account) => account.accountGroupId === group.id).map((account) => account.id),
+      ),
+    )
+    setError(null)
+    setAssignPanelGroupId(group.id)
+  }
+
+  const toggleAccountSelection = (accountId: number) => {
+    setAssignSelections((prev) => {
+      const next = new Set(prev)
+      if (next.has(accountId)) {
+        next.delete(accountId)
+      } else {
+        next.add(accountId)
+      }
+      return next
+    })
+  }
+
+  const applyAssignments = (groupId: number) => {
+    if (isSubmitting) return
+    const changes = data.accounts
+      .filter((account) => !account.isSystemManaged)
+      .filter((account) => (account.accountGroupId === groupId) !== assignSelections.has(account.id))
+      .map((account) => ({
+        id: account.id,
+        accountGroupId: assignSelections.has(account.id) ? groupId : null,
+      }))
+
+    if (changes.length === 0) {
+      setAssignPanelGroupId(null)
+      return
+    }
+
+    setIsSubmitting(true)
+    setError(null)
+    void Promise.all(
+      changes.map((change) =>
+        Promise.resolve().then(() =>
+          accountRepository.update(change.id, { accountGroupId: change.accountGroupId }),
+        ),
+      ),
+    )
+      .then(() => {
+        setAssignPanelGroupId(null)
+        load()
+      })
+      .catch(() => setError(t('assignAccountsError')))
+      .finally(() => setIsSubmitting(false))
+  }
+
+  const pathLabelByGroupId = buildAccountGroupPathLabels(data.groups)
+
   const parentOptions = data.groups.filter((group) => {
     if (group.id === formMode) return false
     if (typeof formMode === 'number' && isDescendantGroup(data.groups, formMode, group.id)) return false
@@ -198,6 +274,16 @@ export function AccountGroupManagementScreen({
                     )}
                   </span>
                   <span className="account-group-list-actions">
+                    <button
+                      type="button"
+                      onClick={() => toggleAssignPanel(group)}
+                      aria-expanded={assignPanelGroupId === group.id}
+                      disabled={isSubmitting}
+                    >
+                      {assignPanelGroupId === group.id
+                        ? t('assignAccountsToggleCollapse')
+                        : t('assignAccountsButton')}
+                    </button>
                     <button type="button" onClick={() => openEditForm(group)} disabled={isSubmitting}>
                       {t('editButton')}
                     </button>
@@ -223,6 +309,37 @@ export function AccountGroupManagementScreen({
                     )}
                   </span>
                 </div>
+
+                {assignPanelGroupId === group.id && (
+                  <div className="account-group-assign-panel">
+                    <ul className="account-group-assign-list">
+                      {data.accounts
+                        .filter((account) => !account.isSystemManaged)
+                        .map((account) => {
+                          const currentLabel =
+                            account.accountGroupId === null
+                              ? t('assignAccountsUnclassifiedLabel')
+                              : (pathLabelByGroupId.get(account.accountGroupId) ?? '')
+                          return (
+                            <li key={account.id}>
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={assignSelections.has(account.id)}
+                                  onChange={() => toggleAccountSelection(account.id)}
+                                  disabled={isSubmitting}
+                                />
+                                {account.name}({currentLabel})
+                              </label>
+                            </li>
+                          )
+                        })}
+                    </ul>
+                    <button type="button" onClick={() => applyAssignments(group.id)} disabled={isSubmitting}>
+                      {t('assignAccountsApplyButton')}
+                    </button>
+                  </div>
+                )}
               </li>
             )
           })}
@@ -254,7 +371,7 @@ export function AccountGroupManagementScreen({
             <option value="">{t('parentUnspecified')}</option>
             {parentOptions.map((group) => (
               <option key={group.id} value={group.id}>
-                {group.name}
+                {pathLabelByGroupId.get(group.id) ?? group.name}
               </option>
             ))}
           </select>
