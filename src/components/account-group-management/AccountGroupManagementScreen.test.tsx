@@ -251,6 +251,45 @@ describe('AccountGroupManagementScreen', () => {
         expect(updated?.parentGroupId).toBe(newParent?.id)
       })
     })
+
+    it('親グループとして既存グループの子孫を選ぶと、その祖先グループは子グループ候補から除外される(循環参照の防止)', async () => {
+      const grandparent = accountGroupRepository.create({ name: '固定費' })
+      const parent = accountGroupRepository.create({ name: 'クレジットカード', parentGroupId: grandparent.id })
+      renderScreen()
+      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: 'グループを追加' }))
+      fireEvent.change(screen.getByLabelText('名称'), { target: { value: '楽天カード' } })
+      fireEvent.change(screen.getByLabelText('親グループ'), { target: { value: String(parent.id) } })
+
+      expect(screen.queryByRole('checkbox', { name: '固定費' })).not.toBeInTheDocument()
+    })
+
+    it('子として選択済みのグループが、後から選んだ親グループの祖先になった場合、送信時にそのグループの親付け替えは行われない', async () => {
+      const ancestor = accountGroupRepository.create({ name: '固定費' })
+      const descendant = accountGroupRepository.create({
+        name: 'クレジットカード',
+        parentGroupId: ancestor.id,
+      })
+      renderScreen()
+      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: 'グループを追加' }))
+      fireEvent.change(screen.getByLabelText('名称'), { target: { value: '楽天カード' } })
+      // 親を選ぶ前に「固定費」を子として一旦チェックする
+      fireEvent.click(await screen.findByRole('checkbox', { name: '固定費' }))
+      // その後、固定費の子孫(クレジットカード)を親に選び直す(固定費が候補から消える)
+      fireEvent.change(screen.getByLabelText('親グループ'), { target: { value: String(descendant.id) } })
+      fireEvent.click(screen.getByRole('button', { name: '作成する' }))
+
+      // 新規グループは正常に作成され、一覧に反映される(エラーにならず孤立しない)
+      expect(await screen.findByText('楽天カード')).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      const newGroup = accountGroupRepository.findAll().find((g) => g.name === '楽天カード')
+      expect(newGroup?.parentGroupId).toBe(descendant.id)
+      // 「固定費」自体の親は変更されず、循環参照は作られない
+      expect(accountGroupRepository.findById(ancestor.id)?.parentGroupId).toBeNull()
+    })
   })
 
   describe('科目の一括割り当て', () => {

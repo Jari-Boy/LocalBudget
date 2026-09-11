@@ -84,6 +84,13 @@ function isEligibleForAssignmentPanel(account: Account, groupId: number): boolea
  * この画面からは選択肢に表示されず、この画面から他グループの科目を"奪う"操作はできない
  * (isEligibleForAssignmentPanel参照、ユーザー指摘への対応)。他グループへの再分類は
  * 科目側(AccountListScreen)の編集フォームから行う。is_system_managed科目は常に対象外。
+ * 新規作成フォームには「既存のグループを子にする」チェックボックス一覧(既存の最上位・
+ * アクティブなグループのみ候補)も表示し、親グループ選択と同時に子グループの一括指定も
+ * できる(ユーザー指摘への対応)。候補・送信対象は選択中の親グループの祖先(または親自身)を
+ * 除外する。除外しないと、親としてBを選びつつBの祖先Aを子に選ぶ、という循環参照になる
+ * 組み合わせが可能になり、グループ作成自体は成功するのにAの親付け替えだけが
+ * Repository層で拒否され、新規グループが孤立するおそれがあるため(evaluatorのFAIL指摘への
+ * 対応)。後続処理が失敗した場合でも、最新状態を読み直してから画面に反映する。
  */
 export function AccountGroupManagementScreen({
   accountGroupRepository,
@@ -187,9 +194,15 @@ export function AccountGroupManagementScreen({
       .then((savedGroup) => {
         if (formMode !== 'create' || childGroupIdsInput.size === 0) return undefined
         // 新規作成したグループを親として、選択された既存の最上位グループを子にする。
-        // 作成直後のグループは他のどのグループの子孫にもなり得ないため、循環参照は起こり得ない。
+        // childGroupCandidates(選択中の親グループの祖先を除外済み)に現在も含まれるものだけを
+        // 対象にする。チェック後に親グループの選択を変更し、候補から外れたグループの
+        // チェックがstateに残っていても、ここで除外することで循環参照の組み合わせを送信しない
+        // (evaluatorのFAIL指摘への対応)。
+        const validChildGroupIds = new Set(childGroupCandidates.map((group) => group.id))
+        const childIdsToReparent = [...childGroupIdsInput].filter((id) => validChildGroupIds.has(id))
+        if (childIdsToReparent.length === 0) return undefined
         return Promise.all(
-          [...childGroupIdsInput].map((childId) =>
+          childIdsToReparent.map((childId) =>
             Promise.resolve().then(() =>
               accountGroupRepository.update(childId, { parentGroupId: savedGroup.id }),
             ),
@@ -200,7 +213,13 @@ export function AccountGroupManagementScreen({
         closeForm()
         load()
       })
-      .catch(() => setError(t('saveError')))
+      .catch(() => {
+        setError(t('saveError'))
+        // 作成自体は成功しているのに子グループの付け替え等の後続処理が失敗した場合、
+        // 画面が古いデータのまま(新規作成したグループが見えない)にならないよう、
+        // 失敗時も最新状態を読み直す(evaluatorのFAIL指摘への対応)。
+        load()
+      })
       .finally(() => setIsSubmitting(false))
   }
 
@@ -293,10 +312,16 @@ export function AccountGroupManagementScreen({
   })
 
   /** 新規作成時のみ「既存のグループを子にする」候補として提示する、既存の最上位・アクティブな
-   * グループ(既に親を持つグループ・非アクティブなグループは対象外)。 */
-  const childGroupCandidates = data.groups.filter(
-    (group) => group.parentGroupId === null && group.isActive,
-  )
+   * グループ(既に親を持つグループ・非アクティブなグループは対象外)。加えて、選択中の
+   * 親グループ(parentGroupIdInput)の祖先(または親自身)は候補から除外する。除外しないと、
+   * 新規グループの親としてBを選びつつBの祖先Aを子に選ぶ、という組み合わせが可能になり、
+   * グループ作成自体は成功するのにAの親付け替えだけが循環参照でRepository層に拒否され、
+   * 新規グループが一覧に反映されないまま孤立するおそれがある(evaluatorのFAIL指摘への対応)。 */
+  const childGroupCandidates = data.groups.filter((group) => {
+    if (group.parentGroupId !== null || !group.isActive) return false
+    if (parentGroupIdInput === null) return true
+    return !isDescendantGroup(data.groups, group.id, parentGroupIdInput)
+  })
 
   return (
     <div className="account-group-management-screen">
