@@ -12,7 +12,7 @@
  * 依存するためNode/Vitestでは検証できず、Playwrightで検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from '../db/createTestDatabase'
 import { runMigrations } from '../db/migrations'
@@ -56,6 +56,10 @@ beforeEach(async () => {
   autoSaveController = createStubAutoSaveController()
   storageAdapter = createStubStorageAdapter()
   registry = createRepositoryRegistry(db, autoSaveController, storageAdapter)
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('createRepositoryRegistry', () => {
@@ -120,6 +124,13 @@ describe('createRepositoryRegistry', () => {
         dayOfMonth: 1,
         householdMemberId: memberId,
       })
+      db.run(
+        `INSERT INTO journal_entries (entry_date, source_type, generated_from_rule_id, household_member_id)
+         VALUES ('2026-08-01', 'recurring_generated', ?, ?)`,
+        [rule.id, memberId],
+      )
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-09-01T00:00:00Z'))
 
       const entry = registry.recurringTransactionProposal.confirm({
         ruleId: rule.id,

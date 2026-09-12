@@ -108,6 +108,9 @@ describe('confirm', () => {
       dayOfMonth: 1,
       householdMemberId: memberId,
     })
+    insertGeneratedEntry(rule.id, '2026-08-01')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-01T00:00:00Z'))
 
     const entry = api.confirm({ ruleId: rule.id, dueDate: '2026-09-01' })
 
@@ -127,6 +130,9 @@ describe('confirm', () => {
       dayOfMonth: 1,
       householdMemberId: memberId,
     })
+    insertGeneratedEntry(rule.id, '2026-08-01')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-01T00:00:00Z'))
 
     const entry = api.confirm({ ruleId: rule.id, dueDate: '2026-09-01', amount: 85000 })
 
@@ -145,6 +151,9 @@ describe('confirm', () => {
       householdMemberId: memberId,
       counterpartyId,
     })
+    insertGeneratedEntry(rule.id, '2026-08-01')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-01T00:00:00Z'))
 
     const entry = api.confirm({ ruleId: rule.id, dueDate: '2026-09-01' })
 
@@ -163,6 +172,9 @@ describe('confirm', () => {
       frequency: 'monthly',
       dayOfMonth: 1,
     })
+    insertGeneratedEntry(rule.id, '2026-08-01')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-01T00:00:00Z'))
 
     expect(() => api.confirm({ ruleId: rule.id, dueDate: '2026-09-01' })).toThrow(
       RecurringTransactionHouseholdMemberRequiredError,
@@ -178,6 +190,9 @@ describe('confirm', () => {
       frequency: 'monthly',
       dayOfMonth: 1,
     })
+    insertGeneratedEntry(rule.id, '2026-08-01')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-01T00:00:00Z'))
 
     const entry = api.confirm({
       ruleId: rule.id,
@@ -205,5 +220,57 @@ describe('confirm', () => {
 
   it('存在しないruleIdを指定するとエラーになる', () => {
     expect(() => api.confirm({ ruleId: 9999, dueDate: '2026-09-01' })).toThrow()
+  })
+
+  it('スケジュールに合致しない日付を指定するとエラーになる(RPC境界の入力を無検証で信用しない)', () => {
+    const rule = ruleRepository.create({
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+      householdMemberId: memberId,
+    })
+
+    expect(() => api.confirm({ ruleId: rule.id, dueDate: '2026-09-15' })).toThrow()
+  })
+
+  it('未確認の対象日を飛び越えて後の対象日だけを確認すると、飛び越えた対象日が消失せずエラーになる(Review Attempt 1で再現・修正)', () => {
+    const rule = ruleRepository.create({
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+      householdMemberId: memberId,
+    })
+    insertGeneratedEntry(rule.id, '2026-01-01')
+
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-01T00:00:00Z'))
+
+    expect(api.listPending()).toEqual([
+      { ruleId: rule.id, dueDate: '2026-02-01' },
+      { ruleId: rule.id, dueDate: '2026-03-01' },
+      { ruleId: rule.id, dueDate: '2026-04-01' },
+    ])
+
+    expect(() => api.confirm({ ruleId: rule.id, dueDate: '2026-04-01' })).toThrow()
+
+    // 飛び越え確認は拒否され、2026-02-01・2026-03-01は依然として提案され続ける(消失しない)
+    expect(api.listPending()).toEqual([
+      { ruleId: rule.id, dueDate: '2026-02-01' },
+      { ruleId: rule.id, dueDate: '2026-03-01' },
+      { ruleId: rule.id, dueDate: '2026-04-01' },
+    ])
+
+    // 昇順に確認していけば、最終的に全て仕訳化できる
+    api.confirm({ ruleId: rule.id, dueDate: '2026-02-01' })
+    api.confirm({ ruleId: rule.id, dueDate: '2026-03-01' })
+    api.confirm({ ruleId: rule.id, dueDate: '2026-04-01' })
+
+    expect(api.listPending()).toEqual([])
   })
 })
