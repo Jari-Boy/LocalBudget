@@ -140,11 +140,13 @@ function findEntryItem(page: Page, exactMemo: string) {
 }
 
 /**
- * ホーム画面から割勘対象選択画面を開き、指定した摘要の仕訳をチェックボックスで
- * 選択して「選択した仕訳で割勘する」を押し、割勘起票フォームへ遷移する
- * (計画Issue #40 Attempt 4、複数選択対応)。
+ * ホーム画面から仕訳ハブ→割勘サブハブ(計画Issue #118)を経由して割勘対象選択画面を開き、
+ * 指定した摘要の仕訳をチェックボックスで選択して「選択した仕訳で割勘する」を押し、
+ * 割勘起票フォームへ遷移する(計画Issue #40 Attempt 4、複数選択対応)。
  */
 async function selectEntriesForSplitting(page: Page, memos: string[]) {
+  await page.getByRole('button', { name: '仕訳' }).click()
+  await page.getByRole('button', { name: '割勘', exact: true }).click()
   await page.getByRole('button', { name: '割勘する' }).click()
   for (const memo of memos) {
     await findEntryItem(page, memo)
@@ -162,7 +164,15 @@ async function selectEntriesForSplitting(page: Page, memos: string[]) {
 async function openSplittingForm(page: Page, data: BaseData, originalMemo: string) {
   await selectEntriesForSplitting(page, [originalMemo])
 
-  await page.getByLabel('プロジェクト').selectOption(String(data.projectId))
+  // 割勘対象選択画面(前の画面)のJournalEntryFilterFormも同じ「プロジェクト」ラベルの
+  // 絞り込みselectを持つため、画面遷移直後の一瞬page.getByLabel('プロジェクト')が
+  // 前の画面側の要素に解決されてしまうことがある(計画Issue #118のルーティング刷新後に
+  // 顕在化)。割勘起票フォーム自身のコンテナ(.expense-splitting-form)に絞り込んで
+  // 一意に解決する。
+  await page
+    .locator('.expense-splitting-form')
+    .getByLabel('プロジェクト')
+    .selectOption(String(data.projectId))
 }
 
 /**
@@ -191,6 +201,8 @@ test.describe('割勘対象選択画面', () => {
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
 
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '割勘', exact: true }).click()
     await page.getByRole('button', { name: '割勘する' }).click()
     await expect(page.getByText('絞り込み確認用の食事代', { exact: true })).not.toBeVisible()
   })
@@ -224,6 +236,8 @@ test.describe('割勘対象選択画面', () => {
     await page.reload()
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '割勘', exact: true }).click()
     await page.getByRole('button', { name: '割勘する' }).click()
 
     await expect(page.getByText('費用科目あり除外確認用の食事代')).toBeVisible()
@@ -257,6 +271,8 @@ test.describe('割勘対象選択画面', () => {
     await page.reload()
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '割勘', exact: true }).click()
     await page.getByRole('button', { name: '割勘する' }).click()
     await expect(page.getByText('割勘用食費の絞り込みテスト')).toBeVisible()
     await expect(page.getByText('交通費の絞り込みテスト')).toBeVisible()
@@ -285,6 +301,7 @@ test.describe('割勘起票', () => {
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     // 仕訳一覧(確認専用画面)から元仕訳の詳細画面に遷移し、割勘の履歴が表示されることを確認
+    await page.getByRole('button', { name: '仕訳' }).click()
     await page.getByRole('button', { name: '仕訳一覧' }).click()
     const originalItem = findEntryItem(page, '世帯メンバー間割勘テスト用の食事代')
     await originalItem.getByRole('button', { name: '詳細を見る' }).click()
@@ -352,7 +369,7 @@ test.describe('割勘起票', () => {
 
     await selectEntriesForSplitting(page, ['その場作成テスト用の食事代'])
 
-    await page.getByLabel('プロジェクト').selectOption('__new__')
+    await page.locator('.expense-splitting-form').getByLabel('プロジェクト').selectOption('__new__')
     await page.getByLabel('新しいプロジェクトの名前').fill('26/8その場作成バッチ')
     await page.getByRole('button', { name: '作成する' }).click()
     await expect(page.getByLabel('新しいプロジェクトの名前')).not.toBeVisible()
@@ -362,6 +379,8 @@ test.describe('割勘起票', () => {
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
 
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '割勘', exact: true }).click()
     await page.getByRole('button', { name: '精算する', exact: true }).click()
     await expect(page.getByLabel('プロジェクト').locator('option', { hasText: '26/8その場作成バッチ' })).toHaveCount(
       1,
@@ -409,7 +428,7 @@ test.describe('割勘起票', () => {
     await createOriginalExpenseEntry(page, data, '複数選択テスト用の食事代2', 500)
 
     await selectEntriesForSplitting(page, ['複数選択テスト用の食事代1', '複数選択テスト用の食事代2'])
-    await page.getByLabel('プロジェクト').selectOption(String(data.projectId))
+    await page.locator('.expense-splitting-form').getByLabel('プロジェクト').selectOption(String(data.projectId))
 
     // 複数選択時は「按分する金額」欄は表示されず、配分方法に「金額を直接指定する」も出ない
     await expect(page.getByLabel('按分する金額')).not.toBeVisible()
@@ -432,6 +451,7 @@ test.describe('割勘起票', () => {
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
     // 両方の元仕訳の詳細画面から、同じ1件の割勘仕訳への履歴を辿れることを確認
+    await page.getByRole('button', { name: '仕訳' }).click()
     await page.getByRole('button', { name: '仕訳一覧' }).click()
     const splitItem = findEntryItem(page, '2件の支出の割勘')
     await expect(splitItem).toBeVisible()
@@ -465,6 +485,8 @@ test.describe('割勘起票', () => {
     // 割勘によって作られた仕訳(世帯外の相手との割勘は費用科目1行のみのため、費用科目
     // 1件限定の絞り込みだけではすり抜けてしまう)自身が、割勘対象選択画面の候補に
     // 再び現れないことを確認する
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '割勘', exact: true }).click()
     await page.getByRole('button', { name: '割勘する' }).click()
     await expect(page.getByText('割勘の割勘防止確認用の食事代', { exact: true })).not.toBeVisible()
     await expect(page.getByText('割勘の割勘防止確認用の食事代の割勘', { exact: true })).not.toBeVisible()
@@ -491,6 +513,8 @@ test.describe('精算・履歴・取り消し', () => {
   test('精算(立替金の消込)を起票できる', async ({ page }) => {
     const data = await setUpSplitEntryForSettlement(page)
 
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '割勘', exact: true }).click()
     await page.getByRole('button', { name: '精算する', exact: true }).click()
     await page.getByLabel('プロジェクト').selectOption(String(data.projectId))
     await page.getByLabel('精算方向').selectOption('liability')
@@ -512,14 +536,17 @@ test.describe('精算・履歴・取り消し', () => {
     const data = await setUpSplitEntryForSettlement(page)
 
     // 精算前の取り消し
+    await page.getByRole('button', { name: '仕訳' }).click()
     await page.getByRole('button', { name: '仕訳一覧' }).click()
     const splitItem = findEntryItem(page, '精算テスト用の食事代の割勘')
     await splitItem.getByRole('button', { name: '詳細を見る' }).click()
     await page.getByRole('button', { name: 'この割勘を取り消す' }).click()
     await waitForJournalEntryCount(page, 1)
 
-    // 削除後はjournal-entry-list画面に戻る(App.tsxのonDeletedコールバック)ため、
-    // 割勘対象選択画面(home画面のみに入口がある)を開く前に一度homeへ戻る
+    // 削除後はjournal-entry-list画面に戻る(onDeletedコールバック、ブラウザ履歴経由)。
+    // 割勘対象選択画面を開く前に、仕訳ハブ→ホームの順に「戻る」で遡る。
+    await page.getByRole('button', { name: '戻る' }).click()
+    await expect(page.getByRole('heading', { name: '仕訳' })).toBeVisible()
     await page.getByRole('button', { name: '戻る' }).click()
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
@@ -531,6 +558,8 @@ test.describe('精算・履歴・取り消し', () => {
     await waitForJournalEntryCount(page, 2)
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '割勘', exact: true }).click()
     await page.getByRole('button', { name: '精算する', exact: true }).click()
     await page.getByLabel('プロジェクト').selectOption(String(data.projectId))
     await page.getByLabel('精算方向').selectOption('liability')
@@ -541,6 +570,9 @@ test.describe('精算・履歴・取り消し', () => {
     await unsettledItem.getByRole('button', { name: '精算を確定する' }).click()
     await waitForJournalEntryCount(page, 3)
 
+    // 精算画面の「戻る」は割勘サブハブへ、そこからさらに「戻る」で仕訳ハブへ戻る
+    await page.getByRole('button', { name: '戻る' }).click()
+    await expect(page.getByRole('heading', { name: '割勘', exact: true })).toBeVisible()
     await page.getByRole('button', { name: '戻る' }).click()
     await page.getByRole('button', { name: '仕訳一覧' }).click()
     const settledSplitItem = findEntryItem(page, '精算テスト用の食事代の割勘')

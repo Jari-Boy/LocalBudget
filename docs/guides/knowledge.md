@@ -137,7 +137,7 @@
 ## e2e/配下はtsconfig.app.jsonのinclude対象外のため、npm run typecheckの型チェックを受けない
 
 **内容**: `tsconfig.app.json`の`include`は`["src"]`のみであり、`e2e/*.spec.ts`はこの対象に含まれない。`npm run typecheck`(`tsc -p tsconfig.app.json --noEmit`)は`src`配下のみを検査するため、`e2e/`配下のPlaywrightテストコードに存在する型エラーはCIの型チェックでは検出されない(Playwright自体はテストランナーが型注釈を無視して直接実行するため、テストの実行自体には影響しない)。この性質により、例えば`e2e/worker-rpc.spec.ts`の`client.account.create(...)`(Comlinkの型定義上`client.account`は`Comlink.proxy()`が付与されていないため`Promisify<AccountRepository>`= `Promise<AccountRepository>`と推論され、本来`.create`は存在しないはずの型)が、実際にはTypeScriptの型チェックに一度も晒されずに動作し続けている。同じ`RepositoryRegistry`の未`Comlink.proxy()`プロパティ(`account`等)を`src/`配下(型チェック対象)のコンポーネントから初めて呼び出そうとした際(Issue #31の`App.tsx`)に、この型エラーが初めて表面化した。
-**参考**: `tsconfig.app.json`、`playwright.config.ts`、`src/App.tsx`(`Comlink.Remote<T>`型アサーション)、`docs/decisions.md`「App.tsxではRepositoryRegistryの未Comlink.proxy()プロパティをComlink.Remote<T>型アサーションで扱う」、Issue #31
+**参考**: `tsconfig.app.json`、`playwright.config.ts`、`src/routes/AppRoutes.tsx`(`Comlink.Remote<T>`型アサーション。計画Issue #118のルーティング刷新に伴い`App.tsx`から移動)、`docs/decisions.md`「App.tsxではRepositoryRegistryの未Comlink.proxy()プロパティをComlink.Remote<T>型アサーションで扱う」、Issue #31
 
 ## 楽天カード・楽天銀行・PayPayカードの組み込みマッピング定義に採用した実際のCSVヘッダー・列構成
 

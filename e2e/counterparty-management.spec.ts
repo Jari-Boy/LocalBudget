@@ -49,6 +49,7 @@ test.describe('取引先管理画面', () => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
+    await page.getByRole('button', { name: 'マスタ管理' }).click()
     await page.getByRole('button', { name: '取引先を管理する' }).click()
     await expect(page.getByText('登録済みの取引先がありません')).toBeVisible()
 
@@ -107,7 +108,9 @@ test.describe('取引先管理画面', () => {
     await osakaItem.getByRole('button', { name: '非アクティブ化' }).click()
     await expect(osakaItem).toContainText('非アクティブ')
 
-    // トップ画面へ戻る
+    // トップ画面へ戻る(マスタ管理ハブ画面を経由する)
+    await page.getByRole('button', { name: '戻る' }).click()
+    await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()
     await page.getByRole('button', { name: '戻る' }).click()
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
   })
@@ -145,6 +148,7 @@ test.describe('取引先管理画面', () => {
     await waitForCounterpartyCreated(page, 'イオン')
     await page.reload()
 
+    await page.getByRole('button', { name: 'マスタ管理' }).click()
     await page.getByRole('button', { name: '取引先を管理する' }).click()
     const item = page.getByRole('listitem').filter({ hasText: 'イオン' })
     await expect(item.getByRole('button', { name: '削除' })).toHaveCount(0)
@@ -155,6 +159,7 @@ test.describe('取引先管理画面', () => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
+    await page.getByRole('button', { name: 'マスタ管理' }).click()
     await page.getByRole('button', { name: '取引先を管理する' }).click()
     await page.getByRole('button', { name: '取引先を追加' }).click()
     await page.getByLabel('名称').fill('イオン')
@@ -179,8 +184,10 @@ test.describe('取引先管理画面', () => {
       await client.counterparty.addPattern(counterparty.id, 'AEON')
     })
     await waitForPatternCount(page, 'イオン', 1)
+    // HashRouter導入(計画Issue #118)によりリロード後もURL(/master/counterparties)が
+    // 維持されるため、旧実装(常にトップ画面へ戻っていた)と異なりホーム経由の
+    // 再ナビゲーションは不要になった。
     await page.reload()
-    await page.getByRole('button', { name: '取引先を管理する' }).click()
 
     const reopenedItem = page.getByRole('listitem').filter({ hasText: 'イオン' })
     await expect(reopenedItem.getByRole('button', { name: '登録済みパターン: 1件' })).toBeVisible()

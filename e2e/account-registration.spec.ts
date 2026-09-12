@@ -57,6 +57,7 @@ async function waitForHouseholdMemberCreated(page: Page, memberName: string) {
  * の入口ステップまで遷移する。
  */
 async function openAccountRegistrationFlow(page: Page) {
+  await page.getByRole('button', { name: 'マスタ管理' }).click()
   await page.getByRole('button', { name: '科目を管理する' }).click()
   await page.getByRole('button', { name: '科目を追加する' }).click()
 }
@@ -70,6 +71,7 @@ async function openAccountRegistrationFlow(page: Page) {
  * 挟まずアプリ本体が使う既存Worker上でUI操作により削除する。
  */
 async function deleteDefaultHouseholdMemberViaUi(page: Page) {
+  await page.getByRole('button', { name: 'マスタ管理' }).click()
   await page.getByRole('button', { name: '世帯メンバーを管理する' }).click()
   const item = page
     .getByRole('listitem')
@@ -77,6 +79,8 @@ async function deleteDefaultHouseholdMemberViaUi(page: Page) {
   await expect(item).toBeVisible()
   await item.getByRole('button', { name: '削除' }).click()
   await expect(item).toHaveCount(0)
+  await page.getByRole('button', { name: '戻る' }).click()
+  await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()
   await page.getByRole('button', { name: '戻る' }).click()
   await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 }

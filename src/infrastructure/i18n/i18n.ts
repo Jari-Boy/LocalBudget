@@ -3,6 +3,7 @@ import { initReactI18next } from 'react-i18next'
 import common from '../../locales/ja/common.json'
 import account from '../../locales/ja/account.json'
 import accountGroup from '../../locales/ja/account-group.json'
+import master from '../../locales/ja/master.json'
 import journal from '../../locales/ja/journal.json'
 import statementImport from '../../locales/ja/statementImport.json'
 import counterparty from '../../locales/ja/counterparty.json'
@@ -23,6 +24,9 @@ import expenseSplitting from '../../locales/ja/expenseSplitting.json'
  * financialStatement名前空間は計画Issue #34(財務諸表PL/BS表示UI)で追加した。
  * expenseSplitting名前空間は計画Issue #40(割勘/精算UI)で追加した。
  * accountGroup名前空間は計画Issue #112(勘定科目グループのCRUD・科目への割り当てUI)で追加した。
+ * master名前空間は計画Issue #118(react-routerベースのナビゲーション基盤刷新)で、
+ * マスタ管理ハブ画面(/master)がaccount/counterparty/householdMember/project等
+ * 複数ドメインの名前空間をまたいで再利用するため新設した。
  */
 void i18n.use(initReactI18next).init({
   lng: 'ja',
@@ -33,6 +37,7 @@ void i18n.use(initReactI18next).init({
       common,
       account,
       accountGroup,
+      master,
       journal,
       statementImport,
       counterparty,
