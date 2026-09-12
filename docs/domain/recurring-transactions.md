@@ -140,7 +140,7 @@
 
 ### 2.3 他ドメインへの影響
 
-`journal_entries`に`generated_from_rule_id`カラムの追加が必要(上記DDL参照)。方向性が固まり次第、[journal.md 2章](./journal.md#2-仕訳マスタjournal_entriesjournal_lines)に反映する。
+`journal_entries`に`generated_from_rule_id`カラムを追加した(上記DDL参照)。[journal.md 2.1](./journal.md#21-フィールド定義)に反映済み(計画Issue #121)。
 
 ---
 

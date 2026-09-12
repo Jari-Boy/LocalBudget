@@ -165,6 +165,7 @@
 | `currency` | 通貨コード | ISO 4217、MVPでは`JPY`固定 |
 | `source_type` | 作成経路 | ENUM、既定`manual`([1.7 作成経路(source_type)](#17-作成経路source_type)参照) |
 | `household_member_id` | 起票者 | FK、NOT NULL。この仕訳を切った主体([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照、計画Issue #88) |
+| `generated_from_rule_id` | 生成元の定期取引ルール | FK、任意。`source_type = 'recurring_generated'`の仕訳でのみ値を持ち、手入力・外部明細取込由来の仕訳では`NULL`。参照のみで複式簿記の整合性検証には関与しない([recurring-transactions.md 1.5](./recurring-transactions.md#15-生成された仕訳との関係)参照、計画Issue #121) |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
 
