@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 /**
- * 科目一覧・管理画面(計画Issue #70で新設、計画Issue #95で編集・削除・非アクティブ化を追加)の
- * コンポーネントテスト。isSystemManaged科目を除いた登録済み全科目が、区分を問わずフラットな
- * 一覧として名称・残高・(あれば)世帯メンバー名とともに表示されること、0件時の空状態表示、
- * 戻る操作に加え、名称・名義の編集、参照(仕訳・予算・定期取引ルール)が無い科目のみの削除、
+ * 科目一覧・管理画面(計画Issue #70で新設、計画Issue #95で編集・削除・非アクティブ化を追加、
+ * 計画Issue #112で編集フォームへのグループ割り当て欄を追加)のコンポーネントテスト。
+ * isSystemManaged科目を除いた登録済み全科目が、区分を問わずフラットな一覧として名称・残高・
+ * (あれば)世帯メンバー名とともに表示されること、0件時の空状態表示、戻る操作に加え、
+ * 名称・名義・グループの編集、参照(仕訳・予算・定期取引ルール)が無い科目のみの削除、
  * 非アクティブ化を、sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテスト
  * として検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
@@ -16,6 +17,7 @@ import i18n from '../../infrastructure/i18n/i18n'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
+import { SqlJsAccountGroupRepository } from '../../infrastructure/db/SqlJsAccountGroupRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsBudgetRepository } from '../../infrastructure/db/SqlJsBudgetRepository'
@@ -24,6 +26,7 @@ import { AccountListScreen } from './AccountListScreen'
 
 let db: Database
 let accountRepository: SqlJsAccountRepository
+let accountGroupRepository: SqlJsAccountGroupRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
 let budgetRepository: SqlJsBudgetRepository
@@ -33,6 +36,7 @@ beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
   accountRepository = new SqlJsAccountRepository(db)
+  accountGroupRepository = new SqlJsAccountGroupRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
   budgetRepository = new SqlJsBudgetRepository(db)
@@ -46,6 +50,7 @@ function renderScreen(onBack: () => void = vi.fn()) {
     <I18nextProvider i18n={i18n}>
       <AccountListScreen
         accountRepository={accountRepository}
+        accountGroupRepository={accountGroupRepository}
         journalEntryRepository={journalEntryRepository}
         householdMemberRepository={householdMemberRepository}
         budgetRepository={budgetRepository}
@@ -301,6 +306,84 @@ describe('AccountListScreen', () => {
       expect(debitItem.querySelector('button[data-action="delete"]')).toBeNull()
       const creditItem = screen.getByText('未払金').closest('li')!
       expect(creditItem.querySelector('button[data-action="delete"]')).toBeNull()
+    })
+  })
+
+  describe('グループ割り当て', () => {
+    it('編集フォームでグループを選択して割り当てることができる', async () => {
+      const group = accountGroupRepository.create({ name: '水道光熱費' })
+      accountRepository.create({ category: 'expense', name: '電気代', isReconcilable: null })
+
+      renderScreen()
+      await screen.findByText('電気代')
+
+      fireEvent.click(screen.getByRole('button', { name: '編集' }))
+      fireEvent.change(screen.getByLabelText('グループ'), { target: { value: String(group.id) } })
+      fireEvent.click(screen.getByRole('button', { name: '保存する' }))
+
+      await waitFor(() =>
+        expect(accountRepository.findAll().find((a) => a.name === '電気代')?.accountGroupId).toBe(
+          group.id,
+        ),
+      )
+    })
+
+    it('グループが割り当て済みの科目を「未分類」に戻せる', async () => {
+      const group = accountGroupRepository.create({ name: '水道光熱費' })
+      accountRepository.create({
+        category: 'expense',
+        name: '電気代',
+        isReconcilable: null,
+        accountGroupId: group.id,
+      })
+
+      renderScreen()
+      await screen.findByText('電気代')
+
+      fireEvent.click(screen.getByRole('button', { name: '編集' }))
+      fireEvent.change(screen.getByLabelText('グループ'), { target: { value: '' } })
+      fireEvent.click(screen.getByRole('button', { name: '保存する' }))
+
+      await waitFor(() =>
+        expect(
+          accountRepository.findAll().find((a) => a.name === '電気代')?.accountGroupId,
+        ).toBeNull(),
+      )
+    })
+
+    it('非アクティブ化されたグループが現在選択中の値である場合、選択肢から消えない', async () => {
+      const group = accountGroupRepository.create({ name: '水道光熱費' })
+      accountRepository.create({
+        category: 'expense',
+        name: '電気代',
+        isReconcilable: null,
+        accountGroupId: group.id,
+      })
+      accountGroupRepository.deactivate(group.id)
+
+      renderScreen()
+      await screen.findByText('電気代')
+
+      fireEvent.click(screen.getByRole('button', { name: '編集' }))
+
+      expect(screen.getByLabelText('グループ')).toHaveValue(String(group.id))
+      expect(within(screen.getByLabelText('グループ')).getByText('水道光熱費')).toBeInTheDocument()
+    })
+
+    it('グループ選択欄は、異なる親配下の同名グループを「親 > 子」形式のパス表示で区別できる', async () => {
+      const fixedCost = accountGroupRepository.create({ name: '固定費' })
+      const variableCost = accountGroupRepository.create({ name: '変動費' })
+      accountGroupRepository.create({ name: 'カード', parentGroupId: fixedCost.id })
+      accountGroupRepository.create({ name: 'カード', parentGroupId: variableCost.id })
+      accountRepository.create({ category: 'expense', name: '電気代', isReconcilable: null })
+
+      renderScreen()
+      await screen.findByText('電気代')
+      fireEvent.click(screen.getByRole('button', { name: '編集' }))
+
+      const groupSelect = screen.getByLabelText('グループ')
+      expect(within(groupSelect).getByText('固定費 > カード')).toBeInTheDocument()
+      expect(within(groupSelect).getByText('変動費 > カード')).toBeInTheDocument()
     })
   })
 

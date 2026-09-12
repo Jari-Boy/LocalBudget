@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account, AccountCategory } from '../../domain/account/Account'
+import type { AccountGroup } from '../../domain/account-group/AccountGroup'
+import { buildAccountGroupPathLabels } from '../../domain/account-group/buildAccountGroupPathLabels'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { Budget } from '../../domain/budget/Budget'
@@ -14,7 +16,10 @@ interface AccountFinder {
 }
 
 interface AccountUpdater {
-  update(id: number, input: { name?: string; householdMemberId?: number | null }): Account | Promise<Account>
+  update(
+    id: number,
+    input: { name?: string; householdMemberId?: number | null; accountGroupId?: number | null },
+  ): Account | Promise<Account>
 }
 
 interface AccountDeleter {
@@ -31,6 +36,10 @@ interface JournalEntryFinder {
 
 interface HouseholdMemberFinder {
   findAll(): HouseholdMember[] | Promise<HouseholdMember[]>
+}
+
+interface AccountGroupFinder {
+  findAll(): AccountGroup[] | Promise<AccountGroup[]>
 }
 
 interface BudgetFinder {
@@ -53,6 +62,7 @@ const CATEGORY_LABEL_KEY: Record<AccountCategory, string> = {
 
 export interface AccountListScreenProps {
   accountRepository: AccountFinder & AccountUpdater & AccountDeleter & AccountDeactivator
+  accountGroupRepository: AccountGroupFinder
   journalEntryRepository: JournalEntryFinder
   householdMemberRepository: HouseholdMemberFinder
   budgetRepository: BudgetFinder
@@ -65,6 +75,7 @@ interface LoadedData {
   balanceByAccountId: Map<number, AccountBalance>
   householdMembers: HouseholdMember[]
   householdMemberNameById: Map<number, string>
+  accountGroups: AccountGroup[]
   /** 仕訳・予算・定期取引ルールのいずれかが紐づく科目id(docs/schema/accounts.sqlの
    * prevent_delete_account_with_referencesトリガーと同じ3種の参照を集計する) */
   accountIdsWithReference: Set<number>
@@ -79,12 +90,14 @@ type FormMode = number | null
  * 登録済み全科目を、区分を問わずフラットな一覧として名称・残高とともに表示する。
  * householdMemberIdが設定された科目には世帯メンバー名を併記する。並び順は
  * AccountRepository.findAll()の返り順(登録順)をそのまま使い、UI層での独自ソートは行わない。
- * 各行から名称・名義の編集ができ、紐づく仕訳・予算・定期取引ルールがいずれも0件の科目のみ
- * 削除ボタンを表示する(docs/schema/accounts.sqlのprevent_delete_account_with_references
- * トリガーが最終防御線)。is_active = trueの科目には非アクティブ化ボタンを表示する。
+ * 各行から名称・名義・グループ(計画Issue #112、account_group_id)の編集ができ、紐づく
+ * 仕訳・予算・定期取引ルールがいずれも0件の科目のみ削除ボタンを表示する
+ * (docs/schema/accounts.sqlのprevent_delete_account_with_referencesトリガーが最終防御線)。
+ * is_active = trueの科目には非アクティブ化ボタンを表示する。
  */
 export function AccountListScreen({
   accountRepository,
+  accountGroupRepository,
   journalEntryRepository,
   householdMemberRepository,
   budgetRepository,
@@ -97,6 +110,7 @@ export function AccountListScreen({
   const [formMode, setFormMode] = useState<FormMode>(null)
   const [nameInput, setNameInput] = useState('')
   const [householdMemberIdInput, setHouseholdMemberIdInput] = useState<number | null>(null)
+  const [accountGroupIdInput, setAccountGroupIdInput] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   /** 編集・削除・非アクティブ化のいずれか進行中は全操作ボタンを無効化する(連打による二重実行防止) */
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -108,7 +122,8 @@ export function AccountListScreen({
       Promise.resolve(householdMemberRepository.findAll()),
       Promise.resolve(budgetRepository.findAll()),
       Promise.resolve(recurringTransactionRuleRepository.findAll()),
-    ]).then(([accounts, entries, householdMembers, budgets, recurringRules]) => {
+      Promise.resolve(accountGroupRepository.findAll()),
+    ]).then(([accounts, entries, householdMembers, budgets, recurringRules, accountGroups]) => {
       const visibleAccounts = accounts.filter((account) => !account.isSystemManaged)
       const accountIdsWithReference = new Set<number>()
       for (const entry of entries) {
@@ -131,6 +146,7 @@ export function AccountListScreen({
         ),
         householdMembers,
         householdMemberNameById: new Map(householdMembers.map((member) => [member.id, member.name])),
+        accountGroups,
         accountIdsWithReference,
       })
     })
@@ -139,7 +155,14 @@ export function AccountListScreen({
   useEffect(
     load,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accountRepository, journalEntryRepository, householdMemberRepository, budgetRepository, recurringTransactionRuleRepository],
+    [
+      accountRepository,
+      accountGroupRepository,
+      journalEntryRepository,
+      householdMemberRepository,
+      budgetRepository,
+      recurringTransactionRuleRepository,
+    ],
   )
 
   if (data === null) {
@@ -149,6 +172,7 @@ export function AccountListScreen({
   const openEditForm = (account: Account) => {
     setNameInput(account.name)
     setHouseholdMemberIdInput(account.householdMemberId)
+    setAccountGroupIdInput(account.accountGroupId)
     setError(null)
     setFormMode(account.id)
   }
@@ -167,7 +191,11 @@ export function AccountListScreen({
     // 届かない(docs/guides/patterns.md参照)。
     void Promise.resolve()
       .then(() =>
-        accountRepository.update(formMode, { name: nameInput, householdMemberId: householdMemberIdInput }),
+        accountRepository.update(formMode, {
+          name: nameInput,
+          householdMemberId: householdMemberIdInput,
+          accountGroupId: accountGroupIdInput,
+        }),
       )
       .then(() => {
         closeForm()
@@ -198,6 +226,8 @@ export function AccountListScreen({
       .catch(() => setError(t('deactivateError')))
       .finally(() => setIsSubmitting(false))
   }
+
+  const groupPathLabelByGroupId = buildAccountGroupPathLabels(data.accountGroups)
 
   return (
     <div className="account-list-screen">
@@ -287,6 +317,24 @@ export function AccountListScreen({
               .map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.name}
+                </option>
+              ))}
+          </select>
+
+          <label htmlFor="account-edit-group">{t('groupSelectLabel')}</label>
+          <select
+            id="account-edit-group"
+            value={accountGroupIdInput ?? ''}
+            onChange={(event) =>
+              setAccountGroupIdInput(event.target.value === '' ? null : Number(event.target.value))
+            }
+          >
+            <option value="">{t('groupUnspecified')}</option>
+            {data.accountGroups
+              .filter((group) => group.isActive || group.id === accountGroupIdInput)
+              .map((group) => (
+                <option key={group.id} value={group.id}>
+                  {groupPathLabelByGroupId.get(group.id) ?? group.name}
                 </option>
               ))}
           </select>

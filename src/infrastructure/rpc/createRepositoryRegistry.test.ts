@@ -17,6 +17,7 @@ import type { Database } from 'sql.js'
 import { createTestDatabase } from '../db/createTestDatabase'
 import { runMigrations } from '../db/migrations'
 import { SqlJsAccountRepository } from '../db/SqlJsAccountRepository'
+import { SqlJsAccountGroupRepository } from '../db/SqlJsAccountGroupRepository'
 import { SqlJsBudgetRepository } from '../db/SqlJsBudgetRepository'
 import { SqlJsCounterpartyRepository } from '../db/SqlJsCounterpartyRepository'
 import { SqlJsExternalTransactionRefRepository } from '../db/SqlJsExternalTransactionRefRepository'
@@ -58,8 +59,9 @@ beforeEach(async () => {
 })
 
 describe('createRepositoryRegistry', () => {
-  it('10種全てのキーに対応するSqlJs実装クラスのインスタンスを割り当てる', () => {
+  it('11種全てのキーに対応するSqlJs実装クラスのインスタンスを割り当てる', () => {
     expect(registry.account).toBeInstanceOf(SqlJsAccountRepository)
+    expect(registry.accountGroup).toBeInstanceOf(SqlJsAccountGroupRepository)
     expect(registry.budget).toBeInstanceOf(SqlJsBudgetRepository)
     expect(registry.counterparty).toBeInstanceOf(SqlJsCounterpartyRepository)
     expect(registry.externalTransactionRef).toBeInstanceOf(

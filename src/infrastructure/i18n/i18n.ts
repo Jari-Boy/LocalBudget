@@ -2,6 +2,7 @@ import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import common from '../../locales/ja/common.json'
 import account from '../../locales/ja/account.json'
+import accountGroup from '../../locales/ja/account-group.json'
 import journal from '../../locales/ja/journal.json'
 import statementImport from '../../locales/ja/statementImport.json'
 import counterparty from '../../locales/ja/counterparty.json'
@@ -21,6 +22,7 @@ import expenseSplitting from '../../locales/ja/expenseSplitting.json'
  * project名前空間は計画Issue #36(プロジェクト管理UI)で追加した。
  * financialStatement名前空間は計画Issue #34(財務諸表PL/BS表示UI)で追加した。
  * expenseSplitting名前空間は計画Issue #40(割勘/精算UI)で追加した。
+ * accountGroup名前空間は計画Issue #112(勘定科目グループのCRUD・科目への割り当てUI)で追加した。
  */
 void i18n.use(initReactI18next).init({
   lng: 'ja',
@@ -30,6 +32,7 @@ void i18n.use(initReactI18next).init({
     ja: {
       common,
       account,
+      accountGroup,
       journal,
       statementImport,
       counterparty,

@@ -1,6 +1,7 @@
 import * as Comlink from 'comlink'
 import type { Database } from 'sql.js'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
+import type { AccountGroupRepository } from '../../domain/account-group/AccountGroupRepository'
 import type { BudgetRepository } from '../../domain/budget/BudgetRepository'
 import type { CounterpartyRepository } from '../../domain/counterparty/CounterpartyRepository'
 import type { ExternalTransactionRefRepository } from '../../domain/reconciliation/ExternalTransactionRefRepository'
@@ -16,6 +17,7 @@ import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRe
 import type { ProjectRepository } from '../../domain/project/ProjectRepository'
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import { SqlJsAccountRepository } from '../db/SqlJsAccountRepository'
+import { SqlJsAccountGroupRepository } from '../db/SqlJsAccountGroupRepository'
 import { SqlJsBudgetRepository } from '../db/SqlJsBudgetRepository'
 import { SqlJsCounterpartyRepository } from '../db/SqlJsCounterpartyRepository'
 import { SqlJsExternalTransactionRefRepository } from '../db/SqlJsExternalTransactionRefRepository'
@@ -58,6 +60,7 @@ export interface BackupRpcApi {
 
 export interface RepositoryRegistry {
   account: AccountRepository
+  accountGroup: AccountGroupRepository
   budget: BudgetRepository
   counterparty: CounterpartyRepository
   externalTransactionRef: ExternalTransactionRefRepository
@@ -83,7 +86,7 @@ export interface RepositoryRegistry {
 }
 
 /**
- * Worker側で全10種のRepositoryインスタンスを生成し、1つのレジストリオブジェクトへ
+ * Worker側で全11種のRepositoryインスタンスを生成し、1つのレジストリオブジェクトへ
  * まとめる(計画Issue #24のレジストリパターン)。新規Repositoryを追加する際は、
  * このオブジェクトへ1エントリ追加するだけでよい。呼び出し元(`db.worker.ts`)で
  * `withAutoSave`から得たAutoSaveControllerを`autoSaveController`として受け取り、
@@ -100,6 +103,7 @@ export function createRepositoryRegistry(
 
   return {
     account: new SqlJsAccountRepository(db),
+    accountGroup: new SqlJsAccountGroupRepository(db),
     budget: new SqlJsBudgetRepository(db),
     counterparty: new SqlJsCounterpartyRepository(db),
     externalTransactionRef: new SqlJsExternalTransactionRefRepository(db),

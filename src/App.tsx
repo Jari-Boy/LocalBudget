@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type * as Comlink from 'comlink'
 import { useTranslation } from 'react-i18next'
 import type { AccountRepository } from './domain/account/AccountRepository'
+import type { AccountGroupRepository } from './domain/account-group/AccountGroupRepository'
 import type { BudgetRepository } from './domain/budget/BudgetRepository'
 import type { RecurringTransactionRuleRepository } from './domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { CounterpartyRepository } from './domain/counterparty/CounterpartyRepository'
@@ -14,6 +15,7 @@ import type { ExternalTransactionRefRepository } from './domain/reconciliation/E
 import type { JournalEntryDraftRpcApi } from './infrastructure/rpc/createRepositoryRegistry'
 import { DbClientProvider, useDbClient } from './infrastructure/rpc/DbClientProvider'
 import { AccountRegistrationFlow } from './components/account-registration/AccountRegistrationFlow'
+import { AccountGroupManagementScreen } from './components/account-group-management/AccountGroupManagementScreen'
 import { AccountListScreen } from './components/account-list/AccountListScreen'
 import { AccountManagementScreen } from './components/account-management/AccountManagementScreen'
 import { CounterpartyManagementScreen } from './components/counterparty-management/CounterpartyManagementScreen'
@@ -43,6 +45,7 @@ type Screen =
   | 'account-management'
   | 'register-account'
   | 'account-list'
+  | 'account-group-management'
   | 'counterparty-management'
   | 'household-member-management'
   | 'project-management'
@@ -110,6 +113,7 @@ function AppContent() {
   const journalEntryRepository = client.journalEntry as unknown as Comlink.Remote<JournalEntryRepository>
   const householdMemberRepository =
     client.householdMember as unknown as Comlink.Remote<HouseholdMemberRepository>
+  const accountGroupRepository = client.accountGroup as unknown as Comlink.Remote<AccountGroupRepository>
   const projectRepository = client.project as unknown as Comlink.Remote<ProjectRepository>
   const counterpartyRepository = client.counterparty as unknown as Comlink.Remote<CounterpartyRepository>
   const journalEntryDraftRepository =
@@ -127,7 +131,18 @@ function AppContent() {
       <AccountManagementScreen
         onAddAccount={() => setScreen('register-account')}
         onViewList={() => setScreen('account-list')}
+        onManageGroups={() => setScreen('account-group-management')}
         onBack={() => setScreen('home')}
+      />
+    )
+  }
+
+  if (screen === 'account-group-management') {
+    return (
+      <AccountGroupManagementScreen
+        accountGroupRepository={accountGroupRepository}
+        accountRepository={accountRepository}
+        onBack={() => setScreen('account-management')}
       />
     )
   }
@@ -148,6 +163,7 @@ function AppContent() {
     return (
       <AccountListScreen
         accountRepository={accountRepository}
+        accountGroupRepository={accountGroupRepository}
         journalEntryRepository={journalEntryRepository}
         householdMemberRepository={householdMemberRepository}
         budgetRepository={budgetRepository}
