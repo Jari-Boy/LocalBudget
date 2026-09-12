@@ -1,4 +1,5 @@
 {
+  "splittingHubTitle": "割勘",
   "formTitle": "割勘を起票する",
   "splitMemoTemplate": "{{memo}}の割勘",
   "splitMemoTemplateMultiple": "{{count}}件の支出の割勘",
