@@ -161,7 +161,8 @@ function csvBuffer(content: string): Buffer {
  * 一致しないため候補には残らず、テストで作成した専用定義のみがパースに成功する)。
  */
 async function startUpload(page: Page, accountName: string) {
-  await page.getByRole('button', { name: '明細を取り込む' }).click()
+  await page.getByRole('button', { name: '仕訳' }).click()
+  await page.getByRole('button', { name: '明細取込' }).click()
   await page.getByLabel('対象科目').selectOption({ label: accountName })
 }
 
@@ -681,9 +682,13 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await expect(page.getByText('3件を確定しました(0件失敗)')).toBeVisible()
 
     // 確定後、仕訳が実際に永続化され登録済み科目一覧の残高に反映されていることを確認する
-    // (計画Issue #95により、一覧画面へは科目管理ハブ画面「科目を管理する」を経由する)
+    // (計画Issue #95により、一覧画面へは科目管理ハブ画面「科目を管理する」を経由する。
+    // 計画Issue #118のルーティング刷新により、仕訳ハブ→ホーム→マスタ管理ハブの順に
+    // 「戻る」で遡ってから科目管理ハブへ入る)
     await page.getByRole('button', { name: '戻る' }).click()
     await page.getByRole('button', { name: '戻る' }).click()
+    await page.getByRole('button', { name: '戻る' }).click()
+    await page.getByRole('button', { name: 'マスタ管理' }).click()
     await page.getByRole('button', { name: '科目を管理する' }).click()
     await page.getByRole('button', { name: '科目一覧を見る' }).click()
     await expect(page.getByRole('heading', { name: '登録済みの科目' })).toBeVisible()

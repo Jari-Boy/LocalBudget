@@ -102,7 +102,8 @@ test.describe('マニュアル仕訳入力', () => {
       { category: 'asset', name: '現金', isReconcilable: false },
     ])
 
-    await page.getByRole('button', { name: '仕訳を入力する' }).click()
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '手入力で起票' }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
     const line1 = page.getByRole('group', { name: '1行目' })
@@ -143,7 +144,8 @@ test.describe('マニュアル仕訳入力', () => {
 
     await setupAccountsAndReload(page, [{ category: 'expense', name: 'ランチ代', isReconcilable: null }])
 
-    await page.getByRole('button', { name: '仕訳を入力する' }).click()
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '手入力で起票' }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
     const line1 = page.getByRole('group', { name: '1行目' })
@@ -153,10 +155,12 @@ test.describe('マニュアル仕訳入力', () => {
     // フォーム側のデバウンス(2秒)を経てjournal_entry_draftsへ保存され、さらに
     // withAutoSaveのデバウンス(2秒)を経てIndexedDBへ永続化されるまで待つ。
     await waitForDraftCount(page, 1)
+    // HashRouter導入(計画Issue #118)によりリロード後もURL(新規入力フォーム)が
+    // 維持されるため、旧実装(常にトップ画面へ戻っていた)と異なりホーム経由の
+    // 再ナビゲーションは不要になった。「戻る」で下書き一覧に戻ると、直前の入力内容が
+    // 永続化された下書きとして表示される。
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
-
-    await page.getByRole('button', { name: '仕訳を入力する' }).click()
+    await page.getByRole('button', { name: '戻る' }).click()
     await expect(page.getByRole('listitem')).toHaveCount(1, { timeout: 10000 })
 
     await page.getByRole('button', { name: '再開する' }).click()
@@ -164,7 +168,10 @@ test.describe('マニュアル仕訳入力', () => {
     await expect(resumedLine1.getByLabel('金額')).toHaveValue('5000')
 
     await page.getByRole('button', { name: '戻る' }).click()
-    await page.getByRole('button', { name: '削除する' }).click()
+    // 「戻る」はhandleBack内で保留中の下書き自動保存をflushしてから遷移するため非同期。
+    // 遷移完了(下書き一覧の再表示)を待ってから削除ボタンを押す。
+    await expect(page.getByRole('listitem')).toHaveCount(1, { timeout: 10000 })
+    await page.getByRole('listitem').getByRole('button', { name: '削除する' }).click()
     await expect(page.getByText('保存されている下書きはありません')).toBeVisible()
   })
 
@@ -179,7 +186,8 @@ test.describe('マニュアル仕訳入力', () => {
       { category: 'asset', name: '現金', isReconcilable: false },
     ])
 
-    await page.getByRole('button', { name: '仕訳を入力する' }).click()
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '手入力で起票' }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
     const line1 = page.getByRole('group', { name: '1行目' })
@@ -208,7 +216,8 @@ test.describe('マニュアル仕訳入力', () => {
       { category: 'asset', name: '現金', isReconcilable: false },
     ])
 
-    await page.getByRole('button', { name: '仕訳を入力する' }).click()
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '手入力で起票' }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
     const line1 = page.getByRole('group', { name: '1行目' })

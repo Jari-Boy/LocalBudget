@@ -32,6 +32,7 @@ test.describe('プロジェクト管理画面', () => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
+    await page.getByRole('button', { name: 'マスタ管理' }).click()
     await page.getByRole('button', { name: 'プロジェクトを管理する' }).click()
     await expect(page.getByText('登録済みのプロジェクトがありません')).toBeVisible()
 
@@ -68,6 +69,8 @@ test.describe('プロジェクト管理画面', () => {
     await expect(page.getByRole('listitem').filter({ hasText: '26/7生活費割勘' })).toHaveCount(0)
 
     await page.getByRole('button', { name: '戻る' }).click()
+    await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()
+    await page.getByRole('button', { name: '戻る' }).click()
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
   })
 
@@ -103,6 +106,7 @@ test.describe('プロジェクト管理画面', () => {
     await waitForProjectCreated(page, '記帳済みの旅行')
     await page.reload()
 
+    await page.getByRole('button', { name: 'マスタ管理' }).click()
     await page.getByRole('button', { name: 'プロジェクトを管理する' }).click()
     const item = page.getByRole('listitem').filter({ hasText: '記帳済みの旅行' })
     await expect(item).toBeVisible()

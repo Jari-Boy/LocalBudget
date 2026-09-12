@@ -250,7 +250,7 @@ export function AppRoutes() {
             journalEntryRepository={journalEntryRepository}
             journalEntryDraftRepository={journalEntryDraftRepository}
             initialDraft={null}
-            onComplete={() => navigate('/journal')}
+            onComplete={() => navigate('/')}
             onBack={() => navigate('/journal/create/manual')}
           />
         }
@@ -438,7 +438,7 @@ function ResumeJournalEntryFormRoute({
       journalEntryRepository={journalEntryRepository}
       journalEntryDraftRepository={journalEntryDraftRepository}
       initialDraft={state.draft}
-      onComplete={() => navigate('/journal')}
+      onComplete={() => navigate('/')}
       onBack={() => navigate('/journal/create/manual')}
     />
   )
@@ -565,7 +565,7 @@ function ExpenseSplittingFormRoute({
       householdMemberRepository={householdMemberRepository}
       counterpartyRepository={counterpartyRepository}
       journalEntryRepository={journalEntryRepository}
-      onComplete={() => navigate('/journal/splitting')}
+      onComplete={() => navigate('/')}
       onBack={() => navigate('/journal/splitting/new')}
     />
   )

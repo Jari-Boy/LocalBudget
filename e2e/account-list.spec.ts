@@ -50,6 +50,7 @@ test.describe('登録済み科目一覧画面', () => {
     await waitForAccountCreated(page, '普通預金')
     await page.reload()
 
+    await page.getByRole('button', { name: 'マスタ管理' }).click()
     await page.getByRole('button', { name: '科目を管理する' }).click()
     await page.getByRole('button', { name: '科目一覧を見る' }).click()
     await expect(page.getByText('普通預金')).toBeVisible()
@@ -63,6 +64,7 @@ test.describe('登録済み科目一覧画面', () => {
   }) => {
     await page.goto('/')
 
+    await page.getByRole('button', { name: 'マスタ管理' }).click()
     await page.getByRole('button', { name: '科目を管理する' }).click()
     await page.getByRole('button', { name: '科目一覧を見る' }).click()
     await expect(page.getByText('食費')).toBeVisible()
