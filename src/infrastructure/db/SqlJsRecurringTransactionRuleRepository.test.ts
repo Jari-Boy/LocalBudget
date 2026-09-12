@@ -282,6 +282,59 @@ describe('countGeneratedJournalEntries', () => {
   })
 })
 
+describe('findLatestGeneratedEntryDate', () => {
+  it('生成済みの仕訳が無ければnullを返す', () => {
+    const created = repository.create({
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+    })
+
+    expect(repository.findLatestGeneratedEntryDate(created.id)).toBeNull()
+  })
+
+  it('generated_from_rule_idが一致する仕訳のうち最新のentry_dateを返す', () => {
+    const created = repository.create({
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+    })
+    insertGeneratedJournalEntry(db, created.id, '2026-07-01')
+    insertGeneratedJournalEntry(db, created.id, '2026-09-01')
+    insertGeneratedJournalEntry(db, created.id, '2026-08-01')
+
+    expect(repository.findLatestGeneratedEntryDate(created.id)).toBe('2026-09-01')
+  })
+
+  it('他ルールから生成された仕訳は対象外', () => {
+    const created = repository.create({
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+    })
+    const otherRule = repository.create({
+      name: '給与',
+      debitAccountId: liabilityAccountId,
+      creditAccountId: expenseAccountId,
+      amount: 300000,
+      frequency: 'monthly',
+      dayOfMonth: 25,
+    })
+    insertGeneratedJournalEntry(db, otherRule.id, '2026-09-25')
+
+    expect(repository.findLatestGeneratedEntryDate(created.id)).toBeNull()
+  })
+})
+
 function insertAccount(
   database: Database,
   category: string,
@@ -296,12 +349,16 @@ function insertAccount(
   return database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
 }
 
-function insertGeneratedJournalEntry(database: Database, ruleId: number): void {
+function insertGeneratedJournalEntry(
+  database: Database,
+  ruleId: number,
+  entryDate = '2026-08-01',
+): void {
   database.run(`INSERT INTO household_members (name) VALUES ('自分')`)
   const memberId = database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
   database.run(
     `INSERT INTO journal_entries (entry_date, source_type, generated_from_rule_id, household_member_id)
-     VALUES ('2026-08-01', 'recurring_generated', ?, ?)`,
-    [ruleId, memberId],
+     VALUES (?, 'recurring_generated', ?, ?)`,
+    [entryDate, ruleId, memberId],
   )
 }

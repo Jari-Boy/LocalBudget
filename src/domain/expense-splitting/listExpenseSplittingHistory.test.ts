@@ -21,6 +21,7 @@ function buildEntry(id: number, entryDate = '2026-07-01'): JournalEntry {
     currency: 'JPY',
     sourceType: 'manual',
     householdMemberId: 999,
+    generatedFromRuleId: null,
     createdAt: '2026-07-01T00:00:00.000Z',
     updatedAt: '2026-07-01T00:00:00.000Z',
     lines: [],

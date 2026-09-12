@@ -37,6 +37,7 @@ function buildEntry(overrides: Partial<JournalEntry> & Pick<JournalEntry, 'lines
     currency: 'JPY',
     sourceType: 'manual',
     householdMemberId: 999,
+    generatedFromRuleId: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,

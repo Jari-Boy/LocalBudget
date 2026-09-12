@@ -115,6 +115,14 @@ export class SqlJsRecurringTransactionRuleRepository implements RecurringTransac
     )
     return result!.values[0][0] as number
   }
+
+  findLatestGeneratedEntryDate(id: number): string | null {
+    const [result] = this.db.exec(
+      'SELECT MAX(entry_date) AS latest FROM journal_entries WHERE generated_from_rule_id = ?',
+      [id],
+    )
+    return (result!.values[0][0] as string | null) ?? null
+  }
 }
 
 function sqlToBool(value: number): boolean {
