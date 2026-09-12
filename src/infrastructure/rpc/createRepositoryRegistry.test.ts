@@ -98,6 +98,38 @@ describe('createRepositoryRegistry', () => {
     expect(registry.account.findById(account.id)).not.toBeNull()
   })
 
+  describe('recurringTransactionProposal', () => {
+    it('confirmで生成した仕訳をjournalEntryから参照できる(登録されたRepositoryと同一DB接続を共有する)', () => {
+      const expenseAccountId = registry.account.create({
+        category: 'expense',
+        name: '家賃',
+        isReconcilable: null,
+      }).id
+      const liabilityAccountId = registry.account.create({
+        category: 'liability',
+        name: '未払金',
+        isReconcilable: false,
+      }).id
+      const memberId = registry.householdMember.create({ name: '自分' }).id
+      const rule = registry.recurringTransactionRule.create({
+        name: '家賃',
+        debitAccountId: expenseAccountId,
+        creditAccountId: liabilityAccountId,
+        amount: 80000,
+        frequency: 'monthly',
+        dayOfMonth: 1,
+        householdMemberId: memberId,
+      })
+
+      const entry = registry.recurringTransactionProposal.confirm({
+        ruleId: rule.id,
+        dueDate: '2026-09-01',
+      })
+
+      expect(registry.journalEntry.findById(entry.id)).not.toBeNull()
+    })
+  })
+
   describe('journalEntryDraft.confirm', () => {
     it('完成した下書きを仕訳化し、journalEntryから参照でき下書きは削除される', () => {
       const foodExpenseAccountId = registry.account.create({

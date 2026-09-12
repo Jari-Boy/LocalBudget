@@ -28,6 +28,10 @@ import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
 import { importDatabaseBackup } from '../backup/importDatabaseBackup'
+import {
+  createRecurringTransactionProposalApi,
+  type RecurringTransactionProposalRpcApi,
+} from './createRecurringTransactionProposalApi'
 import type { StorageAdapter } from '../storage/StorageAdapter'
 import type { AutoSaveController } from '../storage/withAutoSave'
 
@@ -70,6 +74,8 @@ export interface RepositoryRegistry {
   journalEntryDraft: JournalEntryDraftRpcApi
   project: ProjectRepository
   recurringTransactionRule: RecurringTransactionRuleRepository
+  /** 定期取引の提案評価・仕訳生成(計画Issue #121、docs/domain/recurring-transactions.md 1.2節)のRPC API */
+  recurringTransactionProposal: RecurringTransactionProposalRpcApi
   /**
    * DBの永続化制御(計画Issue #58)。Worker側で生成済みのAutoSaveControllerをそのまま
    * 公開し、メインスレッド側がページ非表示時等に`flush()`をRPC越しに呼べるようにする。
@@ -86,7 +92,7 @@ export interface RepositoryRegistry {
 }
 
 /**
- * Worker側で全11種のRepositoryインスタンスを生成し、1つのレジストリオブジェクトへ
+ * Worker側で全12種のRepositoryインスタンスを生成し、1つのレジストリオブジェクトへ
  * まとめる(計画Issue #24のレジストリパターン)。新規Repositoryを追加する際は、
  * このオブジェクトへ1エントリ追加するだけでよい。呼び出し元(`db.worker.ts`)で
  * `withAutoSave`から得たAutoSaveControllerを`autoSaveController`として受け取り、
@@ -120,6 +126,7 @@ export function createRepositoryRegistry(
     },
     project: new SqlJsProjectRepository(db),
     recurringTransactionRule: new SqlJsRecurringTransactionRuleRepository(db),
+    recurringTransactionProposal: createRecurringTransactionProposalApi(db, journalEntryRepository),
     autoSave: Comlink.proxy(autoSaveController),
     backup: {
       export: () => db.export(),

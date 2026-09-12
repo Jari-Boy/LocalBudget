@@ -11,6 +11,7 @@ import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAc
 import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMismatchError'
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
+import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
 import { MappingColumnNotFoundError } from '../../domain/statement-import/MappingColumnNotFoundError'
 import { InvalidBackupFileError } from '../backup/InvalidBackupFileError'
 import {
@@ -20,12 +21,13 @@ import {
 } from './domainErrorRegistry'
 
 describe('isDomainError', () => {
-  it('登録済みの7種のドメインエラーをtrueと判定する', () => {
+  it('登録済みの8種のドメインエラーをtrueと判定する', () => {
     expect(isDomainError(new UnbalancedJournalEntryError(100, 90))).toBe(true)
     expect(isDomainError(new RestrictedAccountPostingError(1, 'manual'))).toBe(true)
     expect(isDomainError(new SettlementTagMismatchError(1, 2))).toBe(true)
     expect(isDomainError(new NoBalanceDiscrepancyError())).toBe(true)
     expect(isDomainError(new InvalidRecurringScheduleError('invalid'))).toBe(true)
+    expect(isDomainError(new RecurringTransactionHouseholdMemberRequiredError(1))).toBe(true)
     expect(isDomainError(new MappingColumnNotFoundError('date', 'A'))).toBe(true)
     expect(isDomainError(new InvalidBackupFileError('invalid'))).toBe(true)
   })
@@ -116,6 +118,15 @@ describe('serializeDomainError / deserializeDomainError', () => {
 
     expect(revived).toBeInstanceOf(InvalidBackupFileError)
     expect(revived.message).toBe('missing expected tables (journal_entries)')
+  })
+
+  it('RecurringTransactionHouseholdMemberRequiredErrorのruleIdを保持して往復する', () => {
+    const original = new RecurringTransactionHouseholdMemberRequiredError(42)
+
+    const revived = deserializeDomainError(serializeDomainError(original))
+
+    expect(revived).toBeInstanceOf(RecurringTransactionHouseholdMemberRequiredError)
+    expect((revived as RecurringTransactionHouseholdMemberRequiredError).ruleId).toBe(42)
   })
 
   it('未登録のエラー名をdeserializeしようとした場合は例外を投げる', () => {
