@@ -45,6 +45,7 @@ function toSplitEntry(): JournalEntry {
     currency: 'JPY',
     sourceType: 'manual',
     householdMemberId: 999,
+    generatedFromRuleId: null,
     createdAt: '2026-07-15T00:00:00.000Z',
     updatedAt: '2026-07-15T00:00:00.000Z',
     lines: input.lines.map((line, index) => ({

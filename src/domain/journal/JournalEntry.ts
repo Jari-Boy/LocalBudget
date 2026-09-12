@@ -34,6 +34,11 @@ export interface JournalEntry {
    * resolveEffectiveHouseholdMemberId参照)。
    */
   householdMemberId: number
+  /**
+   * 生成元の定期取引ルール(docs/domain/recurring-transactions.md 1.5)。参照のみで複式簿記の
+   * 整合性検証には関与しない。sourceType = 'recurring_generated'の仕訳でのみ非null
+   */
+  generatedFromRuleId: number | null
   createdAt: string
   updatedAt: string
   lines: JournalLine[]
@@ -69,6 +74,8 @@ export interface CreateJournalEntryInput {
    * journalEntryIdは仕訳作成後に確定するため含めない。
    */
   externalTransactionRef?: CreateExternalTransactionRefTarget
+  /** 生成元の定期取引ルール(docs/domain/recurring-transactions.md 1.5)。参照のみ、任意 */
+  generatedFromRuleId?: number | null
 }
 
 export interface CreateExternalTransactionRefTarget {

@@ -3,6 +3,7 @@ import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAc
 import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMismatchError'
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
+import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
 import { MappingColumnNotFoundError } from '../../domain/statement-import/MappingColumnNotFoundError'
 import { InvalidBackupFileError } from '../backup/InvalidBackupFileError'
 
@@ -33,6 +34,8 @@ const DOMAIN_ERROR_REVIVERS: Record<string, DomainErrorReviver> = {
     new SettlementTagMismatchError(extra.fromEntryId as number, extra.toEntryId as number),
   NoBalanceDiscrepancyError: () => new NoBalanceDiscrepancyError(),
   InvalidRecurringScheduleError: (message) => new InvalidRecurringScheduleError(message),
+  RecurringTransactionHouseholdMemberRequiredError: (_message, extra) =>
+    new RecurringTransactionHouseholdMemberRequiredError(extra.ruleId as number),
   MappingColumnNotFoundError: (_message, extra) =>
     new MappingColumnNotFoundError(extra.fieldName as string, extra.columnSpec as string),
   InvalidBackupFileError: (message) => new InvalidBackupFileError(message),

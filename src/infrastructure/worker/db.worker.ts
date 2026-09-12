@@ -48,6 +48,13 @@ import { withAutoSave } from '../storage/withAutoSave'
  * 標準科目(食費・交通費・給与収入)を使うため、必ずseedDefaultAccounts(db)より後に呼び出す。
  * 本番ビルドではimport.meta.env.DEVがfalseに静的展開されVite/Rollupのtree-shakingで
  * バンドルから除去されるため、npm run devの動作確認専用であり本番の挙動には一切影響しない。
+ * レジストリ生成後、Comlink.expose()より前に`registry.recurringTransactionProposal.listPending()`
+ * を1回呼び出す(計画Issue #121、docs/domain/recurring-transactions.md 1.2節「アプリ起動時に
+ * 評価する」)。戻り値は使わず、評価中の例外を起動シーケンスに乗せて検出する目的のみ
+ * (既存のworker-init-errorによる伝播に委ねる)。listPending自体は「ルールごとの生成済み
+ * 最新entry_date(無ければ作成日)を起点に対象日を評価する」副作用のない読み取り専用の
+ * 純粋な計算であり、UI側もマウント時に同じRPCを呼んで再評価する(提案データ自体を
+ * 永続化しないため、起動時の1回の呼び出しだけでは画面には反映されない)。
  */
 async function main(): Promise<void> {
   registerDomainErrorTransferHandler()
@@ -65,6 +72,7 @@ async function main(): Promise<void> {
   const autoSaveController = withAutoSave(db, storageAdapter)
 
   const registry = createRepositoryRegistry(db, autoSaveController, storageAdapter)
+  registry.recurringTransactionProposal.listPending()
   Comlink.expose(registry)
 
   postMessage(WORKER_READY_MESSAGE)

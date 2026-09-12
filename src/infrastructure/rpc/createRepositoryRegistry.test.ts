@@ -12,7 +12,7 @@
  * 依存するためNode/Vitestでは検証できず、Playwrightで検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from '../db/createTestDatabase'
 import { runMigrations } from '../db/migrations'
@@ -58,6 +58,10 @@ beforeEach(async () => {
   registry = createRepositoryRegistry(db, autoSaveController, storageAdapter)
 })
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('createRepositoryRegistry', () => {
   it('11種全てのキーに対応するSqlJs実装クラスのインスタンスを割り当てる', () => {
     expect(registry.account).toBeInstanceOf(SqlJsAccountRepository)
@@ -96,6 +100,45 @@ describe('createRepositoryRegistry', () => {
     })
 
     expect(registry.account.findById(account.id)).not.toBeNull()
+  })
+
+  describe('recurringTransactionProposal', () => {
+    it('confirmで生成した仕訳をjournalEntryから参照できる(登録されたRepositoryと同一DB接続を共有する)', () => {
+      const expenseAccountId = registry.account.create({
+        category: 'expense',
+        name: '家賃',
+        isReconcilable: null,
+      }).id
+      const liabilityAccountId = registry.account.create({
+        category: 'liability',
+        name: '未払金',
+        isReconcilable: false,
+      }).id
+      const memberId = registry.householdMember.create({ name: '自分' }).id
+      const rule = registry.recurringTransactionRule.create({
+        name: '家賃',
+        debitAccountId: expenseAccountId,
+        creditAccountId: liabilityAccountId,
+        amount: 80000,
+        frequency: 'monthly',
+        dayOfMonth: 1,
+        householdMemberId: memberId,
+      })
+      db.run(
+        `INSERT INTO journal_entries (entry_date, source_type, generated_from_rule_id, household_member_id)
+         VALUES ('2026-08-01', 'recurring_generated', ?, ?)`,
+        [rule.id, memberId],
+      )
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-09-01T00:00:00Z'))
+
+      const entry = registry.recurringTransactionProposal.confirm({
+        ruleId: rule.id,
+        dueDate: '2026-09-01',
+      })
+
+      expect(registry.journalEntry.findById(entry.id)).not.toBeNull()
+    })
   })
 
   describe('journalEntryDraft.confirm', () => {

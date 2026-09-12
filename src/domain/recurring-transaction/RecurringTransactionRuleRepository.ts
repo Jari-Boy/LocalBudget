@@ -28,4 +28,12 @@ export interface RecurringTransactionRuleRepository {
 
   /** このルールから生成済みのjournal_entries件数(max_occurrences判定に使用、2.1節参照) */
   countGeneratedJournalEntries(id: number): number
+
+  /**
+   * このルールから生成済みのjournal_entriesのうち最新のentry_date。1件も生成されていなければnull。
+   * 提案評価の起点(前回チェック日、1.2節)として使う。専用のチェックポイントを別途永続化せず
+   * journal_entriesから逆算する設計判断はdocs/decisions.md参照(max_occurrencesの専用カウンタを
+   * 持たない既存方針と同じ「二重管理を避ける」考え方)
+   */
+  findLatestGeneratedEntryDate(id: number): string | null
 }
