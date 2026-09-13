@@ -14,6 +14,7 @@ import type { ProjectRepository } from '../domain/project/ProjectRepository'
 import type { ImportMappingDefinitionRepository } from '../domain/statement-import/ImportMappingDefinitionRepository'
 import type { ExternalTransactionRefRepository } from '../domain/reconciliation/ExternalTransactionRefRepository'
 import type { JournalEntryDraftRpcApi } from '../infrastructure/rpc/createRepositoryRegistry'
+import type { RecurringTransactionProposalRpcApi } from '../infrastructure/rpc/createRecurringTransactionProposalApi'
 import { useDbClient } from '../infrastructure/rpc/DbClientProvider'
 import { AccountRegistrationFlow } from '../components/account-registration/AccountRegistrationFlow'
 import { AccountGroupManagementScreen } from '../components/account-group-management/AccountGroupManagementScreen'
@@ -24,6 +25,8 @@ import { HouseholdMemberManagementScreen } from '../components/household-member-
 import { ProjectManagementScreen } from '../components/project-management/ProjectManagementScreen'
 import { FinancialStatementScreen } from '../components/financial-statement/FinancialStatementScreen'
 import { MasterHubScreen } from '../components/master/MasterHubScreen'
+import { RecurringTransactionRuleManagementScreen } from '../components/recurring-transaction-management/RecurringTransactionRuleManagementScreen'
+import { RecurringTransactionProposalReviewScreen } from '../components/recurring-transaction-proposal/RecurringTransactionProposalReviewScreen'
 import { JournalHubScreen } from '../components/journal-entry/JournalHubScreen'
 import { JournalEntryDraftListScreen } from '../components/journal-entry/JournalEntryDraftListScreen'
 import { JournalEntryForm } from '../components/journal-entry/JournalEntryForm'
@@ -116,6 +119,8 @@ export function AppRoutes() {
   const budgetRepository = client.budget as unknown as Comlink.Remote<BudgetRepository>
   const recurringTransactionRuleRepository =
     client.recurringTransactionRule as unknown as Comlink.Remote<RecurringTransactionRuleRepository>
+  const recurringTransactionProposalApi =
+    client.recurringTransactionProposal as unknown as Comlink.Remote<RecurringTransactionProposalRpcApi>
 
   const goBackFromEntryDetail = useHistoryBackOrFallback('/journal/entries')
 
@@ -131,7 +136,21 @@ export function AppRoutes() {
             onManageCounterparties={() => navigate('/master/counterparties')}
             onManageHouseholdMembers={() => navigate('/master/household-members')}
             onManageProjects={() => navigate('/master/projects')}
+            onManageRecurringTransactions={() => navigate('/master/recurring-transactions')}
             onBack={() => navigate('/')}
+          />
+        }
+      />
+      <Route
+        path="/master/recurring-transactions"
+        element={
+          <RecurringTransactionRuleManagementScreen
+            recurringTransactionRuleRepository={recurringTransactionRuleRepository}
+            accountRepository={accountRepository}
+            projectRepository={projectRepository}
+            householdMemberRepository={householdMemberRepository}
+            counterpartyRepository={counterpartyRepository}
+            onBack={() => navigate('/master')}
           />
         }
       />
@@ -224,7 +243,19 @@ export function AppRoutes() {
             onStatementImport={() => navigate('/journal/create/import')}
             onViewEntries={() => navigate('/journal/entries')}
             onSplitting={() => navigate('/journal/splitting')}
+            onRecurringProposals={() => navigate('/journal/recurring-proposals')}
             onBack={() => navigate('/')}
+          />
+        }
+      />
+      <Route
+        path="/journal/recurring-proposals"
+        element={
+          <RecurringTransactionProposalReviewScreen
+            recurringTransactionProposalApi={recurringTransactionProposalApi}
+            recurringTransactionRuleRepository={recurringTransactionRuleRepository}
+            householdMemberRepository={householdMemberRepository}
+            onBack={() => navigate('/journal')}
           />
         }
       />

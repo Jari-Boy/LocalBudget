@@ -6,6 +6,7 @@ export interface JournalHubScreenProps {
   onStatementImport: () => void
   onViewEntries: () => void
   onSplitting: () => void
+  onRecurringProposals: () => void
   onBack: () => void
 }
 
@@ -23,9 +24,11 @@ export function JournalHubScreen({
   onStatementImport,
   onViewEntries,
   onSplitting,
+  onRecurringProposals,
   onBack,
 }: JournalHubScreenProps) {
   const { t } = useTranslation('journal')
+  const { t: tRecurringTransaction } = useTranslation('recurringTransaction')
 
   return (
     <div className="hub-menu-screen">
@@ -41,6 +44,9 @@ export function JournalHubScreen({
       </button>
       <button type="button" onClick={onSplitting}>
         {t('splittingMenuButton')}
+      </button>
+      <button type="button" onClick={onRecurringProposals}>
+        {tRecurringTransaction('recurringProposalMenuButton')}
       </button>
       <button type="button" onClick={onBack}>
         {t('back')}

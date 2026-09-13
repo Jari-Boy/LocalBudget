@@ -11,6 +11,7 @@ import householdMember from '../../locales/ja/household-member.json'
 import project from '../../locales/ja/project.json'
 import financialStatement from '../../locales/ja/financial-statement.json'
 import expenseSplitting from '../../locales/ja/expenseSplitting.json'
+import recurringTransaction from '../../locales/ja/recurringTransaction.json'
 
 /**
  * ドメイン別の名前空間(account.json等)は、それぞれのUI実装Issue(D1〜D10、
@@ -27,6 +28,9 @@ import expenseSplitting from '../../locales/ja/expenseSplitting.json'
  * master名前空間は計画Issue #118(react-routerベースのナビゲーション基盤刷新)で、
  * マスタ管理ハブ画面(/master)がaccount/counterparty/householdMember/project等
  * 複数ドメインの名前空間をまたいで再利用するため新設した。
+ * recurringTransaction名前空間は計画Issue #39(定期取引ルール管理画面・提案レビュー画面)で
+ * 追加した。journal名前空間と同様、ルール管理・提案レビューの2画面分の文言を1つの名前空間に
+ * まとめている。
  */
 void i18n.use(initReactI18next).init({
   lng: 'ja',
@@ -45,6 +49,7 @@ void i18n.use(initReactI18next).init({
       project,
       financialStatement,
       expenseSplitting,
+      recurringTransaction,
     },
   },
   interpolation: {

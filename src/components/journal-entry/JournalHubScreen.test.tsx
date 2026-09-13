@@ -21,6 +21,7 @@ function renderScreen(overrides: Partial<Parameters<typeof JournalHubScreen>[0]>
   const onStatementImport = vi.fn()
   const onViewEntries = vi.fn()
   const onSplitting = vi.fn()
+  const onRecurringProposals = vi.fn()
   const onBack = vi.fn()
   render(
     <I18nextProvider i18n={i18n}>
@@ -29,12 +30,13 @@ function renderScreen(overrides: Partial<Parameters<typeof JournalHubScreen>[0]>
         onStatementImport={onStatementImport}
         onViewEntries={onViewEntries}
         onSplitting={onSplitting}
+        onRecurringProposals={onRecurringProposals}
         onBack={onBack}
         {...overrides}
       />
     </I18nextProvider>,
   )
-  return { onManualEntry, onStatementImport, onViewEntries, onSplitting, onBack }
+  return { onManualEntry, onStatementImport, onViewEntries, onSplitting, onRecurringProposals, onBack }
 }
 
 describe('JournalHubScreen', () => {
@@ -68,6 +70,14 @@ describe('JournalHubScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: '割勘' }))
 
     expect(onSplitting).toHaveBeenCalledTimes(1)
+  })
+
+  it('「定期取引の確認」ボタンを押すとonRecurringProposalsが呼ばれる', () => {
+    const { onRecurringProposals } = renderScreen()
+
+    fireEvent.click(screen.getByRole('button', { name: '定期取引の確認' }))
+
+    expect(onRecurringProposals).toHaveBeenCalledTimes(1)
   })
 
   it('戻るボタンを押すとonBackが呼ばれる', () => {

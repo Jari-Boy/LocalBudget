@@ -20,6 +20,7 @@ function renderScreen(overrides: Partial<Parameters<typeof MasterHubScreen>[0]> 
   const onManageCounterparties = vi.fn()
   const onManageHouseholdMembers = vi.fn()
   const onManageProjects = vi.fn()
+  const onManageRecurringTransactions = vi.fn()
   const onBack = vi.fn()
   render(
     <I18nextProvider i18n={i18n}>
@@ -28,12 +29,20 @@ function renderScreen(overrides: Partial<Parameters<typeof MasterHubScreen>[0]> 
         onManageCounterparties={onManageCounterparties}
         onManageHouseholdMembers={onManageHouseholdMembers}
         onManageProjects={onManageProjects}
+        onManageRecurringTransactions={onManageRecurringTransactions}
         onBack={onBack}
         {...overrides}
       />
     </I18nextProvider>,
   )
-  return { onManageAccounts, onManageCounterparties, onManageHouseholdMembers, onManageProjects, onBack }
+  return {
+    onManageAccounts,
+    onManageCounterparties,
+    onManageHouseholdMembers,
+    onManageProjects,
+    onManageRecurringTransactions,
+    onBack,
+  }
 }
 
 describe('MasterHubScreen', () => {
@@ -67,6 +76,14 @@ describe('MasterHubScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'プロジェクトを管理する' }))
 
     expect(onManageProjects).toHaveBeenCalledTimes(1)
+  })
+
+  it('「定期取引を管理する」ボタンを押すとonManageRecurringTransactionsが呼ばれる', () => {
+    const { onManageRecurringTransactions } = renderScreen()
+
+    fireEvent.click(screen.getByRole('button', { name: '定期取引を管理する' }))
+
+    expect(onManageRecurringTransactions).toHaveBeenCalledTimes(1)
   })
 
   it('戻るボタンを押すとonBackが呼ばれる', () => {

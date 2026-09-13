@@ -1,0 +1,91 @@
+.recurring-transaction-proposal-review-screen {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.recurring-transaction-proposal-review-screen ul {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.recurring-transaction-proposal-review-screen li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.recurring-transaction-proposal-review-screen .recurring-transaction-proposal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.recurring-transaction-proposal-review-screen .recurring-transaction-proposal-name {
+  color: var(--text-h);
+}
+
+.recurring-transaction-proposal-review-screen .recurring-transaction-proposal-due-date {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.recurring-transaction-proposal-review-screen .recurring-transaction-proposal-other-pending {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.recurring-transaction-proposal-review-screen label {
+  display: block;
+}
+
+.recurring-transaction-proposal-review-screen input,
+.recurring-transaction-proposal-review-screen select {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  box-sizing: border-box;
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-color: var(--accent);
+  }
+}
+
+.recurring-transaction-proposal-review-screen button {
+  font-size: 16px;
+  padding: 8px 20px;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background: var(--accent-bg);
+  color: var(--accent-contrast);
+  cursor: pointer;
+  transition: border-color 0.3s;
+
+  &:hover:not(:disabled) {
+    border-color: var(--accent-border);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}

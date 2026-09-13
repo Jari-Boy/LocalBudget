@@ -6,6 +6,7 @@ export interface MasterHubScreenProps {
   onManageCounterparties: () => void
   onManageHouseholdMembers: () => void
   onManageProjects: () => void
+  onManageRecurringTransactions: () => void
   onBack: () => void
 }
 
@@ -23,6 +24,7 @@ export function MasterHubScreen({
   onManageCounterparties,
   onManageHouseholdMembers,
   onManageProjects,
+  onManageRecurringTransactions,
   onBack,
 }: MasterHubScreenProps) {
   const { t } = useTranslation('master')
@@ -30,6 +32,7 @@ export function MasterHubScreen({
   const { t: tCounterparty } = useTranslation('counterparty')
   const { t: tHouseholdMember } = useTranslation('householdMember')
   const { t: tProject } = useTranslation('project')
+  const { t: tRecurringTransaction } = useTranslation('recurringTransaction')
 
   return (
     <div className="hub-menu-screen">
@@ -45,6 +48,9 @@ export function MasterHubScreen({
       </button>
       <button type="button" onClick={onManageProjects}>
         {tProject('viewProjectsTitle')}
+      </button>
+      <button type="button" onClick={onManageRecurringTransactions}>
+        {tRecurringTransaction('viewRecurringTransactionsTitle')}
       </button>
       <button type="button" onClick={onBack}>
         {t('back')}
