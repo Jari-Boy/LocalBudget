@@ -189,4 +189,34 @@ describe('RecurringTransactionProposalReviewScreen', () => {
     )
     expect(journalEntryRepository.findAll().find((e) => e.lines.length > 0)?.householdMemberId).toBe(memberId)
   })
+
+  it('確認ボタンクリック前に他経路(別タブ等)で同じ対象日が確認され同期例外(昇順違反)になった場合、エラーメッセージが表示され確認ボタンが再び有効になる', async () => {
+    // 画面ロード時点では対象日2026-09-01が最古の保留中対象日だが、クリック前に別経路で
+    // confirmされ、次回チェック日が前進したとする(confirmは同期関数であり、この違反は
+    // 同期的にthrowされる、createRecurringTransactionProposalApi.ts参照)。Promise.resolve(fn())
+    // のままだとこの例外が.catch()に届かずisSubmittingがtrueに固定されたままボタンが
+    // 恒久的に無効化される(Promise.resolve().then(() => fn())への修正のリグレッションテスト、
+    // コミットffafcc9)。
+    const rule = ruleRepository.create({
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+      householdMemberId: memberId,
+    })
+    insertGeneratedEntry(rule.id, '2026-08-01')
+    vi.setSystemTime(new Date('2026-09-01T00:00:00Z'))
+
+    renderScreen()
+    const confirmButton = await screen.findByRole('button', { name: '確認して仕訳を作成する' })
+
+    proposalApi.confirm({ ruleId: rule.id, dueDate: '2026-09-01' })
+
+    fireEvent.click(confirmButton)
+
+    expect(await screen.findByText('仕訳の作成に失敗しました。もう一度お試しください。')).toBeInTheDocument()
+    await waitFor(() => expect(confirmButton).toBeEnabled())
+  })
 })

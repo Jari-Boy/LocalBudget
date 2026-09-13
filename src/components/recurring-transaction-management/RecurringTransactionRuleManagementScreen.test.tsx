@@ -219,4 +219,84 @@ describe('RecurringTransactionRuleManagementScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: '非アクティブ化' }))
     expect(await screen.findByText('非アクティブ')).toBeInTheDocument()
   })
+
+  it('削除ボタン表示後に他経路で仕訳が生成され同期例外(DDLトリガー)になった場合、エラーメッセージが表示され削除ボタンが再び有効になる', async () => {
+    // 画面ロード時点ではgeneratedCount=0のため削除ボタンが表示されるが、クリック前に
+    // (別タブでの提案確認等)そのルールから仕訳が生成されるレースを想定する。この場合
+    // prevent_delete_rule_with_journal_entriesトリガーがdelete()呼び出し時に同期的に
+    // 例外を投げる。Promise.resolve(fn())のままだとこの例外が.catch()に届かず
+    // isSubmittingがtrueに固定されたままボタンが恒久的に無効化される
+    // (Promise.resolve().then(() => fn())への修正のリグレッションテスト、コミットffafcc9)。
+    const rule = ruleRepository.create({
+      name: '削除競合ルール',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 500,
+      frequency: 'weekly',
+      dayOfWeek: 0,
+    })
+    renderScreen()
+    const deleteButton = await screen.findByRole('button', { name: '削除' })
+
+    journalEntryRepository.create({
+      entryDate: '2026-07-06',
+      memo: null,
+      householdMemberId: memberId,
+      generatedFromRuleId: rule.id,
+      lines: [
+        { accountId: expenseAccountId, side: 'debit', amount: 500 },
+        { accountId: liabilityAccountId, side: 'credit', amount: 500 },
+      ],
+    })
+
+    fireEvent.click(deleteButton)
+
+    expect(await screen.findByText('削除に失敗しました。もう一度お試しください。')).toBeInTheDocument()
+    await waitFor(() => expect(deleteButton).toBeEnabled())
+  })
+
+  it('保存操作中にRepositoryが同期的に例外を投げた場合、エラーメッセージが表示され保存ボタンが再び有効になる', async () => {
+    // submitForm(update)経路のPromise.resolve().then(() => fn())修正(コミットffafcc9)の
+    // リグレッションテスト。updateが同期的に例外を投げるスタブRepositoryを使い、
+    // Promise.resolve(fn())のままだと例外が.catch()に届かずisSubmittingが固定される
+    // 不具合が再発しないことを検証する。
+    ruleRepository.create({
+      name: '保存失敗ルール',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 500,
+      frequency: 'weekly',
+      dayOfWeek: 0,
+    })
+    const throwingRuleRepository = {
+      findAll: () => ruleRepository.findAll(),
+      create: (input: Parameters<typeof ruleRepository.create>[0]) => ruleRepository.create(input),
+      update: () => {
+        throw new Error('update failed synchronously')
+      },
+      delete: (id: number) => ruleRepository.delete(id),
+      deactivate: (id: number) => ruleRepository.deactivate(id),
+      countGeneratedJournalEntries: (id: number) => ruleRepository.countGeneratedJournalEntries(id),
+    }
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <RecurringTransactionRuleManagementScreen
+          recurringTransactionRuleRepository={throwingRuleRepository}
+          accountRepository={accountRepository}
+          projectRepository={projectRepository}
+          householdMemberRepository={householdMemberRepository}
+          counterpartyRepository={counterpartyRepository}
+          onBack={vi.fn()}
+        />
+      </I18nextProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: '編集' }))
+    const saveButton = screen.getByRole('button', { name: '保存する' })
+    fireEvent.click(saveButton)
+
+    expect(await screen.findByText('保存に失敗しました。もう一度お試しください。')).toBeInTheDocument()
+    await waitFor(() => expect(saveButton).toBeEnabled())
+  })
 })
