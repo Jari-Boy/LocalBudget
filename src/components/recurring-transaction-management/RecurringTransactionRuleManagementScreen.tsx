@@ -292,12 +292,17 @@ export function RecurringTransactionRuleManagementScreen({
       maxOccurrences: form.maxOccurrences === '' ? null : Number(form.maxOccurrences),
     }
 
-    const request =
-      formMode === 'create'
-        ? Promise.resolve(recurringTransactionRuleRepository.create(input))
-        : Promise.resolve(recurringTransactionRuleRepository.update(formMode as number, input))
-
-    void request
+    // Repository呼び出しは.then()コールバック内で行う(Promise.resolve(fn())ではなく
+    // Promise.resolve().then(() => fn()))。DDLトリガー違反等でfn()が同期的に例外を
+    // 投げる場合、Promise.resolve(fn())だとfn()の評価がPromise.resolve呼び出しより先に
+    // 走るため例外が.catch()に届かずisSubmittingがtrueのまま固定されてしまう
+    // (docs/decisions.md 2026-08-13参照)。
+    void Promise.resolve()
+      .then(() =>
+        formMode === 'create'
+          ? recurringTransactionRuleRepository.create(input)
+          : recurringTransactionRuleRepository.update(formMode as number, input),
+      )
       .then(() => {
         closeForm()
         load()
@@ -310,7 +315,8 @@ export function RecurringTransactionRuleManagementScreen({
     if (isSubmitting) return
     setIsSubmitting(true)
     setError(null)
-    void Promise.resolve(recurringTransactionRuleRepository.delete(id))
+    void Promise.resolve()
+      .then(() => recurringTransactionRuleRepository.delete(id))
       .then(load)
       .catch(() => setError(t('deleteError')))
       .finally(() => setIsSubmitting(false))
@@ -320,7 +326,8 @@ export function RecurringTransactionRuleManagementScreen({
     if (isSubmitting) return
     setIsSubmitting(true)
     setError(null)
-    void Promise.resolve(recurringTransactionRuleRepository.deactivate(id))
+    void Promise.resolve()
+      .then(() => recurringTransactionRuleRepository.deactivate(id))
       .then(load)
       .catch(() => setError(t('deactivateError')))
       .finally(() => setIsSubmitting(false))

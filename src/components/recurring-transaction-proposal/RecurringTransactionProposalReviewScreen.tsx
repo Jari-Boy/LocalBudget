@@ -134,14 +134,19 @@ export function RecurringTransactionProposalReviewScreen({
     setIsSubmitting(true)
     setError(null)
     const amount = Number(input.amountInput)
-    void Promise.resolve(
-      recurringTransactionProposalApi.confirm({
-        ruleId: item.rule.id,
-        dueDate: item.dueDate,
-        amount: input.amountInput === '' || !Number.isFinite(amount) ? undefined : amount,
-        householdMemberId: input.householdMemberIdInput === '' ? undefined : input.householdMemberIdInput,
-      }),
-    )
+    // confirm()はPromise.resolve().then(() => fn())の形で起動する(Promise.resolve(fn())は
+    // 使わない)。confirmが同期的に例外を投げる場合(昇順違反等)、Promise.resolve(fn())だと
+    // fn()の評価がPromise.resolve呼び出しより先に走り例外が.catch()に届かなくなる
+    // (docs/decisions.md 2026-08-13参照)。
+    void Promise.resolve()
+      .then(() =>
+        recurringTransactionProposalApi.confirm({
+          ruleId: item.rule.id,
+          dueDate: item.dueDate,
+          amount: input.amountInput === '' || !Number.isFinite(amount) ? undefined : amount,
+          householdMemberId: input.householdMemberIdInput === '' ? undefined : input.householdMemberIdInput,
+        }),
+      )
       .then(load)
       .catch((caught: unknown) => {
         setError(
