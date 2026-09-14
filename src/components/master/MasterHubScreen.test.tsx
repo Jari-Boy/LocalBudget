@@ -5,6 +5,9 @@
  * マスタ管理という1つのカテゴリに統合する入口として、4つの導線ボタンと戻るボタンを
  * 提供することを検証する。DB・Repositoryへの依存を持たない純粋な表示・ナビゲーション
  * コンポーネント。外部依存: なし。
+ * (計画Issue #39の定期取引ルール管理画面は、当初本ハブ配下に追加したが、ルール管理・
+ * 提案確認という定期取引機能全体の発見性を優先しJournalHubScreen配下の専用サブハブへ
+ * 統合し直した経緯があり、本画面からは導線を持たない、docs/decisions.md参照)
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -33,7 +36,13 @@ function renderScreen(overrides: Partial<Parameters<typeof MasterHubScreen>[0]> 
       />
     </I18nextProvider>,
   )
-  return { onManageAccounts, onManageCounterparties, onManageHouseholdMembers, onManageProjects, onBack }
+  return {
+    onManageAccounts,
+    onManageCounterparties,
+    onManageHouseholdMembers,
+    onManageProjects,
+    onBack,
+  }
 }
 
 describe('MasterHubScreen', () => {

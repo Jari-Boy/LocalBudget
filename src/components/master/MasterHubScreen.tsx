@@ -17,6 +17,10 @@ export interface MasterHubScreenProps {
  * accountManagementTitleを再利用していた既存の慣習を踏襲)。実際の画面遷移は
  * コールバック経由で呼び出し元(App.tsx)に委ねる、DB非依存の純粋な表示・
  * ナビゲーションコンポーネント。
+ * 定期取引ルール管理画面(計画Issue #39)は当初本ハブ配下に追加したが、ルール管理・
+ * 提案確認という定期取引機能全体の発見性を優先し、JournalHubScreen配下の専用サブハブ
+ * (RecurringTransactionHubScreen)へ導線を一本化したため、本ハブからは参照しない
+ * (Human Override - REJECT、docs/decisions.md参照)。
  */
 export function MasterHubScreen({
   onManageAccounts,
