@@ -1,6 +1,8 @@
 /**
  * 定期取引の提案レビュー画面(計画Issue #39)のE2Eテスト。実ブラウザ(Chromium)で
- * トップ画面(仕訳ハブ)からの遷移、#121が提供するlistPending/confirm RPCを経由した
+ * トップ画面→仕訳ハブ→定期取引サブハブ経由の遷移(Human Override - REJECTにより
+ * 仕訳ハブから直接ではなく定期取引サブハブ経由に変更、docs/decisions.md参照)、
+ * #121が提供するlistPending/confirm RPCを経由した
  * 保留中の提案一覧表示、「そのルールについて最も古い対象日のみ確認操作ができる」制約
  * (docs/domain/recurring-transactions.md 1.2節、confirmは昇順のみ許可)、レビュー時の
  * 金額編集(2.1節)、ルールにhouseholdMemberIdが未設定の場合に起票者を選択するまで
@@ -36,6 +38,7 @@ async function waitForPendingProposalCount(page: Page, expectedCount: number) {
 
 async function openProposalReviewScreen(page: Page) {
   await page.getByRole('button', { name: '仕訳' }).click()
+  await page.getByRole('button', { name: '定期取引' }).click()
   await page.getByRole('button', { name: '定期取引の確認' }).click()
 }
 

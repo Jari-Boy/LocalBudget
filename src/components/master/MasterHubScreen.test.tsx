@@ -5,6 +5,9 @@
  * マスタ管理という1つのカテゴリに統合する入口として、4つの導線ボタンと戻るボタンを
  * 提供することを検証する。DB・Repositoryへの依存を持たない純粋な表示・ナビゲーション
  * コンポーネント。外部依存: なし。
+ * (計画Issue #39の定期取引ルール管理画面は、当初本ハブ配下に追加したが、ルール管理・
+ * 提案確認という定期取引機能全体の発見性を優先しJournalHubScreen配下の専用サブハブへ
+ * 統合し直した経緯があり、本画面からは導線を持たない、docs/decisions.md参照)
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -20,7 +23,6 @@ function renderScreen(overrides: Partial<Parameters<typeof MasterHubScreen>[0]> 
   const onManageCounterparties = vi.fn()
   const onManageHouseholdMembers = vi.fn()
   const onManageProjects = vi.fn()
-  const onManageRecurringTransactions = vi.fn()
   const onBack = vi.fn()
   render(
     <I18nextProvider i18n={i18n}>
@@ -29,7 +31,6 @@ function renderScreen(overrides: Partial<Parameters<typeof MasterHubScreen>[0]> 
         onManageCounterparties={onManageCounterparties}
         onManageHouseholdMembers={onManageHouseholdMembers}
         onManageProjects={onManageProjects}
-        onManageRecurringTransactions={onManageRecurringTransactions}
         onBack={onBack}
         {...overrides}
       />
@@ -40,7 +41,6 @@ function renderScreen(overrides: Partial<Parameters<typeof MasterHubScreen>[0]> 
     onManageCounterparties,
     onManageHouseholdMembers,
     onManageProjects,
-    onManageRecurringTransactions,
     onBack,
   }
 }
@@ -76,14 +76,6 @@ describe('MasterHubScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'プロジェクトを管理する' }))
 
     expect(onManageProjects).toHaveBeenCalledTimes(1)
-  })
-
-  it('「定期取引を管理する」ボタンを押すとonManageRecurringTransactionsが呼ばれる', () => {
-    const { onManageRecurringTransactions } = renderScreen()
-
-    fireEvent.click(screen.getByRole('button', { name: '定期取引を管理する' }))
-
-    expect(onManageRecurringTransactions).toHaveBeenCalledTimes(1)
   })
 
   it('戻るボタンを押すとonBackが呼ばれる', () => {

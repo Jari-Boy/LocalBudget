@@ -1,5 +1,7 @@
 {
-  "viewRecurringTransactionsTitle": "定期取引を管理する",
+  "recurringTransactionMenuButton": "定期取引",
+  "recurringTransactionHubTitle": "定期取引",
+  "ruleManagementMenuButton": "ルールを管理する",
   "ruleListTitle": "定期取引ルール管理",
   "ruleListEmpty": "登録済みの定期取引ルールがありません",
   "nameLabel": "ルール名",

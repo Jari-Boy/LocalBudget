@@ -21,7 +21,7 @@ function renderScreen(overrides: Partial<Parameters<typeof JournalHubScreen>[0]>
   const onStatementImport = vi.fn()
   const onViewEntries = vi.fn()
   const onSplitting = vi.fn()
-  const onRecurringProposals = vi.fn()
+  const onRecurringTransactions = vi.fn()
   const onBack = vi.fn()
   render(
     <I18nextProvider i18n={i18n}>
@@ -30,13 +30,13 @@ function renderScreen(overrides: Partial<Parameters<typeof JournalHubScreen>[0]>
         onStatementImport={onStatementImport}
         onViewEntries={onViewEntries}
         onSplitting={onSplitting}
-        onRecurringProposals={onRecurringProposals}
+        onRecurringTransactions={onRecurringTransactions}
         onBack={onBack}
         {...overrides}
       />
     </I18nextProvider>,
   )
-  return { onManualEntry, onStatementImport, onViewEntries, onSplitting, onRecurringProposals, onBack }
+  return { onManualEntry, onStatementImport, onViewEntries, onSplitting, onRecurringTransactions, onBack }
 }
 
 describe('JournalHubScreen', () => {
@@ -72,12 +72,12 @@ describe('JournalHubScreen', () => {
     expect(onSplitting).toHaveBeenCalledTimes(1)
   })
 
-  it('「定期取引の確認」ボタンを押すとonRecurringProposalsが呼ばれる', () => {
-    const { onRecurringProposals } = renderScreen()
+  it('「定期取引」ボタンを押すとonRecurringTransactionsが呼ばれる', () => {
+    const { onRecurringTransactions } = renderScreen()
 
-    fireEvent.click(screen.getByRole('button', { name: '定期取引の確認' }))
+    fireEvent.click(screen.getByRole('button', { name: '定期取引' }))
 
-    expect(onRecurringProposals).toHaveBeenCalledTimes(1)
+    expect(onRecurringTransactions).toHaveBeenCalledTimes(1)
   })
 
   it('戻るボタンを押すとonBackが呼ばれる', () => {

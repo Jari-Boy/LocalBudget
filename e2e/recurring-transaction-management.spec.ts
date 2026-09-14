@@ -1,6 +1,8 @@
 /**
  * 定期取引ルール管理画面(計画Issue #39)のE2Eテスト。実ブラウザ(Chromium)で
- * トップ画面からの遷移、frequency(weekly/monthly日付指定/monthly曜日指定/yearly)ごとに
+ * トップ画面→仕訳ハブ→定期取引サブハブ経由の遷移(Human Override - REJECTにより
+ * マスタ管理配下から仕訳ハブ配下へ再配置、docs/decisions.md参照)、
+ * frequency(weekly/monthly日付指定/monthly曜日指定/yearly)ごとに
  * 入力項目が切り替わる条件分岐フォームでの新規作成、編集、および「生成済み仕訳が0件なら
  * 物理削除可、1件以上なら理由表示の上で非アクティブ化のみ」という削除可否の分岐
  * (docs/domain/recurring-transactions.md 1.6節)が実際のWeb Worker + RPC層を経由して
@@ -61,8 +63,9 @@ test.describe('定期取引ルール管理画面', () => {
   }) => {
     await page.goto('/')
     await seedRuleAccounts(page)
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: '定期取引を管理する' }).click()
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '定期取引' }).click()
+    await page.getByRole('button', { name: 'ルールを管理する' }).click()
     await expect(page.getByText('登録済みの定期取引ルールがありません')).toBeVisible()
 
     // weekly
@@ -129,7 +132,7 @@ test.describe('定期取引ルール管理画面', () => {
     await expect(insuranceItem).toContainText('毎年6月1日')
 
     await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '定期取引' })).toBeVisible()
   })
 
   test('生成済み仕訳が0件のルールは削除でき、1件以上あるルールは理由表示の上で非アクティブ化のみ可能', async ({
@@ -183,8 +186,9 @@ test.describe('定期取引ルール管理画面', () => {
     await waitForRuleCreated(page, '記帳済みルール')
     await page.reload()
 
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: '定期取引を管理する' }).click()
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '定期取引' }).click()
+    await page.getByRole('button', { name: 'ルールを管理する' }).click()
 
     const unusedItem = page.getByRole('listitem').filter({ hasText: '未使用ルール' })
     await unusedItem.getByRole('button', { name: '削除' }).click()

@@ -25,6 +25,7 @@ import { HouseholdMemberManagementScreen } from '../components/household-member-
 import { ProjectManagementScreen } from '../components/project-management/ProjectManagementScreen'
 import { FinancialStatementScreen } from '../components/financial-statement/FinancialStatementScreen'
 import { MasterHubScreen } from '../components/master/MasterHubScreen'
+import { RecurringTransactionHubScreen } from '../components/recurring-transaction/RecurringTransactionHubScreen'
 import { RecurringTransactionRuleManagementScreen } from '../components/recurring-transaction-management/RecurringTransactionRuleManagementScreen'
 import { RecurringTransactionProposalReviewScreen } from '../components/recurring-transaction-proposal/RecurringTransactionProposalReviewScreen'
 import { JournalHubScreen } from '../components/journal-entry/JournalHubScreen'
@@ -136,21 +137,7 @@ export function AppRoutes() {
             onManageCounterparties={() => navigate('/master/counterparties')}
             onManageHouseholdMembers={() => navigate('/master/household-members')}
             onManageProjects={() => navigate('/master/projects')}
-            onManageRecurringTransactions={() => navigate('/master/recurring-transactions')}
             onBack={() => navigate('/')}
-          />
-        }
-      />
-      <Route
-        path="/master/recurring-transactions"
-        element={
-          <RecurringTransactionRuleManagementScreen
-            recurringTransactionRuleRepository={recurringTransactionRuleRepository}
-            accountRepository={accountRepository}
-            projectRepository={projectRepository}
-            householdMemberRepository={householdMemberRepository}
-            counterpartyRepository={counterpartyRepository}
-            onBack={() => navigate('/master')}
           />
         }
       />
@@ -243,19 +230,42 @@ export function AppRoutes() {
             onStatementImport={() => navigate('/journal/create/import')}
             onViewEntries={() => navigate('/journal/entries')}
             onSplitting={() => navigate('/journal/splitting')}
-            onRecurringProposals={() => navigate('/journal/recurring-proposals')}
+            onRecurringTransactions={() => navigate('/journal/recurring')}
             onBack={() => navigate('/')}
           />
         }
       />
       <Route
-        path="/journal/recurring-proposals"
+        path="/journal/recurring"
+        element={
+          <RecurringTransactionHubScreen
+            onManageRules={() => navigate('/journal/recurring/rules')}
+            onReviewProposals={() => navigate('/journal/recurring/proposals')}
+            onBack={() => navigate('/journal')}
+          />
+        }
+      />
+      <Route
+        path="/journal/recurring/rules"
+        element={
+          <RecurringTransactionRuleManagementScreen
+            recurringTransactionRuleRepository={recurringTransactionRuleRepository}
+            accountRepository={accountRepository}
+            projectRepository={projectRepository}
+            householdMemberRepository={householdMemberRepository}
+            counterpartyRepository={counterpartyRepository}
+            onBack={() => navigate('/journal/recurring')}
+          />
+        }
+      />
+      <Route
+        path="/journal/recurring/proposals"
         element={
           <RecurringTransactionProposalReviewScreen
             recurringTransactionProposalApi={recurringTransactionProposalApi}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
             householdMemberRepository={householdMemberRepository}
-            onBack={() => navigate('/journal')}
+            onBack={() => navigate('/journal/recurring')}
           />
         }
       />
