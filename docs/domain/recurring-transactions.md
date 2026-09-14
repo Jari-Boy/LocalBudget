@@ -48,6 +48,9 @@
 > **「前回チェック日」はルールごとに専用の値を永続化せず、生成済みの実績から逆算する(計画Issue #121)**
 > 上記の「前回チェック日」を専用のテーブル/カラムとして持つ設計も検討したが、`max_occurrences`の残数を専用カウンタで持たず`journal_entries`のCOUNTから逆算する既存方針([2.1](#21-フィールド定義)「なぜmax_occurrencesを専用の残数カウンタにしないか」)と同じ理由(生成失敗時の同期ズレを避ける「二重管理を避ける」考え方)により、ルールごとに「生成済みの仕訳のうち最新の`entry_date`(1件も無ければルールの作成日)」を前回チェック日として都度導出する実装にした。この方式は、提案の確認(仕訳生成)を対象日の昇順以外の順序で行うと、飛び越された未確認の対象日が二度と評価対象に含まれなくなる(実績が「最新の1件」でしか進捗を表現できないため)という欠陥を持つ。これを防ぐため、確認操作(RPCの`confirm`)は「そのルールについて現在保留中の対象日のうち最も古いもの」と一致する場合にのみ許可し、飛び越しての確認を拒否する(実装: `src/infrastructure/rpc/createRecurringTransactionProposalApi.ts`)。この制約により、UI([計画Issue #39](https://github.com/Jari-Boy/LocalBudget/issues/39))は保留中の提案を古い順に確認させる導線にする必要がある。
 >
+> **実装状況(計画Issue #39)**
+> `RecurringTransactionProposalReviewScreen`(`src/components/recurring-transaction-proposal/`)で上記の導線を実装した。ルールごとに保留中の対象日を昇順ソートし、最も古い対象日のみを確認フォーム付きで表示する。それ以外の保留中件数は`otherPendingCount`として「ほか◯件が保留中です(古い順に確認してください)」という案内文のみを表示し、確認フォーム自体は出さない(古い順にしか確認できない導線)。
+>
 > **提案の評価はWeb Worker起動時に1回実行されるが、画面表示のたびにも再評価される**
 > 評価(`listPending`)自体は副作用のない読み取り専用の純粋な計算であり、起動シーケンスに特別なステップを追加する必要はない。Worker起動時([architecture.md 5章](../architecture.md#5-dbアクセス層とworker設計))に1回呼び出すことで評価中の例外を既存の`worker-init-error`伝播に乗せて早期検知しつつ、提案データ自体は永続化しないため、UI側もマウント時に同じRPCを呼んで最新の状態を取得する。
 >
@@ -78,7 +81,10 @@
 複合仕訳(3行以上)のテンプレート化は複雑になるため、MVPでは「借方1科目・貸方1科目」の単純な2行仕訳のみを対象とする。ルールが持つ`project_id`・`household_member_id`・`counterparty_id`はそれぞれ1つのみであり、生成時に借方・貸方どちらの行に設定するかが軸ごとに異なる。
 
 - `project_id`([projects.md 1.2](./projects.md#12-紐づけ対象))・`household_member_id`([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承))は全区分の仕訳明細に設定できるため、生成される2行の両方に同じ値を設定する。
-- `counterparty_id`は[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)の通りPL科目(収益・費用)の行にのみ設定可能(TRIGGERで強制)なため、`debit_account_id`・`credit_account_id`のうちPL区分(revenue/expense)である側の行にのみ設定する。両方ともBS科目のルール([3章 大口費用の按分](#3-大口費用の按分)の支払いルール等)ではPL行が存在しないため、`counterparty_id`を設定しても実質無視される(UI側で入力欄自体を非表示にするかは実装課題とする)。
+- `counterparty_id`は[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)の通りPL科目(収益・費用)の行にのみ設定可能(TRIGGERで強制)なため、`debit_account_id`・`credit_account_id`のうちPL区分(revenue/expense)である側の行にのみ設定する。両方ともBS科目のルール([3章 大口費用の按分](#3-大口費用の按分)の支払いルール等)ではPL行が存在しないため、`counterparty_id`を設定しても実質無視される。
+
+> **実装状況(計画Issue #39)**
+> `RecurringTransactionRuleManagementScreen`(`src/components/recurring-transaction-management/`)は、借方・貸方いずれかの科目がPL区分(revenue/expense)である場合にのみ取引先選択欄を表示する(`showCounterpartyField`)。判定には`JournalEntryForm`・`StatementImportReviewScreen`・`CounterpartyManagementScreen`と共通の`isCounterpartyEligibleCategory`(`src/components/journal-entry/journalEntryFormLine.ts`)を再利用しており、上記「UI側で入力欄自体を非表示にするかは実装課題とする」は解消済み。
 
 ### 1.5 生成された仕訳との関係
 
