@@ -40,6 +40,7 @@
   "memberUnspecified": "全員",
   "groupSelectLabel": "グループ",
   "groupUnspecified": "未分類",
+  "balanceColumnLabel": "残高",
   "nameEditLabel": "名称",
   "editButton": "編集",
   "deleteButton": "削除",

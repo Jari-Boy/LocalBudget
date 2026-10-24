@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 /**
  * 科目一覧・管理画面(計画Issue #70で新設、計画Issue #95で編集・削除・非アクティブ化を追加、
- * 計画Issue #112で編集フォームへのグループ割り当て欄を追加)のコンポーネントテスト。
- * isSystemManaged科目を除いた登録済み全科目が、区分を問わずフラットな一覧として名称・残高・
- * (あれば)世帯メンバー名とともに表示されること、0件時の空状態表示、戻る操作に加え、
- * 名称・名義・グループの編集、参照(仕訳・予算・定期取引ルール)が無い科目のみの削除、
- * 非アクティブ化を、sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテスト
- * として検証する。外部依存: sql.js(ネットワークアクセスなし)。
+ * 計画Issue #112で編集フォームへのグループ割り当て欄を追加、計画Issue #127でテーブル形式+
+ * 行内インライン編集に変更)のコンポーネントテスト。isSystemManaged科目を除いた登録済み全科目が、
+ * 区分を問わずテーブル(thead/tbody)の1行として名称・残高・(あれば)世帯メンバー名・グループとともに
+ * 表示されること、0件時の空状態表示、戻る操作に加え、行をクリックして入る編集モードでの
+ * 名称・名義・グループの編集(保存/取消)、参照(仕訳・予算・定期取引ルール)が無い科目のみの削除、
+ * 非アクティブ化を、sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして
+ * 検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -61,6 +62,11 @@ function renderScreen(onBack: () => void = vi.fn()) {
   )
 }
 
+/** ヘッダー行を除いたtbody側の行(role="row")一覧を返す */
+function getBodyRows() {
+  return screen.getAllByRole('row').slice(1)
+}
+
 describe('AccountListScreen', () => {
   it('登録済み科目が名称と残高とともに一覧表示される', async () => {
     const account = accountRepository.create({
@@ -89,6 +95,19 @@ describe('AccountListScreen', () => {
 
     expect(await screen.findByText('普通預金')).toBeInTheDocument()
     expect(screen.getByText('￥50,000')).toBeInTheDocument()
+  })
+
+  it('一覧はテーブル(thead/tbody)で表示され、列見出しを持つ', async () => {
+    accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+
+    renderScreen()
+    await screen.findByText('普通預金')
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '名称' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '名義' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'グループ' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '残高' })).toBeInTheDocument()
   })
 
   it('isSystemManagedな科目(初期残高科目等)は一覧に表示されない', async () => {
@@ -126,11 +145,11 @@ describe('AccountListScreen', () => {
 
     renderScreen()
 
-    const taroItem = (await screen.findByText('太郎の口座')).closest('li')!
-    expect(taroItem).toHaveTextContent('太郎')
+    const taroRow = (await screen.findByText('太郎の口座')).closest('tr')!
+    expect(taroRow).toHaveTextContent('太郎')
 
-    const sharedItem = screen.getByText('共通口座').closest('li')!
-    expect(sharedItem).not.toHaveTextContent('太郎')
+    const sharedRow = screen.getByText('共通口座').closest('tr')!
+    expect(sharedRow).not.toHaveTextContent('太郎')
   })
 
   it.each([
@@ -147,11 +166,11 @@ describe('AccountListScreen', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('テスト科目')).closest('li')!
-    expect(item).toHaveTextContent(expectedLabel)
+    const row = (await screen.findByText('テスト科目')).closest('tr')!
+    expect(row).toHaveTextContent(expectedLabel)
   })
 
-  it('名義(householdMemberId)が設定されている科目には「名義: 太郎」のように表示され、設定されていない科目には「名義: 全員」と表示される', async () => {
+  it('名義(householdMemberId)が設定されている科目にはその世帯メンバー名が表示され、設定されていない科目には「全員」と表示される', async () => {
     const member = householdMemberRepository.create({ name: '太郎' })
     accountRepository.create({
       category: 'asset',
@@ -163,11 +182,11 @@ describe('AccountListScreen', () => {
 
     renderScreen()
 
-    const taroItem = (await screen.findByText('太郎の口座')).closest('li')!
-    expect(taroItem).toHaveTextContent('名義: 太郎')
+    const taroRow = (await screen.findByText('太郎の口座')).closest('tr')!
+    expect(within(taroRow).getByText('太郎')).toBeInTheDocument()
 
-    const sharedItem = screen.getByText('共通口座').closest('li')!
-    expect(sharedItem).toHaveTextContent('名義: 全員')
+    const sharedRow = screen.getByText('共通口座').closest('tr')!
+    expect(within(sharedRow).getByText('全員')).toBeInTheDocument()
   })
 
   it('登録済み科目が0件の場合はエラーにならず空状態が表示される', async () => {
@@ -193,9 +212,9 @@ describe('AccountListScreen', () => {
     renderScreen()
 
     await screen.findByText('B口座')
-    const names = screen.getAllByRole('listitem').map((item) => item.textContent)
-    expect(names[0]).toContain('B口座')
-    expect(names[1]).toContain('A口座')
+    const rows = getBodyRows()
+    expect(rows[0]).toHaveTextContent('B口座')
+    expect(rows[1]).toHaveTextContent('A口座')
   })
 
   describe('編集', () => {
@@ -219,7 +238,38 @@ describe('AccountListScreen', () => {
       fireEvent.click(screen.getByRole('button', { name: '保存する' }))
 
       expect(await screen.findByText('交際費')).toBeInTheDocument()
-      expect(screen.getByText('交際費').closest('li')).toHaveTextContent('花子')
+      expect(screen.getByText('交際費').closest('tr')).toHaveTextContent('花子')
+    })
+
+    it('行をクリックして編集中でも、他の行は表示専用のままで入力欄を持たない', async () => {
+      accountRepository.create({ category: 'expense', name: '娯楽費', isReconcilable: null })
+      accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+
+      renderScreen()
+      await screen.findByText('娯楽費')
+
+      const editingRow = screen.getByText('娯楽費').closest('tr')!
+      fireEvent.click(within(editingRow).getByRole('button', { name: '編集' }))
+
+      expect(within(editingRow).getByLabelText('名称')).toBeInTheDocument()
+      const otherRow = screen.getByText('食費').closest('tr')!
+      expect(within(otherRow).queryByLabelText('名称')).not.toBeInTheDocument()
+      expect(within(otherRow).getByText('食費')).toBeInTheDocument()
+    })
+
+    it('取消ボタンを押すと編集前の値のまま一覧表示に戻る', async () => {
+      accountRepository.create({ category: 'expense', name: '娯楽費', isReconcilable: null })
+
+      renderScreen()
+      await screen.findByText('娯楽費')
+
+      fireEvent.click(screen.getByRole('button', { name: '編集' }))
+      fireEvent.change(screen.getByLabelText('名称'), { target: { value: '書き換え中' } })
+      fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+
+      expect(screen.queryByLabelText('名称')).not.toBeInTheDocument()
+      expect(screen.getByText('娯楽費')).toBeInTheDocument()
+      expect(screen.queryByText('書き換え中')).not.toBeInTheDocument()
     })
 
     it('同一区分内で既存の別科目と同じ名前に変更しようとすると、UNIQUE制約違反(同期例外)がエラーメッセージとして表示され、操作ボタンが再び有効になる', async () => {
@@ -229,8 +279,8 @@ describe('AccountListScreen', () => {
       renderScreen()
       await screen.findByText('娯楽費')
 
-      const item = screen.getByText('娯楽費').closest('li')!
-      fireEvent.click(within(item).getByRole('button', { name: '編集' }))
+      const row = screen.getByText('娯楽費').closest('tr')!
+      fireEvent.click(within(row).getByRole('button', { name: '編集' }))
       fireEvent.change(screen.getByLabelText('名称'), { target: { value: '食費' } })
       fireEvent.click(screen.getByRole('button', { name: '保存する' }))
 
@@ -270,9 +320,9 @@ describe('AccountListScreen', () => {
       })
 
       renderScreen()
-      const item = (await screen.findByText('普通預金')).closest('li')!
+      const row = (await screen.findByText('普通預金')).closest('tr')!
 
-      expect(item.querySelector('button[data-action="delete"]')).toBeNull()
+      expect(row.querySelector('button[data-action="delete"]')).toBeNull()
     })
 
     it('予算が紐づく科目には削除ボタンが表示されない', async () => {
@@ -280,9 +330,9 @@ describe('AccountListScreen', () => {
       budgetRepository.create({ accountId: expense.id, yearMonth: '2026-08', amount: 30000 })
 
       renderScreen()
-      const item = (await screen.findByText('食費')).closest('li')!
+      const row = (await screen.findByText('食費')).closest('tr')!
 
-      expect(item.querySelector('button[data-action="delete"]')).toBeNull()
+      expect(row.querySelector('button[data-action="delete"]')).toBeNull()
     })
 
     it('定期取引ルールが紐づく科目には削除ボタンが表示されない', async () => {
@@ -302,10 +352,10 @@ describe('AccountListScreen', () => {
       })
 
       renderScreen()
-      const debitItem = (await screen.findByText('家賃')).closest('li')!
-      expect(debitItem.querySelector('button[data-action="delete"]')).toBeNull()
-      const creditItem = screen.getByText('未払金').closest('li')!
-      expect(creditItem.querySelector('button[data-action="delete"]')).toBeNull()
+      const debitRow = (await screen.findByText('家賃')).closest('tr')!
+      expect(debitRow.querySelector('button[data-action="delete"]')).toBeNull()
+      const creditRow = screen.getByText('未払金').closest('tr')!
+      expect(creditRow.querySelector('button[data-action="delete"]')).toBeNull()
     })
   })
 
@@ -349,6 +399,15 @@ describe('AccountListScreen', () => {
           accountRepository.findAll().find((a) => a.name === '電気代')?.accountGroupId,
         ).toBeNull(),
       )
+    })
+
+    it('グループ未割り当ての科目には一覧に「未分類」と表示される', async () => {
+      accountRepository.create({ category: 'expense', name: '電気代', isReconcilable: null })
+
+      renderScreen()
+
+      const row = (await screen.findByText('電気代')).closest('tr')!
+      expect(within(row).getByText('未分類')).toBeInTheDocument()
     })
 
     it('非アクティブ化されたグループが現在選択中の値である場合、選択肢から消えない', async () => {
@@ -396,12 +455,12 @@ describe('AccountListScreen', () => {
 
       fireEvent.click(screen.getByRole('button', { name: '非アクティブ化' }))
 
-      const item = await waitFor(() => {
-        const el = screen.getByText('娯楽費').closest('li')!
+      const row = await waitFor(() => {
+        const el = screen.getByText('娯楽費').closest('tr')!
         expect(el).toHaveTextContent('非アクティブ')
         return el
       })
-      expect(item.querySelector('button[data-action="deactivate"]')).toBeNull()
+      expect(row.querySelector('button[data-action="deactivate"]')).toBeNull()
     })
   })
 })

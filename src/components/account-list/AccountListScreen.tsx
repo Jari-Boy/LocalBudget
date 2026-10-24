@@ -86,12 +86,14 @@ type FormMode = number | null
 
 /**
  * 登録済み科目一覧・管理画面(計画Issue #70で新設、計画Issue #95で編集・削除・
- * 非アクティブ化を追加)。isSystemManaged科目(初期残高科目等の内部管理用科目)を除いた
- * 登録済み全科目を、区分を問わずフラットな一覧として名称・残高とともに表示する。
- * householdMemberIdが設定された科目には世帯メンバー名を併記する。並び順は
- * AccountRepository.findAll()の返り順(登録順)をそのまま使い、UI層での独自ソートは行わない。
- * 各行から名称・名義・グループ(計画Issue #112、account_group_id)の編集ができ、紐づく
- * 仕訳・予算・定期取引ルールがいずれも0件の科目のみ削除ボタンを表示する
+ * 非アクティブ化を追加、計画Issue #127でテーブル形式+行内インライン編集に変更)。
+ * isSystemManaged科目(初期残高科目等の内部管理用科目)を除いた登録済み全科目を、区分を
+ * 問わずテーブル(thead/tbody)の1行として名称・残高とともに表示する。householdMemberIdが
+ * 設定された科目には世帯メンバー名を併記する。並び順はAccountRepository.findAll()の
+ * 返り順(登録順)をそのまま使い、UI層での独自ソートは行わない。各行の「編集」ボタンで
+ * その行だけ名称・名義・グループ(計画Issue #112、account_group_id)の入力欄に切り替わり、
+ * 「保存する」/「キャンセル」で確定・破棄する(常時全行編集可能にはしない)。紐づく仕訳・
+ * 予算・定期取引ルールがいずれも0件の科目のみ削除ボタンを表示する
  * (docs/schema/accounts.sqlのprevent_delete_account_with_referencesトリガーが最終防御線)。
  * is_active = trueの科目には非アクティブ化ボタンを表示する。
  */
@@ -238,30 +240,111 @@ export function AccountListScreen({
       {data.accounts.length === 0 ? (
         <p>{t('accountListEmpty')}</p>
       ) : (
-        <ul>
-          {data.accounts.map((account) => {
-            const balance = data.balanceByAccountId.get(account.id)
-            const canDelete = !data.accountIdsWithReference.has(account.id)
-            return (
-              <li key={account.id}>
-                <div className="account-list-row">
-                  <span className="account-list-name">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">{t('nameEditLabel')}</th>
+              <th scope="col">{t('memberSelectLabel')}</th>
+              <th scope="col">{t('groupSelectLabel')}</th>
+              <th scope="col">{t('balanceColumnLabel')}</th>
+              <th scope="col"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.accounts.map((account) => {
+              const balance = data.balanceByAccountId.get(account.id)
+              const canDelete = !data.accountIdsWithReference.has(account.id)
+              const isEditing = formMode === account.id
+
+              if (isEditing) {
+                return (
+                  <tr key={account.id}>
+                    <td>
+                      <input
+                        aria-label={t('nameEditLabel')}
+                        type="text"
+                        value={nameInput}
+                        onChange={(event) => setNameInput(event.target.value)}
+                      />
+                    </td>
+                    <td>
+                      <select
+                        aria-label={t('memberSelectLabel')}
+                        value={householdMemberIdInput ?? ''}
+                        onChange={(event) =>
+                          setHouseholdMemberIdInput(
+                            event.target.value === '' ? null : Number(event.target.value),
+                          )
+                        }
+                      >
+                        <option value="">{t('memberUnspecified')}</option>
+                        {data.householdMembers
+                          .filter((member) => member.isActive || member.id === householdMemberIdInput)
+                          .map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.name}
+                            </option>
+                          ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        aria-label={t('groupSelectLabel')}
+                        value={accountGroupIdInput ?? ''}
+                        onChange={(event) =>
+                          setAccountGroupIdInput(
+                            event.target.value === '' ? null : Number(event.target.value),
+                          )
+                        }
+                      >
+                        <option value="">{t('groupUnspecified')}</option>
+                        {data.accountGroups
+                          .filter((group) => group.isActive || group.id === accountGroupIdInput)
+                          .map((group) => (
+                            <option key={group.id} value={group.id}>
+                              {groupPathLabelByGroupId.get(group.id) ?? group.name}
+                            </option>
+                          ))}
+                      </select>
+                    </td>
+                    <td className="account-list-amount">{formatCurrency(balance?.amount ?? 0, 'JPY')}</td>
+                    <td className="account-list-actions">
+                      <button
+                        type="button"
+                        onClick={submitEdit}
+                        disabled={nameInput.trim() === '' || isSubmitting}
+                      >
+                        {t('saveSubmit')}
+                      </button>
+                      <button type="button" onClick={closeForm} disabled={isSubmitting}>
+                        {t('cancel')}
+                      </button>
+                    </td>
+                  </tr>
+                )
+              }
+
+              return (
+                <tr key={account.id}>
+                  <td className="account-list-name">
                     {account.name}
                     <span className="account-list-category">{t(CATEGORY_LABEL_KEY[account.category])}</span>
                     {!account.isActive && (
                       <span className="account-list-inactive">{t('inactiveLabel')}</span>
                     )}
-                  </span>
-                  <span className="account-list-amount">{formatCurrency(balance?.amount ?? 0, 'JPY')}</span>
-                </div>
-                <div className="account-list-row">
-                  <span className="account-list-member">
-                    {t('memberSelectLabel')}:{' '}
+                  </td>
+                  <td>
                     {account.householdMemberId !== null
                       ? data.householdMemberNameById.get(account.householdMemberId)
                       : t('memberUnspecified')}
-                  </span>
-                  <span className="account-list-actions">
+                  </td>
+                  <td>
+                    {account.accountGroupId !== null
+                      ? groupPathLabelByGroupId.get(account.accountGroupId) ?? t('groupUnspecified')
+                      : t('groupUnspecified')}
+                  </td>
+                  <td className="account-list-amount">{formatCurrency(balance?.amount ?? 0, 'JPY')}</td>
+                  <td className="account-list-actions">
                     <button type="button" onClick={() => openEditForm(account)} disabled={isSubmitting}>
                       {t('editButton')}
                     </button>
@@ -285,69 +368,12 @@ export function AccountListScreen({
                         {t('deactivateButton')}
                       </button>
                     )}
-                  </span>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-
-      {formMode !== null && (
-        <div className="account-edit-form">
-          <label htmlFor="account-edit-name">{t('nameEditLabel')}</label>
-          <input
-            id="account-edit-name"
-            type="text"
-            value={nameInput}
-            onChange={(event) => setNameInput(event.target.value)}
-          />
-
-          <label htmlFor="account-edit-member">{t('memberSelectLabel')}</label>
-          <select
-            id="account-edit-member"
-            value={householdMemberIdInput ?? ''}
-            onChange={(event) =>
-              setHouseholdMemberIdInput(event.target.value === '' ? null : Number(event.target.value))
-            }
-          >
-            <option value="">{t('memberUnspecified')}</option>
-            {data.householdMembers
-              .filter((member) => member.isActive || member.id === householdMemberIdInput)
-              .map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-          </select>
-
-          <label htmlFor="account-edit-group">{t('groupSelectLabel')}</label>
-          <select
-            id="account-edit-group"
-            value={accountGroupIdInput ?? ''}
-            onChange={(event) =>
-              setAccountGroupIdInput(event.target.value === '' ? null : Number(event.target.value))
-            }
-          >
-            <option value="">{t('groupUnspecified')}</option>
-            {data.accountGroups
-              .filter((group) => group.isActive || group.id === accountGroupIdInput)
-              .map((group) => (
-                <option key={group.id} value={group.id}>
-                  {groupPathLabelByGroupId.get(group.id) ?? group.name}
-                </option>
-              ))}
-          </select>
-
-          <div className="account-edit-form-actions">
-            <button type="button" onClick={submitEdit} disabled={nameInput.trim() === '' || isSubmitting}>
-              {t('saveSubmit')}
-            </button>
-            <button type="button" onClick={closeForm} disabled={isSubmitting}>
-              {t('cancel')}
-            </button>
-          </div>
-        </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       )}
 
       <button type="button" onClick={onBack} disabled={isSubmitting}>

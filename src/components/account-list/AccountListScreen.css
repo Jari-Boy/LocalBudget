@@ -1,38 +1,28 @@
 .account-list-screen {
-  max-width: 480px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 1rem;
 }
 
-.account-list-screen ul {
-  list-style: none;
+.account-list-screen table {
+  width: 100%;
+  border-collapse: collapse;
   margin: 0 0 1rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
 }
 
-.account-list-screen li {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 8px 12px;
-  border-radius: 5px;
+.account-list-screen th,
+.account-list-screen td {
   border: 1px solid var(--border);
-  background: var(--bg);
-}
-
-.account-list-screen .account-list-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.75rem;
-}
-
-.account-list-screen .account-list-name {
+  padding: 8px 12px;
+  text-align: left;
   color: var(--text-h);
+  vertical-align: top;
+}
+
+.account-list-screen th {
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
 }
 
 .account-list-screen .account-list-category {
@@ -42,11 +32,6 @@
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 1px 6px;
-}
-
-.account-list-screen .account-list-member {
-  font-size: 14px;
-  color: var(--text);
 }
 
 .account-list-screen .account-list-inactive {
@@ -66,24 +51,14 @@
 .account-list-screen .account-list-actions {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
-.account-list-screen .account-edit-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.account-list-screen .account-edit-form label {
-  display: block;
-}
-
-.account-list-screen .account-edit-form input,
-.account-list-screen .account-edit-form select {
+.account-list-screen input,
+.account-list-screen select {
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 8px;
   border-radius: 5px;
   border: 1px solid var(--border);
   background: var(--bg);
@@ -96,12 +71,6 @@
     outline-offset: 2px;
     border-color: var(--accent);
   }
-}
-
-.account-list-screen .account-edit-form-actions {
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
 }
 
 .account-list-screen [role='alert'] {
