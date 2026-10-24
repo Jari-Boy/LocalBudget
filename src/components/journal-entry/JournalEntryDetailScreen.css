@@ -1,41 +1,15 @@
 .journal-entry-detail-screen {
-  max-width: 480px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 1rem;
 }
 
-.journal-entry-detail-screen .journal-entry-detail-header {
-  display: flex;
-  flex-direction: row;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-  color: var(--text-h);
-}
-
-.journal-entry-detail-screen .journal-entry-detail-lines {
-  list-style: none;
-  margin: 0 0 1rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.journal-entry-detail-screen .journal-entry-detail-lines li {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.75rem;
+.journal-entry-detail-screen [role='alert'] {
   padding: 8px 12px;
   border-radius: 5px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text-h);
-}
-
-.journal-entry-detail-screen .journal-entry-detail-line-account {
-  font-weight: bold;
+  background: var(--error-bg);
+  color: var(--error);
+  margin-bottom: 1rem;
 }
 
 .journal-entry-detail-screen .journal-entry-detail-cancellation {

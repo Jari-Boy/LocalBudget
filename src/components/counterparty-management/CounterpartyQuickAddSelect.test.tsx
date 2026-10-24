@@ -26,6 +26,7 @@ function renderSelect(overrides?: {
   value?: number | null
   i18nNamespace?: string
   onCreate?: (name: string) => Promise<Counterparty>
+  disabled?: boolean
 }) {
   const onChange = vi.fn()
   const onCreate =
@@ -40,6 +41,7 @@ function renderSelect(overrides?: {
         onChange={onChange}
         onCreate={onCreate}
         i18nNamespace={overrides?.i18nNamespace ?? 'expenseSplitting'}
+        disabled={overrides?.disabled}
       />
     </I18nextProvider>,
   )
@@ -89,6 +91,12 @@ describe('CounterpartyQuickAddSelect', () => {
 
     expect(screen.queryByLabelText('新しい取引先の名前')).not.toBeInTheDocument()
     expect(screen.getByLabelText('相手')).toBeInTheDocument()
+  })
+
+  it('disabled指定時はセレクトが無効化される(計画Issue #125、科目に応じてロックされる項目の表現)', () => {
+    renderSelect({ disabled: true })
+
+    expect(screen.getByLabelText('相手')).toBeDisabled()
   })
 
   it('i18nNamespaceに応じて、呼び出し元の翻訳名前空間の文言が使われる', () => {

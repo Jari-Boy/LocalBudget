@@ -4,6 +4,11 @@
  * Web Worker + RPC層を経由して複合仕訳(3行以上)の作成、借方/貸方合計・差額の
  * リアルタイム表示、貸借不一致時のエラーフィードバック、取引先入力欄のPL科目行限定、
  * 下書きのデバウンス自動保存・リロード後の下書き一覧からの再開・削除を検証する。
+ * 借方/貸方は1枚の連結した表(JournalEntryLinesTable、計画Issue #125)の列として表示され、
+ * 行ごとの借方/貸方切り替えは存在しない(どちらの列に追加したかで決まる)。行追加ボタンは
+ * 廃止されており、各列の最終行のいずれかのフィールドに入力すると自動的に次の空行が現れる。
+ * 取引先入力欄はPL科目(収益/費用)以外の行でも非表示にはせず、無効化(disabled)した状態で
+ * 表示する。
  * account-registration.spec.tsと同様、事前データ準備はpage.evaluate内で新規に
  * createDbClient()した別Workerで行うため、Reactアプリが使う既存Workerには
  * 直接は反映されない。作成したデータがRepository経由で確認できるまでpollしてから
@@ -32,6 +37,19 @@ import { test, expect, type Page } from '@playwright/test'
  * 後勝ちで上書きし合ってしまう(docs/architecture.md 9章のマルチタブ書き込み競合と
  * 同種の問題)ため避ける。
  */
+/**
+ * 借方列・貸方列(JournalEntryLinesTable、計画Issue #125)のN番目の行セルを取得する。
+ * 借方/貸方は1枚の表の列(1列目=借方、2列目=貸方)として連結表示され、行ごとの
+ * 借方/貸方切り替え欄は存在しない。
+ */
+function journalEntryBlockCard(page: Page, side: '借方' | '貸方', index: number) {
+  const columnIndex = side === '借方' ? 1 : 2
+  return page
+    .locator('table.journal-entry-lines-table-grid tbody tr')
+    .nth(index)
+    .locator(`td:nth-child(${columnIndex})`)
+}
+
 async function setupAccountsAndReload(
   page: Page,
   inputs: { category: string; name: string; isReconcilable: boolean | null }[],
@@ -106,21 +124,18 @@ test.describe('マニュアル仕訳入力', () => {
     await page.getByRole('button', { name: '手入力で起票' }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
-    const line1 = page.getByRole('group', { name: '1行目' })
-    await line1.getByLabel('科目').selectOption({ label: 'ランチ代' })
-    await line1.getByLabel('借方/貸方').selectOption({ label: '借方' })
-    await line1.getByLabel('金額').fill('7000')
+    const debitCard1 = journalEntryBlockCard(page, '借方', 0)
+    await debitCard1.getByLabel('科目').selectOption({ label: 'ランチ代' })
+    await debitCard1.getByLabel('金額').fill('7000')
 
-    await page.getByRole('button', { name: '行を追加する' }).click()
-    const line2 = page.getByRole('group', { name: '2行目' })
-    await line2.getByLabel('科目').selectOption({ label: '文房具費' })
-    await line2.getByLabel('借方/貸方').selectOption({ label: '借方' })
-    await line2.getByLabel('金額').fill('3000')
+    // 行追加ボタンは無く、1枚目のカードへ入力した時点で自動的に2枚目の空カードが現れる。
+    const debitCard2 = journalEntryBlockCard(page, '借方', 1)
+    await debitCard2.getByLabel('科目').selectOption({ label: '文房具費' })
+    await debitCard2.getByLabel('金額').fill('3000')
 
-    const line3 = page.getByRole('group', { name: '3行目' })
-    await line3.getByLabel('科目').selectOption({ label: '現金' })
-    await line3.getByLabel('借方/貸方').selectOption({ label: '貸方' })
-    await line3.getByLabel('金額').fill('10000')
+    const creditCard1 = journalEntryBlockCard(page, '貸方', 0)
+    await creditCard1.getByLabel('科目').selectOption({ label: '現金' })
+    await creditCard1.getByLabel('金額').fill('10000')
 
     await page.getByRole('button', { name: '確定する' }).click()
 
@@ -148,9 +163,9 @@ test.describe('マニュアル仕訳入力', () => {
     await page.getByRole('button', { name: '手入力で起票' }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
-    const line1 = page.getByRole('group', { name: '1行目' })
-    await line1.getByLabel('科目').selectOption({ label: 'ランチ代' })
-    await line1.getByLabel('金額').fill('5000')
+    const debitCard1 = journalEntryBlockCard(page, '借方', 0)
+    await debitCard1.getByLabel('科目').selectOption({ label: 'ランチ代' })
+    await debitCard1.getByLabel('金額').fill('5000')
 
     // フォーム側のデバウンス(2秒)を経てjournal_entry_draftsへ保存され、さらに
     // withAutoSaveのデバウンス(2秒)を経てIndexedDBへ永続化されるまで待つ。
@@ -164,8 +179,8 @@ test.describe('マニュアル仕訳入力', () => {
     await expect(page.getByRole('listitem')).toHaveCount(1, { timeout: 10000 })
 
     await page.getByRole('button', { name: '再開する' }).click()
-    const resumedLine1 = page.getByRole('group', { name: '1行目' })
-    await expect(resumedLine1.getByLabel('金額')).toHaveValue('5000')
+    const resumedDebitCard1 = journalEntryBlockCard(page, '借方', 0)
+    await expect(resumedDebitCard1.getByLabel('金額')).toHaveValue('5000')
 
     await page.getByRole('button', { name: '戻る' }).click()
     // 「戻る」はhandleBack内で保留中の下書き自動保存をflushしてから遷移するため非同期。
@@ -190,15 +205,13 @@ test.describe('マニュアル仕訳入力', () => {
     await page.getByRole('button', { name: '手入力で起票' }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
-    const line1 = page.getByRole('group', { name: '1行目' })
-    await line1.getByLabel('科目').selectOption({ label: 'ランチ代' })
-    await line1.getByLabel('借方/貸方').selectOption({ label: '借方' })
-    await line1.getByLabel('金額').fill('3000')
+    const debitCard1 = journalEntryBlockCard(page, '借方', 0)
+    await debitCard1.getByLabel('科目').selectOption({ label: 'ランチ代' })
+    await debitCard1.getByLabel('金額').fill('3000')
 
-    const line2 = page.getByRole('group', { name: '2行目' })
-    await line2.getByLabel('科目').selectOption({ label: '現金' })
-    await line2.getByLabel('借方/貸方').selectOption({ label: '貸方' })
-    await line2.getByLabel('金額').fill('2000')
+    const creditCard1 = journalEntryBlockCard(page, '貸方', 0)
+    await creditCard1.getByLabel('科目').selectOption({ label: '現金' })
+    await creditCard1.getByLabel('金額').fill('2000')
 
     await expect(page.getByText('￥1,000')).toBeVisible()
 
@@ -207,7 +220,9 @@ test.describe('マニュアル仕訳入力', () => {
     await waitForJournalEntryCount(page, 0)
   })
 
-  test('取引先入力欄は選択した科目がPL科目(収益/費用)の行にのみ表示される', async ({ page }) => {
+  test('取引先入力欄は選択した科目がPL科目(収益/費用)でない行では無効化される(非表示にはしない)', async ({
+    page,
+  }) => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
@@ -220,14 +235,14 @@ test.describe('マニュアル仕訳入力', () => {
     await page.getByRole('button', { name: '手入力で起票' }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
-    const line1 = page.getByRole('group', { name: '1行目' })
-    await expect(line1.getByLabel('取引先(任意)')).toHaveCount(0)
+    const debitCard1 = journalEntryBlockCard(page, '借方', 0)
+    await expect(debitCard1.getByLabel('取引先(任意) 🔒')).toBeDisabled()
 
-    await line1.getByLabel('科目').selectOption({ label: 'ランチ代' })
-    await expect(line1.getByLabel('取引先(任意)')).toBeVisible()
+    await debitCard1.getByLabel('科目').selectOption({ label: 'ランチ代' })
+    await expect(debitCard1.getByLabel('取引先(任意)')).toBeEnabled()
 
-    const line2 = page.getByRole('group', { name: '2行目' })
-    await line2.getByLabel('科目').selectOption({ label: '現金' })
-    await expect(line2.getByLabel('取引先(任意)')).toHaveCount(0)
+    const creditCard1 = journalEntryBlockCard(page, '貸方', 0)
+    await creditCard1.getByLabel('科目').selectOption({ label: '現金' })
+    await expect(creditCard1.getByLabel('取引先(任意) 🔒')).toBeDisabled()
   })
 })

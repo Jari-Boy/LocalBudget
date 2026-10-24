@@ -338,6 +338,9 @@ export function AppRoutes() {
         element={
           <JournalEntryListScreen
             journalEntryRepository={journalEntryRepository}
+            accountRepository={accountRepository}
+            householdMemberRepository={householdMemberRepository}
+            projectRepository={projectRepository}
             onSelectEntry={(entry) => navigate(`/journal/entries/${entry.id}`)}
             onBack={() => navigate('/journal')}
           />

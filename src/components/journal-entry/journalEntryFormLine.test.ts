@@ -6,11 +6,14 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { JournalEntryDraftLine } from '../../domain/journal/JournalEntryDraft'
+import type { JournalLine } from '../../domain/journal/JournalEntry'
 import {
   createEmptyJournalEntryFormLine,
   fromJournalEntryDraftLine,
+  fromJournalLine,
   hasNonPositiveAmountInput,
   isCounterpartyEligibleCategory,
+  isLineEmpty,
   isManualEntryEligibleAccount,
   toJournalEntryDraftLineInput,
   toJournalLineInput,
@@ -57,6 +60,18 @@ describe('isManualEntryEligibleAccount', () => {
 
   it('isSystemManaged = trueの科目(初期残高科目等)はfalseを返す(システム内部管理用であり手入力対象外)', () => {
     expect(isManualEntryEligibleAccount({ isReconcilable: null, isSystemManaged: true })).toBe(false)
+  })
+
+  it('isActive = falseの科目はfalseを返す(非アクティブ化済み科目は新規仕訳で選択不可、docs/domain/accounts.md 2.3)', () => {
+    expect(
+      isManualEntryEligibleAccount({ isReconcilable: null, isSystemManaged: false, isActive: false }),
+    ).toBe(false)
+  })
+
+  it('isActive = trueの科目はtrueを返す', () => {
+    expect(
+      isManualEntryEligibleAccount({ isReconcilable: null, isSystemManaged: false, isActive: true }),
+    ).toBe(true)
   })
 })
 
@@ -211,5 +226,49 @@ describe('fromJournalEntryDraftLine', () => {
       householdMemberId: null,
       counterpartyId: null,
     })
+  })
+})
+
+describe('fromJournalLine', () => {
+  it('確定済み仕訳明細(JournalLine)をフォーム行に変換する(金額は文字列化、計画Issue #125)', () => {
+    const line: JournalLine = {
+      id: 10,
+      journalEntryId: 1,
+      accountId: 1,
+      projectId: 2,
+      householdMemberId: 3,
+      counterpartyId: 4,
+      side: 'debit',
+      amount: 7000,
+      createdAt: '2026-08-11T00:00:00.000Z',
+    }
+    expect(fromJournalLine(line)).toEqual({
+      accountId: 1,
+      side: 'debit',
+      amountInput: '7000',
+      projectId: 2,
+      householdMemberId: 3,
+      counterpartyId: 4,
+    })
+  })
+})
+
+describe('isLineEmpty', () => {
+  it('全項目が未選択・空文字の行はtrueを返す(計画Issue #125、自動行追加の判定に使う)', () => {
+    expect(isLineEmpty(createEmptyJournalEntryFormLine())).toBe(true)
+  })
+
+  it('科目のみ選択されている行はfalseを返す', () => {
+    expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), accountId: 1 })).toBe(false)
+  })
+
+  it('金額のみ入力されている行はfalseを返す', () => {
+    expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), amountInput: '1000' })).toBe(false)
+  })
+
+  it('プロジェクト・世帯メンバー・取引先のいずれかのみ設定されている行もfalseを返す', () => {
+    expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), projectId: 1 })).toBe(false)
+    expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), householdMemberId: 1 })).toBe(false)
+    expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), counterpartyId: 1 })).toBe(false)
   })
 })

@@ -1,0 +1,177 @@
+.journal-entry-lines-table-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.journal-entry-lines-table-header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.journal-entry-lines-table-header label {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.journal-entry-lines-table-grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin-bottom: 1.5rem;
+}
+
+.journal-entry-lines-table-grid th {
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--text-h);
+  background: var(--bg-subtle, color-mix(in srgb, var(--bg) 92%, var(--text)));
+}
+
+.journal-entry-lines-table-cell {
+  border: 1px solid var(--border);
+  padding: 0;
+  vertical-align: top;
+  background: var(--bg);
+}
+
+.journal-entry-lines-table-cell-empty {
+  background: var(--bg);
+}
+
+.journal-entry-line-cell-inner {
+  position: relative;
+  padding: 10px 28px 10px 12px;
+}
+
+/*
+ * セレクタを`.journal-entry-lines-table .journal-entry-line-cell-remove`にしているのは、
+ * JournalEntryForm.cssの`.journal-entry-form button`(詳細度: class+要素型)が、クラス単独の
+ * セレクタより詳細度が高くpadding/background/colorを上書きしてしまい、ゴミ箱アイコンが
+ * 背景(--accent-bg、薄紫)と同系色の文字色(--accent-contrast)になって見えなくなる不具合が
+ * 実機で発覚したため(計画Issue #125)。クラスを2つ重ねて詳細度を確実に上回らせる。
+ */
+.journal-entry-lines-table .journal-entry-line-cell-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--error-bg);
+    border-color: var(--error);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.journal-entry-line-cell-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    'account .'
+    'counterparty project'
+    'member amount';
+  gap: 0.5rem;
+}
+
+.journal-entry-line-cell-field-account {
+  grid-area: account;
+}
+.journal-entry-line-cell-field-counterparty {
+  grid-area: counterparty;
+}
+.journal-entry-line-cell-field-project {
+  grid-area: project;
+}
+.journal-entry-line-cell-field-member {
+  grid-area: member;
+}
+.journal-entry-line-cell-field-amount {
+  grid-area: amount;
+}
+
+.journal-entry-line-cell-field label {
+  display: block;
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.journal-entry-lines-table input,
+.journal-entry-lines-table select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  box-sizing: border-box;
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-color: var(--accent);
+  }
+
+  /* 科目に既定の世帯メンバーがある、または取引先が選択科目に対して不適格な場合など、
+     「操作を受け付けない」ことを明示する(ユーザーレビューでの指摘対応)。 */
+  &:disabled {
+    background: var(--bg-subtle, color-mix(in srgb, var(--bg) 92%, var(--text)));
+    color: var(--text);
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+}
+
+.journal-entry-lines-table-totals-cell {
+  /* display: flexをtdへ直接指定するとtable-cellとしてのレイアウトが外れ、
+     隣接するセルと横並びにならず1列全幅で縦に積まれてしまう(実機確認で発覚)。
+     flexは内側のjournal-entry-lines-table-totals-row側に適用する。 */
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  font-size: 14px;
+  background: var(--bg-subtle, color-mix(in srgb, var(--bg) 92%, var(--text)));
+}
+
+.journal-entry-lines-table-totals-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.journal-entry-lines-table-totals-row > span:first-child {
+  color: var(--text);
+}
+
+.journal-entry-lines-table-totals-row > span:last-child {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.journal-entry-lines-table-totals-shortfall {
+  margin-left: 0.35rem;
+  font-weight: 400;
+  color: var(--error);
+}

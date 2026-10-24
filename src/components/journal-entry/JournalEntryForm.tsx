@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { Project } from '../../domain/project/Project'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
-import type { Counterparty } from '../../domain/counterparty/Counterparty'
+import type { Counterparty, CreateCounterpartyInput } from '../../domain/counterparty/Counterparty'
 import type { CreateJournalEntryInput, JournalEntry, JournalLineSide } from '../../domain/journal/JournalEntry'
 import type {
   CreateJournalEntryDraftInput,
@@ -12,14 +12,15 @@ import type {
 } from '../../domain/journal/JournalEntryDraft'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
-import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
-import { calculateJournalLineTotals } from './journalLineTotals'
+import {
+  JournalEntryLinesTable,
+  type JournalEntryLineRow,
+  type JournalEntryLinesTableMasterData,
+} from './JournalEntryLinesTable'
 import {
   createEmptyJournalEntryFormLine,
   fromJournalEntryDraftLine,
   hasNonPositiveAmountInput,
-  isCounterpartyEligibleCategory,
-  isManualEntryEligibleAccount,
   toJournalEntryDraftLineInput,
   toJournalLineInput,
   type JournalEntryFormLine,
@@ -39,6 +40,7 @@ interface HouseholdMemberFinder {
 }
 interface CounterpartyFinder {
   findAll(): Counterparty[] | Promise<Counterparty[]>
+  create(input: CreateCounterpartyInput): Counterparty | Promise<Counterparty>
 }
 interface JournalEntryCreator {
   create(input: CreateJournalEntryInput): JournalEntry | Promise<JournalEntry>
@@ -75,17 +77,8 @@ export interface JournalEntryFormProps {
   draftSaveDebounceMs?: number
 }
 
-interface FormLineState {
-  key: number
-  line: JournalEntryFormLine
-}
-
-interface MasterData {
-  accounts: Account[]
-  projects: Project[]
-  householdMembers: HouseholdMember[]
-  counterparties: Counterparty[]
-}
+type FormLineState = JournalEntryLineRow
+type MasterData = JournalEntryLinesTableMasterData
 
 /**
  * マニュアル仕訳入力フォーム(計画Issue #32、docs/domain/journal.md 1章)。
@@ -135,7 +128,10 @@ export function JournalEntryForm({
   const [lineStates, setLineStates] = useState<FormLineState[]>(() =>
     initialDraft && initialDraft.lines.length > 0
       ? initialDraft.lines.map((draftLine) => createLineState(fromJournalEntryDraftLine(draftLine)))
-      : [createLineState(), createLineState()],
+      : [
+          createLineState({ ...createEmptyJournalEntryFormLine(), side: 'debit' }),
+          createLineState({ ...createEmptyJournalEntryFormLine(), side: 'credit' }),
+        ],
   )
   const [draftId, setDraftId] = useState<number | null>(initialDraft?.id ?? null)
   const [submitting, setSubmitting] = useState(false)
@@ -198,19 +194,30 @@ export function JournalEntryForm({
     hasUserEditedRef.current = true
   }
 
+  /**
+   * 取引先セレクトの「+ 新規取引先を追加」から呼ばれる(CounterpartyQuickAddSelect、
+   * StatementImportReviewScreenと同じ設計)。作成した取引先をmasterData.counterpartiesに
+   * 追加し、以降すべての行の選択肢に即座に反映されるようにする(再フェッチ不要)。
+   */
+  async function createCounterparty(name: string): Promise<Counterparty> {
+    const created = await Promise.resolve(counterpartyRepository.create({ name }))
+    setMasterData((prev) => (prev === null ? prev : { ...prev, counterparties: [...prev.counterparties, created] }))
+    return created
+  }
+
   function updateLine(key: number, updater: (line: JournalEntryFormLine) => JournalEntryFormLine) {
     markEdited()
     setLineStates((prev) => prev.map((state) => (state.key === key ? { key, line: updater(state.line) } : state)))
   }
 
-  function addLine() {
+  function addLine(side: JournalLineSide) {
     markEdited()
-    setLineStates((prev) => [...prev, createLineState()])
+    setLineStates((prev) => [...prev, createLineState({ ...createEmptyJournalEntryFormLine(), side })])
   }
 
   function removeLine(key: number) {
     markEdited()
-    setLineStates((prev) => (prev.length <= 2 ? prev : prev.filter((state) => state.key !== key)))
+    setLineStates((prev) => prev.filter((state) => state.key !== key))
   }
 
   function cancelPendingSave(): void {
@@ -289,227 +296,33 @@ export function JournalEntryForm({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const totals = calculateJournalLineTotals(lineStates.map((state) => state.line))
-
   return (
     <div className="journal-entry-form">
       <h2>{t('journalEntryFormTitle')}</h2>
 
-      <div>
-        <label htmlFor="journal-entry-date">{t('entryDateLabel')}</label>
-        <input
-          id="journal-entry-date"
-          type="date"
-          value={entryDateInput}
-          onChange={(event) => {
-            markEdited()
-            setEntryDateInput(event.target.value)
-          }}
-        />
-      </div>
-
-      <div>
-        <label htmlFor="journal-entry-memo">{t('memoLabel')}</label>
-        <input
-          id="journal-entry-memo"
-          type="text"
-          placeholder={t('memoPlaceholder')}
-          value={memoInput}
-          onChange={(event) => {
-            markEdited()
-            setMemoInput(event.target.value)
-          }}
-        />
-      </div>
-
-      <div>
-        <label htmlFor="journal-entry-household-member">{t('creatorHouseholdMemberLabel')}</label>
-        <select
-          id="journal-entry-household-member"
-          value={headerHouseholdMemberId ?? ''}
-          onChange={(event) => {
-            markEdited()
-            setHeaderHouseholdMemberId(event.target.value === '' ? null : Number(event.target.value))
-          }}
-        >
-          <option value="">{t('unselected')}</option>
-          {masterData.householdMembers.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {lineStates.map((state, index) => {
-        const selectedAccount = masterData.accounts.find((account) => account.id === state.line.accountId)
-        const showCounterparty =
-          selectedAccount !== undefined && isCounterpartyEligibleCategory(selectedAccount.category)
-        /**
-         * 科目に既定の世帯メンバーがある場合、明細側での上書きはDDLトリガーで禁止される
-         * (docs/schema/journal.sql、計画Issue #88)。UIでも選択欄をdisabled化して
-         * 通常操作では違反が起きないようにし、科目の既定値をそのまま表示する。
-         * 既定値が無い行は、明細側が未選択(null)の間ヘッダーの起票者を初期値として表示し
-         * つつ明細ごとに変更できる(household-members.md 1.2節の新ロジック)。
-         */
-        const accountDefaultMemberId = selectedAccount?.householdMemberId ?? null
-        const isMemberFieldDisabled = accountDefaultMemberId !== null
-        const memberFieldValue = isMemberFieldDisabled
-          ? accountDefaultMemberId
-          : (state.line.householdMemberId ?? headerHouseholdMemberId)
-        const idPrefix = `journal-entry-line-${state.key}`
-
-        return (
-          <fieldset key={state.key}>
-            <legend>{t('lineGroupLabel', { index: index + 1 })}</legend>
-
-            <label htmlFor={`${idPrefix}-account`}>{t('lineAccountLabel')}</label>
-            <select
-              id={`${idPrefix}-account`}
-              value={state.line.accountId ?? ''}
-              onChange={(event) => {
-                const accountId = event.target.value === '' ? null : Number(event.target.value)
-                const account = masterData.accounts.find((candidate) => candidate.id === accountId)
-                updateLine(state.key, (line) => ({
-                  ...line,
-                  accountId,
-                  counterpartyId:
-                    account !== undefined && isCounterpartyEligibleCategory(account.category)
-                      ? line.counterpartyId
-                      : null,
-                  // 既定値のある科目に切り替えた場合、明細側の上書き値が残っていると
-                  // DDLトリガー違反(household-members.md 1.2節)で確定操作が失敗しうるため、
-                  // 選択欄をdisabled化するのと合わせてここでクリアする
-                  householdMemberId:
-                    account !== undefined && account.householdMemberId !== null
-                      ? null
-                      : line.householdMemberId,
-                }))
-              }}
-            >
-              <option value="">{t('unselected')}</option>
-              {masterData.accounts.filter(isManualEntryEligibleAccount).map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-
-            <label htmlFor={`${idPrefix}-side`}>{t('lineSideLabel')}</label>
-            <select
-              id={`${idPrefix}-side`}
-              value={state.line.side ?? ''}
-              onChange={(event) =>
-                updateLine(state.key, (line) => ({
-                  ...line,
-                  side: event.target.value === '' ? null : (event.target.value as JournalLineSide),
-                }))
-              }
-            >
-              <option value="">{t('unselected')}</option>
-              <option value="debit">{t('sideDebit')}</option>
-              <option value="credit">{t('sideCredit')}</option>
-            </select>
-
-            <label htmlFor={`${idPrefix}-amount`}>{t('lineAmountLabel')}</label>
-            <input
-              id={`${idPrefix}-amount`}
-              type="number"
-              value={state.line.amountInput}
-              onChange={(event) =>
-                updateLine(state.key, (line) => ({ ...line, amountInput: event.target.value }))
-              }
-            />
-
-            <label htmlFor={`${idPrefix}-project`}>{t('lineProjectLabel')}</label>
-            <select
-              id={`${idPrefix}-project`}
-              value={state.line.projectId ?? ''}
-              onChange={(event) =>
-                updateLine(state.key, (line) => ({
-                  ...line,
-                  projectId: event.target.value === '' ? null : Number(event.target.value),
-                }))
-              }
-            >
-              <option value="">{t('unselected')}</option>
-              {masterData.projects
-                .filter((project) => project.isActive || project.id === state.line.projectId)
-                .map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-            </select>
-
-            <label htmlFor={`${idPrefix}-member`}>{t('lineHouseholdMemberLabel')}</label>
-            <select
-              id={`${idPrefix}-member`}
-              value={memberFieldValue ?? ''}
-              disabled={isMemberFieldDisabled}
-              onChange={(event) =>
-                updateLine(state.key, (line) => ({
-                  ...line,
-                  householdMemberId: event.target.value === '' ? null : Number(event.target.value),
-                }))
-              }
-            >
-              <option value="">{t('unselected')}</option>
-              {masterData.householdMembers.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </select>
-
-            {showCounterparty && (
-              <>
-                <label htmlFor={`${idPrefix}-counterparty`}>{t('lineCounterpartyLabel')}</label>
-                <select
-                  id={`${idPrefix}-counterparty`}
-                  value={state.line.counterpartyId ?? ''}
-                  onChange={(event) =>
-                    updateLine(state.key, (line) => ({
-                      ...line,
-                      counterpartyId: event.target.value === '' ? null : Number(event.target.value),
-                    }))
-                  }
-                >
-                  <option value="">{t('unselected')}</option>
-                  {masterData.counterparties.map((counterparty) => (
-                    <option key={counterparty.id} value={counterparty.id}>
-                      {counterparty.name}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-
-            <button type="button" onClick={() => removeLine(state.key)} disabled={lineStates.length <= 2}>
-              {t('removeLine')}
-            </button>
-          </fieldset>
-        )
-      })}
-
-      <button type="button" onClick={addLine}>
-        {t('addLine')}
-      </button>
-
-      <div className="journal-entry-totals">
-        <div>
-          <span>{t('debitTotalLabel')}</span>
-          <span>{formatCurrency(totals.debitTotal, 'JPY')}</span>
-        </div>
-        <div>
-          <span>{t('creditTotalLabel')}</span>
-          <span>{formatCurrency(totals.creditTotal, 'JPY')}</span>
-        </div>
-        <div>
-          <span>{t('differenceLabel')}</span>
-          <span>{formatCurrency(Math.abs(totals.difference), 'JPY')}</span>
-        </div>
-      </div>
+      <JournalEntryLinesTable
+        entryDate={entryDateInput}
+        onEntryDateChange={(value) => {
+          markEdited()
+          setEntryDateInput(value)
+        }}
+        memo={memoInput}
+        onMemoChange={(value) => {
+          markEdited()
+          setMemoInput(value)
+        }}
+        headerHouseholdMemberId={headerHouseholdMemberId}
+        onHeaderHouseholdMemberChange={(id) => {
+          markEdited()
+          setHeaderHouseholdMemberId(id)
+        }}
+        lineRows={lineStates}
+        onUpdateLine={updateLine}
+        onAddLine={addLine}
+        onRemoveLine={removeLine}
+        masterData={masterData}
+        onCreateCounterparty={createCounterparty}
+      />
 
       {error && <p role="alert">{error}</p>}
 

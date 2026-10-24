@@ -1,5 +1,5 @@
 import type { AccountCategory } from '../../domain/account/Account'
-import type { JournalLineInput, JournalLineSide } from '../../domain/journal/JournalEntry'
+import type { JournalLine, JournalLineInput, JournalLineSide } from '../../domain/journal/JournalEntry'
 import type {
   JournalEntryDraftLine,
   JournalEntryDraftLineInput,
@@ -39,12 +39,16 @@ export function createEmptyJournalEntryFormLine(): JournalEntryFormLine {
  *   (AccountListScreenが一覧表示から除外するのと同じ理由)。この制約はJournalEntryRepository・
  *   DDLトリガーいずれにも存在せず、選ぶとそのまま記帳できてしまい初期残高の整合性が壊れうる
  *   ため、UI側の選択肢除外が事実上唯一の防御手段になる。
+ * - isActive = falseの科目(非アクティブ化済み)は新規仕訳では選択不可(docs/domain/accounts.md
+ *   2.3「非アクティブ化: 過去集計はそのまま表示、新規仕訳では選択不可」)。isActiveは
+ *   省略時trueとして扱う(既存の呼び出し元・テストとの互換のため)。
  */
 export function isManualEntryEligibleAccount(account: {
   isReconcilable: boolean | null
   isSystemManaged: boolean
+  isActive?: boolean
 }): boolean {
-  return account.isReconcilable !== true && !account.isSystemManaged
+  return account.isReconcilable !== true && !account.isSystemManaged && account.isActive !== false
 }
 
 /**
@@ -124,5 +128,38 @@ export function fromJournalEntryDraftLine(draftLine: JournalEntryDraftLine): Jou
     projectId: draftLine.projectId,
     householdMemberId: draftLine.householdMemberId,
     counterpartyId: draftLine.counterpartyId,
+  }
+}
+
+/**
+ * 行のすべてのフィールドが未入力かどうかを判定する(計画Issue #125)。
+ * JournalEntryLinesTableが「ブロックの最終行が入力されたら自動で次の空行を追加する」
+ * (行追加ボタンを廃止したことの代替)挙動を実装する際の判定に使う。sideは常にどちらの
+ * ブロックに属するかで決まり空かどうかの判定には関与しないため対象外とする。
+ */
+export function isLineEmpty(line: JournalEntryFormLine): boolean {
+  return (
+    line.accountId === null &&
+    line.amountInput === '' &&
+    line.projectId === null &&
+    line.householdMemberId === null &&
+    line.counterpartyId === null
+  )
+}
+
+/**
+ * 確定済み仕訳明細(JournalLine)をフォーム行に変換する(計画Issue #125)。
+ * JournalEntryDetailScreenでのLines編集で、既存の明細をJournalEntryLinesTableの
+ * 入力状態として読み込む際に使う。確定済み明細は科目・貸借・金額がすべて必須のため
+ * (fromJournalEntryDraftLineと異なり)null合流の分岐は不要。
+ */
+export function fromJournalLine(line: JournalLine): JournalEntryFormLine {
+  return {
+    accountId: line.accountId,
+    side: line.side,
+    amountInput: String(line.amount),
+    projectId: line.projectId,
+    householdMemberId: line.householdMemberId,
+    counterpartyId: line.counterpartyId,
   }
 }

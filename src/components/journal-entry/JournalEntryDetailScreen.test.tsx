@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 /**
- * 確定済み仕訳詳細画面(計画Issue #40)のコンポーネントテスト。個々の仕訳明細
- * (科目名・金額・プロジェクト・世帯メンバー・取引先)を借方/貸方等の簿記用語を
- * 見せない形で表示すること、割勘の履歴表示(元の支出→割勘→精算のトレース、
- * docs/domain/expense-splitting.md 1.5節)、取り消し導線(精算前は割勘仕訳の
- * 物理削除、精算後は返金案内メッセージ)を、sql.jsのNode実装(createTestDatabase)
- * を使った統合的なレンダリングテストとして検証する。外部依存: sql.js(ネットワークアクセスなし)。
+ * 確定済み仕訳詳細画面(計画Issue #40、Lines編集は計画Issue #125)のコンポーネントテスト。
+ * 個々の仕訳明細(科目名・金額・プロジェクト・世帯メンバー・取引先)を共通コンポーネント
+ * JournalEntryLinesTableで編集可能なカード形式(借方・貸方ブロック)で表示すること、
+ * 明細の編集・行の追加削除(行追加ボタンは廃止、ブロック最終行が入力済みになると
+ * 自動で次の空行が現れる)・更新操作(JournalEntryRepository.updateの呼び出し、
+ * 貸借不一致時のエラー表示と入力保持)、割勘の履歴表示(元の支出→割勘→精算のトレース、
+ * docs/domain/expense-splitting.md 1.5節)、取り消し導線(精算前は割勘仕訳の物理削除、
+ * 精算後は返金案内メッセージ)を、sql.jsのNode実装(createTestDatabase)を使った統合的な
+ * レンダリングテストとして検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -61,8 +64,35 @@ function renderScreen(entryId: number, overrides?: { onBack?: () => void; onDele
   return { onBack, onDeleted }
 }
 
+/**
+ * 借方列・貸方列それぞれの「実データを持つ」セルを取得する(計画Issue #125、
+ * JournalEntryLinesTableは連結した1枚の表で借方/貸方を列として持つため、
+ * 各tr内の該当列セル(空セルを除く)を集める)。getBlock/findBlockはside識別子を
+ * そのまま返し、getCardsが呼ばれるたびにDOMを再クエリする(waitFor内での再評価や
+ * 複数回の呼び出しが常に最新のセル構成を反映できるようにするため)。
+ */
+function getDebitOrCreditCells(side: '借方' | '貸方'): HTMLElement[] {
+  const columnIndex = side === '借方' ? 0 : 1
+  return Array.from(screen.getByRole('table').querySelectorAll('tbody tr'))
+    .map((row) => (row as HTMLTableRowElement).cells[columnIndex])
+    .filter((cell) => !cell.classList.contains('journal-entry-lines-table-cell-empty'))
+}
+
+function getBlock(side: '借方' | '貸方'): '借方' | '貸方' {
+  return side
+}
+
+async function findBlock(side: '借方' | '貸方'): Promise<'借方' | '貸方'> {
+  await screen.findByRole('table')
+  return side
+}
+
+function getCards(side: '借方' | '貸方'): HTMLElement[] {
+  return getDebitOrCreditCells(side)
+}
+
 describe('JournalEntryDetailScreen', () => {
-  it('仕訳の日付・摘要・各明細行(科目名・金額)が表示される', async () => {
+  it('仕訳の日付・摘要・各明細行(科目・金額)がLinesテーブルに表示される', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
@@ -78,14 +108,22 @@ describe('JournalEntryDetailScreen', () => {
 
     renderScreen(entry.id)
 
-    expect(await screen.findByText('2026-08-01')).toBeInTheDocument()
-    expect(screen.getByText('スーパーで食材購入')).toBeInTheDocument()
-    expect(screen.getByText('食費')).toBeInTheDocument()
-    expect(screen.getByText('現金')).toBeInTheDocument()
-    expect(screen.getAllByText('￥3,000')).toHaveLength(2)
+    expect(await screen.findByLabelText('取引日')).toHaveValue('2026-08-01')
+    expect(screen.getByLabelText('摘要(任意)')).toHaveValue('スーパーで食材購入')
+    // 確定済み明細(非空)が最終行のため、不変条件により各ブロックに自動で空行が1枚追加され
+    // 2枚ずつカードが表示される(計画Issue #125)。useEffectでの自動追加はコミット後の
+    // 追加レンダリングを挟むためwaitForで待つ。
+    await waitFor(() => expect(getCards(getBlock('借方'))).toHaveLength(2))
+    await waitFor(() => expect(getCards(getBlock('貸方'))).toHaveLength(2))
+    const debitCards = getCards(getBlock('借方'))
+    const creditCards = getCards(getBlock('貸方'))
+    expect(within(debitCards[0]).getByLabelText('科目')).toHaveValue(String(expense.id))
+    expect(within(debitCards[0]).getByLabelText('金額')).toHaveValue(3000)
+    expect(within(creditCards[0]).getByLabelText('科目')).toHaveValue(String(cash.id))
+    expect(within(creditCards[0]).getByLabelText('金額')).toHaveValue(3000)
   })
 
-  it('明細行にプロジェクト・世帯メンバー・取引先が設定されている場合、それぞれの名称が表示される', async () => {
+  it('明細行にプロジェクト・世帯メンバー・取引先が設定されている場合、それぞれの選択値がLinesテーブルに反映される', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const other = householdMemberRepository.create({ name: 'Bさん' })
     const project = projectRepository.create({ name: '26/7生活費割勘' })
@@ -104,10 +142,92 @@ describe('JournalEntryDetailScreen', () => {
 
     renderScreen(entry.id)
 
-    await screen.findByText('2026-08-01')
-    expect(screen.getByText('26/7生活費割勘')).toBeInTheDocument()
-    expect(screen.getByText('Bさん')).toBeInTheDocument()
-    expect(screen.getByText('友人Cさん')).toBeInTheDocument()
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const creditCard = getCards(await findBlock('貸方'))[0]
+    expect(within(debitCard).getByLabelText('プロジェクト(任意)')).toHaveValue(String(project.id))
+    expect(within(debitCard).getByLabelText('世帯メンバー(任意)')).toHaveValue(String(other.id))
+    expect(within(creditCard).getByLabelText('取引先(任意)')).toHaveValue(String(counterparty.id))
+  })
+
+  it('明細を編集して更新すると、JournalEntryRepository.updateが呼ばれ変更が画面に反映される', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 3000 },
+        { accountId: cash.id, side: 'credit', amount: 3000 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const creditCard = getCards(await findBlock('貸方'))[0]
+
+    fireEvent.change(within(debitCard).getByLabelText('金額'), { target: { value: '5000' } })
+    fireEvent.change(within(creditCard).getByLabelText('金額'), { target: { value: '5000' } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+
+    await waitFor(() => {
+      const updated = journalEntryRepository.findById(entry.id)
+      expect(updated?.lines.map((line) => line.amount)).toEqual([5000, 5000])
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('貸借が不一致になる編集をして更新すると、エラーメッセージが表示され入力内容は保持されDBも更新されない', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 3000 },
+        { accountId: cash.id, side: 'credit', amount: 3000 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    const debitCard = getCards(await findBlock('借方'))[0]
+
+    fireEvent.change(within(debitCard).getByLabelText('金額'), { target: { value: '4000' } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('貸借が一致していません')
+    expect(within(getCards(getBlock('借方'))[0]).getByLabelText('金額')).toHaveValue(4000)
+    expect(journalEntryRepository.findById(entry.id)?.lines.map((line) => line.amount)).toEqual([3000, 3000])
+  })
+
+  it('ブロック最終行が入力済みの既存明細を読み込むと自動で空行が追加され、削除しても入力済み行が最終行である限り空行が保たれる', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    const debitBlock = await findBlock('借方')
+
+    // 行追加ボタンは無く、確定済み明細(非空)が最終行のため不変条件により自動で空行が1枚追加される。
+    await waitFor(() => expect(getCards(debitBlock)).toHaveLength(2))
+
+    const removeButton = within(getCards(debitBlock)[1]).getByRole('button', { name: 'この行を削除する' })
+    fireEvent.click(removeButton)
+
+    // 入力済みの行(食費)が最終行のままのため、削除直後に再び空行が自動追加され行数は2のまま。
+    await waitFor(() => expect(getCards(debitBlock)).toHaveLength(2))
+    expect(within(getCards(debitBlock)[0]).getByLabelText('科目')).toHaveValue(String(expense.id))
   })
 
   it('割勘・精算と無関係な通常の仕訳では、取り消しセクションが表示されない', async () => {
@@ -125,7 +245,7 @@ describe('JournalEntryDetailScreen', () => {
 
     renderScreen(entry.id)
 
-    await screen.findByText('2026-08-01')
+    await screen.findByLabelText('取引日')
     expect(screen.queryByRole('button', { name: 'この割勘を取り消す' })).not.toBeInTheDocument()
   })
 
@@ -164,7 +284,7 @@ describe('JournalEntryDetailScreen', () => {
     })
 
     const { onDeleted } = renderScreen(splitEntry.id)
-    await screen.findByText('2026-08-02')
+    await screen.findByLabelText('取引日')
 
     const deleteButton = await screen.findByRole('button', { name: 'この割勘を取り消す' })
     fireEvent.click(deleteButton)
@@ -277,7 +397,7 @@ describe('JournalEntryDetailScreen', () => {
     })
 
     const { onBack } = renderScreen(entry.id)
-    await screen.findByText('2026-08-01')
+    await screen.findByLabelText('取引日')
 
     fireEvent.click(screen.getByRole('button', { name: '戻る' }))
 
