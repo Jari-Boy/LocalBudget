@@ -180,6 +180,23 @@ describe('confirm', () => {
     expect(journalEntryRepository.findAll()).toHaveLength(0)
   })
 
+  it('全項目が未入力の明細(UI側が常に保つ末尾の空行、計画Issue #125)が含まれていても、その行は除外して確定できる', () => {
+    const created = repository.create({
+      entryDate: '2026-07-22',
+      householdMemberId,
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
+        { accountId: cashAccountId, side: 'credit', amount: 3000 },
+        {},
+      ],
+    })
+
+    const confirmed = repository.confirm(created.id, journalEntryRepository)
+
+    expect(confirmed.lines).toHaveLength(2)
+    expect(repository.findById(created.id)).toBeNull()
+  })
+
   it('起票者(householdMemberId)が未入力のまま確定しようとするとエラーになり、下書きを残す(計画Issue #88)', () => {
     const created = repository.create({
       entryDate: '2026-07-22',

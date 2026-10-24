@@ -14,7 +14,6 @@ import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAc
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import {
   JournalEntryLinesTable,
-  MIN_JOURNAL_LINE_COUNT,
   type JournalEntryLineRow,
   type JournalEntryLinesTableMasterData,
 } from './JournalEntryLinesTable'
@@ -218,7 +217,7 @@ export function JournalEntryForm({
 
   function removeLine(key: number) {
     markEdited()
-    setLineStates((prev) => (prev.length <= MIN_JOURNAL_LINE_COUNT ? prev : prev.filter((state) => state.key !== key)))
+    setLineStates((prev) => prev.filter((state) => state.key !== key))
   }
 
   function cancelPendingSave(): void {

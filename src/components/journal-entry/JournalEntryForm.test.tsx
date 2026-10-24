@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
  * マニュアル仕訳入力フォーム(計画Issue #32)のコンポーネントテスト。借方/貸方を
- * 独立したブロック(紙の仕訳帳のように左右に並べる、計画Issue #125)として扱う
- * Linesテーブルでの2行仕訳・複合仕訳(3行以上)の入力、借方/貸方合計・差額の
+ * 独立したブロック(紙の仕訳帳のように左右に並べる、計画Issue #125)のカード形式で
+ * 扱うLinesテーブルでの2行仕訳・複合仕訳(3行以上)の入力(行追加ボタンは廃止、
+ * ブロック最終行が入力済みになると自動で次の空行が現れる)、借方/貸方合計・差額の
  * リアルタイム表示、デバウンスによる下書き自動保存、既存下書きからの再開、確定操作
  * (貸借バランス検証エラーのフィードバックを含む)、取引先入力欄がPL科目行にのみ
  * 表示されることを、sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリング
@@ -91,24 +92,24 @@ function createAccount(overrides: {
   })
 }
 
-function selectLineAccount(lineRow: HTMLElement, accountId: number) {
-  fireEvent.change(within(lineRow).getByLabelText('科目'), { target: { value: String(accountId) } })
+function selectLineAccount(card: HTMLElement, accountId: number) {
+  fireEvent.change(within(card).getByLabelText('科目'), { target: { value: String(accountId) } })
 }
 
-/** 借方ブロック・貸方ブロックそれぞれのtable要素を取得する(DOM上、借方が先に描画される) */
-function getBlockTables(): { debitTable: HTMLElement; creditTable: HTMLElement } {
-  const tables = screen.getAllByRole('table')
-  return { debitTable: tables[0], creditTable: tables[1] }
+/** 借方ブロック・貸方ブロックそれぞれのコンテナ要素を見出しテキストで取得する */
+function getBlock(side: '借方' | '貸方'): HTMLElement {
+  return screen.getByRole('heading', { name: side }).closest('.journal-entry-lines-table-block') as HTMLElement
 }
 
-async function findBlockTables(): Promise<{ debitTable: HTMLElement; creditTable: HTMLElement }> {
-  const tables = await screen.findAllByRole('table')
-  return { debitTable: tables[0], creditTable: tables[1] }
+async function findBlock(side: '借方' | '貸方'): Promise<HTMLElement> {
+  return (await screen.findByRole('heading', { name: side })).closest(
+    '.journal-entry-lines-table-block',
+  ) as HTMLElement
 }
 
-/** Linesテーブルのブロック内の行(ヘッダー行を除く)を取得する(計画Issue #125、JournalEntryLinesTable参照) */
-function getRowsIn(table: HTMLElement): HTMLElement[] {
-  return within(table).getAllByRole('row').slice(1)
+/** ブロック内の行カード要素を取得する(計画Issue #125、JournalEntryLinesTable参照) */
+function getCards(block: HTMLElement): HTMLElement[] {
+  return Array.from(block.querySelectorAll('.journal-entry-line-card'))
 }
 
 describe('JournalEntryForm', () => {
@@ -117,43 +118,43 @@ describe('JournalEntryForm', () => {
 
     expect(await screen.findByLabelText('取引日')).toBeInTheDocument()
     expect(screen.getByLabelText('摘要(任意)')).toBeInTheDocument()
-    const { debitTable, creditTable } = getBlockTables()
-    expect(getRowsIn(debitTable)).toHaveLength(1)
-    expect(getRowsIn(creditTable)).toHaveLength(1)
+    expect(getCards(getBlock('借方'))).toHaveLength(1)
+    expect(getCards(getBlock('貸方'))).toHaveLength(1)
   })
 
-  it('借方行を追加すると借方ブロックの入力欄が1行増え、複合仕訳(3行以上)を入力できる', async () => {
+  it('借方ブロックの明細を入力すると、行追加ボタンなしで自動的に次の空行が現れ、複合仕訳(3行以上)を入力できる', async () => {
+    const expense = createAccount({ name: '食費', category: 'expense' })
+
     renderForm()
-    await screen.findByLabelText('取引日')
+    const debitBlock = await findBlock('借方')
+    selectLineAccount(getCards(debitBlock)[0], expense.id)
 
-    fireEvent.click(screen.getByRole('button', { name: '借方行を追加する' }))
-
-    const { debitTable, creditTable } = getBlockTables()
-    expect(getRowsIn(debitTable)).toHaveLength(2)
-    expect(getRowsIn(creditTable)).toHaveLength(1)
+    await waitFor(() => expect(getCards(debitBlock)).toHaveLength(2))
   })
 
   it('借方・貸方とも1行(合計2行)の状態では行削除ボタンが無効化され、2行未満にはできない', async () => {
     renderForm()
     await screen.findByLabelText('取引日')
 
-    const { debitTable, creditTable } = getBlockTables()
-    expect(within(getRowsIn(debitTable)[0]).getByRole('button', { name: 'この行を削除する' })).toBeDisabled()
-    expect(within(getRowsIn(creditTable)[0]).getByRole('button', { name: 'この行を削除する' })).toBeDisabled()
+    expect(within(getCards(getBlock('借方'))[0]).getByRole('button', { name: 'この行を削除する' })).toBeDisabled()
+    expect(within(getCards(getBlock('貸方'))[0]).getByRole('button', { name: 'この行を削除する' })).toBeDisabled()
   })
 
-  it('借方行を追加してから削除すると、元の行数に戻る', async () => {
+  it('自動追加された空行を削除すると元の行数に戻り、入力済みの行が最終行のままなら再び空行が自動追加される', async () => {
+    const expense = createAccount({ name: '食費', category: 'expense' })
+
     renderForm()
-    await screen.findByLabelText('取引日')
+    const debitBlock = await findBlock('借方')
+    selectLineAccount(getCards(debitBlock)[0], expense.id)
+    await waitFor(() => expect(getCards(debitBlock)).toHaveLength(2))
 
-    fireEvent.click(screen.getByRole('button', { name: '借方行を追加する' }))
-    const { debitTable } = getBlockTables()
-    expect(getRowsIn(debitTable)).toHaveLength(2)
+    const removeButton = within(getCards(debitBlock)[1]).getByRole('button', { name: 'この行を削除する' })
+    fireEvent.click(removeButton)
 
-    const removeButtons = within(debitTable).getAllByRole('button', { name: 'この行を削除する' })
-    fireEvent.click(removeButtons[1])
-
-    expect(getRowsIn(debitTable)).toHaveLength(1)
+    // 入力済みの行(食費)が最終行のままのため、不変条件(ブロック最終行は常に空)により
+    // 削除直後に再び空行が自動追加され、結果として行数は2のまま変わらない。
+    await waitFor(() => expect(getCards(debitBlock)).toHaveLength(2))
+    expect(within(getCards(debitBlock)[0]).getByLabelText('科目')).toHaveValue(String(expense.id))
   })
 
   it('借方/貸方の金額入力に応じて借方合計・貸方合計・差額がリアルタイム表示される', async () => {
@@ -161,15 +162,14 @@ describe('JournalEntryForm', () => {
     const cash = createAccount({ name: '現金', category: 'asset' })
 
     renderForm()
-    const { debitTable, creditTable } = await findBlockTables()
-    const debitRow = getRowsIn(debitTable)[0]
-    const creditRow = getRowsIn(creditTable)[0]
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const creditCard = getCards(await findBlock('貸方'))[0]
 
-    selectLineAccount(debitRow, expense.id)
-    fireEvent.change(within(debitRow).getByLabelText('金額'), { target: { value: '3000' } })
+    selectLineAccount(debitCard, expense.id)
+    fireEvent.change(within(debitCard).getByLabelText('金額'), { target: { value: '3000' } })
 
-    selectLineAccount(creditRow, cash.id)
-    fireEvent.change(within(creditRow).getByLabelText('金額'), { target: { value: '2000' } })
+    selectLineAccount(creditCard, cash.id)
+    fireEvent.change(within(creditCard).getByLabelText('金額'), { target: { value: '2000' } })
 
     const totalsSection = screen.getByText('借方合計').closest('.journal-entry-totals') as HTMLElement
     expect(within(totalsSection).getByText('￥3,000')).toBeInTheDocument()
@@ -182,17 +182,16 @@ describe('JournalEntryForm', () => {
     const cash = createAccount({ name: '現金', category: 'asset' })
 
     renderForm()
-    const { debitTable, creditTable } = await findBlockTables()
-    const debitRow = getRowsIn(debitTable)[0]
-    const creditRow = getRowsIn(creditTable)[0]
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const creditCard = getCards(await findBlock('貸方'))[0]
 
-    expect(within(debitRow).queryByLabelText('取引先(任意)')).not.toBeInTheDocument()
+    expect(within(debitCard).queryByLabelText('取引先(任意)')).not.toBeInTheDocument()
 
-    selectLineAccount(debitRow, expense.id)
-    expect(within(debitRow).getByLabelText('取引先(任意)')).toBeInTheDocument()
+    selectLineAccount(debitCard, expense.id)
+    expect(within(debitCard).getByLabelText('取引先(任意)')).toBeInTheDocument()
 
-    selectLineAccount(creditRow, cash.id)
-    expect(within(creditRow).queryByLabelText('取引先(任意)')).not.toBeInTheDocument()
+    selectLineAccount(creditCard, cash.id)
+    expect(within(creditCard).queryByLabelText('取引先(任意)')).not.toBeInTheDocument()
   })
 
   it('isReconcilable = trueの科目(普通預金等)はマニュアル仕訳では直接記帳できないため科目選択の選択肢に表示されない', async () => {
@@ -201,8 +200,8 @@ describe('JournalEntryForm', () => {
     void expense
 
     renderForm()
-    const { debitTable } = await findBlockTables()
-    const select = within(getRowsIn(debitTable)[0]).getByLabelText('科目') as HTMLSelectElement
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const select = within(debitCard).getByLabelText('科目') as HTMLSelectElement
     const optionTexts = Array.from(select.options).map((option) => option.textContent)
     expect(optionTexts).not.toContain('普通預金')
     expect(optionTexts).toContain('食費')
@@ -215,8 +214,8 @@ describe('JournalEntryForm', () => {
     void expense
 
     renderForm()
-    const { debitTable } = await findBlockTables()
-    const select = within(getRowsIn(debitTable)[0]).getByLabelText('科目') as HTMLSelectElement
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const select = within(debitCard).getByLabelText('科目') as HTMLSelectElement
     const optionTexts = Array.from(select.options).map((option) => option.textContent)
     expect(optionTexts).not.toContain('解約済み口座')
     expect(optionTexts).toContain('食費')
@@ -227,18 +226,17 @@ describe('JournalEntryForm', () => {
     void expense
 
     renderForm()
-    const { debitTable } = await findBlockTables()
-    const debitRow = getRowsIn(debitTable)[0]
-    selectLineAccount(debitRow, expense.id)
-    const counterpartyField = within(debitRow).getByLabelText('取引先(任意)')
+    const debitCard = getCards(await findBlock('借方'))[0]
+    selectLineAccount(debitCard, expense.id)
+    const counterpartyField = within(debitCard).getByLabelText('取引先(任意)')
 
     fireEvent.change(counterpartyField, { target: { value: '__new__' } })
-    fireEvent.change(within(debitRow).getByLabelText('新しい取引先名'), {
+    fireEvent.change(within(debitCard).getByLabelText('新しい取引先名'), {
       target: { value: '新しい取引先' },
     })
-    await fireEvent.click(within(debitRow).getByRole('button', { name: '追加' }))
+    await fireEvent.click(within(debitCard).getByRole('button', { name: '追加' }))
 
-    expect(await within(debitRow).findByLabelText('取引先(任意)')).toHaveValue(
+    expect(await within(debitCard).findByLabelText('取引先(任意)')).toHaveValue(
       String(counterpartyRepository.findAll()[0]?.id ?? ''),
     )
   })
@@ -254,8 +252,8 @@ describe('JournalEntryForm', () => {
     void expense
 
     renderForm()
-    const { debitTable } = await findBlockTables()
-    const select = within(getRowsIn(debitTable)[0]).getByLabelText('科目') as HTMLSelectElement
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const select = within(debitCard).getByLabelText('科目') as HTMLSelectElement
     const optionTexts = Array.from(select.options).map((option) => option.textContent)
     expect(optionTexts).not.toContain('初期残高(普通預金)')
     expect(optionTexts).toContain('食費')
@@ -267,15 +265,14 @@ describe('JournalEntryForm', () => {
     householdMemberRepository.create({ name: '自分' })
 
     const { onComplete } = renderForm()
-    const { debitTable, creditTable } = await findBlockTables()
-    const debitRow = getRowsIn(debitTable)[0]
-    const creditRow = getRowsIn(creditTable)[0]
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const creditCard = getCards(await findBlock('貸方'))[0]
 
-    selectLineAccount(debitRow, expense.id)
-    fireEvent.change(within(debitRow).getByLabelText('金額'), { target: { value: '3000' } })
+    selectLineAccount(debitCard, expense.id)
+    fireEvent.change(within(debitCard).getByLabelText('金額'), { target: { value: '3000' } })
 
-    selectLineAccount(creditRow, cash.id)
-    fireEvent.change(within(creditRow).getByLabelText('金額'), { target: { value: '3000' } })
+    selectLineAccount(creditCard, cash.id)
+    fireEvent.change(within(creditCard).getByLabelText('金額'), { target: { value: '3000' } })
 
     fireEvent.click(screen.getByRole('button', { name: '確定する' }))
 
@@ -291,15 +288,14 @@ describe('JournalEntryForm', () => {
     const cash = createAccount({ name: '現金', category: 'asset' })
 
     const { onComplete } = renderForm()
-    const { debitTable, creditTable } = await findBlockTables()
-    const debitRow = getRowsIn(debitTable)[0]
-    const creditRow = getRowsIn(creditTable)[0]
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const creditCard = getCards(await findBlock('貸方'))[0]
 
-    selectLineAccount(debitRow, expense.id)
-    fireEvent.change(within(debitRow).getByLabelText('金額'), { target: { value: '3000' } })
+    selectLineAccount(debitCard, expense.id)
+    fireEvent.change(within(debitCard).getByLabelText('金額'), { target: { value: '3000' } })
 
-    selectLineAccount(creditRow, cash.id)
-    fireEvent.change(within(creditRow).getByLabelText('金額'), { target: { value: '2000' } })
+    selectLineAccount(creditCard, cash.id)
+    fireEvent.change(within(creditCard).getByLabelText('金額'), { target: { value: '2000' } })
 
     fireEvent.click(screen.getByRole('button', { name: '確定する' }))
 
@@ -314,22 +310,24 @@ describe('JournalEntryForm', () => {
     const cash = createAccount({ name: '現金', category: 'asset' })
 
     const { onComplete } = renderForm()
-    const { debitTable, creditTable } = await findBlockTables()
+    const debitBlock = await findBlock('借方')
+    const creditBlock = await findBlock('貸方')
 
     // 1行目はマイナス金額。2行目(借方)・貸方1行目だけなら貸借が一致してしまうケースを検証する
-    // (マイナス行が黙って無視され確定されてしまわないことを確認する)。
-    const firstDebitRow = getRowsIn(debitTable)[0]
-    selectLineAccount(firstDebitRow, expense.id)
-    fireEvent.change(within(firstDebitRow).getByLabelText('金額'), { target: { value: '-1000' } })
+    // (マイナス行が黙って無視され確定されてしまわないことを確認する)。行追加ボタンは無いため、
+    // 1行目に科目を選ぶと自動的に2行目が現れる。
+    const firstDebitCard = getCards(debitBlock)[0]
+    selectLineAccount(firstDebitCard, expense.id)
+    fireEvent.change(within(firstDebitCard).getByLabelText('金額'), { target: { value: '-1000' } })
 
-    fireEvent.click(screen.getByRole('button', { name: '借方行を追加する' }))
-    const secondDebitRow = getRowsIn(debitTable)[1]
-    selectLineAccount(secondDebitRow, daily.id)
-    fireEvent.change(within(secondDebitRow).getByLabelText('金額'), { target: { value: '5000' } })
+    await waitFor(() => expect(getCards(debitBlock)).toHaveLength(2))
+    const secondDebitCard = getCards(debitBlock)[1]
+    selectLineAccount(secondDebitCard, daily.id)
+    fireEvent.change(within(secondDebitCard).getByLabelText('金額'), { target: { value: '5000' } })
 
-    const creditRow = getRowsIn(creditTable)[0]
-    selectLineAccount(creditRow, cash.id)
-    fireEvent.change(within(creditRow).getByLabelText('金額'), { target: { value: '5000' } })
+    const creditCard = getCards(creditBlock)[0]
+    selectLineAccount(creditCard, cash.id)
+    fireEvent.change(within(creditCard).getByLabelText('金額'), { target: { value: '5000' } })
 
     fireEvent.click(screen.getByRole('button', { name: '確定する' }))
 
@@ -342,8 +340,8 @@ describe('JournalEntryForm', () => {
     const expense = createAccount({ name: '食費', category: 'expense' })
 
     renderForm()
-    const { debitTable } = await findBlockTables()
-    selectLineAccount(getRowsIn(debitTable)[0], expense.id)
+    const debitCard = getCards(await findBlock('借方'))[0]
+    selectLineAccount(debitCard, expense.id)
 
     expect(journalEntryDraftRepositoryImpl.findAll()).toHaveLength(0)
 
@@ -377,10 +375,9 @@ describe('JournalEntryForm', () => {
       </I18nextProvider>,
     )
 
-    const { debitTable } = await findBlockTables()
-    const debitRow = getRowsIn(debitTable)[0]
-    selectLineAccount(debitRow, expense.id)
-    fireEvent.change(within(debitRow).getByLabelText('金額'), { target: { value: '5000' } })
+    const debitCard = getCards(await findBlock('借方'))[0]
+    selectLineAccount(debitCard, expense.id)
+    fireEvent.change(within(debitCard).getByLabelText('金額'), { target: { value: '5000' } })
 
     // デバウンス(2000ms)が発火する前に戻るボタンを押す
     await vi.advanceTimersByTimeAsync(500)
@@ -409,14 +406,13 @@ describe('JournalEntryForm', () => {
     householdMemberRepository.create({ name: '自分' })
 
     const { onComplete } = renderForm()
-    const { debitTable, creditTable } = await findBlockTables()
-    const debitRow = getRowsIn(debitTable)[0]
-    const creditRow = getRowsIn(creditTable)[0]
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const creditCard = getCards(await findBlock('貸方'))[0]
 
-    selectLineAccount(debitRow, expense.id)
-    fireEvent.change(within(debitRow).getByLabelText('金額'), { target: { value: '3000' } })
-    selectLineAccount(creditRow, cash.id)
-    fireEvent.change(within(creditRow).getByLabelText('金額'), { target: { value: '3000' } })
+    selectLineAccount(debitCard, expense.id)
+    fireEvent.change(within(debitCard).getByLabelText('金額'), { target: { value: '3000' } })
+    selectLineAccount(creditCard, cash.id)
+    fireEvent.change(within(creditCard).getByLabelText('金額'), { target: { value: '3000' } })
 
     await vi.advanceTimersByTimeAsync(2000)
     await waitFor(() => expect(journalEntryDraftRepositoryImpl.findAll()).toHaveLength(1))
@@ -459,9 +455,10 @@ describe('JournalEntryForm', () => {
 
     expect(await screen.findByLabelText('取引日')).toHaveValue('2026-08-01')
     expect(screen.getByLabelText('摘要(任意)')).toHaveValue('先週のスーパー')
-    const { debitTable, creditTable } = getBlockTables()
-    expect(within(getRowsIn(debitTable)[0]).getByLabelText('金額')).toHaveValue(4000)
-    expect(within(getRowsIn(creditTable)[0]).getByLabelText('金額')).toHaveValue(4000)
+    const debitCard = getCards(getBlock('借方'))[0]
+    const creditCard = getCards(getBlock('貸方'))[0]
+    expect(within(debitCard).getByLabelText('金額')).toHaveValue(4000)
+    expect(within(creditCard).getByLabelText('金額')).toHaveValue(4000)
   })
 
   it('非アクティブ化済みのプロジェクトはプロジェクト選択欄の新規選択肢に含まれない(docs/domain/projects.md 1.3節)', async () => {
@@ -470,8 +467,8 @@ describe('JournalEntryForm', () => {
     projectRepository.deactivate(inactiveProject.id)
 
     renderForm()
-    const { debitTable } = await findBlockTables()
-    const select = within(getRowsIn(debitTable)[0]).getByLabelText('プロジェクト(任意)')
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const select = within(debitCard).getByLabelText('プロジェクト(任意)')
 
     expect(within(select).getByText(activeProject.name)).toBeInTheDocument()
     expect(within(select).queryByText(inactiveProject.name)).not.toBeInTheDocument()
@@ -508,8 +505,8 @@ describe('JournalEntryForm', () => {
       </I18nextProvider>,
     )
 
-    const { debitTable } = await findBlockTables()
-    const select = within(getRowsIn(debitTable)[0]).getByLabelText('プロジェクト(任意)')
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const select = within(debitCard).getByLabelText('プロジェクト(任意)')
     expect(select).toHaveValue(String(project.id))
     expect(within(select).getByText('終了した旅行')).toBeInTheDocument()
   })
@@ -520,13 +517,12 @@ describe('JournalEntryForm', () => {
     const expense = createAccount({ name: '食費', category: 'expense' })
 
     renderForm()
-    const { debitTable } = await findBlockTables()
-    const debitRow = getRowsIn(debitTable)[0]
+    const debitCard = getCards(await findBlock('借方'))[0]
 
     expect(await screen.findByLabelText('起票者')).toHaveValue(String(husband.id))
 
-    selectLineAccount(debitRow, expense.id)
-    const memberSelect = within(debitRow).getByLabelText('世帯メンバー(任意)')
+    selectLineAccount(debitCard, expense.id)
+    const memberSelect = within(debitCard).getByLabelText('世帯メンバー(任意)')
     expect(memberSelect).toHaveValue(String(husband.id))
     expect(memberSelect).not.toBeDisabled()
 
@@ -544,11 +540,10 @@ describe('JournalEntryForm', () => {
     })
 
     renderForm()
-    const { debitTable } = await findBlockTables()
-    const debitRow = getRowsIn(debitTable)[0]
+    const debitCard = getCards(await findBlock('借方'))[0]
 
-    selectLineAccount(debitRow, wallet.id)
-    const memberSelect = within(debitRow).getByLabelText('世帯メンバー(任意)')
+    selectLineAccount(debitCard, wallet.id)
+    const memberSelect = within(debitCard).getByLabelText('世帯メンバー(任意)')
 
     expect(memberSelect).toBeDisabled()
     expect(memberSelect).toHaveValue(String(husband.id))

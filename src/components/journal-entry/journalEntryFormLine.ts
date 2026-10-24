@@ -132,6 +132,22 @@ export function fromJournalEntryDraftLine(draftLine: JournalEntryDraftLine): Jou
 }
 
 /**
+ * 行のすべてのフィールドが未入力かどうかを判定する(計画Issue #125)。
+ * JournalEntryLinesTableが「ブロックの最終行が入力されたら自動で次の空行を追加する」
+ * (行追加ボタンを廃止したことの代替)挙動を実装する際の判定に使う。sideは常にどちらの
+ * ブロックに属するかで決まり空かどうかの判定には関与しないため対象外とする。
+ */
+export function isLineEmpty(line: JournalEntryFormLine): boolean {
+  return (
+    line.accountId === null &&
+    line.amountInput === '' &&
+    line.projectId === null &&
+    line.householdMemberId === null &&
+    line.counterpartyId === null
+  )
+}
+
+/**
  * 確定済み仕訳明細(JournalLine)をフォーム行に変換する(計画Issue #125)。
  * JournalEntryDetailScreenでのLines編集で、既存の明細をJournalEntryLinesTableの
  * 入力状態として読み込む際に使う。確定済み明細は科目・貸借・金額がすべて必須のため

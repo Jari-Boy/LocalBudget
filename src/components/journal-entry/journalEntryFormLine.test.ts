@@ -13,6 +13,7 @@ import {
   fromJournalLine,
   hasNonPositiveAmountInput,
   isCounterpartyEligibleCategory,
+  isLineEmpty,
   isManualEntryEligibleAccount,
   toJournalEntryDraftLineInput,
   toJournalLineInput,
@@ -249,5 +250,25 @@ describe('fromJournalLine', () => {
       householdMemberId: 3,
       counterpartyId: 4,
     })
+  })
+})
+
+describe('isLineEmpty', () => {
+  it('全項目が未選択・空文字の行はtrueを返す(計画Issue #125、自動行追加の判定に使う)', () => {
+    expect(isLineEmpty(createEmptyJournalEntryFormLine())).toBe(true)
+  })
+
+  it('科目のみ選択されている行はfalseを返す', () => {
+    expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), accountId: 1 })).toBe(false)
+  })
+
+  it('金額のみ入力されている行はfalseを返す', () => {
+    expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), amountInput: '1000' })).toBe(false)
+  })
+
+  it('プロジェクト・世帯メンバー・取引先のいずれかのみ設定されている行もfalseを返す', () => {
+    expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), projectId: 1 })).toBe(false)
+    expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), householdMemberId: 1 })).toBe(false)
+    expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), counterpartyId: 1 })).toBe(false)
   })
 })

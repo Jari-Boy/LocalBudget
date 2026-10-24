@@ -12,12 +12,26 @@ import type { JournalEntryDraftRepository } from '../../domain/journal/JournalEn
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 
 /**
+ * 明細が仕訳化できる最小限の完成状態(科目・貸借・正の金額がすべて入力済み)かどうかを
+ * 判定する(計画Issue #125)。JournalEntryLinesTableが各ブロックの末尾に常に空行を
+ * 自動追加する挙動(行追加ボタンの廃止)により、下書きには未入力のままの明細が常に
+ * 含まれるようになったため、confirm時にそれらを除外する必要がある。
+ */
+function isCompleteDraftLine(
+  line: JournalEntryDraftLine,
+): line is JournalEntryDraftLine & { accountId: number; side: JournalLineSide; amount: number } {
+  return line.accountId !== null && line.side !== null && line.amount !== null && line.amount > 0
+}
+
+/**
  * JournalEntryDraftRepository(ドメイン層のポート)のsql.js実装。
  * journal_entries/journal_linesとは異なりバランス検証・必須項目チェックを一切課さず、
  * 入力途中の状態(未選択のaccount_id・side・amount等)をそのまま保存する
  * (docs/domain/journal.md 3章)。confirmはJournalEntryRepository.createを経由し、
  * 通常のバランス検証・is_reconcilable記帳制限を受けさせる。createが失敗した場合は
- * 下書きを削除せず残す。
+ * 下書きを削除せず残す。confirm時、未入力のまま残っている明細(isCompleteDraftLine)は
+ * 送信対象から除外する(JournalEntryLinesTableが常に末尾へ自動追加する空行がそのまま
+ * 含まれてしまうため、計画Issue #125)。
  */
 export class SqlJsJournalEntryDraftRepository implements JournalEntryDraftRepository {
   private readonly db: Database
@@ -119,13 +133,13 @@ export class SqlJsJournalEntryDraftRepository implements JournalEntryDraftReposi
       memo: draft.memo,
       currency: draft.currency ?? undefined,
       householdMemberId: draft.householdMemberId as number,
-      lines: draft.lines.map((line) => ({
-        accountId: line.accountId as number,
+      lines: draft.lines.filter(isCompleteDraftLine).map((line) => ({
+        accountId: line.accountId,
         projectId: line.projectId,
         householdMemberId: line.householdMemberId,
         counterpartyId: line.counterpartyId,
-        side: line.side as JournalLineSide,
-        amount: line.amount as number,
+        side: line.side,
+        amount: line.amount,
       })),
     })
 
