@@ -9,7 +9,7 @@ import type { Project } from '../../domain/project/Project'
 import { traceExpenseSplittingHistory } from '../../domain/expense-splitting/traceExpenseSplittingHistory'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
-import { JournalEntryLinesTable, type JournalEntryLineRow } from './JournalEntryLinesTable'
+import { JournalEntryLinesTable, MIN_JOURNAL_LINE_COUNT, type JournalEntryLineRow } from './JournalEntryLinesTable'
 import {
   createEmptyJournalEntryFormLine,
   fromJournalLine,
@@ -185,7 +185,7 @@ export function JournalEntryDetailScreen({
 
   function removeEditLine(key: number): void {
     setEditState((prev) =>
-      prev === null || prev.lineStates.length <= 2
+      prev === null || prev.lineStates.length <= MIN_JOURNAL_LINE_COUNT
         ? prev
         : { ...prev, lineStates: prev.lineStates.filter((state) => state.key !== key) },
     )

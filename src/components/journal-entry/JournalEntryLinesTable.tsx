@@ -11,6 +11,14 @@ import { isCounterpartyEligibleCategory, isManualEntryEligibleAccount, type Jour
 import { calculateJournalLineTotals } from './journalLineTotals'
 import './JournalEntryLinesTable.css'
 
+/**
+ * 仕訳は2件以上の明細から成るという不変条件(docs/domain/journal.md 1.1)に対応する、
+ * Linesテーブル・呼び出し元(JournalEntryForm・JournalEntryDetailScreen)共通の最小行数。
+ * 呼び出し元の行削除ロジックとJournalEntryLinesTableのminLineCount既定値の両方で
+ * この定数を参照し、マジックナンバーの重複を避ける。
+ */
+export const MIN_JOURNAL_LINE_COUNT = 2
+
 export interface JournalEntryLineRow {
   key: number
   line: JournalEntryFormLine
@@ -62,7 +70,7 @@ export function JournalEntryLinesTable({
   onUpdateLine,
   onAddLine,
   onRemoveLine,
-  minLineCount = 2,
+  minLineCount = MIN_JOURNAL_LINE_COUNT,
   masterData,
   onCreateCounterparty,
 }: JournalEntryLinesTableProps) {
@@ -107,11 +115,13 @@ export function JournalEntryLinesTable({
             }
           >
             <option value="">{t('unselected')}</option>
-            {masterData.householdMembers.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
+            {masterData.householdMembers
+              .filter((member) => member.isActive || member.id === headerHouseholdMemberId)
+              .map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
           </select>
         </div>
       </div>
@@ -236,11 +246,13 @@ export function JournalEntryLinesTable({
                     }
                   >
                     <option value="">{t('unselected')}</option>
-                    {masterData.householdMembers.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.name}
-                      </option>
-                    ))}
+                    {masterData.householdMembers
+                      .filter((member) => member.isActive || member.id === memberFieldValue)
+                      .map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.name}
+                        </option>
+                      ))}
                   </select>
                 </td>
                 <td>

@@ -40,12 +40,23 @@ function createRow(key: number, line?: Partial<JournalEntryFormLine>): JournalEn
   return { key, line: { ...createEmptyJournalEntryFormLine(), ...line } }
 }
 
+function createHouseholdMember(overrides: Partial<HouseholdMember> & { id: number; name: string }): HouseholdMember {
+  return {
+    isGroup: false,
+    isActive: true,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
 function renderTable(overrides?: {
   lineRows?: JournalEntryLineRow[]
   accounts?: Account[]
   projects?: Project[]
   householdMembers?: HouseholdMember[]
   counterparties?: Counterparty[]
+  headerHouseholdMemberId?: number | null
   readOnlyHeader?: boolean
   onUpdateLine?: ReturnType<typeof vi.fn>
   onAddLine?: () => void
@@ -67,7 +78,7 @@ function renderTable(overrides?: {
         onEntryDateChange={overrides?.readOnlyHeader ? undefined : onEntryDateChange}
         memo="テストメモ"
         onMemoChange={overrides?.readOnlyHeader ? undefined : onMemoChange}
-        headerHouseholdMemberId={null}
+        headerHouseholdMemberId={overrides?.headerHouseholdMemberId ?? null}
         onHeaderHouseholdMemberChange={overrides?.readOnlyHeader ? undefined : onHeaderHouseholdMemberChange}
         lineRows={lineRows}
         onUpdateLine={onUpdateLine}
@@ -169,6 +180,51 @@ describe('JournalEntryLinesTable', () => {
     fireEvent.click(removeButton)
 
     expect(onRemoveLine).toHaveBeenCalledWith(3)
+  })
+
+  it('ヘッダーの起票者選択は非アクティブ化済みの世帯メンバーを新規選択肢に含まない(docs/domain/household-members.md 1.3)', () => {
+    const active = createHouseholdMember({ id: 1, name: '夫' })
+    const inactive = createHouseholdMember({ id: 2, name: '元同居人', isActive: false })
+    renderTable({ householdMembers: [active, inactive] })
+
+    const select = screen.getByLabelText('起票者') as HTMLSelectElement
+    const optionTexts = Array.from(select.options).map((option) => option.textContent)
+    expect(optionTexts).toContain('夫')
+    expect(optionTexts).not.toContain('元同居人')
+  })
+
+  it('ヘッダーの起票者が非アクティブ化済みメンバーを指している場合、選択済みの値は表示から消えない', () => {
+    const inactive = createHouseholdMember({ id: 2, name: '元同居人', isActive: false })
+    renderTable({ householdMembers: [inactive], headerHouseholdMemberId: 2 })
+
+    const select = screen.getByLabelText('起票者') as HTMLSelectElement
+    expect(select).toHaveValue('2')
+    expect(within(select).getByText('元同居人')).toBeInTheDocument()
+  })
+
+  it('明細行の世帯メンバー選択は非アクティブ化済みのメンバーを新規選択肢に含まない(docs/domain/household-members.md 1.3)', () => {
+    const active = createHouseholdMember({ id: 1, name: '夫' })
+    const inactive = createHouseholdMember({ id: 2, name: '元同居人', isActive: false })
+    renderTable({ householdMembers: [active, inactive] })
+    const rows = getLineRowElements()
+
+    const select = within(rows[0]).getByLabelText('世帯メンバー(任意)') as HTMLSelectElement
+    const optionTexts = Array.from(select.options).map((option) => option.textContent)
+    expect(optionTexts).toContain('夫')
+    expect(optionTexts).not.toContain('元同居人')
+  })
+
+  it('明細行の世帯メンバー選択が非アクティブ化済みメンバーを指している場合、選択済みの値は表示から消えない', () => {
+    const inactive = createHouseholdMember({ id: 2, name: '元同居人', isActive: false })
+    renderTable({
+      householdMembers: [inactive],
+      lineRows: [createRow(1, { householdMemberId: 2 }), createRow(2)],
+    })
+    const rows = getLineRowElements()
+
+    const select = within(rows[0]).getByLabelText('世帯メンバー(任意)') as HTMLSelectElement
+    expect(select).toHaveValue('2')
+    expect(within(select).getByText('元同居人')).toBeInTheDocument()
   })
 
   it('取引先入力欄は選択した科目がPL科目(収益/費用)の行にのみ表示される', () => {
