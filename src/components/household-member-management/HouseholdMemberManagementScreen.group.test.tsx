@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 /**
- * 世帯メンバー管理画面(計画Issue #37)のグループ機能のコンポーネントテスト。
- * docs/domain/household-members.md 1.5節が定めるグループの所属メンバー追加・除去、
- * および同節の制約(グループのネスト禁止・作成後のisGroup変更禁止)がDDLトリガー
+ * 世帯メンバー管理画面(計画Issue #37、計画Issue #127でテーブル形式に変更)のグループ機能の
+ * コンポーネントテスト。docs/domain/household-members.md 1.5節が定めるグループの所属メンバー
+ * 追加・除去、および同節の制約(グループのネスト禁止・作成後のisGroup変更禁止)がDDLトリガー
  * (docs/schema/household_members.sql)経由で拒否された際、UIが選択肢から機械的に
  * 排除するのではなく、Repository層が投げる例外を捕捉してエラー表示することを
  * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして検証する。
+ * メンバーごとに専用の<tbody>でグルーピングされ、所属メンバーパネルは同じ<tbody>内の
+ * 追加行として展開されるため、`.closest('tbody')`で行とパネルの両方を含むスコープを取得する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -56,7 +58,7 @@ describe('HouseholdMemberManagementScreen グループ所属メンバー管理',
 
     renderScreen()
 
-    const groupItem = (await screen.findByText('夫婦')).closest('li')!
+    const groupItem = (await screen.findByText('夫婦')).closest('tbody')!
     fireEvent.click(within(groupItem).getByRole('button', { name: '所属メンバー: 0人' }))
 
     fireEvent.change(within(groupItem).getByLabelText('追加するメンバー'), {
@@ -75,7 +77,7 @@ describe('HouseholdMemberManagementScreen グループ所属メンバー管理',
 
     renderScreen()
 
-    const groupItem = (await screen.findByText('夫婦')).closest('li')!
+    const groupItem = (await screen.findByText('夫婦')).closest('tbody')!
     fireEvent.click(within(groupItem).getByRole('button', { name: '所属メンバー: 1人' }))
     await within(groupItem).findByText('夫', { selector: '.household-member-group-member-name' })
 
@@ -91,7 +93,7 @@ describe('HouseholdMemberManagementScreen グループ所属メンバー管理',
 
     renderScreen()
 
-    const groupItem = (await screen.findByText('夫婦')).closest('li')!
+    const groupItem = (await screen.findByText('夫婦')).closest('tbody')!
     fireEvent.click(within(groupItem).getByRole('button', { name: '所属メンバー: 1人' }))
     await within(groupItem).findByText('夫', { selector: '.household-member-group-member-name' })
 
@@ -106,7 +108,7 @@ describe('HouseholdMemberManagementScreen グループ所属メンバー管理',
 
     renderScreen()
 
-    const outerItem = (await screen.findByText('外側グループ')).closest('li')!
+    const outerItem = (await screen.findByText('外側グループ')).closest('tbody')!
     fireEvent.click(within(outerItem).getByRole('button', { name: '所属メンバー: 0人' }))
 
     const innerGroupId = householdMemberRepository.findAll().find((m) => m.name === '内側グループ')!.id
@@ -125,7 +127,7 @@ describe('HouseholdMemberManagementScreen グループ所属メンバー管理',
 
     renderScreen()
 
-    const item = (await screen.findByText('夫')).closest('li')!
+    const item = (await screen.findByText('夫')).closest('tbody')!
     fireEvent.click(within(item).getByRole('button', { name: '編集' }))
     fireEvent.click(screen.getByLabelText('グループ'))
     fireEvent.click(screen.getByRole('button', { name: '保存する' }))

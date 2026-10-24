@@ -64,13 +64,17 @@ interface LoadedData {
   groupMembersByGroupId: Map<number, HouseholdMember[]>
 }
 
-/** nullは非表示、'create'は新規作成フォーム、number(id)は該当メンバーの編集フォームを表す */
+/** nullは非表示、'create'は新規作成行、number(id)は該当メンバーの編集行を表す */
 type FormMode = 'create' | number | null
 
 /**
- * 世帯メンバー管理画面(計画Issue #37)。登録済みメンバー(個人・グループ)の一覧表示・
- * 新規作成・編集(名称)・削除/非アクティブ化・グループの所属メンバー管理を、単一画面+
- * インラインフォームで提供する(docs/domain/household-members.md 1.3・1.5節)。
+ * 世帯メンバー管理画面(計画Issue #37、計画Issue #127でテーブル形式+行内インライン編集に変更)。
+ * 登録済みメンバー(個人・グループ)をテーブル(thead/tbody)として一覧表示する。メンバーごとに
+ * 専用の<tbody>でグルーピングし、グループの所属メンバーパネルは同じ<tbody>内の追加行として
+ * 行の下に展開する。新規作成は表の最終行に追加される作成用の行から行い、既存メンバーの編集
+ * (名称・種別)は行の「編集」ボタンでその行だけ入力欄に切り替わるインライン編集方式とし、
+ * 「保存する」/「キャンセル」で確定・破棄する。削除/非アクティブ化・グループの所属メンバー
+ * 管理は行内の操作列・展開パネルで提供する(docs/domain/household-members.md 1.3・1.5節)。
  *
  * グループのネスト不可・作成後のisGroup変更不可という制約(同1.5節)はドメイン層ではなく
  * DDLトリガー側で強制されている(HouseholdMemberRepositoryのJSDoc参照)。本画面では
@@ -260,10 +264,16 @@ export function HouseholdMemberManagementScreen({
 
       {error !== null && <p role="alert">{error}</p>}
 
-      {data.members.length === 0 ? (
+      {data.members.length === 0 && formMode !== 'create' ? (
         <p>{t('householdMemberListEmpty')}</p>
       ) : (
-        <ul>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">{t('nameLabel')}</th>
+              <th scope="col"></th>
+            </tr>
+          </thead>
           {data.members.map((member) => {
             const referenceCount =
               (data.accountCountByMemberId.get(member.id) ?? 0) +
@@ -274,144 +284,206 @@ export function HouseholdMemberManagementScreen({
             const availableCandidates = data.members.filter(
               (candidate) => candidate.id !== member.id && !groupMemberIds.has(candidate.id),
             )
+            const isEditing = formMode === member.id
 
             return (
-              <li key={member.id}>
-                <div className="household-member-list-row">
-                  <span className="household-member-list-name">
-                    {member.name}
-                    {member.isGroup && (
-                      <span className="household-member-list-type">{t('typeGroup')}</span>
-                    )}
-                    {!member.isActive && (
-                      <span className="household-member-list-inactive">{t('inactiveLabel')}</span>
-                    )}
-                  </span>
-                  <span className="household-member-list-actions">
-                    {member.isGroup && (
+              <tbody key={member.id}>
+                {isEditing ? (
+                  <tr>
+                    <td>
+                      <input
+                        aria-label={t('nameLabel')}
+                        type="text"
+                        value={nameInput}
+                        onChange={(event) => setNameInput(event.target.value)}
+                      />
+                      <fieldset className="household-member-type-fieldset">
+                        <legend>{t('typeLabel')}</legend>
+                        <label>
+                          <input
+                            type="radio"
+                            name="household-member-type"
+                            checked={!isGroupInput}
+                            onChange={() => setIsGroupInput(false)}
+                          />
+                          {t('typeIndividual')}
+                        </label>
+                        <label>
+                          <input
+                            type="radio"
+                            name="household-member-type"
+                            checked={isGroupInput}
+                            onChange={() => setIsGroupInput(true)}
+                          />
+                          {t('typeGroup')}
+                        </label>
+                      </fieldset>
+                    </td>
+                    <td className="household-member-list-actions">
                       <button
                         type="button"
-                        onClick={() => toggleGroupMembers(member.id)}
-                        aria-expanded={groupMembersExpanded}
+                        onClick={submitForm}
+                        disabled={nameInput.trim() === '' || isSubmitting}
                       >
-                        {t('groupMembersButton', { count: groupMembers.length })}
+                        {t('saveSubmit')}
                       </button>
-                    )}
-                    <button type="button" onClick={() => openEditForm(member)} disabled={isSubmitting}>
-                      {t('editButton')}
-                    </button>
-                    {referenceCount === 0 && (
-                      <button type="button" onClick={() => deleteMember(member.id)} disabled={isSubmitting}>
-                        {t('deleteButton')}
+                      <button type="button" onClick={closeForm} disabled={isSubmitting}>
+                        {t('cancel')}
                       </button>
-                    )}
-                    {member.isActive && (
-                      <button type="button" onClick={() => deactivateMember(member.id)} disabled={isSubmitting}>
-                        {t('deactivateButton')}
+                    </td>
+                  </tr>
+                ) : (
+                  <tr>
+                    <td>
+                      {member.name}
+                      {member.isGroup && (
+                        <span className="household-member-list-type">{t('typeGroup')}</span>
+                      )}
+                      {!member.isActive && (
+                        <span className="household-member-list-inactive">{t('inactiveLabel')}</span>
+                      )}
+                    </td>
+                    <td className="household-member-list-actions">
+                      {member.isGroup && (
+                        <button
+                          type="button"
+                          onClick={() => toggleGroupMembers(member.id)}
+                          aria-expanded={groupMembersExpanded}
+                        >
+                          {t('groupMembersButton', { count: groupMembers.length })}
+                        </button>
+                      )}
+                      <button type="button" onClick={() => openEditForm(member)} disabled={isSubmitting}>
+                        {t('editButton')}
                       </button>
-                    )}
-                  </span>
-                </div>
+                      {referenceCount === 0 && (
+                        <button type="button" onClick={() => deleteMember(member.id)} disabled={isSubmitting}>
+                          {t('deleteButton')}
+                        </button>
+                      )}
+                      {member.isActive && (
+                        <button
+                          type="button"
+                          onClick={() => deactivateMember(member.id)}
+                          disabled={isSubmitting}
+                        >
+                          {t('deactivateButton')}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )}
 
                 {member.isGroup && groupMembersExpanded && (
-                  <div className="household-member-group-panel">
-                    {groupMembers.length === 0 ? (
-                      <p>{t('groupMembersEmpty')}</p>
-                    ) : (
-                      <ul className="household-member-group-member-list">
-                        {groupMembers.map((groupMember) => (
-                          <li key={groupMember.id} className="household-member-group-member-row">
-                            <span className="household-member-group-member-name">{groupMember.name}</span>
-                            <button
-                              type="button"
-                              onClick={() => removeMemberFromGroup(member.id, groupMember.id)}
-                              disabled={isSubmitting}
-                            >
-                              {t('groupMemberRemoveButton')}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                  <tr className="household-member-panel-row">
+                    <td colSpan={2}>
+                      <div className="household-member-group-panel">
+                        {groupMembers.length === 0 ? (
+                          <p>{t('groupMembersEmpty')}</p>
+                        ) : (
+                          <ul className="household-member-group-member-list">
+                            {groupMembers.map((groupMember) => (
+                              <li key={groupMember.id} className="household-member-group-member-row">
+                                <span className="household-member-group-member-name">{groupMember.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeMemberFromGroup(member.id, groupMember.id)}
+                                  disabled={isSubmitting}
+                                >
+                                  {t('groupMemberRemoveButton')}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
 
-                    <div className="household-member-group-add-row">
-                      <label htmlFor={`household-member-group-add-${member.id}`}>
-                        {t('groupMemberAddLabel')}
-                      </label>
-                      <select
-                        id={`household-member-group-add-${member.id}`}
-                        value={groupMemberInputByGroupId.get(member.id) ?? ''}
-                        onChange={(event) => setGroupMemberInput(member.id, event.target.value)}
-                      >
-                        <option value="">{t('groupMemberAddPlaceholder')}</option>
-                        {availableCandidates.map((candidate) => (
-                          <option key={candidate.id} value={candidate.id}>
-                            {candidate.name}
-                            {candidate.isGroup ? `(${t('typeGroup')})` : ''}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => addMemberToGroup(member.id)}
-                        disabled={(groupMemberInputByGroupId.get(member.id) ?? '') === '' || isSubmitting}
-                      >
-                        {t('groupMemberAddButton')}
-                      </button>
-                    </div>
-                  </div>
+                        <div className="household-member-group-add-row">
+                          <label htmlFor={`household-member-group-add-${member.id}`}>
+                            {t('groupMemberAddLabel')}
+                          </label>
+                          <select
+                            id={`household-member-group-add-${member.id}`}
+                            value={groupMemberInputByGroupId.get(member.id) ?? ''}
+                            onChange={(event) => setGroupMemberInput(member.id, event.target.value)}
+                          >
+                            <option value="">{t('groupMemberAddPlaceholder')}</option>
+                            {availableCandidates.map((candidate) => (
+                              <option key={candidate.id} value={candidate.id}>
+                                {candidate.name}
+                                {candidate.isGroup ? `(${t('typeGroup')})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => addMemberToGroup(member.id)}
+                            disabled={(groupMemberInputByGroupId.get(member.id) ?? '') === '' || isSubmitting}
+                          >
+                            {t('groupMemberAddButton')}
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
                 )}
-              </li>
+              </tbody>
             )
           })}
-        </ul>
+
+          {formMode === 'create' && (
+            <tbody>
+              <tr>
+                <td>
+                  <input
+                    aria-label={t('nameLabel')}
+                    type="text"
+                    value={nameInput}
+                    onChange={(event) => setNameInput(event.target.value)}
+                  />
+                  <fieldset className="household-member-type-fieldset">
+                    <legend>{t('typeLabel')}</legend>
+                    <label>
+                      <input
+                        type="radio"
+                        name="household-member-type"
+                        checked={!isGroupInput}
+                        onChange={() => setIsGroupInput(false)}
+                      />
+                      {t('typeIndividual')}
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        name="household-member-type"
+                        checked={isGroupInput}
+                        onChange={() => setIsGroupInput(true)}
+                      />
+                      {t('typeGroup')}
+                    </label>
+                  </fieldset>
+                </td>
+                <td className="household-member-list-actions">
+                  <button
+                    type="button"
+                    onClick={submitForm}
+                    disabled={nameInput.trim() === '' || isSubmitting}
+                  >
+                    {t('createSubmit')}
+                  </button>
+                  <button type="button" onClick={closeForm} disabled={isSubmitting}>
+                    {t('cancel')}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          )}
+        </table>
       )}
 
-      {formMode === null ? (
+      {formMode === null && (
         <button type="button" onClick={openCreateForm} disabled={isSubmitting}>
           {t('addButton')}
         </button>
-      ) : (
-        <div className="household-member-form">
-          <label htmlFor="household-member-name">{t('nameLabel')}</label>
-          <input
-            id="household-member-name"
-            type="text"
-            value={nameInput}
-            onChange={(event) => setNameInput(event.target.value)}
-          />
-
-          <fieldset className="household-member-type-fieldset">
-            <legend>{t('typeLabel')}</legend>
-            <label>
-              <input
-                type="radio"
-                name="household-member-type"
-                checked={!isGroupInput}
-                onChange={() => setIsGroupInput(false)}
-              />
-              {t('typeIndividual')}
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="household-member-type"
-                checked={isGroupInput}
-                onChange={() => setIsGroupInput(true)}
-              />
-              {t('typeGroup')}
-            </label>
-          </fieldset>
-
-          <div className="household-member-form-actions">
-            <button type="button" onClick={submitForm} disabled={nameInput.trim() === '' || isSubmitting}>
-              {formMode === 'create' ? t('createSubmit') : t('saveSubmit')}
-            </button>
-            <button type="button" onClick={closeForm} disabled={isSubmitting}>
-              {t('cancel')}
-            </button>
-          </div>
-        </div>
       )}
 
       <button type="button" onClick={onBack} disabled={isSubmitting}>
