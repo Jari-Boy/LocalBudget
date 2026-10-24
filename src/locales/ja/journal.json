@@ -45,6 +45,7 @@
   "draftLineCount": "{{count}}行",
   "entryListTitle": "仕訳一覧",
   "entryListEmpty": "確定済みの仕訳はまだありません",
+  "entryAmountLabel": "金額",
   "entryNoMemo": "摘要なし",
   "viewEntryDetail": "詳細を見る",
   "entryDetailTitle": "仕訳の詳細",
