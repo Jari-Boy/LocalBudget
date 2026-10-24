@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { Project } from '../../domain/project/Project'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
-import type { Counterparty } from '../../domain/counterparty/Counterparty'
+import type { Counterparty, CreateCounterpartyInput } from '../../domain/counterparty/Counterparty'
 import type { CreateJournalEntryInput, JournalEntry, JournalLineSide } from '../../domain/journal/JournalEntry'
 import type {
   CreateJournalEntryDraftInput,
@@ -13,6 +13,8 @@ import type {
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
+import { CounterpartyQuickAddSelect } from '../counterparty-management/CounterpartyQuickAddSelect'
+import { AccountSelect } from './AccountSelect'
 import { calculateJournalLineTotals } from './journalLineTotals'
 import {
   createEmptyJournalEntryFormLine,
@@ -39,6 +41,7 @@ interface HouseholdMemberFinder {
 }
 interface CounterpartyFinder {
   findAll(): Counterparty[] | Promise<Counterparty[]>
+  create(input: CreateCounterpartyInput): Counterparty | Promise<Counterparty>
 }
 interface JournalEntryCreator {
   create(input: CreateJournalEntryInput): JournalEntry | Promise<JournalEntry>
@@ -196,6 +199,17 @@ export function JournalEntryForm({
 
   function markEdited() {
     hasUserEditedRef.current = true
+  }
+
+  /**
+   * 取引先セレクトの「+ 新規取引先を追加」から呼ばれる(CounterpartyQuickAddSelect、
+   * StatementImportReviewScreenと同じ設計)。作成した取引先をmasterData.counterpartiesに
+   * 追加し、以降すべての行の選択肢に即座に反映されるようにする(再フェッチ不要)。
+   */
+  async function createCounterparty(name: string): Promise<Counterparty> {
+    const created = await Promise.resolve(counterpartyRepository.create({ name }))
+    setMasterData((prev) => (prev === null ? prev : { ...prev, counterparties: [...prev.counterparties, created] }))
+    return created
   }
 
   function updateLine(key: number, updater: (line: JournalEntryFormLine) => JournalEntryFormLine) {
@@ -363,12 +377,14 @@ export function JournalEntryForm({
           <fieldset key={state.key}>
             <legend>{t('lineGroupLabel', { index: index + 1 })}</legend>
 
-            <label htmlFor={`${idPrefix}-account`}>{t('lineAccountLabel')}</label>
-            <select
+            <AccountSelect
               id={`${idPrefix}-account`}
-              value={state.line.accountId ?? ''}
-              onChange={(event) => {
-                const accountId = event.target.value === '' ? null : Number(event.target.value)
+              label={t('lineAccountLabel')}
+              value={state.line.accountId}
+              accounts={masterData.accounts}
+              filter={isManualEntryEligibleAccount}
+              i18nNamespace="journal"
+              onChange={(accountId) => {
                 const account = masterData.accounts.find((candidate) => candidate.id === accountId)
                 updateLine(state.key, (line) => ({
                   ...line,
@@ -386,14 +402,7 @@ export function JournalEntryForm({
                       : line.householdMemberId,
                 }))
               }}
-            >
-              <option value="">{t('unselected')}</option>
-              {masterData.accounts.filter(isManualEntryEligibleAccount).map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
+            />
 
             <label htmlFor={`${idPrefix}-side`}>{t('lineSideLabel')}</label>
             <select
@@ -463,26 +472,15 @@ export function JournalEntryForm({
             </select>
 
             {showCounterparty && (
-              <>
-                <label htmlFor={`${idPrefix}-counterparty`}>{t('lineCounterpartyLabel')}</label>
-                <select
-                  id={`${idPrefix}-counterparty`}
-                  value={state.line.counterpartyId ?? ''}
-                  onChange={(event) =>
-                    updateLine(state.key, (line) => ({
-                      ...line,
-                      counterpartyId: event.target.value === '' ? null : Number(event.target.value),
-                    }))
-                  }
-                >
-                  <option value="">{t('unselected')}</option>
-                  {masterData.counterparties.map((counterparty) => (
-                    <option key={counterparty.id} value={counterparty.id}>
-                      {counterparty.name}
-                    </option>
-                  ))}
-                </select>
-              </>
+              <CounterpartyQuickAddSelect
+                id={`${idPrefix}-counterparty`}
+                label={t('lineCounterpartyLabel')}
+                value={state.line.counterpartyId}
+                counterparties={masterData.counterparties}
+                i18nNamespace="journal"
+                onChange={(counterpartyId) => updateLine(state.key, (line) => ({ ...line, counterpartyId }))}
+                onCreate={createCounterparty}
+              />
             )}
 
             <button type="button" onClick={() => removeLine(state.key)} disabled={lineStates.length <= 2}>

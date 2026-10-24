@@ -189,6 +189,41 @@ describe('JournalEntryForm', () => {
     expect(optionTexts).toContain('食費')
   })
 
+  it('非アクティブ化済みの科目は新規仕訳の科目選択の選択肢に表示されない(docs/domain/accounts.md 2.3)', async () => {
+    const inactive = createAccount({ name: '解約済み口座', category: 'asset' })
+    accountRepository.deactivate(inactive.id)
+    const expense = createAccount({ name: '食費', category: 'expense' })
+    void expense
+
+    renderForm()
+    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+
+    const select = within(lineGroups[0]).getByLabelText('科目') as HTMLSelectElement
+    const optionTexts = Array.from(select.options).map((option) => option.textContent)
+    expect(optionTexts).not.toContain('解約済み口座')
+    expect(optionTexts).toContain('食費')
+  })
+
+  it('取引先入力欄から新規取引先をその場で作成して選択できる', async () => {
+    const expense = createAccount({ name: '食費', category: 'expense' })
+    void expense
+
+    renderForm()
+    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    selectLineAccount(lineGroups[0], expense.id)
+    const counterpartyField = within(lineGroups[0]).getByLabelText('取引先(任意)')
+
+    fireEvent.change(counterpartyField, { target: { value: '__new__' } })
+    fireEvent.change(within(lineGroups[0]).getByLabelText('新しい取引先名'), {
+      target: { value: '新しい取引先' },
+    })
+    await fireEvent.click(within(lineGroups[0]).getByRole('button', { name: '追加' }))
+
+    expect(await within(lineGroups[0]).findByLabelText('取引先(任意)')).toHaveValue(
+      String(counterpartyRepository.findAll()[0]?.id ?? ''),
+    )
+  })
+
   it('isSystemManaged = trueの科目(初期残高科目等)はシステム内部管理用のため科目選択の選択肢に表示されない', async () => {
     accountRepository.create({
       category: 'equity',

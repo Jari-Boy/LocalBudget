@@ -39,12 +39,16 @@ export function createEmptyJournalEntryFormLine(): JournalEntryFormLine {
  *   (AccountListScreenが一覧表示から除外するのと同じ理由)。この制約はJournalEntryRepository・
  *   DDLトリガーいずれにも存在せず、選ぶとそのまま記帳できてしまい初期残高の整合性が壊れうる
  *   ため、UI側の選択肢除外が事実上唯一の防御手段になる。
+ * - isActive = falseの科目(非アクティブ化済み)は新規仕訳では選択不可(docs/domain/accounts.md
+ *   2.3「非アクティブ化: 過去集計はそのまま表示、新規仕訳では選択不可」)。isActiveは
+ *   省略時trueとして扱う(既存の呼び出し元・テストとの互換のため)。
  */
 export function isManualEntryEligibleAccount(account: {
   isReconcilable: boolean | null
   isSystemManaged: boolean
+  isActive?: boolean
 }): boolean {
-  return account.isReconcilable !== true && !account.isSystemManaged
+  return account.isReconcilable !== true && !account.isSystemManaged && account.isActive !== false
 }
 
 /**

@@ -58,6 +58,18 @@ describe('isManualEntryEligibleAccount', () => {
   it('isSystemManaged = trueの科目(初期残高科目等)はfalseを返す(システム内部管理用であり手入力対象外)', () => {
     expect(isManualEntryEligibleAccount({ isReconcilable: null, isSystemManaged: true })).toBe(false)
   })
+
+  it('isActive = falseの科目はfalseを返す(非アクティブ化済み科目は新規仕訳で選択不可、docs/domain/accounts.md 2.3)', () => {
+    expect(
+      isManualEntryEligibleAccount({ isReconcilable: null, isSystemManaged: false, isActive: false }),
+    ).toBe(false)
+  })
+
+  it('isActive = trueの科目はtrueを返す', () => {
+    expect(
+      isManualEntryEligibleAccount({ isReconcilable: null, isSystemManaged: false, isActive: true }),
+    ).toBe(true)
+  })
 })
 
 describe('toJournalEntryDraftLineInput', () => {
