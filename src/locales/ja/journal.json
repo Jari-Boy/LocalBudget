@@ -24,7 +24,6 @@
   "removeLine": "この行を削除する",
   "debitTotalLabel": "借方合計",
   "creditTotalLabel": "貸方合計",
-  "differenceLabel": "差額",
   "confirm": "確定する",
   "back": "戻る",
   "negativeAmountError": "金額には1以上の整数を入力してください。",

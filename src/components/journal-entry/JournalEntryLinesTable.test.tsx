@@ -377,20 +377,60 @@ describe('JournalEntryLinesTable', () => {
     expect(onCreateCounterparty).toHaveBeenCalledWith('新しい取引先')
   })
 
-  it('借方合計・貸方合計・差額が表の最終行(tfoot)に表示される', () => {
+  it('借方合計・貸方合計が表の最終行(tfoot)の同じtr内に横並びで表示される', () => {
     renderTable({
       lineRows: [
         createRow(1, { side: 'debit', amountInput: '3000' }),
-        createRow(2, { side: 'credit', amountInput: '2000' }),
+        createRow(2, { side: 'credit', amountInput: '3000' }),
       ],
     })
 
     const debitTotalCell = screen.getByText('借方合計').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
     const creditTotalCell = screen.getByText('貸方合計').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
-    const differenceCell = screen.getByText('差額').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
     expect(within(debitTotalCell).getByText('￥3,000')).toBeInTheDocument()
-    expect(within(creditTotalCell).getByText('￥2,000')).toBeInTheDocument()
-    expect(within(differenceCell).getByText('￥1,000')).toBeInTheDocument()
+    expect(within(creditTotalCell).getByText('￥3,000')).toBeInTheDocument()
+    expect(debitTotalCell.closest('tr')).toBe(creditTotalCell.closest('tr'))
     expect(debitTotalCell.closest('tfoot')).not.toBeNull()
+  })
+
+  it('貸借が一致している場合、不足額の括弧書きは表示されない', () => {
+    renderTable({
+      lineRows: [
+        createRow(1, { side: 'debit', amountInput: '3000' }),
+        createRow(2, { side: 'credit', amountInput: '3000' }),
+      ],
+    })
+
+    expect(screen.queryByText(/-￥/)).not.toBeInTheDocument()
+  })
+
+  it('借方が多い場合、不足している貸方合計に不足額が括弧書きで表示される(ユーザー指定のレイアウト)', () => {
+    renderTable({
+      lineRows: [
+        createRow(1, { side: 'debit', amountInput: '2000' }),
+        createRow(2, { side: 'credit', amountInput: '1800' }),
+      ],
+    })
+
+    const creditTotalCell = screen.getByText('貸方合計').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
+    expect(within(creditTotalCell).getByText('￥1,800')).toBeInTheDocument()
+    expect(within(creditTotalCell).getByText('(-￥200)')).toBeInTheDocument()
+    const debitTotalCell = screen.getByText('借方合計').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
+    expect(within(debitTotalCell).queryByText(/-￥/)).not.toBeInTheDocument()
+  })
+
+  it('貸方が多い場合、不足している借方合計に不足額が括弧書きで表示される', () => {
+    renderTable({
+      lineRows: [
+        createRow(1, { side: 'debit', amountInput: '1800' }),
+        createRow(2, { side: 'credit', amountInput: '2000' }),
+      ],
+    })
+
+    const debitTotalCell = screen.getByText('借方合計').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
+    expect(within(debitTotalCell).getByText('￥1,800')).toBeInTheDocument()
+    expect(within(debitTotalCell).getByText('(-￥200)')).toBeInTheDocument()
+    const creditTotalCell = screen.getByText('貸方合計').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
+    expect(within(creditTotalCell).queryByText(/-￥/)).not.toBeInTheDocument()
   })
 })

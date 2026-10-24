@@ -187,10 +187,10 @@ describe('JournalEntryForm', () => {
 
     const debitTotalCell = screen.getByText('借方合計').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
     const creditTotalCell = screen.getByText('貸方合計').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
-    const differenceCell = screen.getByText('差額').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
     expect(within(debitTotalCell).getByText('￥3,000')).toBeInTheDocument()
     expect(within(creditTotalCell).getByText('￥2,000')).toBeInTheDocument()
-    expect(within(differenceCell).getByText('￥1,000')).toBeInTheDocument()
+    // 借方が多いため、不足している貸方合計に不足額が括弧書きで表示される(計画Issue #125)
+    expect(within(creditTotalCell).getByText('(-￥1,000)')).toBeInTheDocument()
   })
 
   it('取引先入力欄は選択した科目がPL科目(収益/費用)の行にのみ表示される', async () => {

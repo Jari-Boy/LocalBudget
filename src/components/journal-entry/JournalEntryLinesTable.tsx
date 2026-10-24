@@ -336,18 +336,30 @@ export function JournalEntryLinesTable({
         <tfoot>
           <tr>
             <td className="journal-entry-lines-table-totals-cell">
-              <span>{t('debitTotalLabel')}</span>
-              <span>{formatCurrency(totals.debitTotal, 'JPY')}</span>
+              <div className="journal-entry-lines-table-totals-row">
+                <span>{t('debitTotalLabel')}</span>
+                <span>
+                  {formatCurrency(totals.debitTotal, 'JPY')}
+                  {totals.difference < 0 && (
+                    <span className="journal-entry-lines-table-totals-shortfall">
+                      ({formatCurrency(totals.difference, 'JPY')})
+                    </span>
+                  )}
+                </span>
+              </div>
             </td>
             <td className="journal-entry-lines-table-totals-cell">
-              <span>{t('creditTotalLabel')}</span>
-              <span>{formatCurrency(totals.creditTotal, 'JPY')}</span>
-            </td>
-          </tr>
-          <tr>
-            <td className="journal-entry-lines-table-totals-cell" colSpan={2}>
-              <span>{t('differenceLabel')}</span>
-              <span>{formatCurrency(Math.abs(totals.difference), 'JPY')}</span>
+              <div className="journal-entry-lines-table-totals-row">
+                <span>{t('creditTotalLabel')}</span>
+                <span>
+                  {formatCurrency(totals.creditTotal, 'JPY')}
+                  {totals.difference > 0 && (
+                    <span className="journal-entry-lines-table-totals-shortfall">
+                      ({formatCurrency(-totals.difference, 'JPY')})
+                    </span>
+                  )}
+                </span>
+              </div>
             </td>
           </tr>
         </tfoot>

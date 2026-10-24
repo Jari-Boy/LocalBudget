@@ -79,23 +79,3 @@
   background: var(--error-bg);
   color: var(--error);
 }
-
-.journal-entry-totals {
-  display: flex;
-  gap: 1.5rem;
-  margin: 1rem 0;
-}
-
-.journal-entry-totals div {
-  display: flex;
-  flex-direction: column;
-}
-
-.journal-entry-totals span:first-child {
-  font-size: 14px;
-  color: var(--text);
-}
-
-.journal-entry-totals span:last-child {
-  color: var(--text-h);
-}
