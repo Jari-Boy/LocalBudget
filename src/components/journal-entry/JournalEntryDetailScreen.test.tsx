@@ -64,20 +64,31 @@ function renderScreen(entryId: number, overrides?: { onBack?: () => void; onDele
   return { onBack, onDeleted }
 }
 
-/** 借方ブロック・貸方ブロックそれぞれのコンテナ要素を見出しテキストで取得する */
-function getBlock(side: '借方' | '貸方'): HTMLElement {
-  return screen.getByRole('heading', { name: side }).closest('.journal-entry-lines-table-block') as HTMLElement
+/**
+ * 借方列・貸方列それぞれの「実データを持つ」セルを取得する(計画Issue #125、
+ * JournalEntryLinesTableは連結した1枚の表で借方/貸方を列として持つため、
+ * 各tr内の該当列セル(空セルを除く)を集める)。getBlock/findBlockはside識別子を
+ * そのまま返し、getCardsが呼ばれるたびにDOMを再クエリする(waitFor内での再評価や
+ * 複数回の呼び出しが常に最新のセル構成を反映できるようにするため)。
+ */
+function getDebitOrCreditCells(side: '借方' | '貸方'): HTMLElement[] {
+  const columnIndex = side === '借方' ? 0 : 1
+  return Array.from(screen.getByRole('table').querySelectorAll('tbody tr'))
+    .map((row) => (row as HTMLTableRowElement).cells[columnIndex])
+    .filter((cell) => !cell.classList.contains('journal-entry-lines-table-cell-empty'))
 }
 
-async function findBlock(side: '借方' | '貸方'): Promise<HTMLElement> {
-  return (await screen.findByRole('heading', { name: side })).closest(
-    '.journal-entry-lines-table-block',
-  ) as HTMLElement
+function getBlock(side: '借方' | '貸方'): '借方' | '貸方' {
+  return side
 }
 
-/** ブロック内の行カード要素を取得する(計画Issue #125、JournalEntryLinesTable参照) */
-function getCards(block: HTMLElement): HTMLElement[] {
-  return Array.from(block.querySelectorAll('.journal-entry-line-card'))
+async function findBlock(side: '借方' | '貸方'): Promise<'借方' | '貸方'> {
+  await screen.findByRole('table')
+  return side
+}
+
+function getCards(side: '借方' | '貸方'): HTMLElement[] {
+  return getDebitOrCreditCells(side)
 }
 
 describe('JournalEntryDetailScreen', () => {

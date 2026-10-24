@@ -96,20 +96,34 @@ function selectLineAccount(card: HTMLElement, accountId: number) {
   fireEvent.change(within(card).getByLabelText('科目'), { target: { value: String(accountId) } })
 }
 
-/** 借方ブロック・貸方ブロックそれぞれのコンテナ要素を見出しテキストで取得する */
-function getBlock(side: '借方' | '貸方'): HTMLElement {
-  return screen.getByRole('heading', { name: side }).closest('.journal-entry-lines-table-block') as HTMLElement
+/**
+ * 借方列・貸方列それぞれの「実データを持つ」セルを取得する(計画Issue #125、
+ * JournalEntryLinesTableは連結した1枚の表で借方/貸方を列として持つため、
+ * 各tr内の該当列セル(空セルを除く)を集める)。getBlock/findBlockの戻り値を
+ * そのままgetCardsへ渡す既存の呼び出し形を変えずに済むよう、getBlock自体が
+ * セル配列を返す形にしている。
+ */
+function getDebitOrCreditCells(side: '借方' | '貸方'): HTMLElement[] {
+  const columnIndex = side === '借方' ? 0 : 1
+  return Array.from(screen.getByRole('table').querySelectorAll('tbody tr'))
+    .map((row) => (row as HTMLTableRowElement).cells[columnIndex])
+    .filter((cell) => !cell.classList.contains('journal-entry-lines-table-cell-empty'))
 }
 
-async function findBlock(side: '借方' | '貸方'): Promise<HTMLElement> {
-  return (await screen.findByRole('heading', { name: side })).closest(
-    '.journal-entry-lines-table-block',
-  ) as HTMLElement
+// getBlock/findBlockはside識別子をそのまま返す(getCardsが呼ばれるたびにDOMを再クエリする
+// ことで、waitFor内での再評価や複数回の呼び出しが常に最新のセル構成を反映できるようにする。
+// 既存のgetCards(await findBlock('借方'))という呼び出し形を変えずに済む)。
+function getBlock(side: '借方' | '貸方'): '借方' | '貸方' {
+  return side
 }
 
-/** ブロック内の行カード要素を取得する(計画Issue #125、JournalEntryLinesTable参照) */
-function getCards(block: HTMLElement): HTMLElement[] {
-  return Array.from(block.querySelectorAll('.journal-entry-line-card'))
+async function findBlock(side: '借方' | '貸方'): Promise<'借方' | '貸方'> {
+  await screen.findByRole('table')
+  return side
+}
+
+function getCards(side: '借方' | '貸方'): HTMLElement[] {
+  return getDebitOrCreditCells(side)
 }
 
 describe('JournalEntryForm', () => {
@@ -171,10 +185,12 @@ describe('JournalEntryForm', () => {
     selectLineAccount(creditCard, cash.id)
     fireEvent.change(within(creditCard).getByLabelText('金額'), { target: { value: '2000' } })
 
-    const totalsSection = screen.getByText('借方合計').closest('.journal-entry-totals') as HTMLElement
-    expect(within(totalsSection).getByText('￥3,000')).toBeInTheDocument()
-    expect(within(totalsSection).getByText('￥2,000')).toBeInTheDocument()
-    expect(within(totalsSection).getByText('￥1,000')).toBeInTheDocument()
+    const debitTotalCell = screen.getByText('借方合計').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
+    const creditTotalCell = screen.getByText('貸方合計').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
+    const differenceCell = screen.getByText('差額').closest('.journal-entry-lines-table-totals-cell') as HTMLElement
+    expect(within(debitTotalCell).getByText('￥3,000')).toBeInTheDocument()
+    expect(within(creditTotalCell).getByText('￥2,000')).toBeInTheDocument()
+    expect(within(differenceCell).getByText('￥1,000')).toBeInTheDocument()
   })
 
   it('取引先入力欄は選択した科目がPL科目(収益/費用)の行にのみ表示される', async () => {
@@ -543,7 +559,7 @@ describe('JournalEntryForm', () => {
     const debitCard = getCards(await findBlock('借方'))[0]
 
     selectLineAccount(debitCard, wallet.id)
-    const memberSelect = within(debitCard).getByLabelText('世帯メンバー(任意)')
+    const memberSelect = within(debitCard).getByLabelText('世帯メンバー(任意) 🔒')
 
     expect(memberSelect).toBeDisabled()
     expect(memberSelect).toHaveValue(String(husband.id))

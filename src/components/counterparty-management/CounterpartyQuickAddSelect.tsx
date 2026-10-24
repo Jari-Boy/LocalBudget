@@ -14,6 +14,8 @@ export interface CounterpartyQuickAddSelectProps {
   onChange: (counterpartyId: number | null) => void
   /** 取引先を新規作成する。作成後の状態(counterparties一覧への追加等)は呼び出し元の責務 */
   onCreate: (name: string) => Promise<Counterparty>
+  /** 科目側の制約でこの明細に取引先を設定できない場合に無効化する(計画Issue #125) */
+  disabled?: boolean
   /**
    * 呼び出し元画面の翻訳名前空間。ラベル・ボタン・エラーメッセージ(unselected・
    * addNewCounterpartyOption・newCounterpartyNameLabel・addCounterpartyButton・
@@ -46,6 +48,7 @@ export function CounterpartyQuickAddSelect({
   onChange,
   onCreate,
   i18nNamespace,
+  disabled,
 }: CounterpartyQuickAddSelectProps) {
   const { t } = useTranslation(i18nNamespace)
   const [adding, setAdding] = useState(false)
@@ -103,6 +106,7 @@ export function CounterpartyQuickAddSelect({
       <select
         id={id}
         value={value ?? ''}
+        disabled={disabled}
         onChange={(event) => {
           if (event.target.value === NEW_COUNTERPARTY_OPTION_VALUE) {
             setAdding(true)

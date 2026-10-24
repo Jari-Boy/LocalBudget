@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { Project } from '../../domain/project/Project'
@@ -50,27 +50,43 @@ export interface JournalEntryLinesTableProps {
   onCreateCounterparty: (name: string) => Promise<Counterparty>
 }
 
+const TrashIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <polyline points="3 6 5 6 21 6"></polyline>
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+    <path d="M10 11v6"></path>
+    <path d="M14 11v6"></path>
+    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+  </svg>
+)
+
 /**
- * Entry項目(起票者・摘要・取引日)をヘッダーに持ち、借方/貸方をそれぞれ独立したブロック
- * (紙の仕訳帳のように左右に並べる)として複数行扱えるLinesテーブル(計画Issue #125)。
- * 仕訳の「入力」(JournalEntryForm)と「確認・編集」(JournalEntryDetailScreen)の両方から
- * 共通利用する。各行はtableの行ではなく、科目・金額を上段、取引先・プロジェクトを中段、
- * 世帯メンバー・金額を下段に配置するカード(ユーザー指定のレイアウト)として表示する。
- * 行の追加・削除・各セルの編集操作はすべて呼び出し元にコールバックで委譲し(状態は持たない)、
- * 呼び出し元が下書き自動保存・確定送信・更新送信といった文脈ごとに異なる保存戦略を
- * 実装できるようにする。
+ * Entry項目(起票者・摘要・取引日)をヘッダーに持ち、借方/貸方の明細を1枚の連結した表として
+ * 扱えるLinesテーブル(計画Issue #125)。仕訳の「入力」(JournalEntryForm)と「確認・編集」
+ * (JournalEntryDetailScreen)の両方から共通利用する。借方ブロック・貸方ブロックは列として
+ * 並べ、行(明細)はtrで罫線を共有する(浮いた個別カードではなく「1つの仕訳」として
+ * 見える連結表にする、ユーザーレビューでの指摘対応)。各行内は科目を上段、取引先・
+ * プロジェクトを中段、世帯メンバー・金額を下段に配置する2列グリッド(ユーザー指定の
+ * レイアウト)。借方/貸方の行数は独立して増減しうる(ドメイン上、両者を1対1対応させる
+ * 構造は存在しない)ため、表示上は行番号で両ブロックを並べ、短い側は空セルにする
+ * (あくまで表示上の位置揃えであり、行番号に意味上の対応関係は無い)。借方合計・貸方合計は
+ * 別枠ではなく表の最終行(tfoot)に統合する。
  *
  * 行追加ボタンは持たず、各ブロックは常に末尾に1行は空行を保つ(スプレッドシート的に、
  * 最終行の何らかのフィールドが入力された瞬間に次の空行が自動で現れる)。この不変条件は
  * useEffectでlineRowsの変化を監視し、ブロックの最終行が空でなければonAddLineを呼ぶ形で
- * 実現する(初期表示時・既存データ読み込み時にも同様に働く)。行の削除は、残り1行のみの
- * ブロックでは無効化する(空行の入力欄が消えてしまうことを防ぐ。自動追加との組み合わせで
- * 実質「ブロックは常に1行以上」が保たれる)。
+ * 実現する(初期表示時・既存データ読み込み時にも同様に働く)。React18のStrictMode(開発時)は
+ * マウント時にeffectを2回実行するため、素朴にonAddLineを呼ぶと1回の追加要求に対し2行
+ * 追加されてしまう不具合があった(ユーザーの実機確認で発覚)。lineRowsの参照をrefで記録し、
+ * 同一参照に対して二重に処理しないことで防いでいる(StrictModeの2回目の実行は同一レンダーの
+ * 同一lineRows参照に対して行われるため、参照比較で確実に検出できる)。行の削除は、残り1行の
+ * みのブロックでは無効化する(自動追加と組み合わせて「ブロックは常に1行以上」を保つ)。
  *
- * 借方行・貸方行を1対1で対応させる構造はドメイン上存在しない(JournalLineはside単位の
- * フラットな配列で件数も独立)ため、左右ブロックの行数は独立して増減する(借方4行・貸方2行
- * のような不均衡も許容する、ユーザー要望に基づく設計)。科目・金額・プロジェクト・
- * 世帯メンバー・取引先の全フィールドを両ブロックに重複して持たせる(ユーザー要望に基づく設計)。
+ * 科目・金額・プロジェクト・世帯メンバー・取引先の全フィールドを両ブロックに重複して
+ * 持たせる(ユーザー要望に基づく設計)。取引先は選択した科目がPL科目(収益/費用)でない場合、
+ * 非表示にするのではなく選択欄自体を無効化(グレー表示+ラベルに🔒)して「操作を受け付けない」
+ * ことを明示する(ユーザーレビューでの指摘対応。科目に既定の世帯メンバーがある場合の
+ * 世帯メンバー欄の無効化と同じ表現に揃える)。
  */
 export function JournalEntryLinesTable({
   entryDate,
@@ -95,7 +111,14 @@ export function JournalEntryLinesTable({
   const debitRows = lineRows.filter((row) => row.line.side !== 'credit')
   const creditRows = lineRows.filter((row) => row.line.side === 'credit')
 
+  const processedLineRowsRef = useRef<JournalEntryLineRow[] | null>(null)
   useEffect(() => {
+    // StrictMode(開発時)はeffectを2回実行するが、2回目は同一レンダーの同一lineRows参照に
+    // 対して呼ばれる。参照が前回処理済みと同じなら何もしないことで、1回の「空行が必要」
+    // 判定につき1回だけonAddLineを呼ぶことを保証する(二重追加バグの防止)。
+    if (processedLineRowsRef.current === lineRows) return
+    processedLineRowsRef.current = lineRows
+
     if (debitRows.length === 0 || !isLineEmpty(debitRows[debitRows.length - 1].line)) {
       onAddLine('debit')
     }
@@ -105,10 +128,14 @@ export function JournalEntryLinesTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineRows])
 
-  function renderRow(row: JournalEntryLineRow, rows: JournalEntryLineRow[]): ReactNode {
+  function renderCell(row: JournalEntryLineRow | undefined, rows: JournalEntryLineRow[]): ReactNode {
+    if (row === undefined) {
+      return <td className="journal-entry-lines-table-cell journal-entry-lines-table-cell-empty"></td>
+    }
+
     const selectedAccount = masterData.accounts.find((account) => account.id === row.line.accountId)
-    const showCounterparty =
-      selectedAccount !== undefined && isCounterpartyEligibleCategory(selectedAccount.category)
+    const isCounterpartyFieldDisabled =
+      selectedAccount === undefined || !isCounterpartyEligibleCategory(selectedAccount.category)
     /**
      * 科目に既定の世帯メンバーがある場合、明細側での上書きはDDLトリガーで禁止される
      * (docs/schema/journal.sql)。UIでも選択欄をdisabled化して通常操作では違反が
@@ -123,126 +150,125 @@ export function JournalEntryLinesTable({
     const canRemove = rows.length > 1
 
     return (
-      <div className="journal-entry-line-card" key={row.key}>
-        <button
-          type="button"
-          className="journal-entry-line-card-remove"
-          onClick={() => onRemoveLine(row.key)}
-          disabled={!canRemove}
-          aria-label={t('removeLine')}
-        >
-          🗑
-        </button>
-        <div className="journal-entry-line-card-grid">
-          <div className="journal-entry-line-card-field journal-entry-line-card-field-account">
-            <AccountSelect
-              id={`${idPrefix}-account`}
-              label={t('lineAccountLabel')}
-              value={row.line.accountId}
-              accounts={masterData.accounts}
-              filter={isManualEntryEligibleAccount}
-              i18nNamespace="journal"
-              onChange={(accountId) => {
-                const account = masterData.accounts.find((candidate) => candidate.id === accountId)
-                onUpdateLine(row.key, (line) => ({
-                  ...line,
-                  accountId,
-                  counterpartyId:
-                    account !== undefined && isCounterpartyEligibleCategory(account.category)
-                      ? line.counterpartyId
-                      : null,
-                  householdMemberId:
-                    account !== undefined && account.householdMemberId !== null ? null : line.householdMemberId,
-                }))
-              }}
-            />
-          </div>
+      <td className="journal-entry-lines-table-cell" key={row.key}>
+        <div className="journal-entry-line-cell-inner">
+          <button
+            type="button"
+            className="journal-entry-line-cell-remove"
+            onClick={() => onRemoveLine(row.key)}
+            disabled={!canRemove}
+            aria-label={t('removeLine')}
+          >
+            <TrashIcon />
+          </button>
+          <div className="journal-entry-line-cell-grid">
+            <div className="journal-entry-line-cell-field journal-entry-line-cell-field-account">
+              <AccountSelect
+                id={`${idPrefix}-account`}
+                label={t('lineAccountLabel')}
+                value={row.line.accountId}
+                accounts={masterData.accounts}
+                filter={isManualEntryEligibleAccount}
+                i18nNamespace="journal"
+                onChange={(accountId) => {
+                  const account = masterData.accounts.find((candidate) => candidate.id === accountId)
+                  onUpdateLine(row.key, (line) => ({
+                    ...line,
+                    accountId,
+                    counterpartyId:
+                      account !== undefined && isCounterpartyEligibleCategory(account.category)
+                        ? line.counterpartyId
+                        : null,
+                    householdMemberId:
+                      account !== undefined && account.householdMemberId !== null ? null : line.householdMemberId,
+                  }))
+                }}
+              />
+            </div>
 
-          <div className="journal-entry-line-card-field journal-entry-line-card-field-counterparty">
-            {showCounterparty && (
+            <div className="journal-entry-line-cell-field journal-entry-line-cell-field-counterparty">
               <CounterpartyQuickAddSelect
                 id={`${idPrefix}-counterparty`}
-                label={t('lineCounterpartyLabel')}
+                label={`${t('lineCounterpartyLabel')}${isCounterpartyFieldDisabled ? ' 🔒' : ''}`}
                 value={row.line.counterpartyId}
                 counterparties={masterData.counterparties}
                 i18nNamespace="journal"
+                disabled={isCounterpartyFieldDisabled}
                 onChange={(counterpartyId) => onUpdateLine(row.key, (line) => ({ ...line, counterpartyId }))}
                 onCreate={onCreateCounterparty}
               />
-            )}
-          </div>
+            </div>
 
-          <div className="journal-entry-line-card-field journal-entry-line-card-field-project">
-            <label htmlFor={`${idPrefix}-project`}>{t('lineProjectLabel')}</label>
-            <select
-              id={`${idPrefix}-project`}
-              value={row.line.projectId ?? ''}
-              onChange={(event) =>
-                onUpdateLine(row.key, (line) => ({
-                  ...line,
-                  projectId: event.target.value === '' ? null : Number(event.target.value),
-                }))
-              }
-            >
-              <option value="">{t('unselected')}</option>
-              {masterData.projects
-                .filter((project) => project.isActive || project.id === row.line.projectId)
-                .map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-            </select>
-          </div>
+            <div className="journal-entry-line-cell-field journal-entry-line-cell-field-project">
+              <label htmlFor={`${idPrefix}-project`}>{t('lineProjectLabel')}</label>
+              <select
+                id={`${idPrefix}-project`}
+                value={row.line.projectId ?? ''}
+                onChange={(event) =>
+                  onUpdateLine(row.key, (line) => ({
+                    ...line,
+                    projectId: event.target.value === '' ? null : Number(event.target.value),
+                  }))
+                }
+              >
+                <option value="">{t('unselected')}</option>
+                {masterData.projects
+                  .filter((project) => project.isActive || project.id === row.line.projectId)
+                  .map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
 
-          <div className="journal-entry-line-card-field journal-entry-line-card-field-member">
-            <label htmlFor={`${idPrefix}-member`}>{t('lineHouseholdMemberLabel')}</label>
-            <select
-              id={`${idPrefix}-member`}
-              value={memberFieldValue ?? ''}
-              disabled={isMemberFieldDisabled}
-              onChange={(event) =>
-                onUpdateLine(row.key, (line) => ({
-                  ...line,
-                  householdMemberId: event.target.value === '' ? null : Number(event.target.value),
-                }))
-              }
-            >
-              <option value="">{t('unselected')}</option>
-              {masterData.householdMembers
-                .filter((member) => member.isActive || member.id === memberFieldValue)
-                .map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name}
-                  </option>
-                ))}
-            </select>
-          </div>
+            <div className="journal-entry-line-cell-field journal-entry-line-cell-field-member">
+              <label htmlFor={`${idPrefix}-member`}>
+                {t('lineHouseholdMemberLabel')}
+                {isMemberFieldDisabled ? ' 🔒' : ''}
+              </label>
+              <select
+                id={`${idPrefix}-member`}
+                value={memberFieldValue ?? ''}
+                disabled={isMemberFieldDisabled}
+                onChange={(event) =>
+                  onUpdateLine(row.key, (line) => ({
+                    ...line,
+                    householdMemberId: event.target.value === '' ? null : Number(event.target.value),
+                  }))
+                }
+              >
+                <option value="">{t('unselected')}</option>
+                {masterData.householdMembers
+                  .filter((member) => member.isActive || member.id === memberFieldValue)
+                  .map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
 
-          <div className="journal-entry-line-card-field journal-entry-line-card-field-amount">
-            <label htmlFor={`${idPrefix}-amount`}>{t('lineAmountLabel')}</label>
-            <input
-              id={`${idPrefix}-amount`}
-              type="number"
-              value={row.line.amountInput}
-              onChange={(event) => onUpdateLine(row.key, (line) => ({ ...line, amountInput: event.target.value }))}
-            />
+            <div className="journal-entry-line-cell-field journal-entry-line-cell-field-amount">
+              <label htmlFor={`${idPrefix}-amount`}>{t('lineAmountLabel')}</label>
+              <input
+                id={`${idPrefix}-amount`}
+                type="number"
+                value={row.line.amountInput}
+                onChange={(event) => onUpdateLine(row.key, (line) => ({ ...line, amountInput: event.target.value }))}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      </td>
     )
   }
 
-  function renderBlock(side: JournalLineSide, rows: JournalEntryLineRow[]): ReactNode {
-    const titleKey = side === 'debit' ? 'sideDebit' : 'sideCredit'
-
-    return (
-      <div className="journal-entry-lines-table-block">
-        <h3>{t(titleKey)}</h3>
-        <div className="journal-entry-line-cards">{rows.map((row) => renderRow(row, rows))}</div>
-      </div>
-    )
-  }
+  const rowCount = Math.max(debitRows.length, creditRows.length)
+  const pairedRows = Array.from({ length: rowCount }, (_, index) => ({
+    debit: debitRows[index],
+    credit: creditRows[index],
+  }))
 
   return (
     <div className="journal-entry-lines-table">
@@ -292,25 +318,40 @@ export function JournalEntryLinesTable({
         </div>
       </div>
 
-      <div className="journal-entry-lines-table-blocks">
-        {renderBlock('debit', debitRows)}
-        {renderBlock('credit', creditRows)}
-      </div>
-
-      <div className="journal-entry-totals">
-        <div>
-          <span>{t('debitTotalLabel')}</span>
-          <span>{formatCurrency(totals.debitTotal, 'JPY')}</span>
-        </div>
-        <div>
-          <span>{t('creditTotalLabel')}</span>
-          <span>{formatCurrency(totals.creditTotal, 'JPY')}</span>
-        </div>
-        <div>
-          <span>{t('differenceLabel')}</span>
-          <span>{formatCurrency(Math.abs(totals.difference), 'JPY')}</span>
-        </div>
-      </div>
+      <table className="journal-entry-lines-table-grid">
+        <thead>
+          <tr>
+            <th scope="col">{t('sideDebit')}</th>
+            <th scope="col">{t('sideCredit')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pairedRows.map((pair, index) => (
+            <tr key={pair.debit?.key ?? `empty-debit-${index}`}>
+              {renderCell(pair.debit, debitRows)}
+              {renderCell(pair.credit, creditRows)}
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td className="journal-entry-lines-table-totals-cell">
+              <span>{t('debitTotalLabel')}</span>
+              <span>{formatCurrency(totals.debitTotal, 'JPY')}</span>
+            </td>
+            <td className="journal-entry-lines-table-totals-cell">
+              <span>{t('creditTotalLabel')}</span>
+              <span>{formatCurrency(totals.creditTotal, 'JPY')}</span>
+            </td>
+          </tr>
+          <tr>
+            <td className="journal-entry-lines-table-totals-cell" colSpan={2}>
+              <span>{t('differenceLabel')}</span>
+              <span>{formatCurrency(Math.abs(totals.difference), 'JPY')}</span>
+            </td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
   )
 }
