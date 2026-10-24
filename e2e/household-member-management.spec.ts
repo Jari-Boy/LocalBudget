@@ -30,14 +30,15 @@ async function waitForHouseholdMemberCreated(page: Page, name: string) {
 }
 
 /**
- * 名称でメンバーのlistitemを特定する。単純な`filter({ hasText })`はグループの
+ * 名称でメンバーの行グループ(計画Issue #127でテーブル化、メンバーごとの<tbody>、
+ * 暗黙ロールはrowgroup)を特定する。単純な`filter({ hasText })`はグループの
  * 所属メンバー追加用<select>内の<option>テキスト(他の全メンバー名を含む)も
  * 拾ってしまうため、メンバー名を表示する要素(.household-member-list-name)に
  * 絞ってマッチさせる。
  */
 function memberItem(page: Page, name: string) {
   return page
-    .getByRole('listitem')
+    .getByRole('rowgroup')
     .filter({ has: page.locator('.household-member-list-name', { hasText: name }) })
 }
 

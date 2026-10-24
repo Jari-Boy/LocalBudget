@@ -40,33 +40,33 @@ test.describe('プロジェクト管理画面', () => {
     await page.getByRole('button', { name: 'プロジェクトを追加' }).click()
     await page.getByLabel('名称').fill('26年7月アメリカ旅行')
     await page.getByRole('button', { name: '作成する' }).click()
-    await expect(page.getByRole('list').getByText('26年7月アメリカ旅行')).toBeVisible()
+    await expect(page.getByRole('table').getByText('26年7月アメリカ旅行')).toBeVisible()
 
     // 新規作成(kind=settlementを明示指定)
     await page.getByRole('button', { name: 'プロジェクトを追加' }).click()
     await page.getByLabel('名称').fill('26/7生活費割勘')
     await page.getByLabel('種別').selectOption('settlement')
     await page.getByRole('button', { name: '作成する' }).click()
-    const settlementItem = page.getByRole('listitem').filter({ hasText: '26/7生活費割勘' })
+    const settlementItem = page.getByRole('rowgroup').filter({ hasText: '26/7生活費割勘' })
     await expect(settlementItem).toBeVisible()
     await expect(settlementItem).toContainText('精算')
 
     // 編集
-    const tripItem = page.getByRole('listitem').filter({ hasText: '26年7月アメリカ旅行' })
+    const tripItem = page.getByRole('rowgroup').filter({ hasText: '26年7月アメリカ旅行' })
     await tripItem.getByRole('button', { name: '編集' }).click()
     await page.getByLabel('名称').fill('26年7月アメリカ旅行(確定)')
     await page.getByRole('button', { name: '保存する' }).click()
-    await expect(page.getByRole('list').getByText('26年7月アメリカ旅行(確定)')).toBeVisible()
+    await expect(page.getByRole('table').getByText('26年7月アメリカ旅行(確定)')).toBeVisible()
 
     // 非アクティブ化
-    const confirmedTripItem = page.getByRole('listitem').filter({ hasText: '26年7月アメリカ旅行(確定)' })
+    const confirmedTripItem = page.getByRole('rowgroup').filter({ hasText: '26年7月アメリカ旅行(確定)' })
     await confirmedTripItem.getByRole('button', { name: '非アクティブ化' }).click()
     await expect(confirmedTripItem.getByText('非アクティブ')).toBeVisible()
     await expect(confirmedTripItem.getByRole('button', { name: '非アクティブ化' })).toHaveCount(0)
 
     // 削除(紐づく仕訳明細が0件のため物理削除できる)
     await settlementItem.getByRole('button', { name: '削除' }).click()
-    await expect(page.getByRole('listitem').filter({ hasText: '26/7生活費割勘' })).toHaveCount(0)
+    await expect(page.getByRole('rowgroup').filter({ hasText: '26/7生活費割勘' })).toHaveCount(0)
 
     await page.getByRole('button', { name: '戻る' }).click()
     await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()
@@ -108,7 +108,7 @@ test.describe('プロジェクト管理画面', () => {
 
     await page.getByRole('button', { name: 'マスタ管理' }).click()
     await page.getByRole('button', { name: 'プロジェクトを管理する' }).click()
-    const item = page.getByRole('listitem').filter({ hasText: '記帳済みの旅行' })
+    const item = page.getByRole('rowgroup').filter({ hasText: '記帳済みの旅行' })
     await expect(item).toBeVisible()
     await expect(item.getByRole('button', { name: '削除' })).toHaveCount(0)
 

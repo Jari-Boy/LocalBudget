@@ -57,33 +57,33 @@ test.describe('取引先管理画面', () => {
     await page.getByRole('button', { name: '取引先を追加' }).click()
     await page.getByLabel('名称').fill('ローソン 東京日本橋店')
     await page.getByRole('button', { name: '作成する' }).click()
-    await expect(page.getByRole('list').getByText('ローソン 東京日本橋店')).toBeVisible()
+    await expect(page.getByRole('table').getByText('ローソン 東京日本橋店')).toBeVisible()
 
     await page.getByRole('button', { name: '取引先を追加' }).click()
     await page.getByLabel('名称').fill('ローソン 大阪梅田店')
     await page.getByRole('button', { name: '作成する' }).click()
-    await expect(page.getByRole('list').getByText('ローソン 大阪梅田店')).toBeVisible()
+    await expect(page.getByRole('table').getByText('ローソン 大阪梅田店')).toBeVisible()
 
     await page.getByRole('button', { name: '取引先を追加' }).click()
     await page.getByLabel('名称').fill('ローソン')
     await page.getByRole('button', { name: '作成する' }).click()
-    await expect(page.getByRole('list').getByText('ローソン', { exact: true })).toBeVisible()
+    await expect(page.getByRole('table').getByText('ローソン', { exact: true })).toBeVisible()
 
     // 編集
-    const tokyoItem = page.getByRole('listitem').filter({ hasText: 'ローソン 東京日本橋店' })
+    const tokyoItem = page.getByRole('rowgroup').filter({ hasText: 'ローソン 東京日本橋店' })
     await tokyoItem.getByRole('button', { name: '編集' }).click()
     await page.getByLabel('名称').fill('ローソン 東京日本橋本店')
     await page.getByRole('button', { name: '保存する' }).click()
-    await expect(page.getByRole('list').getByText('ローソン 東京日本橋本店')).toBeVisible()
+    await expect(page.getByRole('table').getByText('ローソン 東京日本橋本店')).toBeVisible()
 
     // 統合: 「ローソン 東京日本橋本店」「ローソン 大阪梅田店」→「ローソン」
     await page
-      .getByRole('listitem')
+      .getByRole('rowgroup')
       .filter({ hasText: 'ローソン 東京日本橋本店' })
       .getByRole('checkbox')
       .check()
     await page
-      .getByRole('listitem')
+      .getByRole('rowgroup')
       .filter({ hasText: 'ローソン 大阪梅田店' })
       .getByRole('checkbox')
       .check()
@@ -97,14 +97,14 @@ test.describe('取引先管理画面', () => {
 
     // 削除(統合元は仕訳明細0件のため物理削除可能)
     await page
-      .getByRole('listitem')
+      .getByRole('rowgroup')
       .filter({ hasText: 'ローソン 東京日本橋本店' })
       .getByRole('button', { name: '削除' })
       .click()
-    await expect(page.getByRole('list').getByText('ローソン 東京日本橋本店')).toHaveCount(0)
+    await expect(page.getByRole('table').getByText('ローソン 東京日本橋本店')).toHaveCount(0)
 
     // 非アクティブ化
-    const osakaItem = page.getByRole('listitem').filter({ hasText: 'ローソン 大阪梅田店' })
+    const osakaItem = page.getByRole('rowgroup').filter({ hasText: 'ローソン 大阪梅田店' })
     await osakaItem.getByRole('button', { name: '非アクティブ化' }).click()
     await expect(osakaItem).toContainText('非アクティブ')
 
@@ -150,7 +150,7 @@ test.describe('取引先管理画面', () => {
 
     await page.getByRole('button', { name: 'マスタ管理' }).click()
     await page.getByRole('button', { name: '取引先を管理する' }).click()
-    const item = page.getByRole('listitem').filter({ hasText: 'イオン' })
+    const item = page.getByRole('rowgroup').filter({ hasText: 'イオン' })
     await expect(item.getByRole('button', { name: '削除' })).toHaveCount(0)
     await expect(item.getByRole('button', { name: '非アクティブ化' })).toBeVisible()
   })
@@ -164,9 +164,9 @@ test.describe('取引先管理画面', () => {
     await page.getByRole('button', { name: '取引先を追加' }).click()
     await page.getByLabel('名称').fill('イオン')
     await page.getByRole('button', { name: '作成する' }).click()
-    await expect(page.getByRole('list').getByText('イオン')).toBeVisible()
+    await expect(page.getByRole('table').getByText('イオン')).toBeVisible()
 
-    const item = page.getByRole('listitem').filter({ hasText: 'イオン' })
+    const item = page.getByRole('rowgroup').filter({ hasText: 'イオン' })
     await expect(item.getByRole('button', { name: '登録済みパターン: 0件' })).toBeVisible()
     await item.getByRole('button', { name: '登録済みパターン: 0件' }).click()
     await expect(item.getByText('登録済みのパターンはありません')).toBeVisible()
@@ -189,7 +189,7 @@ test.describe('取引先管理画面', () => {
     // 再ナビゲーションは不要になった。
     await page.reload()
 
-    const reopenedItem = page.getByRole('listitem').filter({ hasText: 'イオン' })
+    const reopenedItem = page.getByRole('rowgroup').filter({ hasText: 'イオン' })
     await expect(reopenedItem.getByRole('button', { name: '登録済みパターン: 1件' })).toBeVisible()
     await reopenedItem.getByRole('button', { name: '登録済みパターン: 1件' }).click()
     await expect(reopenedItem.getByText('AEON')).toBeVisible()

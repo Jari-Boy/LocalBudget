@@ -335,13 +335,15 @@ export function HouseholdMemberManagementScreen({
                 ) : (
                   <tr>
                     <td>
-                      {member.name}
-                      {member.isGroup && (
-                        <span className="household-member-list-type">{t('typeGroup')}</span>
-                      )}
-                      {!member.isActive && (
-                        <span className="household-member-list-inactive">{t('inactiveLabel')}</span>
-                      )}
+                      <span className="household-member-list-name">
+                        {member.name}
+                        {member.isGroup && (
+                          <span className="household-member-list-type">{t('typeGroup')}</span>
+                        )}
+                        {!member.isActive && (
+                          <span className="household-member-list-inactive">{t('inactiveLabel')}</span>
+                        )}
+                      </span>
                     </td>
                     <td className="household-member-list-actions">
                       {member.isGroup && (

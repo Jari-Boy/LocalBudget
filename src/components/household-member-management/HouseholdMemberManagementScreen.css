@@ -25,6 +25,10 @@
   white-space: nowrap;
 }
 
+.household-member-management-screen .household-member-list-name {
+  color: var(--text-h);
+}
+
 .household-member-management-screen .household-member-list-type,
 .household-member-management-screen .household-member-list-inactive {
   margin-left: 0.5em;
