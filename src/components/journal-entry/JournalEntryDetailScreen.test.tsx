@@ -64,9 +64,20 @@ function renderScreen(entryId: number, overrides?: { onBack?: () => void; onDele
   return { onBack, onDeleted }
 }
 
-/** Linesテーブルの行(ヘッダー行を除く)を取得する(JournalEntryLinesTable参照) */
-async function findLineRows(): Promise<HTMLElement[]> {
-  return (await screen.findAllByRole('row')).slice(1)
+/** 借方ブロック・貸方ブロックそれぞれのtable要素を取得する(DOM上、借方が先に描画される) */
+function getBlockTables(): { debitTable: HTMLElement; creditTable: HTMLElement } {
+  const tables = screen.getAllByRole('table')
+  return { debitTable: tables[0], creditTable: tables[1] }
+}
+
+async function findBlockTables(): Promise<{ debitTable: HTMLElement; creditTable: HTMLElement }> {
+  const tables = await screen.findAllByRole('table')
+  return { debitTable: tables[0], creditTable: tables[1] }
+}
+
+/** Linesテーブルのブロック内の行(ヘッダー行を除く)を取得する(JournalEntryLinesTable参照) */
+function getRowsIn(table: HTMLElement): HTMLElement[] {
+  return within(table).getAllByRole('row').slice(1)
 }
 
 describe('JournalEntryDetailScreen', () => {
@@ -88,12 +99,15 @@ describe('JournalEntryDetailScreen', () => {
 
     expect(await screen.findByLabelText('取引日')).toHaveValue('2026-08-01')
     expect(screen.getByLabelText('摘要(任意)')).toHaveValue('スーパーで食材購入')
-    const rows = await findLineRows()
-    expect(rows).toHaveLength(2)
-    expect(within(rows[0]).getByLabelText('科目')).toHaveValue(String(expense.id))
-    expect(within(rows[0]).getByLabelText('金額')).toHaveValue(3000)
-    expect(within(rows[1]).getByLabelText('科目')).toHaveValue(String(cash.id))
-    expect(within(rows[1]).getByLabelText('金額')).toHaveValue(3000)
+    const { debitTable, creditTable } = getBlockTables()
+    const debitRows = getRowsIn(debitTable)
+    const creditRows = getRowsIn(creditTable)
+    expect(debitRows).toHaveLength(1)
+    expect(creditRows).toHaveLength(1)
+    expect(within(debitRows[0]).getByLabelText('科目')).toHaveValue(String(expense.id))
+    expect(within(debitRows[0]).getByLabelText('金額')).toHaveValue(3000)
+    expect(within(creditRows[0]).getByLabelText('科目')).toHaveValue(String(cash.id))
+    expect(within(creditRows[0]).getByLabelText('金額')).toHaveValue(3000)
   })
 
   it('明細行にプロジェクト・世帯メンバー・取引先が設定されている場合、それぞれの選択値がLinesテーブルに反映される', async () => {
@@ -115,10 +129,12 @@ describe('JournalEntryDetailScreen', () => {
 
     renderScreen(entry.id)
 
-    const rows = await findLineRows()
-    expect(within(rows[0]).getByLabelText('プロジェクト(任意)')).toHaveValue(String(project.id))
-    expect(within(rows[0]).getByLabelText('世帯メンバー(任意)')).toHaveValue(String(other.id))
-    expect(within(rows[1]).getByLabelText('取引先(任意)')).toHaveValue(String(counterparty.id))
+    const { debitTable, creditTable } = await findBlockTables()
+    const debitRow = getRowsIn(debitTable)[0]
+    const creditRow = getRowsIn(creditTable)[0]
+    expect(within(debitRow).getByLabelText('プロジェクト(任意)')).toHaveValue(String(project.id))
+    expect(within(debitRow).getByLabelText('世帯メンバー(任意)')).toHaveValue(String(other.id))
+    expect(within(creditRow).getByLabelText('取引先(任意)')).toHaveValue(String(counterparty.id))
   })
 
   it('明細を編集して更新すると、JournalEntryRepository.updateが呼ばれ変更が画面に反映される', async () => {
@@ -136,10 +152,10 @@ describe('JournalEntryDetailScreen', () => {
     })
 
     renderScreen(entry.id)
-    const rows = await findLineRows()
+    const { debitTable, creditTable } = await findBlockTables()
 
-    fireEvent.change(within(rows[0]).getByLabelText('金額'), { target: { value: '5000' } })
-    fireEvent.change(within(rows[1]).getByLabelText('金額'), { target: { value: '5000' } })
+    fireEvent.change(within(getRowsIn(debitTable)[0]).getByLabelText('金額'), { target: { value: '5000' } })
+    fireEvent.change(within(getRowsIn(creditTable)[0]).getByLabelText('金額'), { target: { value: '5000' } })
     fireEvent.click(screen.getByRole('button', { name: '更新する' }))
 
     await waitFor(() => {
@@ -164,13 +180,13 @@ describe('JournalEntryDetailScreen', () => {
     })
 
     renderScreen(entry.id)
-    const rows = await findLineRows()
+    const { debitTable } = await findBlockTables()
 
-    fireEvent.change(within(rows[0]).getByLabelText('金額'), { target: { value: '4000' } })
+    fireEvent.change(within(getRowsIn(debitTable)[0]).getByLabelText('金額'), { target: { value: '4000' } })
     fireEvent.click(screen.getByRole('button', { name: '更新する' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('貸借が一致していません')
-    expect(within((await findLineRows())[0]).getByLabelText('金額')).toHaveValue(4000)
+    expect(within(getRowsIn((await findBlockTables()).debitTable)[0]).getByLabelText('金額')).toHaveValue(4000)
     expect(journalEntryRepository.findById(entry.id)?.lines.map((line) => line.amount)).toEqual([3000, 3000])
   })
 
@@ -188,14 +204,16 @@ describe('JournalEntryDetailScreen', () => {
     })
 
     renderScreen(entry.id)
-    await findLineRows()
+    await findBlockTables()
 
-    fireEvent.click(screen.getByRole('button', { name: '行を追加する' }))
-    expect(await findLineRows()).toHaveLength(3)
+    fireEvent.click(screen.getByRole('button', { name: '借方行を追加する' }))
+    const { debitTable: debitTableAfterAdd } = getBlockTables()
+    expect(getRowsIn(debitTableAfterAdd)).toHaveLength(2)
 
-    const removeButtons = screen.getAllByRole('button', { name: 'この行を削除する' })
-    fireEvent.click(removeButtons[2])
-    expect(await findLineRows()).toHaveLength(2)
+    const removeButtons = within(debitTableAfterAdd).getAllByRole('button', { name: 'この行を削除する' })
+    fireEvent.click(removeButtons[1])
+    const { debitTable: debitTableAfterRemove } = getBlockTables()
+    expect(getRowsIn(debitTableAfterRemove)).toHaveLength(1)
   })
 
   it('割勘・精算と無関係な通常の仕訳では、取り消しセクションが表示されない', async () => {

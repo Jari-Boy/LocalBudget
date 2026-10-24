@@ -2,8 +2,10 @@
 /**
  * Linesテーブル共通コンポーネント(JournalEntryLinesTable、計画Issue #125)の
  * コンポーネントテスト。Entry項目(取引日・摘要・起票者)のヘッダー表示(編集可能/
- * 読み取り専用の出し分け)、借方/貸方複数行のテーブル表示、行の追加・削除・各セル編集時の
- * コールバック呼び出し、取引先入力欄がPL科目行にのみ表示されその場で新規作成できること、
+ * 読み取り専用の出し分け)、借方/貸方を独立したブロック(紙の仕訳帳のように左右に並べる)
+ * として複数行扱えること、各ブロックの行の追加・削除・各セル編集時のコールバック呼び出し、
+ * 取引先入力欄がPL科目行にのみ表示されその場で新規作成できること、非アクティブ化済みの
+ * プロジェクト・世帯メンバーが新規選択肢から除外されつつ既存選択値は保持されること、
  * 借方合計・貸方合計・差額の表示を、モックデータを使った単体のレンダリングテストとして
  * 検証する。外部依存: なし(masterData・コールバックはすべてテスト側のモック)。
  */
@@ -36,10 +38,6 @@ function createAccount(overrides: Partial<Account> & { id: number; name: string 
   }
 }
 
-function createRow(key: number, line?: Partial<JournalEntryFormLine>): JournalEntryLineRow {
-  return { key, line: { ...createEmptyJournalEntryFormLine(), ...line } }
-}
-
 function createHouseholdMember(overrides: Partial<HouseholdMember> & { id: number; name: string }): HouseholdMember {
   return {
     isGroup: false,
@@ -48,6 +46,10 @@ function createHouseholdMember(overrides: Partial<HouseholdMember> & { id: numbe
     updatedAt: '2026-08-01T00:00:00.000Z',
     ...overrides,
   }
+}
+
+function createRow(key: number, line?: Partial<JournalEntryFormLine>): JournalEntryLineRow {
+  return { key, line: { ...createEmptyJournalEntryFormLine(), ...line } }
 }
 
 function renderTable(overrides?: {
@@ -59,7 +61,7 @@ function renderTable(overrides?: {
   headerHouseholdMemberId?: number | null
   readOnlyHeader?: boolean
   onUpdateLine?: ReturnType<typeof vi.fn>
-  onAddLine?: () => void
+  onAddLine?: (side: 'debit' | 'credit') => void
   onRemoveLine?: (key: number) => void
 }) {
   const onUpdateLine = overrides?.onUpdateLine ?? vi.fn()
@@ -69,7 +71,10 @@ function renderTable(overrides?: {
   const onMemoChange = vi.fn()
   const onHeaderHouseholdMemberChange = vi.fn()
   const onCreateCounterparty = vi.fn()
-  const lineRows = overrides?.lineRows ?? [createRow(1), createRow(2)]
+  const lineRows = overrides?.lineRows ?? [
+    createRow(1, { side: 'debit' }),
+    createRow(2, { side: 'credit' }),
+  ]
 
   render(
     <I18nextProvider i18n={i18n}>
@@ -98,8 +103,14 @@ function renderTable(overrides?: {
   return { onUpdateLine, onAddLine, onRemoveLine, onEntryDateChange, onMemoChange, onCreateCounterparty, lineRows }
 }
 
-function getLineRowElements() {
-  return screen.getAllByRole('row').slice(1)
+/** 借方ブロック・貸方ブロックそれぞれのtable要素を取得する(DOM上、借方が先に描画される) */
+function getBlockTables(): { debitTable: HTMLElement; creditTable: HTMLElement } {
+  const tables = screen.getAllByRole('table')
+  return { debitTable: tables[0], creditTable: tables[1] }
+}
+
+function getRowsIn(table: HTMLElement): HTMLElement[] {
+  return within(table).getAllByRole('row').slice(1)
 }
 
 describe('JournalEntryLinesTable', () => {
@@ -119,16 +130,27 @@ describe('JournalEntryLinesTable', () => {
     expect(screen.getByLabelText('起票者')).toBeDisabled()
   })
 
-  it('lineRowsの件数分だけ行がテーブルに表示される', () => {
-    renderTable({ lineRows: [createRow(1), createRow(2), createRow(3)] })
+  it('借方/貸方が独立したブロックとして表示され、side別に行が振り分けられる', () => {
+    renderTable({
+      lineRows: [
+        createRow(1, { side: 'debit' }),
+        createRow(2, { side: 'debit' }),
+        createRow(3, { side: 'credit' }),
+      ],
+    })
 
-    expect(getLineRowElements()).toHaveLength(3)
+    expect(screen.getByRole('heading', { name: '借方' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '貸方' })).toBeInTheDocument()
+    const { debitTable, creditTable } = getBlockTables()
+    expect(getRowsIn(debitTable)).toHaveLength(2)
+    expect(getRowsIn(creditTable)).toHaveLength(1)
   })
 
   it('科目を選択するとonUpdateLineが対象行のkeyとupdater関数で呼ばれる', () => {
     const expense = createAccount({ id: 10, name: '食費' })
     const { onUpdateLine } = renderTable({ accounts: [expense] })
-    const rows = getLineRowElements()
+    const { debitTable } = getBlockTables()
+    const rows = getRowsIn(debitTable)
 
     fireEvent.change(within(rows[0]).getByLabelText('科目'), { target: { value: '10' } })
 
@@ -149,37 +171,50 @@ describe('JournalEntryLinesTable', () => {
       captured.line = updater(createEmptyJournalEntryFormLine())
     })
     renderTable({ onUpdateLine })
-    const rows = getLineRowElements()
+    const { debitTable } = getBlockTables()
+    const rows = getRowsIn(debitTable)
 
     fireEvent.change(within(rows[0]).getByLabelText('金額'), { target: { value: '3000' } })
 
     expect(captured.line?.amountInput).toBe('3000')
   })
 
-  it('行追加ボタンでonAddLineが呼ばれる', () => {
+  it('借方ブロックの「借方行を追加する」ボタンでonAddLineが"debit"付きで呼ばれる', () => {
     const { onAddLine } = renderTable()
 
-    fireEvent.click(screen.getByRole('button', { name: '行を追加する' }))
+    fireEvent.click(screen.getByRole('button', { name: '借方行を追加する' }))
 
-    expect(onAddLine).toHaveBeenCalledTimes(1)
+    expect(onAddLine).toHaveBeenCalledWith('debit')
   })
 
-  it('最小行数(既定2)まで減らすと削除ボタンが無効化される', () => {
-    renderTable({ lineRows: [createRow(1), createRow(2)] })
-    const rows = getLineRowElements()
+  it('貸方ブロックの「貸方行を追加する」ボタンでonAddLineが"credit"付きで呼ばれる', () => {
+    const { onAddLine } = renderTable()
 
-    rows.forEach((row) => expect(within(row).getByRole('button', { name: 'この行を削除する' })).toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: '貸方行を追加する' }))
+
+    expect(onAddLine).toHaveBeenCalledWith('credit')
   })
 
-  it('最小行数を超えている場合は削除ボタンが有効で、クリックするとonRemoveLineが呼ばれる', () => {
-    const { onRemoveLine } = renderTable({ lineRows: [createRow(1), createRow(2), createRow(3)] })
-    const rows = getLineRowElements()
+  it('借方・貸方の合計行数が最小行数(既定2)の場合、どちらのブロックの削除ボタンも無効化される', () => {
+    renderTable({ lineRows: [createRow(1, { side: 'debit' }), createRow(2, { side: 'credit' })] })
 
-    const removeButton = within(rows[2]).getByRole('button', { name: 'この行を削除する' })
+    const { debitTable, creditTable } = getBlockTables()
+    expect(within(getRowsIn(debitTable)[0]).getByRole('button', { name: 'この行を削除する' })).toBeDisabled()
+    expect(within(getRowsIn(creditTable)[0]).getByRole('button', { name: 'この行を削除する' })).toBeDisabled()
+  })
+
+  it('合計行数が最小行数を超えている場合は削除ボタンが有効で、クリックするとonRemoveLineが呼ばれる', () => {
+    const { onRemoveLine } = renderTable({
+      lineRows: [createRow(1, { side: 'debit' }), createRow(2, { side: 'debit' }), createRow(3, { side: 'credit' })],
+    })
+    const { debitTable } = getBlockTables()
+    const rows = getRowsIn(debitTable)
+
+    const removeButton = within(rows[1]).getByRole('button', { name: 'この行を削除する' })
     expect(removeButton).toBeEnabled()
     fireEvent.click(removeButton)
 
-    expect(onRemoveLine).toHaveBeenCalledWith(3)
+    expect(onRemoveLine).toHaveBeenCalledWith(2)
   })
 
   it('ヘッダーの起票者選択は非アクティブ化済みの世帯メンバーを新規選択肢に含まない(docs/domain/household-members.md 1.3)', () => {
@@ -206,7 +241,8 @@ describe('JournalEntryLinesTable', () => {
     const active = createHouseholdMember({ id: 1, name: '夫' })
     const inactive = createHouseholdMember({ id: 2, name: '元同居人', isActive: false })
     renderTable({ householdMembers: [active, inactive] })
-    const rows = getLineRowElements()
+    const { debitTable } = getBlockTables()
+    const rows = getRowsIn(debitTable)
 
     const select = within(rows[0]).getByLabelText('世帯メンバー(任意)') as HTMLSelectElement
     const optionTexts = Array.from(select.options).map((option) => option.textContent)
@@ -218,13 +254,50 @@ describe('JournalEntryLinesTable', () => {
     const inactive = createHouseholdMember({ id: 2, name: '元同居人', isActive: false })
     renderTable({
       householdMembers: [inactive],
-      lineRows: [createRow(1, { householdMemberId: 2 }), createRow(2)],
+      lineRows: [
+        createRow(1, { side: 'debit', householdMemberId: 2 }),
+        createRow(2, { side: 'credit' }),
+      ],
     })
-    const rows = getLineRowElements()
+    const { debitTable } = getBlockTables()
+    const rows = getRowsIn(debitTable)
 
     const select = within(rows[0]).getByLabelText('世帯メンバー(任意)') as HTMLSelectElement
     expect(select).toHaveValue('2')
     expect(within(select).getByText('元同居人')).toBeInTheDocument()
+  })
+
+  it('非アクティブ化済みのプロジェクトは新規選択肢に含まれないが、既存の選択値は表示から消えない', () => {
+    const activeProject: Project = {
+      id: 1,
+      name: '26年7月アメリカ旅行',
+      kind: 'event',
+      isActive: true,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    }
+    const inactiveProject: Project = {
+      id: 2,
+      name: '25年冬の旅行',
+      kind: 'event',
+      isActive: false,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    }
+    renderTable({
+      projects: [activeProject, inactiveProject],
+      lineRows: [
+        createRow(1, { side: 'debit', projectId: 2 }),
+        createRow(2, { side: 'credit' }),
+      ],
+    })
+    const { debitTable } = getBlockTables()
+    const select = within(getRowsIn(debitTable)[0]).getByLabelText('プロジェクト(任意)') as HTMLSelectElement
+    const optionTexts = Array.from(select.options).map((option) => option.textContent)
+
+    expect(optionTexts).toContain('26年7月アメリカ旅行')
+    expect(select).toHaveValue('2')
+    expect(within(select).getByText('25年冬の旅行')).toBeInTheDocument()
   })
 
   it('取引先入力欄は選択した科目がPL科目(収益/費用)の行にのみ表示される', () => {
@@ -232,12 +305,34 @@ describe('JournalEntryLinesTable', () => {
     const cash = createAccount({ id: 2, name: '現金', category: 'asset' })
     renderTable({
       accounts: [expense, cash],
-      lineRows: [createRow(1, { accountId: 1 }), createRow(2, { accountId: 2 })],
+      lineRows: [
+        createRow(1, { side: 'debit', accountId: 1 }),
+        createRow(2, { side: 'credit', accountId: 2 }),
+      ],
     })
-    const rows = getLineRowElements()
+    const { debitTable, creditTable } = getBlockTables()
 
-    expect(within(rows[0]).getByLabelText('取引先(任意)')).toBeInTheDocument()
-    expect(within(rows[1]).queryByLabelText('取引先(任意)')).not.toBeInTheDocument()
+    expect(within(getRowsIn(debitTable)[0]).getByLabelText('取引先(任意)')).toBeInTheDocument()
+    expect(within(getRowsIn(creditTable)[0]).queryByLabelText('取引先(任意)')).not.toBeInTheDocument()
+  })
+
+  it('取引先入力欄から新規取引先をその場で作成して選択できる', async () => {
+    const expense = createAccount({ id: 1, name: '食費', category: 'expense' })
+    const { onCreateCounterparty } = renderTable({
+      accounts: [expense],
+      lineRows: [
+        createRow(1, { side: 'debit', accountId: 1 }),
+        createRow(2, { side: 'credit' }),
+      ],
+    })
+    const { debitTable } = getBlockTables()
+    const row = getRowsIn(debitTable)[0]
+
+    fireEvent.change(within(row).getByLabelText('取引先(任意)'), { target: { value: '__new__' } })
+    fireEvent.change(within(row).getByLabelText('新しい取引先名'), { target: { value: '新しい取引先' } })
+    fireEvent.click(within(row).getByRole('button', { name: '追加' }))
+
+    expect(onCreateCounterparty).toHaveBeenCalledWith('新しい取引先')
   })
 
   it('借方合計・貸方合計・差額が表示される', () => {

@@ -4,7 +4,7 @@ import type { Account } from '../../domain/account/Account'
 import type { Project } from '../../domain/project/Project'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { Counterparty, CreateCounterpartyInput } from '../../domain/counterparty/Counterparty'
-import type { CreateJournalEntryInput, JournalEntry } from '../../domain/journal/JournalEntry'
+import type { CreateJournalEntryInput, JournalEntry, JournalLineSide } from '../../domain/journal/JournalEntry'
 import type {
   CreateJournalEntryDraftInput,
   JournalEntryDraft,
@@ -129,7 +129,10 @@ export function JournalEntryForm({
   const [lineStates, setLineStates] = useState<FormLineState[]>(() =>
     initialDraft && initialDraft.lines.length > 0
       ? initialDraft.lines.map((draftLine) => createLineState(fromJournalEntryDraftLine(draftLine)))
-      : [createLineState(), createLineState()],
+      : [
+          createLineState({ ...createEmptyJournalEntryFormLine(), side: 'debit' }),
+          createLineState({ ...createEmptyJournalEntryFormLine(), side: 'credit' }),
+        ],
   )
   const [draftId, setDraftId] = useState<number | null>(initialDraft?.id ?? null)
   const [submitting, setSubmitting] = useState(false)
@@ -208,9 +211,9 @@ export function JournalEntryForm({
     setLineStates((prev) => prev.map((state) => (state.key === key ? { key, line: updater(state.line) } : state)))
   }
 
-  function addLine() {
+  function addLine(side: JournalLineSide) {
     markEdited()
-    setLineStates((prev) => [...prev, createLineState()])
+    setLineStates((prev) => [...prev, createLineState({ ...createEmptyJournalEntryFormLine(), side })])
   }
 
   function removeLine(key: number) {

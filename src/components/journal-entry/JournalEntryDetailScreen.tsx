@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { Counterparty, CreateCounterpartyInput } from '../../domain/counterparty/Counterparty'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
-import type { JournalEntry, UpdateJournalEntryInput } from '../../domain/journal/JournalEntry'
+import type { JournalEntry, JournalLineSide, UpdateJournalEntryInput } from '../../domain/journal/JournalEntry'
 import type { JournalEntryLink } from '../../domain/journal/JournalEntryLink'
 import type { Project } from '../../domain/project/Project'
 import { traceExpenseSplittingHistory } from '../../domain/expense-splitting/traceExpenseSplittingHistory'
@@ -175,11 +175,13 @@ export function JournalEntryDetailScreen({
     )
   }
 
-  function addEditLine(): void {
+  function addEditLine(side: JournalLineSide): void {
     lineKeyRef.current += 1
     const key = lineKeyRef.current
     setEditState((prev) =>
-      prev === null ? prev : { ...prev, lineStates: [...prev.lineStates, { key, line: createEmptyJournalEntryFormLine() }] },
+      prev === null
+        ? prev
+        : { ...prev, lineStates: [...prev.lineStates, { key, line: { ...createEmptyJournalEntryFormLine(), side } }] },
     )
   }
 
