@@ -1,46 +1,28 @@
 .project-management-screen {
-  max-width: 480px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 1rem;
 }
 
-.project-management-screen ul {
-  list-style: none;
+.project-management-screen table {
+  width: 100%;
+  border-collapse: collapse;
   margin: 0 0 1rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
 }
 
-.project-management-screen li {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+.project-management-screen th,
+.project-management-screen td {
+  border: 1px solid var(--border);
   padding: 8px 12px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-}
-
-.project-management-screen .project-list-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.75rem;
-}
-
-.project-management-screen .project-list-name {
+  text-align: left;
   color: var(--text-h);
+  vertical-align: top;
 }
 
-.project-management-screen .project-list-kind {
-  margin-left: 0.5em;
-  font-size: 12px;
+.project-management-screen th {
+  font-size: 13px;
   color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 6px;
+  white-space: nowrap;
 }
 
 .project-management-screen .project-list-inactive {
@@ -55,7 +37,12 @@
 .project-management-screen .project-list-actions {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 6px;
+}
+
+.project-management-screen .project-panel-row td {
+  background: var(--code-bg);
 }
 
 .project-management-screen .project-deactivation-proposal {
@@ -64,9 +51,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 8px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
 }
 
 .project-management-screen .project-deactivation-proposal p {
@@ -78,9 +62,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  padding: 8px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
 }
 
 .project-management-screen .project-balance-category h4 {
@@ -108,21 +89,10 @@
   color: var(--text-h);
 }
 
-.project-management-screen .project-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.project-management-screen .project-form label {
-  display: block;
-}
-
-.project-management-screen .project-form input,
-.project-management-screen .project-form select {
+.project-management-screen input,
+.project-management-screen select {
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 8px;
   border-radius: 5px;
   border: 1px solid var(--border);
   background: var(--bg);
@@ -137,10 +107,11 @@
   }
 }
 
-.project-management-screen .project-form-actions {
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
+.project-management-screen [role='alert'] {
+  padding: 8px 12px;
+  border-radius: 5px;
+  background: var(--error-bg);
+  color: var(--error);
 }
 
 .project-management-screen button {

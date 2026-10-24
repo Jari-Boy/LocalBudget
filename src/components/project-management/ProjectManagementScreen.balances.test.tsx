@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 /**
- * プロジェクト管理画面(計画Issue #36)のうち、プロジェクト別のPL/BS科目残高内訳表示
- * (summarizeProjectAccountBalances、docs/domain/projects.md 1.4節)と、
- * kind='settlement'かつ精算残高0のプロジェクトへの非アクティブ化提案表示
- * (isSettlementBalanceZero、1.3節・1.5節)を検証するコンポーネントテスト。
- * 一覧表示・作成・編集・削除・非アクティブ化の基本操作はProjectManagementScreen.test.tsx
- * に分離済み。sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテスト。
- * 外部依存: sql.js(ネットワークアクセスなし)。
+ * プロジェクト管理画面(計画Issue #36、計画Issue #127でテーブル形式に変更)のうち、
+ * プロジェクト別のPL/BS科目残高内訳表示(summarizeProjectAccountBalances、
+ * docs/domain/projects.md 1.4節)と、kind='settlement'かつ精算残高0のプロジェクトへの
+ * 非アクティブ化提案表示(isSettlementBalanceZero、1.3節・1.5節)を検証するコンポーネントテスト。
+ * テーブル化後はプロジェクトごとに専用の<tbody>でグルーピングされ、残高内訳パネル・
+ * 非アクティブ化提案は同じ<tbody>内の追加行として表示されるため、`.closest('tbody')`で
+ * 行と展開パネルの両方を含むスコープを取得する。一覧表示・作成・編集・削除・非アクティブ化の
+ * 基本操作はProjectManagementScreen.test.tsxに分離済み。sql.jsのNode実装
+ * (createTestDatabase)を使った統合的なレンダリングテスト。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
@@ -69,7 +71,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('26年7月アメリカ旅行')).closest('li')!
+    const item = (await screen.findByText('26年7月アメリカ旅行')).closest('tbody')!
     fireEvent.click(within(item).getByRole('button', { name: '内訳を表示' }))
 
     expect(within(item).getByText('お土産代')).toBeInTheDocument()
@@ -81,7 +83,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('計画中の旅行')).closest('li')!
+    const item = (await screen.findByText('計画中の旅行')).closest('tbody')!
     fireEvent.click(within(item).getByRole('button', { name: '内訳を表示' }))
 
     expect(within(item).getByText('残高のある科目がありません')).toBeInTheDocument()
@@ -103,7 +105,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('26年7月アメリカ旅行')).closest('li')!
+    const item = (await screen.findByText('26年7月アメリカ旅行')).closest('tbody')!
     expect(within(item).queryByText('非アクティブ化しますか?')).not.toBeInTheDocument()
   })
 
@@ -136,7 +138,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('26/7生活費割勘')).closest('li')!
+    const item = (await screen.findByText('26/7生活費割勘')).closest('tbody')!
     expect(within(item).getByText('非アクティブ化しますか?')).toBeInTheDocument()
 
     // 提案が表示されるだけでは自動的に非アクティブ化されない(docs/domain/projects.md 1.3節)
@@ -172,7 +174,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('26/7生活費割勘')).closest('li')!
+    const item = (await screen.findByText('26/7生活費割勘')).closest('tbody')!
     fireEvent.click(within(item).getByRole('button', { name: '非アクティブ化する' }))
 
     await screen.findByText('非アクティブ')
@@ -199,7 +201,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('26/7生活費割勘')).closest('li')!
+    const item = (await screen.findByText('26/7生活費割勘')).closest('tbody')!
     expect(within(item).queryByText('非アクティブ化しますか?')).not.toBeInTheDocument()
   })
 })
