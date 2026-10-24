@@ -6,9 +6,11 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { JournalEntryDraftLine } from '../../domain/journal/JournalEntryDraft'
+import type { JournalLine } from '../../domain/journal/JournalEntry'
 import {
   createEmptyJournalEntryFormLine,
   fromJournalEntryDraftLine,
+  fromJournalLine,
   hasNonPositiveAmountInput,
   isCounterpartyEligibleCategory,
   isManualEntryEligibleAccount,
@@ -222,6 +224,30 @@ describe('fromJournalEntryDraftLine', () => {
       projectId: null,
       householdMemberId: null,
       counterpartyId: null,
+    })
+  })
+})
+
+describe('fromJournalLine', () => {
+  it('確定済み仕訳明細(JournalLine)をフォーム行に変換する(金額は文字列化、計画Issue #125)', () => {
+    const line: JournalLine = {
+      id: 10,
+      journalEntryId: 1,
+      accountId: 1,
+      projectId: 2,
+      householdMemberId: 3,
+      counterpartyId: 4,
+      side: 'debit',
+      amount: 7000,
+      createdAt: '2026-08-11T00:00:00.000Z',
+    }
+    expect(fromJournalLine(line)).toEqual({
+      accountId: 1,
+      side: 'debit',
+      amountInput: '7000',
+      projectId: 2,
+      householdMemberId: 3,
+      counterpartyId: 4,
     })
   })
 })

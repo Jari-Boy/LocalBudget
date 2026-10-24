@@ -48,6 +48,8 @@
   "entryNoMemo": "摘要なし",
   "viewEntryDetail": "詳細を見る",
   "entryDetailTitle": "仕訳の詳細",
+  "updateEntry": "更新する",
+  "updateError": "更新に失敗しました。もう一度お試しください。",
   "cancelSplitEntry": "この割勘を取り消す",
   "splitCancellationAfterSettlementNotice": "精算後は新しい取引として現実の返金を記録してください",
   "splitHistoryTitle": "この支出から生まれた割勘",

@@ -1,5 +1,5 @@
 import type { AccountCategory } from '../../domain/account/Account'
-import type { JournalLineInput, JournalLineSide } from '../../domain/journal/JournalEntry'
+import type { JournalLine, JournalLineInput, JournalLineSide } from '../../domain/journal/JournalEntry'
 import type {
   JournalEntryDraftLine,
   JournalEntryDraftLineInput,
@@ -128,5 +128,22 @@ export function fromJournalEntryDraftLine(draftLine: JournalEntryDraftLine): Jou
     projectId: draftLine.projectId,
     householdMemberId: draftLine.householdMemberId,
     counterpartyId: draftLine.counterpartyId,
+  }
+}
+
+/**
+ * 確定済み仕訳明細(JournalLine)をフォーム行に変換する(計画Issue #125)。
+ * JournalEntryDetailScreenでのLines編集で、既存の明細をJournalEntryLinesTableの
+ * 入力状態として読み込む際に使う。確定済み明細は科目・貸借・金額がすべて必須のため
+ * (fromJournalEntryDraftLineと異なり)null合流の分岐は不要。
+ */
+export function fromJournalLine(line: JournalLine): JournalEntryFormLine {
+  return {
+    accountId: line.accountId,
+    side: line.side,
+    amountInput: String(line.amount),
+    projectId: line.projectId,
+    householdMemberId: line.householdMemberId,
+    counterpartyId: line.counterpartyId,
   }
 }

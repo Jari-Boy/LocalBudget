@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 /**
- * 確定済み仕訳詳細画面(計画Issue #40)のコンポーネントテスト。個々の仕訳明細
- * (科目名・金額・プロジェクト・世帯メンバー・取引先)を借方/貸方等の簿記用語を
- * 見せない形で表示すること、割勘の履歴表示(元の支出→割勘→精算のトレース、
- * docs/domain/expense-splitting.md 1.5節)、取り消し導線(精算前は割勘仕訳の
- * 物理削除、精算後は返金案内メッセージ)を、sql.jsのNode実装(createTestDatabase)
- * を使った統合的なレンダリングテストとして検証する。外部依存: sql.js(ネットワークアクセスなし)。
+ * 確定済み仕訳詳細画面(計画Issue #40、Lines編集は計画Issue #125)のコンポーネントテスト。
+ * 個々の仕訳明細(科目名・金額・プロジェクト・世帯メンバー・取引先)を共通コンポーネント
+ * JournalEntryLinesTableで編集可能なテーブルとして表示すること(借方/貸方等の簿記用語の
+ * 扱いはJournalEntryLinesTable側の仕様に従う)、明細の編集・行の追加削除・更新操作
+ * (JournalEntryRepository.updateの呼び出し、貸借不一致時のエラー表示と入力保持)、
+ * 割勘の履歴表示(元の支出→割勘→精算のトレース、docs/domain/expense-splitting.md 1.5節)、
+ * 取り消し導線(精算前は割勘仕訳の物理削除、精算後は返金案内メッセージ)を、
+ * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして検証する。
+ * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -61,8 +64,13 @@ function renderScreen(entryId: number, overrides?: { onBack?: () => void; onDele
   return { onBack, onDeleted }
 }
 
+/** Linesテーブルの行(ヘッダー行を除く)を取得する(JournalEntryLinesTable参照) */
+async function findLineRows(): Promise<HTMLElement[]> {
+  return (await screen.findAllByRole('row')).slice(1)
+}
+
 describe('JournalEntryDetailScreen', () => {
-  it('仕訳の日付・摘要・各明細行(科目名・金額)が表示される', async () => {
+  it('仕訳の日付・摘要・各明細行(科目・金額)がLinesテーブルに表示される', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
@@ -78,14 +86,17 @@ describe('JournalEntryDetailScreen', () => {
 
     renderScreen(entry.id)
 
-    expect(await screen.findByText('2026-08-01')).toBeInTheDocument()
-    expect(screen.getByText('スーパーで食材購入')).toBeInTheDocument()
-    expect(screen.getByText('食費')).toBeInTheDocument()
-    expect(screen.getByText('現金')).toBeInTheDocument()
-    expect(screen.getAllByText('￥3,000')).toHaveLength(2)
+    expect(await screen.findByLabelText('取引日')).toHaveValue('2026-08-01')
+    expect(screen.getByLabelText('摘要(任意)')).toHaveValue('スーパーで食材購入')
+    const rows = await findLineRows()
+    expect(rows).toHaveLength(2)
+    expect(within(rows[0]).getByLabelText('科目')).toHaveValue(String(expense.id))
+    expect(within(rows[0]).getByLabelText('金額')).toHaveValue(3000)
+    expect(within(rows[1]).getByLabelText('科目')).toHaveValue(String(cash.id))
+    expect(within(rows[1]).getByLabelText('金額')).toHaveValue(3000)
   })
 
-  it('明細行にプロジェクト・世帯メンバー・取引先が設定されている場合、それぞれの名称が表示される', async () => {
+  it('明細行にプロジェクト・世帯メンバー・取引先が設定されている場合、それぞれの選択値がLinesテーブルに反映される', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const other = householdMemberRepository.create({ name: 'Bさん' })
     const project = projectRepository.create({ name: '26/7生活費割勘' })
@@ -104,10 +115,87 @@ describe('JournalEntryDetailScreen', () => {
 
     renderScreen(entry.id)
 
-    await screen.findByText('2026-08-01')
-    expect(screen.getByText('26/7生活費割勘')).toBeInTheDocument()
-    expect(screen.getByText('Bさん')).toBeInTheDocument()
-    expect(screen.getByText('友人Cさん')).toBeInTheDocument()
+    const rows = await findLineRows()
+    expect(within(rows[0]).getByLabelText('プロジェクト(任意)')).toHaveValue(String(project.id))
+    expect(within(rows[0]).getByLabelText('世帯メンバー(任意)')).toHaveValue(String(other.id))
+    expect(within(rows[1]).getByLabelText('取引先(任意)')).toHaveValue(String(counterparty.id))
+  })
+
+  it('明細を編集して更新すると、JournalEntryRepository.updateが呼ばれ変更が画面に反映される', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 3000 },
+        { accountId: cash.id, side: 'credit', amount: 3000 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    const rows = await findLineRows()
+
+    fireEvent.change(within(rows[0]).getByLabelText('金額'), { target: { value: '5000' } })
+    fireEvent.change(within(rows[1]).getByLabelText('金額'), { target: { value: '5000' } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+
+    await waitFor(() => {
+      const updated = journalEntryRepository.findById(entry.id)
+      expect(updated?.lines.map((line) => line.amount)).toEqual([5000, 5000])
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('貸借が不一致になる編集をして更新すると、エラーメッセージが表示され入力内容は保持されDBも更新されない', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 3000 },
+        { accountId: cash.id, side: 'credit', amount: 3000 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    const rows = await findLineRows()
+
+    fireEvent.change(within(rows[0]).getByLabelText('金額'), { target: { value: '4000' } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('貸借が一致していません')
+    expect(within((await findLineRows())[0]).getByLabelText('金額')).toHaveValue(4000)
+    expect(journalEntryRepository.findById(entry.id)?.lines.map((line) => line.amount)).toEqual([3000, 3000])
+  })
+
+  it('行を追加・削除できる', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    await findLineRows()
+
+    fireEvent.click(screen.getByRole('button', { name: '行を追加する' }))
+    expect(await findLineRows()).toHaveLength(3)
+
+    const removeButtons = screen.getAllByRole('button', { name: 'この行を削除する' })
+    fireEvent.click(removeButtons[2])
+    expect(await findLineRows()).toHaveLength(2)
   })
 
   it('割勘・精算と無関係な通常の仕訳では、取り消しセクションが表示されない', async () => {
@@ -125,7 +213,7 @@ describe('JournalEntryDetailScreen', () => {
 
     renderScreen(entry.id)
 
-    await screen.findByText('2026-08-01')
+    await screen.findByLabelText('取引日')
     expect(screen.queryByRole('button', { name: 'この割勘を取り消す' })).not.toBeInTheDocument()
   })
 
@@ -164,7 +252,7 @@ describe('JournalEntryDetailScreen', () => {
     })
 
     const { onDeleted } = renderScreen(splitEntry.id)
-    await screen.findByText('2026-08-02')
+    await screen.findByLabelText('取引日')
 
     const deleteButton = await screen.findByRole('button', { name: 'この割勘を取り消す' })
     fireEvent.click(deleteButton)
@@ -277,7 +365,7 @@ describe('JournalEntryDetailScreen', () => {
     })
 
     const { onBack } = renderScreen(entry.id)
-    await screen.findByText('2026-08-01')
+    await screen.findByLabelText('取引日')
 
     fireEvent.click(screen.getByRole('button', { name: '戻る' }))
 
