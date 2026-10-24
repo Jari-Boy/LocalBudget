@@ -94,13 +94,22 @@ function selectLineAccount(lineGroup: HTMLElement, accountId: number) {
   fireEvent.change(within(lineGroup).getByLabelText('科目'), { target: { value: String(accountId) } })
 }
 
+/** Linesテーブルの行(ヘッダー行を除く)を取得する(計画Issue #125、JournalEntryLinesTable参照) */
+function getLineRows(): HTMLElement[] {
+  return screen.getAllByRole('row').slice(1)
+}
+
+async function findLineRows(): Promise<HTMLElement[]> {
+  return (await screen.findAllByRole('row')).slice(1)
+}
+
 describe('JournalEntryForm', () => {
   it('初期表示で日付・摘要入力欄と2行分の明細入力欄が表示される', async () => {
     renderForm()
 
     expect(await screen.findByLabelText('取引日')).toBeInTheDocument()
     expect(screen.getByLabelText('摘要(任意)')).toBeInTheDocument()
-    expect(screen.getAllByRole('group', { name: /行目/ })).toHaveLength(2)
+    expect(getLineRows()).toHaveLength(2)
   })
 
   it('行を追加すると入力欄が1行増え、複合仕訳(3行以上)を入力できる', async () => {
@@ -109,7 +118,7 @@ describe('JournalEntryForm', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '行を追加する' }))
 
-    expect(screen.getAllByRole('group', { name: /行目/ })).toHaveLength(3)
+    expect(getLineRows()).toHaveLength(3)
   })
 
   it('2行しかない状態では行削除ボタンが無効化され、2行未満にはできない', async () => {
@@ -126,12 +135,12 @@ describe('JournalEntryForm', () => {
     await screen.findByLabelText('取引日')
 
     fireEvent.click(screen.getByRole('button', { name: '行を追加する' }))
-    expect(screen.getAllByRole('group', { name: /行目/ })).toHaveLength(3)
+    expect(getLineRows()).toHaveLength(3)
 
     const removeButtons = screen.getAllByRole('button', { name: 'この行を削除する' })
     fireEvent.click(removeButtons[2])
 
-    expect(screen.getAllByRole('group', { name: /行目/ })).toHaveLength(2)
+    expect(getLineRows()).toHaveLength(2)
   })
 
   it('借方/貸方の金額入力に応じて借方合計・貸方合計・差額がリアルタイム表示される', async () => {
@@ -139,7 +148,7 @@ describe('JournalEntryForm', () => {
     const cash = createAccount({ name: '現金', category: 'asset' })
 
     renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
 
     selectLineAccount(lineGroups[0], expense.id)
     fireEvent.change(within(lineGroups[0]).getByLabelText('借方/貸方'), {
@@ -164,7 +173,7 @@ describe('JournalEntryForm', () => {
     const cash = createAccount({ name: '現金', category: 'asset' })
 
     renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
 
     expect(within(lineGroups[0]).queryByLabelText('取引先(任意)')).not.toBeInTheDocument()
 
@@ -181,7 +190,7 @@ describe('JournalEntryForm', () => {
     void expense
 
     renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
 
     const select = within(lineGroups[0]).getByLabelText('科目') as HTMLSelectElement
     const optionTexts = Array.from(select.options).map((option) => option.textContent)
@@ -196,7 +205,7 @@ describe('JournalEntryForm', () => {
     void expense
 
     renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
 
     const select = within(lineGroups[0]).getByLabelText('科目') as HTMLSelectElement
     const optionTexts = Array.from(select.options).map((option) => option.textContent)
@@ -209,7 +218,7 @@ describe('JournalEntryForm', () => {
     void expense
 
     renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
     selectLineAccount(lineGroups[0], expense.id)
     const counterpartyField = within(lineGroups[0]).getByLabelText('取引先(任意)')
 
@@ -235,7 +244,7 @@ describe('JournalEntryForm', () => {
     void expense
 
     renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
 
     const select = within(lineGroups[0]).getByLabelText('科目') as HTMLSelectElement
     const optionTexts = Array.from(select.options).map((option) => option.textContent)
@@ -249,7 +258,7 @@ describe('JournalEntryForm', () => {
     householdMemberRepository.create({ name: '自分' })
 
     const { onComplete } = renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
 
     selectLineAccount(lineGroups[0], expense.id)
     fireEvent.change(within(lineGroups[0]).getByLabelText('借方/貸方'), {
@@ -277,7 +286,7 @@ describe('JournalEntryForm', () => {
     const cash = createAccount({ name: '現金', category: 'asset' })
 
     const { onComplete } = renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
 
     selectLineAccount(lineGroups[0], expense.id)
     fireEvent.change(within(lineGroups[0]).getByLabelText('借方/貸方'), {
@@ -304,7 +313,7 @@ describe('JournalEntryForm', () => {
     const cash = createAccount({ name: '現金', category: 'asset' })
 
     const { onComplete } = renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
 
     // 1行目はマイナス金額。2・3行目だけなら貸借が一致してしまうケースを検証する
     // (マイナス行が黙って無視され確定されてしまわないことを確認する)。
@@ -315,7 +324,7 @@ describe('JournalEntryForm', () => {
     fireEvent.change(within(lineGroups[0]).getByLabelText('金額'), { target: { value: '-1000' } })
 
     fireEvent.click(screen.getByRole('button', { name: '行を追加する' }))
-    const updatedLineGroups = screen.getAllByRole('group', { name: /行目/ })
+    const updatedLineGroups = getLineRows()
 
     selectLineAccount(updatedLineGroups[1], daily.id)
     fireEvent.change(within(updatedLineGroups[1]).getByLabelText('借方/貸方'), {
@@ -340,7 +349,7 @@ describe('JournalEntryForm', () => {
     const expense = createAccount({ name: '食費', category: 'expense' })
 
     renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
     selectLineAccount(lineGroups[0], expense.id)
 
     expect(journalEntryDraftRepositoryImpl.findAll()).toHaveLength(0)
@@ -375,7 +384,7 @@ describe('JournalEntryForm', () => {
       </I18nextProvider>,
     )
 
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
     selectLineAccount(lineGroups[0], expense.id)
     fireEvent.change(within(lineGroups[0]).getByLabelText('金額'), { target: { value: '5000' } })
 
@@ -406,7 +415,7 @@ describe('JournalEntryForm', () => {
     householdMemberRepository.create({ name: '自分' })
 
     const { onComplete } = renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
 
     selectLineAccount(lineGroups[0], expense.id)
     fireEvent.change(within(lineGroups[0]).getByLabelText('借方/貸方'), {
@@ -460,7 +469,7 @@ describe('JournalEntryForm', () => {
 
     expect(await screen.findByLabelText('取引日')).toHaveValue('2026-08-01')
     expect(screen.getByLabelText('摘要(任意)')).toHaveValue('先週のスーパー')
-    const lineGroups = screen.getAllByRole('group', { name: /行目/ })
+    const lineGroups = getLineRows()
     expect(within(lineGroups[0]).getByLabelText('金額')).toHaveValue(4000)
   })
 
@@ -470,7 +479,7 @@ describe('JournalEntryForm', () => {
     projectRepository.deactivate(inactiveProject.id)
 
     renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
     const select = within(lineGroups[0]).getByLabelText('プロジェクト(任意)')
 
     expect(within(select).getByText(activeProject.name)).toBeInTheDocument()
@@ -508,7 +517,7 @@ describe('JournalEntryForm', () => {
       </I18nextProvider>,
     )
 
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
     const select = within(lineGroups[0]).getByLabelText('プロジェクト(任意)')
     expect(select).toHaveValue(String(project.id))
     expect(within(select).getByText('終了した旅行')).toBeInTheDocument()
@@ -520,7 +529,7 @@ describe('JournalEntryForm', () => {
     const expense = createAccount({ name: '食費', category: 'expense' })
 
     renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
 
     expect(await screen.findByLabelText('起票者')).toHaveValue(String(husband.id))
 
@@ -543,7 +552,7 @@ describe('JournalEntryForm', () => {
     })
 
     renderForm()
-    const lineGroups = await screen.findAllByRole('group', { name: /行目/ })
+    const lineGroups = await findLineRows()
 
     selectLineAccount(lineGroups[0], wallet.id)
     const memberSelect = within(lineGroups[0]).getByLabelText('世帯メンバー(任意)')
