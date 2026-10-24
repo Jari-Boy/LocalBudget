@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
- * 取引先管理画面(計画Issue #85)の学習済みパターン一覧表示・編集・削除のコンポーネントテスト。
- * 各取引先の登録済みパターン件数表示、クリックによる一覧展開(0件時の空状態を含む)、
+ * 取引先管理画面(計画Issue #85、計画Issue #127でテーブル形式に変更)の学習済みパターン一覧表示・
+ * 編集・削除のコンポーネントテスト。各取引先の登録済みパターン件数表示、クリックによる
+ * 一覧展開(0件時の空状態を含む、取引先ごとに専用の<tbody>内の追加行として展開される)、
  * パターン文字列の編集・削除が一覧・件数表示に反映されることを、sql.jsのNode実装
  * (createTestDatabase)を使った統合的なレンダリングテストとして検証する。
  * 二重送信防止はCounterpartyManagementScreen.doubleSubmit.test.tsxで扱う。
@@ -49,7 +50,7 @@ function renderScreen() {
 }
 
 function findListItem(name: string) {
-  return within(screen.getByRole('list')).getByText(name).closest('li')!
+  return within(screen.getByRole('table')).getByText(name).closest('tbody')!
 }
 
 describe('CounterpartyManagementScreen 学習済みパターン', () => {

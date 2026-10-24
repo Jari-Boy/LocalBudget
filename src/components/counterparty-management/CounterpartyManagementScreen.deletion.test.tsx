@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 /**
- * 取引先管理画面(計画Issue #38)の削除・非アクティブ化のコンポーネントテスト。
- * docs/domain/counterparties.md 1.5節の通り、紐づく仕訳明細が0件の取引先は物理削除、
- * 1件以上ある取引先は非アクティブ化のみ可能であることを、sql.jsのNode実装
- * (createTestDatabase)を使った統合的なレンダリングテストとして検証する。
+ * 取引先管理画面(計画Issue #38、計画Issue #127でテーブル形式に変更)の削除・非アクティブ化の
+ * コンポーネントテスト。docs/domain/counterparties.md 1.5節の通り、紐づく仕訳明細が0件の
+ * 取引先は物理削除、1件以上ある取引先は非アクティブ化のみ可能であることを、sql.jsのNode実装
+ * (createTestDatabase)を使った統合的なレンダリングテストとして検証する。取引先ごとに専用の
+ * <tbody>でグルーピングされるため、`.closest('tbody')`で行をスコープする。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -56,7 +57,7 @@ describe('CounterpartyManagementScreen 削除・非アクティブ化', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('イオン')).closest('li')!
+    const item = (await screen.findByText('イオン')).closest('tbody')!
     fireEvent.click(within(item).getByRole('button', { name: '削除' }))
 
     await waitFor(() => expect(screen.queryByText('イオン')).not.toBeInTheDocument())
@@ -86,7 +87,7 @@ describe('CounterpartyManagementScreen 削除・非アクティブ化', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('イオン')).closest('li')!
+    const item = (await screen.findByText('イオン')).closest('tbody')!
     expect(within(item).queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
   })
 
@@ -95,10 +96,10 @@ describe('CounterpartyManagementScreen 削除・非アクティブ化', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('イオン')).closest('li')!
+    const item = (await screen.findByText('イオン')).closest('tbody')!
     fireEvent.click(within(item).getByRole('button', { name: '非アクティブ化' }))
 
-    const updatedItem = (await screen.findByText('イオン')).closest('li')!
+    const updatedItem = (await screen.findByText('イオン')).closest('tbody')!
     expect(updatedItem).toHaveTextContent('非アクティブ')
   })
 
@@ -125,10 +126,10 @@ describe('CounterpartyManagementScreen 削除・非アクティブ化', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('イオン')).closest('li')!
+    const item = (await screen.findByText('イオン')).closest('tbody')!
     fireEvent.click(within(item).getByRole('button', { name: '非アクティブ化' }))
 
-    const updatedItem = (await screen.findByText('イオン')).closest('li')!
+    const updatedItem = (await screen.findByText('イオン')).closest('tbody')!
     expect(updatedItem).toHaveTextContent('非アクティブ')
   })
 
@@ -138,7 +139,7 @@ describe('CounterpartyManagementScreen 削除・非アクティブ化', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('イオン')).closest('li')!
+    const item = (await screen.findByText('イオン')).closest('tbody')!
     expect(within(item).queryByRole('button', { name: '非アクティブ化' })).not.toBeInTheDocument()
   })
 })

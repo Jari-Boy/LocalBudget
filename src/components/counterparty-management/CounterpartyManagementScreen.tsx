@@ -72,13 +72,17 @@ interface LoadedData {
   patternsByCounterpartyId: Map<number, CounterpartyPattern[]>
 }
 
-/** nullは非表示、'create'は新規作成フォーム、number(id)は該当取引先の編集フォームを表す */
+/** nullは非表示、'create'は新規作成行、number(id)は該当取引先の編集行を表す */
 type FormMode = 'create' | number | null
 
 /**
- * 取引先管理画面(計画Issue #38)。登録済み取引先の一覧表示・新規作成・編集
- * (名称・default_account_id)・削除/非アクティブ化・統合を、単一画面+
- * インラインフォームで提供する(docs/domain/counterparties.md 2章・1.5・1.5a節)。
+ * 取引先管理画面(計画Issue #38、計画Issue #127でテーブル形式+行内インライン編集に変更)。
+ * 登録済み取引先をテーブル(thead/tbody)として一覧表示する。取引先ごとに専用の<tbody>で
+ * グルーピングし、学習パターンパネルは同じ<tbody>内の追加行として行の下に展開する。
+ * 新規作成は表の最終行に追加される作成用の行から行い、既存取引先の編集(名称・
+ * default_account_id)は行の「編集」ボタンでその行だけ入力欄に切り替わるインライン編集方式
+ * とし、「保存する」/「キャンセル」で確定・破棄する。削除/非アクティブ化・統合は行内の
+ * 操作列・表の下の統合セクションで提供する(docs/domain/counterparties.md 2章・1.5・1.5a節)。
  */
 export function CounterpartyManagementScreen({
   counterpartyRepository,
@@ -309,165 +313,235 @@ export function CounterpartyManagementScreen({
 
       {error !== null && <p role="alert">{error}</p>}
 
-      {data.counterparties.length === 0 ? (
+      {data.counterparties.length === 0 && formMode !== 'create' ? (
         <p>{t('counterpartyListEmpty')}</p>
       ) : (
-        <ul>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col"></th>
+              <th scope="col">{t('nameLabel')}</th>
+              <th scope="col">{t('defaultAccountLabel')}</th>
+              <th scope="col"></th>
+              <th scope="col"></th>
+            </tr>
+          </thead>
           {data.counterparties.map((counterparty) => {
             const journalLineCount = data.journalLineCountByCounterpartyId.get(counterparty.id) ?? 0
             const patterns = data.patternsByCounterpartyId.get(counterparty.id) ?? []
             const patternsExpanded = expandedPatternIds.has(counterparty.id)
+            const isEditing = formMode === counterparty.id
+
+            const mergeCheckbox = (
+              <input
+                type="checkbox"
+                aria-label={counterparty.name}
+                checked={selectedSourceIds.has(counterparty.id)}
+                onChange={() => toggleMergeSource(counterparty.id)}
+              />
+            )
+            const patternToggleButton = (
+              <button
+                type="button"
+                onClick={() => togglePatterns(counterparty.id)}
+                aria-expanded={patternsExpanded}
+              >
+                {t('patternCount', { count: patterns.length })}
+              </button>
+            )
+
             return (
-              <li key={counterparty.id}>
-                <div className="counterparty-list-row">
-                  <input
-                    type="checkbox"
-                    aria-label={counterparty.name}
-                    checked={selectedSourceIds.has(counterparty.id)}
-                    onChange={() => toggleMergeSource(counterparty.id)}
-                  />
-                  <span className="counterparty-list-name">
-                    {counterparty.name}
-                    {counterparty.defaultAccountId !== null && (
-                      <span className="counterparty-list-default-account">
-                        {data.accountNameById.get(counterparty.defaultAccountId)}
-                      </span>
-                    )}
-                    {!counterparty.isActive && (
-                      <span className="counterparty-list-inactive">{t('inactiveLabel')}</span>
-                    )}
-                  </span>
-                  <span className="counterparty-list-actions">
-                    <button
-                      type="button"
-                      onClick={() => togglePatterns(counterparty.id)}
-                      aria-expanded={patternsExpanded}
-                    >
-                      {t('patternCount', { count: patterns.length })}
-                    </button>
-                    <button type="button" onClick={() => openEditForm(counterparty)} disabled={isSubmitting}>
-                      {t('editButton')}
-                    </button>
-                    {journalLineCount === 0 && (
+              <tbody key={counterparty.id}>
+                {isEditing ? (
+                  <tr>
+                    <td>{mergeCheckbox}</td>
+                    <td>
+                      <input
+                        aria-label={t('nameLabel')}
+                        type="text"
+                        value={nameInput}
+                        onChange={(event) => setNameInput(event.target.value)}
+                      />
+                    </td>
+                    <td>
+                      <select
+                        aria-label={t('defaultAccountLabel')}
+                        value={defaultAccountInput}
+                        onChange={(event) => setDefaultAccountInput(event.target.value)}
+                      >
+                        <option value="">{t('defaultAccountNone')}</option>
+                        {data.eligibleAccounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>{patternToggleButton}</td>
+                    <td className="counterparty-list-actions">
                       <button
                         type="button"
-                        onClick={() => deleteCounterparty(counterparty.id)}
-                        disabled={isSubmitting}
+                        onClick={submitForm}
+                        disabled={nameInput.trim() === '' || isSubmitting}
                       >
-                        {t('deleteButton')}
+                        {t('saveSubmit')}
                       </button>
-                    )}
-                    {counterparty.isActive && (
-                      <button
-                        type="button"
-                        onClick={() => deactivateCounterparty(counterparty.id)}
-                        disabled={isSubmitting}
-                      >
-                        {t('deactivateButton')}
+                      <button type="button" onClick={closeForm} disabled={isSubmitting}>
+                        {t('cancel')}
                       </button>
-                    )}
-                  </span>
-                </div>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr>
+                    <td>{mergeCheckbox}</td>
+                    <td>
+                      {counterparty.name}
+                      {!counterparty.isActive && (
+                        <span className="counterparty-list-inactive">{t('inactiveLabel')}</span>
+                      )}
+                    </td>
+                    <td>
+                      {counterparty.defaultAccountId !== null
+                        ? data.accountNameById.get(counterparty.defaultAccountId)
+                        : ''}
+                    </td>
+                    <td>{patternToggleButton}</td>
+                    <td className="counterparty-list-actions">
+                      <button type="button" onClick={() => openEditForm(counterparty)} disabled={isSubmitting}>
+                        {t('editButton')}
+                      </button>
+                      {journalLineCount === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => deleteCounterparty(counterparty.id)}
+                          disabled={isSubmitting}
+                        >
+                          {t('deleteButton')}
+                        </button>
+                      )}
+                      {counterparty.isActive && (
+                        <button
+                          type="button"
+                          onClick={() => deactivateCounterparty(counterparty.id)}
+                          disabled={isSubmitting}
+                        >
+                          {t('deactivateButton')}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )}
 
                 {patternsExpanded && (
-                  <div className="counterparty-pattern-panel">
-                    {patterns.length === 0 ? (
-                      <p>{t('patternListEmpty')}</p>
-                    ) : (
-                      <ul className="counterparty-pattern-list">
-                        {patterns.map((pattern) => (
-                          <li key={pattern.id} className="counterparty-pattern-row">
-                            {editingPatternId === pattern.id ? (
-                              <>
-                                <input
-                                  aria-label={t('patternInputLabel')}
-                                  type="text"
-                                  value={patternInput}
-                                  onChange={(event) => setPatternInput(event.target.value)}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={savePattern}
-                                  disabled={patternInput.trim() === '' || isSubmitting}
-                                >
-                                  {t('patternSaveSubmit')}
-                                </button>
-                                <button type="button" onClick={cancelPatternEdit} disabled={isSubmitting}>
-                                  {t('cancel')}
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <span className="counterparty-pattern-text">{pattern.pattern}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => startPatternEdit(pattern)}
-                                  disabled={isSubmitting}
-                                >
-                                  {t('patternEditButton')}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => deletePattern(pattern.id)}
-                                  disabled={isSubmitting}
-                                >
-                                  {t('patternDeleteButton')}
-                                </button>
-                              </>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
+                  <tr className="counterparty-panel-row">
+                    <td></td>
+                    <td colSpan={4}>
+                      <div className="counterparty-pattern-panel">
+                        {patterns.length === 0 ? (
+                          <p>{t('patternListEmpty')}</p>
+                        ) : (
+                          <ul className="counterparty-pattern-list">
+                            {patterns.map((pattern) => (
+                              <li key={pattern.id} className="counterparty-pattern-row">
+                                {editingPatternId === pattern.id ? (
+                                  <>
+                                    <input
+                                      aria-label={t('patternInputLabel')}
+                                      type="text"
+                                      value={patternInput}
+                                      onChange={(event) => setPatternInput(event.target.value)}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={savePattern}
+                                      disabled={patternInput.trim() === '' || isSubmitting}
+                                    >
+                                      {t('patternSaveSubmit')}
+                                    </button>
+                                    <button type="button" onClick={cancelPatternEdit} disabled={isSubmitting}>
+                                      {t('cancel')}
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="counterparty-pattern-text">{pattern.pattern}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => startPatternEdit(pattern)}
+                                      disabled={isSubmitting}
+                                    >
+                                      {t('patternEditButton')}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => deletePattern(pattern.id)}
+                                      disabled={isSubmitting}
+                                    >
+                                      {t('patternDeleteButton')}
+                                    </button>
+                                  </>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
                 )}
-              </li>
+              </tbody>
             )
           })}
-        </ul>
+
+          {formMode === 'create' && (
+            <tbody>
+              <tr>
+                <td></td>
+                <td>
+                  <input
+                    aria-label={t('nameLabel')}
+                    type="text"
+                    value={nameInput}
+                    onChange={(event) => setNameInput(event.target.value)}
+                  />
+                </td>
+                <td>
+                  <select
+                    aria-label={t('defaultAccountLabel')}
+                    value={defaultAccountInput}
+                    onChange={(event) => setDefaultAccountInput(event.target.value)}
+                  >
+                    <option value="">{t('defaultAccountNone')}</option>
+                    {data.eligibleAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td></td>
+                <td className="counterparty-list-actions">
+                  <button
+                    type="button"
+                    onClick={submitForm}
+                    disabled={nameInput.trim() === '' || isSubmitting}
+                  >
+                    {t('createSubmit')}
+                  </button>
+                  <button type="button" onClick={closeForm} disabled={isSubmitting}>
+                    {t('cancel')}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          )}
+        </table>
       )}
 
-      {formMode === null ? (
+      {formMode === null && (
         <button type="button" onClick={openCreateForm} disabled={isSubmitting}>
           {t('addButton')}
         </button>
-      ) : (
-        <div className="counterparty-form">
-          <label htmlFor="counterparty-name">{t('nameLabel')}</label>
-          <input
-            id="counterparty-name"
-            type="text"
-            value={nameInput}
-            onChange={(event) => setNameInput(event.target.value)}
-          />
-
-          <label htmlFor="counterparty-default-account">{t('defaultAccountLabel')}</label>
-          <select
-            id="counterparty-default-account"
-            value={defaultAccountInput}
-            onChange={(event) => setDefaultAccountInput(event.target.value)}
-          >
-            <option value="">{t('defaultAccountNone')}</option>
-            {data.eligibleAccounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name}
-              </option>
-            ))}
-          </select>
-
-          <div className="counterparty-form-actions">
-            <button
-              type="button"
-              onClick={submitForm}
-              disabled={nameInput.trim() === '' || isSubmitting}
-            >
-              {formMode === 'create' ? t('createSubmit') : t('saveSubmit')}
-            </button>
-            <button type="button" onClick={closeForm} disabled={isSubmitting}>
-              {t('cancel')}
-            </button>
-          </div>
-        </div>
       )}
 
       {data.counterparties.length >= 2 && (

@@ -1,39 +1,39 @@
 .counterparty-management-screen {
-  max-width: 480px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 1rem;
 }
 
-.counterparty-management-screen ul {
-  list-style: none;
+.counterparty-management-screen table {
+  width: 100%;
+  border-collapse: collapse;
   margin: 0 0 1rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
 }
 
-.counterparty-management-screen li {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 8px 12px;
-  border-radius: 5px;
+.counterparty-management-screen th,
+.counterparty-management-screen td {
   border: 1px solid var(--border);
-  background: var(--bg);
+  padding: 8px 12px;
+  text-align: left;
+  color: var(--text-h);
+  vertical-align: top;
 }
 
-.counterparty-management-screen .counterparty-list-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.75rem;
+.counterparty-management-screen th {
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.counterparty-management-screen .counterparty-panel-row td {
+  background: var(--code-bg);
 }
 
 .counterparty-management-screen .counterparty-pattern-panel {
   padding: 8px;
   border-radius: 5px;
   border: 1px solid var(--border);
+  background: var(--bg);
 }
 
 .counterparty-management-screen .counterparty-pattern-list {
@@ -62,29 +62,6 @@
 
 .counterparty-management-screen .counterparty-pattern-row input {
   flex: 1;
-  padding: 8px 12px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text-h);
-  font: inherit;
-  box-sizing: border-box;
-
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-    border-color: var(--accent);
-  }
-}
-
-.counterparty-management-screen .counterparty-list-name {
-  color: var(--text-h);
-}
-
-.counterparty-management-screen .counterparty-list-default-account {
-  margin-left: 0.5em;
-  font-size: 14px;
-  color: var(--text);
 }
 
 .counterparty-management-screen .counterparty-list-inactive {
@@ -99,6 +76,7 @@
 .counterparty-management-screen .counterparty-list-actions {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -116,38 +94,16 @@
   margin: 0;
 }
 
-.counterparty-management-screen .counterparty-merge-section select {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text-h);
-  font: inherit;
-  box-sizing: border-box;
-}
-
 .counterparty-management-screen .counterparty-merge-confirm {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.counterparty-management-screen .counterparty-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.counterparty-management-screen .counterparty-form label {
-  display: block;
-}
-
-.counterparty-management-screen .counterparty-form input,
-.counterparty-management-screen .counterparty-form select {
+.counterparty-management-screen input,
+.counterparty-management-screen select {
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 8px;
   border-radius: 5px;
   border: 1px solid var(--border);
   background: var(--bg);
@@ -162,10 +118,15 @@
   }
 }
 
-.counterparty-management-screen .counterparty-form-actions {
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
+.counterparty-management-screen td input[type='checkbox'] {
+  width: auto;
+}
+
+.counterparty-management-screen [role='alert'] {
+  padding: 8px 12px;
+  border-radius: 5px;
+  background: var(--error-bg);
+  color: var(--error);
 }
 
 .counterparty-management-screen button {

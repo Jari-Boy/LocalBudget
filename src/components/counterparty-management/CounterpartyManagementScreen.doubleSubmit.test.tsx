@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 /**
- * 取引先管理画面(計画Issue #38、計画Issue #85でパターン編集・削除を追加)の
- * 二重送信防止のコンポーネントテスト。作成・編集・削除・非アクティブ化・統合確定・
- * パターン編集・パターン削除の各非同期操作について、Repository呼び出しの完了を待つ間は
- * 操作ボタンが無効化され、連打による多重実行を防ぐことを検証する
+ * 取引先管理画面(計画Issue #38、計画Issue #85でパターン編集・削除を追加、計画Issue #127で
+ * テーブル形式に変更)の二重送信防止のコンポーネントテスト。作成・編集・削除・非アクティブ化・
+ * 統合確定・パターン編集・パターン削除の各非同期操作について、Repository呼び出しの完了を
+ * 待つ間は操作ボタンが無効化され、連打による多重実行を防ぐことを検証する
  * (StatementImportUploadScreen.test.tsxと同種のテスト手法。Repositoryメソッドの解決タイミングを
- * Proxyで手動制御し、ボタンクリック直後の一時的な無効化状態を観測する)。
+ * Proxyで手動制御し、ボタンクリック直後の一時的な無効化状態を観測する)。取引先ごとに専用の
+ * <tbody>でグルーピングされるため、`.closest('tbody')`で行をスコープする。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -91,7 +92,7 @@ describe('CounterpartyManagementScreen 二重送信防止', () => {
     const { repository, release } = withDelayed(counterpartyRepository, 'update')
     renderScreen(repository)
 
-    const item = (await screen.findByText('イオン')).closest('li')!
+    const item = (await screen.findByText('イオン')).closest('tbody')!
     fireEvent.click(within(item).getByRole('button', { name: '編集' }))
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: 'イオン 東京日本橋店' } })
     const submitButton = screen.getByRole('button', { name: '保存する' })
@@ -110,7 +111,7 @@ describe('CounterpartyManagementScreen 二重送信防止', () => {
     const { repository, release } = withDelayed(counterpartyRepository, 'delete')
     renderScreen(repository)
 
-    const item = (await screen.findByText('イオン')).closest('li')!
+    const item = (await screen.findByText('イオン')).closest('tbody')!
     const deleteButton = within(item).getByRole('button', { name: '削除' })
     fireEvent.click(deleteButton)
 
@@ -127,7 +128,7 @@ describe('CounterpartyManagementScreen 二重送信防止', () => {
     const { repository, release } = withDelayed(counterpartyRepository, 'deactivate')
     renderScreen(repository)
 
-    const item = (await screen.findByText('イオン')).closest('li')!
+    const item = (await screen.findByText('イオン')).closest('tbody')!
     const deactivateButton = within(item).getByRole('button', { name: '非アクティブ化' })
     fireEvent.click(deactivateButton)
 
@@ -135,7 +136,7 @@ describe('CounterpartyManagementScreen 二重送信防止', () => {
     fireEvent.click(deactivateButton)
 
     release()
-    await waitFor(() => expect(screen.getByText('イオン').closest('li')).toHaveTextContent('非アクティブ'))
+    await waitFor(() => expect(screen.getByText('イオン').closest('tbody')).toHaveTextContent('非アクティブ'))
   })
 
   it('統合確定完了を待つ間は統合確定ボタンが無効化され、連打しても1回のみ統合される', async () => {
@@ -144,8 +145,8 @@ describe('CounterpartyManagementScreen 二重送信防止', () => {
     const { repository, release } = withDelayed(counterpartyRepository, 'merge')
     renderScreen(repository)
 
-    const list = await screen.findByRole('list')
-    const sourceItem = within(list).getByText('ローソン 東京日本橋店').closest('li')!
+    const list = await screen.findByRole('table')
+    const sourceItem = within(list).getByText('ローソン 東京日本橋店').closest('tbody')!
     fireEvent.click(within(sourceItem).getByRole('checkbox'))
     fireEvent.change(screen.getByLabelText('統合先'), {
       target: { value: String(counterpartyRepository.findAll().find((c) => c.name === 'ローソン')!.id) },
@@ -170,7 +171,7 @@ describe('CounterpartyManagementScreen 二重送信防止', () => {
     const { repository, release } = withDelayed(counterpartyRepository, 'updatePattern')
     renderScreen(repository)
 
-    const item = (await screen.findByText('イオン')).closest('li')!
+    const item = (await screen.findByText('イオン')).closest('tbody')!
     fireEvent.click(within(item).getByRole('button', { name: '登録済みパターン: 1件' }))
     fireEvent.click(within(item).getByRole('button', { name: 'パターンを編集' }))
     fireEvent.change(within(item).getByLabelText('パターン文字列'), { target: { value: 'AEON MALL' } })
@@ -191,7 +192,7 @@ describe('CounterpartyManagementScreen 二重送信防止', () => {
     const { repository, release } = withDelayed(counterpartyRepository, 'deletePattern')
     renderScreen(repository)
 
-    const item = (await screen.findByText('イオン')).closest('li')!
+    const item = (await screen.findByText('イオン')).closest('tbody')!
     fireEvent.click(within(item).getByRole('button', { name: '登録済みパターン: 1件' }))
     const deleteButton = within(item).getByRole('button', { name: 'パターンを削除' })
     fireEvent.click(deleteButton)
