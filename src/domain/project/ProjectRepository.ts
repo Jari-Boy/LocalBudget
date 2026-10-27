@@ -14,4 +14,5 @@ export interface ProjectRepository {
   update(id: number, input: UpdateProjectInput): Project
   delete(id: number): void
   deactivate(id: number): Project
+  activate(id: number): Project
 }

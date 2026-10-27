@@ -79,6 +79,11 @@ export class SqlJsAccountRepository implements AccountRepository {
     this.db.run('UPDATE accounts SET is_active = 0 WHERE id = ?', [id])
     return this.findById(id)!
   }
+
+  activate(id: number): Account {
+    this.db.run('UPDATE accounts SET is_active = 1 WHERE id = ?', [id])
+    return this.findById(id)!
+  }
 }
 
 function boolToSql(value: boolean | null | undefined): number | null {

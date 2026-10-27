@@ -13,6 +13,7 @@ export interface CounterpartyRepository {
   update(id: number, input: UpdateCounterpartyInput): Counterparty
   delete(id: number): void
   deactivate(id: number): Counterparty
+  activate(id: number): Counterparty
 
   /** CSV摘要文字列とのマッチング用パターンを取引先に追加する(docs/domain/counterparties.md 1.3参照) */
   addPattern(counterpartyId: number, pattern: string): CounterpartyPattern

@@ -191,6 +191,33 @@ describe('deactivate', () => {
   })
 })
 
+describe('activate', () => {
+  it('非アクティブな科目を再度アクティブにする', () => {
+    const created = repository.create({
+      category: 'asset',
+      name: '解約した口座',
+      isReconcilable: true,
+    })
+    repository.deactivate(created.id)
+
+    const activated = repository.activate(created.id)
+
+    expect(activated.isActive).toBe(true)
+  })
+
+  it('is_activeの値によらず科目をアクティブにできる', () => {
+    const created = repository.create({
+      category: 'asset',
+      name: 'もともとアクティブな口座',
+      isReconcilable: true,
+    })
+
+    const activated = repository.activate(created.id)
+
+    expect(activated.isActive).toBe(true)
+  })
+})
+
 describe('system-managed科目は name 以外の変更を禁止(domain/accounts.md 3.1)', () => {
   it('システム管理科目でも名前の変更は引き続き許可される', () => {
     const systemManaged = repository.create({

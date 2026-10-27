@@ -149,6 +149,25 @@ describe('deactivate', () => {
   })
 })
 
+describe('activate', () => {
+  it('非アクティブな取引先を再度アクティブにする', () => {
+    const created = repository.create({ name: '閉店した取引先' })
+    repository.deactivate(created.id)
+
+    const activated = repository.activate(created.id)
+
+    expect(activated.isActive).toBe(true)
+  })
+
+  it('is_activeの値によらず取引先をアクティブにできる', () => {
+    const created = repository.create({ name: 'もともとアクティブな取引先' })
+
+    const activated = repository.activate(created.id)
+
+    expect(activated.isActive).toBe(true)
+  })
+})
+
 function lastInsertRowId(database: Database): number {
   return database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
 }

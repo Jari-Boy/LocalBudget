@@ -18,6 +18,7 @@ export interface HouseholdMemberRepository {
   update(id: number, input: UpdateHouseholdMemberInput): HouseholdMember
   delete(id: number): void
   deactivate(id: number): HouseholdMember
+  activate(id: number): HouseholdMember
   addGroupMember(groupId: number, memberId: number): void
   removeGroupMember(groupId: number, memberId: number): void
   findGroupMembers(groupId: number): HouseholdMember[]
