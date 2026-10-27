@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 /**
  * 科目一覧・管理画面(計画Issue #70で新設、計画Issue #95で編集・削除・非アクティブ化を追加、
- * 計画Issue #112で編集フォームへのグループ割り当て欄を追加、計画Issue #127でテーブル形式+
- * 行内インライン編集に変更)のコンポーネントテスト。isSystemManaged科目を除いた登録済み全科目が、
- * 区分を問わずテーブル(thead/tbody)の1行として名称・残高・(あれば)世帯メンバー名・グループとともに
- * 表示されること、0件時の空状態表示、戻る操作に加え、行をクリックして入る編集モードでの
- * 名称・名義・グループの編集(保存/取消)、参照(仕訳・予算・定期取引ルール)が無い科目のみの削除、
- * 非アクティブ化を、sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして
- * 検証する。外部依存: sql.js(ネットワークアクセスなし)。
+ * 計画Issue #127でテーブル形式+行内インライン編集に変更、同Issueのユーザーレビューで
+ * 区分列・名称・名義のみのシンプルな構成に変更しグループ割り当て・残高表示を削除)の
+ * コンポーネントテスト。isSystemManaged科目を除いた登録済み全科目が、テーブル
+ * (thead/tbody)の1行として区分・名称・(あれば)世帯メンバー名とともに表示されること、
+ * 0件時の空状態表示、戻る操作に加え、行をクリックして入る編集モードでの名称・名義の編集
+ * (保存/取消)、参照(仕訳・予算・定期取引ルール)が無い科目のみの削除、非アクティブ化/
+ * アクティブ化(行内の目/目にスラッシュアイコンのみで状態を表現し、テキストタグは使わない)を、
+ * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして検証する。
+ * グループ割り当てはAccountGroupManagementScreen側の責務になったためこの画面のテスト対象外。
+ * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -18,7 +21,6 @@ import i18n from '../../infrastructure/i18n/i18n'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
-import { SqlJsAccountGroupRepository } from '../../infrastructure/db/SqlJsAccountGroupRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsBudgetRepository } from '../../infrastructure/db/SqlJsBudgetRepository'
@@ -27,7 +29,6 @@ import { AccountListScreen } from './AccountListScreen'
 
 let db: Database
 let accountRepository: SqlJsAccountRepository
-let accountGroupRepository: SqlJsAccountGroupRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
 let budgetRepository: SqlJsBudgetRepository
@@ -37,7 +38,6 @@ beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
   accountRepository = new SqlJsAccountRepository(db)
-  accountGroupRepository = new SqlJsAccountGroupRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
   budgetRepository = new SqlJsBudgetRepository(db)
@@ -51,7 +51,6 @@ function renderScreen(onBack: () => void = vi.fn()) {
     <I18nextProvider i18n={i18n}>
       <AccountListScreen
         accountRepository={accountRepository}
-        accountGroupRepository={accountGroupRepository}
         journalEntryRepository={journalEntryRepository}
         householdMemberRepository={householdMemberRepository}
         budgetRepository={budgetRepository}
@@ -68,46 +67,29 @@ function getBodyRows() {
 }
 
 describe('AccountListScreen', () => {
-  it('登録済み科目が名称と残高とともに一覧表示される', async () => {
-    const account = accountRepository.create({
+  it('登録済み科目が区分・名称とともに一覧表示される', async () => {
+    accountRepository.create({
       category: 'asset',
       name: '普通預金',
       isReconcilable: true,
-      householdMemberId: null,
-    })
-    const equity = accountRepository.create({
-      category: 'equity',
-      name: '初期残高(普通預金)',
-      isReconcilable: null,
-      isSystemManaged: true,
-    })
-    journalEntryRepository.create({
-      entryDate: '2026-08-11',
-      sourceType: 'initial_balance',
-      householdMemberId: householdMemberRepository.create({ name: '自分' }).id,
-      lines: [
-        { accountId: account.id, side: 'debit', amount: 50000 },
-        { accountId: equity.id, side: 'credit', amount: 50000 },
-      ],
     })
 
     renderScreen()
 
-    expect(await screen.findByText('普通預金')).toBeInTheDocument()
-    expect(screen.getByText('￥50,000')).toBeInTheDocument()
+    const row = (await screen.findByText('普通預金')).closest('tr')!
+    expect(row).toHaveTextContent('資産')
   })
 
-  it('一覧はテーブル(thead/tbody)で表示され、列見出しを持つ', async () => {
+  it('一覧はテーブル(thead/tbody)で表示され、区分・名称・名義の列見出しを持つ', async () => {
     accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
 
     renderScreen()
     await screen.findByText('普通預金')
 
     expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '区分' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '名称' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '名義' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'グループ' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: '残高' })).toBeInTheDocument()
   })
 
   it('isSystemManagedな科目(初期残高科目等)は一覧に表示されない', async () => {
@@ -157,7 +139,7 @@ describe('AccountListScreen', () => {
     ['liability', '負債'],
     ['revenue', '収益'],
     ['expense', '費用'],
-  ])('区分「%s」の科目には一覧に「%s」の区分表示が併記される', async (category, expectedLabel) => {
+  ])('区分「%s」の科目には一覧に「%s」が区分列として表示される', async (category, expectedLabel) => {
     accountRepository.create({
       category: category as 'asset' | 'liability' | 'revenue' | 'expense',
       name: 'テスト科目',
@@ -359,108 +341,43 @@ describe('AccountListScreen', () => {
     })
   })
 
-  describe('グループ割り当て', () => {
-    it('編集フォームでグループを選択して割り当てることができる', async () => {
-      const group = accountGroupRepository.create({ name: '水道光熱費' })
-      accountRepository.create({ category: 'expense', name: '電気代', isReconcilable: null })
-
-      renderScreen()
-      await screen.findByText('電気代')
-
-      fireEvent.click(screen.getByRole('button', { name: '編集' }))
-      fireEvent.change(screen.getByLabelText('グループ'), { target: { value: String(group.id) } })
-      fireEvent.click(screen.getByRole('button', { name: '保存する' }))
-
-      await waitFor(() =>
-        expect(accountRepository.findAll().find((a) => a.name === '電気代')?.accountGroupId).toBe(
-          group.id,
-        ),
-      )
-    })
-
-    it('グループが割り当て済みの科目を「未分類」に戻せる', async () => {
-      const group = accountGroupRepository.create({ name: '水道光熱費' })
-      accountRepository.create({
-        category: 'expense',
-        name: '電気代',
-        isReconcilable: null,
-        accountGroupId: group.id,
-      })
-
-      renderScreen()
-      await screen.findByText('電気代')
-
-      fireEvent.click(screen.getByRole('button', { name: '編集' }))
-      fireEvent.change(screen.getByLabelText('グループ'), { target: { value: '' } })
-      fireEvent.click(screen.getByRole('button', { name: '保存する' }))
-
-      await waitFor(() =>
-        expect(
-          accountRepository.findAll().find((a) => a.name === '電気代')?.accountGroupId,
-        ).toBeNull(),
-      )
-    })
-
-    it('グループ未割り当ての科目には一覧に「未分類」と表示される', async () => {
-      accountRepository.create({ category: 'expense', name: '電気代', isReconcilable: null })
-
-      renderScreen()
-
-      const row = (await screen.findByText('電気代')).closest('tr')!
-      expect(within(row).getByText('未分類')).toBeInTheDocument()
-    })
-
-    it('非アクティブ化されたグループが現在選択中の値である場合、選択肢から消えない', async () => {
-      const group = accountGroupRepository.create({ name: '水道光熱費' })
-      accountRepository.create({
-        category: 'expense',
-        name: '電気代',
-        isReconcilable: null,
-        accountGroupId: group.id,
-      })
-      accountGroupRepository.deactivate(group.id)
-
-      renderScreen()
-      await screen.findByText('電気代')
-
-      fireEvent.click(screen.getByRole('button', { name: '編集' }))
-
-      expect(screen.getByLabelText('グループ')).toHaveValue(String(group.id))
-      expect(within(screen.getByLabelText('グループ')).getByText('水道光熱費')).toBeInTheDocument()
-    })
-
-    it('グループ選択欄は、異なる親配下の同名グループを「親 > 子」形式のパス表示で区別できる', async () => {
-      const fixedCost = accountGroupRepository.create({ name: '固定費' })
-      const variableCost = accountGroupRepository.create({ name: '変動費' })
-      accountGroupRepository.create({ name: 'カード', parentGroupId: fixedCost.id })
-      accountGroupRepository.create({ name: 'カード', parentGroupId: variableCost.id })
-      accountRepository.create({ category: 'expense', name: '電気代', isReconcilable: null })
-
-      renderScreen()
-      await screen.findByText('電気代')
-      fireEvent.click(screen.getByRole('button', { name: '編集' }))
-
-      const groupSelect = screen.getByLabelText('グループ')
-      expect(within(groupSelect).getByText('固定費 > カード')).toBeInTheDocument()
-      expect(within(groupSelect).getByText('変動費 > カード')).toBeInTheDocument()
-    })
-  })
-
-  describe('非アクティブ化', () => {
-    it('is_active = trueの科目には非アクティブ化ボタンが表示され、押すと非アクティブになる', async () => {
+  describe('非アクティブ化・アクティブ化', () => {
+    it('is_active = trueの科目には非アクティブ化ボタンが表示され、押すとアクティブ化ボタンに切り替わる(状態はアイコンのみで表現しタグは使わない)', async () => {
       accountRepository.create({ category: 'expense', name: '娯楽費', isReconcilable: null })
 
       renderScreen()
-      await screen.findByText('娯楽費')
+      const row = (await screen.findByText('娯楽費')).closest('tr')!
+      expect(within(row).queryByText('非アクティブ')).not.toBeInTheDocument()
 
-      fireEvent.click(screen.getByRole('button', { name: '非アクティブ化' }))
+      fireEvent.click(within(row).getByRole('button', { name: '非アクティブ化' }))
 
-      const row = await waitFor(() => {
-        const el = screen.getByText('娯楽費').closest('tr')!
-        expect(el).toHaveTextContent('非アクティブ')
-        return el
-      })
+      await waitFor(() =>
+        expect(within(row).getByRole('button', { name: 'アクティブ化' })).toBeInTheDocument(),
+      )
+      expect(within(row).queryByText('非アクティブ')).not.toBeInTheDocument()
       expect(row.querySelector('button[data-action="deactivate"]')).toBeNull()
+    })
+
+    it('非アクティブな科目にはアクティブ化ボタンが表示され、押すと再度非アクティブ化ボタンに切り替わる', async () => {
+      const account = accountRepository.create({
+        category: 'expense',
+        name: '娯楽費',
+        isReconcilable: null,
+      })
+      accountRepository.deactivate(account.id)
+
+      renderScreen()
+      const row = (await screen.findByText('娯楽費')).closest('tr')!
+      expect(within(row).getByRole('button', { name: 'アクティブ化' })).toBeInTheDocument()
+      expect(within(row).queryByRole('button', { name: '非アクティブ化' })).not.toBeInTheDocument()
+
+      fireEvent.click(within(row).getByRole('button', { name: 'アクティブ化' }))
+
+      await waitFor(() =>
+        expect(within(row).getByRole('button', { name: '非アクティブ化' })).toBeInTheDocument(),
+      )
+      expect(row.querySelector('button[data-action="deactivate"]')).not.toBeNull()
+      expect(row.querySelector('button[data-action="activate"]')).toBeNull()
     })
   })
 })
