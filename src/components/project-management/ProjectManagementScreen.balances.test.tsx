@@ -11,7 +11,7 @@
  * (createTestDatabase)を使った統合的なレンダリングテスト。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -177,7 +177,7 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
     const item = (await screen.findByText('26/7生活費割勘')).closest('tbody')!
     fireEvent.click(within(item).getByRole('button', { name: '非アクティブ化する' }))
 
-    await screen.findByText('非アクティブ')
+    await waitFor(() => expect(within(item).getByRole('button', { name: 'アクティブ化' })).toBeInTheDocument())
     expect(projectRepository.findAll()[0].isActive).toBe(false)
   })
 

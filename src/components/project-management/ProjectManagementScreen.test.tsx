@@ -205,7 +205,7 @@ describe('ProjectManagementScreen', () => {
 
     fireEvent.click(within(row).getByRole('button', { name: '非アクティブ化' }))
 
-    await screen.findByText('非アクティブ')
+    await waitFor(() => expect(within(row).getByRole('button', { name: 'アクティブ化' })).toBeInTheDocument())
     expect(projectRepository.findAll()[0].isActive).toBe(false)
   })
 
@@ -217,6 +217,20 @@ describe('ProjectManagementScreen', () => {
 
     const row = (await screen.findByText('終了した旅行')).closest('tr')!
     expect(within(row).queryByRole('button', { name: '非アクティブ化' })).not.toBeInTheDocument()
+  })
+
+  it('非アクティブなプロジェクトにはアクティブ化ボタンが表示され、押すと再度アクティブになる', async () => {
+    const project = projectRepository.create({ name: '終了した旅行' })
+    projectRepository.deactivate(project.id)
+
+    renderScreen()
+
+    const row = (await screen.findByText('終了した旅行')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: 'アクティブ化' }))
+
+    await waitFor(() =>
+      expect(within(row).getByRole('button', { name: '非アクティブ化' })).toBeInTheDocument(),
+    )
   })
 
   it('戻るボタンを押すとonBackが呼ばれる', async () => {

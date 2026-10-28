@@ -14,6 +14,7 @@ import {
   type ProjectAccountBalances,
 } from '../../domain/project/summarizeProjectAccountBalances'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
+import { ChevronDownIcon, EditIcon, EyeIcon, EyeOffIcon, TrashIcon } from '../icons/ActionIcons'
 import './ProjectManagementScreen.css'
 
 interface JournalEntryFinder {
@@ -37,9 +38,17 @@ interface ProjectDeleter {
 interface ProjectDeactivator {
   deactivate(id: number): Project | Promise<Project>
 }
+interface ProjectActivator {
+  activate(id: number): Project | Promise<Project>
+}
 
 export interface ProjectManagementScreenProps {
-  projectRepository: ProjectFinder & ProjectCreator & ProjectUpdater & ProjectDeleter & ProjectDeactivator
+  projectRepository: ProjectFinder &
+    ProjectCreator &
+    ProjectUpdater &
+    ProjectDeleter &
+    ProjectDeactivator &
+    ProjectActivator
   accountRepository: AccountFinder
   journalEntryRepository: JournalEntryFinder
   onBack: () => void
@@ -179,6 +188,16 @@ export function ProjectManagementScreen({
       .finally(() => setIsSubmitting(false))
   }
 
+  const activateProject = (id: number) => {
+    if (isSubmitting) return
+    setIsSubmitting(true)
+    setError(null)
+    void Promise.resolve(projectRepository.activate(id))
+      .then(load)
+      .catch(() => setError(t('activateError')))
+      .finally(() => setIsSubmitting(false))
+  }
+
   const toggleDetail = (projectId: number) => {
     setExpandedProjectIds((prev) => {
       const next = new Set(prev)
@@ -206,6 +225,7 @@ export function ProjectManagementScreen({
               <th scope="col">{t('nameLabel')}</th>
               <th scope="col">{t('kindLabel')}</th>
               <th scope="col"></th>
+              <th scope="col"></th>
             </tr>
           </thead>
           {data.projects.map((project) => {
@@ -229,7 +249,7 @@ export function ProjectManagementScreen({
                       />
                     </td>
                     <td>{kindLabel}</td>
-                    <td className="project-list-actions">
+                    <td className="project-list-actions" colSpan={2}>
                       <button
                         type="button"
                         onClick={submitForm}
@@ -244,45 +264,77 @@ export function ProjectManagementScreen({
                   </tr>
                 ) : (
                   <tr>
-                    <td>
-                      {project.name}
-                      {!project.isActive && (
-                        <span className="project-list-inactive">{t('inactiveLabel')}</span>
-                      )}
-                    </td>
+                    <td>{project.name}</td>
                     <td>{kindLabel}</td>
-                    <td className="project-list-actions">
+                    <td>
                       <button
                         type="button"
+                        className="icon-action-button"
+                        title={detailExpanded ? t('detailToggleCollapse') : t('detailToggle')}
+                        aria-label={detailExpanded ? t('detailToggleCollapse') : t('detailToggle')}
                         onClick={() => toggleDetail(project.id)}
                         aria-expanded={detailExpanded}
                       >
-                        {detailExpanded ? t('detailToggleCollapse') : t('detailToggle')}
+                        <ChevronDownIcon />
                       </button>
-                      <button type="button" onClick={() => openEditForm(project)} disabled={isSubmitting}>
-                        {t('editButton')}
-                      </button>
-                      {journalLineCount === 0 && (
-                        <button type="button" onClick={() => deleteProject(project.id)} disabled={isSubmitting}>
-                          {t('deleteButton')}
-                        </button>
-                      )}
-                      {project.isActive && (
+                    </td>
+                    <td className="project-list-actions">
+                      <span className="row-icon-actions">
                         <button
                           type="button"
-                          onClick={() => deactivateProject(project.id)}
+                          className="icon-action-button"
+                          title={t('editButton')}
+                          aria-label={t('editButton')}
+                          onClick={() => openEditForm(project)}
                           disabled={isSubmitting}
                         >
-                          {t('deactivateButton')}
+                          <EditIcon />
                         </button>
-                      )}
+                        {journalLineCount === 0 ? (
+                          <button
+                            type="button"
+                            className="icon-action-button icon-action-danger"
+                            title={t('deleteButton')}
+                            aria-label={t('deleteButton')}
+                            onClick={() => deleteProject(project.id)}
+                            disabled={isSubmitting}
+                          >
+                            <TrashIcon />
+                          </button>
+                        ) : (
+                          <span className="icon-action-placeholder" aria-hidden="true" />
+                        )}
+                        {project.isActive ? (
+                          <button
+                            type="button"
+                            className="icon-action-button"
+                            title={t('deactivateButton')}
+                            aria-label={t('deactivateButton')}
+                            onClick={() => deactivateProject(project.id)}
+                            disabled={isSubmitting}
+                          >
+                            <EyeIcon />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="icon-action-button"
+                            title={t('activateButton')}
+                            aria-label={t('activateButton')}
+                            onClick={() => activateProject(project.id)}
+                            disabled={isSubmitting}
+                          >
+                            <EyeOffIcon />
+                          </button>
+                        )}
+                      </span>
                     </td>
                   </tr>
                 )}
 
                 {proposeDeactivation && (
                   <tr className="project-panel-row">
-                    <td colSpan={3}>
+                    <td colSpan={4}>
                       <div className="project-deactivation-proposal" role="status">
                         <p>{t('deactivationProposalMessage')}</p>
                         <button
@@ -299,7 +351,7 @@ export function ProjectManagementScreen({
 
                 {detailExpanded && (
                   <tr className="project-panel-row">
-                    <td colSpan={3}>
+                    <td colSpan={4}>
                       <div className="project-balance-panel">
                         {(() => {
                           const balances = summarizeProjectAccountBalances(
@@ -362,7 +414,7 @@ export function ProjectManagementScreen({
                     <option value="settlement">{t('kindSettlement')}</option>
                   </select>
                 </td>
-                <td className="project-list-actions">
+                <td className="project-list-actions" colSpan={2}>
                   <button
                     type="button"
                     onClick={submitForm}
