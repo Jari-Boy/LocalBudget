@@ -1,14 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type {
   AccountGroup,
+  AccountGroupCategory,
   CreateAccountGroupInput,
   UpdateAccountGroupInput,
 } from '../../domain/account-group/AccountGroup'
+import { buildAccountGroupForest, type AccountGroupForestNode } from '../../domain/account-group/buildAccountGroupForest'
 import { buildAccountGroupPathLabels } from '../../domain/account-group/buildAccountGroupPathLabels'
-import { flattenAccountGroupTree } from '../../domain/account-group/flattenAccountGroupTree'
 import { isDescendantGroup } from '../../domain/account-group/isDescendantGroup'
+import {
+  resolveAccountGroupDrop,
+  type AccountGroupNodeRef,
+} from '../../domain/account-group/resolveAccountGroupDrop'
+import { EyeIcon, TrashIcon } from '../icons/ActionIcons'
 import './AccountGroupManagementScreen.css'
 
 interface AccountGroupFinder {
@@ -30,7 +36,7 @@ interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
 }
 interface AccountUpdater {
-  update(id: number, input: { accountGroupId: number | null }): Account | Promise<Account>
+  update(id: number, input: { accountGroupId?: number | null; sortOrder?: number }): Account | Promise<Account>
 }
 
 export interface AccountGroupManagementScreenProps {
@@ -46,56 +52,72 @@ export interface AccountGroupManagementScreenProps {
 interface LoadedData {
   groups: AccountGroup[]
   accounts: Account[]
-  /** docs/schema/accounts.sqlのprevent_delete_account_group_with_childrenと同じ判定基準 */
   childCountByGroupId: Map<number, number>
-  /** docs/schema/accounts.sqlのprevent_delete_account_group_with_accountsと同じ判定基準 */
   accountCountByGroupId: Map<number, number>
 }
 
-/** null = 非表示、'create' = 新規作成フォーム、number(id) = 該当グループの編集フォーム */
-type FormMode = 'create' | number | null
+const CATEGORY_ORDER: AccountGroupCategory[] = ['asset', 'liability', 'revenue', 'expense']
+const CATEGORY_LABEL_KEY: Record<AccountGroupCategory, string> = {
+  asset: 'listCategoryAsset',
+  liability: 'listCategoryLiability',
+  revenue: 'listCategoryRevenue',
+  expense: 'listCategoryExpense',
+}
 
-/**
- * 一括割り当てパネルの対象科目の判定(ユーザー指摘への対応)。他グループに属する科目を
- * この画面から選んでこのグループへ"奪う"ことはできないよう、未分類の科目とこのグループに
- * 既に属する科目のみを対象とする。他グループへ付け替えるには、まず現在のグループの
- * パネルで対象科目を外して未分類に戻し、次に目的のグループのパネルで割り当てる
- * (計画Issue #127でAccountListScreenの編集フォームからグループ選択欄を削除したため、
- * 直接の付け替え経路は現状ない。ドラッグ&ドロップ等によるグループ管理画面自体の
- * 刷新は別途検討課題)。is_system_managed科目は常に対象外。
- */
-function isEligibleForAssignmentPanel(account: Account, groupId: number): boolean {
-  if (account.isSystemManaged) return false
-  return account.accountGroupId === null || account.accountGroupId === groupId
+type RowDescriptor =
+  | { kind: 'group'; prefix: string; group: AccountGroup; hasChildren: boolean }
+  | { kind: 'account'; prefix: string; account: Account }
+
+function flattenForest(
+  nodes: AccountGroupForestNode[],
+  continuation: string,
+  expandedGroupIds: Set<number>,
+  rows: RowDescriptor[],
+) {
+  nodes.forEach((node, index) => {
+    const isLast = index === nodes.length - 1
+    const connector = isLast ? '└─ ' : '├─ '
+    const prefix = continuation + connector
+    const nextContinuation = continuation + (isLast ? '   ' : '│  ')
+    if (node.kind === 'account') {
+      rows.push({ kind: 'account', prefix, account: node.account })
+    } else {
+      rows.push({ kind: 'group', prefix, group: node.group, hasChildren: node.children.length > 0 })
+      if (expandedGroupIds.has(node.group.id)) {
+        flattenForest(node.children, nextContinuation, expandedGroupIds, rows)
+      }
+    }
+  })
+}
+
+type DragZone = 'before' | 'after' | 'inside'
+
+function computeDragZone(event: { currentTarget: EventTarget; clientY: number }, allowInside: boolean): DragZone {
+  const rect = (event.currentTarget as Element).getBoundingClientRect()
+  const relativeY = rect.height === 0 ? 0.5 : (event.clientY - rect.top) / rect.height
+  if (allowInside) {
+    if (relativeY < 0.25) return 'before'
+    if (relativeY > 0.75) return 'after'
+    return 'inside'
+  }
+  return relativeY < 0.5 ? 'before' : 'after'
 }
 
 /**
- * 勘定科目グループ管理画面(計画Issue #112)。登録済みグループの一覧表示・新規作成
- * (名称・親グループ)・編集(名称・親グループ)・削除/非アクティブ化を、単一画面+
- * インラインフォームで提供する(docs/domain/accounts.md 3.3節)。入れ子構造は展開/
- * 折りたたみ式ツリーではなく、深さに応じたインデント付きフラットリスト(意図的な
- * スコープ限定、計画Issue #112)で表現する。物理削除は子グループ・所属科目がともに
- * 0件の場合のみ許可し、循環参照(親グループの変更で自分自身の子孫を親に指定する操作)は
- * Repository層(isDescendantGroupを用いたSqlJsAccountGroupRepository)で最終的に
- * 拒否されるが、UI側の親グループ選択欄でも編集対象の子孫を事前に選択肢から除外する。
- * 親グループ・科目選択欄には、異なる親配下の同名グループを区別できるよう
- * buildAccountGroupPathLabelsによる「親 > 子」形式のパス表示ラベルを用いる
- * (ユーザー指摘への対応)。各グループ行から「科目を割り当てる」を開くと、
- * 未分類の科目とこのグループに既に属する科目のチェックリストが表示され、複数科目を
- * まとめてこのグループへ割り当てる(または外して未分類に戻す)ことができる
- * (グループ側からの一括割り当て、ユーザー指摘への対応)。他グループに属する科目は
- * この画面からは選択肢に表示されず、この画面から他グループの科目を"奪う"操作はできない
- * (isEligibleForAssignmentPanel参照、ユーザー指摘への対応)。そのため他グループへの
- * 付け替えは、現在のグループのパネルで未分類に戻してから目的のグループのパネルで
- * 割り当てる2段階操作になる(計画Issue #127でAccountListScreen側の編集フォームから
- * グループ選択欄を削除したため)。is_system_managed科目は常に対象外。
- * 新規作成フォームには「既存のグループを子にする」チェックボックス一覧(既存の最上位・
- * アクティブなグループのみ候補)も表示し、親グループ選択と同時に子グループの一括指定も
- * できる(ユーザー指摘への対応)。候補・送信対象は選択中の親グループの祖先(または親自身)を
- * 除外する。除外しないと、親としてBを選びつつBの祖先Aを子に選ぶ、という循環参照になる
- * 組み合わせが可能になり、グループ作成自体は成功するのにAの親付け替えだけが
- * Repository層で拒否され、新規グループが孤立するおそれがあるため(evaluatorのFAIL指摘への
- * 対応)。後続処理が失敗した場合でも、最新状態を読み直してから画面に反映する。
+ * 勘定科目グループ管理画面(計画Issue #129)。「資産/負債/収益/費用」の4セクション見出しの
+ * 直下に、そのcategoryに属する最上位グループをツリー表示する(buildAccountGroupForestで
+ * サブグループ+直属科目を1つの表示順に混在させ、展開済みのグループのみ子を描画する)。
+ * 各セクション見出しの「+グループを追加」から作成したグループのcategoryはそのセクションで
+ * 自動的に確定し、以後変更できない(作成フォームにcategory選択欄は無い)。
+ * グループ・科目の行はドラッグ可能で、ドロップ先の行の上端/下端(兄弟として挿入、階層は
+ * 変えない)・中央(グループの場合のみ、子としてネスト)で挙動が変わる
+ * (resolveAccountGroupDropが判定、categoryをまたぐ・循環参照になる操作は拒否しエラー表示)。
+ * キーボード操作・スクリーンリーダー向けに、各行のチェックボックスで1件以上選択すると
+ * 上部に移動先選択(プルダウン)が現れ、選んだ瞬間に確定する(単体移動も複数選択での
+ * まとめて移動も同じ経路)。選択項目のcategoryが揃っていなければ移動先は出さず、
+ * その旨をメッセージで示す。グループ名はダブルクリックまたはフォーカス+Enter/Spaceで
+ * インライン編集できる。削除(子グループ・所属科目がともに0件のみ)・非アクティブ化は
+ * 既存のルールを維持する。
  */
 export function AccountGroupManagementScreen({
   accountGroupRepository,
@@ -103,22 +125,21 @@ export function AccountGroupManagementScreen({
   onBack,
 }: AccountGroupManagementScreenProps) {
   const { t } = useTranslation('accountGroup')
+  const { t: tAccount } = useTranslation('account')
   const { t: tCommon } = useTranslation('common')
+
   const [data, setData] = useState<LoadedData | null>(null)
-  const [formMode, setFormMode] = useState<FormMode>(null)
-  const [nameInput, setNameInput] = useState('')
-  const [parentGroupIdInput, setParentGroupIdInput] = useState<number | null>(null)
-  /** 新規作成時のみ使用。既存の最上位・アクティブなグループから、このグループの子にする
-   * ものを選択する(ユーザー指摘への対応: 親を指定して子を作るのではなく、グループ追加時に
-   * 既存グループを子として指定できるようにする)。編集時は空のまま使わない。 */
-  const [childGroupIdsInput, setChildGroupIdsInput] = useState<Set<number>>(new Set())
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<number>>(new Set())
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(new Set())
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<number>>(new Set())
+  const [editingGroupId, setEditingGroupId] = useState<number | null>(null)
+  const [editingGroupName, setEditingGroupName] = useState('')
+  const [createFormCategory, setCreateFormCategory] = useState<AccountGroupCategory | null>(null)
+  const [newGroupName, setNewGroupName] = useState('')
   const [error, setError] = useState<string | null>(null)
-  /** 作成・編集・削除・非アクティブ化のいずれか進行中は全操作ボタンを無効化する(連打による二重実行防止) */
   const [isSubmitting, setIsSubmitting] = useState(false)
-  /** 科目の一括割り当てパネルを開いているグループ(null = 全パネル非表示、計画Issue #112後続対応) */
-  const [assignPanelGroupId, setAssignPanelGroupId] = useState<number | null>(null)
-  /** 一括割り当てパネルでチェックが入っている科目id(パネルを開いた時点の所属状況で初期化する) */
-  const [assignSelections, setAssignSelections] = useState<Set<number>>(new Set())
+  const [draggingNode, setDraggingNode] = useState<AccountGroupNodeRef | null>(null)
+  const [dragOverRowKey, setDragOverRowKey] = useState<string | null>(null)
 
   const load = () => {
     void Promise.all([
@@ -133,10 +154,7 @@ export function AccountGroupManagementScreen({
       const accountCountByGroupId = new Map<number, number>()
       for (const account of accounts) {
         if (account.accountGroupId === null) continue
-        accountCountByGroupId.set(
-          account.accountGroupId,
-          (accountCountByGroupId.get(account.accountGroupId) ?? 0) + 1,
-        )
+        accountCountByGroupId.set(account.accountGroupId, (accountCountByGroupId.get(account.accountGroupId) ?? 0) + 1)
       }
       setData({ groups, accounts, childCountByGroupId, accountCountByGroupId })
     })
@@ -144,87 +162,163 @@ export function AccountGroupManagementScreen({
 
   useEffect(load, [accountGroupRepository, accountRepository])
 
+  const forest = useMemo(() => (data ? buildAccountGroupForest(data.groups, data.accounts) : []), [data])
+  const pathLabelByGroupId = useMemo(() => (data ? buildAccountGroupPathLabels(data.groups) : new Map()), [data])
+
   if (data === null) {
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const openCreateForm = () => {
-    setNameInput('')
-    setParentGroupIdInput(null)
-    setChildGroupIdsInput(new Set())
-    setError(null)
-    setFormMode('create')
-  }
-
-  const toggleChildGroupSelection = (groupId: number) => {
-    setChildGroupIdsInput((prev) => {
+  const toggleExpand = (groupId: number) => {
+    setExpandedGroupIds((prev) => {
       const next = new Set(prev)
-      if (next.has(groupId)) {
-        next.delete(groupId)
-      } else {
-        next.add(groupId)
-      }
+      if (next.has(groupId)) next.delete(groupId)
+      else next.add(groupId)
       return next
     })
   }
 
-  const openEditForm = (group: AccountGroup) => {
-    setNameInput(group.name)
-    setParentGroupIdInput(group.parentGroupId)
-    setError(null)
-    setFormMode(group.id)
-  }
+  const expandAll = () => setExpandedGroupIds(new Set(data.groups.map((g) => g.id)))
+  const collapseAll = () => setExpandedGroupIds(new Set())
 
-  const closeForm = () => {
-    setFormMode(null)
+  const openCreateForm = (category: AccountGroupCategory) => {
+    setCreateFormCategory(category)
+    setNewGroupName('')
     setError(null)
   }
+  const closeCreateForm = () => {
+    setCreateFormCategory(null)
+    setNewGroupName('')
+  }
 
-  const submitForm = () => {
-    if (isSubmitting) return
+  const submitCreate = () => {
+    const name = newGroupName.trim()
+    if (!name || createFormCategory === null || isSubmitting) return
     setIsSubmitting(true)
     setError(null)
-    // Repository呼び出しはPromise.resolve(fn())ではなくPromise.resolve().then(() => fn())で
-    // 開始する。sql.js実装は同期的に例外を投げるため、前者だとfnの同期例外が.catch()に
-    // 届かない(docs/guides/patterns.md参照)。
     void Promise.resolve()
-      .then(() =>
-        formMode === 'create'
-          ? accountGroupRepository.create({ name: nameInput, parentGroupId: parentGroupIdInput })
-          : accountGroupRepository.update(formMode as number, {
-              name: nameInput,
-              parentGroupId: parentGroupIdInput,
-            }),
-      )
-      .then((savedGroup) => {
-        if (formMode !== 'create' || childGroupIdsInput.size === 0) return undefined
-        // 新規作成したグループを親として、選択された既存の最上位グループを子にする。
-        // childGroupCandidates(選択中の親グループの祖先を除外済み)に現在も含まれるものだけを
-        // 対象にする。チェック後に親グループの選択を変更し、候補から外れたグループの
-        // チェックがstateに残っていても、ここで除外することで循環参照の組み合わせを送信しない
-        // (evaluatorのFAIL指摘への対応)。
-        const validChildGroupIds = new Set(childGroupCandidates.map((group) => group.id))
-        const childIdsToReparent = [...childGroupIdsInput].filter((id) => validChildGroupIds.has(id))
-        if (childIdsToReparent.length === 0) return undefined
-        return Promise.all(
-          childIdsToReparent.map((childId) =>
-            Promise.resolve().then(() =>
-              accountGroupRepository.update(childId, { parentGroupId: savedGroup.id }),
-            ),
-          ),
-        )
-      })
+      .then(() => accountGroupRepository.create({ name, category: createFormCategory }))
       .then(() => {
-        closeForm()
+        closeCreateForm()
         load()
       })
-      .catch(() => {
-        setError(t('saveError'))
-        // 作成自体は成功しているのに子グループの付け替え等の後続処理が失敗した場合、
-        // 画面が古いデータのまま(新規作成したグループが見えない)にならないよう、
-        // 失敗時も最新状態を読み直す(evaluatorのFAIL指摘への対応)。
+      .catch(() => setError(t('createError')))
+      .finally(() => setIsSubmitting(false))
+  }
+
+  const startEditName = (group: AccountGroup) => {
+    setEditingGroupId(group.id)
+    setEditingGroupName(group.name)
+    setError(null)
+  }
+  const cancelEditName = () => {
+    setEditingGroupId(null)
+    setEditingGroupName('')
+  }
+  const saveEditName = (groupId: number) => {
+    const name = editingGroupName.trim()
+    if (!name || isSubmitting) return
+    setIsSubmitting(true)
+    setError(null)
+    void Promise.resolve()
+      .then(() => accountGroupRepository.update(groupId, { name }))
+      .then(() => {
+        setEditingGroupId(null)
+        setEditingGroupName('')
         load()
       })
+      .catch(() => setError(t('renameError')))
+      .finally(() => setIsSubmitting(false))
+  }
+
+  const toggleGroupSelect = (id: number) => {
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const toggleAccountSelect = (id: number) => {
+    setSelectedAccountIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const clearSelection = () => {
+    setSelectedGroupIds(new Set())
+    setSelectedAccountIds(new Set())
+  }
+
+  const selectedGroups = data.groups.filter((g) => selectedGroupIds.has(g.id))
+  const selectedAccounts = data.accounts.filter((a) => selectedAccountIds.has(a.id))
+  const selectionCount = selectedGroups.length + selectedAccounts.length
+  const selectionCategories = new Set([
+    ...selectedGroups.map((g) => g.category),
+    ...selectedAccounts.map((a) => a.category),
+  ])
+  const selectionMixedCategory = selectionCategories.size > 1
+  const bulkMoveOptions: { value: string; label: string }[] = []
+  if (selectionCount > 0 && !selectionMixedCategory) {
+    const category = [...selectionCategories][0]
+    const blockedGroupIds = new Set<number>()
+    for (const group of selectedGroups) {
+      for (const candidate of data.groups) {
+        if (candidate.id === group.id || isDescendantGroup(data.groups, group.id, candidate.id)) {
+          blockedGroupIds.add(candidate.id)
+        }
+      }
+    }
+    for (const group of data.groups) {
+      if (group.category !== category || blockedGroupIds.has(group.id)) continue
+      bulkMoveOptions.push({ value: 'group:' + group.id, label: pathLabelByGroupId.get(group.id) ?? group.name })
+    }
+    if (selectedAccounts.length === selectionCount) {
+      bulkMoveOptions.push({ value: 'unclassified', label: t('moveTargetUnclassified') })
+    }
+    if (selectedGroups.length === selectionCount && selectedGroups.some((g) => g.parentGroupId !== null)) {
+      bulkMoveOptions.push({ value: 'root', label: t('moveTargetRoot') })
+    }
+  }
+
+  const applyBulkMove = (value: string) => {
+    if (!value || isSubmitting) return
+    setIsSubmitting(true)
+    setError(null)
+
+    const groupIds = selectedGroups.map((g) => g.id)
+    const accountIds = selectedAccounts.map((a) => a.id)
+
+    const buildUpdates = (): Promise<unknown>[] => {
+      if (value === 'unclassified') {
+        return accountIds.map((id) =>
+          Promise.resolve().then(() => accountRepository.update(id, { accountGroupId: null })),
+        )
+      }
+      if (value === 'root') {
+        return groupIds.map((id) =>
+          Promise.resolve().then(() => accountGroupRepository.update(id, { parentGroupId: null })),
+        )
+      }
+      const targetId = Number(value.slice('group:'.length))
+      return [
+        ...accountIds.map((id) =>
+          Promise.resolve().then(() => accountRepository.update(id, { accountGroupId: targetId })),
+        ),
+        ...groupIds.map((id) =>
+          Promise.resolve().then(() => accountGroupRepository.update(id, { parentGroupId: targetId })),
+        ),
+      ]
+    }
+
+    void Promise.all(buildUpdates())
+      .then(() => {
+        clearSelection()
+        load()
+      })
+      .catch(() => setError(t('bulkMoveError')))
       .finally(() => setIsSubmitting(false))
   }
 
@@ -250,240 +344,321 @@ export function AccountGroupManagementScreen({
       .finally(() => setIsSubmitting(false))
   }
 
-  const toggleAssignPanel = (group: AccountGroup) => {
-    if (assignPanelGroupId === group.id) {
-      setAssignPanelGroupId(null)
-      return
-    }
-    setAssignSelections(
-      new Set(
-        data.accounts.filter((account) => account.accountGroupId === group.id).map((account) => account.id),
-      ),
-    )
-    setError(null)
-    setAssignPanelGroupId(group.id)
+  const handleDragStart = (node: AccountGroupNodeRef) => (event: React.DragEvent) => {
+    event.dataTransfer.setData('text/plain', node.kind + ':' + node.id)
+    event.dataTransfer.effectAllowed = 'move'
+    setDraggingNode(node)
+  }
+  const handleDragEnd = () => {
+    setDraggingNode(null)
+    setDragOverRowKey(null)
+  }
+  const handleRowDragOver = (event: React.DragEvent) => {
+    if (draggingNode) event.preventDefault()
+  }
+  const handleRowDragEnter = (key: string) => () => {
+    if (draggingNode) setDragOverRowKey(key)
+  }
+  const handleRowDragLeave = (key: string) => () => {
+    setDragOverRowKey((prev) => (prev === key ? null : prev))
   }
 
-  const toggleAccountSelection = (accountId: number) => {
-    setAssignSelections((prev) => {
-      const next = new Set(prev)
-      if (next.has(accountId)) {
-        next.delete(accountId)
-      } else {
-        next.add(accountId)
-      }
-      return next
-    })
-  }
-
-  const applyAssignments = (groupId: number) => {
-    if (isSubmitting) return
-    const changes = data.accounts
-      .filter((account) => isEligibleForAssignmentPanel(account, groupId))
-      .filter((account) => (account.accountGroupId === groupId) !== assignSelections.has(account.id))
-      .map((account) => ({
-        id: account.id,
-        accountGroupId: assignSelections.has(account.id) ? groupId : null,
-      }))
-
-    if (changes.length === 0) {
-      setAssignPanelGroupId(null)
-      return
-    }
-
+  const applyDropResult = (groupUpdates: Map<number, UpdateAccountGroupInput>, accountUpdates: Map<number, { accountGroupId?: number | null; sortOrder?: number }>) => {
+    if (groupUpdates.size === 0 && accountUpdates.size === 0) return
     setIsSubmitting(true)
     setError(null)
-    void Promise.all(
-      changes.map((change) =>
-        Promise.resolve().then(() =>
-          accountRepository.update(change.id, { accountGroupId: change.accountGroupId }),
-        ),
+    const updates: Promise<unknown>[] = [
+      ...[...groupUpdates.entries()].map(([id, patch]) =>
+        Promise.resolve().then(() => accountGroupRepository.update(id, patch)),
       ),
-    )
-      .then(() => {
-        setAssignPanelGroupId(null)
-        load()
-      })
-      .catch(() => setError(t('assignAccountsError')))
+      ...[...accountUpdates.entries()].map(([id, patch]) =>
+        Promise.resolve().then(() => accountRepository.update(id, patch)),
+      ),
+    ]
+    void Promise.all(updates)
+      .then(load)
+      .catch(() => setError(t('dropError')))
       .finally(() => setIsSubmitting(false))
   }
 
-  const pathLabelByGroupId = buildAccountGroupPathLabels(data.groups)
+  const handleDropOnRow = (target: AccountGroupNodeRef, allowInside: boolean) => (event: React.DragEvent) => {
+    event.preventDefault()
+    setDragOverRowKey(null)
+    const dragged = draggingNode
+    setDraggingNode(null)
+    if (!dragged) return
 
-  const parentOptions = data.groups.filter((group) => {
-    if (group.id === formMode) return false
-    if (typeof formMode === 'number' && isDescendantGroup(data.groups, formMode, group.id)) return false
-    return group.isActive || group.id === parentGroupIdInput
-  })
+    const zone = computeDragZone(event, allowInside)
+    const result = resolveAccountGroupDrop(data.groups, data.accounts, dragged, { ...target, zone })
+    if (!result) {
+      setError(t('dropCategoryMismatchError'))
+      return
+    }
+    applyDropResult(result.groupUpdates, result.accountUpdates)
+  }
 
-  /** 新規作成時のみ「既存のグループを子にする」候補として提示する、既存の最上位・アクティブな
-   * グループ(既に親を持つグループ・非アクティブなグループは対象外)。加えて、選択中の
-   * 親グループ(parentGroupIdInput)の祖先(または親自身)は候補から除外する。除外しないと、
-   * 新規グループの親としてBを選びつつBの祖先Aを子に選ぶ、という組み合わせが可能になり、
-   * グループ作成自体は成功するのにAの親付け替えだけが循環参照でRepository層に拒否され、
-   * 新規グループが一覧に反映されないまま孤立するおそれがある(evaluatorのFAIL指摘への対応)。 */
-  const childGroupCandidates = data.groups.filter((group) => {
-    if (group.parentGroupId !== null || !group.isActive) return false
-    if (parentGroupIdInput === null) return true
-    return !isDescendantGroup(data.groups, group.id, parentGroupIdInput)
-  })
+  const handleDropOnSection = (category: AccountGroupCategory) => (event: React.DragEvent) => {
+    event.preventDefault()
+    setDragOverRowKey(null)
+    const dragged = draggingNode
+    setDraggingNode(null)
+    if (!dragged || dragged.kind !== 'group') return
+    const group = data.groups.find((g) => g.id === dragged.id)
+    if (!group) return
+    if (group.category !== category) {
+      setError(t('dropCategoryMismatchError'))
+      return
+    }
+    if (group.parentGroupId === null) return
+    applyDropResult(new Map([[group.id, { parentGroupId: null }]]), new Map())
+  }
 
   return (
     <div className="account-group-management-screen">
       <h2>{t('groupListTitle')}</h2>
+      <p className="account-group-description">{t('groupListDescription')}</p>
 
       {error !== null && <p role="alert">{error}</p>}
 
-      {data.groups.length === 0 ? (
-        <p>{t('groupListEmpty')}</p>
-      ) : (
-        <ul>
-          {flattenAccountGroupTree(data.groups).map(({ group, depth }) => {
-            const canDelete =
-              (data.childCountByGroupId.get(group.id) ?? 0) === 0 &&
-              (data.accountCountByGroupId.get(group.id) ?? 0) === 0
-            return (
-              <li key={group.id} data-depth={depth} style={{ marginLeft: `${depth * 1.5}rem` }}>
-                <div className="account-group-list-row">
-                  <span className="account-group-list-name">
-                    {group.name}
-                    {!group.isActive && (
-                      <span className="account-group-list-inactive">{t('inactiveLabel')}</span>
-                    )}
-                  </span>
-                  <span className="account-group-list-actions">
-                    <button
-                      type="button"
-                      onClick={() => toggleAssignPanel(group)}
-                      aria-expanded={assignPanelGroupId === group.id}
-                      disabled={isSubmitting}
-                    >
-                      {assignPanelGroupId === group.id
-                        ? t('assignAccountsToggleCollapse')
-                        : t('assignAccountsButton')}
-                    </button>
-                    <button type="button" onClick={() => openEditForm(group)} disabled={isSubmitting}>
-                      {t('editButton')}
-                    </button>
-                    {canDelete && (
-                      <button
-                        type="button"
-                        data-action="delete"
-                        onClick={() => deleteGroup(group.id)}
-                        disabled={isSubmitting}
-                      >
-                        {t('deleteButton')}
-                      </button>
-                    )}
-                    {group.isActive && (
-                      <button
-                        type="button"
-                        data-action="deactivate"
-                        onClick={() => deactivateGroup(group.id)}
-                        disabled={isSubmitting}
-                      >
-                        {t('deactivateButton')}
-                      </button>
-                    )}
-                  </span>
-                </div>
-
-                {assignPanelGroupId === group.id && (
-                  <div className="account-group-assign-panel">
-                    <ul className="account-group-assign-list">
-                      {data.accounts
-                        .filter((account) => isEligibleForAssignmentPanel(account, group.id))
-                        .map((account) => {
-                          const currentLabel =
-                            account.accountGroupId === null
-                              ? t('assignAccountsUnclassifiedLabel')
-                              : (pathLabelByGroupId.get(account.accountGroupId) ?? '')
-                          return (
-                            <li key={account.id}>
-                              <label>
-                                <input
-                                  type="checkbox"
-                                  checked={assignSelections.has(account.id)}
-                                  onChange={() => toggleAccountSelection(account.id)}
-                                  disabled={isSubmitting}
-                                />
-                                {account.name}({currentLabel})
-                              </label>
-                            </li>
-                          )
-                        })}
-                    </ul>
-                    <button type="button" onClick={() => applyAssignments(group.id)} disabled={isSubmitting}>
-                      {t('assignAccountsApplyButton')}
-                    </button>
-                  </div>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
-
-      {formMode === null ? (
-        <button type="button" onClick={openCreateForm} disabled={isSubmitting}>
-          {t('addButton')}
-        </button>
-      ) : (
-        <div className="account-group-form">
-          <label htmlFor="account-group-name">{t('nameLabel')}</label>
-          <input
-            id="account-group-name"
-            type="text"
-            value={nameInput}
-            onChange={(event) => setNameInput(event.target.value)}
-          />
-
-          <label htmlFor="account-group-parent">{t('parentLabel')}</label>
-          <select
-            id="account-group-parent"
-            value={parentGroupIdInput ?? ''}
-            onChange={(event) =>
-              setParentGroupIdInput(event.target.value === '' ? null : Number(event.target.value))
-            }
-          >
-            <option value="">{t('parentUnspecified')}</option>
-            {parentOptions.map((group) => (
-              <option key={group.id} value={group.id}>
-                {pathLabelByGroupId.get(group.id) ?? group.name}
-              </option>
-            ))}
-          </select>
-
-          {formMode === 'create' && childGroupCandidates.length > 0 && (
-            <div className="account-group-children-select">
-              <span>{t('childGroupsLabel')}</span>
-              <ul>
-                {childGroupCandidates.map((group) => (
-                  <li key={group.id}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={childGroupIdsInput.has(group.id)}
-                        onChange={() => toggleChildGroupSelection(group.id)}
-                      />
-                      {group.name}
-                    </label>
-                  </li>
+      {selectionCount > 0 && (
+        <div className="account-group-selection-toolbar">
+          <strong>{t('selectionCountLabel', { count: selectionCount })}</strong>
+          {selectionMixedCategory ? (
+            <span>{t('selectionMixedCategoryMessage')}</span>
+          ) : (
+            <label>
+              {t('moveTargetSelectLabel')}
+              <select
+                aria-label={t('moveTargetSelectLabel')}
+                onChange={(event) => applyBulkMove(event.target.value)}
+                defaultValue=""
+                disabled={isSubmitting}
+              >
+                <option value="">{t('moveTargetPlaceholder')}</option>
+                {bulkMoveOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
                 ))}
-              </ul>
-            </div>
+              </select>
+            </label>
           )}
-
-          <div className="account-group-form-actions">
-            <button type="button" onClick={submitForm} disabled={nameInput.trim() === '' || isSubmitting}>
-              {formMode === 'create' ? t('createSubmit') : t('saveSubmit')}
-            </button>
-            <button type="button" onClick={closeForm} disabled={isSubmitting}>
-              {t('cancel')}
-            </button>
-          </div>
+          <button type="button" onClick={clearSelection} disabled={isSubmitting}>
+            {t('clearSelectionButton')}
+          </button>
         </div>
       )}
+
+      <div className="account-group-tree-actions">
+        <button type="button" onClick={expandAll}>
+          {t('expandAllButton')}
+        </button>
+        <button type="button" onClick={collapseAll}>
+          {t('collapseAllButton')}
+        </button>
+      </div>
+
+      {CATEGORY_ORDER.map((category) => {
+        const roots = forest.filter((node) => node.group.category === category)
+        const rows: RowDescriptor[] = []
+        flattenForest(roots, '', expandedGroupIds, rows)
+        const sectionKey = 'section-' + category
+
+        return (
+          <section key={category} data-section>
+            <div
+              className="account-group-section-heading"
+              onDragOver={handleRowDragOver}
+              onDragEnter={handleRowDragEnter(sectionKey)}
+              onDragLeave={handleRowDragLeave(sectionKey)}
+              onDrop={handleDropOnSection(category)}
+              data-drag-over={dragOverRowKey === sectionKey || undefined}
+            >
+              <h3>{tAccount(CATEGORY_LABEL_KEY[category])}</h3>
+              <button type="button" onClick={() => openCreateForm(category)} disabled={isSubmitting}>
+                {t('addGroupButton')}
+              </button>
+              {roots.length === 0 && <span className="account-group-section-empty">{t('emptyGroupsInSection')}</span>}
+            </div>
+
+            {createFormCategory === category && (
+              <div className="account-group-create-form">
+                <label htmlFor={'new-group-name-' + category}>
+                  {t('newGroupNameInSectionLabel', { section: tAccount(CATEGORY_LABEL_KEY[category]) })}
+                </label>
+                <input
+                  id={'new-group-name-' + category}
+                  aria-label={t('newGroupNameLabel')}
+                  type="text"
+                  value={newGroupName}
+                  onChange={(event) => setNewGroupName(event.target.value)}
+                />
+                <div className="account-group-create-form-actions">
+                  <button type="button" onClick={submitCreate} disabled={newGroupName.trim() === '' || isSubmitting}>
+                    {t('createSubmit')}
+                  </button>
+                  <button type="button" onClick={closeCreateForm} disabled={isSubmitting}>
+                    {t('cancel')}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <ul className="account-group-tree">
+              {rows.map((row) => {
+                if (row.kind === 'account') {
+                  const account = row.account
+                  const rowKey = 'account-' + account.id
+                  const node: AccountGroupNodeRef = { kind: 'account', id: account.id }
+                  return (
+                    <li
+                      key={rowKey}
+                      data-row-id={rowKey}
+                      className="account-group-row"
+                      draggable
+                      onDragStart={handleDragStart(node)}
+                      onDragEnd={handleDragEnd}
+                      onDragOver={handleRowDragOver}
+                      onDragEnter={handleRowDragEnter(rowKey)}
+                      onDragLeave={handleRowDragLeave(rowKey)}
+                      onDrop={handleDropOnRow(node, false)}
+                      data-drag-over={dragOverRowKey === rowKey || undefined}
+                    >
+                      <span aria-hidden="true" className="account-group-row-prefix">
+                        {row.prefix}
+                      </span>
+                      <input
+                        type="checkbox"
+                        aria-label={t('selectCheckboxLabel', { name: account.name })}
+                        checked={selectedAccountIds.has(account.id)}
+                        onChange={() => toggleAccountSelect(account.id)}
+                      />
+                      <span className="account-group-row-spacer" aria-hidden="true" />
+                      <span className="account-group-row-name account-group-row-name-account">{account.name}</span>
+                    </li>
+                  )
+                }
+
+                const group = row.group
+                const rowKey = 'group-' + group.id
+                const node: AccountGroupNodeRef = { kind: 'group', id: group.id }
+                const isEditing = editingGroupId === group.id
+                const canDelete =
+                  (data.childCountByGroupId.get(group.id) ?? 0) === 0 &&
+                  (data.accountCountByGroupId.get(group.id) ?? 0) === 0
+
+                return (
+                  <li
+                    key={rowKey}
+                    data-row-id={rowKey}
+                    className="account-group-row"
+                    draggable
+                    onDragStart={handleDragStart(node)}
+                    onDragEnd={handleDragEnd}
+                    onDragOver={handleRowDragOver}
+                    onDragEnter={handleRowDragEnter(rowKey)}
+                    onDragLeave={handleRowDragLeave(rowKey)}
+                    onDrop={handleDropOnRow(node, true)}
+                    data-drag-over={dragOverRowKey === rowKey || undefined}
+                  >
+                    <span aria-hidden="true" className="account-group-row-prefix">
+                      {row.prefix}
+                    </span>
+                    <input
+                      type="checkbox"
+                      aria-label={t('selectCheckboxLabel', { name: group.name })}
+                      checked={selectedGroupIds.has(group.id)}
+                      onChange={() => toggleGroupSelect(group.id)}
+                    />
+                    {row.hasChildren ? (
+                      <button
+                        type="button"
+                        className="account-group-toggle"
+                        aria-expanded={expandedGroupIds.has(group.id)}
+                        aria-label={
+                          expandedGroupIds.has(group.id)
+                            ? t('toggleCollapse', { name: group.name })
+                            : t('toggleExpand', { name: group.name })
+                        }
+                        onClick={() => toggleExpand(group.id)}
+                      >
+                        {expandedGroupIds.has(group.id) ? '▾' : '▸'}
+                      </button>
+                    ) : (
+                      <span className="account-group-row-spacer" aria-hidden="true" />
+                    )}
+
+                    {isEditing ? (
+                      <>
+                        <input
+                          type="text"
+                          aria-label={t('editNameAriaLabel', { name: group.name })}
+                          value={editingGroupName}
+                          onChange={(event) => setEditingGroupName(event.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => saveEditName(group.id)}
+                          disabled={editingGroupName.trim() === '' || isSubmitting}
+                        >
+                          {t('saveNameButton')}
+                        </button>
+                        <button type="button" onClick={cancelEditName} disabled={isSubmitting}>
+                          {t('cancel')}
+                        </button>
+                      </>
+                    ) : (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="account-group-row-name"
+                        aria-label={t('editNameHint', { name: group.name })}
+                        onDoubleClick={() => startEditName(group)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            startEditName(group)
+                          }
+                        }}
+                      >
+                        {group.name}
+                        {!group.isActive && <span className="account-group-inactive-label">{t('inactiveLabel')}</span>}
+                      </span>
+                    )}
+
+                    <span className="account-group-row-icon-actions">
+                      {canDelete && (
+                        <button
+                          type="button"
+                          className="icon-action-button icon-action-danger"
+                          title={t('deleteButton')}
+                          aria-label={t('deleteButton')}
+                          onClick={() => deleteGroup(group.id)}
+                          disabled={isSubmitting}
+                        >
+                          <TrashIcon />
+                        </button>
+                      )}
+                      {group.isActive && (
+                        <button
+                          type="button"
+                          className="icon-action-button"
+                          title={t('deactivateButton')}
+                          aria-label={t('deactivateButton')}
+                          onClick={() => deactivateGroup(group.id)}
+                          disabled={isSubmitting}
+                        >
+                          <EyeIcon />
+                        </button>
+                      )}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        )
+      })}
 
       <button type="button" onClick={onBack} disabled={isSubmitting}>
         {t('back')}
