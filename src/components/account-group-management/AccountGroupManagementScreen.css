@@ -189,8 +189,8 @@
 }
 
 .account-group-management-screen span.account-group-row-name {
-  cursor: text;
-
+  /* 行全体がドラッグ可能(cursor: grab)なため、名前の上だけ別カーソルにしない。
+     ダブルクリック/Enterでの名前編集はcursorの見た目に頼らず機能する */
   &:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
