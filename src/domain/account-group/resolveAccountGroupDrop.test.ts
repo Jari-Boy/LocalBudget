@@ -105,15 +105,52 @@ describe('resolveAccountGroupDrop', () => {
     expect(result).toBeNull()
   })
 
-  it('科目をルート(最上位グループの兄弟)へ挿入しようとすると拒否される(null)', () => {
-    const account = makeAccount({ id: 101, name: '普通預金' })
-    const rootGroup = makeGroup({ id: 1, name: '現金同等物' })
+  it('未分類の科目を最上位グループの兄弟として挿入すると、未分類のまま並び順だけ変わる', () => {
+    const account = makeAccount({ id: 101, name: '普通預金', accountGroupId: null, sortOrder: 5 })
+    const rootGroup = makeGroup({ id: 1, name: '現金同等物', sortOrder: 0 })
 
     const result = resolveAccountGroupDrop([rootGroup], [account], { kind: 'account', id: 101 }, {
       kind: 'group',
       id: 1,
       zone: 'before',
     })
+
+    expect(result).not.toBeNull()
+    expect(result!.accountUpdates.get(101)).not.toHaveProperty('accountGroupId')
+    expect(result!.accountUpdates.get(101)?.sortOrder).toBeDefined()
+  })
+
+  it('グループに属する科目を、未分類の科目の手前へ兄弟挿入すると、未分類に戻りその位置に並ぶ', () => {
+    const group = makeGroup({ id: 1, name: '現金同等物' })
+    const grouped = makeAccount({ id: 101, name: '証券口座', accountGroupId: 1 })
+    const unclassified = makeAccount({ id: 102, name: '未分類の口座', accountGroupId: null, sortOrder: 0 })
+
+    const result = resolveAccountGroupDrop(
+      [group],
+      [grouped, unclassified],
+      { kind: 'account', id: 101 },
+      { kind: 'account', id: 102, zone: 'before' },
+    )
+
+    expect(result).not.toBeNull()
+    expect(result!.accountUpdates.get(101)).toMatchObject({ accountGroupId: null })
+  })
+
+  it('categoryが異なる未分類の科目同士は、それぞれの入れ物が独立している', () => {
+    const assetUnclassified = makeAccount({ id: 101, name: '資産の未分類', category: 'asset', sortOrder: 0 })
+    const liabilityUnclassified = makeAccount({
+      id: 102,
+      name: '負債の未分類',
+      category: 'liability',
+      sortOrder: 0,
+    })
+
+    const result = resolveAccountGroupDrop(
+      [],
+      [assetUnclassified, liabilityUnclassified],
+      { kind: 'account', id: 101 },
+      { kind: 'account', id: 102, zone: 'before' },
+    )
 
     expect(result).toBeNull()
   })

@@ -112,6 +112,23 @@ describe('ツリー表示(4セクション構成)', () => {
     expect(screen.getByText('費用')).toBeInTheDocument()
   })
 
+  it('グループが無くても、未分類の科目はそのcategoryのセクションにそのまま表示される', async () => {
+    accountRepository.create({ category: 'asset', name: '現金', isReconcilable: true })
+
+    renderScreen()
+
+    expect(await screen.findByText('現金')).toBeInTheDocument()
+  })
+
+  it('未分類の科目が表示されているセクションには「まだグループがありません」は出ない', async () => {
+    accountRepository.create({ category: 'asset', name: '現金', isReconcilable: true })
+    renderScreen()
+    await screen.findByText('現金')
+
+    const assetSection = screen.getByText('資産').closest('[data-section]') as HTMLElement
+    expect(within(assetSection).queryByText('まだグループがありません')).not.toBeInTheDocument()
+  })
+
   it('ルートグループがそのcategoryのセクション直下に表示される', async () => {
     accountGroupRepository.create({ name: '現金同等物', category: 'asset' })
     accountGroupRepository.create({ name: 'クレカ', category: 'liability' })

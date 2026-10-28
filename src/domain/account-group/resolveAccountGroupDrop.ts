@@ -56,12 +56,11 @@ function containerEntries(
       ? groups.filter((g) => g.parentGroupId === null && g.category === category)
       : groups.filter((g) => g.parentGroupId === containerId)
   ).map((g) => ({ kind: 'group', id: g.id, sortOrder: g.sortOrder }))
-  const accountEntries: ContainerEntry[] =
+  const accountEntries: ContainerEntry[] = (
     containerId === null
-      ? []
-      : accounts
-          .filter((a) => a.accountGroupId === containerId)
-          .map((a) => ({ kind: 'account', id: a.id, sortOrder: a.sortOrder }))
+      ? accounts.filter((a) => a.accountGroupId === null && a.category === category)
+      : accounts.filter((a) => a.accountGroupId === containerId)
+  ).map((a) => ({ kind: 'account', id: a.id, sortOrder: a.sortOrder }))
   return [...groupEntries, ...accountEntries].sort((a, b) => a.sortOrder - b.sortOrder)
 }
 
@@ -94,8 +93,6 @@ export function resolveAccountGroupDrop(
 
   const destContainerId =
     target.zone === 'inside' ? target.id : containerOf(target.kind, targetItem).containerId
-
-  if (destContainerId === null && dragged.kind === 'account') return null
 
   if (dragged.kind === 'group') {
     if (destContainerId !== null && isDescendantGroup(groups, dragged.id, destContainerId)) return null

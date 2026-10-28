@@ -459,9 +459,20 @@ export function AccountGroupManagementScreen({
       </div>
 
       {CATEGORY_ORDER.map((category) => {
-        const roots = forest.filter((node) => node.group.category === category)
+        const rootGroups = forest.filter((node) => node.group.category === category)
+        const unclassifiedAccounts = data.accounts.filter(
+          (a) => a.category === category && a.accountGroupId === null,
+        )
+        const rootNodes: AccountGroupForestNode[] = [
+          ...rootGroups,
+          ...unclassifiedAccounts.map((account): AccountGroupForestNode => ({ kind: 'account', account })),
+        ].sort(
+          (a, b) =>
+            (a.kind === 'group' ? a.group.sortOrder : a.account.sortOrder) -
+            (b.kind === 'group' ? b.group.sortOrder : b.account.sortOrder),
+        )
         const rows: RowDescriptor[] = []
-        flattenForest(roots, '', expandedGroupIds, rows)
+        flattenForest(rootNodes, '', expandedGroupIds, rows)
         const sectionKey = 'section-' + category
 
         return (
@@ -478,7 +489,9 @@ export function AccountGroupManagementScreen({
               <button type="button" onClick={() => openCreateForm(category)} disabled={isSubmitting}>
                 {t('addGroupButton')}
               </button>
-              {roots.length === 0 && <span className="account-group-section-empty">{t('emptyGroupsInSection')}</span>}
+              {rootNodes.length === 0 && (
+                <span className="account-group-section-empty">{t('emptyGroupsInSection')}</span>
+              )}
             </div>
 
             {createFormCategory === category && (
