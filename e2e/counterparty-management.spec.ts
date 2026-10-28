@@ -106,7 +106,7 @@ test.describe('取引先管理画面', () => {
     // 非アクティブ化
     const osakaItem = page.getByRole('rowgroup').filter({ hasText: 'ローソン 大阪梅田店' })
     await osakaItem.getByRole('button', { name: '非アクティブ化' }).click()
-    await expect(osakaItem).toContainText('非アクティブ')
+    await expect(osakaItem.getByRole('button', { name: 'アクティブ化' })).toBeVisible()
 
     // トップ画面へ戻る(マスタ管理ハブ画面を経由する)
     await page.getByRole('button', { name: '戻る' }).click()

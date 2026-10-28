@@ -61,7 +61,7 @@ test.describe('プロジェクト管理画面', () => {
     // 非アクティブ化
     const confirmedTripItem = page.getByRole('rowgroup').filter({ hasText: '26年7月アメリカ旅行(確定)' })
     await confirmedTripItem.getByRole('button', { name: '非アクティブ化' }).click()
-    await expect(confirmedTripItem.getByText('非アクティブ')).toBeVisible()
+    await expect(confirmedTripItem.getByRole('button', { name: 'アクティブ化' })).toBeVisible()
     await expect(confirmedTripItem.getByRole('button', { name: '非アクティブ化' })).toHaveCount(0)
 
     // 削除(紐づく仕訳明細が0件のため物理削除できる)
@@ -113,6 +113,6 @@ test.describe('プロジェクト管理画面', () => {
     await expect(item.getByRole('button', { name: '削除' })).toHaveCount(0)
 
     await item.getByRole('button', { name: '非アクティブ化' }).click()
-    await expect(item.getByText('非アクティブ')).toBeVisible()
+    await expect(item.getByRole('button', { name: 'アクティブ化' })).toBeVisible()
   })
 })

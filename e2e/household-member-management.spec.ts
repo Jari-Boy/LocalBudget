@@ -96,7 +96,7 @@ test.describe('世帯メンバー管理画面', () => {
 
     // 非アクティブ化: 「山田次郎」
     await renamedItem.getByRole('button', { name: '非アクティブ化' }).click()
-    await expect(renamedItem).toContainText('非アクティブ')
+    await expect(renamedItem.getByRole('button', { name: 'アクティブ化' })).toBeVisible()
 
     // 削除: 紐づく参照が無い「山田花子」
     const wifeItem = memberItem(page, '山田花子')
