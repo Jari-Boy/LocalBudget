@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 /**
- * 勘定科目グループ管理画面(計画Issue #112)のコンポーネントテスト。
- * 登録済みグループの一覧表示(深さに応じたインデント付きフラットリスト、
- * 展開/折りたたみ式ツリーは使わない)、新規作成(名称・親グループ)、編集(名称・
- * 親グループの変更)、削除(子グループ・所属科目がともに0件の場合のみ)・非アクティブ化を、
- * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして検証する。
+ * 勘定科目グループ管理画面(計画Issue #129)のコンポーネントテスト。
+ * 「資産/負債/収益/費用」4セクション構成でのツリー表示、セクション単位のグループ追加
+ * (categoryは作成したセクションで自動的に決まる)、すべて展開/折りたたみ、
+ * グループ名のインライン編集(ダブルクリック/Enter)、チェックボックス選択+移動先指定に
+ * よる単体/一括移動(categoryが揃っていない場合の拒否を含む)、ドラッグ&ドロップ
+ * (3ゾーン方式: 兄弟挿入/ネスト、category境界を越える操作の拒否とエラー表示)、
+ * 既存の確立済みルール(削除可否判定)の維持を、sql.jsのNode実装
+ * (createTestDatabase)を使った統合的なレンダリングテストとして検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -44,349 +47,393 @@ function renderScreen(onBack: () => void = vi.fn()) {
   )
 }
 
-describe('AccountGroupManagementScreen', () => {
-  it('登録済みグループが名称とともに一覧表示される', async () => {
-    accountGroupRepository.create({ name: '水道光熱費' })
+async function waitForLoaded() {
+  await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+}
 
+function createDataTransfer(): DataTransfer {
+  const store = new Map<string, string>()
+  return {
+    setData: (type: string, value: string) => store.set(type, value),
+    getData: (type: string) => store.get(type) ?? '',
+    types: [],
+    effectAllowed: 'move',
+    dropEffect: 'move',
+    files: [] as unknown as FileList,
+    items: [] as unknown as DataTransferItemList,
+    setDragImage: () => {},
+    clearData: () => store.clear(),
+  } as unknown as DataTransfer
+}
+
+function mockRowRect(element: Element) {
+  vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({
+    top: 0,
+    bottom: 40,
+    left: 0,
+    right: 200,
+    width: 200,
+    height: 40,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  } as DOMRect)
+}
+
+function getRow(name: string): HTMLElement {
+  return screen.getByText(name).closest('[data-row-id]') as HTMLElement
+}
+
+/**
+ * jsdomはDragEventを実装しておらず、testing-libraryのfireEvent.dragOver/dropは
+ * clientYを含むinitを渡してもEventコンストラクタに無視される(clientYはMouseEvent/
+ * DragEvent固有のプロパティのため)。createEventで素のEventを作ってからclientYを
+ * 直接プロパティとして上書きし、それをdispatchすることで迂回する。
+ */
+function fireDragEventWithClientY(
+  type: 'dragOver' | 'drop',
+  element: Element,
+  dataTransfer: DataTransfer,
+  clientY: number,
+) {
+  const event = createEvent[type](element, { dataTransfer })
+  Object.defineProperty(event, 'clientY', { value: clientY, configurable: true })
+  fireEvent(element, event)
+}
+
+describe('ツリー表示(4セクション構成)', () => {
+  it('グループが無い場合、4セクション見出しとも「まだグループがありません」が表示される', async () => {
     renderScreen()
+    await waitForLoaded()
 
-    expect(await screen.findByText('水道光熱費')).toBeInTheDocument()
+    expect(screen.getByText('資産')).toBeInTheDocument()
+    expect(screen.getByText('負債')).toBeInTheDocument()
+    expect(screen.getByText('収益')).toBeInTheDocument()
+    expect(screen.getByText('費用')).toBeInTheDocument()
   })
 
-  it('グループが0件の場合はエラーにならず空状態が表示される', async () => {
+  it('グループが無くても、未分類の科目はそのcategoryのセクションにそのまま表示される', async () => {
+    accountRepository.create({ category: 'asset', name: '現金', isReconcilable: true })
+
     renderScreen()
 
-    expect(await screen.findByText('登録済みのグループがありません')).toBeInTheDocument()
+    expect(await screen.findByText('現金')).toBeInTheDocument()
   })
 
-  it('子グループは親グループより深いインデント(data-depth)で表示される', async () => {
-    const parent = accountGroupRepository.create({ name: '固定費' })
-    accountGroupRepository.create({ name: 'クレジットカード', parentGroupId: parent.id })
-
+  it('is_system_managed科目(立替金・初期残高科目等)はツリーに表示されない', async () => {
+    const group = accountGroupRepository.create({ name: '現金同等物', category: 'asset' })
+    accountRepository.create({
+      category: 'asset',
+      name: '立替金',
+      isReconcilable: false,
+      isSystemManaged: true,
+      accountGroupId: group.id,
+    })
+    accountRepository.create({ category: 'asset', name: '立替金(未分類)', isReconcilable: false, isSystemManaged: true })
     renderScreen()
+    await screen.findByText('現金同等物')
+    fireEvent.click(screen.getByRole('button', { name: 'すべて展開する' }))
 
-    const parentItem = (await screen.findByText('固定費')).closest('li')!
-    const childItem = (await screen.findByText('クレジットカード')).closest('li')!
-    expect(parentItem).toHaveAttribute('data-depth', '0')
-    expect(childItem).toHaveAttribute('data-depth', '1')
-  })
-
-  it('親グループを指定せずに新規グループを作成できる', async () => {
-    renderScreen()
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
-
-    fireEvent.click(screen.getByRole('button', { name: 'グループを追加' }))
-    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '水道光熱費' } })
-    fireEvent.click(screen.getByRole('button', { name: '作成する' }))
-
-    expect(await screen.findByText('水道光熱費')).toBeInTheDocument()
-    expect(accountGroupRepository.findAll()).toHaveLength(1)
+    expect(screen.queryByText('立替金')).not.toBeInTheDocument()
+    expect(screen.queryByText('立替金(未分類)')).not.toBeInTheDocument()
   })
 
-  it('親グループを選択して子グループを作成できる', async () => {
-    const parent = accountGroupRepository.create({ name: '固定費' })
+  it('未分類の科目が表示されているセクションには「まだグループがありません」は出ない', async () => {
+    accountRepository.create({ category: 'asset', name: '現金', isReconcilable: true })
     renderScreen()
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+    await screen.findByText('現金')
 
-    fireEvent.click(screen.getByRole('button', { name: 'グループを追加' }))
-    fireEvent.change(screen.getByLabelText('名称'), { target: { value: 'クレジットカード' } })
-    fireEvent.change(screen.getByLabelText('親グループ'), { target: { value: String(parent.id) } })
-    fireEvent.click(screen.getByRole('button', { name: '作成する' }))
-
-    await screen.findByText('クレジットカード')
-    expect(accountGroupRepository.findById(accountGroupRepository.findAll()[1].id)?.parentGroupId).toBe(
-      parent.id,
-    )
+    const assetSection = screen.getByText('資産').closest('[data-section]') as HTMLElement
+    expect(within(assetSection).queryByText('まだグループがありません')).not.toBeInTheDocument()
   })
 
-  it('親グループ選択欄は、異なる親配下の同名グループを「親 > 子」形式のパス表示で区別できる', async () => {
-    const fixedCost = accountGroupRepository.create({ name: '固定費' })
-    const variableCost = accountGroupRepository.create({ name: '変動費' })
-    accountGroupRepository.create({ name: 'カード', parentGroupId: fixedCost.id })
-    accountGroupRepository.create({ name: 'カード', parentGroupId: variableCost.id })
+  it('ルートグループがそのcategoryのセクション直下に表示される', async () => {
+    accountGroupRepository.create({ name: '現金同等物', category: 'asset' })
+    accountGroupRepository.create({ name: 'クレカ', category: 'liability' })
 
     renderScreen()
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: 'グループを追加' }))
 
-    const parentSelect = screen.getByLabelText('親グループ')
-    expect(within(parentSelect).getByText('固定費 > カード')).toBeInTheDocument()
-    expect(within(parentSelect).getByText('変動費 > カード')).toBeInTheDocument()
+    expect(await screen.findByText('現金同等物')).toBeInTheDocument()
+    expect(await screen.findByText('クレカ')).toBeInTheDocument()
   })
 
-  it('同一親内で既存の別グループと同じ名前に変更しようとすると、UNIQUE制約違反(同期例外)がエラーメッセージとして表示され、操作ボタンが再び有効になる', async () => {
-    accountGroupRepository.create({ name: '水道光熱費' })
-    accountGroupRepository.create({ name: '通信費' })
+  it('サブグループ・直属科目は折りたたまれており、展開するまで表示されない', async () => {
+    const parent = accountGroupRepository.create({ name: '現金同等物', category: 'asset' })
+    accountRepository.create({ category: 'asset', name: '現金', isReconcilable: true, accountGroupId: parent.id })
+
     renderScreen()
-    const item = (await screen.findByText('通信費')).closest('li')!
+    await screen.findByText('現金同等物')
 
-    fireEvent.click(within(item).getByRole('button', { name: '編集' }))
-    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '水道光熱費' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存する' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('保存に失敗しました。もう一度お試しください。')
-    await waitFor(() => expect(screen.getByRole('button', { name: '保存する' })).toBeEnabled())
+    expect(screen.queryByText('現金')).not.toBeInTheDocument()
   })
 
-  it('既存グループの名称を編集できる', async () => {
-    accountGroupRepository.create({ name: '水道光熱費' })
+  it('「すべて展開する」で全グループが展開され、科目まで表示される', async () => {
+    const parent = accountGroupRepository.create({ name: '現金同等物', category: 'asset' })
+    accountRepository.create({ category: 'asset', name: '現金', isReconcilable: true, accountGroupId: parent.id })
     renderScreen()
-    await screen.findByText('水道光熱費')
+    await screen.findByText('現金同等物')
 
-    fireEvent.click(screen.getByRole('button', { name: '編集' }))
-    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '光熱費' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存する' }))
+    fireEvent.click(screen.getByRole('button', { name: 'すべて展開する' }))
+
+    expect(await screen.findByText('現金')).toBeInTheDocument()
+  })
+
+  it('展開後に「すべて折りたたむ」を押すと再び折りたたまれる', async () => {
+    const parent = accountGroupRepository.create({ name: '現金同等物', category: 'asset' })
+    accountRepository.create({ category: 'asset', name: '現金', isReconcilable: true, accountGroupId: parent.id })
+    renderScreen()
+    await screen.findByText('現金同等物')
+    fireEvent.click(screen.getByRole('button', { name: 'すべて展開する' }))
+    await screen.findByText('現金')
+
+    fireEvent.click(screen.getByRole('button', { name: 'すべて折りたたむ' }))
+
+    expect(screen.queryByText('現金')).not.toBeInTheDocument()
+  })
+})
+
+describe('セクション単位のグループ追加', () => {
+  it('「資産」セクションの追加ボタンから作成すると、categoryがassetになる', async () => {
+    renderScreen()
+    await waitForLoaded()
+    const assetSection = screen.getByText('資産').closest('[data-section]') as HTMLElement
+
+    fireEvent.click(within(assetSection).getByRole('button', { name: '+ グループを追加' }))
+    fireEvent.change(screen.getByLabelText('グループ名'), { target: { value: '現金同等物' } })
+    fireEvent.click(screen.getByRole('button', { name: '追加する' }))
+
+    await screen.findByText('現金同等物')
+    const created = accountGroupRepository.findAll().find((g) => g.name === '現金同等物')
+    expect(created?.category).toBe('asset')
+    expect(created?.parentGroupId).toBeNull()
+  })
+
+  it('「負債」セクションの追加ボタンから作成すると、categoryがliabilityになる', async () => {
+    renderScreen()
+    await waitForLoaded()
+    const section = screen.getByText('負債').closest('[data-section]') as HTMLElement
+
+    fireEvent.click(within(section).getByRole('button', { name: '+ グループを追加' }))
+    fireEvent.change(screen.getByLabelText('グループ名'), { target: { value: 'クレカ' } })
+    fireEvent.click(screen.getByRole('button', { name: '追加する' }))
+
+    await screen.findByText('クレカ')
+    expect(accountGroupRepository.findAll().find((g) => g.name === 'クレカ')?.category).toBe('liability')
+  })
+})
+
+describe('グループ名のインライン編集', () => {
+  it('ダブルクリックで編集モードになり、保存すると名前が変わる', async () => {
+    accountGroupRepository.create({ name: '水道光熱費', category: 'expense' })
+    renderScreen()
+    const nameEl = await screen.findByText('水道光熱費')
+
+    fireEvent.doubleClick(nameEl)
+    fireEvent.change(screen.getByLabelText('水道光熱費 の新しい名前'), { target: { value: '光熱費' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     expect(await screen.findByText('光熱費')).toBeInTheDocument()
   })
 
-  it('子グループを持つグループには削除ボタンが表示されない', async () => {
-    const parent = accountGroupRepository.create({ name: '固定費' })
-    accountGroupRepository.create({ name: 'クレジットカード', parentGroupId: parent.id })
-
+  it('Enterキーでも編集モードに入れる(キーボード操作)', async () => {
+    accountGroupRepository.create({ name: '水道光熱費', category: 'expense' })
     renderScreen()
+    const nameEl = await screen.findByText('水道光熱費')
 
-    const parentItem = (await screen.findByText('固定費')).closest('li')!
-    expect(parentItem.querySelector('button[data-action="delete"]')).not.toBeInTheDocument()
+    fireEvent.keyDown(nameEl, { key: 'Enter' })
+
+    expect(screen.getByLabelText('水道光熱費 の新しい名前')).toBeInTheDocument()
   })
 
-  it('所属する勘定科目があるグループには削除ボタンが表示されない', async () => {
-    const group = accountGroupRepository.create({ name: '水道光熱費' })
-    accountRepository.create({
-      category: 'expense',
-      name: '電気代',
-      isReconcilable: null,
-      accountGroupId: group.id,
+  it('キャンセルすると編集前の名前のままになる', async () => {
+    accountGroupRepository.create({ name: '水道光熱費', category: 'expense' })
+    renderScreen()
+    const nameEl = await screen.findByText('水道光熱費')
+    fireEvent.doubleClick(nameEl)
+    fireEvent.change(screen.getByLabelText('水道光熱費 の新しい名前'), { target: { value: '光熱費' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+
+    expect(await screen.findByText('水道光熱費')).toBeInTheDocument()
+  })
+})
+
+describe('チェックボックス選択+移動先指定(キーボード操作対応)', () => {
+  it('科目を1件選択して移動先を選ぶと、そのグループへ移動する', async () => {
+    const groupA = accountGroupRepository.create({ name: 'A', category: 'expense' })
+    const groupB = accountGroupRepository.create({ name: 'B', category: 'expense' })
+    accountRepository.create({ category: 'expense', name: '電気代', isReconcilable: null, accountGroupId: groupA.id })
+    renderScreen()
+    await waitForLoaded()
+    fireEvent.click(screen.getByRole('button', { name: 'すべて展開する' }))
+    const accountRow = await screen.findByText('電気代')
+
+    fireEvent.click(within(getRow('電気代')).getByRole('checkbox'))
+    const select = screen.getByRole('combobox', { name: '選択した項目の移動先を選択' })
+    fireEvent.change(select, {
+      target: { value: within(select).getByText('B').closest('option')!.getAttribute('value') },
     })
 
-    renderScreen()
-
-    const item = (await screen.findByText('水道光熱費')).closest('li')!
-    expect(item.querySelector('button[data-action="delete"]')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(accountRepository.findAll().find((a) => a.name === '電気代')?.accountGroupId).toBe(groupB.id),
+    )
+    expect(accountRow).toBeInTheDocument()
   })
 
-  it('参照が無いグループは削除でき一覧から消える', async () => {
-    accountGroupRepository.create({ name: '使わないグループ' })
+  it('categoryが異なる項目を同時に選択すると、移動先は提示されずメッセージが表示される', async () => {
+    const assetGroup = accountGroupRepository.create({ name: '資産グループ', category: 'asset' })
+    const expenseGroup = accountGroupRepository.create({ name: '費用グループ', category: 'expense' })
     renderScreen()
-    const item = (await screen.findByText('使わないグループ')).closest('li')!
+    await screen.findByText('資産グループ')
 
-    fireEvent.click(item.querySelector('button[data-action="delete"]')!)
+    fireEvent.click(within(getRow('資産グループ')).getByRole('checkbox'))
+    fireEvent.click(within(getRow('費用グループ')).getByRole('checkbox'))
 
-    await waitFor(() => expect(screen.queryByText('使わないグループ')).not.toBeInTheDocument())
-    expect(accountGroupRepository.findAll()).toHaveLength(0)
+    expect(
+      await screen.findByText('区分が異なる項目が含まれるため、まとめて移動できません'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: '選択した項目の移動先を選択' })).not.toBeInTheDocument()
+    void assetGroup
+    void expenseGroup
+  })
+})
+
+describe('ドラッグ&ドロップ', () => {
+  it('ドラッグ中、グループ行のどのゾーンにいるかがdata-drag-zoneで分かる(上端/中央/下端)', async () => {
+    accountGroupRepository.create({ name: '現金同等物', category: 'asset' })
+    accountGroupRepository.create({ name: 'ネット銀行', category: 'asset' })
+    renderScreen()
+    await screen.findByText('現金同等物')
+    const sourceRow = getRow('ネット銀行')
+    const targetRow = getRow('現金同等物')
+    mockRowRect(targetRow)
+    const dataTransfer = createDataTransfer()
+    fireEvent.dragStart(sourceRow, { dataTransfer })
+
+    fireDragEventWithClientY('dragOver', targetRow, dataTransfer, 2)
+    expect(targetRow).toHaveAttribute('data-drag-zone', 'before')
+
+    fireDragEventWithClientY('dragOver', targetRow, dataTransfer, 20)
+    expect(targetRow).toHaveAttribute('data-drag-zone', 'inside')
+
+    fireDragEventWithClientY('dragOver', targetRow, dataTransfer, 38)
+    expect(targetRow).toHaveAttribute('data-drag-zone', 'after')
+
+    fireEvent.dragLeave(targetRow, { dataTransfer })
+    expect(targetRow).not.toHaveAttribute('data-drag-zone')
   })
 
-  it('is_active = trueのグループを非アクティブ化できる', async () => {
-    accountGroupRepository.create({ name: '使わなくなった分類' })
+  it('科目行は中央ゾーンを持たず、常にbefore/afterのどちらかになる', async () => {
+    const group = accountGroupRepository.create({ name: '水道光熱費', category: 'expense' })
+    accountRepository.create({ category: 'expense', name: '電気代', isReconcilable: null, accountGroupId: group.id })
+    accountRepository.create({ category: 'expense', name: 'ガス代', isReconcilable: null, accountGroupId: group.id })
     renderScreen()
-    const item = (await screen.findByText('使わなくなった分類')).closest('li')!
+    fireEvent.click(await screen.findByRole('button', { name: 'すべて展開する' }))
+    await screen.findByText('電気代')
+    const sourceRow = getRow('ガス代')
+    const targetRow = getRow('電気代')
+    mockRowRect(targetRow)
+    const dataTransfer = createDataTransfer()
+    fireEvent.dragStart(sourceRow, { dataTransfer })
 
-    fireEvent.click(item.querySelector('button[data-action="deactivate"]')!)
+    fireDragEventWithClientY('dragOver', targetRow, dataTransfer, 20)
 
-    await waitFor(() => expect(item).toHaveTextContent('非アクティブ'))
+    expect(targetRow).toHaveAttribute('data-drag-zone', 'after')
+  })
+
+  it('グループ行の中央(ネストゾーン)にドロップすると、子グループになる', async () => {
+    accountGroupRepository.create({ name: '現金同等物', category: 'asset' })
+    accountGroupRepository.create({ name: 'ネット銀行', category: 'asset' })
+    renderScreen()
+    await screen.findByText('現金同等物')
+    const sourceRow = getRow('ネット銀行')
+    const targetRow = getRow('現金同等物')
+    mockRowRect(targetRow)
+    const dataTransfer = createDataTransfer()
+
+    fireEvent.dragStart(sourceRow, { dataTransfer })
+    fireEvent.dragEnter(targetRow, { dataTransfer })
+    fireDragEventWithClientY('dragOver', targetRow, dataTransfer, 20)
+    fireDragEventWithClientY('drop', targetRow, dataTransfer, 20)
+
+    await waitFor(() => {
+      const moved = accountGroupRepository.findAll().find((g) => g.name === 'ネット銀行')
+      const parent = accountGroupRepository.findAll().find((g) => g.name === '現金同等物')
+      expect(moved?.parentGroupId).toBe(parent?.id)
+    })
+  })
+
+  it('グループ行の上端(兄弟挿入ゾーン)にドロップすると、階層を変えず並び順だけ変わる', async () => {
+    const a = accountGroupRepository.create({ name: 'A', category: 'expense' })
+    const b = accountGroupRepository.create({ name: 'B', category: 'expense' })
+    renderScreen()
+    await screen.findByText('A')
+    const sourceRow = getRow('B')
+    const targetRow = getRow('A')
+    mockRowRect(targetRow)
+    const dataTransfer = createDataTransfer()
+
+    fireEvent.dragStart(sourceRow, { dataTransfer })
+    fireEvent.dragEnter(targetRow, { dataTransfer })
+    fireDragEventWithClientY('dragOver', targetRow, dataTransfer, 2)
+    fireDragEventWithClientY('drop', targetRow, dataTransfer, 2)
+
+    await waitFor(() => {
+      const movedB = accountGroupRepository.findAll().find((g) => g.id === b.id)
+      const stillA = accountGroupRepository.findAll().find((g) => g.id === a.id)
+      expect(movedB!.parentGroupId).toBeNull()
+      expect(movedB!.sortOrder).toBeLessThan(stillA!.sortOrder)
+    })
+  })
+
+  it('categoryが異なるグループへのドロップは拒否され、エラーメッセージが表示される', async () => {
+    accountGroupRepository.create({ name: '資産グループ', category: 'asset' })
+    accountGroupRepository.create({ name: '費用グループ', category: 'expense' })
+    renderScreen()
+    await screen.findByText('資産グループ')
+    const sourceRow = getRow('資産グループ')
+    const targetRow = getRow('費用グループ')
+    mockRowRect(targetRow)
+    const dataTransfer = createDataTransfer()
+
+    fireEvent.dragStart(sourceRow, { dataTransfer })
+    fireEvent.dragEnter(targetRow, { dataTransfer })
+    fireDragEventWithClientY('dragOver', targetRow, dataTransfer, 20)
+    fireDragEventWithClientY('drop', targetRow, dataTransfer, 20)
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    const unchanged = accountGroupRepository.findAll().find((g) => g.name === '資産グループ')
+    expect(unchanged?.parentGroupId).toBeNull()
+  })
+})
+
+describe('既存の確立済みルールの維持', () => {
+  it('子グループ・所属科目がともに0件のグループには削除アイコンが表示される', async () => {
+    accountGroupRepository.create({ name: '使わないグループ', category: 'expense' })
+    renderScreen()
+    const row = getRow(await (await screen.findByText('使わないグループ')).textContent!)
+
+    expect(within(row).getByRole('button', { name: '削除' })).toBeInTheDocument()
+  })
+
+  it('所属する勘定科目があるグループには削除アイコンが表示されない', async () => {
+    const group = accountGroupRepository.create({ name: '水道光熱費', category: 'expense' })
+    accountRepository.create({ category: 'expense', name: '電気代', isReconcilable: null, accountGroupId: group.id })
+    renderScreen()
+    await screen.findByText('水道光熱費')
+    const row = getRow('水道光熱費')
+
+    expect(within(row).queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
   })
 
   it('戻るボタンを押すとonBackが呼ばれる', async () => {
     const onBack = vi.fn()
     renderScreen(onBack)
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+    await waitForLoaded()
 
     fireEvent.click(screen.getByRole('button', { name: '戻る' }))
 
     expect(onBack).toHaveBeenCalledTimes(1)
-  })
-
-  describe('グループ作成時の既存グループの子指定', () => {
-    it('新規作成フォームに、既存の最上位かつアクティブなグループが「既存のグループを子にする」の候補として表示される', async () => {
-      accountGroupRepository.create({ name: '水道光熱費' })
-      accountGroupRepository.create({ name: '通信費' })
-      renderScreen()
-      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
-
-      fireEvent.click(screen.getByRole('button', { name: 'グループを追加' }))
-
-      expect(await screen.findByRole('checkbox', { name: '水道光熱費' })).toBeInTheDocument()
-      expect(screen.getByRole('checkbox', { name: '通信費' })).toBeInTheDocument()
-    })
-
-    it('既に親を持つグループ・非アクティブなグループは候補に表示されない', async () => {
-      const parent = accountGroupRepository.create({ name: '固定費' })
-      accountGroupRepository.create({ name: 'カード', parentGroupId: parent.id })
-      const inactive = accountGroupRepository.create({ name: '使わないグループ' })
-      accountGroupRepository.deactivate(inactive.id)
-
-      renderScreen()
-      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
-      fireEvent.click(screen.getByRole('button', { name: 'グループを追加' }))
-      await screen.findByRole('checkbox', { name: '固定費' })
-
-      expect(screen.queryByRole('checkbox', { name: 'カード' })).not.toBeInTheDocument()
-      expect(screen.queryByRole('checkbox', { name: '使わないグループ' })).not.toBeInTheDocument()
-    })
-
-    it('編集フォームには「既存のグループを子にする」欄が表示されない', async () => {
-      accountGroupRepository.create({ name: '水道光熱費' })
-      accountGroupRepository.create({ name: '通信費' })
-      renderScreen()
-      await screen.findByText('水道光熱費')
-
-      fireEvent.click(screen.getAllByRole('button', { name: '編集' })[0])
-
-      expect(screen.queryByRole('checkbox', { name: '通信費' })).not.toBeInTheDocument()
-    })
-
-    it('既存グループを子として選択して作成すると、そのグループの親が新規作成したグループになる', async () => {
-      const existing = accountGroupRepository.create({ name: '通信費' })
-      renderScreen()
-      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
-
-      fireEvent.click(screen.getByRole('button', { name: 'グループを追加' }))
-      fireEvent.change(screen.getByLabelText('名称'), { target: { value: '固定費' } })
-      fireEvent.click(await screen.findByRole('checkbox', { name: '通信費' }))
-      fireEvent.click(screen.getByRole('button', { name: '作成する' }))
-
-      await waitFor(() => {
-        const updated = accountGroupRepository.findById(existing.id)
-        const newParent = accountGroupRepository.findAll().find((g) => g.name === '固定費')
-        expect(updated?.parentGroupId).toBe(newParent?.id)
-      })
-    })
-
-    it('親グループとして既存グループの子孫を選ぶと、その祖先グループは子グループ候補から除外される(循環参照の防止)', async () => {
-      const grandparent = accountGroupRepository.create({ name: '固定費' })
-      const parent = accountGroupRepository.create({ name: 'クレジットカード', parentGroupId: grandparent.id })
-      renderScreen()
-      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
-
-      fireEvent.click(screen.getByRole('button', { name: 'グループを追加' }))
-      fireEvent.change(screen.getByLabelText('名称'), { target: { value: '楽天カード' } })
-      fireEvent.change(screen.getByLabelText('親グループ'), { target: { value: String(parent.id) } })
-
-      expect(screen.queryByRole('checkbox', { name: '固定費' })).not.toBeInTheDocument()
-    })
-
-    it('子として選択済みのグループが、後から選んだ親グループの祖先になった場合、送信時にそのグループの親付け替えは行われない', async () => {
-      const ancestor = accountGroupRepository.create({ name: '固定費' })
-      const descendant = accountGroupRepository.create({
-        name: 'クレジットカード',
-        parentGroupId: ancestor.id,
-      })
-      renderScreen()
-      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
-
-      fireEvent.click(screen.getByRole('button', { name: 'グループを追加' }))
-      fireEvent.change(screen.getByLabelText('名称'), { target: { value: '楽天カード' } })
-      // 親を選ぶ前に「固定費」を子として一旦チェックする
-      fireEvent.click(await screen.findByRole('checkbox', { name: '固定費' }))
-      // その後、固定費の子孫(クレジットカード)を親に選び直す(固定費が候補から消える)
-      fireEvent.change(screen.getByLabelText('親グループ'), { target: { value: String(descendant.id) } })
-      fireEvent.click(screen.getByRole('button', { name: '作成する' }))
-
-      // 新規グループは正常に作成され、一覧に反映される(エラーにならず孤立しない)
-      expect(await screen.findByText('楽天カード')).toBeInTheDocument()
-      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-      const newGroup = accountGroupRepository.findAll().find((g) => g.name === '楽天カード')
-      expect(newGroup?.parentGroupId).toBe(descendant.id)
-      // 「固定費」自体の親は変更されず、循環参照は作られない
-      expect(accountGroupRepository.findById(ancestor.id)?.parentGroupId).toBeNull()
-    })
-  })
-
-  describe('科目の一括割り当て', () => {
-    it('「科目を割り当てる」を押すと、未分類の科目と現在このグループに属する科目のみがチェックボックスで表示され、システム管理科目・他グループ所属科目は表示されない', async () => {
-      const group = accountGroupRepository.create({ name: '水道光熱費' })
-      const otherGroup = accountGroupRepository.create({ name: '通信費' })
-      accountRepository.create({
-        category: 'expense',
-        name: '電気代',
-        isReconcilable: null,
-        accountGroupId: group.id,
-      })
-      accountRepository.create({ category: 'expense', name: 'ガス代', isReconcilable: null })
-      accountRepository.create({
-        category: 'expense',
-        name: 'スマホ代',
-        isReconcilable: null,
-        accountGroupId: otherGroup.id,
-      })
-      accountRepository.create({
-        category: 'equity',
-        name: '初期残高(現金)',
-        isReconcilable: null,
-        isSystemManaged: true,
-      })
-
-      renderScreen()
-      const item = (await screen.findByText('水道光熱費')).closest('li')!
-
-      fireEvent.click(within(item).getByRole('button', { name: '科目を割り当てる' }))
-
-      expect(await screen.findByRole('checkbox', { name: /電気代/ })).toBeChecked()
-      expect(screen.getByRole('checkbox', { name: /ガス代/ })).not.toBeChecked()
-      expect(screen.queryByText('スマホ代', { exact: false })).not.toBeInTheDocument()
-      expect(screen.queryByText('初期残高(現金)')).not.toBeInTheDocument()
-    })
-
-    it('チェックを入れて適用すると、その科目がこのグループに割り当てられる', async () => {
-      const group = accountGroupRepository.create({ name: '水道光熱費' })
-      accountRepository.create({ category: 'expense', name: 'ガス代', isReconcilable: null })
-
-      renderScreen()
-      const item = (await screen.findByText('水道光熱費')).closest('li')!
-      fireEvent.click(within(item).getByRole('button', { name: '科目を割り当てる' }))
-
-      fireEvent.click(await screen.findByRole('checkbox', { name: /ガス代/ }))
-      fireEvent.click(screen.getByRole('button', { name: '適用する' }))
-
-      await waitFor(() =>
-        expect(accountRepository.findAll().find((a) => a.name === 'ガス代')?.accountGroupId).toBe(
-          group.id,
-        ),
-      )
-    })
-
-    it('チェックを外して適用すると、その科目が未分類に戻る', async () => {
-      const group = accountGroupRepository.create({ name: '水道光熱費' })
-      accountRepository.create({
-        category: 'expense',
-        name: '電気代',
-        isReconcilable: null,
-        accountGroupId: group.id,
-      })
-
-      renderScreen()
-      const item = (await screen.findByText('水道光熱費')).closest('li')!
-      fireEvent.click(within(item).getByRole('button', { name: '科目を割り当てる' }))
-
-      fireEvent.click(await screen.findByRole('checkbox', { name: /電気代/ }))
-      fireEvent.click(screen.getByRole('button', { name: '適用する' }))
-
-      await waitFor(() =>
-        expect(
-          accountRepository.findAll().find((a) => a.name === '電気代')?.accountGroupId,
-        ).toBeNull(),
-      )
-    })
-
-    it('他のグループに属する科目は選択肢に表示されず、この画面から他グループの科目を奪うことはできない', async () => {
-      const otherGroup = accountGroupRepository.create({ name: '通信費' })
-      accountGroupRepository.create({ name: '水道光熱費' })
-      accountRepository.create({
-        category: 'expense',
-        name: 'スマホ代',
-        isReconcilable: null,
-        accountGroupId: otherGroup.id,
-      })
-
-      renderScreen()
-      const item = (await screen.findByText('水道光熱費')).closest('li')!
-      fireEvent.click(within(item).getByRole('button', { name: '科目を割り当てる' }))
-      await within(item).findByRole('button', { name: '適用する' })
-
-      expect(screen.queryByRole('checkbox', { name: /スマホ代/ })).not.toBeInTheDocument()
-      expect(accountRepository.findAll().find((a) => a.name === 'スマホ代')?.accountGroupId).toBe(
-        otherGroup.id,
-      )
-    })
   })
 })

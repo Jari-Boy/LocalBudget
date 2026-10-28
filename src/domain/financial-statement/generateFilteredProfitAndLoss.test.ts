@@ -23,6 +23,7 @@ function buildAccount(overrides: Partial<Account> = {}): Account {
     householdMemberId: null,
     accountGroupId: null,
     initialBalanceForAccountId: null,
+    sortOrder: 0,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,

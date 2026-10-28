@@ -22,6 +22,7 @@ function buildAccount(id: number, category: AccountCategory): Account {
     householdMemberId: null,
     accountGroupId: null,
     initialBalanceForAccountId: null,
+    sortOrder: 0,
     createdAt: '2026-06-01T00:00:00.000Z',
     updatedAt: '2026-06-01T00:00:00.000Z',
   }

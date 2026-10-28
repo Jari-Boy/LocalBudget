@@ -12,6 +12,7 @@ CREATE TABLE accounts (
   household_member_id  INTEGER REFERENCES household_members(id),
   account_group_id     INTEGER REFERENCES account_groups(id),
   initial_balance_for_account_id INTEGER REFERENCES accounts(id),
+  sort_order           INTEGER NOT NULL DEFAULT 0,
   created_at           TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK (
@@ -116,12 +117,42 @@ CREATE TABLE account_groups (
   id                INTEGER PRIMARY KEY,
   name              TEXT NOT NULL,
   parent_group_id   INTEGER REFERENCES account_groups(id),
+  -- 作成時点で確定し、以後変更できない(prevent_account_group_category_change、計画Issue #129)。
+  -- equityは対象外(equity科目はis_system_managed専用でグループ化UIの対象外)
+  category          TEXT NOT NULL CHECK (category IN ('asset','liability','revenue','expense')),
+  sort_order        INTEGER NOT NULL DEFAULT 0,
   is_active         BOOLEAN NOT NULL DEFAULT TRUE,
   created_at        TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX idx_account_groups_parent ON account_groups(parent_group_id);
+
+-- グループのcategoryは作成後変更できない(計画Issue #129、accounts.prevent_category_changeと同じ発想)
+CREATE TRIGGER prevent_account_group_category_change
+BEFORE UPDATE OF category ON account_groups
+WHEN OLD.category != NEW.category
+BEGIN
+  SELECT RAISE(ABORT, 'account group category cannot be changed');
+END;
+
+-- 親グループと子グループは常に同一categoryでなければならない(新規作成時、計画Issue #129)
+CREATE TRIGGER prevent_account_group_parent_category_mismatch_on_insert
+BEFORE INSERT ON account_groups
+WHEN NEW.parent_group_id IS NOT NULL
+  AND (SELECT category FROM account_groups WHERE id = NEW.parent_group_id) != NEW.category
+BEGIN
+  SELECT RAISE(ABORT, 'account group category must match its parent group category');
+END;
+
+-- 親グループと子グループは常に同一categoryでなければならない(親グループの変更時、計画Issue #129)
+CREATE TRIGGER prevent_account_group_parent_category_mismatch_on_update
+BEFORE UPDATE OF parent_group_id ON account_groups
+WHEN NEW.parent_group_id IS NOT NULL
+  AND (SELECT category FROM account_groups WHERE id = NEW.parent_group_id) != NEW.category
+BEGIN
+  SELECT RAISE(ABORT, 'account group category must match its parent group category');
+END;
 
 -- 勘定科目が紐づくグループの物理削除を禁止
 CREATE TRIGGER prevent_delete_account_group_with_accounts
@@ -151,4 +182,23 @@ AFTER UPDATE ON account_groups
 WHEN NEW.updated_at = OLD.updated_at
 BEGIN
   UPDATE account_groups SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
+
+-- 科目のcategoryは、直接所属するグループのcategoryと一致しなければならない(新規作成時、計画Issue #129)。
+-- account_groupsを参照するためこのテーブルの定義より後に置く
+CREATE TRIGGER prevent_account_group_category_mismatch_on_insert
+BEFORE INSERT ON accounts
+WHEN NEW.account_group_id IS NOT NULL
+  AND (SELECT category FROM account_groups WHERE id = NEW.account_group_id) != NEW.category
+BEGIN
+  SELECT RAISE(ABORT, 'account category must match its account group category');
+END;
+
+-- 科目のcategoryは、直接所属するグループのcategoryと一致しなければならない(グループ変更時、計画Issue #129)
+CREATE TRIGGER prevent_account_group_category_mismatch_on_update
+BEFORE UPDATE OF account_group_id ON accounts
+WHEN NEW.account_group_id IS NOT NULL
+  AND (SELECT category FROM account_groups WHERE id = NEW.account_group_id) != NEW.category
+BEGIN
+  SELECT RAISE(ABORT, 'account category must match its account group category');
 END;

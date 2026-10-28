@@ -15,6 +15,8 @@ function buildGroup(overrides: Partial<AccountGroup> = {}): AccountGroup {
     id: 1,
     name: 'テストグループ',
     parentGroupId: null,
+    category: 'expense',
+    sortOrder: 0,
     isActive: true,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
