@@ -6,7 +6,7 @@
  * グループ名のインライン編集(ダブルクリック/Enter)、チェックボックス選択+移動先指定に
  * よる単体/一括移動(categoryが揃っていない場合の拒否を含む)、ドラッグ&ドロップ
  * (3ゾーン方式: 兄弟挿入/ネスト、category境界を越える操作の拒否とエラー表示)、
- * 既存の確立済みルール(削除可否判定・非アクティブ化)の維持を、sql.jsのNode実装
+ * 既存の確立済みルール(削除可否判定)の維持を、sql.jsのNode実装
  * (createTestDatabase)を使った統合的なレンダリングテストとして検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
@@ -118,6 +118,25 @@ describe('ツリー表示(4セクション構成)', () => {
     renderScreen()
 
     expect(await screen.findByText('現金')).toBeInTheDocument()
+  })
+
+  it('is_system_managed科目(立替金・初期残高科目等)はツリーに表示されない', async () => {
+    const group = accountGroupRepository.create({ name: '現金同等物', category: 'asset' })
+    accountRepository.create({
+      category: 'asset',
+      name: '立替金',
+      isReconcilable: false,
+      isSystemManaged: true,
+      accountGroupId: group.id,
+    })
+    accountRepository.create({ category: 'asset', name: '立替金(未分類)', isReconcilable: false, isSystemManaged: true })
+    renderScreen()
+    await screen.findByText('現金同等物')
+    fireEvent.click(screen.getByRole('button', { name: 'すべて展開する' }))
+
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+    expect(screen.queryByText('立替金')).not.toBeInTheDocument()
+    expect(screen.queryByText('立替金(未分類)')).not.toBeInTheDocument()
   })
 
   it('未分類の科目が表示されているセクションには「まだグループがありません」は出ない', async () => {
@@ -364,17 +383,6 @@ describe('既存の確立済みルールの維持', () => {
     const row = getRow('水道光熱費')
 
     expect(within(row).queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
-  })
-
-  it('is_active = trueのグループを非アクティブ化できる', async () => {
-    accountGroupRepository.create({ name: '使わなくなった分類', category: 'expense' })
-    renderScreen()
-    await screen.findByText('使わなくなった分類')
-    const row = getRow('使わなくなった分類')
-
-    fireEvent.click(within(row).getByRole('button', { name: '非アクティブ化' }))
-
-    await waitFor(() => expect(row).toHaveTextContent('非アクティブ'))
   })
 
   it('戻るボタンを押すとonBackが呼ばれる', async () => {

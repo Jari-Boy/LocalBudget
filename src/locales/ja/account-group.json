@@ -28,8 +28,6 @@
   "toggleCollapse": "{{name}} を折りたたむ",
   "deleteButton": "削除",
   "deleteError": "削除に失敗しました。もう一度お試しください。",
-  "deactivateButton": "非アクティブ化",
-  "deactivateError": "非アクティブ化に失敗しました。もう一度お試しください。",
   "inactiveLabel": "非アクティブ",
   "back": "戻る"
 }

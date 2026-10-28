@@ -14,7 +14,7 @@ import {
   resolveAccountGroupDrop,
   type AccountGroupNodeRef,
 } from '../../domain/account-group/resolveAccountGroupDrop'
-import { EyeIcon, TrashIcon } from '../icons/ActionIcons'
+import { TrashIcon } from '../icons/ActionIcons'
 import './AccountGroupManagementScreen.css'
 
 interface AccountGroupFinder {
@@ -29,9 +29,6 @@ interface AccountGroupUpdater {
 interface AccountGroupDeleter {
   delete(id: number): void | Promise<void>
 }
-interface AccountGroupDeactivator {
-  deactivate(id: number): AccountGroup | Promise<AccountGroup>
-}
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
 }
@@ -40,11 +37,7 @@ interface AccountUpdater {
 }
 
 export interface AccountGroupManagementScreenProps {
-  accountGroupRepository: AccountGroupFinder &
-    AccountGroupCreator &
-    AccountGroupUpdater &
-    AccountGroupDeleter &
-    AccountGroupDeactivator
+  accountGroupRepository: AccountGroupFinder & AccountGroupCreator & AccountGroupUpdater & AccountGroupDeleter
   accountRepository: AccountFinder & AccountUpdater
   onBack: () => void
 }
@@ -116,8 +109,9 @@ function computeDragZone(event: { currentTarget: EventTarget; clientY: number },
  * 上部に移動先選択(プルダウン)が現れ、選んだ瞬間に確定する(単体移動も複数選択での
  * まとめて移動も同じ経路)。選択項目のcategoryが揃っていなければ移動先は出さず、
  * その旨をメッセージで示す。グループ名はダブルクリックまたはフォーカス+Enter/Spaceで
- * インライン編集できる。削除(子グループ・所属科目がともに0件のみ)・非アクティブ化は
- * 既存のルールを維持する。
+ * インライン編集できる。削除(子グループ・所属科目がともに0件のみ)は既存のルールを維持する。
+ * グループの非アクティブ化ボタンは本画面には置かない(科目を出して空にしてから削除すれば
+ * 足りるため、かつ再アクティブ化の手段を対で用意しない片道の操作を避けるための判断)。
  */
 export function AccountGroupManagementScreen({
   accountGroupRepository,
@@ -162,7 +156,13 @@ export function AccountGroupManagementScreen({
 
   useEffect(load, [accountGroupRepository, accountRepository])
 
-  const forest = useMemo(() => (data ? buildAccountGroupForest(data.groups, data.accounts) : []), [data])
+  // is_system_managed科目(割勘の立替金・初期残高科目等)は、DDLトリガー
+  // (prevent_non_name_change_on_system_managed_account)によりaccount_group_idの変更自体が
+  // 禁止されているため、この画面のツリー・選択・ドラッグ対象には含めない
+  // (旧実装のisEligibleForAssignmentPanelと同じ扱い)。削除可否判定(accountCountByGroupId)は
+  // 非表示のシステム管理科目も含めて正しく数える必要があるため、dataの方は絞り込まない。
+  const visibleAccounts = useMemo(() => data?.accounts.filter((a) => !a.isSystemManaged) ?? [], [data])
+  const forest = useMemo(() => (data ? buildAccountGroupForest(data.groups, visibleAccounts) : []), [data, visibleAccounts])
   const pathLabelByGroupId = useMemo(() => (data ? buildAccountGroupPathLabels(data.groups) : new Map()), [data])
 
   if (data === null) {
@@ -253,7 +253,7 @@ export function AccountGroupManagementScreen({
   }
 
   const selectedGroups = data.groups.filter((g) => selectedGroupIds.has(g.id))
-  const selectedAccounts = data.accounts.filter((a) => selectedAccountIds.has(a.id))
+  const selectedAccounts = visibleAccounts.filter((a) => selectedAccountIds.has(a.id))
   const selectionCount = selectedGroups.length + selectedAccounts.length
   const selectionCategories = new Set([
     ...selectedGroups.map((g) => g.category),
@@ -333,17 +333,6 @@ export function AccountGroupManagementScreen({
       .finally(() => setIsSubmitting(false))
   }
 
-  const deactivateGroup = (id: number) => {
-    if (isSubmitting) return
-    setIsSubmitting(true)
-    setError(null)
-    void Promise.resolve()
-      .then(() => accountGroupRepository.deactivate(id))
-      .then(load)
-      .catch(() => setError(t('deactivateError')))
-      .finally(() => setIsSubmitting(false))
-  }
-
   const handleDragStart = (node: AccountGroupNodeRef) => (event: React.DragEvent) => {
     event.dataTransfer.setData('text/plain', node.kind + ':' + node.id)
     event.dataTransfer.effectAllowed = 'move'
@@ -389,7 +378,7 @@ export function AccountGroupManagementScreen({
     if (!dragged) return
 
     const zone = computeDragZone(event, allowInside)
-    const result = resolveAccountGroupDrop(data.groups, data.accounts, dragged, { ...target, zone })
+    const result = resolveAccountGroupDrop(data.groups, visibleAccounts, dragged, { ...target, zone })
     if (!result) {
       setError(t('dropCategoryMismatchError'))
       return
@@ -459,7 +448,7 @@ export function AccountGroupManagementScreen({
 
       {CATEGORY_ORDER.map((category) => {
         const rootGroups = forest.filter((node) => node.group.category === category)
-        const unclassifiedAccounts = data.accounts.filter(
+        const unclassifiedAccounts = visibleAccounts.filter(
           (a) => a.category === category && a.accountGroupId === null,
         )
         const rootNodes: AccountGroupForestNode[] = [
@@ -649,18 +638,6 @@ export function AccountGroupManagementScreen({
                           disabled={isSubmitting}
                         >
                           <TrashIcon />
-                        </button>
-                      )}
-                      {group.isActive && (
-                        <button
-                          type="button"
-                          className="icon-action-button"
-                          title={t('deactivateButton')}
-                          aria-label={t('deactivateButton')}
-                          onClick={() => deactivateGroup(group.id)}
-                          disabled={isSubmitting}
-                        >
-                          <EyeIcon />
                         </button>
                       )}
                     </span>
