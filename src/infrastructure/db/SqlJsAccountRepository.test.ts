@@ -316,6 +316,90 @@ describe('勘定科目名のユニーク制約(区分内・is_active=TRUEのみ)
   })
 })
 
+describe('accountGroupIdのcategory一致検証(計画Issue #129)', () => {
+  it('科目のcategoryとグループのcategoryが一致していれば割り当てできる', () => {
+    const groupId = insertAccountGroup(db, { name: '現金同等物', category: 'asset' })
+
+    const created = repository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+      accountGroupId: groupId,
+    })
+
+    expect(created.accountGroupId).toBe(groupId)
+  })
+
+  it('科目のcategoryとグループのcategoryが異なる場合、新規作成時に拒否される', () => {
+    const groupId = insertAccountGroup(db, { name: 'クレカ', category: 'liability' })
+
+    expect(() =>
+      repository.create({
+        category: 'asset',
+        name: '普通預金',
+        isReconcilable: true,
+        accountGroupId: groupId,
+      }),
+    ).toThrow()
+  })
+
+  it('科目のcategoryとグループのcategoryが異なる場合、updateでの割り当ても拒否される', () => {
+    const groupId = insertAccountGroup(db, { name: 'クレカ', category: 'liability' })
+    const account = repository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+
+    expect(() => repository.update(account.id, { accountGroupId: groupId })).toThrow()
+  })
+
+  it('未分類(accountGroupId = null)への変更はcategoryを問わず許可される', () => {
+    const groupId = insertAccountGroup(db, { name: '現金同等物', category: 'asset' })
+    const account = repository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+      accountGroupId: groupId,
+    })
+
+    const updated = repository.update(account.id, { accountGroupId: null })
+
+    expect(updated.accountGroupId).toBeNull()
+  })
+})
+
+describe('sortOrder(計画Issue #129)', () => {
+  it('作成時に指定しなければ既定値0になる', () => {
+    const created = repository.create({ category: 'expense', name: '雑費', isReconcilable: null })
+
+    expect(created.sortOrder).toBe(0)
+  })
+
+  it('sortOrderを明示的に指定して作成できる', () => {
+    const created = repository.create({
+      category: 'expense',
+      name: '雑費',
+      isReconcilable: null,
+      sortOrder: 3,
+    })
+
+    expect(created.sortOrder).toBe(3)
+  })
+
+  it('updateでsortOrderを変更できる', () => {
+    const created = repository.create({ category: 'expense', name: '雑費', isReconcilable: null })
+
+    const updated = repository.update(created.id, { sortOrder: 5 })
+
+    expect(updated.sortOrder).toBe(5)
+  })
+})
+
+function insertAccountGroup(
+  database: Database,
+  { name, category }: { name: string; category: string },
+): number {
+  database.run('INSERT INTO account_groups (name, category) VALUES (?, ?)', [name, category])
+  return lastInsertRowId(database)
+}
+
 function lastInsertRowId(database: Database): number {
   return database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
 }

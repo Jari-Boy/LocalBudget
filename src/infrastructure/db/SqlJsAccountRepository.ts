@@ -24,8 +24,8 @@ export class SqlJsAccountRepository implements AccountRepository {
     this.db.run(
       `INSERT INTO accounts
         (category, name, is_reconcilable, is_system_managed,
-         household_member_id, account_group_id, initial_balance_for_account_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         household_member_id, account_group_id, initial_balance_for_account_id, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.category,
         input.name,
@@ -34,6 +34,7 @@ export class SqlJsAccountRepository implements AccountRepository {
         input.householdMemberId ?? null,
         input.accountGroupId ?? null,
         input.initialBalanceForAccountId ?? null,
+        input.sortOrder ?? 0,
       ],
     )
     return this.findById(lastInsertRowId(this.db))!
@@ -58,13 +59,14 @@ export class SqlJsAccountRepository implements AccountRepository {
     }
 
     this.db.run(
-      `UPDATE accounts SET name = ?, household_member_id = ?, account_group_id = ? WHERE id = ?`,
+      `UPDATE accounts SET name = ?, household_member_id = ?, account_group_id = ?, sort_order = ? WHERE id = ?`,
       [
         input.name ?? current.name,
         input.householdMemberId === undefined
           ? current.householdMemberId
           : input.householdMemberId,
         input.accountGroupId === undefined ? current.accountGroupId : input.accountGroupId,
+        input.sortOrder === undefined ? current.sortOrder : input.sortOrder,
         id,
       ],
     )
@@ -112,6 +114,7 @@ function mapRowToAccount(columns: string[], values: unknown[]): Account {
     householdMemberId: get<number | null>('household_member_id'),
     accountGroupId: get<number | null>('account_group_id'),
     initialBalanceForAccountId: get<number | null>('initial_balance_for_account_id'),
+    sortOrder: get<number>('sort_order'),
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),
   }
