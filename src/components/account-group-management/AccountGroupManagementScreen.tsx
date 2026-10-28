@@ -133,7 +133,10 @@ export function AccountGroupManagementScreen({
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [draggingNode, setDraggingNode] = useState<AccountGroupNodeRef | null>(null)
-  const [dragOverRowKey, setDragOverRowKey] = useState<string | null>(null)
+  /** 行の上端/下端/中央のうち、現在ドラッグがどのゾーンにかかっているか(計画Issue #129、
+   * 実機確認で「ドラッグ中にどこへ入るか視覚的に分からない」という指摘を受けて追加) */
+  const [dragOverRowZone, setDragOverRowZone] = useState<{ key: string; zone: DragZone } | null>(null)
+  const [dragOverSectionKey, setDragOverSectionKey] = useState<string | null>(null)
 
   const load = () => {
     void Promise.all([
@@ -340,16 +343,29 @@ export function AccountGroupManagementScreen({
   }
   const handleDragEnd = () => {
     setDraggingNode(null)
-    setDragOverRowKey(null)
+    setDragOverRowZone(null)
+    setDragOverSectionKey(null)
   }
-  const handleRowDragOver = (event: React.DragEvent) => {
-    if (draggingNode) event.preventDefault()
-  }
-  const handleRowDragEnter = (key: string) => () => {
-    if (draggingNode) setDragOverRowKey(key)
+  /** 行の上端/下端/中央のどこにいるかをdragover中に継続的に計算し、ゾーンが実際に
+   * 変わった時だけ状態を更新する(無駄な再描画を避ける)。allowInsideがfalseの科目行は
+   * 常に2分割(before/after)、グループ行は3分割(before/inside/after)で判定する。 */
+  const handleRowDragOver = (key: string, allowInside: boolean) => (event: React.DragEvent) => {
+    if (!draggingNode) return
+    event.preventDefault()
+    const zone = computeDragZone(event, allowInside)
+    setDragOverRowZone((prev) => (prev?.key === key && prev.zone === zone ? prev : { key, zone }))
   }
   const handleRowDragLeave = (key: string) => () => {
-    setDragOverRowKey((prev) => (prev === key ? null : prev))
+    setDragOverRowZone((prev) => (prev?.key === key ? null : prev))
+  }
+  const handleSectionDragOver = (event: React.DragEvent) => {
+    if (draggingNode) event.preventDefault()
+  }
+  const handleSectionDragEnter = (key: string) => () => {
+    if (draggingNode) setDragOverSectionKey(key)
+  }
+  const handleSectionDragLeave = (key: string) => () => {
+    setDragOverSectionKey((prev) => (prev === key ? null : prev))
   }
 
   const applyDropResult = (groupUpdates: Map<number, UpdateAccountGroupInput>, accountUpdates: Map<number, { accountGroupId?: number | null; sortOrder?: number }>) => {
@@ -372,7 +388,7 @@ export function AccountGroupManagementScreen({
 
   const handleDropOnRow = (target: AccountGroupNodeRef, allowInside: boolean) => (event: React.DragEvent) => {
     event.preventDefault()
-    setDragOverRowKey(null)
+    setDragOverRowZone(null)
     const dragged = draggingNode
     setDraggingNode(null)
     if (!dragged) return
@@ -388,7 +404,7 @@ export function AccountGroupManagementScreen({
 
   const handleDropOnSection = (category: AccountGroupCategory) => (event: React.DragEvent) => {
     event.preventDefault()
-    setDragOverRowKey(null)
+    setDragOverSectionKey(null)
     const dragged = draggingNode
     setDraggingNode(null)
     if (!dragged || dragged.kind !== 'group') return
@@ -467,11 +483,11 @@ export function AccountGroupManagementScreen({
           <section key={category} data-section>
             <div
               className="account-group-section-heading"
-              onDragOver={handleRowDragOver}
-              onDragEnter={handleRowDragEnter(sectionKey)}
-              onDragLeave={handleRowDragLeave(sectionKey)}
+              onDragOver={handleSectionDragOver}
+              onDragEnter={handleSectionDragEnter(sectionKey)}
+              onDragLeave={handleSectionDragLeave(sectionKey)}
               onDrop={handleDropOnSection(category)}
-              data-drag-over={dragOverRowKey === sectionKey || undefined}
+              data-drag-over={dragOverSectionKey === sectionKey || undefined}
             >
               <h3>{tAccount(CATEGORY_LABEL_KEY[category])}</h3>
               <button type="button" onClick={() => openCreateForm(category)} disabled={isSubmitting}>
@@ -519,11 +535,10 @@ export function AccountGroupManagementScreen({
                       draggable
                       onDragStart={handleDragStart(node)}
                       onDragEnd={handleDragEnd}
-                      onDragOver={handleRowDragOver}
-                      onDragEnter={handleRowDragEnter(rowKey)}
+                      onDragOver={handleRowDragOver(rowKey, false)}
                       onDragLeave={handleRowDragLeave(rowKey)}
                       onDrop={handleDropOnRow(node, false)}
-                      data-drag-over={dragOverRowKey === rowKey || undefined}
+                      data-drag-zone={dragOverRowZone?.key === rowKey ? dragOverRowZone.zone : undefined}
                     >
                       <span aria-hidden="true" className="account-group-row-prefix">
                         {row.prefix}
@@ -556,11 +571,10 @@ export function AccountGroupManagementScreen({
                     draggable
                     onDragStart={handleDragStart(node)}
                     onDragEnd={handleDragEnd}
-                    onDragOver={handleRowDragOver}
-                    onDragEnter={handleRowDragEnter(rowKey)}
+                    onDragOver={handleRowDragOver(rowKey, true)}
                     onDragLeave={handleRowDragLeave(rowKey)}
                     onDrop={handleDropOnRow(node, true)}
-                    data-drag-over={dragOverRowKey === rowKey || undefined}
+                    data-drag-zone={dragOverRowZone?.key === rowKey ? dragOverRowZone.zone : undefined}
                   >
                     <span aria-hidden="true" className="account-group-row-prefix">
                       {row.prefix}

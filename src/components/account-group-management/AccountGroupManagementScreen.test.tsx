@@ -300,6 +300,48 @@ describe('チェックボックス選択+移動先指定(キーボード操作�
 })
 
 describe('ドラッグ&ドロップ', () => {
+  it('ドラッグ中、グループ行のどのゾーンにいるかがdata-drag-zoneで分かる(上端/中央/下端)', async () => {
+    accountGroupRepository.create({ name: '現金同等物', category: 'asset' })
+    accountGroupRepository.create({ name: 'ネット銀行', category: 'asset' })
+    renderScreen()
+    await screen.findByText('現金同等物')
+    const sourceRow = getRow('ネット銀行')
+    const targetRow = getRow('現金同等物')
+    mockRowRect(targetRow)
+    const dataTransfer = createDataTransfer()
+    fireEvent.dragStart(sourceRow, { dataTransfer })
+
+    fireDragEventWithClientY('dragOver', targetRow, dataTransfer, 2)
+    expect(targetRow).toHaveAttribute('data-drag-zone', 'before')
+
+    fireDragEventWithClientY('dragOver', targetRow, dataTransfer, 20)
+    expect(targetRow).toHaveAttribute('data-drag-zone', 'inside')
+
+    fireDragEventWithClientY('dragOver', targetRow, dataTransfer, 38)
+    expect(targetRow).toHaveAttribute('data-drag-zone', 'after')
+
+    fireEvent.dragLeave(targetRow, { dataTransfer })
+    expect(targetRow).not.toHaveAttribute('data-drag-zone')
+  })
+
+  it('科目行は中央ゾーンを持たず、常にbefore/afterのどちらかになる', async () => {
+    const group = accountGroupRepository.create({ name: '水道光熱費', category: 'expense' })
+    accountRepository.create({ category: 'expense', name: '電気代', isReconcilable: null, accountGroupId: group.id })
+    accountRepository.create({ category: 'expense', name: 'ガス代', isReconcilable: null, accountGroupId: group.id })
+    renderScreen()
+    fireEvent.click(await screen.findByRole('button', { name: 'すべて展開する' }))
+    await screen.findByText('電気代')
+    const sourceRow = getRow('ガス代')
+    const targetRow = getRow('電気代')
+    mockRowRect(targetRow)
+    const dataTransfer = createDataTransfer()
+    fireEvent.dragStart(sourceRow, { dataTransfer })
+
+    fireDragEventWithClientY('dragOver', targetRow, dataTransfer, 20)
+
+    expect(targetRow).toHaveAttribute('data-drag-zone', 'after')
+  })
+
   it('グループ行の中央(ネストゾーン)にドロップすると、子グループになる', async () => {
     accountGroupRepository.create({ name: '現金同等物', category: 'asset' })
     accountGroupRepository.create({ name: 'ネット銀行', category: 'asset' })
