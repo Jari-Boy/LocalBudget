@@ -416,7 +416,6 @@ export function AccountGroupManagementScreen({
   return (
     <div className="account-group-management-screen">
       <h2>{t('groupListTitle')}</h2>
-      <p className="account-group-description">{t('groupListDescription')}</p>
 
       {error !== null && <p role="alert">{error}</p>}
 

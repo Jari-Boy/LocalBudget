@@ -1,6 +1,5 @@
 {
   "groupListTitle": "勘定科目グループ管理",
-  "groupListDescription": "区分(資産・負債・収益・費用)はグループを追加したセクションで決まり、以後変更できません。グループ行にドラッグすると、上端/下端に乗せれば兄弟として並べ替え、中央に乗せれば子としてネストします。区分をまたぐ移動はできません。",
   "expandAllButton": "すべて展開する",
   "collapseAllButton": "すべて折りたたむ",
   "emptyGroupsInSection": "まだグループがありません",

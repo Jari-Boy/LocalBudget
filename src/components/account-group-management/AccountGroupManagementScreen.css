@@ -7,12 +7,6 @@
   gap: 0.5rem;
 }
 
-.account-group-management-screen .account-group-description {
-  color: var(--text);
-  font-size: 14px;
-  margin: 0 0 0.5rem;
-}
-
 .account-group-management-screen [role='alert'] {
   padding: 8px 12px;
   border-radius: 5px;
