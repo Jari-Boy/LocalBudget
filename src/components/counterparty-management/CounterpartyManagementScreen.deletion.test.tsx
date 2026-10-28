@@ -100,7 +100,7 @@ describe('CounterpartyManagementScreen 削除・非アクティブ化', () => {
     fireEvent.click(within(item).getByRole('button', { name: '非アクティブ化' }))
 
     const updatedItem = (await screen.findByText('イオン')).closest('tbody')!
-    expect(updatedItem).toHaveTextContent('非アクティブ')
+    expect(within(updatedItem).getByRole('button', { name: 'アクティブ化' })).toBeInTheDocument()
   })
 
   it('紐づく仕訳明細が1件以上ある取引先の非アクティブ化ボタンを押すと非アクティブと判別できる', async () => {
@@ -130,7 +130,7 @@ describe('CounterpartyManagementScreen 削除・非アクティブ化', () => {
     fireEvent.click(within(item).getByRole('button', { name: '非アクティブ化' }))
 
     const updatedItem = (await screen.findByText('イオン')).closest('tbody')!
-    expect(updatedItem).toHaveTextContent('非アクティブ')
+    expect(within(updatedItem).getByRole('button', { name: 'アクティブ化' })).toBeInTheDocument()
   })
 
   it('既に非アクティブ化された取引先には非アクティブ化ボタンが表示されない', async () => {
@@ -141,5 +141,17 @@ describe('CounterpartyManagementScreen 削除・非アクティブ化', () => {
 
     const item = (await screen.findByText('イオン')).closest('tbody')!
     expect(within(item).queryByRole('button', { name: '非アクティブ化' })).not.toBeInTheDocument()
+  })
+
+  it('非アクティブな取引先にはアクティブ化ボタンが表示され、押すと再度アクティブになる', async () => {
+    const counterparty = counterpartyRepository.create({ name: 'イオン' })
+    counterpartyRepository.deactivate(counterparty.id)
+
+    renderScreen()
+
+    const item = (await screen.findByText('イオン')).closest('tbody')!
+    fireEvent.click(within(item).getByRole('button', { name: 'アクティブ化' }))
+
+    await waitFor(() => expect(within(item).getByRole('button', { name: '非アクティブ化' })).toBeInTheDocument())
   })
 })

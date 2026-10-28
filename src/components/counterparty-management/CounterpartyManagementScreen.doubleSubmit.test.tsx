@@ -136,7 +136,11 @@ describe('CounterpartyManagementScreen 二重送信防止', () => {
     fireEvent.click(deactivateButton)
 
     release()
-    await waitFor(() => expect(screen.getByText('イオン').closest('tbody')).toHaveTextContent('非アクティブ'))
+    await waitFor(() =>
+      expect(
+        within(screen.getByText('イオン').closest('tbody')!).getByRole('button', { name: 'アクティブ化' }),
+      ).toBeInTheDocument(),
+    )
   })
 
   it('統合確定完了を待つ間は統合確定ボタンが無効化され、連打しても1回のみ統合される', async () => {

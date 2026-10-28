@@ -9,6 +9,7 @@ import type {
   UpdateCounterpartyInput,
 } from '../../domain/counterparty/Counterparty'
 import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFormLine'
+import { EditIcon, EyeIcon, EyeOffIcon, TrashIcon } from '../icons/ActionIcons'
 import './CounterpartyManagementScreen.css'
 
 interface AccountFinder {
@@ -32,6 +33,9 @@ interface CounterpartyDeleter {
 interface CounterpartyDeactivator {
   deactivate(id: number): Counterparty | Promise<Counterparty>
 }
+interface CounterpartyActivator {
+  activate(id: number): Counterparty | Promise<Counterparty>
+}
 interface CounterpartyMerger {
   merge(targetId: number, sourceIds: number[]): void | Promise<void>
 }
@@ -53,6 +57,7 @@ export interface CounterpartyManagementScreenProps {
     CounterpartyUpdater &
     CounterpartyDeleter &
     CounterpartyDeactivator &
+    CounterpartyActivator &
     CounterpartyMerger &
     CounterpartyPatternFinder &
     CounterpartyPatternUpdater &
@@ -212,6 +217,16 @@ export function CounterpartyManagementScreen({
     void Promise.resolve(counterpartyRepository.deactivate(id))
       .then(load)
       .catch(() => setError(t('deactivateError')))
+      .finally(() => setIsSubmitting(false))
+  }
+
+  const activateCounterparty = (id: number) => {
+    if (isSubmitting) return
+    setIsSubmitting(true)
+    setError(null)
+    void Promise.resolve(counterpartyRepository.activate(id))
+      .then(load)
+      .catch(() => setError(t('activateError')))
       .finally(() => setIsSubmitting(false))
   }
 
@@ -394,40 +409,63 @@ export function CounterpartyManagementScreen({
                 ) : (
                   <tr>
                     <td>{mergeCheckbox}</td>
-                    <td>
-                      {counterparty.name}
-                      {!counterparty.isActive && (
-                        <span className="counterparty-list-inactive">{t('inactiveLabel')}</span>
-                      )}
-                    </td>
+                    <td>{counterparty.name}</td>
                     <td>
                       {counterparty.defaultAccountId !== null
                         ? data.accountNameById.get(counterparty.defaultAccountId)
                         : ''}
                     </td>
                     <td>{patternToggleButton}</td>
-                    <td className="counterparty-list-actions">
-                      <button type="button" onClick={() => openEditForm(counterparty)} disabled={isSubmitting}>
-                        {t('editButton')}
-                      </button>
-                      {journalLineCount === 0 && (
+                    <td>
+                      <span className="row-icon-actions">
                         <button
                           type="button"
-                          onClick={() => deleteCounterparty(counterparty.id)}
+                          className="icon-action-button"
+                          title={t('editButton')}
+                          aria-label={t('editButton')}
+                          onClick={() => openEditForm(counterparty)}
                           disabled={isSubmitting}
                         >
-                          {t('deleteButton')}
+                          <EditIcon />
                         </button>
-                      )}
-                      {counterparty.isActive && (
-                        <button
-                          type="button"
-                          onClick={() => deactivateCounterparty(counterparty.id)}
-                          disabled={isSubmitting}
-                        >
-                          {t('deactivateButton')}
-                        </button>
-                      )}
+                        {journalLineCount === 0 ? (
+                          <button
+                            type="button"
+                            className="icon-action-button icon-action-danger"
+                            title={t('deleteButton')}
+                            aria-label={t('deleteButton')}
+                            onClick={() => deleteCounterparty(counterparty.id)}
+                            disabled={isSubmitting}
+                          >
+                            <TrashIcon />
+                          </button>
+                        ) : (
+                          <span className="icon-action-placeholder" aria-hidden="true" />
+                        )}
+                        {counterparty.isActive ? (
+                          <button
+                            type="button"
+                            className="icon-action-button"
+                            title={t('deactivateButton')}
+                            aria-label={t('deactivateButton')}
+                            onClick={() => deactivateCounterparty(counterparty.id)}
+                            disabled={isSubmitting}
+                          >
+                            <EyeIcon />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="icon-action-button"
+                            title={t('activateButton')}
+                            aria-label={t('activateButton')}
+                            onClick={() => activateCounterparty(counterparty.id)}
+                            disabled={isSubmitting}
+                          >
+                            <EyeOffIcon />
+                          </button>
+                        )}
+                      </span>
                     </td>
                   </tr>
                 )}
@@ -539,7 +577,12 @@ export function CounterpartyManagementScreen({
       )}
 
       {formMode === null && (
-        <button type="button" onClick={openCreateForm} disabled={isSubmitting}>
+        <button
+          type="button"
+          className="counterparty-add-button"
+          onClick={openCreateForm}
+          disabled={isSubmitting}
+        >
           {t('addButton')}
         </button>
       )}

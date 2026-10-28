@@ -17,6 +17,7 @@
   text-align: left;
   color: var(--text-h);
   vertical-align: top;
+  white-space: nowrap;
 }
 
 .counterparty-management-screen th {
@@ -25,8 +26,11 @@
   white-space: nowrap;
 }
 
+/* 学習パターンパネル(複数行のリストを含む)は折り返しを許可する(行の高さが名称の長さで
+   揃わなくなる問題への対応でtd全体をnowrap化したため、ここだけ明示的に戻す) */
 .counterparty-management-screen .counterparty-panel-row td {
   background: var(--code-bg);
+  white-space: normal;
 }
 
 .counterparty-management-screen .counterparty-pattern-panel {
@@ -62,15 +66,6 @@
 
 .counterparty-management-screen .counterparty-pattern-row input {
   flex: 1;
-}
-
-.counterparty-management-screen .counterparty-list-inactive {
-  margin-left: 0.5em;
-  font-size: 12px;
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 6px;
 }
 
 .counterparty-management-screen .counterparty-list-actions {
@@ -150,4 +145,45 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
+}
+
+.counterparty-management-screen .counterparty-add-button {
+  display: block;
+  margin: 0 0 1rem;
+}
+
+.counterparty-management-screen .row-icon-actions {
+  display: inline-grid;
+  grid-template-columns: repeat(3, 32px);
+  gap: 6px;
+  vertical-align: middle;
+}
+
+.counterparty-management-screen .icon-action-placeholder {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+}
+
+.counterparty-management-screen button.icon-action-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid transparent;
+
+  &:hover:not(:disabled) {
+    background: var(--code-bg);
+    border-color: var(--border);
+  }
+}
+
+.counterparty-management-screen button.icon-action-danger:hover:not(:disabled) {
+  background: var(--error-bg);
+  border-color: var(--error);
+  color: var(--error);
 }
