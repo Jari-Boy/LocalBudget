@@ -17,26 +17,16 @@
   text-align: left;
   color: var(--text-h);
   vertical-align: top;
+  white-space: nowrap;
 }
 
 .household-member-management-screen th {
   font-size: 13px;
   color: var(--text);
-  white-space: nowrap;
 }
 
 .household-member-management-screen .household-member-list-name {
   color: var(--text-h);
-}
-
-.household-member-management-screen .household-member-list-type,
-.household-member-management-screen .household-member-list-inactive {
-  margin-left: 0.5em;
-  font-size: 12px;
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 6px;
 }
 
 .household-member-management-screen .household-member-list-actions {
@@ -48,6 +38,7 @@
 
 .household-member-management-screen .household-member-panel-row td {
   background: var(--code-bg);
+  white-space: normal;
 }
 
 .household-member-management-screen .household-member-group-panel {
@@ -119,17 +110,14 @@
   box-sizing: border-box;
 }
 
-.household-member-management-screen .household-member-type-fieldset {
+.household-member-management-screen .household-member-type-options {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 1rem;
-  padding: 8px 12px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
+  gap: 0.75rem;
 }
 
-.household-member-management-screen .household-member-type-fieldset label {
+.household-member-management-screen .household-member-type-options label {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
@@ -163,4 +151,40 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
+}
+
+.household-member-management-screen .row-icon-actions {
+  display: inline-grid;
+  grid-template-columns: repeat(3, 32px);
+  gap: 6px;
+  vertical-align: middle;
+}
+
+.household-member-management-screen .icon-action-placeholder {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+}
+
+.household-member-management-screen button.icon-action-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid transparent;
+
+  &:hover:not(:disabled) {
+    background: var(--code-bg);
+    border-color: var(--border);
+  }
+}
+
+.household-member-management-screen button.icon-action-danger:hover:not(:disabled) {
+  background: var(--error-bg);
+  border-color: var(--error);
+  color: var(--error);
 }

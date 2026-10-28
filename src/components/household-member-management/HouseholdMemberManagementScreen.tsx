@@ -7,6 +7,7 @@ import type {
   HouseholdMember,
   UpdateHouseholdMemberInput,
 } from '../../domain/household-member/HouseholdMember'
+import { EditIcon, EyeIcon, EyeOffIcon, TrashIcon } from '../icons/ActionIcons'
 import './HouseholdMemberManagementScreen.css'
 
 interface AccountFinder {
@@ -30,6 +31,9 @@ interface HouseholdMemberDeleter {
 interface HouseholdMemberDeactivator {
   deactivate(id: number): HouseholdMember | Promise<HouseholdMember>
 }
+interface HouseholdMemberActivator {
+  activate(id: number): HouseholdMember | Promise<HouseholdMember>
+}
 interface GroupMemberAdder {
   addGroupMember(groupId: number, memberId: number): void | Promise<void>
 }
@@ -46,6 +50,7 @@ export interface HouseholdMemberManagementScreenProps {
     HouseholdMemberUpdater &
     HouseholdMemberDeleter &
     HouseholdMemberDeactivator &
+    HouseholdMemberActivator &
     GroupMemberAdder &
     GroupMemberRemover &
     GroupMemberFinder
@@ -211,6 +216,17 @@ export function HouseholdMemberManagementScreen({
       .finally(() => setIsSubmitting(false))
   }
 
+  const activateMember = (id: number) => {
+    if (isSubmitting) return
+    setIsSubmitting(true)
+    setError(null)
+    void Promise.resolve()
+      .then(() => householdMemberRepository.activate(id))
+      .then(load)
+      .catch(() => setError(t('activateError')))
+      .finally(() => setIsSubmitting(false))
+  }
+
   const toggleGroupMembers = (groupId: number) => {
     setExpandedGroupIds((prev) => {
       const next = new Set(prev)
@@ -270,7 +286,9 @@ export function HouseholdMemberManagementScreen({
         <table>
           <thead>
             <tr>
+              <th scope="col">{t('typeLabel')}</th>
               <th scope="col">{t('nameLabel')}</th>
+              <th scope="col"></th>
               <th scope="col"></th>
             </tr>
           </thead>
@@ -291,14 +309,7 @@ export function HouseholdMemberManagementScreen({
                 {isEditing ? (
                   <tr>
                     <td>
-                      <input
-                        aria-label={t('nameLabel')}
-                        type="text"
-                        value={nameInput}
-                        onChange={(event) => setNameInput(event.target.value)}
-                      />
-                      <fieldset className="household-member-type-fieldset">
-                        <legend>{t('typeLabel')}</legend>
+                      <div className="household-member-type-options">
                         <label>
                           <input
                             type="radio"
@@ -317,9 +328,17 @@ export function HouseholdMemberManagementScreen({
                           />
                           {t('typeGroup')}
                         </label>
-                      </fieldset>
+                      </div>
                     </td>
-                    <td className="household-member-list-actions">
+                    <td>
+                      <input
+                        aria-label={t('nameLabel')}
+                        type="text"
+                        value={nameInput}
+                        onChange={(event) => setNameInput(event.target.value)}
+                      />
+                    </td>
+                    <td className="household-member-list-actions" colSpan={2}>
                       <button
                         type="button"
                         onClick={submitForm}
@@ -334,18 +353,11 @@ export function HouseholdMemberManagementScreen({
                   </tr>
                 ) : (
                   <tr>
+                    <td>{member.isGroup ? t('typeGroup') : t('typeIndividual')}</td>
                     <td>
-                      <span className="household-member-list-name">
-                        {member.name}
-                        {member.isGroup && (
-                          <span className="household-member-list-type">{t('typeGroup')}</span>
-                        )}
-                        {!member.isActive && (
-                          <span className="household-member-list-inactive">{t('inactiveLabel')}</span>
-                        )}
-                      </span>
+                      <span className="household-member-list-name">{member.name}</span>
                     </td>
-                    <td className="household-member-list-actions">
+                    <td>
                       {member.isGroup && (
                         <button
                           type="button"
@@ -355,30 +367,64 @@ export function HouseholdMemberManagementScreen({
                           {t('groupMembersButton', { count: groupMembers.length })}
                         </button>
                       )}
-                      <button type="button" onClick={() => openEditForm(member)} disabled={isSubmitting}>
-                        {t('editButton')}
-                      </button>
-                      {referenceCount === 0 && (
-                        <button type="button" onClick={() => deleteMember(member.id)} disabled={isSubmitting}>
-                          {t('deleteButton')}
-                        </button>
-                      )}
-                      {member.isActive && (
+                    </td>
+                    <td className="household-member-list-actions">
+                      <span className="row-icon-actions">
                         <button
                           type="button"
-                          onClick={() => deactivateMember(member.id)}
+                          className="icon-action-button"
+                          title={t('editButton')}
+                          aria-label={t('editButton')}
+                          onClick={() => openEditForm(member)}
                           disabled={isSubmitting}
                         >
-                          {t('deactivateButton')}
+                          <EditIcon />
                         </button>
-                      )}
+                        {referenceCount === 0 ? (
+                          <button
+                            type="button"
+                            className="icon-action-button icon-action-danger"
+                            title={t('deleteButton')}
+                            aria-label={t('deleteButton')}
+                            onClick={() => deleteMember(member.id)}
+                            disabled={isSubmitting}
+                          >
+                            <TrashIcon />
+                          </button>
+                        ) : (
+                          <span className="icon-action-placeholder" aria-hidden="true" />
+                        )}
+                        {member.isActive ? (
+                          <button
+                            type="button"
+                            className="icon-action-button"
+                            title={t('deactivateButton')}
+                            aria-label={t('deactivateButton')}
+                            onClick={() => deactivateMember(member.id)}
+                            disabled={isSubmitting}
+                          >
+                            <EyeIcon />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="icon-action-button"
+                            title={t('activateButton')}
+                            aria-label={t('activateButton')}
+                            onClick={() => activateMember(member.id)}
+                            disabled={isSubmitting}
+                          >
+                            <EyeOffIcon />
+                          </button>
+                        )}
+                      </span>
                     </td>
                   </tr>
                 )}
 
                 {member.isGroup && groupMembersExpanded && (
                   <tr className="household-member-panel-row">
-                    <td colSpan={2}>
+                    <td colSpan={4}>
                       <div className="household-member-group-panel">
                         {groupMembers.length === 0 ? (
                           <p>{t('groupMembersEmpty')}</p>
@@ -436,14 +482,7 @@ export function HouseholdMemberManagementScreen({
             <tbody>
               <tr>
                 <td>
-                  <input
-                    aria-label={t('nameLabel')}
-                    type="text"
-                    value={nameInput}
-                    onChange={(event) => setNameInput(event.target.value)}
-                  />
-                  <fieldset className="household-member-type-fieldset">
-                    <legend>{t('typeLabel')}</legend>
+                  <div className="household-member-type-options">
                     <label>
                       <input
                         type="radio"
@@ -462,9 +501,17 @@ export function HouseholdMemberManagementScreen({
                       />
                       {t('typeGroup')}
                     </label>
-                  </fieldset>
+                  </div>
                 </td>
-                <td className="household-member-list-actions">
+                <td>
+                  <input
+                    aria-label={t('nameLabel')}
+                    type="text"
+                    value={nameInput}
+                    onChange={(event) => setNameInput(event.target.value)}
+                  />
+                </td>
+                <td className="household-member-list-actions" colSpan={2}>
                   <button
                     type="button"
                     onClick={submitForm}

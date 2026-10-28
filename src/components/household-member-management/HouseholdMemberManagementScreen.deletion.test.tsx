@@ -8,7 +8,7 @@
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -100,7 +100,7 @@ describe('HouseholdMemberManagementScreen 削除・非アクティブ化', () =>
     fireEvent.click(within(item).getByRole('button', { name: '非アクティブ化' }))
 
     const updatedItem = (await screen.findByText('夫')).closest('tr')!
-    expect(updatedItem).toHaveTextContent('非アクティブ')
+    expect(within(updatedItem).getByRole('button', { name: 'アクティブ化' })).toBeInTheDocument()
   })
 
   it('既に非アクティブ化されたメンバーには非アクティブ化ボタンが表示されない', async () => {
@@ -111,5 +111,19 @@ describe('HouseholdMemberManagementScreen 削除・非アクティブ化', () =>
 
     const item = (await screen.findByText('夫')).closest('tr')!
     expect(within(item).queryByRole('button', { name: '非アクティブ化' })).not.toBeInTheDocument()
+  })
+
+  it('非アクティブなメンバーにはアクティブ化ボタンが表示され、押すと再度アクティブになる', async () => {
+    const member = householdMemberRepository.create({ name: '夫' })
+    householdMemberRepository.deactivate(member.id)
+
+    renderScreen()
+
+    const item = (await screen.findByText('夫')).closest('tr')!
+    fireEvent.click(within(item).getByRole('button', { name: 'アクティブ化' }))
+
+    await waitFor(() =>
+      expect(within(item).getByRole('button', { name: '非アクティブ化' })).toBeInTheDocument(),
+    )
   })
 })

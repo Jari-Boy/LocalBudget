@@ -59,16 +59,21 @@ describe('HouseholdMemberManagementScreen', () => {
 
     expect(await screen.findByText('夫')).toBeInTheDocument()
     expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '種別' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '名称' })).toBeInTheDocument()
   })
 
-  it('登録済みのグループにはグループであることを示すラベルが併記される', async () => {
+  it('種別は名称とは別の列として表示され、個人メンバーには「個人」、グループには「グループ」と表示される', async () => {
+    householdMemberRepository.create({ name: '夫' })
     householdMemberRepository.create({ name: '夫婦', isGroup: true })
 
     renderScreen()
 
-    const item = (await screen.findByText('夫婦')).closest('tr')!
-    expect(item).toHaveTextContent('グループ')
+    const individualRow = (await screen.findByText('夫')).closest('tr')!
+    expect(within(individualRow).getByText('個人')).toBeInTheDocument()
+
+    const groupRow = screen.getByText('夫婦').closest('tr')!
+    expect(within(groupRow).getByText('グループ')).toBeInTheDocument()
   })
 
   it('メンバーが0件の場合はエラーにならず空状態が表示される', async () => {
@@ -167,6 +172,18 @@ describe('HouseholdMemberManagementScreen', () => {
     fireEvent.click(within(item).getByRole('button', { name: '編集' }))
 
     expect(screen.getByLabelText('グループ')).toBeChecked()
+  })
+
+  it('編集行では種別(ラジオボタン)と名称(テキスト入力)が別々のセルに並び、行が1行に収まる', async () => {
+    householdMemberRepository.create({ name: '夫' })
+    renderScreen()
+
+    const item = (await screen.findByText('夫')).closest('tr')!
+    fireEvent.click(within(item).getByRole('button', { name: '編集' }))
+
+    const nameCell = screen.getByLabelText('名称').closest('td')!
+    const typeCell = screen.getByLabelText('個人').closest('td')!
+    expect(nameCell).not.toBe(typeCell)
   })
 
   it('戻るボタンを押すとonBackが呼ばれる', async () => {
