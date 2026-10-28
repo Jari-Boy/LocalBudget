@@ -10,6 +10,8 @@ export interface Account {
   householdMemberId: number | null
   accountGroupId: number | null
   initialBalanceForAccountId: number | null
+  /** 所属グループ内での表示順(未分類の場合は意味を持たない、計画Issue #129) */
+  sortOrder: number
   createdAt: string
   updatedAt: string
 }
@@ -22,10 +24,12 @@ export interface CreateAccountInput {
   householdMemberId?: number | null
   accountGroupId?: number | null
   initialBalanceForAccountId?: number | null
+  sortOrder?: number
 }
 
 export interface UpdateAccountInput {
   name?: string
   householdMemberId?: number | null
   accountGroupId?: number | null
+  sortOrder?: number
 }
