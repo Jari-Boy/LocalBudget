@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 /**
- * プロジェクト管理画面(計画Issue #36)のコンポーネントテスト。
- * 登録済みプロジェクトの一覧表示、新規作成(名称・kind)、既存プロジェクトの編集(名称のみ、
- * kindは作成時のみ指定可能)、削除(紐づく仕訳明細が0件の場合のみ)・非アクティブ化を、
- * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして検証する。
- * プロジェクト別集計・非アクティブ化提案は別ファイルに分離する(計画Issue #36の後続コミット)。
+ * プロジェクト管理画面(計画Issue #36、計画Issue #127でテーブル形式+行内インライン編集に変更)の
+ * コンポーネントテスト。登録済みプロジェクトの一覧表示(テーブルのthead/tbody)、新規作成(名称・kind、
+ * 表の最終行に追加される作成用の行から行う)、既存プロジェクトの編集(行内インライン編集、名称のみ、
+ * kindは作成時のみ指定可能)、削除(紐づく仕訳明細が0件の場合のみ)・非アクティブ化を、sql.jsのNode実装
+ * (createTestDatabase)を使った統合的なレンダリングテストとして検証する。プロジェクト別集計・
+ * 非アクティブ化提案は別ファイルに分離する(計画Issue #36の後続コミット)。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -52,12 +53,15 @@ function renderScreen(onBack: () => void = vi.fn()) {
 }
 
 describe('ProjectManagementScreen', () => {
-  it('登録済みプロジェクトが名称とともに一覧表示される', async () => {
+  it('登録済みプロジェクトが名称とともにテーブル(thead/tbody)で一覧表示される', async () => {
     projectRepository.create({ name: '26年7月アメリカ旅行' })
 
     renderScreen()
 
     expect(await screen.findByText('26年7月アメリカ旅行')).toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '名称' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '種別' })).toBeInTheDocument()
   })
 
   it('プロジェクトが0件の場合はエラーにならず空状態が表示される', async () => {
@@ -72,10 +76,10 @@ describe('ProjectManagementScreen', () => {
 
     renderScreen()
 
-    const settlementItem = (await screen.findByText('26/7生活費割勘')).closest('li')!
-    expect(settlementItem).toHaveTextContent('精算')
-    const eventItem = (await screen.findByText('26年7月アメリカ旅行')).closest('li')!
-    expect(eventItem).toHaveTextContent('イベント')
+    const settlementRow = (await screen.findByText('26/7生活費割勘')).closest('tr')!
+    expect(settlementRow).toHaveTextContent('精算')
+    const eventRow = (await screen.findByText('26年7月アメリカ旅行')).closest('tr')!
+    expect(eventRow).toHaveTextContent('イベント')
   })
 
   it('kindを指定せず名称のみで新規プロジェクトを作成すると、既定のevent種別で作成される', async () => {
@@ -86,8 +90,8 @@ describe('ProjectManagementScreen', () => {
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '26年7月アメリカ旅行' } })
     fireEvent.click(screen.getByRole('button', { name: '作成する' }))
 
-    const item = (await screen.findByText('26年7月アメリカ旅行')).closest('li')!
-    expect(item).toHaveTextContent('イベント')
+    const row = (await screen.findByText('26年7月アメリカ旅行')).closest('tr')!
+    expect(row).toHaveTextContent('イベント')
     expect(projectRepository.findAll()).toHaveLength(1)
   })
 
@@ -100,16 +104,29 @@ describe('ProjectManagementScreen', () => {
     fireEvent.change(screen.getByLabelText('種別'), { target: { value: 'settlement' } })
     fireEvent.click(screen.getByRole('button', { name: '作成する' }))
 
-    const item = (await screen.findByText('26/7生活費割勘')).closest('li')!
-    expect(item).toHaveTextContent('精算')
+    const row = (await screen.findByText('26/7生活費割勘')).closest('tr')!
+    expect(row).toHaveTextContent('精算')
+  })
+
+  it('作成用の行は取消(キャンセル)できる', async () => {
+    renderScreen()
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'プロジェクトを追加' }))
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '書きかけの旅行' } })
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+
+    expect(screen.queryByLabelText('名称')).not.toBeInTheDocument()
+    expect(screen.queryByText('書きかけの旅行')).not.toBeInTheDocument()
+    expect(projectRepository.findAll()).toHaveLength(0)
   })
 
   it('既存プロジェクトの名称を編集できる', async () => {
     projectRepository.create({ name: '26年7月アメリカ旅行' })
     renderScreen()
 
-    const item = (await screen.findByText('26年7月アメリカ旅行')).closest('li')!
-    fireEvent.click(within(item).getByRole('button', { name: '編集' }))
+    const row = (await screen.findByText('26年7月アメリカ旅行')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: '編集' }))
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '26年7月アメリカ旅行(確定)' } })
     fireEvent.click(screen.getByRole('button', { name: '保存する' }))
 
@@ -117,22 +134,51 @@ describe('ProjectManagementScreen', () => {
     expect(screen.queryByText('26年7月アメリカ旅行')).not.toBeInTheDocument()
   })
 
-  it('編集フォームには種別(kind)の入力欄が表示されない(作成時のみ指定可能)', async () => {
+  it('編集中でも他の行は表示専用のままで入力欄を持たない', async () => {
+    projectRepository.create({ name: '26年7月アメリカ旅行' })
+    projectRepository.create({ name: '26年8月沖縄旅行' })
+    renderScreen()
+    await screen.findByText('26年7月アメリカ旅行')
+
+    const editingRow = screen.getByText('26年7月アメリカ旅行').closest('tr')!
+    fireEvent.click(within(editingRow).getByRole('button', { name: '編集' }))
+
+    expect(within(editingRow).getByLabelText('名称')).toBeInTheDocument()
+    const otherRow = screen.getByText('26年8月沖縄旅行').closest('tr')!
+    expect(within(otherRow).queryByLabelText('名称')).not.toBeInTheDocument()
+  })
+
+  it('編集中の行には種別(kind)の入力欄が表示されない(作成時のみ指定可能)', async () => {
     projectRepository.create({ name: '26/7生活費割勘', kind: 'settlement' })
     renderScreen()
 
-    const item = (await screen.findByText('26/7生活費割勘')).closest('li')!
-    fireEvent.click(within(item).getByRole('button', { name: '編集' }))
+    const row = (await screen.findByText('26/7生活費割勘')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: '編集' }))
 
     expect(screen.queryByLabelText('種別')).not.toBeInTheDocument()
+    expect(within(row).getByText('精算')).toBeInTheDocument()
+  })
+
+  it('編集を取消(キャンセル)すると変更前の名称のまま一覧表示に戻る', async () => {
+    projectRepository.create({ name: '26年7月アメリカ旅行' })
+    renderScreen()
+
+    const row = (await screen.findByText('26年7月アメリカ旅行')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: '編集' }))
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '書き換え中' } })
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+
+    expect(screen.queryByLabelText('名称')).not.toBeInTheDocument()
+    expect(screen.getByText('26年7月アメリカ旅行')).toBeInTheDocument()
+    expect(screen.queryByText('書き換え中')).not.toBeInTheDocument()
   })
 
   it('紐づく仕訳明細が0件のプロジェクトは削除できる', async () => {
     projectRepository.create({ name: '26年7月アメリカ旅行' })
     renderScreen()
 
-    const item = (await screen.findByText('26年7月アメリカ旅行')).closest('li')!
-    fireEvent.click(within(item).getByRole('button', { name: '削除' }))
+    const row = (await screen.findByText('26年7月アメリカ旅行')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: '削除' }))
 
     await waitFor(() => expect(screen.queryByText('26年7月アメリカ旅行')).not.toBeInTheDocument())
     expect(projectRepository.findAll()).toHaveLength(0)
@@ -154,12 +200,12 @@ describe('ProjectManagementScreen', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('26年7月アメリカ旅行')).closest('li')!
-    expect(within(item).queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
+    const row = (await screen.findByText('26年7月アメリカ旅行')).closest('tr')!
+    expect(within(row).queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
 
-    fireEvent.click(within(item).getByRole('button', { name: '非アクティブ化' }))
+    fireEvent.click(within(row).getByRole('button', { name: '非アクティブ化' }))
 
-    await screen.findByText('非アクティブ')
+    await waitFor(() => expect(within(row).getByRole('button', { name: 'アクティブ化' })).toBeInTheDocument())
     expect(projectRepository.findAll()[0].isActive).toBe(false)
   })
 
@@ -169,8 +215,22 @@ describe('ProjectManagementScreen', () => {
 
     renderScreen()
 
-    const item = (await screen.findByText('終了した旅行')).closest('li')!
-    expect(within(item).queryByRole('button', { name: '非アクティブ化' })).not.toBeInTheDocument()
+    const row = (await screen.findByText('終了した旅行')).closest('tr')!
+    expect(within(row).queryByRole('button', { name: '非アクティブ化' })).not.toBeInTheDocument()
+  })
+
+  it('非アクティブなプロジェクトにはアクティブ化ボタンが表示され、押すと再度アクティブになる', async () => {
+    const project = projectRepository.create({ name: '終了した旅行' })
+    projectRepository.deactivate(project.id)
+
+    renderScreen()
+
+    const row = (await screen.findByText('終了した旅行')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: 'アクティブ化' }))
+
+    await waitFor(() =>
+      expect(within(row).getByRole('button', { name: '非アクティブ化' })).toBeInTheDocument(),
+    )
   })
 
   it('戻るボタンを押すとonBackが呼ばれる', async () => {

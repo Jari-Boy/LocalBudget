@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 /**
- * 取引先管理画面(計画Issue #38)の取引先統合のコンポーネントテスト。
- * docs/domain/counterparties.md 1.5a節の通り、統合元(複数選択可)を選択し統合先を
- * 指定して実行すると、確認を経た上で仕訳明細・パターンが統合先へ付け替わり、
+ * 取引先管理画面(計画Issue #38、計画Issue #127でテーブル形式に変更)の取引先統合の
+ * コンポーネントテスト。docs/domain/counterparties.md 1.5a節の通り、統合元(複数選択可)を
+ * 選択し統合先を指定して実行すると、確認を経た上で仕訳明細・パターンが統合先へ付け替わり、
  * 統合結果(対象取引先名)が画面上に表示されることを、sql.jsのNode実装
  * (createTestDatabase)を使った統合的なレンダリングテストとして検証する。
  * 一覧の取引先名は統合先セレクトの選択肢(<option>)としても同じテキストで
- * 出現するため、一覧内の要素取得は<ul role="list">配下に絞り込んで曖昧一致を避ける。
- * 外部依存: sql.js(ネットワークアクセスなし)。
+ * 出現するため、一覧内の要素取得は<table>配下に絞り込んで曖昧一致を避ける。取引先ごとに
+ * 専用の<tbody>でグルーピングされるため、行+学習パターンパネルのスコープには
+ * `.closest('tbody')`を使う。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -53,9 +54,9 @@ function renderScreen(onBack: () => void = vi.fn()) {
   )
 }
 
-/** 一覧(<ul>)配下に絞り込んで取引先名からli要素を取得する(統合先<select>の同名<option>との曖昧一致を避ける) */
+/** 一覧(<table>)配下に絞り込んで取引先名からtbody要素を取得する(統合先<select>の同名<option>との曖昧一致を避ける) */
 function findListItem(name: string) {
-  return within(screen.getByRole('list')).getByText(name).closest('li')!
+  return within(screen.getByRole('table')).getByText(name).closest('tbody')!
 }
 
 describe('CounterpartyManagementScreen 取引先統合', () => {
@@ -65,7 +66,7 @@ describe('CounterpartyManagementScreen 取引先統合', () => {
     counterpartyRepository.create({ name: 'ローソン' })
 
     renderScreen()
-    await screen.findByRole('list')
+    await screen.findByRole('table')
 
     fireEvent.click(within(findListItem('ローソン 東京日本橋店')).getByRole('checkbox'))
     fireEvent.click(within(findListItem('ローソン 大阪梅田店')).getByRole('checkbox'))
@@ -107,7 +108,7 @@ describe('CounterpartyManagementScreen 取引先統合', () => {
     counterpartyRepository.addPattern(source.id, 'ローソン東京日本橋')
 
     renderScreen()
-    await screen.findByRole('list')
+    await screen.findByRole('table')
 
     fireEvent.click(within(findListItem('ローソン 東京日本橋店')).getByRole('checkbox'))
 
@@ -137,7 +138,7 @@ describe('CounterpartyManagementScreen 取引先統合', () => {
     counterpartyRepository.create({ name: 'ローソン' })
 
     renderScreen()
-    await screen.findByRole('list')
+    await screen.findByRole('table')
 
     fireEvent.click(within(findListItem('ローソン 東京日本橋店')).getByRole('checkbox'))
 
@@ -151,7 +152,7 @@ describe('CounterpartyManagementScreen 取引先統合', () => {
     counterpartyRepository.create({ name: 'ローソン' })
 
     renderScreen()
-    await screen.findByRole('list')
+    await screen.findByRole('table')
 
     expect(screen.getByRole('button', { name: '統合を実行' })).toBeDisabled()
   })
@@ -161,7 +162,7 @@ describe('CounterpartyManagementScreen 取引先統合', () => {
     counterpartyRepository.create({ name: 'ローソン' })
 
     renderScreen()
-    await screen.findByRole('list')
+    await screen.findByRole('table')
 
     fireEvent.click(within(findListItem('ローソン 東京日本橋店')).getByRole('checkbox'))
     fireEvent.change(screen.getByLabelText('統合先'), {
@@ -170,6 +171,6 @@ describe('CounterpartyManagementScreen 取引先統合', () => {
     fireEvent.click(screen.getByRole('button', { name: '統合を実行' }))
     fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
 
-    expect(within(screen.getByRole('list')).getByText('ローソン 東京日本橋店')).toBeInTheDocument()
+    expect(within(screen.getByRole('table')).getByText('ローソン 東京日本橋店')).toBeInTheDocument()
   })
 })

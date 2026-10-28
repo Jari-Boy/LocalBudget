@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 /**
- * 世帯メンバー管理画面(計画Issue #37)のコンポーネントテスト。
- * 登録済みメンバー(個人・グループ)の一覧表示、新規作成、既存メンバーの名称編集を、
- * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして検証する。
- * 削除・非アクティブ化はHouseholdMemberManagementScreen.deletion.test.tsx、
- * グループの所属メンバー管理・制約違反エラー表示はHouseholdMemberManagementScreen.group.test.tsxに分離する。
+ * 世帯メンバー管理画面(計画Issue #37、計画Issue #127でテーブル形式+行内インライン編集に変更)の
+ * コンポーネントテスト。登録済みメンバー(個人・グループ)の一覧表示(テーブルのthead/tbody)、
+ * 新規作成(表の最終行に追加される作成用の行から行う)、既存メンバーの名称・種別編集(行をクリックして
+ * 入る編集モードでの変更、保存/取消)を、sql.jsのNode実装(createTestDatabase)を使った統合的な
+ * レンダリングテストとして検証する。メンバーごとに専用の<tbody>でグルーピングし、グループの
+ * 所属メンバーパネルは同じ<tbody>内の追加行として展開する。削除・非アクティブ化は
+ * HouseholdMemberManagementScreen.deletion.test.tsx、グループの所属メンバー管理・制約違反
+ * エラー表示はHouseholdMemberManagementScreen.group.test.tsxに分離する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -49,21 +52,28 @@ function renderScreen(onBack: () => void = vi.fn()) {
 }
 
 describe('HouseholdMemberManagementScreen', () => {
-  it('登録済みの個人メンバーが名称とともに一覧表示される', async () => {
+  it('登録済みの個人メンバーが名称とともにテーブル(thead/tbody)で一覧表示される', async () => {
     householdMemberRepository.create({ name: '夫' })
 
     renderScreen()
 
     expect(await screen.findByText('夫')).toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '種別' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '名称' })).toBeInTheDocument()
   })
 
-  it('登録済みのグループにはグループであることを示すラベルが併記される', async () => {
+  it('種別は名称とは別の列として表示され、個人メンバーには「個人」、グループには「グループ」と表示される', async () => {
+    householdMemberRepository.create({ name: '夫' })
     householdMemberRepository.create({ name: '夫婦', isGroup: true })
 
     renderScreen()
 
-    const item = (await screen.findByText('夫婦')).closest('li')!
-    expect(item).toHaveTextContent('グループ')
+    const individualRow = (await screen.findByText('夫')).closest('tr')!
+    expect(within(individualRow).getByText('個人')).toBeInTheDocument()
+
+    const groupRow = screen.getByText('夫婦').closest('tr')!
+    expect(within(groupRow).getByText('グループ')).toBeInTheDocument()
   })
 
   it('メンバーが0件の場合はエラーにならず空状態が表示される', async () => {
@@ -95,16 +105,29 @@ describe('HouseholdMemberManagementScreen', () => {
     fireEvent.click(screen.getByLabelText('グループ'))
     fireEvent.click(screen.getByRole('button', { name: '作成する' }))
 
-    const item = (await screen.findByText('夫婦')).closest('li')!
+    const item = (await screen.findByText('夫婦')).closest('tr')!
     expect(item).toHaveTextContent('グループ')
     expect(householdMemberRepository.findAll()[0].isGroup).toBe(true)
+  })
+
+  it('作成用の行は取消(キャンセル)できる', async () => {
+    renderScreen()
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: '世帯メンバーを追加' }))
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '書きかけ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+
+    expect(screen.queryByLabelText('名称')).not.toBeInTheDocument()
+    expect(screen.queryByText('書きかけ')).not.toBeInTheDocument()
+    expect(householdMemberRepository.findAll()).toHaveLength(0)
   })
 
   it('既存メンバーの名称を編集できる', async () => {
     householdMemberRepository.create({ name: '夫' })
     renderScreen()
 
-    const item = (await screen.findByText('夫')).closest('li')!
+    const item = (await screen.findByText('夫')).closest('tr')!
     fireEvent.click(within(item).getByRole('button', { name: '編集' }))
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '夫(改名)' } })
     fireEvent.click(screen.getByRole('button', { name: '保存する' }))
@@ -113,14 +136,54 @@ describe('HouseholdMemberManagementScreen', () => {
     expect(screen.queryByText('夫', { exact: true })).not.toBeInTheDocument()
   })
 
+  it('編集中でも他の行は表示専用のままで入力欄を持たない', async () => {
+    householdMemberRepository.create({ name: '夫' })
+    householdMemberRepository.create({ name: '妻' })
+    renderScreen()
+    await screen.findByText('夫')
+
+    const editingItem = screen.getByText('夫').closest('tr')!
+    fireEvent.click(within(editingItem).getByRole('button', { name: '編集' }))
+
+    expect(within(editingItem).getByLabelText('名称')).toBeInTheDocument()
+    const otherItem = screen.getByText('妻').closest('tr')!
+    expect(within(otherItem).queryByLabelText('名称')).not.toBeInTheDocument()
+  })
+
+  it('編集を取消(キャンセル)すると変更前の値のまま一覧表示に戻る', async () => {
+    householdMemberRepository.create({ name: '夫' })
+    renderScreen()
+
+    const item = (await screen.findByText('夫')).closest('tr')!
+    fireEvent.click(within(item).getByRole('button', { name: '編集' }))
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '書き換え中' } })
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+
+    expect(screen.queryByLabelText('名称')).not.toBeInTheDocument()
+    expect(screen.getByText('夫')).toBeInTheDocument()
+    expect(screen.queryByText('書き換え中')).not.toBeInTheDocument()
+  })
+
   it('編集フォームでは種別(個人/グループ)が現在の値で選択された状態で表示される', async () => {
     householdMemberRepository.create({ name: '夫婦', isGroup: true })
     renderScreen()
 
-    const item = (await screen.findByText('夫婦')).closest('li')!
+    const item = (await screen.findByText('夫婦')).closest('tr')!
     fireEvent.click(within(item).getByRole('button', { name: '編集' }))
 
     expect(screen.getByLabelText('グループ')).toBeChecked()
+  })
+
+  it('編集行では種別(ラジオボタン)と名称(テキスト入力)が別々のセルに並び、行が1行に収まる', async () => {
+    householdMemberRepository.create({ name: '夫' })
+    renderScreen()
+
+    const item = (await screen.findByText('夫')).closest('tr')!
+    fireEvent.click(within(item).getByRole('button', { name: '編集' }))
+
+    const nameCell = screen.getByLabelText('名称').closest('td')!
+    const typeCell = screen.getByLabelText('個人').closest('td')!
+    expect(nameCell).not.toBe(typeCell)
   })
 
   it('戻るボタンを押すとonBackが呼ばれる', async () => {

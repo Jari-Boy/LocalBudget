@@ -58,8 +58,11 @@ type FormMode = 'create' | number | null
 /**
  * 一括割り当てパネルの対象科目の判定(ユーザー指摘への対応)。他グループに属する科目を
  * この画面から選んでこのグループへ"奪う"ことはできないよう、未分類の科目とこのグループに
- * 既に属する科目のみを対象とする。他グループへの再分類は科目側(AccountListScreen)の
- * 編集フォームから行う。is_system_managed科目は常に対象外。
+ * 既に属する科目のみを対象とする。他グループへ付け替えるには、まず現在のグループの
+ * パネルで対象科目を外して未分類に戻し、次に目的のグループのパネルで割り当てる
+ * (計画Issue #127でAccountListScreenの編集フォームからグループ選択欄を削除したため、
+ * 直接の付け替え経路は現状ない。ドラッグ&ドロップ等によるグループ管理画面自体の
+ * 刷新は別途検討課題)。is_system_managed科目は常に対象外。
  */
 function isEligibleForAssignmentPanel(account: Account, groupId: number): boolean {
   if (account.isSystemManaged) return false
@@ -82,8 +85,10 @@ function isEligibleForAssignmentPanel(account: Account, groupId: number): boolea
  * まとめてこのグループへ割り当てる(または外して未分類に戻す)ことができる
  * (グループ側からの一括割り当て、ユーザー指摘への対応)。他グループに属する科目は
  * この画面からは選択肢に表示されず、この画面から他グループの科目を"奪う"操作はできない
- * (isEligibleForAssignmentPanel参照、ユーザー指摘への対応)。他グループへの再分類は
- * 科目側(AccountListScreen)の編集フォームから行う。is_system_managed科目は常に対象外。
+ * (isEligibleForAssignmentPanel参照、ユーザー指摘への対応)。そのため他グループへの
+ * 付け替えは、現在のグループのパネルで未分類に戻してから目的のグループのパネルで
+ * 割り当てる2段階操作になる(計画Issue #127でAccountListScreen側の編集フォームから
+ * グループ選択欄を削除したため)。is_system_managed科目は常に対象外。
  * 新規作成フォームには「既存のグループを子にする」チェックボックス一覧(既存の最上位・
  * アクティブなグループのみ候補)も表示し、親グループ選択と同時に子グループの一括指定も
  * できる(ユーザー指摘への対応)。候補・送信対象は選択中の親グループの祖先(または親自身)を

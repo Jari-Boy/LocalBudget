@@ -59,6 +59,11 @@ export class SqlJsProjectRepository implements ProjectRepository {
     this.db.run('UPDATE projects SET is_active = 0 WHERE id = ?', [id])
     return this.findById(id)!
   }
+
+  activate(id: number): Project {
+    this.db.run('UPDATE projects SET is_active = 1 WHERE id = ?', [id])
+    return this.findById(id)!
+  }
 }
 
 function sqlToBool(value: number): boolean {

@@ -74,6 +74,11 @@ export class SqlJsHouseholdMemberRepository implements HouseholdMemberRepository
     return this.findById(id)!
   }
 
+  activate(id: number): HouseholdMember {
+    this.db.run('UPDATE household_members SET is_active = 1 WHERE id = ?', [id])
+    return this.findById(id)!
+  }
+
   addGroupMember(groupId: number, memberId: number): void {
     this.db.run(
       'INSERT INTO household_member_group_memberships (group_id, member_id) VALUES (?, ?)',

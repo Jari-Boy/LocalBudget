@@ -14,4 +14,5 @@ export interface AccountRepository {
   update(id: number, input: UpdateAccountInput): Account
   delete(id: number): void
   deactivate(id: number): Account
+  activate(id: number): Account
 }

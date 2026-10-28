@@ -147,6 +147,25 @@ describe('deactivate', () => {
   })
 })
 
+describe('activate', () => {
+  it('非アクティブなメンバーを再度アクティブにする', () => {
+    const created = repository.create({ name: '引っ越したメンバー' })
+    repository.deactivate(created.id)
+
+    const activated = repository.activate(created.id)
+
+    expect(activated.isActive).toBe(true)
+  })
+
+  it('is_activeの値によらずメンバーをアクティブにできる', () => {
+    const created = repository.create({ name: 'もともとアクティブなメンバー' })
+
+    const activated = repository.activate(created.id)
+
+    expect(activated.isActive).toBe(true)
+  })
+})
+
 function lastInsertRowId(database: Database): number {
   return database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
 }

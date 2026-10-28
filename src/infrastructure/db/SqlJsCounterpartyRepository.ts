@@ -65,6 +65,11 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
     return this.findById(id)!
   }
 
+  activate(id: number): Counterparty {
+    this.db.run('UPDATE counterparties SET is_active = 1 WHERE id = ?', [id])
+    return this.findById(id)!
+  }
+
   addPattern(counterpartyId: number, pattern: string): CounterpartyPattern {
     this.db.run('INSERT INTO counterparty_patterns (counterparty_id, pattern) VALUES (?, ?)', [
       counterpartyId,

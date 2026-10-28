@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 /**
- * 世帯メンバー管理画面(計画Issue #37)の削除・非アクティブ化のコンポーネントテスト。
- * docs/domain/household-members.md 1.3節の通り、口座(accounts.household_member_id)・
- * 仕訳明細(journal_lines.household_member_id)いずれにも紐づかないメンバーは物理削除、
- * 一方でも紐づく場合は非アクティブ化のみ可能であることを、sql.jsのNode実装
- * (createTestDatabase)を使った統合的なレンダリングテストとして検証する。
+ * 世帯メンバー管理画面(計画Issue #37、計画Issue #127でテーブル形式に変更)の削除・非アクティブ化の
+ * コンポーネントテスト。docs/domain/household-members.md 1.3節の通り、口座
+ * (accounts.household_member_id)・仕訳明細(journal_lines.household_member_id)いずれにも
+ * 紐づかないメンバーは物理削除、一方でも紐づく場合は非アクティブ化のみ可能であることを、
+ * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -54,7 +54,7 @@ describe('HouseholdMemberManagementScreen 削除・非アクティブ化', () =>
 
     renderScreen()
 
-    const item = (await screen.findByText('夫')).closest('li')!
+    const item = (await screen.findByText('夫')).closest('tr')!
     fireEvent.click(within(item).getByRole('button', { name: '削除' }))
 
     expect(await screen.findByText('登録済みの世帯メンバーがいません')).toBeInTheDocument()
@@ -67,7 +67,7 @@ describe('HouseholdMemberManagementScreen 削除・非アクティブ化', () =>
 
     renderScreen()
 
-    const item = (await screen.findByText('夫')).closest('li')!
+    const item = (await screen.findByText('夫')).closest('tr')!
     expect(within(item).queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
     expect(within(item).getByRole('button', { name: '非アクティブ化' })).toBeInTheDocument()
   })
@@ -87,7 +87,7 @@ describe('HouseholdMemberManagementScreen 削除・非アクティブ化', () =>
 
     renderScreen()
 
-    const item = (await screen.findByText('妻')).closest('li')!
+    const item = (await screen.findByText('妻')).closest('tr')!
     expect(within(item).queryByRole('button', { name: '削除' })).not.toBeInTheDocument()
   })
 
@@ -96,11 +96,11 @@ describe('HouseholdMemberManagementScreen 削除・非アクティブ化', () =>
 
     renderScreen()
 
-    const item = (await screen.findByText('夫')).closest('li')!
+    const item = (await screen.findByText('夫')).closest('tr')!
     fireEvent.click(within(item).getByRole('button', { name: '非アクティブ化' }))
 
-    const updatedItem = (await screen.findByText('夫')).closest('li')!
-    expect(updatedItem).toHaveTextContent('非アクティブ')
+    const updatedItem = (await screen.findByText('夫')).closest('tr')!
+    expect(within(updatedItem).getByRole('button', { name: 'アクティブ化' })).toBeInTheDocument()
   })
 
   it('既に非アクティブ化されたメンバーには非アクティブ化ボタンが表示されない', async () => {
@@ -109,7 +109,21 @@ describe('HouseholdMemberManagementScreen 削除・非アクティブ化', () =>
 
     renderScreen()
 
-    const item = (await screen.findByText('夫')).closest('li')!
+    const item = (await screen.findByText('夫')).closest('tr')!
     expect(within(item).queryByRole('button', { name: '非アクティブ化' })).not.toBeInTheDocument()
+  })
+
+  it('非アクティブなメンバーにはアクティブ化ボタンが表示され、押すと再度アクティブになる', async () => {
+    const member = householdMemberRepository.create({ name: '夫' })
+    householdMemberRepository.deactivate(member.id)
+
+    renderScreen()
+
+    const item = (await screen.findByText('夫')).closest('tr')!
+    fireEvent.click(within(item).getByRole('button', { name: 'アクティブ化' }))
+
+    await waitFor(() =>
+      expect(within(item).getByRole('button', { name: '非アクティブ化' })).toBeInTheDocument(),
+    )
   })
 })

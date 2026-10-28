@@ -1,59 +1,47 @@
 .household-member-management-screen {
-  max-width: 480px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 1rem;
 }
 
-.household-member-management-screen ul {
-  list-style: none;
+.household-member-management-screen table {
+  width: 100%;
+  border-collapse: collapse;
   margin: 0 0 1rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
 }
 
-.household-member-management-screen li {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 8px 12px;
-  border-radius: 5px;
+.household-member-management-screen th,
+.household-member-management-screen td {
   border: 1px solid var(--border);
-  background: var(--bg);
+  padding: 8px 12px;
+  text-align: left;
+  color: var(--text-h);
+  vertical-align: top;
+  white-space: nowrap;
 }
 
-.household-member-management-screen .household-member-list-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.75rem;
+.household-member-management-screen th {
+  font-size: 13px;
+  color: var(--text);
 }
 
 .household-member-management-screen .household-member-list-name {
   color: var(--text-h);
 }
 
-.household-member-management-screen .household-member-list-type,
-.household-member-management-screen .household-member-list-inactive {
-  margin-left: 0.5em;
-  font-size: 12px;
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 6px;
-}
-
 .household-member-management-screen .household-member-list-actions {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
+.household-member-management-screen .household-member-panel-row td {
+  background: var(--code-bg);
+  white-space: normal;
+}
+
 .household-member-management-screen .household-member-group-panel {
-  padding: 8px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -92,35 +80,18 @@
 
 .household-member-management-screen .household-member-group-add-row select {
   flex: 1;
-  padding: 8px 12px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text-h);
-  font: inherit;
-  box-sizing: border-box;
 }
 
-.household-member-management-screen .household-member-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.household-member-management-screen .household-member-form label {
-  display: block;
-}
-
-.household-member-management-screen .household-member-form input[type='text'] {
+.household-member-management-screen input[type='text'] {
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 8px;
   border-radius: 5px;
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text-h);
   font: inherit;
   box-sizing: border-box;
+  margin-bottom: 0.5rem;
 
   &:focus-visible {
     outline: 2px solid var(--accent);
@@ -129,26 +100,34 @@
   }
 }
 
-.household-member-management-screen .household-member-type-fieldset {
+.household-member-management-screen select {
+  padding: 6px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.household-member-management-screen .household-member-type-options {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 1rem;
-  padding: 8px 12px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
+  gap: 0.75rem;
 }
 
-.household-member-management-screen .household-member-type-fieldset label {
+.household-member-management-screen .household-member-type-options label {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
 }
 
-.household-member-management-screen .household-member-form-actions {
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
+.household-member-management-screen [role='alert'] {
+  padding: 8px 12px;
+  border-radius: 5px;
+  background: var(--error-bg);
+  color: var(--error);
 }
 
 .household-member-management-screen button {
@@ -172,4 +151,40 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
+}
+
+.household-member-management-screen .row-icon-actions {
+  display: inline-grid;
+  grid-template-columns: repeat(3, 32px);
+  gap: 6px;
+  vertical-align: middle;
+}
+
+.household-member-management-screen .icon-action-placeholder {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+}
+
+.household-member-management-screen button.icon-action-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid transparent;
+
+  &:hover:not(:disabled) {
+    background: var(--code-bg);
+    border-color: var(--border);
+  }
+}
+
+.household-member-management-screen button.icon-action-danger:hover:not(:disabled) {
+  background: var(--error-bg);
+  border-color: var(--error);
+  color: var(--error);
 }

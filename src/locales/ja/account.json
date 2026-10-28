@@ -36,18 +36,18 @@
   "listCategoryExpense": "費用",
   "categoryRevenue": "収益",
   "categoryExpense": "費用",
+  "categoryColumnLabel": "区分",
   "memberSelectLabel": "名義",
   "memberUnspecified": "全員",
-  "groupSelectLabel": "グループ",
-  "groupUnspecified": "未分類",
   "nameEditLabel": "名称",
   "editButton": "編集",
   "deleteButton": "削除",
   "deactivateButton": "非アクティブ化",
-  "inactiveLabel": "非アクティブ",
+  "activateButton": "アクティブ化",
   "saveSubmit": "保存する",
   "cancel": "キャンセル",
   "saveError": "保存に失敗しました。もう一度お試しください。",
   "deleteError": "削除に失敗しました。もう一度お試しください。",
-  "deactivateError": "非アクティブ化に失敗しました。もう一度お試しください。"
+  "deactivateError": "非アクティブ化に失敗しました。もう一度お試しください。",
+  "activateError": "アクティブ化に失敗しました。もう一度お試しください。"
 }

@@ -1,14 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account, AccountCategory } from '../../domain/account/Account'
-import type { AccountGroup } from '../../domain/account-group/AccountGroup'
-import { buildAccountGroupPathLabels } from '../../domain/account-group/buildAccountGroupPathLabels'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { Budget } from '../../domain/budget/Budget'
 import type { RecurringTransactionRule } from '../../domain/recurring-transaction/RecurringTransactionRule'
-import { listAccountBalances, type AccountBalance } from '../../domain/financial-statement/listAccountBalances'
-import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
+import { EditIcon, EyeIcon, EyeOffIcon, TrashIcon } from '../icons/ActionIcons'
 import './AccountListScreen.css'
 
 interface AccountFinder {
@@ -16,10 +13,7 @@ interface AccountFinder {
 }
 
 interface AccountUpdater {
-  update(
-    id: number,
-    input: { name?: string; householdMemberId?: number | null; accountGroupId?: number | null },
-  ): Account | Promise<Account>
+  update(id: number, input: { name?: string; householdMemberId?: number | null }): Account | Promise<Account>
 }
 
 interface AccountDeleter {
@@ -30,16 +24,16 @@ interface AccountDeactivator {
   deactivate(id: number): Account | Promise<Account>
 }
 
+interface AccountActivator {
+  activate(id: number): Account | Promise<Account>
+}
+
 interface JournalEntryFinder {
   findAll(): JournalEntry[] | Promise<JournalEntry[]>
 }
 
 interface HouseholdMemberFinder {
   findAll(): HouseholdMember[] | Promise<HouseholdMember[]>
-}
-
-interface AccountGroupFinder {
-  findAll(): AccountGroup[] | Promise<AccountGroup[]>
 }
 
 interface BudgetFinder {
@@ -61,8 +55,7 @@ const CATEGORY_LABEL_KEY: Record<AccountCategory, string> = {
 }
 
 export interface AccountListScreenProps {
-  accountRepository: AccountFinder & AccountUpdater & AccountDeleter & AccountDeactivator
-  accountGroupRepository: AccountGroupFinder
+  accountRepository: AccountFinder & AccountUpdater & AccountDeleter & AccountDeactivator & AccountActivator
   journalEntryRepository: JournalEntryFinder
   householdMemberRepository: HouseholdMemberFinder
   budgetRepository: BudgetFinder
@@ -72,10 +65,8 @@ export interface AccountListScreenProps {
 
 interface LoadedData {
   accounts: Account[]
-  balanceByAccountId: Map<number, AccountBalance>
   householdMembers: HouseholdMember[]
   householdMemberNameById: Map<number, string>
-  accountGroups: AccountGroup[]
   /** 仕訳・予算・定期取引ルールのいずれかが紐づく科目id(docs/schema/accounts.sqlの
    * prevent_delete_account_with_referencesトリガーと同じ3種の参照を集計する) */
   accountIdsWithReference: Set<number>
@@ -86,18 +77,22 @@ type FormMode = number | null
 
 /**
  * 登録済み科目一覧・管理画面(計画Issue #70で新設、計画Issue #95で編集・削除・
- * 非アクティブ化を追加)。isSystemManaged科目(初期残高科目等の内部管理用科目)を除いた
- * 登録済み全科目を、区分を問わずフラットな一覧として名称・残高とともに表示する。
- * householdMemberIdが設定された科目には世帯メンバー名を併記する。並び順は
- * AccountRepository.findAll()の返り順(登録順)をそのまま使い、UI層での独自ソートは行わない。
- * 各行から名称・名義・グループ(計画Issue #112、account_group_id)の編集ができ、紐づく
- * 仕訳・予算・定期取引ルールがいずれも0件の科目のみ削除ボタンを表示する
+ * 非アクティブ化を追加、計画Issue #127でテーブル形式+行内インライン編集に変更)。
+ * isSystemManaged科目(初期残高科目等の内部管理用科目)を除いた登録済み全科目を、
+ * テーブル(thead/tbody)の1行として区分・名称・名義とともに表示する(区分変更不可のため
+ * 編集行でも表示専用)。グループ割り当ては専用のグループ管理画面
+ * (AccountGroupManagementScreen、計画Issue #112)の一括割り当てパネルに委ね、残高は
+ * 財務諸表画面に委ねることで、この一覧は一覧性を優先したシンプルな構成に留める
+ * (ユーザーレビューでの指摘対応、計画Issue #127)。is_active状態はタグではなく行内の
+ * 目/目にスラッシュアイコンのみで表現する(同アイコンが状態の可視化と非アクティブ化/
+ * アクティブ化操作を兼ねる)。並び順はAccountRepository.findAll()の返り順(登録順)を
+ * そのまま使い、UI層での独自ソートは行わない。各行の「編集」ボタンでその行だけ名称・
+ * 名義の入力欄に切り替わり、「保存する」/「キャンセル」で確定・破棄する(常時全行編集可能
+ * にはしない)。紐づく仕訳・予算・定期取引ルールがいずれも0件の科目のみ削除ボタンを表示する
  * (docs/schema/accounts.sqlのprevent_delete_account_with_referencesトリガーが最終防御線)。
- * is_active = trueの科目には非アクティブ化ボタンを表示する。
  */
 export function AccountListScreen({
   accountRepository,
-  accountGroupRepository,
   journalEntryRepository,
   householdMemberRepository,
   budgetRepository,
@@ -110,9 +105,8 @@ export function AccountListScreen({
   const [formMode, setFormMode] = useState<FormMode>(null)
   const [nameInput, setNameInput] = useState('')
   const [householdMemberIdInput, setHouseholdMemberIdInput] = useState<number | null>(null)
-  const [accountGroupIdInput, setAccountGroupIdInput] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-  /** 編集・削除・非アクティブ化のいずれか進行中は全操作ボタンを無効化する(連打による二重実行防止) */
+  /** 編集・削除・非アクティブ化・アクティブ化のいずれか進行中は全操作ボタンを無効化する(連打による二重実行防止) */
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const load = () => {
@@ -122,8 +116,7 @@ export function AccountListScreen({
       Promise.resolve(householdMemberRepository.findAll()),
       Promise.resolve(budgetRepository.findAll()),
       Promise.resolve(recurringTransactionRuleRepository.findAll()),
-      Promise.resolve(accountGroupRepository.findAll()),
-    ]).then(([accounts, entries, householdMembers, budgets, recurringRules, accountGroups]) => {
+    ]).then(([accounts, entries, householdMembers, budgets, recurringRules]) => {
       const visibleAccounts = accounts.filter((account) => !account.isSystemManaged)
       const accountIdsWithReference = new Set<number>()
       for (const entry of entries) {
@@ -141,12 +134,8 @@ export function AccountListScreen({
 
       setData({
         accounts: visibleAccounts,
-        balanceByAccountId: new Map(
-          listAccountBalances(entries, visibleAccounts).map((balance) => [balance.accountId, balance]),
-        ),
         householdMembers,
         householdMemberNameById: new Map(householdMembers.map((member) => [member.id, member.name])),
-        accountGroups,
         accountIdsWithReference,
       })
     })
@@ -155,14 +144,7 @@ export function AccountListScreen({
   useEffect(
     load,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      accountRepository,
-      accountGroupRepository,
-      journalEntryRepository,
-      householdMemberRepository,
-      budgetRepository,
-      recurringTransactionRuleRepository,
-    ],
+    [accountRepository, journalEntryRepository, householdMemberRepository, budgetRepository, recurringTransactionRuleRepository],
   )
 
   if (data === null) {
@@ -172,7 +154,6 @@ export function AccountListScreen({
   const openEditForm = (account: Account) => {
     setNameInput(account.name)
     setHouseholdMemberIdInput(account.householdMemberId)
-    setAccountGroupIdInput(account.accountGroupId)
     setError(null)
     setFormMode(account.id)
   }
@@ -194,7 +175,6 @@ export function AccountListScreen({
         accountRepository.update(formMode, {
           name: nameInput,
           householdMemberId: householdMemberIdInput,
-          accountGroupId: accountGroupIdInput,
         }),
       )
       .then(() => {
@@ -227,7 +207,16 @@ export function AccountListScreen({
       .finally(() => setIsSubmitting(false))
   }
 
-  const groupPathLabelByGroupId = buildAccountGroupPathLabels(data.accountGroups)
+  const activateAccount = (id: number) => {
+    if (isSubmitting) return
+    setIsSubmitting(true)
+    setError(null)
+    void Promise.resolve()
+      .then(() => accountRepository.activate(id))
+      .then(load)
+      .catch(() => setError(t('activateError')))
+      .finally(() => setIsSubmitting(false))
+  }
 
   return (
     <div className="account-list-screen">
@@ -238,116 +227,137 @@ export function AccountListScreen({
       {data.accounts.length === 0 ? (
         <p>{t('accountListEmpty')}</p>
       ) : (
-        <ul>
-          {data.accounts.map((account) => {
-            const balance = data.balanceByAccountId.get(account.id)
-            const canDelete = !data.accountIdsWithReference.has(account.id)
-            return (
-              <li key={account.id}>
-                <div className="account-list-row">
-                  <span className="account-list-name">
-                    {account.name}
-                    <span className="account-list-category">{t(CATEGORY_LABEL_KEY[account.category])}</span>
-                    {!account.isActive && (
-                      <span className="account-list-inactive">{t('inactiveLabel')}</span>
-                    )}
-                  </span>
-                  <span className="account-list-amount">{formatCurrency(balance?.amount ?? 0, 'JPY')}</span>
-                </div>
-                <div className="account-list-row">
-                  <span className="account-list-member">
-                    {t('memberSelectLabel')}:{' '}
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">{t('categoryColumnLabel')}</th>
+              <th scope="col">{t('nameEditLabel')}</th>
+              <th scope="col">{t('memberSelectLabel')}</th>
+              <th scope="col"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.accounts.map((account) => {
+              const canDelete = !data.accountIdsWithReference.has(account.id)
+              const isEditing = formMode === account.id
+              const categoryLabel = t(CATEGORY_LABEL_KEY[account.category])
+
+              if (isEditing) {
+                return (
+                  <tr key={account.id}>
+                    <td>{categoryLabel}</td>
+                    <td>
+                      <input
+                        aria-label={t('nameEditLabel')}
+                        type="text"
+                        value={nameInput}
+                        onChange={(event) => setNameInput(event.target.value)}
+                      />
+                    </td>
+                    <td>
+                      <select
+                        aria-label={t('memberSelectLabel')}
+                        value={householdMemberIdInput ?? ''}
+                        onChange={(event) =>
+                          setHouseholdMemberIdInput(
+                            event.target.value === '' ? null : Number(event.target.value),
+                          )
+                        }
+                      >
+                        <option value="">{t('memberUnspecified')}</option>
+                        {data.householdMembers
+                          .filter((member) => member.isActive || member.id === householdMemberIdInput)
+                          .map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.name}
+                            </option>
+                          ))}
+                      </select>
+                    </td>
+                    <td className="account-list-actions">
+                      <button
+                        type="button"
+                        onClick={submitEdit}
+                        disabled={nameInput.trim() === '' || isSubmitting}
+                      >
+                        {t('saveSubmit')}
+                      </button>
+                      <button type="button" onClick={closeForm} disabled={isSubmitting}>
+                        {t('cancel')}
+                      </button>
+                    </td>
+                  </tr>
+                )
+              }
+
+              return (
+                <tr key={account.id}>
+                  <td>{categoryLabel}</td>
+                  <td>{account.name}</td>
+                  <td>
                     {account.householdMemberId !== null
                       ? data.householdMemberNameById.get(account.householdMemberId)
                       : t('memberUnspecified')}
-                  </span>
-                  <span className="account-list-actions">
-                    <button type="button" onClick={() => openEditForm(account)} disabled={isSubmitting}>
-                      {t('editButton')}
-                    </button>
-                    {canDelete && (
+                  </td>
+                  <td>
+                    <span className="row-icon-actions">
                       <button
                         type="button"
-                        data-action="delete"
-                        onClick={() => deleteAccount(account.id)}
+                        className="icon-action-button"
+                        title={t('editButton')}
+                        aria-label={t('editButton')}
+                        onClick={() => openEditForm(account)}
                         disabled={isSubmitting}
                       >
-                        {t('deleteButton')}
+                        <EditIcon />
                       </button>
-                    )}
-                    {account.isActive && (
-                      <button
-                        type="button"
-                        data-action="deactivate"
-                        onClick={() => deactivateAccount(account.id)}
-                        disabled={isSubmitting}
-                      >
-                        {t('deactivateButton')}
-                      </button>
-                    )}
-                  </span>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-
-      {formMode !== null && (
-        <div className="account-edit-form">
-          <label htmlFor="account-edit-name">{t('nameEditLabel')}</label>
-          <input
-            id="account-edit-name"
-            type="text"
-            value={nameInput}
-            onChange={(event) => setNameInput(event.target.value)}
-          />
-
-          <label htmlFor="account-edit-member">{t('memberSelectLabel')}</label>
-          <select
-            id="account-edit-member"
-            value={householdMemberIdInput ?? ''}
-            onChange={(event) =>
-              setHouseholdMemberIdInput(event.target.value === '' ? null : Number(event.target.value))
-            }
-          >
-            <option value="">{t('memberUnspecified')}</option>
-            {data.householdMembers
-              .filter((member) => member.isActive || member.id === householdMemberIdInput)
-              .map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-          </select>
-
-          <label htmlFor="account-edit-group">{t('groupSelectLabel')}</label>
-          <select
-            id="account-edit-group"
-            value={accountGroupIdInput ?? ''}
-            onChange={(event) =>
-              setAccountGroupIdInput(event.target.value === '' ? null : Number(event.target.value))
-            }
-          >
-            <option value="">{t('groupUnspecified')}</option>
-            {data.accountGroups
-              .filter((group) => group.isActive || group.id === accountGroupIdInput)
-              .map((group) => (
-                <option key={group.id} value={group.id}>
-                  {groupPathLabelByGroupId.get(group.id) ?? group.name}
-                </option>
-              ))}
-          </select>
-
-          <div className="account-edit-form-actions">
-            <button type="button" onClick={submitEdit} disabled={nameInput.trim() === '' || isSubmitting}>
-              {t('saveSubmit')}
-            </button>
-            <button type="button" onClick={closeForm} disabled={isSubmitting}>
-              {t('cancel')}
-            </button>
-          </div>
-        </div>
+                      {canDelete ? (
+                        <button
+                          type="button"
+                          className="icon-action-button icon-action-danger"
+                          title={t('deleteButton')}
+                          aria-label={t('deleteButton')}
+                          data-action="delete"
+                          onClick={() => deleteAccount(account.id)}
+                          disabled={isSubmitting}
+                        >
+                          <TrashIcon />
+                        </button>
+                      ) : (
+                        <span className="icon-action-placeholder" aria-hidden="true" />
+                      )}
+                      {account.isActive ? (
+                        <button
+                          type="button"
+                          className="icon-action-button"
+                          title={t('deactivateButton')}
+                          aria-label={t('deactivateButton')}
+                          data-action="deactivate"
+                          onClick={() => deactivateAccount(account.id)}
+                          disabled={isSubmitting}
+                        >
+                          <EyeIcon />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="icon-action-button"
+                          title={t('activateButton')}
+                          aria-label={t('activateButton')}
+                          data-action="activate"
+                          onClick={() => activateAccount(account.id)}
+                          disabled={isSubmitting}
+                        >
+                          <EyeOffIcon />
+                        </button>
+                      )}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       )}
 
       <button type="button" onClick={onBack} disabled={isSubmitting}>
