@@ -2,7 +2,8 @@
  * 仕訳入力フォームの1行分の入力状態(JournalEntryFormLine)を扱う純粋関数群
  * (計画Issue #32)のユニットテスト。フォーム行↔下書き行(JournalEntryDraftLineInput)・
  * 確定送信用の行(JournalLineInput)相互の変換と、取引先入力欄をPL科目行にのみ
- * 表示するための科目区分判定を検証する。外部依存なし。
+ * 表示するための科目区分判定、確定済み明細のid(lineId)を保持して差分更新に引き渡す変換
+ * (計画Issue #132)を検証する。外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import type { JournalEntryDraftLine } from '../../domain/journal/JournalEntryDraft'
@@ -243,6 +244,7 @@ describe('fromJournalLine', () => {
       createdAt: '2026-08-11T00:00:00.000Z',
     }
     expect(fromJournalLine(line)).toEqual({
+      lineId: 10,
       accountId: 1,
       side: 'debit',
       amountInput: '7000',
@@ -250,6 +252,71 @@ describe('fromJournalLine', () => {
       householdMemberId: 3,
       counterpartyId: 4,
     })
+  })
+
+  it('確定済み明細のidをlineIdとして保持する(行idによる差分更新のため、計画Issue #132)', () => {
+    const line: JournalLine = {
+      id: 42,
+      journalEntryId: 1,
+      accountId: 1,
+      projectId: null,
+      householdMemberId: null,
+      counterpartyId: null,
+      side: 'credit',
+      amount: 100,
+      createdAt: '2026-08-11T00:00:00.000Z',
+    }
+    expect(fromJournalLine(line).lineId).toBe(42)
+  })
+})
+
+describe('行id(lineId)の保持(計画Issue #132)', () => {
+  const completeLine = {
+    accountId: 1,
+    side: 'debit' as const,
+    amountInput: '3000',
+    projectId: null,
+    householdMemberId: null,
+    counterpartyId: null,
+  }
+
+  it('lineIdを持つ行はtoJournalLineInputでidとして送信用の行に引き継がれる', () => {
+    expect(toJournalLineInput({ ...completeLine, lineId: 7 })).toEqual({
+      id: 7,
+      accountId: 1,
+      side: 'debit',
+      amount: 3000,
+      projectId: null,
+      householdMemberId: null,
+      counterpartyId: null,
+    })
+  })
+
+  it('lineIdを持たない新規行はtoJournalLineInputでid未指定のまま変換される(INSERT扱いになる)', () => {
+    expect(toJournalLineInput(completeLine)).not.toHaveProperty('id')
+  })
+
+  it('下書き保存用の変換ではlineIdを持ち込まない(下書きは新規仕訳専用で、確定済みの明細を参照しないため)', () => {
+    expect(toJournalEntryDraftLineInput({ ...completeLine, lineId: 7 })).not.toHaveProperty('lineId')
+  })
+
+  it('下書き行から復元したフォーム行はlineIdを持たない(新規行として扱う)', () => {
+    const draftLine: JournalEntryDraftLine = {
+      id: 10,
+      journalEntryDraftId: 1,
+      accountId: 1,
+      projectId: null,
+      householdMemberId: null,
+      counterpartyId: null,
+      side: 'debit',
+      amount: 7000,
+      createdAt: '2026-08-11T00:00:00.000Z',
+    }
+    expect(fromJournalEntryDraftLine(draftLine).lineId).toBeUndefined()
+  })
+
+  it('空行の初期状態はlineIdを持たない', () => {
+    expect(createEmptyJournalEntryFormLine().lineId).toBeUndefined()
   })
 })
 

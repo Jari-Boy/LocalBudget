@@ -178,6 +178,85 @@ describe('JournalEntryDetailScreen', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('金額・摘要を編集して更新しても、既存の明細行のidは維持される(行単位リンクを保つため、計画Issue #132)', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '更新前',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 3000 },
+        { accountId: cash.id, side: 'credit', amount: 3000 },
+      ],
+    })
+    const originalLineIds = entry.lines.map((line) => line.id)
+    // 更新対象の明細が採番の末尾だと、全削除→再挿入でも偶然同じidが再利用されてしまうため、
+    // 後続の仕訳を作っておく(SqlJsJournalEntryRepository.test.tsのcreateLaterEntry参照)
+    journalEntryRepository.create({
+      entryDate: '2026-12-31',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1 },
+        { accountId: cash.id, side: 'credit', amount: 1 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const creditCard = getCards(await findBlock('貸方'))[0]
+
+    fireEvent.change(screen.getByLabelText('摘要(任意)'), { target: { value: '更新後' } })
+    fireEvent.change(within(debitCard).getByLabelText('金額'), { target: { value: '5000' } })
+    fireEvent.change(within(creditCard).getByLabelText('金額'), { target: { value: '5000' } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+
+    await waitFor(() => {
+      expect(journalEntryRepository.findById(entry.id)?.memo).toBe('更新後')
+    })
+    expect(journalEntryRepository.findById(entry.id)?.lines.map((line) => line.id)).toEqual(originalLineIds)
+  })
+
+  it('更新を2回続けて行っても、最初の更新後に読み込んだ行idで差分更新できる', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '1回目前',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 3000 },
+        { accountId: cash.id, side: 'credit', amount: 3000 },
+      ],
+    })
+    const originalLineIds = entry.lines.map((line) => line.id)
+    // 更新対象の明細が採番の末尾だと、全削除→再挿入でも偶然同じidが再利用されてしまうため、
+    // 後続の仕訳を作っておく(SqlJsJournalEntryRepository.test.tsのcreateLaterEntry参照)
+    journalEntryRepository.create({
+      entryDate: '2026-12-31',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1 },
+        { accountId: cash.id, side: 'credit', amount: 1 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    await findBlock('借方')
+
+    fireEvent.change(screen.getByLabelText('摘要(任意)'), { target: { value: '1回目' } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+    await waitFor(() => expect(journalEntryRepository.findById(entry.id)?.memo).toBe('1回目'))
+
+    fireEvent.change(screen.getByLabelText('摘要(任意)'), { target: { value: '2回目' } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+    await waitFor(() => expect(journalEntryRepository.findById(entry.id)?.memo).toBe('2回目'))
+
+    expect(journalEntryRepository.findById(entry.id)?.lines.map((line) => line.id)).toEqual(originalLineIds)
+  })
+
   it('貸借が不一致になる編集をして更新すると、エラーメッセージが表示され入力内容は保持されDBも更新されない', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })

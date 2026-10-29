@@ -45,6 +45,12 @@ export interface JournalEntry {
 }
 
 export interface JournalLineInput {
+  /**
+   * 既存の明細行のid(計画Issue #132)。JournalEntryRepository.updateに渡した場合のみ意味を持ち、
+   * 指定された行は同じidのままUPDATEされる(行に紐づくjournal_entry_linksも維持される)。
+   * 未指定の行は新規INSERT、入力から消えた既存行はDELETEされる。createでは無視される。
+   */
+  id?: number
   accountId: number
   projectId?: number | null
   householdMemberId?: number | null

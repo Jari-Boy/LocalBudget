@@ -126,6 +126,7 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
       throw new Error(`journal entry not found: ${id}`)
     }
     this.assertNoRestrictedAccountPosting(input.lines, current.sourceType)
+    assertLineIdsBelongToEntry(input.lines, current)
 
     this.db.run('BEGIN')
     try {
@@ -134,8 +135,7 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
         input.memo ?? null,
         id,
       ])
-      this.db.run('DELETE FROM journal_lines WHERE journal_entry_id = ?', [id])
-      insertLines(this.db, id, input.lines)
+      applyLineDiff(this.db, current, input.lines)
       this.db.run('COMMIT')
       return this.findById(id)!
     } catch (error) {
@@ -282,18 +282,78 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
 
 function insertLines(db: Database, entryId: number, lines: readonly JournalLineInput[]): void {
   for (const line of lines) {
+    insertLine(db, entryId, line)
+  }
+}
+
+function insertLine(db: Database, entryId: number, line: JournalLineInput): void {
+  db.run(
+    `INSERT INTO journal_lines
+      (journal_entry_id, account_id, project_id, household_member_id, counterparty_id, side, amount)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      entryId,
+      line.accountId,
+      line.projectId ?? null,
+      line.householdMemberId ?? null,
+      line.counterpartyId ?? null,
+      line.side,
+      line.amount,
+    ],
+  )
+}
+
+/**
+ * updateに渡された行idが、更新対象の仕訳自身の明細に属し、かつ重複していないことを確認する
+ * (計画Issue #132)。他の仕訳の明細idを指定すると、その仕訳の明細を意図せず書き換えて
+ * しまうため、書き込み前に拒否する。
+ */
+function assertLineIdsBelongToEntry(lines: readonly JournalLineInput[], current: JournalEntry): void {
+  const ownLineIds = new Set(current.lines.map((line) => line.id))
+  const seen = new Set<number>()
+  for (const line of lines) {
+    if (line.id === undefined) continue
+    if (!ownLineIds.has(line.id)) {
+      throw new Error(`journal line ${line.id} does not belong to journal entry ${current.id}`)
+    }
+    if (seen.has(line.id)) {
+      throw new Error(`journal line ${line.id} is specified more than once`)
+    }
+    seen.add(line.id)
+  }
+}
+
+/**
+ * 仕訳明細の差分更新(計画Issue #132)。入力に含まれない既存行はDELETE(行に紐づく
+ * journal_entry_linksもON DELETE CASCADEで一緒に削除される)、idを持つ行は同じidのまま
+ * UPDATE、idを持たない行はINSERTする。全削除→再挿入にしないのは、行idが変わると
+ * 行単位のリンクが失われてしまうため。
+ */
+function applyLineDiff(db: Database, current: JournalEntry, lines: readonly JournalLineInput[]): void {
+  const keptIds = new Set(lines.flatMap((line) => (line.id === undefined ? [] : [line.id])))
+  for (const existing of current.lines) {
+    if (!keptIds.has(existing.id)) {
+      db.run('DELETE FROM journal_lines WHERE id = ?', [existing.id])
+    }
+  }
+
+  for (const line of lines) {
+    if (line.id === undefined) {
+      insertLine(db, current.id, line)
+      continue
+    }
     db.run(
-      `INSERT INTO journal_lines
-        (journal_entry_id, account_id, project_id, household_member_id, counterparty_id, side, amount)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `UPDATE journal_lines
+       SET account_id = ?, project_id = ?, household_member_id = ?, counterparty_id = ?, side = ?, amount = ?
+       WHERE id = ?`,
       [
-        entryId,
         line.accountId,
         line.projectId ?? null,
         line.householdMemberId ?? null,
         line.counterpartyId ?? null,
         line.side,
         line.amount,
+        line.id,
       ],
     )
   }
