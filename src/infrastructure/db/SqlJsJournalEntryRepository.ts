@@ -15,6 +15,7 @@ import type {
 } from '../../domain/journal/JournalEntryLink'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import { assertJournalBalance } from '../../domain/journal/assertJournalBalance'
+import { JournalEntryLinkLineError } from '../../domain/journal/JournalEntryLinkLineError'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
 import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMismatchError'
 import { SqlJsExternalTransactionRefRepository } from './SqlJsExternalTransactionRefRepository'
@@ -24,6 +25,31 @@ const RECONCILABLE_POSTING_WHITELIST: readonly JournalEntrySourceType[] = [
   'initial_balance',
   'balance_adjustment',
 ]
+
+/**
+ * リンク(journal_entry_links)の取得用SELECT。DBにはfrom_line_id/to_line_idしか無いため、
+ * 仕訳単位のトラバーサル(findLinkedEntries等)で使うfrom_entry_id/to_entry_idは
+ * journal_linesとのJOINで導出する(計画Issue #132)。
+ */
+const LINK_SELECT = `SELECT l.id, l.from_line_id, l.to_line_id,
+       fl.journal_entry_id AS from_entry_id, tl.journal_entry_id AS to_entry_id,
+       l.link_type, l.amount, l.created_at
+  FROM journal_entry_links l
+  JOIN journal_lines fl ON fl.id = l.from_line_id
+  JOIN journal_lines tl ON tl.id = l.to_line_id`
+
+/** リンクの検証(assertLinkLinesCompatible)に必要な、明細行と科目の属性 */
+interface LinkLine {
+  entryId: number
+  accountId: number
+  side: JournalLineSide
+  amount: number
+  householdMemberId: number | null
+  counterpartyId: number | null
+  projectId: number | null
+  category: string
+  isReconcilable: number | null
+}
 
 /**
  * JournalEntryRepository(ドメイン層のポート)のsql.js実装。
@@ -63,22 +89,19 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
         ],
       )
       const entryId = lastInsertRowId(this.db)
-      insertLines(this.db, entryId, input.lines)
+      const lineIds = insertLines(this.db, entryId, input.lines)
 
       for (const link of input.links ?? []) {
-        if (link.linkType === 'settles') {
-          this.assertSettlementTagMatch({
-            fromEntryId: entryId,
-            toEntryId: link.toEntryId,
-            linkType: link.linkType,
-            amount: link.amount,
-          })
+        const fromLineId = lineIds[link.fromLineIndex]
+        if (fromLineId === undefined) {
+          throw new JournalEntryLinkLineError('line_not_found', null, link.toLineId)
         }
-        this.db.run(
-          `INSERT INTO journal_entry_links (from_entry_id, to_entry_id, link_type, amount)
-           VALUES (?, ?, ?, ?)`,
-          [entryId, link.toEntryId, link.linkType, link.amount],
-        )
+        this.insertValidatedLink({
+          fromLineId,
+          toLineId: link.toLineId,
+          linkType: link.linkType,
+          amount: link.amount,
+        })
       }
 
       if (input.externalTransactionRef) {
@@ -165,18 +188,10 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
   }
 
   createLink(input: CreateJournalEntryLinkInput): JournalEntryLink {
-    if (input.linkType === 'settles') {
-      this.assertSettlementTagMatch(input)
-    }
-
     this.db.run('BEGIN')
     try {
-      this.db.run(
-        `INSERT INTO journal_entry_links (from_entry_id, to_entry_id, link_type, amount)
-         VALUES (?, ?, ?, ?)`,
-        [input.fromEntryId, input.toEntryId, input.linkType, input.amount],
-      )
-      const link = this.findLinkById(lastInsertRowId(this.db))!
+      const linkId = this.insertValidatedLink(input)
+      const link = this.findLinkById(linkId)!
       this.db.run('COMMIT')
       return link
     } catch (error) {
@@ -187,7 +202,7 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
 
   listLinksForEntry(entryId: number): JournalEntryLink[] {
     const [result] = this.db.exec(
-      'SELECT * FROM journal_entry_links WHERE from_entry_id = ? OR to_entry_id = ? ORDER BY id',
+      `${LINK_SELECT} WHERE fl.journal_entry_id = ? OR tl.journal_entry_id = ? ORDER BY l.id`,
       [entryId, entryId],
     )
     if (!result) return []
@@ -195,61 +210,96 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
   }
 
   private findLinkById(id: number): JournalEntryLink | null {
-    const [result] = this.db.exec('SELECT * FROM journal_entry_links WHERE id = ?', [id])
+    const [result] = this.db.exec(`${LINK_SELECT} WHERE l.id = ?`, [id])
     if (!result) return null
     return mapRowToJournalEntryLink(result.columns, result.values[0])
   }
 
   /**
-   * settlesリンク作成時のハード検証(docs/domain/settlement.md 1.8)。
-   * to_entry側の一時勘定行(is_reconcilable=falseのasset/liability科目を使う行)それぞれについて、
-   * from_entry側に同じaccount_id/project_id/household_member_idを持ちamountがリンクのamount以上の
-   * 行が存在するかを確認する。
+   * リンクを検証してから書き込み、採番されたidを返す。呼び出し側のトランザクション内で
+   * 実行されることを前提とする(createは仕訳・明細と同一トランザクション、createLinkは
+   * 単独のトランザクション)。検証に失敗した場合は何も書き込まずにドメインエラーをスローする。
    */
-  private assertSettlementTagMatch(input: CreateJournalEntryLinkInput): void {
-    const [toResult] = this.db.exec(
-      `SELECT jl.account_id, jl.project_id, jl.household_member_id
+  private insertValidatedLink(input: CreateJournalEntryLinkInput): number {
+    this.assertLinkLinesCompatible(input)
+    this.db.run(
+      `INSERT INTO journal_entry_links (from_line_id, to_line_id, link_type, amount)
+       VALUES (?, ?, ?, ?)`,
+      [input.fromLineId, input.toLineId, input.linkType, input.amount],
+    )
+    return lastInsertRowId(this.db)
+  }
+
+  /**
+   * リンク作成時のハード検証(docs/domain/journal.md 1.8、docs/domain/settlement.md 1.8、計画Issue #132)。
+   * 両リンク種別に共通して、from_line・to_lineが存在し、科目が一致し、貸借が逆であり、
+   * from_lineから出るリンクの金額合計(既存分+今回分)がfrom_lineの金額を超えないことを確認する。
+   * settlesリンクはさらに、消込先が一時勘定(is_reconcilable = falseの資産・負債)であり、
+   * household_member_id・counterparty_id・project_idが一致することを確認する。allocatesリンクは
+   * 費用を別の世帯メンバー・取引先へ付け替える関係のため、タグの一致は求めない。
+   * to_lineに対する消込の累計が元の金額を超える過剰消込は、従来通りここでは検証しない
+   * (docs/domain/settlement.md 1.6)。
+   */
+  private assertLinkLinesCompatible(input: CreateJournalEntryLinkInput): void {
+    const from = this.findLinkLine(input.fromLineId)
+    const to = this.findLinkLine(input.toLineId)
+    if (from === null || to === null) {
+      throw new JournalEntryLinkLineError('line_not_found', input.fromLineId, input.toLineId)
+    }
+
+    const isSettles = input.linkType === 'settles'
+    const raiseMismatch = (reason: 'account_mismatch' | 'side_not_opposite'): never => {
+      if (isSettles) throw new SettlementTagMismatchError(from.entryId, to.entryId)
+      throw new JournalEntryLinkLineError(reason, input.fromLineId, input.toLineId)
+    }
+
+    if (from.accountId !== to.accountId) raiseMismatch('account_mismatch')
+    if (from.side === to.side) raiseMismatch('side_not_opposite')
+
+    if (isSettles) {
+      const isTemporaryAccount =
+        (to.category === 'asset' || to.category === 'liability') && to.isReconcilable === 0
+      const hasSameTags =
+        from.householdMemberId === to.householdMemberId &&
+        from.counterpartyId === to.counterpartyId &&
+        from.projectId === to.projectId
+      if (!isTemporaryAccount || !hasSameTags) {
+        throw new SettlementTagMismatchError(from.entryId, to.entryId)
+      }
+    }
+
+    const [sumResult] = this.db.exec(
+      'SELECT COALESCE(SUM(amount), 0) FROM journal_entry_links WHERE from_line_id = ?',
+      [input.fromLineId],
+    )
+    const alreadyLinked = sumResult.values[0][0] as number
+    if (alreadyLinked + input.amount > from.amount) {
+      throw new JournalEntryLinkLineError('amount_exceeds_from_line', input.fromLineId, input.toLineId)
+    }
+  }
+
+  private findLinkLine(lineId: number): LinkLine | null {
+    const [result] = this.db.exec(
+      `SELECT jl.journal_entry_id, jl.account_id, jl.side, jl.amount,
+              jl.household_member_id, jl.counterparty_id, jl.project_id,
+              a.category, a.is_reconcilable
        FROM journal_lines jl
        JOIN accounts a ON a.id = jl.account_id
-       WHERE jl.journal_entry_id = ?
-         AND a.category IN ('asset', 'liability')
-         AND a.is_reconcilable = 0`,
-      [input.toEntryId],
+       WHERE jl.id = ?`,
+      [lineId],
     )
-    const toCandidates = toResult
-      ? toResult.values.map((values) => ({
-          accountId: values[0] as number,
-          projectId: values[1] as number | null,
-          householdMemberId: values[2] as number | null,
-        }))
-      : []
-
-    const [fromResult] = this.db.exec(
-      `SELECT account_id, project_id, household_member_id, amount
-       FROM journal_lines WHERE journal_entry_id = ?`,
-      [input.fromEntryId],
-    )
-    const fromLines = fromResult
-      ? fromResult.values.map((values) => ({
-          accountId: values[0] as number,
-          projectId: values[1] as number | null,
-          householdMemberId: values[2] as number | null,
-          amount: values[3] as number,
-        }))
-      : []
-
-    const hasMatch = toCandidates.some((candidate) =>
-      fromLines.some(
-        (line) =>
-          line.accountId === candidate.accountId &&
-          line.projectId === candidate.projectId &&
-          line.householdMemberId === candidate.householdMemberId &&
-          line.amount >= input.amount,
-      ),
-    )
-
-    if (!hasMatch) {
-      throw new SettlementTagMismatchError(input.fromEntryId, input.toEntryId)
+    if (!result) return null
+    const row = result.values[0]
+    return {
+      entryId: row[0] as number,
+      accountId: row[1] as number,
+      side: row[2] as JournalLineSide,
+      amount: row[3] as number,
+      householdMemberId: row[4] as number | null,
+      counterpartyId: row[5] as number | null,
+      projectId: row[6] as number | null,
+      category: row[7] as string,
+      isReconcilable: row[8] as number | null,
     }
   }
 
@@ -280,13 +330,12 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
   }
 }
 
-function insertLines(db: Database, entryId: number, lines: readonly JournalLineInput[]): void {
-  for (const line of lines) {
-    insertLine(db, entryId, line)
-  }
+/** 明細行を順に挿入し、採番された行idを入力と同じ順序で返す(linksのfromLineIndexの解決に使う) */
+function insertLines(db: Database, entryId: number, lines: readonly JournalLineInput[]): number[] {
+  return lines.map((line) => insertLine(db, entryId, line))
 }
 
-function insertLine(db: Database, entryId: number, line: JournalLineInput): void {
+function insertLine(db: Database, entryId: number, line: JournalLineInput): number {
   db.run(
     `INSERT INTO journal_lines
       (journal_entry_id, account_id, project_id, household_member_id, counterparty_id, side, amount)
@@ -301,6 +350,7 @@ function insertLine(db: Database, entryId: number, line: JournalLineInput): void
       line.amount,
     ],
   )
+  return lastInsertRowId(db)
 }
 
 /**
@@ -383,6 +433,8 @@ function mapRowToJournalEntryLink(columns: string[], values: unknown[]): Journal
   const get = <T,>(name: string): T => values[columns.indexOf(name)] as T
   return {
     id: get<number>('id'),
+    fromLineId: get<number>('from_line_id'),
+    toLineId: get<number>('to_line_id'),
     fromEntryId: get<number>('from_entry_id'),
     toEntryId: get<number>('to_entry_id'),
     linkType: get<JournalEntryLinkType>('link_type'),

@@ -134,6 +134,12 @@ describe('ExpenseSplittingForm', () => {
     expect(links).toEqual([
       expect.objectContaining({ fromEntryId: createdEntries[0].id, toEntryId: originalEntry.id, linkType: 'allocates', amount: 500 }),
     ])
+    // リンクは明細行単位(計画Issue #132): 元仕訳の費用行(借方)から、割勘仕訳の費用の貸方行へ張られる
+    const originalExpenseLine = originalEntry.lines.find((line) => line.side === 'debit')!
+    const splitExpenseCreditLine = createdEntries[0].lines.find(
+      (line) => line.accountId === originalExpenseLine.accountId && line.side === 'credit',
+    )!
+    expect(links[0]).toMatchObject({ toLineId: originalExpenseLine.id, fromLineId: splitExpenseCreditLine.id })
   })
 
   it('世帯外の相手に割勘を起票すると、2行仕訳が作成される', async () => {
@@ -753,6 +759,10 @@ describe('ExpenseSplittingForm(複数の元仕訳をまとめて割勘する場�
       ]),
     )
     expect(links).toHaveLength(2)
+    // それぞれのリンクは、対応する元仕訳の費用行(借方)を指す
+    expect(links.map((link) => link.toLineId).sort()).toEqual(
+      [entry1, entry2].map((entry) => entry.lines.find((line) => line.side === 'debit')!.id).sort(),
+    )
   })
 
   it('元仕訳ごとに金額が異なる場合でも、按分比率は共通のまま元仕訳ごとの金額に対して個別に計算される', async () => {

@@ -33,6 +33,9 @@ function buildLink(
 ): JournalEntryLink {
   return {
     id,
+    // 本テストは仕訳単位のトラバーサルを検証するため、明細行idは仕訳idから機械的に補う(計画Issue #132)
+    fromLineId: fromEntryId * 10,
+    toLineId: toEntryId * 10,
     fromEntryId,
     toEntryId,
     linkType,

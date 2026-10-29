@@ -359,7 +359,7 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
         { accountId: advanceLiability.id, side: 'credit', amount: 500, projectId: project.id, householdMemberId: other.id },
       ],
-      links: [{ toEntryId: original.id, linkType: 'allocates', amount: 500 }],
+      links: [{ fromLineIndex: 2, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
 
     const { onDeleted } = renderScreen(splitEntry.id)
@@ -403,7 +403,7 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
         { accountId: advanceLiability.id, side: 'credit', amount: 500, projectId: project.id, householdMemberId: other.id },
       ],
-      links: [{ toEntryId: original.id, linkType: 'allocates', amount: 500 }],
+      links: [{ fromLineIndex: 2, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
     journalEntryRepository.create({
       entryDate: '2026-08-10',
@@ -413,7 +413,7 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: advanceLiability.id, side: 'debit', amount: 500, projectId: project.id, householdMemberId: other.id },
         { accountId: cash.id, side: 'credit', amount: 500 },
       ],
-      links: [{ toEntryId: splitEntry.id, linkType: 'settles', amount: 500 }],
+      links: [{ fromLineIndex: 0, toLineId: splitEntry.lines[3].id, linkType: 'settles', amount: 500 }],
     })
 
     renderScreen(splitEntry.id)
@@ -453,7 +453,7 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
         { accountId: advanceLiability.id, side: 'credit', amount: 500, projectId: project.id, householdMemberId: other.id },
       ],
-      links: [{ toEntryId: original.id, linkType: 'allocates', amount: 500 }],
+      links: [{ fromLineIndex: 2, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
 
     renderScreen(original.id)

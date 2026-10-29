@@ -34,4 +34,24 @@ export function assertValidDatabaseSchema(db: Database): void {
   if (missing.length > 0) {
     throw new InvalidBackupFileError(`invalid backup file: missing expected tables (${missing.join(', ')})`)
   }
+
+  assertJournalEntryLinksIsLineLevel(db)
+}
+
+/**
+ * journal_entry_linksが明細行単位(from_line_id/to_line_id)であることを確認する(計画Issue #132)。
+ * 仕訳単位(from_entry_id/to_entry_id)だった旧形式のバックアップは、テーブルの有無だけでは
+ * 見分けられず、そのまま読み込むとリンクの取得時にSQLエラーになるため、ここで弾く。
+ */
+function assertJournalEntryLinksIsLineLevel(db: Database): void {
+  const result = db.exec('PRAGMA table_info(journal_entry_links)')
+  const columnNames = new Set(result[0]?.values.map((row) => row[1]) ?? [])
+  const missing = ['from_line_id', 'to_line_id'].filter((name) => !columnNames.has(name))
+
+  if (missing.length > 0) {
+    throw new InvalidBackupFileError(
+      `invalid backup file: journal_entry_links is missing expected columns (${missing.join(', ')}); ` +
+        'the backup was created with an older schema',
+    )
+  }
 }

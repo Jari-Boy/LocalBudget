@@ -1,31 +1,25 @@
-import type { JournalEntry } from '../journal/JournalEntry'
+import type { JournalLine } from '../journal/JournalEntry'
 
 /**
- * タグ不整合の事後検知(docs/domain/settlement.md 1.8)。
- * to_entry側の一時勘定行(settlementAccountId)それぞれについて、fromEntry(消込仕訳)側に
- * 同じaccount_id/project_id/household_member_idを持ちamountがlinkAmount以上の行が
- * 存在するかを確認する。作成時のハード検証(SqlJsJournalEntryRepository.assertSettlementTagMatch、
- * docs/domain/settlement.md 1.8)と同じ「一致する行が存在するか」という存在チェックの考え方を
- * 踏襲し、行同士の1:1対応の厳密な特定は行わない(journal_entry_links側に対応する物理行を
- * 一意に特定する情報がないため)。一致する行が1件も存在しない場合にtrue(不整合)を返す。
+ * タグ不整合の事後検知(docs/domain/settlement.md 1.8、計画Issue #132)。
+ * settlesリンクが指す2つの明細行(to_line:消し込まれる側、from_line:消し込む側)を直接比較し、
+ * 作成時のハード検証(SqlJsJournalEntryRepository.assertLinkLinesCompatible)の条件が
+ * 事後の編集で崩れていればtrue(不整合)を返す。条件は科目の一致、貸借が逆であること、
+ * household_member_id・counterparty_id・project_idの一致、from_lineの金額がリンク金額以上で
+ * あること。リンクが明細行を直接指すため、仕訳内に「一致する行が存在するか」を探す必要はない。
  */
 export function detectSettlementTagMismatch(
-  toEntry: JournalEntry,
-  fromEntry: JournalEntry,
-  settlementAccountId: number,
+  toLine: JournalLine,
+  fromLine: JournalLine,
   linkAmount: number,
 ): boolean {
-  const toCandidates = toEntry.lines.filter((line) => line.accountId === settlementAccountId)
+  const isCompatible =
+    fromLine.accountId === toLine.accountId &&
+    fromLine.side !== toLine.side &&
+    fromLine.projectId === toLine.projectId &&
+    fromLine.householdMemberId === toLine.householdMemberId &&
+    fromLine.counterpartyId === toLine.counterpartyId &&
+    fromLine.amount >= linkAmount
 
-  const hasMatch = toCandidates.some((candidate) =>
-    fromEntry.lines.some(
-      (line) =>
-        line.accountId === candidate.accountId &&
-        line.projectId === candidate.projectId &&
-        line.householdMemberId === candidate.householdMemberId &&
-        line.amount >= linkAmount,
-    ),
-  )
-
-  return !hasMatch
+  return !isCompatible
 }

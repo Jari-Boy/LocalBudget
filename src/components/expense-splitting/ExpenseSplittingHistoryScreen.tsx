@@ -165,7 +165,6 @@ export function ExpenseSplittingHistoryScreen({
             const participantName = resolveParticipantName(splitEntry, accounts, householdMembers, counterparties)
             const isSettled = isExpenseSplittingEntrySettled(
               splitEntry,
-              entries,
               accounts,
               linksByEntryId.get(splitEntry.id) ?? [],
             )

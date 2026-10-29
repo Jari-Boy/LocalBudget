@@ -11,8 +11,8 @@ export type ExpenseSplitRecipient =
   | { kind: 'counterparty'; counterpartyId: number; amount: number }
 
 export interface BuildExpenseSplittingJournalEntryInputsParams {
-  /** 按分対象の元の支出仕訳のid。全分担者の仕訳がこれをallocatesリンクのto_entryとする */
-  originalEntryId: number
+  /** 按分対象の元の支出仕訳の費用行のid。全分担者の仕訳がこれをallocatesリンクのto_lineとする */
+  originalLineId: number
   expenseAccountId: number
   advanceAssetAccountId: number
   /** 元々の支出者(立替者)のhousehold_member_id。分担者リストには含めない */
@@ -40,7 +40,7 @@ export function buildExpenseSplittingJournalEntryInputs(
   return params.recipients.map((recipient) =>
     recipient.kind === 'householdMember'
       ? buildHouseholdMemberExpenseSplittingJournalEntryInput({
-          originalEntryId: params.originalEntryId,
+          originalLineId: params.originalLineId,
           expenseAccountId: params.expenseAccountId,
           advanceAssetAccountId: params.advanceAssetAccountId,
           advanceLiabilityAccountId: recipient.advanceLiabilityAccountId,
@@ -52,7 +52,7 @@ export function buildExpenseSplittingJournalEntryInputs(
           memo: params.memo,
         })
       : buildCounterpartyExpenseSplittingJournalEntryInput({
-          originalEntryId: params.originalEntryId,
+          originalLineId: params.originalLineId,
           expenseAccountId: params.expenseAccountId,
           advanceAssetAccountId: params.advanceAssetAccountId,
           payerMemberId: params.fromMemberId,
