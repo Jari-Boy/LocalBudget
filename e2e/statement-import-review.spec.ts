@@ -681,19 +681,28 @@ test.describe('CSV取込〜レビュー一覧', () => {
     await page.getByRole('button', { name: '確定する' }).click()
     await expect(page.getByText('3件を確定しました(0件失敗)')).toBeVisible()
 
-    // 確定後、仕訳が実際に永続化され登録済み科目一覧の残高に反映されていることを確認する
-    // (計画Issue #95により、一覧画面へは科目管理ハブ画面「科目を管理する」を経由する。
-    // 計画Issue #118のルーティング刷新により、仕訳ハブ→ホーム→マスタ管理ハブの順に
-    // 「戻る」で遡ってから科目管理ハブへ入る)
-    await page.getByRole('button', { name: '戻る' }).click()
-    await page.getByRole('button', { name: '戻る' }).click()
-    await page.getByRole('button', { name: '戻る' }).click()
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: '科目を管理する' }).click()
-    await page.getByRole('button', { name: '科目一覧を見る' }).click()
-    await expect(page.getByRole('heading', { name: '登録済みの科目' })).toBeVisible()
-    await expect(
-      page.getByRole('listitem').filter({ hasText: '普通預金' }).filter({ hasText: '-￥10,500' }),
-    ).toBeVisible()
+    // 確定後、仕訳が実際に永続化され普通預金の残高に反映されていることを確認する。
+    // 登録済み科目一覧画面は計画Issue #127で残高表示自体を廃止した(残高は財務諸表画面に
+    // 委ねる設計、AccountListScreen.tsx参照)ため、UIの一覧表示ではなくRepository経由で
+    // 直接確認する(account-registration.spec.ts等と同じパターン)。withAutoSaveのtrailing
+    // debounce(2秒、計画Issue #58)を挟むため、別Workerから見えるまでpollで待つ。
+    await expect
+      .poll(
+        () =>
+          page.evaluate(async (accountId) => {
+            const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
+            const { calculateAccountBalance } = await import(
+              '/src/domain/financial-statement/calculateAccountBalance.ts'
+            )
+            const client = await createDbClient()
+            const entries = await client.journalEntry.findAll()
+            const lines = entries
+              .flatMap((entry) => entry.lines)
+              .filter((line) => line.accountId === accountId)
+            return calculateAccountBalance('asset', lines)
+          }, accountIds[0]),
+        { timeout: 10000 },
+      )
+      .toBe(-10500)
   })
 })
