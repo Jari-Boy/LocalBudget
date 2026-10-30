@@ -178,6 +178,203 @@ describe('JournalEntryDetailScreen', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('金額・摘要を編集して更新しても、既存の明細行のidは維持される(行単位リンクを保つため、計画Issue #132)', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '更新前',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 3000 },
+        { accountId: cash.id, side: 'credit', amount: 3000 },
+      ],
+    })
+    const originalLineIds = entry.lines.map((line) => line.id)
+    // 更新対象の明細が採番の末尾だと、全削除→再挿入でも偶然同じidが再利用されてしまうため、
+    // 後続の仕訳を作っておく(SqlJsJournalEntryRepository.test.tsのcreateLaterEntry参照)
+    journalEntryRepository.create({
+      entryDate: '2026-12-31',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1 },
+        { accountId: cash.id, side: 'credit', amount: 1 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const creditCard = getCards(await findBlock('貸方'))[0]
+
+    fireEvent.change(screen.getByLabelText('摘要(任意)'), { target: { value: '更新後' } })
+    fireEvent.change(within(debitCard).getByLabelText('金額'), { target: { value: '5000' } })
+    fireEvent.change(within(creditCard).getByLabelText('金額'), { target: { value: '5000' } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+
+    await waitFor(() => {
+      expect(journalEntryRepository.findById(entry.id)?.memo).toBe('更新後')
+    })
+    expect(journalEntryRepository.findById(entry.id)?.lines.map((line) => line.id)).toEqual(originalLineIds)
+  })
+
+  it('更新を2回続けて行っても、最初の更新後に読み込んだ行idで差分更新できる', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '1回目前',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 3000 },
+        { accountId: cash.id, side: 'credit', amount: 3000 },
+      ],
+    })
+    const originalLineIds = entry.lines.map((line) => line.id)
+    // 更新対象の明細が採番の末尾だと、全削除→再挿入でも偶然同じidが再利用されてしまうため、
+    // 後続の仕訳を作っておく(SqlJsJournalEntryRepository.test.tsのcreateLaterEntry参照)
+    journalEntryRepository.create({
+      entryDate: '2026-12-31',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1 },
+        { accountId: cash.id, side: 'credit', amount: 1 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    await findBlock('借方')
+
+    fireEvent.change(screen.getByLabelText('摘要(任意)'), { target: { value: '1回目' } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+    await waitFor(() => expect(journalEntryRepository.findById(entry.id)?.memo).toBe('1回目'))
+
+    fireEvent.change(screen.getByLabelText('摘要(任意)'), { target: { value: '2回目' } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+    await waitFor(() => expect(journalEntryRepository.findById(entry.id)?.memo).toBe('2回目'))
+
+    expect(journalEntryRepository.findById(entry.id)?.lines.map((line) => line.id)).toEqual(originalLineIds)
+  })
+
+  it('リンクが付いた明細行を削除する編集をして更新すると、警告が表示され確定前はDBが更新されない(計画Issue #132)', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '通信費', isReconcilable: null })
+    const liability = accountRepository.create({ category: 'liability', name: '未払金', isReconcilable: false })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const original = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '暫定計上',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: liability.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    const settlement = journalEntryRepository.create({
+      entryDate: '2026-08-10',
+      memo: '消込',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: liability.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+      links: [{ fromLineIndex: 0, toLineId: original.lines[1].id, linkType: 'settles', amount: 1000 }],
+    })
+
+    renderScreen(settlement.id)
+    const debitBlock = await findBlock('借方')
+    // 自動追加される空行が現れ切るまで待つ(自動追加前は残り1行のため削除ボタンが無効化される)
+    await waitFor(() => expect(getCards(debitBlock)).toHaveLength(2))
+    fireEvent.click(within(getCards(debitBlock)[0]).getByRole('button', { name: 'この行を削除する' }))
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('リンク')
+    expect(journalEntryRepository.findById(settlement.id)?.lines).toHaveLength(2)
+  })
+
+  it('警告の確定ボタンを押すと、更新が実行されリンクごと明細行が削除される(計画Issue #132)', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const liability = accountRepository.create({ category: 'liability', name: '未払金', isReconcilable: false })
+    const otherExpense = accountRepository.create({ category: 'expense', name: '雑費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const original = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: otherExpense.id, side: 'debit', amount: 1000 },
+        { accountId: liability.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    const settlement = journalEntryRepository.create({
+      entryDate: '2026-08-10',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: liability.id, side: 'debit', amount: 1000 },
+        { accountId: otherExpense.id, side: 'debit', amount: 500 },
+        { accountId: cash.id, side: 'credit', amount: 1500 },
+      ],
+      links: [{ fromLineIndex: 0, toLineId: original.lines[1].id, linkType: 'settles', amount: 1000 }],
+    })
+
+    renderScreen(settlement.id)
+    const debitBlock = await findBlock('借方')
+    // 自動追加される空行が現れ切るまで待つ(自動追加前は削除ボタンが無効化される行数のため)
+    await waitFor(() => expect(getCards(debitBlock)).toHaveLength(3))
+    await waitFor(() => expect(getCards(getBlock('貸方'))).toHaveLength(2))
+    fireEvent.click(within(getCards(debitBlock)[0]).getByRole('button', { name: 'この行を削除する' }))
+    const creditCard = getCards(getBlock('貸方'))[0]
+    fireEvent.change(within(creditCard).getByLabelText('金額'), { target: { value: '500' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+    fireEvent.click(await screen.findByRole('button', { name: '削除して更新する' }))
+
+    await waitFor(() => {
+      const updated = journalEntryRepository.findById(settlement.id)
+      expect(updated?.lines).toHaveLength(2)
+    })
+    expect(
+      journalEntryRepository.findById(settlement.id)?.lines.some((line) => line.accountId === liability.id),
+    ).toBe(false)
+  })
+
+  it('警告のキャンセルボタンを押すと警告が消え、更新は実行されない(計画Issue #132)', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '通信費', isReconcilable: null })
+    const liability = accountRepository.create({ category: 'liability', name: '未払金', isReconcilable: false })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const original = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: liability.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    const settlement = journalEntryRepository.create({
+      entryDate: '2026-08-10',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: liability.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+      links: [{ fromLineIndex: 0, toLineId: original.lines[1].id, linkType: 'settles', amount: 1000 }],
+    })
+
+    renderScreen(settlement.id)
+    const debitBlock = await findBlock('借方')
+    // 自動追加される空行が現れ切るまで待つ(自動追加前は残り1行のため削除ボタンが無効化される)
+    await waitFor(() => expect(getCards(debitBlock)).toHaveLength(2))
+    fireEvent.click(within(getCards(debitBlock)[0]).getByRole('button', { name: 'この行を削除する' }))
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+    await screen.findByRole('alert')
+
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(journalEntryRepository.findById(settlement.id)?.lines).toHaveLength(2)
+  })
+
   it('貸借が不一致になる編集をして更新すると、エラーメッセージが表示され入力内容は保持されDBも更新されない', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
@@ -280,7 +477,7 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
         { accountId: advanceLiability.id, side: 'credit', amount: 500, projectId: project.id, householdMemberId: other.id },
       ],
-      links: [{ toEntryId: original.id, linkType: 'allocates', amount: 500 }],
+      links: [{ fromLineIndex: 2, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
 
     const { onDeleted } = renderScreen(splitEntry.id)
@@ -324,7 +521,7 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
         { accountId: advanceLiability.id, side: 'credit', amount: 500, projectId: project.id, householdMemberId: other.id },
       ],
-      links: [{ toEntryId: original.id, linkType: 'allocates', amount: 500 }],
+      links: [{ fromLineIndex: 2, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
     journalEntryRepository.create({
       entryDate: '2026-08-10',
@@ -334,7 +531,7 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: advanceLiability.id, side: 'debit', amount: 500, projectId: project.id, householdMemberId: other.id },
         { accountId: cash.id, side: 'credit', amount: 500 },
       ],
-      links: [{ toEntryId: splitEntry.id, linkType: 'settles', amount: 500 }],
+      links: [{ fromLineIndex: 0, toLineId: splitEntry.lines[3].id, linkType: 'settles', amount: 500 }],
     })
 
     renderScreen(splitEntry.id)
@@ -374,7 +571,7 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
         { accountId: advanceLiability.id, side: 'credit', amount: 500, projectId: project.id, householdMemberId: other.id },
       ],
-      links: [{ toEntryId: original.id, linkType: 'allocates', amount: 500 }],
+      links: [{ fromLineIndex: 2, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
 
     renderScreen(original.id)

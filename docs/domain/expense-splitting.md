@@ -122,8 +122,10 @@
 > **originalEntriesは取引日(entryDate)昇順にソートして返す(計画Issue #110)**
 > `listExpenseSplittingHistory`が返す`originalEntries`(1件の割勘仕訳に対応する元仕訳群)は、Repositoryの`findAll()`が返す順序(id採番順=挿入順)をそのまま使わず、`entryDate`の昇順にソートしてから返す。挿入順と取引日順は通常一致するが、外部明細CSVの取込順序によっては一致しないことがある(例: 新しい日付から降順で並ぶ銀行明細CSV)。ソートしないままUI側が「先頭要素の日付」を代表値(最も古い支出日)として使うと、意図しない仕訳の日付を表示してしまう。この並び替えの責務はドメイン層(本関数)に閉じ、UI層は「ソート済みの配列が渡ってくる」ことだけを前提にする。詳細は`docs/decisions.md`(2026-09-11)・`docs/guides/patterns.md`参照。
 
-> **isExpenseSplittingEntrySettledは立替金の科目ごとにcalculateSettlementBalanceを適用する(計画Issue #110)**
-> [settlement.md 1.6](./settlement.md#16-分割消込消込残高による完了判定)の`calculateSettlementBalance`は「1件のto_entryにつき対象の一時勘定は1種類」を前提とした関数である(詳細は同節の注記を参照)。[1.3 世帯メンバー間の割勘](#13-世帯メンバー間の割勘)のように1件の割勘仕訳が資産側・負債側両方の立替金行を持つ場合、`isExpenseSplittingEntrySettled`は資産・負債それぞれの科目ごとに`calculateSettlementBalance`を個別に適用し、両方の残高が0になって初めて「精算済み」と判定する(片方のみの精算を精算済みと誤判定しない)。渡すsettlesリンクも、その精算仕訳(`from_entry`側の実体)が実際に対象科目の行を持っているものだけに事前に絞り込む必要がある。詳細は`docs/decisions.md`(2026-09-11)参照。
+> **isExpenseSplittingEntrySettledは立替金の科目ごとにcalculateSettlementBalanceを適用する**
+> [settlement.md 1.6](./settlement.md#16-分割消込消込残高による完了判定)の`calculateSettlementBalance`は科目(`settlementAccountId`)単位で消込残高を計算する関数である。[1.3 世帯メンバー間の割勘](#13-世帯メンバー間の割勘)のように1件の割勘仕訳が資産側・負債側両方の立替金行を持つ場合、`isExpenseSplittingEntrySettled`は資産・負債それぞれの科目ごとに`calculateSettlementBalance`を個別に適用し、両方の残高が0になって初めて「精算済み」と判定する(片方のみの精算を精算済みと誤判定しない)。
+>
+> 行単位化(計画Issue #132)以前は、`settles`リンクが仕訳単位(`to_entry_id`)だったため、渡すリンクを「その精算仕訳(`from_entry`側の実体)が実際に対象科目の行を持っているものだけ」に呼び出し側で事前に絞り込む必要があった(計画Issue #110、詳細は`docs/decisions.md`2026-09-11)。行単位(`to_line_id`)になった現在は、`calculateSettlementBalance`が対象の`to_line`(立替金の明細行そのもの)ごとにsettlesリンクを直接絞り込むため、この事前絞り込みは不要になり、全リンクをそのまま渡せる(`src/domain/expense-splitting/isExpenseSplittingEntrySettled.ts`参照)。
 
 **取り消し**: 割勘仕訳・精算仕訳はいずれも通常の手入力仕訳(`source_type = 'manual'`)であり、[journal.md 1.5 仕訳の編集・削除](./journal.md#15-仕訳の編集削除)の既存ルール(物理削除は常に許可)がそのまま適用される。
 

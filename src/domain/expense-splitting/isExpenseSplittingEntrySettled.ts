@@ -12,20 +12,17 @@ import { calculateSettlementBalance } from '../settlement/calculateSettlementBal
  * 片方のみの精算を「精算済み」と誤判定しないよう両方を確認する。世帯外の相手との
  * 割勘は資産側の行しか持たないため、その1件のみで判定される。
  *
- * settlesリンク自体はどの立替金科目を対象にした精算かの情報を持たないため、リンクの
- * from_entry側(精算仕訳の実体)をentriesから解決し、その精算仕訳が実際に使っている
- * 科目で紐づける(buildSettlementJournalEntryInputは対象の一時勘定科目の行を必ず1本だけ
- * 持つ仕訳を組み立てるため、この対応付けが成立する)。calculateSettlementBalanceは
- * 1科目分のリンクのみを渡す前提のため、科目ごとに絞り込んでから渡す。DBアクセスなしの純粋関数。
+ * settlesリンクは明細行単位(計画Issue #132)で割勘仕訳の立替金行(to_line)に直接結びつくため、
+ * 以前のように精算仕訳(from_entry側)の実体を解決して使っている科目で絞り込む必要はない。
+ * calculateSettlementBalanceが行ごとにリンクを集計するので、科目ごとの判定に全リンクを
+ * そのまま渡せる。DBアクセスなしの純粋関数。
  */
 export function isExpenseSplittingEntrySettled(
   splitEntry: JournalEntry,
-  entries: readonly JournalEntry[],
   accounts: readonly Account[],
   links: readonly JournalEntryLink[],
 ): boolean {
   const accountsById = new Map(accounts.map((account) => [account.id, account]))
-  const entriesById = new Map(entries.map((entry) => [entry.id, entry]))
 
   const advanceAccountIds = new Set(
     splitEntry.lines
@@ -38,12 +35,7 @@ export function isExpenseSplittingEntrySettled(
       }),
   )
 
-  return Array.from(advanceAccountIds).every((accountId) => {
-    const linksForAccount = links.filter((link) => {
-      if (link.linkType !== 'settles' || link.toEntryId !== splitEntry.id) return false
-      const settlementEntry = entriesById.get(link.fromEntryId)
-      return settlementEntry?.lines.some((line) => line.accountId === accountId) ?? false
-    })
-    return calculateSettlementBalance(splitEntry, accountId, linksForAccount) === 0
-  })
+  return Array.from(advanceAccountIds).every(
+    (accountId) => calculateSettlementBalance(splitEntry, accountId, links) === 0,
+  )
 }

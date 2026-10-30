@@ -24,6 +24,7 @@ import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJourna
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import { buildHouseholdMemberExpenseSplittingJournalEntryInput } from '../../domain/expense-splitting/buildHouseholdMemberExpenseSplittingJournalEntryInput'
+import { mergeExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/mergeExpenseSplittingJournalEntryInputs'
 import { buildCounterpartyExpenseSplittingJournalEntryInput } from '../../domain/expense-splitting/buildCounterpartyExpenseSplittingJournalEntryInput'
 import { buildSettlementJournalEntryInput } from '../../domain/settlement/buildSettlementJournalEntryInput'
 import { ExpenseSplittingHistoryScreen } from './ExpenseSplittingHistoryScreen'
@@ -107,7 +108,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     })
     journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
-        originalEntryId: originalEntry.id,
+        originalLineId: originalEntry.lines[0].id,
         expenseAccountId: expense.id,
         advanceAssetAccountId: advanceAsset.id,
         advanceLiabilityAccountId: advanceLiability.id,
@@ -148,7 +149,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     })
     journalEntryRepository.create(
       buildCounterpartyExpenseSplittingJournalEntryInput({
-        originalEntryId: originalEntry.id,
+        originalLineId: originalEntry.lines[0].id,
         expenseAccountId: expense.id,
         advanceAssetAccountId: advanceAsset.id,
         payerMemberId: member.id,
@@ -191,7 +192,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
       ],
     })
     const splitInputForSmartphone = buildHouseholdMemberExpenseSplittingJournalEntryInput({
-      originalEntryId: smartphoneEntry.id,
+      originalLineId: smartphoneEntry.lines[0].id,
       expenseAccountId: expense.id,
       advanceAssetAccountId: advanceAsset.id,
       advanceLiabilityAccountId: advanceLiability.id,
@@ -202,7 +203,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
       entryDate: '2026-08-03',
     })
     const splitInputForTablet = buildHouseholdMemberExpenseSplittingJournalEntryInput({
-      originalEntryId: tabletEntry.id,
+      originalLineId: tabletEntry.lines[0].id,
       expenseAccountId: expense.id,
       advanceAssetAccountId: advanceAsset.id,
       advanceLiabilityAccountId: advanceLiability.id,
@@ -212,11 +213,16 @@ describe('ExpenseSplittingHistoryScreen', () => {
       amount: 250,
       entryDate: '2026-08-03',
     })
-    journalEntryRepository.create({
-      ...splitInputForSmartphone,
-      lines: [...splitInputForSmartphone.lines, ...splitInputForTablet.lines],
-      links: [...(splitInputForSmartphone.links ?? []), ...(splitInputForTablet.links ?? [])],
-    })
+    // 本番(ExpenseSplittingForm)と同じ統合関数を使う。リンクの起点(fromLineIndex)は
+    // 結合後の行位置へずらす必要があるため、手作業での結合はしない(計画Issue #132)
+    journalEntryRepository.create(
+      mergeExpenseSplittingJournalEntryInputs({
+        inputs: [splitInputForSmartphone, splitInputForTablet],
+        entryDate: '2026-08-03',
+        memo: null,
+        householdMemberId: member.id,
+      }),
+    )
 
     renderScreen()
 
@@ -242,7 +248,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     })
     const splitEntry = journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
-        originalEntryId: originalEntry.id,
+        originalLineId: originalEntry.lines[0].id,
         expenseAccountId: expense.id,
         advanceAssetAccountId: advanceAsset.id,
         advanceLiabilityAccountId: advanceLiability.id,
@@ -255,7 +261,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     )
     journalEntryRepository.create(
       buildSettlementJournalEntryInput({
-        targetEntryId: splitEntry.id,
+        targets: [{ toLineId: splitEntry.lines[3].id, amount: 500 }],
         settlementAccountId: advanceLiability.id,
         settlementAccountCategory: 'liability',
         counterAccountId: cash.id,
@@ -267,7 +273,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     )
     journalEntryRepository.create(
       buildSettlementJournalEntryInput({
-        targetEntryId: splitEntry.id,
+        targets: [{ toLineId: splitEntry.lines[1].id, amount: 500 }],
         settlementAccountId: advanceAsset.id,
         settlementAccountCategory: 'asset',
         counterAccountId: cash.id,
@@ -302,7 +308,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     })
     const splitEntry = journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
-        originalEntryId: originalEntry.id,
+        originalLineId: originalEntry.lines[0].id,
         expenseAccountId: expense.id,
         advanceAssetAccountId: advanceAsset.id,
         advanceLiabilityAccountId: advanceLiability.id,

@@ -5,9 +5,9 @@
  * 双方の科目行に適用し、いずれも残高0になって初めて「精算済み」とみなすことを検証する
  * (docs/domain/expense-splitting.md 1.3節、世帯メンバー間の割勘は資産側・負債側が別々の
  * タイミングで精算されうるため、片方のみの精算を「精算済み」と誤判定しないことが重要)。
- * settlesリンク自体はどの科目を対象にしたかの情報を持たないため、精算仕訳(from_entry側)の
- * 実体をentriesから解決し、その仕訳が実際に使っている立替金科目で対応付けることを検証する。
- * DB非依存、外部依存なし。
+ * settlesリンクが明細行単位(計画Issue #132)になったため、リンクがどの科目の行を消し込んだかは
+ * to_lineから直接決まり、以前のように精算仕訳(from_entry側)の実体を解決して科目で絞り込む必要は
+ * ない。DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import type { Account } from '../account/Account'
@@ -112,15 +112,18 @@ function buildEntry(id: number, lines: JournalLine[]): JournalEntry {
 /** buildSettlementJournalEntryInputが組み立てる、一時勘定行を1本だけ持つ精算仕訳を模す */
 function buildSettlementEntry(id: number, settlementAccountId: number, amount: number): JournalEntry {
   return buildEntry(id, [
-    buildLine({ id: 1, accountId: BANK_ACCOUNT_ID, side: 'debit', amount }),
-    buildLine({ id: 2, accountId: settlementAccountId, side: 'credit', amount }),
+    buildLine({ id: id * 10 + 1, journalEntryId: id, accountId: BANK_ACCOUNT_ID, side: 'debit', amount }),
+    buildLine({ id: id * 10 + 2, journalEntryId: id, accountId: settlementAccountId, side: 'credit', amount }),
   ])
 }
 
-function buildLink(fromEntryId: number, toEntryId: number, amount: number): JournalEntryLink {
+/** 精算仕訳の一時勘定行(lines[1])から、割勘仕訳の立替金行(toLineId)へのsettlesリンク */
+function buildLink(settlementEntry: JournalEntry, toEntryId: number, toLineId: number, amount: number): JournalEntryLink {
   return {
-    id: fromEntryId * 100 + toEntryId,
-    fromEntryId,
+    id: settlementEntry.id * 100 + toLineId,
+    fromLineId: settlementEntry.lines[1].id,
+    toLineId,
+    fromEntryId: settlementEntry.id,
     toEntryId,
     linkType: 'settles',
     amount,
@@ -135,11 +138,9 @@ describe('isExpenseSplittingEntrySettled', () => {
       buildLine({ id: 2, accountId: EXPENSE_ACCOUNT_ID, counterpartyId: 30, side: 'credit', amount: 500 }),
     ])
     const settlementEntry = buildSettlementEntry(2, ADVANCE_ASSET_ACCOUNT_ID, 500)
-    const links = [buildLink(settlementEntry.id, splitEntry.id, 500)]
+    const links = [buildLink(settlementEntry, splitEntry.id, 1, 500)]
 
-    expect(
-      isExpenseSplittingEntrySettled(splitEntry, [splitEntry, settlementEntry], ACCOUNTS, links),
-    ).toBe(true)
+    expect(isExpenseSplittingEntrySettled(splitEntry, ACCOUNTS, links)).toBe(true)
   })
 
   it('世帯外の相手との割勘(資産側のみ)で、未精算の場合はfalseを返す', () => {
@@ -148,7 +149,7 @@ describe('isExpenseSplittingEntrySettled', () => {
       buildLine({ id: 2, accountId: EXPENSE_ACCOUNT_ID, counterpartyId: 30, side: 'credit', amount: 500 }),
     ])
 
-    expect(isExpenseSplittingEntrySettled(splitEntry, [splitEntry], ACCOUNTS, [])).toBe(false)
+    expect(isExpenseSplittingEntrySettled(splitEntry, ACCOUNTS, [])).toBe(false)
   })
 
   it('世帯メンバー間の割勘(資産側+負債側)で、両方とも全額精算済みの場合はtrueを返す', () => {
@@ -175,18 +176,11 @@ describe('isExpenseSplittingEntrySettled', () => {
     const settlementEntryForAsset = buildSettlementEntry(2, ADVANCE_ASSET_ACCOUNT_ID, 500)
     const settlementEntryForLiability = buildSettlementEntry(3, ADVANCE_LIABILITY_ACCOUNT_ID, 500)
     const links = [
-      buildLink(settlementEntryForAsset.id, splitEntry.id, 500),
-      buildLink(settlementEntryForLiability.id, splitEntry.id, 500),
+      buildLink(settlementEntryForAsset, splitEntry.id, 2, 500),
+      buildLink(settlementEntryForLiability, splitEntry.id, 4, 500),
     ]
 
-    expect(
-      isExpenseSplittingEntrySettled(
-        splitEntry,
-        [splitEntry, settlementEntryForAsset, settlementEntryForLiability],
-        ACCOUNTS,
-        links,
-      ),
-    ).toBe(true)
+    expect(isExpenseSplittingEntrySettled(splitEntry, ACCOUNTS, links)).toBe(true)
   })
 
   it('世帯メンバー間の割勘で、資産側のみ精算済み・負債側が未精算の場合はfalseを返す(片方だけの精算を精算済みと誤判定しない)', () => {
@@ -211,11 +205,9 @@ describe('isExpenseSplittingEntrySettled', () => {
       }),
     ])
     const settlementEntryForAsset = buildSettlementEntry(2, ADVANCE_ASSET_ACCOUNT_ID, 500)
-    const links = [buildLink(settlementEntryForAsset.id, splitEntry.id, 500)]
+    const links = [buildLink(settlementEntryForAsset, splitEntry.id, 2, 500)]
 
-    expect(
-      isExpenseSplittingEntrySettled(splitEntry, [splitEntry, settlementEntryForAsset], ACCOUNTS, links),
-    ).toBe(false)
+    expect(isExpenseSplittingEntrySettled(splitEntry, ACCOUNTS, links)).toBe(false)
   })
 
   it('世帯メンバー間の割勘で、両方とも未精算の場合はfalseを返す', () => {
@@ -240,6 +232,6 @@ describe('isExpenseSplittingEntrySettled', () => {
       }),
     ])
 
-    expect(isExpenseSplittingEntrySettled(splitEntry, [splitEntry], ACCOUNTS, [])).toBe(false)
+    expect(isExpenseSplittingEntrySettled(splitEntry, ACCOUNTS, [])).toBe(false)
   })
 })

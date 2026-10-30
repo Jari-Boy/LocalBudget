@@ -1,8 +1,8 @@
 import type { CreateJournalEntryInput } from '../journal/JournalEntry'
 
 export interface BuildCounterpartyExpenseSplittingJournalEntryInputParams {
-  /** 按分対象の元の支出仕訳(食費等)のid。allocatesリンクのto_entryとなる */
-  originalEntryId: number
+  /** 按分対象の元の支出仕訳(食費等)の費用行のid。allocatesリンクのto_lineとなる */
+  originalLineId: number
   /** 付け替え対象の費用科目(元仕訳と同じ科目)のid */
   expenseAccountId: number
   /** 立替金(資産)科目のid */
@@ -27,8 +27,9 @@ export interface BuildCounterpartyExpenseSplittingJournalEntryInputParams {
  * (source_typeは既定の'manual'のまま)を返す。科目id・counterparty_id・project_idの解決は
  * 呼び出し側の責務。
  *
- * 返り値のlinksに元仕訳へのallocatesリンクを含めることで、割勘仕訳自体の作成と
- * allocatesリンクの作成を単一のDBトランザクションにする(docs/domain/journal.md 1.8参照)。
+ * 返り値のlinksに、割勘仕訳の費用の貸方行(from_line)から元仕訳の費用行(to_line)への
+ * allocatesリンクを含めることで、割勘仕訳自体の作成とallocatesリンクの作成を単一のDB
+ * トランザクションにする(docs/domain/journal.md 1.8参照、計画Issue #132で明細行単位に変更)。
  * 起票者(CreateJournalEntryInput.householdMemberId)はpayerMemberId(立て替えた世帯メンバー、
  * 割勘を起票した側)を使う(計画Issue #88)。
  */
@@ -55,6 +56,7 @@ export function buildCounterpartyExpenseSplittingJournalEntryInput(
         amount: params.amount,
       },
     ],
-    links: [{ toEntryId: params.originalEntryId, linkType: 'allocates', amount: params.amount }],
+    // from_lineは費用を減らす貸方行(lines[1])。元の費用行(to_line)と科目が一致し貸借が逆になる
+    links: [{ fromLineIndex: 1, toLineId: params.originalLineId, linkType: 'allocates', amount: params.amount }],
   }
 }

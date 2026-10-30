@@ -319,7 +319,7 @@ export function ExpenseSplittingForm({
         return
       }
       const inputs = buildExpenseSplittingJournalEntryInputs({
-        originalEntryId: entry.id,
+        originalLineId: expenseLine.id,
         expenseAccountId: expenseLine.accountId,
         advanceAssetAccountId,
         fromMemberId: entry.householdMemberId,

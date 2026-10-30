@@ -147,8 +147,10 @@ CSV到着後の消込(CSV由来): (借) 資産・普通預金        250,000
 > **消込残高がマイナスになるケース(過剰消込)**
 > ユーザーが誤って合計額を超えて消込仕訳を対応付けると消込残高は負になりうるが、DB制約としては禁止しない。[1.2 消込は金額が一致するとは限らない](#12-家賃給与の例)で許容している「按分しきらず残高が残る」ケースと同様、これも見込みと実績のズレとして起こりうる状態であり、訂正(消込仕訳の編集・削除)はユーザーの通常の仕訳編集操作([journal.md 1.5](./journal.md#15-仕訳の編集削除))に委ねる。ドメイン側で自動的な整合性回復は行わない。
 
-> **calculateSettlementBalanceは「1件のto_entryにつき、対象の一時勘定科目は1種類」を前提とする(計画Issue #110)**
-> 上記の消込残高の計算式(`Σ(journal_entry_links.amount WHERE link_type = 'settles' AND to_entry_id = 元仕訳.id)`)は、`to_entry_id`が一致するsettlesリンクを単純に合算するだけであり、`journal_entry_links`自体はaccount_idを持たないため、そのリンクがどの一時勘定科目を対象にした精算かをリンク単体からは区別できない。本節・[1.2](#12-家賃給与の例)の例や[expense-splitting.md 1.4 世帯外の相手との割勘](./expense-splitting.md#14-世帯外の相手との割勘)のように、1件の`to_entry`が単一の一時勘定科目しか持たない場合は`to_entry_id`一致だけで安全に計算できる。しかし[expense-splitting.md 1.3 世帯メンバー間の割勘](./expense-splitting.md#13-世帯メンバー間の割勘)のように**1件の仕訳が資産側・負債側それぞれ別の一時勘定行を持つ**場合、両方の科目に対するsettlesリンクをそのまま合算対象に含めると、資産側の消込残高計算に負債側の精算額(またはその逆)が混入し、誤った残高になる。呼び出し側は、`links`引数に渡す前に「精算仕訳(`from_entry`側)の実体が実際に対象の`settlementAccountId`の行を持つか」で絞り込み、科目ごとに個別に本関数を呼び出す必要がある。この絞り込みの実装例は[expense-splitting.md 1.5](./expense-splitting.md#15-割勘の履歴と取り消し)の`isExpenseSplittingEntrySettled`を参照。詳細は`docs/decisions.md`(2026-09-11)参照。
+> **行単位化(計画Issue #132)により、対象の一時勘定科目が複数あっても誤って混入しない**
+> 以前(`journal_entry_links`が仕訳単位の`to_entry_id`を持っていた時点)は、`journal_entry_links`自体がaccount_idを持たないため、そのリンクがどの一時勘定科目を対象にした精算かをリンク単体からは区別できなかった(計画Issue #110)。本節・[1.2](#12-家賃給与の例)の例や[expense-splitting.md 1.4 世帯外の相手との割勘](./expense-splitting.md#14-世帯外の相手との割勘)のように1件の`to_entry`が単一の一時勘定科目しか持たない場合は問題にならないが、[expense-splitting.md 1.3 世帯メンバー間の割勘](./expense-splitting.md#13-世帯メンバー間の割勘)のように**1件の仕訳が資産側・負債側それぞれ別の一時勘定行を持つ**場合、両方の科目に対するsettlesリンクを単純に合算すると、資産側の消込残高計算に負債側の精算額(またはその逆)が混入しうる。これを避けるため、呼び出し側が「精算仕訳側の実体が実際に対象の`settlementAccountId`の行を持つか」で事前に絞り込む回避策([expense-splitting.md 1.5](./expense-splitting.md#15-割勘の履歴と取り消し)の`isExpenseSplittingEntrySettled`、詳細は`docs/decisions.md`2026-09-11)を必要としていた。
+>
+> `journal_entry_links`を明細行単位(`to_line_id`)にしたことで、この回避策は構造上不要になった。`calculateLineSettlementBalance`(`src/domain/settlement/calculateSettlementBalance.ts`)は対象の`to_line`(明細行そのもの)を`toLineId`で直接指定してsettlesリンクを絞り込むため、同じ仕訳内に資産側・負債側の一時勘定行が両方存在していても、リンク自体がどちらの行を指しているかで一意に区別され、互いに混入することはない。`findSettlementTargetLines`が科目(`settlementAccountId`)に一致する行を列挙し、各行ごとに`calculateLineSettlementBalance`を合計する`calculateSettlementBalance`は、呼び出し側での事前絞り込みを要求しない形で同じ計算を提供する。
 
 > **「毎月分を都度計上する」代替案との使い分け**
 > 分割払いは、本節のように契約時に総額を一括計上して段階的に消し込む形のほか、[recurring-transactions.md 3章 大口費用の按分](./recurring-transactions.md#3-大口費用の按分)の枠組みで「毎月分を独立した一時勘定計上として都度生成し、その都度1:1で消し込む」形でも表現できる。前者は契約全体の残債務(消込残高)を一時勘定の集計として把握したい場合に、後者は各月の計上を完全に独立させて按分・解約時の扱いを[recurring-transactions.md 3.4](./recurring-transactions.md#34-按分ルールの終了)の既存の枠組みに乗せたい場合に向く。どちらもドメインとして矛盾なく成立するため、ユーザー(またはUI)がケースに応じて選べばよく、本ドメインはどちらか一方を強制しない。
@@ -195,11 +197,15 @@ CSV到着後の消込(CSV由来): (借) 資産・普通預金        250,000
 
 `journal_entry_links`側は`to_entry_id`ごとに独立した行として`amount`を持つため、1件の消込仕訳が何件・何種類のタグを一括で消し込んでいても、[1.6](#16-分割消込消込残高による完了判定)の消込残高は`to_entry`単位で個別に正しく計算できる。タグ別残高([projects.md 1.4](./projects.md#14-集計への影響))も、消込仕訳側の各行が正しいタグを持つ限り、同じ計算式でプロジェクトごとに正しく減っていく。
 
-> **タグ(project_id・account_id)による候補検索は、消込/精算仕訳自身(from_entry側)を誤って含みうる(計画Issue #40)**
-> 一時勘定の`project_id`・`account_id`は、消込/精算対象(`to_entry`側)だけでなく、本節の引き継ぎにより消込/精算仕訳自身(`from_entry`側)の一時勘定行にも同じ値が設定される。そのため、「このタグが付いた一時勘定行を持つ仕訳」を単純に検索して未消込候補の一覧を組み立てると、過去に作成済みの消込/精算仕訳自身が候補に紛れ込む。呼び出し側は、`settles`リンクの`from_entry_id`として自分自身が登場する仕訳(=それ自体が消込/精算仕訳であるもの)を候補から除外してから[1.6](#16-分割消込消込残高による完了判定)の消込残高計算・`findUnsettledEntries`等に渡す必要がある([expense-splitting.md 1.5](./expense-splitting.md#15-割勘の履歴と取り消し)の`findUnallocatedEntries`(`allocates`リンクの`from_entry`側を割勘仕訳とみなす判定)と対称的な考え方)。詳細は`docs/decisions.md`(2026-08-15)参照。
+> **行単位化(計画Issue #132)により、候補検索での消込/精算仕訳自身の混入が解消済み**
+> 以前(仕訳単位のリンク)は、一時勘定の`project_id`・`account_id`が消込/精算対象(`to_entry`側)だけでなく、本節の引き継ぎにより消込/精算仕訳自身(`from_entry`側)の一時勘定行にも同じ値で設定されるため、「このタグが付いた一時勘定行を持つ仕訳」を単純に検索すると過去に作成済みの消込/精算仕訳自身が候補に紛れ込んでいた(計画Issue #40)。呼び出し側は、`settles`リンクの`from_entry_id`として自分自身が登場する仕訳を候補から除外する必要があった([expense-splitting.md 1.5](./expense-splitting.md#15-割勘の履歴と取り消し)の`findUnallocatedEntries`と対称的な考え方、詳細は`docs/decisions.md`2026-08-15)。
+>
+> 行単位(`from_line_id`)になった現在は、リンクが「どの明細行が消込/精算する側(from_line)か」を直接指すため、`findSettlementTargetLines`(`calculateSettlementBalance.ts`)がsettlesリンクの`fromLineId`になっている行を候補から機械的に除外できる。タグが同じ値であることに依存した見分けではなく構造的な判定になり、この回避策は不要になった。
 
-> **1件のto_entryに対し、household_member_idの異なる複数の一時勘定行を持たせてはいけない(計画Issue #40)**
-> 本節の「タグが異なる元仕訳をまとめて消し込む場合」は、`to_entry`(元仕訳)が複数ある場合に、消込/精算仕訳(`from_entry`)側の一時勘定行をタグの組み合わせの数だけ分けることを定めている。これは`journal_entry_links`が`to_entry_id`ごとに独立した`amount`を持つ(一対多)ことで初めて成立する設計であり、逆に**同じ`to_entry`1件に対して`household_member_id`の異なる複数の一時勘定行を持つ仕訳**は想定していない。既存の`SettlementScreen`(`calculateSettlementBalance`)は未精算残高を`account_id`一致のみで仕訳単位に合算し`household_member_id`を区別しないため、このような仕訳が存在すると異なる世帯メンバーの残高が1つに合算され、一方の精算操作でもう一方の債務まで無警告で消し込まれてしまう。割勘機能([expense-splitting.md](./expense-splitting.md))は当初この制約に気づかず、複数人割勘を「常に1件の複合仕訳にまとめる」設計を試みてevaluatorレビューで実際にこの不具合が再現され、統合単位を「分担者(人)ごと」(=1件の仕訳が持つ一時勘定行のhousehold_member_idタグは常に単一)に限定することで解決した。詳細は`docs/decisions.md`(2026-09-06)参照。今後、一時勘定を経由する新しい機能を設計する際も、1件の仕訳が同一account_id・project_idの一時勘定行を複数持つ場合はhousehold_member_idを揃えるか、精算/消込側をタグ単位で区別できるように改修すること。
+> **行単位化(計画Issue #132)により、1件のto_entryがhousehold_member_idの異なる複数の一時勘定行を持てるようになった**
+> 以前(仕訳単位のリンク)は、`calculateSettlementBalance`が未精算残高を`account_id`一致のみで仕訳単位に合算し`household_member_id`を区別しなかったため、同じ`to_entry`1件に`household_member_id`の異なる複数の一時勘定行が存在すると異なる世帯メンバーの残高が1つに合算され、一方の精算操作でもう一方の債務まで無警告で消し込まれる不具合があった(計画Issue #40)。割勘機能([expense-splitting.md](./expense-splitting.md))は当初この制約に気づかず複数人割勘を「常に1件の複合仕訳にまとめる」設計を試みてevaluatorレビューで実際にこの不具合が再現され、統合単位を「分担者(人)ごと」(=1件の仕訳が持つ一時勘定行のhousehold_member_idタグは常に単一)に限定することで回避していた(詳細は`docs/decisions.md`2026-09-06)。
+>
+> 行単位の`calculateLineSettlementBalance`は`toLine`(明細行そのもの)を指定して計算するため、1件の仕訳が`household_member_id`の異なる複数の一時勘定行を持っていても、行ごとに残高が独立して計算され、他の世帯メンバーの残高と混ざらない。この制約は設計上不要になったが、割勘機能側の「分担者ごとに仕訳を分ける」統合単位自体は、1人ずつ独立して取り消し・精算できるという別の利点があるため、計画Issue #132の時点では変更しない。
 
 ### 1.8 タグ不整合の予防と検知
 

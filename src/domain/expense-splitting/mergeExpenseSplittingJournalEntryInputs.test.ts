@@ -11,9 +11,9 @@
  * 呼び出し側の責務である。buildHouseholdMemberExpenseSplittingJournalEntryInput/
  * buildCounterpartyExpenseSplittingJournalEntryInput(1.3・1.4節の2者間仕訳パターン)が
  * 個別に組み立てたCreateJournalEntryInputの配列を受け取り、明細行を1つの配列に結合し、
- * allocatesリンクは元仕訳(to_entry_id)ごとに金額を合算して1本にまとめる(docs/domain/
- * journal.md 1.8「1回の割勘バッチが複数の元仕訳をまとめて対象にすることもある(一対多)」
- * という既存のリンク設計をそのまま活用する)。DB非依存、外部依存なし。
+ * allocatesリンクは(計画Issue #132で明細行単位になったため)各inputのfrom_line位置
+ * (fromLineIndex)を結合後の行位置へずらして、リンクごとにそのまま引き継ぐ。DB非依存、
+ * 外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import { buildHouseholdMemberExpenseSplittingJournalEntryInput } from './buildHouseholdMemberExpenseSplittingJournalEntryInput'
@@ -27,13 +27,13 @@ const MEMBER_A = 100
 const MEMBER_B = 200
 const FRIEND_COUNTERPARTY_ID = 300
 const PROJECT_ID = 26
-const ORIGINAL_ENTRY_ID_1 = 901
-const ORIGINAL_ENTRY_ID_2 = 902
+const ORIGINAL_LINE_ID_1 = 901
+const ORIGINAL_LINE_ID_2 = 902
 
 describe('mergeExpenseSplittingJournalEntryInputs', () => {
   it('複数のCreateJournalEntryInputの明細行を1つの配列に結合する', () => {
     const memberInput = buildHouseholdMemberExpenseSplittingJournalEntryInput({
-      originalEntryId: ORIGINAL_ENTRY_ID_1,
+      originalLineId: ORIGINAL_LINE_ID_1,
       expenseAccountId: EXPENSE_ACCOUNT_ID,
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       advanceLiabilityAccountId: ADVANCE_LIABILITY_ACCOUNT_ID,
@@ -44,7 +44,7 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
       entryDate: '2026-09-06',
     })
     const counterpartyInput = buildCounterpartyExpenseSplittingJournalEntryInput({
-      originalEntryId: ORIGINAL_ENTRY_ID_1,
+      originalLineId: ORIGINAL_LINE_ID_1,
       expenseAccountId: EXPENSE_ACCOUNT_ID,
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
@@ -67,9 +67,9 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
     expect(merged.lines).toEqual([...memberInput.lines, ...counterpartyInput.lines])
   })
 
-  it('同じ元仕訳に対する複数のallocatesリンクは金額を合算して1本にまとめる', () => {
+  it('各inputのallocatesリンクは、結合後の行位置を指すようfromLineIndexをinputごとの行数分だけずらして引き継ぐ', () => {
     const memberInput = buildHouseholdMemberExpenseSplittingJournalEntryInput({
-      originalEntryId: ORIGINAL_ENTRY_ID_1,
+      originalLineId: ORIGINAL_LINE_ID_1,
       expenseAccountId: EXPENSE_ACCOUNT_ID,
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       advanceLiabilityAccountId: ADVANCE_LIABILITY_ACCOUNT_ID,
@@ -80,7 +80,7 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
       entryDate: '2026-09-06',
     })
     const counterpartyInput = buildCounterpartyExpenseSplittingJournalEntryInput({
-      originalEntryId: ORIGINAL_ENTRY_ID_1,
+      originalLineId: ORIGINAL_LINE_ID_1,
       expenseAccountId: EXPENSE_ACCOUNT_ID,
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
@@ -97,12 +97,20 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
       householdMemberId: MEMBER_A,
     })
 
-    expect(merged.links).toEqual([{ toEntryId: ORIGINAL_ENTRY_ID_1, linkType: 'allocates', amount: 800 }])
+    // 世帯メンバー分(4行)のfrom_lineは[2]のまま、世帯外相手分(2行)のfrom_lineは4行ぶんずれて[5]になる
+    expect(merged.links).toEqual([
+      { fromLineIndex: 2, toLineId: ORIGINAL_LINE_ID_1, linkType: 'allocates', amount: 500 },
+      { fromLineIndex: 5, toLineId: ORIGINAL_LINE_ID_1, linkType: 'allocates', amount: 300 },
+    ])
+    // ずらしたfromLineIndexは、結合後の配列で費用の貸方行(元のfrom_line)を指している
+    for (const link of merged.links ?? []) {
+      expect(merged.lines[link.fromLineIndex]).toMatchObject({ accountId: EXPENSE_ACCOUNT_ID, side: 'credit' })
+    }
   })
 
-  it('元仕訳が複数ある場合、元仕訳ごとに独立したallocatesリンクを保持する', () => {
+  it('元仕訳が複数ある場合、元仕訳の費用行ごとに独立したallocatesリンクを保持する', () => {
     const inputForEntry1 = buildCounterpartyExpenseSplittingJournalEntryInput({
-      originalEntryId: ORIGINAL_ENTRY_ID_1,
+      originalLineId: ORIGINAL_LINE_ID_1,
       expenseAccountId: EXPENSE_ACCOUNT_ID,
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
@@ -112,7 +120,7 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
       entryDate: '2026-09-06',
     })
     const inputForEntry2 = buildCounterpartyExpenseSplittingJournalEntryInput({
-      originalEntryId: ORIGINAL_ENTRY_ID_2,
+      originalLineId: ORIGINAL_LINE_ID_2,
       expenseAccountId: EXPENSE_ACCOUNT_ID,
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
@@ -130,14 +138,14 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
     })
 
     expect(merged.links).toEqual([
-      { toEntryId: ORIGINAL_ENTRY_ID_1, linkType: 'allocates', amount: 500 },
-      { toEntryId: ORIGINAL_ENTRY_ID_2, linkType: 'allocates', amount: 250 },
+      { fromLineIndex: 1, toLineId: ORIGINAL_LINE_ID_1, linkType: 'allocates', amount: 500 },
+      { fromLineIndex: 3, toLineId: ORIGINAL_LINE_ID_2, linkType: 'allocates', amount: 250 },
     ])
   })
 
   it('inputsが1件のみの場合でも、entryDate・memo・householdMemberIdの上書きを適用した1件の仕訳を返す', () => {
     const singleInput = buildCounterpartyExpenseSplittingJournalEntryInput({
-      originalEntryId: ORIGINAL_ENTRY_ID_1,
+      originalLineId: ORIGINAL_LINE_ID_1,
       expenseAccountId: EXPENSE_ACCOUNT_ID,
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
@@ -159,6 +167,8 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
     expect(merged.memo).toBe('ユーザーが入力した摘要')
     expect(merged.householdMemberId).toBe(MEMBER_B)
     expect(merged.lines).toEqual(singleInput.lines)
-    expect(merged.links).toEqual([{ toEntryId: ORIGINAL_ENTRY_ID_1, linkType: 'allocates', amount: 500 }])
+    expect(merged.links).toEqual([
+      { fromLineIndex: 1, toLineId: ORIGINAL_LINE_ID_1, linkType: 'allocates', amount: 500 },
+    ])
   })
 })

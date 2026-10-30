@@ -1,4 +1,5 @@
 import type { CreateJournalEntryInput } from '../journal/JournalEntry'
+import type { JournalEntryLinkTarget } from '../journal/JournalEntryLink'
 
 export interface MergeExpenseSplittingJournalEntryInputsParams {
   /**
@@ -19,11 +20,11 @@ export interface MergeExpenseSplittingJournalEntryInputsParams {
  *
  * 明細行(lines)は全inputsのlinesをそのまま結合するだけで、1.3・1.4節の2者間仕訳
  * パターン自体(各行のaccount_id・household_member_id・counterparty_id等)は変更しない。
- * allocatesリンクは元仕訳(to_entry_id)ごとに金額を合算して1本にまとめる
- * (docs/domain/journal.md 1.8「1回の割勘バッチが複数の元仕訳をまとめて対象にすることも
- * ある(一対多)」という既存のリンク設計をそのまま活用する。同じ元仕訳に対して分担者ごとに
- * 別々のリンクを残すと、元仕訳の詳細画面から辿った際に同じ割勘バッチの按分額が分散して
- * 見えてしまうため、元仕訳単位で合算する)。
+ * allocatesリンクは明細行単位(計画Issue #132)で、各inputのfrom_line(fromLineIndex)がその
+ * input内の位置を指すため、結合後の配列での位置になるようinputごとの行数分だけずらして
+ * そのまま引き継ぐ。リンクは分担者・元仕訳の組ごとに別の費用行(from_line)から出るので、
+ * 以前のように元仕訳単位で金額を合算して1本にまとめる必要はない(同じ元仕訳の費用行に
+ * 向かうリンクが複数あっても、to_lineごとの割勘額はリンクのamountの合計で求まる)。
  *
  * entryDate・memo・householdMemberIdはinputs内の値(各分担者の按分計算時点のもの)を使わず、
  * 呼び出し側が指定する値で統一する(1件の仕訳としてまとめる以上、複数の値を持てないため)。
@@ -31,11 +32,13 @@ export interface MergeExpenseSplittingJournalEntryInputsParams {
 export function mergeExpenseSplittingJournalEntryInputs(
   params: MergeExpenseSplittingJournalEntryInputsParams,
 ): CreateJournalEntryInput {
-  const amountByToEntryId = new Map<number, number>()
+  const links: JournalEntryLinkTarget[] = []
+  let lineOffset = 0
   for (const input of params.inputs) {
     for (const link of input.links ?? []) {
-      amountByToEntryId.set(link.toEntryId, (amountByToEntryId.get(link.toEntryId) ?? 0) + link.amount)
+      links.push({ ...link, fromLineIndex: link.fromLineIndex + lineOffset })
     }
+    lineOffset += input.lines.length
   }
 
   return {
@@ -43,10 +46,6 @@ export function mergeExpenseSplittingJournalEntryInputs(
     memo: params.memo,
     householdMemberId: params.householdMemberId,
     lines: params.inputs.flatMap((input) => input.lines),
-    links: [...amountByToEntryId].map(([toEntryId, amount]) => ({
-      toEntryId,
-      linkType: 'allocates' as const,
-      amount,
-    })),
+    links,
   }
 }

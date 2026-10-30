@@ -10,6 +10,12 @@ import type {
  * (空文字・非数値を含む)をそのまま保持できるよう文字列で持つ。
  */
 export interface JournalEntryFormLine {
+  /**
+   * 確定済み明細のid(計画Issue #132)。JournalEntryDetailScreenが既存の明細を読み込んだ
+   * 場合のみ設定され、更新時にJournalLineInput.idとして引き継ぐことで、行idによる差分更新
+   * (行に紐づくリンクの維持)を可能にする。新規行・下書きから復元した行は未設定のまま。
+   */
+  lineId?: number
   accountId: number | null
   side: JournalLineSide | null
   amountInput: string
@@ -62,7 +68,8 @@ export function isCounterpartyEligibleCategory(category: AccountCategory): boole
 /**
  * 下書き保存(journalEntryDraft.update)用に変換する。下書きはバランス検証・
  * 必須項目チェックを一切課さないため(docs/domain/journal.md 3章)、
- * 数値に変換できない金額はnullとしてそのまま保存する。
+ * 数値に変換できない金額はnullとしてそのまま保存する。下書きは新規仕訳専用
+ * (purpose = 'manual_entry')で確定済みの明細を参照しないため、lineIdは持ち込まない。
  */
 export function toJournalEntryDraftLineInput(
   line: JournalEntryFormLine,
@@ -92,6 +99,7 @@ export function toJournalLineInput(line: JournalEntryFormLine): JournalLineInput
   if (line.amountInput === '' || !Number.isFinite(amount) || amount <= 0) return null
 
   return {
+    ...(line.lineId === undefined ? {} : { id: line.lineId }),
     accountId: line.accountId,
     side: line.side,
     amount,
@@ -151,10 +159,12 @@ export function isLineEmpty(line: JournalEntryFormLine): boolean {
  * 確定済み仕訳明細(JournalLine)をフォーム行に変換する(計画Issue #125)。
  * JournalEntryDetailScreenでのLines編集で、既存の明細をJournalEntryLinesTableの
  * 入力状態として読み込む際に使う。確定済み明細は科目・貸借・金額がすべて必須のため
- * (fromJournalEntryDraftLineと異なり)null合流の分岐は不要。
+ * (fromJournalEntryDraftLineと異なり)null合流の分岐は不要。明細のidはlineIdとして保持し、
+ * 更新時にJournalLineInput.idへ引き継ぐ(計画Issue #132)。
  */
 export function fromJournalLine(line: JournalLine): JournalEntryFormLine {
   return {
+    lineId: line.id,
     accountId: line.accountId,
     side: line.side,
     amountInput: String(line.amount),

@@ -1,4 +1,4 @@
--- journal_entries / journal_lines / journal_entry_links のDDL
+-- journal_entries / journal_lines / journal_entry_links(明細行単位) のDDL
 -- ドメイン定義・各制約の設計判断は docs/domain/journal.md を参照
 
 CREATE TABLE journal_entries (
@@ -98,17 +98,21 @@ END;
 -- 貸借バランス(借方合計=貸方合計)はDBで強制しない。journal.md 1.3参照。
 -- JournalEntryRepository がトランザクション書き込み前に検証する。
 
+-- 仕訳間の関係は明細行(journal_lines)単位で記録する(計画Issue #132、docs/domain/journal.md 1.8)。
+-- 仕訳単位のid(from_entry_id/to_entry_id)は持たず、必要な場合は journal_lines との JOIN で導出する。
+-- 明細行(または明細行を持つ仕訳)が削除されるとリンクも一緒に削除される(ON DELETE CASCADE)。
+-- 仕訳の更新は行idによる差分更新のため、日付・メモ・金額の修正でリンクが失われることはない。
 CREATE TABLE journal_entry_links (
   id              INTEGER PRIMARY KEY,
-  from_entry_id   INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
-  to_entry_id     INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+  from_line_id    INTEGER NOT NULL REFERENCES journal_lines(id) ON DELETE CASCADE,
+  to_line_id      INTEGER NOT NULL REFERENCES journal_lines(id) ON DELETE CASCADE,
   link_type       TEXT NOT NULL CHECK (link_type IN ('settles', 'allocates')),
   amount          INTEGER NOT NULL CHECK (amount > 0),
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_journal_entry_links_from ON journal_entry_links(from_entry_id);
-CREATE INDEX idx_journal_entry_links_to   ON journal_entry_links(to_entry_id);
+CREATE INDEX idx_journal_entry_links_from ON journal_entry_links(from_line_id);
+CREATE INDEX idx_journal_entry_links_to   ON journal_entry_links(to_line_id);
 
 -- journal_entry_drafts / journal_entry_draft_lines のDDL
 -- journal_entries とは異なり貸借バランス・NOT NULL制約を課さない(入力途中の状態を許容するため)

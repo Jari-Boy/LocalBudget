@@ -1,8 +1,8 @@
 /**
  * SqlJsJournalEntryRepository の統合テスト。
  * sql.js(SQLite WASM)をNode上で実際に動かし、docs/domain/journal.md・docs/schema/journal.sql
- * に定義された仕訳(JournalEntry)・仕訳明細(JournalLine)の作成・参照・更新(明細行の全差し替え)・
- * 削除(物理削除)、貸借バランス検証(不一致時は書き込まずUnbalancedJournalEntryErrorを投げる)、
+ * に定義された仕訳(JournalEntry)・仕訳明細(JournalLine)の作成・参照・更新(行idによる差分更新、
+ * 計画Issue #132)・削除(物理削除)、貸借バランス検証(不一致時は書き込まずUnbalancedJournalEntryErrorを投げる)、
  * is_reconcilable資産・負債への直接記帳制限(docs/domain/reconciliation.md 1.2、不一致時は
  * RestrictedAccountPostingErrorを投げる)、FK制約有効化によるDB側エラー時のロールバック保証を検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
@@ -15,7 +15,6 @@ import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
-import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMismatchError'
 
 let db: Database
 let repository: SqlJsJournalEntryRepository
@@ -378,8 +377,25 @@ describe('findAll', () => {
   })
 })
 
-describe('update(明細行の全差し替え)', () => {
-  it('全明細を差し替えjournal_entries.updated_atを更新する', () => {
+/**
+ * 更新対象の仕訳より後に別の仕訳を作成する。SQLiteはINTEGER PRIMARY KEYがAUTOINCREMENTでない場合、
+ * 削除した行が採番の末尾だと同じidを再利用してしまうため、対象の明細が採番の末尾にならないよう
+ * 「後続の仕訳」を用意しておく。これがないと、全削除→再挿入という旧実装でも偶然idが一致し、
+ * 行idの維持を検証するテストが意図どおりに失敗(red)しない。
+ */
+function createLaterEntry(): void {
+  repository.create({
+    householdMemberId: memberId,
+    entryDate: '2026-12-31',
+    lines: [
+      { accountId: miscExpenseAccountId, side: 'debit', amount: 1 },
+      { accountId: cashAccountId, side: 'credit', amount: 1 },
+    ],
+  })
+}
+
+describe('update(行idによる差分更新、計画Issue #132)', () => {
+  it('全明細をid未指定で差し替えjournal_entries.updated_atを更新する', () => {
     const created = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-10',
@@ -414,7 +430,7 @@ describe('update(明細行の全差し替え)', () => {
     expect(updated.updatedAt).not.toBe('2000-01-01 00:00:00')
   })
 
-  it('既存のjournal_lines行を新規挿入行に差し替える(更新をまたいで明細idは保持されない)', () => {
+  it('id未指定の行は新規挿入として扱い、既存の行は削除される(明細idは引き継がれない)', () => {
     const created = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-12',
@@ -450,6 +466,191 @@ describe('update(明細行の全差し替え)', () => {
     for (const id of originalLineIds) {
       expect(newLineIds).not.toContain(id)
     }
+  })
+
+  it('idを指定した既存行は同じidのままUPDATEされ、日付・メモ・金額・科目の変更が反映される', () => {
+    const created = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-12',
+      memo: '更新前',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+    const [debitLine, creditLine] = created.lines
+    createLaterEntry()
+
+    const updated = repository.update(created.id, {
+      entryDate: '2026-07-20',
+      memo: '更新後',
+      lines: [
+        { id: debitLine.id, accountId: miscExpenseAccountId, side: 'debit', amount: 1500 },
+        { id: creditLine.id, accountId: cashAccountId, side: 'credit', amount: 1500 },
+      ],
+    })
+
+    expect(updated.lines.map((line) => line.id)).toEqual([debitLine.id, creditLine.id])
+    expect(updated.lines[0]).toMatchObject({ accountId: miscExpenseAccountId, amount: 1500 })
+    expect(updated.lines[1]).toMatchObject({ accountId: cashAccountId, amount: 1500 })
+    expect(updated.entryDate).toBe('2026-07-20')
+    expect(updated.memo).toBe('更新後')
+  })
+
+  it('id指定の行にprojectId等の任意項目を設定・解除でき、idは変わらない', () => {
+    const projectId = insertProject(db, '旅行')
+    const created = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-12',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000, projectId },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+    const [debitLine, creditLine] = created.lines
+    createLaterEntry()
+
+    const updated = repository.update(created.id, {
+      entryDate: '2026-07-12',
+      lines: [
+        { id: debitLine.id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000, projectId: null },
+        { id: creditLine.id, accountId: cashAccountId, side: 'credit', amount: 1000, householdMemberId: memberId },
+      ],
+    })
+
+    expect(updated.lines[0]).toMatchObject({ id: debitLine.id, projectId: null })
+    expect(updated.lines[1]).toMatchObject({ id: creditLine.id, householdMemberId: memberId })
+  })
+
+  it('id未指定の行は新規INSERTされ、既存の行のidは維持される', () => {
+    const created = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-12',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+    const [debitLine, creditLine] = created.lines
+    createLaterEntry()
+
+    const updated = repository.update(created.id, {
+      entryDate: '2026-07-12',
+      lines: [
+        { id: debitLine.id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { id: creditLine.id, accountId: cashAccountId, side: 'credit', amount: 700 },
+        { accountId: payableAccountId, side: 'credit', amount: 300 },
+      ],
+    })
+
+    expect(updated.lines).toHaveLength(3)
+    expect(updated.lines.slice(0, 2).map((line) => line.id)).toEqual([debitLine.id, creditLine.id])
+    expect([debitLine.id, creditLine.id]).not.toContain(updated.lines[2].id)
+  })
+
+  it('入力から消えた既存行はDELETEされる', () => {
+    const created = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-12',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 600 },
+        { accountId: miscExpenseAccountId, side: 'debit', amount: 400 },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+    const [foodLine, miscLine, cashLine] = created.lines
+    createLaterEntry()
+
+    const updated = repository.update(created.id, {
+      entryDate: '2026-07-12',
+      lines: [
+        { id: foodLine.id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { id: cashLine.id, accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    expect(updated.lines.map((line) => line.id)).toEqual([foodLine.id, cashLine.id])
+    expect(updated.lines.map((line) => line.id)).not.toContain(miscLine.id)
+  })
+
+  it('他の仕訳に属する明細idを指定するとエラーをスローし、何も書き込まない', () => {
+    const created = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-12',
+      memo: '更新前',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+    const other = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-13',
+      lines: [
+        { accountId: miscExpenseAccountId, side: 'debit', amount: 500 },
+        { accountId: cashAccountId, side: 'credit', amount: 500 },
+      ],
+    })
+
+    expect(() =>
+      repository.update(created.id, {
+        entryDate: '2026-07-12',
+        memo: '更新後',
+        lines: [
+          { id: other.lines[0].id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+          { id: created.lines[1].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
+        ],
+      }),
+    ).toThrow()
+
+    expect(repository.findById(created.id)).toEqual(created)
+    expect(repository.findById(other.id)).toEqual(other)
+  })
+
+  it('同じ明細idを複数の入力行で指定するとエラーをスローし、何も書き込まない', () => {
+    const created = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-12',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    expect(() =>
+      repository.update(created.id, {
+        entryDate: '2026-07-12',
+        lines: [
+          { id: created.lines[0].id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+          { id: created.lines[0].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
+        ],
+      }),
+    ).toThrow()
+
+    expect(repository.findById(created.id)).toEqual(created)
+  })
+
+  it('UPDATE中にDB制約違反が起きた場合はトランザクション全体をロールバックし、既存行のidと内容を保つ', () => {
+    const created = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-12',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    expect(() =>
+      repository.update(created.id, {
+        entryDate: '2026-07-12',
+        lines: [
+          { id: created.lines[0].id, accountId: 99999, side: 'debit', amount: 1000 },
+          { id: created.lines[1].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
+        ],
+      }),
+    ).toThrow()
+
+    expect(repository.findById(created.id)).toEqual(created)
   })
 })
 
@@ -526,10 +727,10 @@ describe('delete', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-06',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
-        { accountId: cashAccountId, side: 'credit', amount: 500 },
+        { accountId: foodExpenseAccountId, side: 'credit', amount: 500 },
+        { accountId: cashAccountId, side: 'debit', amount: 500 },
       ],
-      links: [{ toEntryId: original.id, linkType: 'allocates', amount: 500 }],
+      links: [{ fromLineIndex: 0, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
 
     expect(repository.listLinksForEntry(original.id)).toHaveLength(1)
@@ -611,18 +812,18 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       householdMemberId: memberId,
       entryDate: '2026-07-02',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
-        { accountId: payableAccountId, side: 'credit', amount: 500, projectId },
+        { accountId: foodExpenseAccountId, side: 'credit', amount: 500 },
+        { accountId: payableAccountId, side: 'debit', amount: 500, projectId },
       ],
-      links: [{ toEntryId: original.id, linkType: 'allocates', amount: 500 }],
+      links: [{ fromLineIndex: 0, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
 
     const untagged = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-03',
       lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
-        { accountId: payableAccountId, side: 'credit', amount: 80000 },
+        { accountId: rentExpenseAccountId, side: 'credit', amount: 80000 },
+        { accountId: payableAccountId, side: 'debit', amount: 80000 },
       ],
     })
     const taggedToEntry = repository.create({
@@ -630,13 +831,13 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       entryDate: '2026-07-04',
       sourceType: 'external_import',
       lines: [
-        { accountId: payableAccountId, side: 'debit', amount: 80000, projectId },
+        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000, projectId },
         { accountId: bankAccountId, side: 'credit', amount: 80000 },
       ],
     })
     repository.createLink({
-      fromEntryId: untagged.id,
-      toEntryId: taggedToEntry.id,
+      fromLineId: untagged.lines[0].id,
+      toLineId: taggedToEntry.lines[0].id,
       linkType: 'allocates',
       amount: 80000,
     })
@@ -705,294 +906,12 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
         { accountId: payableAccountId, side: 'debit', amount: 80000, projectId },
         { accountId: bankAccountId, side: 'credit', amount: 80000 },
       ],
-      links: [{ toEntryId: toEntry.id, linkType: 'settles', amount: 80000 }],
+      links: [{ fromLineIndex: 0, toLineId: toEntry.lines[1].id, linkType: 'settles', amount: 80000 }],
     })
 
     expect(() => repository.deleteByProjectId(projectId)).not.toThrow()
     expect(repository.findById(toEntry.id)).toBeNull()
     expect(repository.findById(fromEntry.id)).toBeNull()
-  })
-})
-
-describe('journal_entry_links(仕訳間の関係、journal.md 1.8・2.3)', () => {
-  it('消込仕訳側に一致する一時勘定行がある場合はsettlesリンクを作成する', () => {
-    const toEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      memo: '家賃(暫定計上)',
-      lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
-        { accountId: payableAccountId, side: 'credit', amount: 80000 },
-      ],
-    })
-    const fromEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-05',
-      memo: '家賃(消込)',
-      sourceType: 'external_import',
-      lines: [
-        { accountId: payableAccountId, side: 'debit', amount: 80000 },
-        { accountId: bankAccountId, side: 'credit', amount: 80000 },
-      ],
-    })
-
-    const link = repository.createLink({
-      fromEntryId: fromEntry.id,
-      toEntryId: toEntry.id,
-      linkType: 'settles',
-      amount: 80000,
-    })
-
-    expect(link.linkType).toBe('settles')
-    expect(link.fromEntryId).toBe(fromEntry.id)
-    expect(link.toEntryId).toBe(toEntry.id)
-    expect(link.amount).toBe(80000)
-  })
-
-  it('消込仕訳側に一致する科目行がない場合はSettlementTagMismatchErrorをスローし何も書き込まない', () => {
-    const toEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
-        { accountId: payableAccountId, side: 'credit', amount: 80000 },
-      ],
-    })
-    const fromEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-05',
-      sourceType: 'external_import',
-      lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 80000 },
-        { accountId: bankAccountId, side: 'credit', amount: 80000 },
-      ],
-    })
-
-    expect(() =>
-      repository.createLink({
-        fromEntryId: fromEntry.id,
-        toEntryId: toEntry.id,
-        linkType: 'settles',
-        amount: 80000,
-      }),
-    ).toThrow(SettlementTagMismatchError)
-
-    expect(repository.listLinksForEntry(toEntry.id)).toHaveLength(0)
-  })
-
-  it('project_id/household_member_idが一致しない場合はSettlementTagMismatchErrorをスローする', () => {
-    const projectId = insertProject(db, 'スマホ24回')
-    const otherProjectId = insertProject(db, 'タブレット12回')
-    const toEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 10000, projectId },
-        { accountId: payableAccountId, side: 'credit', amount: 10000, projectId },
-      ],
-    })
-    const fromEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-05',
-      sourceType: 'external_import',
-      lines: [
-        { accountId: payableAccountId, side: 'debit', amount: 10000, projectId: otherProjectId },
-        { accountId: bankAccountId, side: 'credit', amount: 10000 },
-      ],
-    })
-
-    expect(() =>
-      repository.createLink({
-        fromEntryId: fromEntry.id,
-        toEntryId: toEntry.id,
-        linkType: 'settles',
-        amount: 10000,
-      }),
-    ).toThrow(SettlementTagMismatchError)
-  })
-
-  it('一致する行の金額がリンク金額を下回る場合はSettlementTagMismatchErrorをスローする', () => {
-    const toEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
-        { accountId: payableAccountId, side: 'credit', amount: 80000 },
-      ],
-    })
-    const fromEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-05',
-      sourceType: 'external_import',
-      lines: [
-        { accountId: payableAccountId, side: 'debit', amount: 5000 },
-        { accountId: bankAccountId, side: 'credit', amount: 5000 },
-      ],
-    })
-
-    expect(() =>
-      repository.createLink({
-        fromEntryId: fromEntry.id,
-        toEntryId: toEntry.id,
-        linkType: 'settles',
-        amount: 80000,
-      }),
-    ).toThrow(SettlementTagMismatchError)
-  })
-
-  it('allocatesリンクはsettlesのハード検証を受けずに許可される', () => {
-    const toEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
-        { accountId: cashAccountId, side: 'credit', amount: 3000 },
-      ],
-    })
-    const fromEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-02',
-      lines: [
-        { accountId: miscExpenseAccountId, side: 'debit', amount: 1500 },
-        { accountId: cashAccountId, side: 'credit', amount: 1500 },
-      ],
-    })
-
-    const link = repository.createLink({
-      fromEntryId: fromEntry.id,
-      toEntryId: toEntry.id,
-      linkType: 'allocates',
-      amount: 1500,
-    })
-
-    expect(link.linkType).toBe('allocates')
-  })
-
-  it('その仕訳がfrom_entry/to_entryいずれかであるリンクを一覧取得する', () => {
-    const toEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
-        { accountId: payableAccountId, side: 'credit', amount: 80000 },
-      ],
-    })
-    const fromEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-05',
-      sourceType: 'external_import',
-      lines: [
-        { accountId: payableAccountId, side: 'debit', amount: 80000 },
-        { accountId: bankAccountId, side: 'credit', amount: 80000 },
-      ],
-    })
-    const link = repository.createLink({
-      fromEntryId: fromEntry.id,
-      toEntryId: toEntry.id,
-      linkType: 'settles',
-      amount: 80000,
-    })
-
-    expect(repository.listLinksForEntry(toEntry.id).map((l) => l.id)).toEqual([link.id])
-    expect(repository.listLinksForEntry(fromEntry.id).map((l) => l.id)).toEqual([link.id])
-    expect(repository.listLinksForEntry(999999)).toHaveLength(0)
-  })
-})
-
-describe('create(linksオプションによる消込仕訳自体の作成とsettlesリンクの同時書き込み)', () => {
-  it('タグが一致する場合は消込仕訳自体とsettlesリンクを1回の呼び出しで作成する', () => {
-    const toEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      memo: '家賃(暫定計上)',
-      lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
-        { accountId: payableAccountId, side: 'credit', amount: 80000 },
-      ],
-    })
-
-    const fromEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-05',
-      memo: '家賃(消込)',
-      sourceType: 'external_import',
-      lines: [
-        { accountId: payableAccountId, side: 'debit', amount: 80000 },
-        { accountId: bankAccountId, side: 'credit', amount: 80000 },
-      ],
-      links: [{ toEntryId: toEntry.id, linkType: 'settles', amount: 80000 }],
-    })
-
-    expect(fromEntry.lines).toHaveLength(2)
-    const links = repository.listLinksForEntry(fromEntry.id)
-    expect(links).toHaveLength(1)
-    expect(links[0]).toMatchObject({
-      fromEntryId: fromEntry.id,
-      toEntryId: toEntry.id,
-      linkType: 'settles',
-      amount: 80000,
-    })
-  })
-
-  it('settlesのハード検証に失敗した場合は仕訳・明細・リンクをまとめてロールバックする', () => {
-    const toEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
-        { accountId: payableAccountId, side: 'credit', amount: 80000 },
-      ],
-    })
-    const entryCountBefore = repository.findAll().length
-
-    expect(() =>
-      repository.create({
-        householdMemberId: memberId,
-        entryDate: '2026-07-05',
-        sourceType: 'external_import',
-        lines: [
-          { accountId: foodExpenseAccountId, side: 'debit', amount: 80000 },
-          { accountId: bankAccountId, side: 'credit', amount: 80000 },
-        ],
-        links: [{ toEntryId: toEntry.id, linkType: 'settles', amount: 80000 }],
-      }),
-    ).toThrow(SettlementTagMismatchError)
-
-    expect(repository.findAll()).toHaveLength(entryCountBefore)
-    expect(repository.listLinksForEntry(toEntry.id)).toHaveLength(0)
-  })
-
-  it('allocatesリンクも同様に、割勘仕訳自体の作成と1回の呼び出しでまとめて書き込める(docs/domain/expense-splitting.md 1.3節)', () => {
-    const originalEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      memo: '食費(A)',
-      lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
-      ],
-    })
-
-    const splitEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-15',
-      memo: '食費割勘',
-      lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
-        { accountId: cashAccountId, side: 'credit', amount: 500 },
-      ],
-      links: [{ toEntryId: originalEntry.id, linkType: 'allocates', amount: 500 }],
-    })
-
-    expect(splitEntry.lines).toHaveLength(2)
-    const links = repository.listLinksForEntry(splitEntry.id)
-    expect(links).toHaveLength(1)
-    expect(links[0]).toMatchObject({
-      fromEntryId: splitEntry.id,
-      toEntryId: originalEntry.id,
-      linkType: 'allocates',
-      amount: 500,
-    })
   })
 })
 

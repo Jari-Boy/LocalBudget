@@ -15,12 +15,20 @@ import type { CreateJournalEntryLinkInput, JournalEntryLink } from './JournalEnt
  * 実装はそちらの制約違反例外をそのまま呼び出し元に伝播させる。
  *
  * 仕訳間の関係(journal_entry_links、docs/domain/journal.md 1.8・2.3)も本Repositoryのメソッドとして
- * 扱う。settlesリンクの作成は消込仕訳自体の作成と同一トランザクションで書き込む必要があるため
- * (docs/domain/reconciliation.md 2.3)、別Repositoryに分離せず、CreateJournalEntryInput.linksを
- * 経由してcreate()内の単一トランザクションでリンクも書き込めるようにしている(settlesハード検証
- * 失敗時は仕訳・明細・リンクのいずれも書き込まれずROLLBACKされる)。createLinkは、既に存在する
- * 2つの仕訳間へ事後的にリンクを追加する場合(allocatesの追加付与等)のための別メソッドであり、
- * こちらは独立したトランザクションを持つ。
+ * 扱う。リンクは明細行(journal_lines)単位で、from_line(消込・割勘する側)からto_line
+ * (消込・割勘される側)へ張る(計画Issue #132)。settlesリンクの作成は消込仕訳自体の作成と同一
+ * トランザクションで書き込む必要があるため(docs/domain/reconciliation.md 2.3)、別Repositoryに
+ * 分離せず、CreateJournalEntryInput.linksを経由してcreate()内の単一トランザクションで
+ * リンクも書き込めるようにしている(新しい仕訳の行はfromLineIndexで指す。検証に失敗した場合は
+ * 仕訳・明細・リンクのいずれも書き込まれずROLLBACKされる)。createLinkは、既に存在する
+ * 2つの明細行の間へ事後的にリンクを追加する場合のための別メソッドであり、こちらは独立した
+ * トランザクションを持つ。リンク作成時は、科目一致・貸借が逆・from_lineの金額上限
+ * (settlesはさらに一時勘定であることと世帯メンバー・取引先・プロジェクトの一致)を検証し、
+ * 違反はSettlementTagMismatchError(settles)またはJournalEntryLinkLineErrorで拒否する。
+ *
+ * update()は明細行のidによる差分更新(計画Issue #132): idを指定した行は同じidのままUPDATEされ、
+ * 行に紐づくリンクが維持される。id未指定の行は新規INSERT、入力から消えた既存行はDELETE
+ * され、その行のリンクもON DELETE CASCADEで一緒に削除される。
  */
 export interface JournalEntryRepository {
   create(input: CreateJournalEntryInput): JournalEntry

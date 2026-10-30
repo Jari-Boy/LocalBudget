@@ -1,13 +1,13 @@
 /**
  * detectSettlementTagMismatch(タグ不整合の事後検知)の純粋関数としてのユニットテスト。
- * docs/domain/settlement.md 1.8の「to_entry側の一時勘定行のタグと、リンクされた消込仕訳側の
- * 対応行のタグを比較し、食い違っていれば警告を出す」ルールを検証する。既存の作成時ハード検証
- * (SqlJsJournalEntryRepository.assertSettlementTagMatch)と同じ「一致する行が存在するか」という
- * 存在チェックの考え方を踏襲し、タグ一致・project_id不一致・household_member_id不一致・
- * 金額不足・複数行の中の1件が一致する場合を含めて検証する。DB非依存、外部依存なし。
+ * docs/domain/settlement.md 1.8の「to_line側の一時勘定行のタグと、リンクされた消込仕訳側の
+ * from_line のタグを比較し、食い違っていれば警告を出す」ルール(計画Issue #132で、仕訳内の
+ * 「一致する行が存在するか」という存在チェックから、リンクが指す2行の直接比較に変更)を検証する。
+ * タグ一致・科目不一致・貸借が逆でない・project_id不一致・household_member_id不一致・
+ * counterparty_id不一致・金額不足を含む。DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
-import type { JournalEntry, JournalLine } from '../journal/JournalEntry'
+import type { JournalLine } from '../journal/JournalEntry'
 import { detectSettlementTagMismatch } from './detectSettlementTagMismatch'
 
 const SETTLEMENT_ACCOUNT_ID = 10
@@ -27,57 +27,63 @@ function buildLine(overrides: Partial<JournalLine>): JournalLine {
   }
 }
 
-function buildEntry(id: number, lines: JournalLine[]): JournalEntry {
+/** 消込先(to_line)の貸方行と、それを消し込む借方行(from_line)の組 */
+function buildPair(toOverrides: Partial<JournalLine>, fromOverrides: Partial<JournalLine>) {
   return {
-    id,
-    entryDate: '2026-01-01',
-    memo: null,
-    currency: 'JPY',
-    sourceType: 'manual',
-    householdMemberId: 999,
-    generatedFromRuleId: null,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-    lines,
+    toLine: buildLine({ id: 1, side: 'credit', ...toOverrides }),
+    fromLine: buildLine({ id: 2, journalEntryId: 2, side: 'debit', ...fromOverrides }),
   }
 }
 
 describe('detectSettlementTagMismatch', () => {
-  it('to_entry側と消込仕訳側のタグが一致する場合はfalse(不整合なし)を返す', () => {
-    const toEntry = buildEntry(1, [buildLine({ projectId: 5, householdMemberId: 2, amount: 10000 })])
-    const fromEntry = buildEntry(2, [buildLine({ projectId: 5, householdMemberId: 2, amount: 10000 })])
+  it('科目・タグが一致し貸借が逆の場合はfalse(不整合なし)を返す', () => {
+    const { toLine, fromLine } = buildPair(
+      { projectId: 5, householdMemberId: 2 },
+      { projectId: 5, householdMemberId: 2 },
+    )
 
-    expect(detectSettlementTagMismatch(toEntry, fromEntry, SETTLEMENT_ACCOUNT_ID, 10000)).toBe(false)
+    expect(detectSettlementTagMismatch(toLine, fromLine, 10000)).toBe(false)
   })
 
   it('project_idが食い違う場合はtrue(不整合)を返す', () => {
-    const toEntry = buildEntry(1, [buildLine({ projectId: 5, householdMemberId: null, amount: 10000 })])
-    const fromEntry = buildEntry(2, [buildLine({ projectId: 6, householdMemberId: null, amount: 10000 })])
+    const { toLine, fromLine } = buildPair({ projectId: 5 }, { projectId: 6 })
 
-    expect(detectSettlementTagMismatch(toEntry, fromEntry, SETTLEMENT_ACCOUNT_ID, 10000)).toBe(true)
+    expect(detectSettlementTagMismatch(toLine, fromLine, 10000)).toBe(true)
   })
 
   it('household_member_idが食い違う場合はtrue(不整合)を返す', () => {
-    const toEntry = buildEntry(1, [buildLine({ projectId: null, householdMemberId: 2, amount: 10000 })])
-    const fromEntry = buildEntry(2, [buildLine({ projectId: null, householdMemberId: 3, amount: 10000 })])
+    const { toLine, fromLine } = buildPair({ householdMemberId: 2 }, { householdMemberId: 3 })
 
-    expect(detectSettlementTagMismatch(toEntry, fromEntry, SETTLEMENT_ACCOUNT_ID, 10000)).toBe(true)
+    expect(detectSettlementTagMismatch(toLine, fromLine, 10000)).toBe(true)
   })
 
-  it('消込仕訳側の対応行の金額がリンク金額未満の場合はtrue(不整合)を返す', () => {
-    const toEntry = buildEntry(1, [buildLine({ projectId: 5, householdMemberId: null, amount: 10000 })])
-    const fromEntry = buildEntry(2, [buildLine({ projectId: 5, householdMemberId: null, amount: 4000 })])
+  it('counterparty_idが食い違う場合はtrue(不整合)を返す', () => {
+    const { toLine, fromLine } = buildPair({ counterpartyId: 2 }, { counterpartyId: null })
 
-    expect(detectSettlementTagMismatch(toEntry, fromEntry, SETTLEMENT_ACCOUNT_ID, 5000)).toBe(true)
+    expect(detectSettlementTagMismatch(toLine, fromLine, 10000)).toBe(true)
   })
 
-  it('N:Nのケースで消込仕訳側に複数行あり、そのうち1件がタグ一致すればfalse(不整合なし)を返す', () => {
-    const toEntry = buildEntry(1, [buildLine({ id: 1, projectId: 100, householdMemberId: null, amount: 10000 })])
-    const fromEntry = buildEntry(2, [
-      buildLine({ id: 2, projectId: 200, householdMemberId: null, amount: 5000 }),
-      buildLine({ id: 3, projectId: 100, householdMemberId: null, amount: 10000 }),
-    ])
+  it('科目が食い違う場合はtrue(不整合)を返す(行の編集で科目が変えられた場合の検知)', () => {
+    const { toLine, fromLine } = buildPair({}, { accountId: 99 })
 
-    expect(detectSettlementTagMismatch(toEntry, fromEntry, SETTLEMENT_ACCOUNT_ID, 10000)).toBe(false)
+    expect(detectSettlementTagMismatch(toLine, fromLine, 10000)).toBe(true)
+  })
+
+  it('貸借が同じ側になっている場合はtrue(不整合)を返す(行の編集で貸借が入れ替えられた場合の検知)', () => {
+    const { toLine, fromLine } = buildPair({}, { side: 'credit' })
+
+    expect(detectSettlementTagMismatch(toLine, fromLine, 10000)).toBe(true)
+  })
+
+  it('消込仕訳側の行の金額がリンク金額未満の場合はtrue(不整合)を返す', () => {
+    const { toLine, fromLine } = buildPair({}, { amount: 4000 })
+
+    expect(detectSettlementTagMismatch(toLine, fromLine, 5000)).toBe(true)
+  })
+
+  it('消込仕訳側の行の金額がリンク金額以上であればfalse(不整合なし)を返す', () => {
+    const { toLine, fromLine } = buildPair({}, { amount: 8000 })
+
+    expect(detectSettlementTagMismatch(toLine, fromLine, 5000)).toBe(false)
   })
 })

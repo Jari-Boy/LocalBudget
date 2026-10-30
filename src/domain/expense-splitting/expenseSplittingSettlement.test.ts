@@ -20,12 +20,12 @@ const ADVANCE_LIABILITY_ACCOUNT_ID = 11 // 負債・立替金(Bさんの債務)
 const MEMBER_A = 100
 const MEMBER_B = 200
 const PROJECT_ID = 26
-const ORIGINAL_ENTRY_ID = 999
+const ORIGINAL_LINE_ID = 999
 const SPLIT_ENTRY_ID = 1000
 
 function toSplitEntry(): JournalEntry {
   const input = buildHouseholdMemberExpenseSplittingJournalEntryInput({
-    originalEntryId: ORIGINAL_ENTRY_ID,
+    originalLineId: ORIGINAL_LINE_ID,
     expenseAccountId: EXPENSE_ACCOUNT_ID,
     advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
     advanceLiabilityAccountId: ADVANCE_LIABILITY_ACCOUNT_ID,
@@ -62,9 +62,12 @@ function toSplitEntry(): JournalEntry {
   }
 }
 
+/** 割勘仕訳の負債側立替金行(lines[3])を消し込むsettlesリンク(計画Issue #132: 明細行単位) */
 function buildSettlesLink(toEntryId: number, amount: number): JournalEntryLink {
   return {
     id: 1,
+    fromLineId: 20000,
+    toLineId: SPLIT_ENTRY_ID * 10 + 3,
     fromEntryId: 2000,
     toEntryId,
     linkType: 'settles',

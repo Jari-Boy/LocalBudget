@@ -94,7 +94,7 @@ describe('ExpenseSplittingEntryPickerScreen', () => {
     })
     journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
-        originalEntryId: alreadySplit.id,
+        originalLineId: alreadySplit.lines[0].id,
         expenseAccountId: expense.id,
         advanceAssetAccountId: advanceAsset.id,
         advanceLiabilityAccountId: advanceLiability.id,
