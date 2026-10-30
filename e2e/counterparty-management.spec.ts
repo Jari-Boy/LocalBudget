@@ -188,6 +188,13 @@ test.describe('取引先管理画面', () => {
     // 維持されるため、旧実装(常にトップ画面へ戻っていた)と異なりホーム経由の
     // 再ナビゲーションは不要になった。
     await page.reload()
+    // reload直後はWorker再起動(WASM読み込み・DB再初期化)が完了するまでアプリ本体が
+    // レンダリングされない。この見出しのexpectは他の操作(ボタンclick等)より既定の
+    // タイムアウトが短いため(5000ms、clickの既定30000msより厳しい)、CI環境の低速な
+    // ランナーでは見出し確認を経ない直後のgetByRole('rowgroup')がタイムアウトする
+    // ことがあった。他のreload箇所(マスタ管理ボタンのclickから再開する箇所)は
+    // clickの長いタイムアウトで暗黙に待てていたため顕在化しなかった。
+    await expect(page.getByRole('heading', { name: '取引先管理' })).toBeVisible({ timeout: 10000 })
 
     const reopenedItem = page.getByRole('rowgroup').filter({ hasText: 'イオン' })
     await expect(reopenedItem.getByRole('button', { name: '登録済みパターン: 1件' })).toBeVisible()
