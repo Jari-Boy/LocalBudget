@@ -37,7 +37,10 @@
 ## SQLiteのINTEGER PRIMARY KEY（AUTOINCREMENTなし）はテーブルが完全に空の場合のみ採番を1から再開する
 
 **内容**: `AUTOINCREMENT`を指定していない`INTEGER PRIMARY KEY`列は、暗黙のROWIDとして「テーブル内の現在の最大値+1」を採番する。そのため、対象テーブルに他の行が1件でも残っていれば、ある行を削除して別の行を再INSERTしても、新しく採番されるidが削除前の値と偶然一致することはない。しかし、対象テーブルが完全に空（0行）の状態から採番すると1から再開するため、「削除→再挿入でidが変わることを検証する」テストをテーブルが空の状態（他に仕訳が1件もない状態）で書くと、たまたま元のidと同じ値が採番されてしまい検証の意図が成立しなくなることがある。このようなテストを書く際は、対象以外の行（例: 別の仕訳の明細）がテーブルに存在する状態を用意し、採番される値が本当に「新しい値」であることを保証する必要がある。
-**参考**: `src/infrastructure/db/SqlJsJournalEntryRepository.ts`（`update`の全削除→再挿入実装）、`src/infrastructure/db/SqlJsJournalEntryRepository.test.ts`（コミット3d78bbdのコメント）
+**参考**: `src/infrastructure/db/SqlJsJournalEntryRepository.ts`（当時の`update`の全削除→再挿入実装。計画Issue #132で行idによる差分更新=`applyLineDiff`に置き換え済み）、`src/infrastructure/db/SqlJsJournalEntryRepository.test.ts`（コミット3d78bbdのコメント）
+
+**追記（計画Issue #132）**: `update`が全削除→再挿入から行idによる差分更新（既存行はUPDATE、新規行はINSERT、入力に無い既存行のみDELETE）に変わった後も、このSQLiteの採番挙動自体は別の文脈で引き続き関係する。「一部の明細行だけ削除されても他の行のidが変わらないこと」を検証するテストで、削除対象の明細がテーブル全体のid採番の末尾（最大id）に当たる場合、削除後に別の行を新規INSERTすると再利用された同じidが偶然採番され、「idが維持される（変化しない）」ことの検証と「idが新規に変わる」ケースの検証が区別できなくなる。対策として、検証対象の仕訳より後に別の仕訳（`createLaterEntry`）を作成しておき、削除対象の明細がid採番の末尾にならないようにする。
+**参考（追記分）**: `src/infrastructure/db/SqlJsJournalEntryRepository.test.ts`（`createLaterEntry`、`update(行idによる差分更新、計画Issue #132)`テストブロック）、`src/infrastructure/db/SqlJsJournalEntryRepository.ts`（`applyLineDiff`）
 
 ## sql.js（SQLite）はデフォルトでautocommitモードであり、複数回の書き込みをまとめるには明示的なBEGIN/COMMITが必要
 
