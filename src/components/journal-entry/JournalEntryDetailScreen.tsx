@@ -3,10 +3,11 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { Counterparty, CreateCounterpartyInput } from '../../domain/counterparty/Counterparty'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
-import type { JournalEntry, JournalLineSide, UpdateJournalEntryInput } from '../../domain/journal/JournalEntry'
+import type { JournalEntry, JournalLineInput, JournalLineSide, UpdateJournalEntryInput } from '../../domain/journal/JournalEntry'
 import type { JournalEntryLink } from '../../domain/journal/JournalEntryLink'
 import type { Project } from '../../domain/project/Project'
 import { traceExpenseSplittingHistory } from '../../domain/expense-splitting/traceExpenseSplittingHistory'
+import { findLinkedLinesToRemove, type LinkedLineToRemove } from '../../domain/journal/findLinkedLinesToRemove'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { JournalEntryLinesTable, type JournalEntryLineRow } from './JournalEntryLinesTable'
@@ -106,6 +107,10 @@ export function JournalEntryDetailScreen({
   const [isDeleting, setIsDeleting] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [pendingLinkRemoval, setPendingLinkRemoval] = useState<{
+    lines: JournalLineInput[]
+    removals: LinkedLineToRemove[]
+  } | null>(null)
   const lineKeyRef = useRef(0)
 
   const load = () => {
@@ -168,6 +173,7 @@ export function JournalEntryDetailScreen({
   }
 
   function updateEditLine(key: number, updater: (line: JournalEntryFormLine) => JournalEntryFormLine): void {
+    setPendingLinkRemoval(null)
     setEditState((prev) =>
       prev === null
         ? prev
@@ -176,6 +182,7 @@ export function JournalEntryDetailScreen({
   }
 
   function addEditLine(side: JournalLineSide): void {
+    setPendingLinkRemoval(null)
     lineKeyRef.current += 1
     const key = lineKeyRef.current
     setEditState((prev) =>
@@ -186,6 +193,7 @@ export function JournalEntryDetailScreen({
   }
 
   function removeEditLine(key: number): void {
+    setPendingLinkRemoval(null)
     setEditState((prev) =>
       prev === null ? prev : { ...prev, lineStates: prev.lineStates.filter((state) => state.key !== key) },
     )
@@ -218,18 +226,11 @@ export function JournalEntryDetailScreen({
    * DBに一切書き込まれない(docs/domain/journal.md 1.3)。エラー時は入力内容を破棄せず
    * editStateをそのまま保持し、ユーザーが値を修正して再試行できるようにする。
    */
-  async function handleUpdate(): Promise<void> {
+  async function performUpdate(lines: JournalLineInput[]): Promise<void> {
     if (editState === null) return
-
-    if (editState.lineStates.some((state) => hasNonPositiveAmountInput(state.line))) {
-      setUpdateError(t('negativeAmountError'))
-      return
-    }
 
     setIsUpdating(true)
     setUpdateError(null)
-
-    const lines = editState.lineStates.map((state) => toJournalLineInput(state.line)).filter((line) => line !== null)
 
     try {
       const updated = await Promise.resolve(
@@ -245,11 +246,38 @@ export function JournalEntryDetailScreen({
         memo: updated.memo ?? '',
         lineStates: buildLineStates(updated.lines, lineKeyRef),
       })
+      setPendingLinkRemoval(null)
     } catch (err) {
       setUpdateError(mapErrorToMessage(err))
     } finally {
       setIsUpdating(false)
     }
+  }
+
+  /**
+   * 「更新する」ボタンの押下を受け、入力中に削除された明細行のうちリンク(消込・割勘)が
+   * 付いているものをfindLinkedLinesToRemoveで検出する(計画Issue #132)。該当する行があれば
+   * docs/domain/settlement.md 1.8の「編集は妨げない」方針に合わせ、更新は実行せず警告を表示する
+   * に留める(拒否はしない)。承認(pendingLinkRemovalの確定ボタン)を得てからperformUpdateを呼ぶ。
+   */
+  function handleUpdateClick(): void {
+    if (editState === null) return
+
+    if (editState.lineStates.some((state) => hasNonPositiveAmountInput(state.line))) {
+      setUpdateError(t('negativeAmountError'))
+      return
+    }
+
+    const lines = editState.lineStates.map((state) => toJournalLineInput(state.line)).filter((line) => line !== null)
+    const keptLineIds = new Set(lines.map((line) => line.id).filter((id): id is number => id !== undefined))
+    const removals = findLinkedLinesToRemove(entry, keptLineIds, entryLinks)
+
+    if (removals.length > 0) {
+      setPendingLinkRemoval({ lines, removals })
+      return
+    }
+
+    void performUpdate(lines)
   }
 
   return (
@@ -258,9 +286,15 @@ export function JournalEntryDetailScreen({
 
       <JournalEntryLinesTable
         entryDate={editState.entryDate}
-        onEntryDateChange={(value) => setEditState((prev) => (prev === null ? prev : { ...prev, entryDate: value }))}
+        onEntryDateChange={(value) => {
+          setPendingLinkRemoval(null)
+          setEditState((prev) => (prev === null ? prev : { ...prev, entryDate: value }))
+        }}
         memo={editState.memo}
-        onMemoChange={(value) => setEditState((prev) => (prev === null ? prev : { ...prev, memo: value }))}
+        onMemoChange={(value) => {
+          setPendingLinkRemoval(null)
+          setEditState((prev) => (prev === null ? prev : { ...prev, memo: value }))
+        }}
         headerHouseholdMemberId={entry.householdMemberId}
         lineRows={editState.lineStates}
         onUpdateLine={updateEditLine}
@@ -272,7 +306,19 @@ export function JournalEntryDetailScreen({
 
       {updateError && <p role="alert">{updateError}</p>}
 
-      <button type="button" disabled={isUpdating} onClick={() => void handleUpdate()}>
+      {pendingLinkRemoval !== null && (
+        <div className="journal-entry-detail-link-removal-warning" role="alert">
+          <p>{t('linkRemovalWarning', { count: pendingLinkRemoval.removals.length })}</p>
+          <button type="button" onClick={() => void performUpdate(pendingLinkRemoval.lines)} disabled={isUpdating}>
+            {t('linkRemovalConfirm')}
+          </button>
+          <button type="button" onClick={() => setPendingLinkRemoval(null)} disabled={isUpdating}>
+            {t('cancelButton')}
+          </button>
+        </div>
+      )}
+
+      <button type="button" disabled={isUpdating} onClick={handleUpdateClick}>
         {t('updateEntry')}
       </button>
 
