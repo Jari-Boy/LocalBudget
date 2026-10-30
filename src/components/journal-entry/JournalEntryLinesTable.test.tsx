@@ -16,7 +16,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { StrictMode } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
 import i18n from '../../infrastructure/i18n/i18n'
 import type { Account } from '../../domain/account/Account'
@@ -24,6 +24,7 @@ import type { Project } from '../../domain/project/Project'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import { createEmptyJournalEntryFormLine, type JournalEntryFormLine } from './journalEntryFormLine'
+import type { JournalLineSide } from '../../domain/journal/JournalEntry'
 import { JournalEntryLinesTable, type JournalEntryLineRow } from './JournalEntryLinesTable'
 
 afterEach(cleanup)
@@ -66,16 +67,18 @@ interface RenderOverrides {
   counterparties?: Counterparty[]
   headerHouseholdMemberId?: number | null
   readOnlyHeader?: boolean
-  onUpdateLine?: ReturnType<typeof vi.fn>
-  onAddLine?: ReturnType<typeof vi.fn>
-  onRemoveLine?: ReturnType<typeof vi.fn>
+  onUpdateLine?: Mock<(key: number, updater: (line: JournalEntryFormLine) => JournalEntryFormLine) => void>
+  onAddLine?: Mock<(side: JournalLineSide) => void>
+  onRemoveLine?: Mock<(key: number) => void>
   strictMode?: boolean
 }
 
 function renderTable(overrides?: RenderOverrides) {
-  const onUpdateLine = overrides?.onUpdateLine ?? vi.fn()
-  const onAddLine = overrides?.onAddLine ?? vi.fn()
-  const onRemoveLine = overrides?.onRemoveLine ?? vi.fn()
+  const onUpdateLine =
+    overrides?.onUpdateLine ??
+    vi.fn<(key: number, updater: (line: JournalEntryFormLine) => JournalEntryFormLine) => void>()
+  const onAddLine = overrides?.onAddLine ?? vi.fn<(side: JournalLineSide) => void>()
+  const onRemoveLine = overrides?.onRemoveLine ?? vi.fn<(key: number) => void>()
   const onEntryDateChange = vi.fn()
   const onMemoChange = vi.fn()
   const onHeaderHouseholdMemberChange = vi.fn()
