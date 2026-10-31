@@ -161,3 +161,8 @@
 
 **内容**: Viteはロード時、`process.env`(および`.env`ファイル)のうち`VITE_`プレフィックスを持つ変数のみをクライアントコードへ`import.meta.env.VITE_*`として埋め込む(プレフィックス無しの変数は意図的な情報漏えい防止のため除外される既定仕様)。`playwright.config.ts`の`webServer.env`(Playwrightが`command`で指定した開発サーバー起動コマンドの子プロセスへ渡す環境変数)に`VITE_DISABLE_DEV_SEED: 'true'`のように`VITE_`プレフィックス付きの変数を設定すると、Playwrightが起動する`npm run dev`のViteプロセスがこれを`process.env`から受け取り、アプリケーションコード側から`import.meta.env.VITE_DISABLE_DEV_SEED`として参照できる。これにより、E2Eテスト実行時の開発サーバーに限定した挙動の切り替え(本件では開発専用ダミーデータ投入の抑制)を、テストコード自体や通常の`npm run dev`起動経路を変更せずに実現できる。
 **参考**: `playwright.config.ts`(`webServer.env`)、`src/infrastructure/db/seedDevSampleDataIfDev.ts`、計画Issue #101
+
+## vitest v5では`vi.fn()`に型引数を渡さないと`ReturnType<typeof vi.fn>`経由の型が広くなり、呼び出しシグネチャの型チェックが効かなくなる
+
+**内容**: vitest v3までは`ReturnType<typeof vi.fn>`（型引数なしの`vi.fn`自体の戻り値型）をpropsの型注釈として使うだけで、実際に`vi.fn()`で生成したモック関数が十分に型チェックされていた。vitest v5では`Mock`の型定義が変わり、型引数を渡さない`vi.fn()`・`ReturnType<typeof vi.fn>`は実質的に緩い型になる。モック関数の呼び出しシグネチャ（引数・戻り値の型）を厳密に検証したい場合は、`vi.fn<(key: number, updater: (line: T) => T) => void>()`のように`vi.fn`自体に関数シグネチャを型引数として明示し、propsの型注釈側も`Mock<(key: number, ...) => void>`のように同じシグネチャを渡す必要がある。この変更はnpm auditのcritical脆弱性（tinypool）対応でvitestを3.2.4→5.0.5にメジャーバージョンアップした際にtypecheckで検出された。
+**参考**: `src/components/journal-entry/JournalEntryLinesTable.test.tsx`（`onUpdateLine`/`onAddLine`/`onRemoveLine`、計画Issue #136）

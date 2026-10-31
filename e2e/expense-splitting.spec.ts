@@ -131,12 +131,22 @@ async function waitForJournalEntryCount(page: Page, expectedCount: number) {
 }
 
 /**
- * 摘要の完全一致で一覧の行を特定する。割勘仕訳の摘要は元仕訳の摘要+「の割勘」で
+ * 割勘対象選択画面(ExpenseSplittingEntryPickerScreen、一覧はul/li構成のまま)で、
+ * 摘要の完全一致で候補行を特定する。割勘仕訳の摘要は元仕訳の摘要+「の割勘」で
  * 生成される(ExpenseSplittingForm)ため、部分一致(hasText)では元仕訳と割勘仕訳の
  * 両方にマッチしてしまう。has+getByText(exact)で完全一致の子孫を持つ行だけに絞り込む。
  */
 function findEntryItem(page: Page, exactMemo: string) {
   return page.getByRole('listitem').filter({ has: page.getByText(exactMemo, { exact: true }) })
+}
+
+/**
+ * 仕訳一覧画面(JournalEntryListScreen、計画Issue #127でテーブル形式に変更済み)で、
+ * 摘要の完全一致で該当行(tr、role="row")を特定する。findEntryItemと絞り込みロジックは
+ * 同じだが、対象画面のマークアップがul/liではなくtableのため別関数として分ける。
+ */
+function findJournalEntryListRow(page: Page, exactMemo: string) {
+  return page.getByRole('row').filter({ has: page.getByText(exactMemo, { exact: true }) })
 }
 
 /**
@@ -303,7 +313,7 @@ test.describe('割勘起票', () => {
     // 仕訳一覧(確認専用画面)から元仕訳の詳細画面に遷移し、割勘の履歴が表示されることを確認
     await page.getByRole('button', { name: '仕訳' }).click()
     await page.getByRole('button', { name: '仕訳一覧' }).click()
-    const originalItem = findEntryItem(page, '世帯メンバー間割勘テスト用の食事代')
+    const originalItem = findJournalEntryListRow(page, '世帯メンバー間割勘テスト用の食事代')
     await originalItem.getByRole('button', { name: '詳細を見る' }).click()
     await expect(page.getByText('この支出から生まれた割勘')).toBeVisible()
     await expect(page.getByText('世帯メンバー間割勘テスト用の食事代の割勘')).toBeVisible()
@@ -453,16 +463,16 @@ test.describe('割勘起票', () => {
     // 両方の元仕訳の詳細画面から、同じ1件の割勘仕訳への履歴を辿れることを確認
     await page.getByRole('button', { name: '仕訳' }).click()
     await page.getByRole('button', { name: '仕訳一覧' }).click()
-    const splitItem = findEntryItem(page, '2件の支出の割勘')
+    const splitItem = findJournalEntryListRow(page, '2件の支出の割勘')
     await expect(splitItem).toBeVisible()
 
-    const entry1Item = findEntryItem(page, '複数選択テスト用の食事代1')
+    const entry1Item = findJournalEntryListRow(page, '複数選択テスト用の食事代1')
     await entry1Item.getByRole('button', { name: '詳細を見る' }).click()
     await expect(page.getByText('この支出から生まれた割勘')).toBeVisible()
     await expect(page.getByText('2件の支出の割勘', { exact: true })).toBeVisible()
     await page.getByRole('button', { name: '戻る' }).click()
 
-    const entry2Item = findEntryItem(page, '複数選択テスト用の食事代2')
+    const entry2Item = findJournalEntryListRow(page, '複数選択テスト用の食事代2')
     await entry2Item.getByRole('button', { name: '詳細を見る' }).click()
     await expect(page.getByText('この支出から生まれた割勘')).toBeVisible()
     await expect(page.getByText('2件の支出の割勘', { exact: true })).toBeVisible()
@@ -538,7 +548,7 @@ test.describe('精算・履歴・取り消し', () => {
     // 精算前の取り消し
     await page.getByRole('button', { name: '仕訳' }).click()
     await page.getByRole('button', { name: '仕訳一覧' }).click()
-    const splitItem = findEntryItem(page, '精算テスト用の食事代の割勘')
+    const splitItem = findJournalEntryListRow(page, '精算テスト用の食事代の割勘')
     await splitItem.getByRole('button', { name: '詳細を見る' }).click()
     await page.getByRole('button', { name: 'この割勘を取り消す' }).click()
     await waitForJournalEntryCount(page, 1)
@@ -575,7 +585,7 @@ test.describe('精算・履歴・取り消し', () => {
     await expect(page.getByRole('heading', { name: '割勘', exact: true })).toBeVisible()
     await page.getByRole('button', { name: '戻る' }).click()
     await page.getByRole('button', { name: '仕訳一覧' }).click()
-    const settledSplitItem = findEntryItem(page, '精算テスト用の食事代の割勘')
+    const settledSplitItem = findJournalEntryListRow(page, '精算テスト用の食事代の割勘')
     await settledSplitItem.getByRole('button', { name: '詳細を見る' }).click()
     await expect(page.getByText('精算後は新しい取引として現実の返金を記録してください')).toBeVisible()
     await expect(page.getByRole('button', { name: 'この割勘を取り消す' })).toHaveCount(0)

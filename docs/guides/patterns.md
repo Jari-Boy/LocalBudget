@@ -29,6 +29,13 @@
 **対策**: DDL・Repositoryを実装する際は、対象テーブルに対応する`docs/domain/<集約>.md`の「フィールド定義」節・「ライフサイクル」節を項目ごとのチェックリストとして読み、各フィールド・各操作（作成/更新/削除/非アクティブ化）について「許可される変更」「禁止される変更」を洗い出してからDDL/テストに落とし込む。特に真偽値フラグ（`is_system_managed`等）は「フラグがTRUEのとき通常のCRUDから除外される操作は何か」を明示的に確認する。evaluatorのレビュー時も、完了条件チェックリストの機械的な充足確認だけでなく、ドメインドキュメントの該当節を読み直して未実装の制約が無いか照合する。
 **該当箇所（例）**: `docs/schema/accounts.sql`（`prevent_delete_system_managed_account`・`prevent_non_name_change_on_system_managed_account`トリガー、コミット5f809e4で追加）、`docs/domain/accounts.md` 3.1、Issue #5 Review Attempt 1（evaluator FAIL指摘、重大度MEDIUM/LOW）
 
+## 画面のDOM構造(ul/li→table等)を変更した際、その画面を別の目的で経由するe2eスペックファイルのセレクタ更新が漏れる
+
+**症状**: 計画Issue #127(マスタ一覧のテーブル化)・#125(仕訳一覧のテーブル化)では、各画面の「専用」e2eスペック(`household-member-management.spec.ts`・`project-management.spec.ts`・`counterparty-management.spec.ts`等)はセレクタを`role="row"`へ更新していたが、同じ画面をセットアップ手順や検証の一部として「間借り」している別目的のe2eスペック(世帯メンバー削除を行う`account-registration.spec.ts`、仕訳一覧から詳細画面へ遷移する`expense-splitting.spec.ts`)は`role="listitem"`のまま更新が漏れていた。この種のテストはリファクタ対象の画面自体をテストしているわけではないため、画面のDOM構造を変更する際の修正対象リストに入りにくく、CIが継続してパスしていた(別要因でのみ失敗が発覚、計画Issue #136)。
+**原因**: 画面のリファクタ作業は「その画面の専用スペックファイル」を手がかりに対象を洗い出しやすいが、Playwrightのセレクタ(`getByRole('listitem')`等)は画面名やコンポーネント名で検索しづらく、grep対象が思いつきにくい。e2eテストは複数の画面をまたいで操作することが多いため、1つの画面のマークアップ変更が、その画面を通過点として使う他のテストシナリオに波及することが見落とされやすい。
+**対策**: 一覧画面のDOM構造(`<ul>/<li>`↔`<table>`等、`role`が変わる変更)を変更する際は、対象画面の専用スペックファイルだけでなく、`e2e/`配下全体を対象に変更前のセレクタ(`getByRole('listitem')`等、または画面遷移に使うボタン名・画面見出しのテキスト)でgrepし、他のスペックファイルから「間借り」されている箇所が無いか確認する。
+**該当箇所（例）**: `e2e/account-registration.spec.ts`（世帯メンバー削除、`getByRole('listitem')`→`getByRole('row')`）、`e2e/expense-splitting.spec.ts`（`findEntryItem`からテーブル用の`findJournalEntryListRow`を分離）、計画Issue #136
+
 ## 新しい集約のRepository実装時にドメイン層とインフラ層を分離し忘れる
 
 **症状**: `docs/architecture.md` 10章はドメインロジックのユニットテストとDBアクセス層（Repository実装）の統合テストを分離する方針を定めているにもかかわらず、実装時にエンティティの型定義・Repositoryインターフェースに相当する形状・sql.jsによるSQL実装を`src/infrastructure/db/<集約名>Repository.ts`という単一ファイルにまとめて実装してしまう。DBアクセスを伴わない純粋なドメインロジック（例: 貸借バランス検証）を後から追加しようとした時に、置き場所がなく後追いでリファクタが必要になる。

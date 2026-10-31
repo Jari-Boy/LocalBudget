@@ -74,7 +74,7 @@ async function deleteDefaultHouseholdMemberViaUi(page: Page) {
   await page.getByRole('button', { name: 'マスタ管理' }).click()
   await page.getByRole('button', { name: '世帯メンバーを管理する' }).click()
   const item = page
-    .getByRole('listitem')
+    .getByRole('row')
     .filter({ has: page.locator('.household-member-list-name', { hasText: '自分' }) })
   await expect(item).toBeVisible()
   await item.getByRole('button', { name: '削除' }).click()

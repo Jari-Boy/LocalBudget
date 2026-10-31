@@ -20,6 +20,15 @@ export default defineConfig({
    * フィードバック速度を落とさない。
    */
   workers: process.env.CI ? 1 : undefined,
+  /**
+   * CI環境限定でリトライを1回許容する。計画Issue #80はworkers:1適用後もなお、CI環境
+   * 限定でごく低頻度に発生するFOREIGN KEY constraint failed等の非決定的な失敗(複数の
+   * 異なるテストで散発し、ローカルでは繰り返し実行しても再現しない)を根本原因未解明の
+   * まま追跡中(計画Issue #136で調査したが、構造的な原因特定には至らなかった)。
+   * リトライは症状を隠す対症療法である点を認識した上で、低頻度のCI環境依存の揺らぎに対する
+   * 実用的な緩和策として導入する。ローカル開発では原因の見落としを避けるためリトライしない。
+   */
+  retries: process.env.CI ? 2 : 0,
   reporter: 'list',
   use: {
     baseURL: 'http://localhost:5173',

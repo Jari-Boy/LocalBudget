@@ -68,7 +68,11 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
     // 旧実装(Screen型union + useStateのみ、URLに状態を持たない)では
     // リロードすると常にトップ画面(LocalBudget)へ戻っていたが、HashRouter導入後は
     // リロードしてもURL(#/master/accounts)がそのまま維持され、同じ画面が再表示される。
-    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
+    // reload直後はWorker再起動(WASM読み込み・DB再初期化)が完了するまでレンダリングされず、
+    // この後に続く操作がボタンclick(既定タイムアウト30000ms)ではなくexpect(既定5000ms)の
+    // ため、CI環境の低速なランナーでは既定のままだと不足することがある(計画Issue #136で
+    // counterparty-management.spec.tsの同種の箇所がCIでのみ失敗したのを踏まえた対策)。
+    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible({ timeout: 10000 })
   })
 
   test('存在しないパスへ直接アクセスするとホーム画面へリダイレクトされる', async ({ page }) => {
