@@ -4,6 +4,7 @@ import householdMembersSql from '../../../docs/schema/household_members.sql?raw'
 import accountsSql from '../../../docs/schema/accounts.sql?raw'
 import projectsSql from '../../../docs/schema/projects.sql?raw'
 import counterpartiesSql from '../../../docs/schema/counterparties.sql?raw'
+import settlementBatchesSql from '../../../docs/schema/settlement_batches.sql?raw'
 import journalSql from '../../../docs/schema/journal.sql?raw'
 import budgetsSql from '../../../docs/schema/budgets.sql?raw'
 import recurringTransactionsSql from '../../../docs/schema/recurring_transactions.sql?raw'
@@ -13,7 +14,8 @@ import statementImportSql from '../../../docs/schema/statement_import.sql?raw'
 export const LATEST_SCHEMA_VERSION = 1
 
 // household_members → accounts(household_membersを参照) → projects/counterparties
-// → journal(accounts/projects/counterpartiesを参照) → budgets(accountsを参照)
+// → settlement_batches(counterpartiesを参照) → journal(accounts/projects/counterparties/
+// settlement_batchesを参照) → budgets(accountsを参照)
 // → recurring_transactions(accounts等を参照しjournal_entriesにALTER TABLEを追加するためjournalより後)
 // → reconciliation/statement_import(accounts/journal_entriesを参照) の順で適用する。
 const MIGRATIONS: Record<number, readonly string[]> = {
@@ -22,6 +24,7 @@ const MIGRATIONS: Record<number, readonly string[]> = {
     accountsSql,
     projectsSql,
     counterpartiesSql,
+    settlementBatchesSql,
     journalSql,
     budgetsSql,
     recurringTransactionsSql,

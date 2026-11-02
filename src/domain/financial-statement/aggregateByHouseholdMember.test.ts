@@ -61,6 +61,7 @@ function line(
     projectId: null,
     householdMemberId,
     counterpartyId: null,
+    settlementBatchId: null,
     side,
     amount,
     createdAt: '2026-07-01T00:00:00.000Z',

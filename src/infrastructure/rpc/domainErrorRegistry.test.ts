@@ -8,7 +8,6 @@
 import { describe, expect, it } from 'vitest'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
-import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMismatchError'
 import { JournalEntryLinkLineError } from '../../domain/journal/JournalEntryLinkLineError'
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
@@ -22,10 +21,9 @@ import {
 } from './domainErrorRegistry'
 
 describe('isDomainError', () => {
-  it('登録済みの9種のドメインエラーをtrueと判定する', () => {
+  it('登録済みの8種のドメインエラーをtrueと判定する', () => {
     expect(isDomainError(new UnbalancedJournalEntryError(100, 90))).toBe(true)
     expect(isDomainError(new RestrictedAccountPostingError(1, 'manual'))).toBe(true)
-    expect(isDomainError(new SettlementTagMismatchError(1, 2))).toBe(true)
     expect(isDomainError(new JournalEntryLinkLineError('line_not_found', 1, 2))).toBe(true)
     expect(isDomainError(new NoBalanceDiscrepancyError())).toBe(true)
     expect(isDomainError(new InvalidRecurringScheduleError('invalid'))).toBe(true)
@@ -73,16 +71,6 @@ describe('serializeDomainError / deserializeDomainError', () => {
     expect(revived).toBeInstanceOf(RestrictedAccountPostingError)
     expect((revived as RestrictedAccountPostingError).accountId).toBe(42)
     expect((revived as RestrictedAccountPostingError).sourceType).toBe('manual')
-  })
-
-  it('SettlementTagMismatchErrorのfromEntryId/toEntryIdを保持して往復する', () => {
-    const original = new SettlementTagMismatchError(10, 20)
-
-    const revived = deserializeDomainError(serializeDomainError(original))
-
-    expect(revived).toBeInstanceOf(SettlementTagMismatchError)
-    expect((revived as SettlementTagMismatchError).fromEntryId).toBe(10)
-    expect((revived as SettlementTagMismatchError).toEntryId).toBe(20)
   })
 
   it('JournalEntryLinkLineErrorのreason/fromLineId/toLineIdを保持して往復する(計画Issue #132)', () => {

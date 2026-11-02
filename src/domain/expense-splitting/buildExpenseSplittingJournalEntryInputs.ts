@@ -17,7 +17,10 @@ export interface BuildExpenseSplittingJournalEntryInputsParams {
   advanceAssetAccountId: number
   /** 元々の支出者(立替者)のhousehold_member_id。分担者リストには含めない */
   fromMemberId: number
-  projectId: number
+  /** 精算バッチのid(計画Issue #133、settlement_batches)。立替金行に付与する */
+  settlementBatchId: number
+  /** 元仕訳の行のproject_id(イベント)。費用行に引き継ぐ(計画Issue #133) */
+  eventProjectId?: number | null
   entryDate: string
   memo?: string | null
   recipients: readonly ExpenseSplitRecipient[]
@@ -46,7 +49,8 @@ export function buildExpenseSplittingJournalEntryInputs(
           advanceLiabilityAccountId: recipient.advanceLiabilityAccountId,
           fromMemberId: params.fromMemberId,
           toMemberId: recipient.toMemberId,
-          projectId: params.projectId,
+          settlementBatchId: params.settlementBatchId,
+          eventProjectId: params.eventProjectId,
           amount: recipient.amount,
           entryDate: params.entryDate,
           memo: params.memo,
@@ -57,7 +61,8 @@ export function buildExpenseSplittingJournalEntryInputs(
           advanceAssetAccountId: params.advanceAssetAccountId,
           payerMemberId: params.fromMemberId,
           counterpartyId: recipient.counterpartyId,
-          projectId: params.projectId,
+          settlementBatchId: params.settlementBatchId,
+          eventProjectId: params.eventProjectId,
           amount: recipient.amount,
           entryDate: params.entryDate,
           memo: params.memo,

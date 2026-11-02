@@ -26,7 +26,7 @@ const ADVANCE_LIABILITY_ACCOUNT_ID = 11
 const MEMBER_A = 100
 const MEMBER_B = 200
 const FRIEND_COUNTERPARTY_ID = 300
-const PROJECT_ID = 26
+const SETTLEMENT_BATCH_ID = 26
 const ORIGINAL_LINE_ID_1 = 901
 const ORIGINAL_LINE_ID_2 = 902
 
@@ -39,7 +39,7 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
       advanceLiabilityAccountId: ADVANCE_LIABILITY_ACCOUNT_ID,
       fromMemberId: MEMBER_A,
       toMemberId: MEMBER_B,
-      projectId: PROJECT_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
       amount: 500,
       entryDate: '2026-09-06',
     })
@@ -49,7 +49,7 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
       counterpartyId: FRIEND_COUNTERPARTY_ID,
-      projectId: PROJECT_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
       amount: 300,
       entryDate: '2026-09-06',
     })
@@ -75,7 +75,7 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
       advanceLiabilityAccountId: ADVANCE_LIABILITY_ACCOUNT_ID,
       fromMemberId: MEMBER_A,
       toMemberId: MEMBER_B,
-      projectId: PROJECT_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
       amount: 500,
       entryDate: '2026-09-06',
     })
@@ -85,7 +85,7 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
       counterpartyId: FRIEND_COUNTERPARTY_ID,
-      projectId: PROJECT_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
       amount: 300,
       entryDate: '2026-09-06',
     })
@@ -115,7 +115,7 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
       counterpartyId: FRIEND_COUNTERPARTY_ID,
-      projectId: PROJECT_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
       amount: 500,
       entryDate: '2026-09-06',
     })
@@ -125,7 +125,7 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
       counterpartyId: FRIEND_COUNTERPARTY_ID,
-      projectId: PROJECT_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
       amount: 250,
       entryDate: '2026-09-06',
     })
@@ -150,7 +150,7 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
       counterpartyId: FRIEND_COUNTERPARTY_ID,
-      projectId: PROJECT_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
       amount: 500,
       entryDate: '2026-07-01',
       memo: '元の仕訳自身が持つ摘要(上書きされるべき)',

@@ -2,15 +2,17 @@ import type { Database } from 'sql.js'
 import { InvalidBackupFileError } from './InvalidBackupFileError'
 
 /**
- * migrations.tsが適用する9つのスキーマファイル(docs/schema/*.sql)それぞれに1つずつ、
- * 代表的なテーブル名を列挙する。全17テーブルは列挙せず、インポートされたファイルが
- * LocalBudgetのDBかどうかを判別するための最小限の指標として使う。
+ * migrations.tsが適用する10個のスキーマファイル(docs/schema/*.sql)それぞれに1つずつ、
+ * 代表的なテーブル名を列挙する。全テーブルは列挙せず、インポートされたファイルが
+ * LocalBudgetのDBかどうかを判別するための最小限の指標として使う。settlement_batches
+ * (計画Issue #133)を追加。
  */
 const REQUIRED_TABLE_NAMES = [
   'household_members',
   'accounts',
   'projects',
   'counterparties',
+  'settlement_batches',
   'journal_entries',
   'budgets',
   'recurring_transaction_rules',

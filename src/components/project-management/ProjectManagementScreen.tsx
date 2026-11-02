@@ -2,13 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
-import type {
-  CreateProjectInput,
-  Project,
-  ProjectKind,
-  UpdateProjectInput,
-} from '../../domain/project/Project'
-import { isSettlementBalanceZero } from '../../domain/project/isSettlementBalanceZero'
+import type { CreateProjectInput, Project, UpdateProjectInput } from '../../domain/project/Project'
 import {
   summarizeProjectAccountBalances,
   type ProjectAccountBalances,
@@ -78,11 +72,12 @@ type FormMode = 'create' | number | null
 
 /**
  * プロジェクト管理画面(計画Issue #36、計画Issue #127でテーブル形式+行内インライン編集に変更)。
- * 登録済みプロジェクトをテーブル(thead/tbody)として一覧表示し、新規作成(名称・kind)は表の
- * 最終行に追加される作成用の行から行う。既存プロジェクトの編集(名称のみ、kindは作成時のみ
- * 指定可能)は行の「編集」ボタンでその行だけ入力欄に切り替わるインライン編集方式とし、
- * 「保存する」/「キャンセル」で確定・破棄する(docs/domain/projects.md 1.3節・2章)。
- * プロジェクトごとに専用の<tbody>でグルーピングし、残高内訳パネル・非アクティブ化提案は
+ * 登録済みプロジェクトをテーブル(thead/tbody)として一覧表示し、新規作成(名称のみ)は表の
+ * 最終行に追加される作成用の行から行う。既存プロジェクトの編集(名称のみ)は行の「編集」ボタンで
+ * その行だけ入力欄に切り替わるインライン編集方式とし、「保存する」/「キャンセル」で確定・破棄する
+ * (docs/domain/projects.md 1.3節・2章)。プロジェクトはイベント専用であり、kindという分類・
+ * 精算残高による非アクティブ化提案は持たない(計画Issue #133、精算バッチはsettlement_batches
+ * として分離された)。プロジェクトごとに専用の<tbody>でグルーピングし、残高内訳パネルは
  * 同じ<tbody>内の追加行として行の下に展開する。物理削除は紐づく仕訳明細が0件の場合のみ
  * 許可し、1件以上の場合は非アクティブ化のみ選択できる(削除操作自体はDDLトリガー
  * prevent_delete_project_with_journal_linesでも強制されるが、UI側で事前に判定し不可能な
@@ -99,7 +94,6 @@ export function ProjectManagementScreen({
   const [data, setData] = useState<LoadedData | null>(null)
   const [formMode, setFormMode] = useState<FormMode>(null)
   const [nameInput, setNameInput] = useState('')
-  const [kindInput, setKindInput] = useState<ProjectKind>('event')
   const [error, setError] = useState<string | null>(null)
   /** 作成・編集・削除・非アクティブ化のいずれか進行中は全操作ボタンを無効化する(連打による二重実行防止) */
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -134,7 +128,6 @@ export function ProjectManagementScreen({
 
   const openCreateForm = () => {
     setNameInput('')
-    setKindInput('event')
     setError(null)
     setFormMode('create')
   }
@@ -156,7 +149,7 @@ export function ProjectManagementScreen({
     setError(null)
     const request =
       formMode === 'create'
-        ? Promise.resolve(projectRepository.create({ name: nameInput, kind: kindInput }))
+        ? Promise.resolve(projectRepository.create({ name: nameInput }))
         : Promise.resolve(projectRepository.update(formMode as number, { name: nameInput }))
 
     void request
@@ -223,7 +216,6 @@ export function ProjectManagementScreen({
           <thead>
             <tr>
               <th scope="col">{t('nameLabel')}</th>
-              <th scope="col">{t('kindLabel')}</th>
               <th scope="col"></th>
               <th scope="col"></th>
             </tr>
@@ -231,10 +223,7 @@ export function ProjectManagementScreen({
           {data.projects.map((project) => {
             const journalLineCount = data.journalLineCountByProjectId.get(project.id) ?? 0
             const detailExpanded = expandedProjectIds.has(project.id)
-            const proposeDeactivation =
-              project.isActive && isSettlementBalanceZero(project, data.entries, data.accounts)
             const isEditing = formMode === project.id
-            const kindLabel = t(project.kind === 'settlement' ? 'kindSettlement' : 'kindEvent')
 
             return (
               <tbody key={project.id}>
@@ -248,7 +237,6 @@ export function ProjectManagementScreen({
                         onChange={(event) => setNameInput(event.target.value)}
                       />
                     </td>
-                    <td>{kindLabel}</td>
                     <td className="project-list-actions" colSpan={2}>
                       <button
                         type="button"
@@ -265,7 +253,6 @@ export function ProjectManagementScreen({
                 ) : (
                   <tr>
                     <td>{project.name}</td>
-                    <td>{kindLabel}</td>
                     <td>
                       <button
                         type="button"
@@ -332,26 +319,9 @@ export function ProjectManagementScreen({
                   </tr>
                 )}
 
-                {proposeDeactivation && (
-                  <tr className="project-panel-row">
-                    <td colSpan={4}>
-                      <div className="project-deactivation-proposal" role="status">
-                        <p>{t('deactivationProposalMessage')}</p>
-                        <button
-                          type="button"
-                          onClick={() => deactivateProject(project.id)}
-                          disabled={isSubmitting}
-                        >
-                          {t('deactivationProposalSubmit')}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-
                 {detailExpanded && (
                   <tr className="project-panel-row">
-                    <td colSpan={4}>
+                    <td colSpan={3}>
                       <div className="project-balance-panel">
                         {(() => {
                           const balances = summarizeProjectAccountBalances(
@@ -403,16 +373,6 @@ export function ProjectManagementScreen({
                     value={nameInput}
                     onChange={(event) => setNameInput(event.target.value)}
                   />
-                </td>
-                <td>
-                  <select
-                    aria-label={t('kindLabel')}
-                    value={kindInput}
-                    onChange={(event) => setKindInput(event.target.value as ProjectKind)}
-                  >
-                    <option value="event">{t('kindEvent')}</option>
-                    <option value="settlement">{t('kindSettlement')}</option>
-                  </select>
                 </td>
                 <td className="project-list-actions" colSpan={2}>
                   <button

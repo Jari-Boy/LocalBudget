@@ -1,11 +1,11 @@
 -- projects のDDL
 -- ドメイン定義・各制約の設計判断は docs/domain/projects.md を参照
 
+-- kindは持たない(計画Issue #133)。プロジェクトはイベント専用の集計軸であり、
+-- 精算バッチの識別はsettlement_batches(docs/schema/settlement_batches.sql)が担う。
 CREATE TABLE projects (
   id          INTEGER PRIMARY KEY,
   name        TEXT NOT NULL,
-  kind        TEXT NOT NULL DEFAULT 'event'
-    CHECK (kind IN ('settlement', 'event')),
   is_active   BOOLEAN NOT NULL DEFAULT TRUE,
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at  TEXT NOT NULL DEFAULT (datetime('now'))

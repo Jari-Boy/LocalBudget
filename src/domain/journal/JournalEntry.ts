@@ -16,6 +16,8 @@ export interface JournalLine {
   projectId: number | null
   householdMemberId: number | null
   counterpartyId: number | null
+  /** 精算バッチのタグ(docs/domain/settlement.md、計画Issue #133)。projectIdとは独立 */
+  settlementBatchId: number | null
   side: JournalLineSide
   amount: number
   createdAt: string
@@ -55,6 +57,7 @@ export interface JournalLineInput {
   projectId?: number | null
   householdMemberId?: number | null
   counterpartyId?: number | null
+  settlementBatchId?: number | null
   side: JournalLineSide
   amount: number
 }

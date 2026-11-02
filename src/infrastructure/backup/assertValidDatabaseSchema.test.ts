@@ -3,8 +3,9 @@
  * (計画Issue #26)時、アップロードされたDBが実際にLocalBudgetのスキーマを持つかを
  * 検証する関数を検証する。runMigrations単体では既にPRAGMA user_versionが最新の
  * DBに対してCREATE TABLE群を実行せず検証にならない(migrations.ts参照)ため、
- * migrations.tsが適用する9つのスキーマファイル(docs/schema/*.sql)それぞれの
- * 代表テーブルの存在を直接確認する。さらに、計画Issue #132でjournal_entry_linksを仕訳単位
+ * migrations.tsが適用する10個のスキーマファイル(docs/schema/*.sql、計画Issue #133で
+ * settlement_batchesを追加)それぞれの代表テーブルの存在を直接確認する。さらに、
+ * 計画Issue #132でjournal_entry_linksを仕訳単位
  * (from_entry_id/to_entry_id)から明細行単位(from_line_id/to_line_id)へ変更したため、
  * 旧形式のテーブルを持つバックアップが弾かれることも確認する。
  * 外部依存: sql.js(ネットワークアクセスなし、createTestDatabaseでNode上に生成)。

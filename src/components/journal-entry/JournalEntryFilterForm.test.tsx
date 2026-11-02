@@ -39,7 +39,7 @@ const householdMembers: HouseholdMember[] = [
   { id: 100, name: 'Aさん', isGroup: false, isActive: true, createdAt: '', updatedAt: '' },
 ]
 const projects: Project[] = [
-  { id: 5, name: '26/8生活費割勘', kind: 'settlement', isActive: true, createdAt: '', updatedAt: '' },
+  { id: 5, name: '26/8生活費割勘', isActive: true, createdAt: '', updatedAt: '' },
 ]
 
 function renderForm(filter: JournalEntryFilter = {}) {

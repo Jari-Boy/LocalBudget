@@ -16,6 +16,7 @@ import type {
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import type { ProjectRepository } from '../../domain/project/ProjectRepository'
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
+import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
 import { SqlJsAccountRepository } from '../db/SqlJsAccountRepository'
 import { SqlJsAccountGroupRepository } from '../db/SqlJsAccountGroupRepository'
 import { SqlJsBudgetRepository } from '../db/SqlJsBudgetRepository'
@@ -27,6 +28,7 @@ import { SqlJsJournalEntryDraftRepository } from '../db/SqlJsJournalEntryDraftRe
 import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
+import { SqlJsSettlementBatchRepository } from '../db/SqlJsSettlementBatchRepository'
 import { importDatabaseBackup } from '../backup/importDatabaseBackup'
 import {
   createRecurringTransactionProposalApi,
@@ -73,6 +75,7 @@ export interface RepositoryRegistry {
   journalEntry: JournalEntryRepository
   journalEntryDraft: JournalEntryDraftRpcApi
   project: ProjectRepository
+  settlementBatch: SettlementBatchRepository
   recurringTransactionRule: RecurringTransactionRuleRepository
   /** 定期取引の提案評価・仕訳生成(計画Issue #121、docs/domain/recurring-transactions.md 1.2節)のRPC API */
   recurringTransactionProposal: RecurringTransactionProposalRpcApi
@@ -125,6 +128,7 @@ export function createRepositoryRegistry(
       confirm: (id) => journalEntryDraftRepository.confirm(id, journalEntryRepository),
     },
     project: new SqlJsProjectRepository(db),
+    settlementBatch: new SqlJsSettlementBatchRepository(db),
     recurringTransactionRule: new SqlJsRecurringTransactionRuleRepository(db),
     recurringTransactionProposal: createRecurringTransactionProposalApi(db, journalEntryRepository),
     autoSave: Comlink.proxy(autoSaveController),

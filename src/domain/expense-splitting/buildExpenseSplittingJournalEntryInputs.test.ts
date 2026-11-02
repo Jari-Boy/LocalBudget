@@ -4,7 +4,9 @@
  * 実現し、単一の可変長仕訳パターンは採用しない)に基づき、分担者ごとに
  * buildHouseholdMemberExpenseSplittingJournalEntryInput/
  * buildCounterpartyExpenseSplittingJournalEntryInputへ振り分けて
- * CreateJournalEntryInput[]を組み立てる合成ロジックを検証する。DB非依存、外部依存なし。
+ * CreateJournalEntryInput[]を組み立てる合成ロジックを検証する。計画Issue #133により、
+ * 立替金行のタグはsettlementBatchId、費用行のタグ(eventProjectId)はproject_id(イベント)に
+ * 分かれたことも検証する。DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import { buildExpenseSplittingJournalEntryInputs } from './buildExpenseSplittingJournalEntryInputs'
@@ -16,7 +18,7 @@ describe('buildExpenseSplittingJournalEntryInputs', () => {
       expenseAccountId: 10,
       advanceAssetAccountId: 20,
       fromMemberId: 100,
-      projectId: 5,
+      settlementBatchId: 5,
       entryDate: '2026-08-15',
       memo: '生活費割勘',
       recipients: [
@@ -31,14 +33,31 @@ describe('buildExpenseSplittingJournalEntryInputs', () => {
       memo: '生活費割勘',
       householdMemberId: 100,
       lines: [
-        { accountId: 10, householdMemberId: 101, side: 'debit', amount: 300 },
-        { accountId: 20, householdMemberId: 100, projectId: 5, side: 'debit', amount: 300 },
-        { accountId: 10, householdMemberId: 100, side: 'credit', amount: 300 },
-        { accountId: 21, householdMemberId: 101, projectId: 5, side: 'credit', amount: 300 },
+        { accountId: 10, householdMemberId: 101, projectId: null, side: 'debit', amount: 300 },
+        { accountId: 20, householdMemberId: 100, settlementBatchId: 5, side: 'debit', amount: 300 },
+        { accountId: 10, householdMemberId: 100, projectId: null, side: 'credit', amount: 300 },
+        { accountId: 21, householdMemberId: 101, settlementBatchId: 5, side: 'credit', amount: 300 },
       ],
       links: [{ fromLineIndex: 2, toLineId: 1, linkType: 'allocates', amount: 300 }],
     })
-    expect(result[1].lines[0]).toEqual({ accountId: 10, householdMemberId: 102, side: 'debit', amount: 300 })
+    expect(result[1].lines[0]).toMatchObject({ accountId: 10, householdMemberId: 102, side: 'debit', amount: 300 })
+  })
+
+  it('eventProjectIdを渡すと、費用行(イベントのタグ)に引き継がれる(計画Issue #133)', () => {
+    const result = buildExpenseSplittingJournalEntryInputs({
+      originalLineId: 1,
+      expenseAccountId: 10,
+      advanceAssetAccountId: 20,
+      fromMemberId: 100,
+      settlementBatchId: 5,
+      eventProjectId: 77,
+      entryDate: '2026-08-15',
+      recipients: [{ kind: 'householdMember', toMemberId: 101, advanceLiabilityAccountId: 21, amount: 300 }],
+    })
+
+    expect(result[0].lines[0]).toMatchObject({ accountId: 10, projectId: 77 })
+    expect(result[0].lines[2]).toMatchObject({ accountId: 10, projectId: 77 })
+    expect(result[0].lines[1]).toMatchObject({ accountId: 20, settlementBatchId: 5 })
   })
 
   it('世帯外相手の分担者のみの場合、分担者ごとに2行仕訳を生成する', () => {
@@ -47,7 +66,7 @@ describe('buildExpenseSplittingJournalEntryInputs', () => {
       expenseAccountId: 10,
       advanceAssetAccountId: 20,
       fromMemberId: 100,
-      projectId: 5,
+      settlementBatchId: 5,
       entryDate: '2026-08-15',
       recipients: [{ kind: 'counterparty', counterpartyId: 7, amount: 500 }],
     })
@@ -58,8 +77,8 @@ describe('buildExpenseSplittingJournalEntryInputs', () => {
       memo: null,
       householdMemberId: 100,
       lines: [
-        { accountId: 20, householdMemberId: 100, projectId: 5, side: 'debit', amount: 500 },
-        { accountId: 10, householdMemberId: 100, counterpartyId: 7, side: 'credit', amount: 500 },
+        { accountId: 20, householdMemberId: 100, settlementBatchId: 5, side: 'debit', amount: 500 },
+        { accountId: 10, householdMemberId: 100, counterpartyId: 7, projectId: null, side: 'credit', amount: 500 },
       ],
       links: [{ fromLineIndex: 1, toLineId: 1, linkType: 'allocates', amount: 500 }],
     })
@@ -71,7 +90,7 @@ describe('buildExpenseSplittingJournalEntryInputs', () => {
       expenseAccountId: 10,
       advanceAssetAccountId: 20,
       fromMemberId: 100,
-      projectId: 5,
+      settlementBatchId: 5,
       entryDate: '2026-08-15',
       recipients: [
         { kind: 'householdMember', toMemberId: 101, advanceLiabilityAccountId: 21, amount: 300 },
@@ -93,7 +112,7 @@ describe('buildExpenseSplittingJournalEntryInputs', () => {
       expenseAccountId: 10,
       advanceAssetAccountId: 20,
       fromMemberId: 100,
-      projectId: 5,
+      settlementBatchId: 5,
       entryDate: '2026-08-15',
       recipients: [],
     })

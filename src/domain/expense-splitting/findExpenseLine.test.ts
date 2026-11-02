@@ -36,6 +36,7 @@ function buildLine(accountId: number, side: JournalLine['side'], amount: number)
     projectId: null,
     householdMemberId: null,
     counterpartyId: null,
+    settlementBatchId: null,
     side,
     amount,
     createdAt: '2026-06-01T00:00:00.000Z',

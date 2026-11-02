@@ -38,6 +38,7 @@ describe('runMigrations', () => {
         'counterparties',
         'counterparty_patterns',
         'counterparty_merge_log',
+        'settlement_batches',
         'journal_entries',
         'journal_lines',
         'journal_entry_links',

@@ -13,8 +13,10 @@ export interface BuildHouseholdMemberExpenseSplittingJournalEntryInputParams {
   fromMemberId: number
   /** 付け替え先(債務者になる側)のhousehold_member_id */
   toMemberId: number
-  /** 割勘バッチを表すproject_id(kind = 'settlement') */
-  projectId: number
+  /** 精算バッチのid(計画Issue #133、settlement_batches)。立替金の資産/負債両行に付与する */
+  settlementBatchId: number
+  /** 元仕訳の行のproject_id(イベント)。費用付け替え2行に引き継ぐ(計画Issue #133) */
+  eventProjectId?: number | null
   amount: number
   entryDate: string
   memo?: string | null
@@ -25,19 +27,24 @@ export interface BuildHouseholdMemberExpenseSplittingJournalEntryInputParams {
  * 「費用をfromMemberからtoMemberへ付け替える」行と「立替金の資産側(fromMember)・負債側
  * (toMember)を発生させる」行の2組4行から成る単一の仕訳を組み立て、
  * JournalEntryRepository.create()にそのまま渡せるCreateJournalEntryInput
- * (source_typeは既定の'manual'のまま)を返す。科目id・household_member_id・project_idの
+ * (source_typeは既定の'manual'のまま)を返す。科目id・household_member_id・settlementBatchIdの
  * 解決は呼び出し側の責務(buildBalanceAdjustmentJournalEntryInputと同じパターン)。
+ *
+ * 立替金(資産/負債)行は`settlementBatchId`(計画Issue #133、精算バッチのタグ)を持ち、
+ * 費用付け替え2行は`eventProjectId`(元仕訳のproject_id、イベントのタグ)を引き継ぐ。
+ * 2つのタグは独立したカラムであり、どちらも同じ仕訳の異なる行に同時に存在できる
+ * (イベント別PLが割勘の友人負担分で過大になるバグの解消)。
  *
  * 返り値のlinksに、割勘仕訳の費用の貸方行(from_line)から元仕訳の費用行(to_line)への
  * allocatesリンクを含めることで、割勘仕訳自体の作成とallocatesリンクの作成を単一のDB
- * トランザクションにする(docs/domain/journal.md 1.8の「settlesリンクは消込仕訳自体の作成と
- * 同一トランザクションで書き込まれる」と同じパターンをallocatesにも適用、計画Issue #132で
- * 明細行単位に変更)。起票者(CreateJournalEntryInput.householdMemberId)はfromMemberId
+ * トランザクションにする(docs/domain/journal.md 1.8参照、計画Issue #132で明細行単位に変更)。
+ * 起票者(CreateJournalEntryInput.householdMemberId)はfromMemberId
  * (元々の支出者、割勘を起票した側)を使う(計画Issue #88)。
  */
 export function buildHouseholdMemberExpenseSplittingJournalEntryInput(
   params: BuildHouseholdMemberExpenseSplittingJournalEntryInputParams,
 ): CreateJournalEntryInput {
+  const eventProjectId = params.eventProjectId ?? null
   return {
     entryDate: params.entryDate,
     memo: params.memo ?? null,
@@ -46,26 +53,28 @@ export function buildHouseholdMemberExpenseSplittingJournalEntryInput(
       {
         accountId: params.expenseAccountId,
         householdMemberId: params.toMemberId,
+        projectId: eventProjectId,
         side: 'debit',
         amount: params.amount,
       },
       {
         accountId: params.advanceAssetAccountId,
         householdMemberId: params.fromMemberId,
-        projectId: params.projectId,
+        settlementBatchId: params.settlementBatchId,
         side: 'debit',
         amount: params.amount,
       },
       {
         accountId: params.expenseAccountId,
         householdMemberId: params.fromMemberId,
+        projectId: eventProjectId,
         side: 'credit',
         amount: params.amount,
       },
       {
         accountId: params.advanceLiabilityAccountId,
         householdMemberId: params.toMemberId,
-        projectId: params.projectId,
+        settlementBatchId: params.settlementBatchId,
         side: 'credit',
         amount: params.amount,
       },

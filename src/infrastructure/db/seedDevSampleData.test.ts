@@ -152,7 +152,6 @@ describe('seedDevSampleData', () => {
     for (const seed of DEV_SAMPLE_PROJECTS) {
       const project = projects.find((candidate) => candidate.name === seed.name)
       expect(project).toBeDefined()
-      expect(project!.kind).toBe(seed.kind)
     }
   })
 

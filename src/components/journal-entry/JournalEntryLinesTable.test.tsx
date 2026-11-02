@@ -323,7 +323,6 @@ describe('JournalEntryLinesTable', () => {
     const activeProject: Project = {
       id: 1,
       name: '26年7月アメリカ旅行',
-      kind: 'event',
       isActive: true,
       createdAt: '2026-08-01T00:00:00.000Z',
       updatedAt: '2026-08-01T00:00:00.000Z',
@@ -331,7 +330,6 @@ describe('JournalEntryLinesTable', () => {
     const inactiveProject: Project = {
       id: 2,
       name: '25年冬の旅行',
-      kind: 'event',
       isActive: false,
       createdAt: '2026-08-01T00:00:00.000Z',
       updatedAt: '2026-08-01T00:00:00.000Z',

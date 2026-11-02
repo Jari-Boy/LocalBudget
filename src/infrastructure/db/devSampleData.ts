@@ -1,5 +1,4 @@
 import type { AccountCategory } from '../../domain/account/Account'
-import type { ProjectKind } from '../../domain/project/Project'
 
 /**
  * seedDevSampleData(計画Issue #101)が投入する開発専用ダミー口座の確定リスト。
@@ -25,12 +24,10 @@ export const DEV_SAMPLE_COUNTERPARTIES: readonly { name: string }[] = [
 
 /**
  * seedDevSampleData(計画Issue #107)が投入する開発専用ダミープロジェクトの確定リスト。
- * kindはいずれも'event'(精算バッチ用の'settlement'はUI動作確認用途に合わないため使わない、
- * docs/domain/projects.md参照)。DEV_SAMPLE_JOURNAL_ENTRIESのPL行に紐付ける。
+ * プロジェクトはイベント専用(計画Issue #133、kindは持たない)。DEV_SAMPLE_JOURNAL_ENTRIESの
+ * PL行に紐付ける。
  */
-export const DEV_SAMPLE_PROJECTS: readonly { name: string; kind: ProjectKind }[] = [
-  { name: '沖縄旅行', kind: 'event' },
-] as const
+export const DEV_SAMPLE_PROJECTS: readonly { name: string }[] = [{ name: '沖縄旅行' }] as const
 
 /**
  * seedDevSampleData(計画Issue #101)が投入する開発専用ダミー仕訳の確定リスト。

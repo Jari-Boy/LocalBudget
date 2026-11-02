@@ -2,16 +2,16 @@
 /**
  * プロジェクト管理画面(計画Issue #36、計画Issue #127でテーブル形式に変更)のうち、
  * プロジェクト別のPL/BS科目残高内訳表示(summarizeProjectAccountBalances、
- * docs/domain/projects.md 1.4節)と、kind='settlement'かつ精算残高0のプロジェクトへの
- * 非アクティブ化提案表示(isSettlementBalanceZero、1.3節・1.5節)を検証するコンポーネントテスト。
- * テーブル化後はプロジェクトごとに専用の<tbody>でグルーピングされ、残高内訳パネル・
- * 非アクティブ化提案は同じ<tbody>内の追加行として表示されるため、`.closest('tbody')`で
- * 行と展開パネルの両方を含むスコープを取得する。一覧表示・作成・編集・削除・非アクティブ化の
- * 基本操作はProjectManagementScreen.test.tsxに分離済み。sql.jsのNode実装
+ * docs/domain/projects.md 1.4節)を検証するコンポーネントテスト。精算残高0による
+ * 非アクティブ化提案はsettlement_batches側の機能として移設され、プロジェクトはイベント専用に
+ * なったため本画面からは撤去されている(計画Issue #133)。テーブル化後はプロジェクトごとに
+ * 専用の<tbody>でグルーピングされ、残高内訳パネルは同じ<tbody>内の追加行として表示されるため、
+ * `.closest('tbody')`で行と展開パネルの両方を含むスコープを取得する。一覧表示・作成・編集・
+ * 削除・非アクティブ化の基本操作はProjectManagementScreen.test.tsxに分離済み。sql.jsのNode実装
  * (createTestDatabase)を使った統合的なレンダリングテスト。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -87,121 +87,5 @@ describe('ProjectManagementScreen(プロジェクト別集計)', () => {
     fireEvent.click(within(item).getByRole('button', { name: '内訳を表示' }))
 
     expect(within(item).getByText('残高のある科目がありません')).toBeInTheDocument()
-  })
-
-  it("kind='event'のプロジェクトは、精算残高が0でも非アクティブ化提案が表示されない", async () => {
-    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
-    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26年7月アメリカ旅行', kind: 'event' })
-    journalEntryRepository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-15',
-      memo: null,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 3000, projectId: project.id },
-        { accountId: cash.id, side: 'credit', amount: 3000 },
-      ],
-    })
-
-    renderScreen()
-
-    const item = (await screen.findByText('26年7月アメリカ旅行')).closest('tbody')!
-    expect(within(item).queryByText('非アクティブ化しますか?')).not.toBeInTheDocument()
-  })
-
-  it("kind='settlement'かつ精算残高が0になったプロジェクトには非アクティブ化提案が表示される", async () => {
-    const advanceAsset = accountRepository.create({
-      category: 'asset',
-      name: '立替金(資産)',
-      isReconcilable: false,
-    })
-    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/7生活費割勘', kind: 'settlement' })
-    journalEntryRepository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      memo: null,
-      lines: [
-        { accountId: advanceAsset.id, side: 'debit', amount: 5000, projectId: project.id },
-        { accountId: cash.id, side: 'credit', amount: 5000 },
-      ],
-    })
-    journalEntryRepository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-20',
-      memo: null,
-      lines: [
-        { accountId: cash.id, side: 'debit', amount: 5000 },
-        { accountId: advanceAsset.id, side: 'credit', amount: 5000, projectId: project.id },
-      ],
-    })
-
-    renderScreen()
-
-    const item = (await screen.findByText('26/7生活費割勘')).closest('tbody')!
-    expect(within(item).getByText('非アクティブ化しますか?')).toBeInTheDocument()
-
-    // 提案が表示されるだけでは自動的に非アクティブ化されない(docs/domain/projects.md 1.3節)
-    expect(projectRepository.findAll()[0].isActive).toBe(true)
-  })
-
-  it('非アクティブ化提案のボタンを押すと、プロジェクトが非アクティブ化される', async () => {
-    const advanceAsset = accountRepository.create({
-      category: 'asset',
-      name: '立替金(資産)',
-      isReconcilable: false,
-    })
-    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/7生活費割勘', kind: 'settlement' })
-    journalEntryRepository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      memo: null,
-      lines: [
-        { accountId: advanceAsset.id, side: 'debit', amount: 5000, projectId: project.id },
-        { accountId: cash.id, side: 'credit', amount: 5000 },
-      ],
-    })
-    journalEntryRepository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-20',
-      memo: null,
-      lines: [
-        { accountId: cash.id, side: 'debit', amount: 5000 },
-        { accountId: advanceAsset.id, side: 'credit', amount: 5000, projectId: project.id },
-      ],
-    })
-
-    renderScreen()
-
-    const item = (await screen.findByText('26/7生活費割勘')).closest('tbody')!
-    fireEvent.click(within(item).getByRole('button', { name: '非アクティブ化する' }))
-
-    await waitFor(() => expect(within(item).getByRole('button', { name: 'アクティブ化' })).toBeInTheDocument())
-    expect(projectRepository.findAll()[0].isActive).toBe(false)
-  })
-
-  it("kind='settlement'でも精算残高が0でなければ非アクティブ化提案は表示されない", async () => {
-    const advanceAsset = accountRepository.create({
-      category: 'asset',
-      name: '立替金(資産)',
-      isReconcilable: false,
-    })
-    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/7生活費割勘', kind: 'settlement' })
-    journalEntryRepository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      memo: null,
-      lines: [
-        { accountId: advanceAsset.id, side: 'debit', amount: 5000, projectId: project.id },
-        { accountId: cash.id, side: 'credit', amount: 5000 },
-      ],
-    })
-
-    renderScreen()
-
-    const item = (await screen.findByText('26/7生活費割勘')).closest('tbody')!
-    expect(within(item).queryByText('非アクティブ化しますか?')).not.toBeInTheDocument()
   })
 })

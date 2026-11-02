@@ -68,6 +68,7 @@ function buildLine(overrides: Partial<JournalLine>): JournalLine {
     projectId: null,
     householdMemberId: null,
     counterpartyId: null,
+    settlementBatchId: null,
     side: 'debit',
     amount: 500,
     createdAt: '2026-07-01T00:00:00.000Z',

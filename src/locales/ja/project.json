@@ -3,9 +3,6 @@
   "projectListTitle": "プロジェクト管理",
   "projectListEmpty": "登録済みのプロジェクトがありません",
   "nameLabel": "名称",
-  "kindLabel": "種別",
-  "kindSettlement": "精算",
-  "kindEvent": "イベント",
   "addButton": "プロジェクトを追加",
   "editButton": "編集",
   "deleteButton": "削除",
@@ -26,7 +23,5 @@
   "balanceEquityTitle": "純資産",
   "balanceRevenuesTitle": "収益",
   "balanceExpensesTitle": "費用",
-  "balanceEmpty": "残高のある科目がありません",
-  "deactivationProposalMessage": "非アクティブ化しますか?",
-  "deactivationProposalSubmit": "非アクティブ化する"
+  "balanceEmpty": "残高のある科目がありません"
 }

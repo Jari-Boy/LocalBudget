@@ -21,7 +21,7 @@ beforeEach(async () => {
 })
 
 describe('create / findById', () => {
-  it('kind省略時はデフォルトのkind(event)でプロジェクトを作成する', () => {
+  it('プロジェクトを作成する(kindは持たない、計画Issue #133)', () => {
     const created = repository.create({ name: '26年7月アメリカ旅行' })
 
     const found = repository.findById(created.id)
@@ -29,15 +29,8 @@ describe('create / findById', () => {
     expect(found).toMatchObject({
       id: created.id,
       name: '26年7月アメリカ旅行',
-      kind: 'event',
       isActive: true,
     })
-  })
-
-  it('kindを明示的に指定(settlement)してプロジェクトを作成する', () => {
-    const created = repository.create({ name: 'スマホ24回払い', kind: 'settlement' })
-
-    expect(created.kind).toBe('settlement')
   })
 
   it('存在しないidに対してはnullを返す', () => {
@@ -48,12 +41,12 @@ describe('create / findById', () => {
 describe('findAll', () => {
   it('作成した全てのプロジェクトを返す', () => {
     repository.create({ name: '26年7月アメリカ旅行' })
-    repository.create({ name: '妹への貸付', kind: 'settlement' })
+    repository.create({ name: '26年8月沖縄旅行' })
 
     const all = repository.findAll()
 
     expect(all.map((p) => p.name)).toEqual(
-      expect.arrayContaining(['26年7月アメリカ旅行', '妹への貸付']),
+      expect.arrayContaining(['26年7月アメリカ旅行', '26年8月沖縄旅行']),
     )
   })
 })

@@ -1,17 +1,17 @@
 /**
- * 割勘で発生した立替金の精算(せいさん)が、A7(消込、docs/domain/settlement.md)の
- * 既存ロジック(calculateSettlementBalance・findUnsettledEntries)をそのまま再利用するだけで
- * 動作し、割勘専用の追加実装を必要としないことを確認する回帰テスト(docs/domain/
- * expense-splitting.md 1.5節「精算はこの按分そのものとは別の処理であり、消込と同じsettlesを
- * 使う」)。docs/domain/expense-splitting.md 1.3節の例(Aさんが立て替えた500円をBさんの口座
- * CSVで精算する精算1)に沿った割勘仕訳を組み立て、settlementドメインの関数へそのまま渡す。
+ * 割勘で発生した立替金の精算(せいさん)が、settlement-batchドメインの既存ロジック
+ * (calculateSettlementBatchBalance・findUnsettledSettlementBatchBalances)をそのまま再利用する
+ * だけで動作し、割勘専用の追加実装を必要としないことを確認する回帰テスト(docs/domain/
+ * expense-splitting.md 1.5節「精算はこの按分そのものとは別の処理である」)。計画Issue #133により
+ * 消込の仕組みがjournal_entry_linksから`settlement_batch_id`タグの集計方式に置き換わったため、
+ * docs/domain/expense-splitting.md 1.3節の例(Aさんが立て替えた500円をBさんの口座CSVで精算する
+ * 精算1)に沿った割勘仕訳を組み立て、settlement-batchドメインの関数へそのまま渡す。
  * DB非依存、外部依存なし。expense-splitting側に新しい精算ロジックのソースファイルは作らない。
  */
 import { describe, expect, it } from 'vitest'
-import type { JournalEntry } from '../journal/JournalEntry'
-import type { JournalEntryLink } from '../journal/JournalEntryLink'
-import { calculateSettlementBalance } from '../settlement/calculateSettlementBalance'
-import { findUnsettledEntries } from '../settlement/findUnsettledEntries'
+import type { JournalLine } from '../journal/JournalEntry'
+import { calculateSettlementBatchBalance } from '../settlement-batch/calculateSettlementBatchBalance'
+import { findUnsettledSettlementBatchBalances } from '../settlement-batch/findUnsettledSettlementBatchBalances'
 import { buildHouseholdMemberExpenseSplittingJournalEntryInput } from './buildHouseholdMemberExpenseSplittingJournalEntryInput'
 
 const EXPENSE_ACCOUNT_ID = 1
@@ -19,11 +19,11 @@ const ADVANCE_ASSET_ACCOUNT_ID = 10 // 資産・立替金(Aさんの債権)
 const ADVANCE_LIABILITY_ACCOUNT_ID = 11 // 負債・立替金(Bさんの債務)
 const MEMBER_A = 100
 const MEMBER_B = 200
-const PROJECT_ID = 26
+const SETTLEMENT_BATCH_ID = 26
 const ORIGINAL_LINE_ID = 999
 const SPLIT_ENTRY_ID = 1000
 
-function toSplitEntry(): JournalEntry {
+function toSplitLines(): JournalLine[] {
   const input = buildHouseholdMemberExpenseSplittingJournalEntryInput({
     originalLineId: ORIGINAL_LINE_ID,
     expenseAccountId: EXPENSE_ACCOUNT_ID,
@@ -31,85 +31,92 @@ function toSplitEntry(): JournalEntry {
     advanceLiabilityAccountId: ADVANCE_LIABILITY_ACCOUNT_ID,
     fromMemberId: MEMBER_A,
     toMemberId: MEMBER_B,
-    projectId: PROJECT_ID,
+    settlementBatchId: SETTLEMENT_BATCH_ID,
     amount: 500,
     entryDate: '2026-07-15',
   })
 
-  // JournalEntryRepository.create()が採番・付与するid等をテスト用に補って
-  // JournalEntryとして組み立て直す(Repository実装のスコープ外、DB非依存)
-  return {
-    id: SPLIT_ENTRY_ID,
-    entryDate: input.entryDate,
-    memo: input.memo ?? null,
-    currency: 'JPY',
-    sourceType: 'manual',
-    householdMemberId: 999,
-    generatedFromRuleId: null,
+  // JournalEntryRepository.create()が採番・付与するid等をテスト用に補ってJournalLineとして
+  // 組み立て直す(Repository実装のスコープ外、DB非依存)
+  return input.lines.map((line, index) => ({
+    id: SPLIT_ENTRY_ID * 10 + index,
+    journalEntryId: SPLIT_ENTRY_ID,
+    accountId: line.accountId,
+    projectId: line.projectId ?? null,
+    householdMemberId: line.householdMemberId ?? null,
+    counterpartyId: line.counterpartyId ?? null,
+    settlementBatchId: line.settlementBatchId ?? null,
+    side: line.side,
+    amount: line.amount,
     createdAt: '2026-07-15T00:00:00.000Z',
-    updatedAt: '2026-07-15T00:00:00.000Z',
-    lines: input.lines.map((line, index) => ({
-      id: SPLIT_ENTRY_ID * 10 + index,
-      journalEntryId: SPLIT_ENTRY_ID,
-      accountId: line.accountId,
-      projectId: line.projectId ?? null,
-      householdMemberId: line.householdMemberId ?? null,
-      counterpartyId: line.counterpartyId ?? null,
-      side: line.side,
-      amount: line.amount,
-      createdAt: '2026-07-15T00:00:00.000Z',
-    })),
-  }
+  }))
 }
 
-/** 割勘仕訳の負債側立替金行(lines[3])を消し込むsettlesリンク(計画Issue #132: 明細行単位) */
-function buildSettlesLink(toEntryId: number, amount: number): JournalEntryLink {
+/** 割勘仕訳の負債側立替金行(Bさんの債務)を精算1相当で消し込む精算仕訳の行(settlementBatchIdタグ付き) */
+function buildSettlementLine(amount: number): JournalLine {
   return {
-    id: 1,
-    fromLineId: 20000,
-    toLineId: SPLIT_ENTRY_ID * 10 + 3,
-    fromEntryId: 2000,
-    toEntryId,
-    linkType: 'settles',
+    id: 20001,
+    journalEntryId: 2000,
+    accountId: ADVANCE_LIABILITY_ACCOUNT_ID,
+    projectId: null,
+    householdMemberId: MEMBER_B,
+    counterpartyId: null,
+    settlementBatchId: SETTLEMENT_BATCH_ID,
+    side: 'debit',
     amount,
     createdAt: '2026-07-31T00:00:00.000Z',
   }
 }
 
-describe('割勘由来の立替金の精算(A7の消込ロジックの再利用)', () => {
-  it('精算前は、割勘仕訳の負債側立替金(Bさんの債務)を消込残高として計算できる(割勘専用実装なし)', () => {
-    const splitEntry = toSplitEntry()
+describe('割勘由来の立替金の精算(settlement-batchドメインの集計方式の再利用)', () => {
+  it('精算前は、割勘仕訳の負債側立替金(Bさんの債務)を未精算残高として計算できる(割勘専用実装なし)', () => {
+    const splitLines = toSplitLines()
 
-    const balance = calculateSettlementBalance(splitEntry, ADVANCE_LIABILITY_ACCOUNT_ID, [])
+    const balance = calculateSettlementBatchBalance(splitLines, 'liability', {
+      settlementBatchId: SETTLEMENT_BATCH_ID,
+      accountId: ADVANCE_LIABILITY_ACCOUNT_ID,
+      householdMemberId: MEMBER_B,
+      counterpartyId: null,
+    })
 
     expect(balance).toBe(500)
   })
 
-  it('精算1(Bさんの口座CSV)相当のsettlesリンクが作成されると、消込残高が0になる(割勘専用実装なし)', () => {
-    const splitEntry = toSplitEntry()
-    const settlesLink = buildSettlesLink(splitEntry.id, 500)
+  it('精算1(Bさんの口座CSV)相当の仕訳が作成されると、未精算残高が0になる(割勘専用実装なし)', () => {
+    const allLines = [...toSplitLines(), buildSettlementLine(500)]
 
-    const balance = calculateSettlementBalance(splitEntry, ADVANCE_LIABILITY_ACCOUNT_ID, [
-      settlesLink,
-    ])
+    const balance = calculateSettlementBatchBalance(allLines, 'liability', {
+      settlementBatchId: SETTLEMENT_BATCH_ID,
+      accountId: ADVANCE_LIABILITY_ACCOUNT_ID,
+      householdMemberId: MEMBER_B,
+      counterpartyId: null,
+    })
 
     expect(balance).toBe(0)
   })
 
-  it('findUnsettledEntriesで、割勘仕訳の負債側立替金がまだ未消込であることを判定できる(割勘専用実装なし)', () => {
-    const splitEntry = toSplitEntry()
+  it('findUnsettledSettlementBatchBalancesで、割勘仕訳の負債側立替金がまだ未精算であることを判定できる(割勘専用実装なし)', () => {
+    const splitLines = toSplitLines()
 
-    const result = findUnsettledEntries([splitEntry], ADVANCE_LIABILITY_ACCOUNT_ID, new Map())
+    const result = findUnsettledSettlementBatchBalances(
+      splitLines,
+      SETTLEMENT_BATCH_ID,
+      ADVANCE_LIABILITY_ACCOUNT_ID,
+      'liability',
+    )
 
-    expect(result).toEqual([splitEntry])
+    expect(result).toEqual([{ householdMemberId: MEMBER_B, counterpartyId: null, balance: 500 }])
   })
 
-  it('精算1が完了すると、findUnsettledEntriesの未消込一覧から除外される(割勘専用実装なし)', () => {
-    const splitEntry = toSplitEntry()
-    const settlesLink = buildSettlesLink(splitEntry.id, 500)
-    const linksByEntryId = new Map([[splitEntry.id, [settlesLink]]])
+  it('精算1が完了すると、findUnsettledSettlementBatchBalancesの未精算一覧から除外される(割勘専用実装なし)', () => {
+    const allLines = [...toSplitLines(), buildSettlementLine(500)]
 
-    const result = findUnsettledEntries([splitEntry], ADVANCE_LIABILITY_ACCOUNT_ID, linksByEntryId)
+    const result = findUnsettledSettlementBatchBalances(
+      allLines,
+      SETTLEMENT_BATCH_ID,
+      ADVANCE_LIABILITY_ACCOUNT_ID,
+      'liability',
+    )
 
     expect(result).toEqual([])
   })

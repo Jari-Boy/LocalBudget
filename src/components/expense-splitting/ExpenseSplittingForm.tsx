@@ -4,7 +4,7 @@ import type { Account } from '../../domain/account/Account'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { CreateJournalEntryInput, JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
-import type { Project } from '../../domain/project/Project'
+import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import { buildExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/buildExpenseSplittingJournalEntryInputs'
 import { findExpenseLine } from '../../domain/expense-splitting/findExpenseLine'
 import { mergeExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/mergeExpenseSplittingJournalEntryInputs'
@@ -22,11 +22,14 @@ import './ExpenseSplittingForm.css'
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
 }
-interface ProjectFinder {
-  findAll(): Project[] | Promise<Project[]>
+interface SettlementBatchFinder {
+  findAll(): SettlementBatch[] | Promise<SettlementBatch[]>
 }
-interface ProjectCreator {
-  create(input: { name: string; kind?: Project['kind'] }): Project | Promise<Project>
+interface SettlementBatchCreator {
+  create(input: { name: string; type: SettlementBatch['type'] }): SettlementBatch | Promise<SettlementBatch>
+}
+interface SettlementBatchUpdater {
+  update(id: number, input: { counterpartyId?: number | null }): SettlementBatch | Promise<SettlementBatch>
 }
 interface HouseholdMemberFinder {
   findAll(): HouseholdMember[] | Promise<HouseholdMember[]>
@@ -49,7 +52,7 @@ export interface ExpenseSplittingFormProps {
    */
   originalEntries: JournalEntry[]
   accountRepository: AccountFinder
-  projectRepository: ProjectFinder & ProjectCreator
+  settlementBatchRepository: SettlementBatchFinder & SettlementBatchCreator & SettlementBatchUpdater
   householdMemberRepository: HouseholdMemberFinder
   counterpartyRepository: CounterpartyFinder & CounterpartyCreator
   journalEntryRepository: JournalEntryCreator
@@ -61,7 +64,7 @@ export interface ExpenseSplittingFormProps {
 
 interface MasterData {
   accounts: Account[]
-  projects: Project[]
+  settlementBatches: SettlementBatch[]
   householdMembers: HouseholdMember[]
   counterparties: Counterparty[]
 }
@@ -136,7 +139,7 @@ function computeDefaultMemo(
 export function ExpenseSplittingForm({
   originalEntries,
   accountRepository,
-  projectRepository,
+  settlementBatchRepository,
   householdMemberRepository,
   counterpartyRepository,
   journalEntryRepository,
@@ -150,7 +153,7 @@ export function ExpenseSplittingForm({
   const isBatch = originalEntries.length > 1
 
   const [masterData, setMasterData] = useState<MasterData | null>(null)
-  const [projectId, setProjectId] = useState<number | null>(null)
+  const [settlementBatchId, setSettlementBatchId] = useState<number | null>(null)
   const [allocationMode, setAllocationMode] = useState<ExpenseSplittingAllocationMode>('equal')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -164,15 +167,15 @@ export function ExpenseSplittingForm({
   if (masterData === null) {
     void Promise.all([
       Promise.resolve(accountRepository.findAll()),
-      Promise.resolve(projectRepository.findAll()),
+      Promise.resolve(settlementBatchRepository.findAll()),
       Promise.resolve(householdMemberRepository.findAll()),
       Promise.resolve(counterpartyRepository.findAll()),
-    ]).then(([accounts, projects, householdMembers, counterparties]) => {
+    ]).then(([accounts, settlementBatches, householdMembers, counterparties]) => {
       if (originalEntries.length === 1) {
         const expenseLine = findExpenseLine(originalEntries[0], accounts)
         setTotalAmountInput(expenseLine ? String(expenseLine.amount) : '')
       }
-      setMasterData({ accounts, projects, householdMembers, counterparties })
+      setMasterData({ accounts, settlementBatches, householdMembers, counterparties })
     })
     return <p role="status">{tCommon('loading')}</p>
   }
@@ -181,6 +184,7 @@ export function ExpenseSplittingForm({
   // narrowingがクロージャ境界を越えて効かず"possibly null"エラーになるため、ここで
   // 非nullであることが確定した参照をローカル変数へ退避しておく。
   const accounts = masterData.accounts
+  const settlementBatches = masterData.settlementBatches
   /**
    * 立替金(資産/負債)科目はユーザーに選択させず、seedAdvanceAccounts(db.worker.ts、
    * docs/domain/expense-splitting.md 1.2節)が投入したis_system_managed科目を自動解決する。
@@ -190,7 +194,6 @@ export function ExpenseSplittingForm({
   const advanceAssetAccountId = accounts.find((account) => account.category === 'asset' && account.isSystemManaged)?.id ?? null
   const advanceLiabilityAccountId =
     accounts.find((account) => account.category === 'liability' && account.isSystemManaged)?.id ?? null
-  const settlementProjects = masterData.projects.filter((project) => project.kind === 'settlement')
   /** 世帯メンバーの選択肢から、選択中の元仕訳いずれかの立替者を除外する(自分自身との割勘を防ぐ) */
   const payerMemberIds = new Set(originalEntries.map((entry) => entry.householdMemberId))
   const eligibleHouseholdMembers = masterData.householdMembers.filter((member) => !payerMemberIds.has(member.id))
@@ -267,7 +270,7 @@ export function ExpenseSplittingForm({
       entryLines.push({ entry, expenseLine })
     }
 
-    if (advanceAssetAccountId === null || projectId === null) {
+    if (advanceAssetAccountId === null || settlementBatchId === null) {
       setError(t('requiredFieldMissingError'))
       return
     }
@@ -302,6 +305,23 @@ export function ExpenseSplittingForm({
       return
     }
 
+    /**
+     * 世帯外の相手を含む割勘の場合、バッチにcounterparty_idを設定する(計画Issue #133)。
+     * バッチ作成(その場作成)は参加者確定前に行われることがあるため、ここで確定後の値を
+     * 書き戻す。複数の世帯外相手が混在する場合は先頭の1件を採用する(精算画面の「対象者」
+     * フィルターでの絞り込みという補助的な用途のための簡易な扱い、懸念点として既知)。
+     */
+    const firstCounterpartyId = counterpartyRows.find((row) => row.targetId !== null)?.targetId ?? null
+    const currentBatch = settlementBatches.find((batch) => batch.id === settlementBatchId)
+    if (firstCounterpartyId !== null && currentBatch?.counterpartyId == null) {
+      try {
+        await settlementBatchRepository.update(settlementBatchId, { counterpartyId: firstCounterpartyId })
+      } catch {
+        setError(t('submitError'))
+        return
+      }
+    }
+
     const entryDate = today ?? new Date().toISOString().slice(0, 10)
     /**
      * 分担者(recipient)ごとに、その分担者が絡む全ての元仕訳分の入力をまとめて保持する。
@@ -323,7 +343,8 @@ export function ExpenseSplittingForm({
         expenseAccountId: expenseLine.accountId,
         advanceAssetAccountId,
         fromMemberId: entry.householdMemberId,
-        projectId,
+        settlementBatchId,
+        eventProjectId: expenseLine.projectId,
         entryDate,
         recipients,
       })
@@ -403,15 +424,17 @@ export function ExpenseSplittingForm({
         />
       </div>
 
-      <ProjectQuickAddSelect
-        id="expense-splitting-project"
+      <SettlementBatchQuickAddSelect
+        id="expense-splitting-settlement-batch"
         label={t('projectLabel')}
-        value={projectId}
-        projects={settlementProjects}
-        onChange={setProjectId}
+        value={settlementBatchId}
+        settlementBatches={masterData.settlementBatches}
+        onChange={setSettlementBatchId}
         onCreate={async (name) => {
-          const created = await projectRepository.create({ name, kind: 'settlement' })
-          setMasterData((prev) => (prev === null ? prev : { ...prev, projects: [...prev.projects, created] }))
+          const created = await settlementBatchRepository.create({ name, type: 'expense_splitting' })
+          setMasterData((prev) =>
+            prev === null ? prev : { ...prev, settlementBatches: [...prev.settlementBatches, created] },
+          )
           return created
         }}
       />
@@ -571,32 +594,37 @@ export function ExpenseSplittingForm({
   )
 }
 
-/** プロジェクトセレクトの「+ 新しいプロジェクトを作成する」を表す特殊値。project idと衝突しない文字列を使う */
-const NEW_PROJECT_OPTION_VALUE = '__new__'
+/** 精算バッチセレクトの「+ 新しい精算バッチを作成する」を表す特殊値。batch idと衝突しない文字列を使う */
+const NEW_SETTLEMENT_BATCH_OPTION_VALUE = '__new__'
 
-interface ProjectQuickAddSelectProps {
+interface SettlementBatchQuickAddSelectProps {
   id: string
   label: string
   value: number | null
-  projects: readonly Project[]
-  onChange: (projectId: number | null) => void
-  /** プロジェクト(kind='settlement')を新規作成する。作成後のprojects一覧への反映は呼び出し元の責務 */
-  onCreate: (name: string) => Promise<Project>
+  settlementBatches: readonly SettlementBatch[]
+  onChange: (settlementBatchId: number | null) => void
+  /** 精算バッチ(type='expense_splitting')を新規作成する。作成後の一覧への反映は呼び出し元の責務 */
+  onCreate: (name: string) => Promise<SettlementBatch>
 }
 
 /**
- * プロジェクト(kind='settlement')セレクト(計画Issue #40)。既存の
+ * 精算バッチ(type='expense_splitting')セレクト(計画Issue #40、計画Issue #133でproject
+ * (kind='settlement')からsettlement_batchesへ置き換え)。既存の
  * CounterpartyQuickAddSelect(src/components/counterparty-management/CounterpartyQuickAddSelect.tsx)
- * と同じ「その場作成(quick add)」パターンを踏襲し、既存プロジェクトからの選択に加え、
- * 「+ 新しいプロジェクトを作成する」を選ぶと名前入力欄がインラインで現れ(モーダル不使用)、
- * その場でprojectRepository.createを呼び出して新規プロジェクトを作成・選択できる
- * (D6のプロジェクト管理画面へ事前に作成しに行く手間を無くすためのユーザー要望)。
- * 作成したプロジェクトは既存のDB永続化の仕組みにより精算画面(SettlementScreen)の
- * 選択肢にも自動的に表示される。表示名は既存のプロジェクト管理画面(D6)と同じ
- * 「プロジェクト」に統一し、「割勘バッチ」という独自の呼称は使わない(人間レビューでの
- * 指摘、同一エンティティが画面によって別名で呼ばれる不整合の解消)。
+ * と同じ「その場作成(quick add)」パターンを踏襲し、既存バッチからの選択に加え、
+ * 「+ 新しい精算バッチを作成する」を選ぶと名前入力欄がインラインで現れ(モーダル不使用)、
+ * その場でsettlementBatchRepository.createを呼び出して新規バッチを作成・選択できる。
+ * 表示名は既存のUXを維持するため「プロジェクト」のラベルをそのまま使う(人間レビューでの
+ * 指摘を踏襲、同一の見た目のまま裏側のエンティティだけがsettlement_batchesに変わる)。
  */
-function ProjectQuickAddSelect({ id, label, value, projects, onChange, onCreate }: ProjectQuickAddSelectProps) {
+function SettlementBatchQuickAddSelect({
+  id,
+  label,
+  value,
+  settlementBatches,
+  onChange,
+  onCreate,
+}: SettlementBatchQuickAddSelectProps) {
   const { t } = useTranslation('expenseSplitting')
   const [adding, setAdding] = useState(false)
   const [nameInput, setNameInput] = useState('')
@@ -654,7 +682,7 @@ function ProjectQuickAddSelect({ id, label, value, projects, onChange, onCreate 
         id={id}
         value={value ?? ''}
         onChange={(event) => {
-          if (event.target.value === NEW_PROJECT_OPTION_VALUE) {
+          if (event.target.value === NEW_SETTLEMENT_BATCH_OPTION_VALUE) {
             setAdding(true)
             return
           }
@@ -662,12 +690,12 @@ function ProjectQuickAddSelect({ id, label, value, projects, onChange, onCreate 
         }}
       >
         <option value="">{t('unselected')}</option>
-        {projects.map((project) => (
-          <option key={project.id} value={project.id}>
-            {project.name}
+        {settlementBatches.map((batch) => (
+          <option key={batch.id} value={batch.id}>
+            {batch.name}
           </option>
         ))}
-        <option value={NEW_PROJECT_OPTION_VALUE}>{t('addNewProjectOption')}</option>
+        <option value={NEW_SETTLEMENT_BATCH_OPTION_VALUE}>{t('addNewProjectOption')}</option>
       </select>
     </div>
   )

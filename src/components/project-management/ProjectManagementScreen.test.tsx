@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 /**
  * プロジェクト管理画面(計画Issue #36、計画Issue #127でテーブル形式+行内インライン編集に変更)の
- * コンポーネントテスト。登録済みプロジェクトの一覧表示(テーブルのthead/tbody)、新規作成(名称・kind、
- * 表の最終行に追加される作成用の行から行う)、既存プロジェクトの編集(行内インライン編集、名称のみ、
- * kindは作成時のみ指定可能)、削除(紐づく仕訳明細が0件の場合のみ)・非アクティブ化を、sql.jsのNode実装
- * (createTestDatabase)を使った統合的なレンダリングテストとして検証する。プロジェクト別集計・
- * 非アクティブ化提案は別ファイルに分離する(計画Issue #36の後続コミット)。
+ * コンポーネントテスト。登録済みプロジェクトの一覧表示(テーブルのthead/tbody)、新規作成(名称のみ、
+ * 表の最終行に追加される作成用の行から行う)、既存プロジェクトの編集(行内インライン編集、名称のみ)、
+ * 削除(紐づく仕訳明細が0件の場合のみ)・非アクティブ化を、sql.jsのNode実装(createTestDatabase)を
+ * 使った統合的なレンダリングテストとして検証する。プロジェクトはイベント専用であり、kindという
+ * 分類・精算残高による非アクティブ化提案は持たない(計画Issue #133、精算バッチはsettlement_batches
+ * として分離された)。プロジェクト別集計は別ファイルに分離する(計画Issue #36の後続コミット)。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -61,7 +62,6 @@ describe('ProjectManagementScreen', () => {
     expect(await screen.findByText('26年7月アメリカ旅行')).toBeInTheDocument()
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '名称' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: '種別' })).toBeInTheDocument()
   })
 
   it('プロジェクトが0件の場合はエラーにならず空状態が表示される', async () => {
@@ -70,19 +70,7 @@ describe('ProjectManagementScreen', () => {
     expect(await screen.findByText('登録済みのプロジェクトがありません')).toBeInTheDocument()
   })
 
-  it('プロジェクトの種別(kind)が一覧に併記される', async () => {
-    projectRepository.create({ name: '26/7生活費割勘', kind: 'settlement' })
-    projectRepository.create({ name: '26年7月アメリカ旅行', kind: 'event' })
-
-    renderScreen()
-
-    const settlementRow = (await screen.findByText('26/7生活費割勘')).closest('tr')!
-    expect(settlementRow).toHaveTextContent('精算')
-    const eventRow = (await screen.findByText('26年7月アメリカ旅行')).closest('tr')!
-    expect(eventRow).toHaveTextContent('イベント')
-  })
-
-  it('kindを指定せず名称のみで新規プロジェクトを作成すると、既定のevent種別で作成される', async () => {
+  it('名称のみで新規プロジェクトを作成できる', async () => {
     renderScreen()
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
 
@@ -90,22 +78,8 @@ describe('ProjectManagementScreen', () => {
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '26年7月アメリカ旅行' } })
     fireEvent.click(screen.getByRole('button', { name: '作成する' }))
 
-    const row = (await screen.findByText('26年7月アメリカ旅行')).closest('tr')!
-    expect(row).toHaveTextContent('イベント')
+    expect(await screen.findByText('26年7月アメリカ旅行')).toBeInTheDocument()
     expect(projectRepository.findAll()).toHaveLength(1)
-  })
-
-  it('kindにsettlementを指定して新規プロジェクトを作成できる', async () => {
-    renderScreen()
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
-
-    fireEvent.click(screen.getByRole('button', { name: 'プロジェクトを追加' }))
-    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '26/7生活費割勘' } })
-    fireEvent.change(screen.getByLabelText('種別'), { target: { value: 'settlement' } })
-    fireEvent.click(screen.getByRole('button', { name: '作成する' }))
-
-    const row = (await screen.findByText('26/7生活費割勘')).closest('tr')!
-    expect(row).toHaveTextContent('精算')
   })
 
   it('作成用の行は取消(キャンセル)できる', async () => {
@@ -146,17 +120,6 @@ describe('ProjectManagementScreen', () => {
     expect(within(editingRow).getByLabelText('名称')).toBeInTheDocument()
     const otherRow = screen.getByText('26年8月沖縄旅行').closest('tr')!
     expect(within(otherRow).queryByLabelText('名称')).not.toBeInTheDocument()
-  })
-
-  it('編集中の行には種別(kind)の入力欄が表示されない(作成時のみ指定可能)', async () => {
-    projectRepository.create({ name: '26/7生活費割勘', kind: 'settlement' })
-    renderScreen()
-
-    const row = (await screen.findByText('26/7生活費割勘')).closest('tr')!
-    fireEvent.click(within(row).getByRole('button', { name: '編集' }))
-
-    expect(screen.queryByLabelText('種別')).not.toBeInTheDocument()
-    expect(within(row).getByText('精算')).toBeInTheDocument()
   })
 
   it('編集を取消(キャンセル)すると変更前の名称のまま一覧表示に戻る', async () => {
