@@ -4,6 +4,37 @@
   padding: 1rem;
 }
 
+.journal-entry-detail-screen .journal-entry-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 1rem;
+}
+
+.journal-entry-detail-screen .journal-entry-detail-header h2 {
+  margin: 0;
+}
+
+.journal-entry-detail-screen .journal-entry-detail-related-entries-trigger {
+  font-size: 14px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-h);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--accent-border);
+    background: var(--accent-bg);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
 .journal-entry-detail-screen [role='alert'] {
   padding: 8px 12px;
   border-radius: 5px;

@@ -13,6 +13,7 @@ import { buildRelatedEntryIdsByEntryId } from '../../domain/journal-link-group/b
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { JournalEntryLinesTable, type JournalEntryLineRow } from './JournalEntryLinesTable'
+import { RelatedEntriesDialog } from './RelatedEntriesDialog'
 import {
   createEmptyJournalEntryFormLine,
   fromJournalLine,
@@ -99,11 +100,13 @@ function buildLineStates(lines: JournalEntry['lines'], lineKeyRef: { current: nu
  * そこから生まれた割勘・精算の履歴(traceExpenseSplittingHistory、docs/domain/
  * expense-splitting.md 1.5節)を表示する。
  *
- * 「関連する仕訳」一覧(計画Issue #138)は、journal_entry_links(行対行のハード検証、計画Issue
+ * 「関連する仕訳」(計画Issue #138)は、journal_entry_links(行対行のハード検証、計画Issue
  * #132・#133で残高計算・消込検証の役割を失い完全撤廃)に代わる関連仕訳グループ(多対多、
- * 表示専用)に基づく。この仕訳が所属する全グループ分の関連仕訳を合算して一覧表示し、
+ * 表示専用)に基づく。この仕訳が所属する全グループ分の関連仕訳を合算し、画面右上の
+ * 「関連仕訳」ボタン(件数表示)から開くダイアログ(RelatedEntriesDialog)に一覧表示する
+ * (UIレビューにより、常時画面に表示する専用セクションではなくボタン起点のダイアログに変更)。
  * 既存の仕訳を検索して新たに関連付ける操作(手動でのグループ作成/参加、
- * journalEntryLinkGroupRepository.joinOrCreateGroups)もここから行える。かつて存在した
+ * journalEntryLinkGroupRepository.joinOrCreateGroups)もこのダイアログから行える。かつて存在した
  * リンク削除警告UI(行削除時の2段階ボタン確認フロー)は、journal_entry_links自体の撤廃に伴い
  * 廃止した(関連仕訳グループは明細行ではなく仕訳単位の緩い関連付けであり、仕訳の更新操作で
  * 行が削除されてもグループ所属には影響しないため、警告の前提自体が成立しない)。
@@ -127,8 +130,8 @@ export function JournalEntryDetailScreen({
   const [isDeleting, setIsDeleting] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
-  const [relateTargetId, setRelateTargetId] = useState<number | null>(null)
-  const [isRelating, setIsRelating] = useState(false)
+  const [isRelatedDialogOpen, setIsRelatedDialogOpen] = useState(false)
+  const [isAddingRelatedEntry, setIsAddingRelatedEntry] = useState(false)
   const [relateError, setRelateError] = useState<string | null>(null)
   const lineKeyRef = useRef(0)
 
@@ -162,7 +165,6 @@ export function JournalEntryDetailScreen({
         lineStates: buildLineStates(entry.lines, lineKeyRef),
       })
       setUpdateError(null)
-      setRelateTargetId(null)
       setRelateError(null)
     })
   }
@@ -211,22 +213,22 @@ export function JournalEntryDetailScreen({
   }
 
   /**
-   * 手動での関連付け(計画Issue #138)。選択した仕訳(relateTargetId)をこの仕訳と関連付ける。
-   * この仕訳が既存のグループに所属していればそのグループへ選択した仕訳を参加させ、
-   * 所属していなければ両方をメンバーとする新規グループを作成する
+   * 手動での関連付け(計画Issue #138)。関連仕訳ダイアログ(RelatedEntriesDialog)で選んだ仕訳
+   * (targetId)をこの仕訳と関連付ける。この仕訳が既存のグループに所属していればそのグループへ
+   * 選択した仕訳を参加させ、所属していなければ両方をメンバーとする新規グループを作成する
    * (JournalEntryLinkGroupRepository.joinOrCreateGroupsの判定、anchor=この仕訳)。
    */
-  async function handleRelate(): Promise<void> {
-    if (isRelating || relateTargetId === null) return
-    setIsRelating(true)
+  async function handleAddRelatedEntry(targetId: number): Promise<void> {
+    if (isAddingRelatedEntry) return
+    setIsAddingRelatedEntry(true)
     setRelateError(null)
     try {
-      await Promise.resolve(journalEntryLinkGroupRepository.joinOrCreateGroups([entry.id], [relateTargetId]))
+      await Promise.resolve(journalEntryLinkGroupRepository.joinOrCreateGroups([entry.id], [targetId]))
       load()
     } catch {
       setRelateError(t('relateEntryError'))
     } finally {
-      setIsRelating(false)
+      setIsAddingRelatedEntry(false)
     }
   }
 
@@ -322,7 +324,16 @@ export function JournalEntryDetailScreen({
 
   return (
     <div className="journal-entry-detail-screen">
-      <h2>{t('entryDetailTitle')}</h2>
+      <div className="journal-entry-detail-header">
+        <h2>{t('entryDetailTitle')}</h2>
+        <button
+          type="button"
+          className="journal-entry-detail-related-entries-trigger"
+          onClick={() => setIsRelatedDialogOpen(true)}
+        >
+          {t('relatedEntriesButtonLabel', { count: relatedEntries.length })}
+        </button>
+      </div>
 
       <JournalEntryLinesTable
         entryDate={editState.entryDate}
@@ -382,46 +393,20 @@ export function JournalEntryDetailScreen({
         </div>
       )}
 
-      <div className="journal-entry-detail-related-entries">
-        <h3>{t('relatedEntriesTitle')}</h3>
-        {relatedEntries.length === 0 ? (
-          <p>{t('relatedEntriesEmpty')}</p>
-        ) : (
-          <ul>
-            {relatedEntries.map((relatedEntry) => (
-              <li key={relatedEntry.id}>
-                <span>{relatedEntry.entryDate}</span>
-                <span>{relatedEntry.memo ?? t('entryNoMemo')}</span>
-                {onSelectRelatedEntry && (
-                  <button type="button" onClick={() => onSelectRelatedEntry(relatedEntry)}>
-                    {t('viewRelatedEntry')}
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <div className="journal-entry-detail-relate-form">
-          <label htmlFor="journal-entry-detail-relate-select">{t('relateEntryLabel')}</label>
-          <select
-            id="journal-entry-detail-relate-select"
-            value={relateTargetId ?? ''}
-            onChange={(event) => setRelateTargetId(event.target.value === '' ? null : Number(event.target.value))}
-          >
-            <option value="">{t('unselected')}</option>
-            {relateCandidates.map((candidate) => (
-              <option key={candidate.id} value={candidate.id}>
-                {candidate.entryDate} {candidate.memo ?? t('entryNoMemo')}
-              </option>
-            ))}
-          </select>
-          <button type="button" disabled={relateTargetId === null || isRelating} onClick={() => void handleRelate()}>
-            {t('relateEntryButton')}
-          </button>
-          {relateError !== null && <p role="alert">{relateError}</p>}
-        </div>
-      </div>
+      {isRelatedDialogOpen && (
+        <RelatedEntriesDialog
+          relatedEntries={relatedEntries}
+          relateCandidates={relateCandidates}
+          onSelectEntry={(relatedEntry) => {
+            setIsRelatedDialogOpen(false)
+            onSelectRelatedEntry?.(relatedEntry)
+          }}
+          onAddEntry={handleAddRelatedEntry}
+          onClose={() => setIsRelatedDialogOpen(false)}
+          isAdding={isAddingRelatedEntry}
+          addError={relateError}
+        />
+      )}
 
       <button type="button" onClick={onBack}>
         {t('back')}
