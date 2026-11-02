@@ -451,6 +451,43 @@ describe('ExpenseSplittingForm', () => {
     expect(journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)).toHaveLength(0)
   })
 
+  it('確定ボタンをクリックすると即座に無効化され、連続クリックしても精算バッチ・仕訳が重複して作成されない(実機レビューでの指摘対応。精算バッチの新規作成がhandleSubmit内のawaitを含むため、ボタン無効化がそれより後だと二重送信で重複が発生していた)', async () => {
+    seedAdvanceAccounts(db)
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    householdMemberRepository.create({ name: 'Bさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm([originalEntry])
+    await screen.findByText('スーパーで食材購入')
+
+    checkHouseholdMember('Bさん')
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(householdMemberRow('Bさん').getByLabelText('金額')).toHaveValue(500))
+
+    const confirmButton = screen.getByRole('button', { name: '割勘を確定する' })
+    fireEvent.click(confirmButton)
+    // クリック直後、精算バッチ作成のawaitより前に同期的に無効化されているべき
+    expect(confirmButton).toBeDisabled()
+    // 無効化されたボタンへのクリックはブラウザ上では発火しないため、連続クリックの再現として扱える
+    fireEvent.click(confirmButton)
+
+    await waitFor(() => {
+      const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      expect(createdEntries).toHaveLength(1)
+    })
+    expect(settlementBatchRepository.findAll()).toHaveLength(1)
+  })
+
   it('精算バッチのセレクトには既定で「新しい精算バッチを作成する」が選択されており、名前入力フォームは存在しない', async () => {
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })

@@ -270,157 +270,154 @@ export function ExpenseSplittingForm({
 
   async function handleSubmit() {
     if (submitting) return
+    /**
+     * バリデーションより前、精算バッチ作成(await)より前の時点で同期的に無効化する。
+     * 精算バッチの新規作成(resolvedSettlementBatchId解決)がhandleSubmit内の最初のawaitに
+     * なったため、ここより後で無効化すると、連続クリック(二重送信)時に無効化が間に合わず
+     * 精算バッチ・仕訳が重複して作成される不具合が実機レビューで見つかったため、冒頭で
+     * 同期的に無効化する(以降の全ての分岐はtry/finallyでsetSubmitting(false)に戻す)。
+     */
+    setSubmitting(true)
     setError(null)
 
-    const entryLines: { entry: JournalEntry; expenseLine: JournalLine }[] = []
-    for (const entry of originalEntries) {
-      const expenseLine = findExpenseLine(entry, accounts)
-      if (expenseLine === undefined) {
-        setError(t('expenseAccountNotFoundError'))
+    try {
+      const entryLines: { entry: JournalEntry; expenseLine: JournalLine }[] = []
+      for (const entry of originalEntries) {
+        const expenseLine = findExpenseLine(entry, accounts)
+        if (expenseLine === undefined) {
+          setError(t('expenseAccountNotFoundError'))
+          return
+        }
+        entryLines.push({ entry, expenseLine })
+      }
+
+      if (advanceAssetAccountId === null) {
+        setError(t('requiredFieldMissingError'))
         return
       }
-      entryLines.push({ entry, expenseLine })
-    }
 
-    if (advanceAssetAccountId === null) {
-      setError(t('requiredFieldMissingError'))
-      return
-    }
+      /**
+       * 世帯メンバー分担者はadvanceLiabilityAccountIdが無いと仕訳を組み立てられない
+       * (toExpenseSplitRecipients/toExpenseSplitRecipientsForEntryAmountが黙って除外する)。
+       * ここで事前に検証しないと、世帯外相手の行が1件でも有効な場合にnoRecipientErrorを
+       * すり抜け、世帯メンバー分の割勘だけが無警告で消失したまま確定されてしまう
+       * (evaluatorレビュー指摘、計画Issue #40 Review Attempt 1対応)。
+       */
+      const hasHouseholdMemberParticipant = participants.some(
+        (row) => row.kind === 'householdMember' && row.targetId !== null,
+      )
+      if (hasHouseholdMemberParticipant && advanceLiabilityAccountId === null) {
+        setError(t('advanceLiabilityAccountRequiredError'))
+        return
+      }
 
-    /**
-     * 世帯メンバー分担者はadvanceLiabilityAccountIdが無いと仕訳を組み立てられない
-     * (toExpenseSplitRecipients/toExpenseSplitRecipientsForEntryAmountが黙って除外する)。
-     * ここで事前に検証しないと、世帯外相手の行が1件でも有効な場合にnoRecipientErrorを
-     * すり抜け、世帯メンバー分の割勘だけが無警告で消失したまま確定されてしまう
-     * (evaluatorレビュー指摘、計画Issue #40 Review Attempt 1対応)。
-     */
-    const hasHouseholdMemberParticipant = participants.some(
-      (row) => row.kind === 'householdMember' && row.targetId !== null,
-    )
-    if (hasHouseholdMemberParticipant && advanceLiabilityAccountId === null) {
-      setError(t('advanceLiabilityAccountRequiredError'))
-      return
-    }
+      /**
+       * 世帯外の相手の行はtargetId(取引先)が無いと仕訳を組み立てられない
+       * (toExpenseSplitRecipients/toExpenseSplitRecipientsForEntryAmountが黙って除外する)。
+       * 上記の立替金(負債)科目の検証と同じ理由で、ここで事前に検証しないと、他に有効な
+       * 分担者がいる場合にnoRecipientErrorをすり抜け、相手未選択の行だけが無警告で
+       * 消失したまま確定されてしまう(人間レビューでの指摘、計画Issue #40)。
+       */
+      const hasIncompleteCounterpartyParticipant = participants.some(
+        (row) => row.kind === 'counterparty' && row.targetId === null,
+      )
+      if (hasIncompleteCounterpartyParticipant) {
+        setError(t('counterpartyTargetRequiredError'))
+        return
+      }
 
-    /**
-     * 世帯外の相手の行はtargetId(取引先)が無いと仕訳を組み立てられない
-     * (toExpenseSplitRecipients/toExpenseSplitRecipientsForEntryAmountが黙って除外する)。
-     * 上記の立替金(負債)科目の検証と同じ理由で、ここで事前に検証しないと、他に有効な
-     * 分担者がいる場合にnoRecipientErrorをすり抜け、相手未選択の行だけが無警告で
-     * 消失したまま確定されてしまう(人間レビューでの指摘、計画Issue #40)。
-     */
-    const hasIncompleteCounterpartyParticipant = participants.some(
-      (row) => row.kind === 'counterparty' && row.targetId === null,
-    )
-    if (hasIncompleteCounterpartyParticipant) {
-      setError(t('counterpartyTargetRequiredError'))
-      return
-    }
+      /**
+       * 世帯外の相手を含む割勘の場合、バッチにcounterparty_idを設定する(計画Issue #133)。
+       * 複数の世帯外相手が混在する場合は先頭の1件を採用する(精算画面の「対象者」フィルターでの
+       * 絞り込みという補助的な用途のための簡易な扱い、懸念点として既知)。
+       */
+      const firstCounterpartyId = counterpartyRows.find((row) => row.targetId !== null)?.targetId ?? null
 
-    /**
-     * 世帯外の相手を含む割勘の場合、バッチにcounterparty_idを設定する(計画Issue #133)。
-     * 複数の世帯外相手が混在する場合は先頭の1件を採用する(精算画面の「対象者」フィルターでの
-     * 絞り込みという補助的な用途のための簡易な扱い、懸念点として既知)。
-     */
-    const firstCounterpartyId = counterpartyRows.find((row) => row.targetId !== null)?.targetId ?? null
-
-    /**
-     * 精算バッチの選択UIは「既存バッチから選ぶ」か「新しい精算バッチを作成する」(既定選択)の
-     * 2択のみで、名前入力フォームは持たない(ユーザーからの指摘「精算バッチの名前はこの画面の
-     * 摘要がそのまま使えるのでは」への対応)。新規作成を選んだ状態のまま確定された場合、ここで
-     * 初めてこの時点の摘要(memoInput)を名前としてバッチを作成する。参加者確定後のこのタイミングで
-     * 作成するため、counterparty_idも作成時に直接設定でき、既存バッチの場合のような事後update
-     * 呼び出しは不要。
-     */
-    let resolvedSettlementBatchId: number
-    if (settlementBatchId === NEW_SETTLEMENT_BATCH_VALUE) {
-      try {
+      /**
+       * 精算バッチの選択UIは「既存バッチから選ぶ」か「新しい精算バッチを作成する」(既定選択)の
+       * 2択のみで、名前入力フォームは持たない(ユーザーからの指摘「精算バッチの名前はこの画面の
+       * 摘要がそのまま使えるのでは」への対応)。新規作成を選んだ状態のまま確定された場合、ここで
+       * 初めてこの時点の摘要(memoInput)を名前としてバッチを作成する。参加者確定後のこのタイミングで
+       * 作成するため、counterparty_idも作成時に直接設定でき、既存バッチの場合のような事後update
+       * 呼び出しは不要。
+       */
+      let resolvedSettlementBatchId: number
+      if (settlementBatchId === NEW_SETTLEMENT_BATCH_VALUE) {
         const created = await settlementBatchRepository.create({
           name: memoInput.trim(),
           type: 'expense_splitting',
           counterpartyId: firstCounterpartyId,
         })
         resolvedSettlementBatchId = created.id
-      } catch {
-        setError(t('submitError'))
-        return
-      }
-    } else {
-      resolvedSettlementBatchId = settlementBatchId
-      const currentBatch = settlementBatches.find((batch) => batch.id === settlementBatchId)
-      if (firstCounterpartyId !== null && currentBatch?.counterpartyId == null) {
-        try {
+      } else {
+        resolvedSettlementBatchId = settlementBatchId
+        const currentBatch = settlementBatches.find((batch) => batch.id === settlementBatchId)
+        if (firstCounterpartyId !== null && currentBatch?.counterpartyId == null) {
           await settlementBatchRepository.update(settlementBatchId, { counterpartyId: firstCounterpartyId })
-        } catch {
-          setError(t('submitError'))
-          return
         }
       }
-    }
 
-    const entryDate = today ?? new Date().toISOString().slice(0, 10)
-    /**
-     * 分担者(recipient)ごとに、その分担者が絡む全ての元仕訳分の入力をまとめて保持する。
-     * 「分担者ごとに1件の複合仕訳にまとめ、選択した元仕訳が複数ある場合はその分も同じ
-     * 分担者の仕訳にまとめる」という設計(下記mergeExpenseSplittingJournalEntryInputsの
-     * JSDoc・docs/decisions.md(2026-09-06)参照)のためのグルーピング。
-     */
-    const inputsByRecipientKey = new Map<string, CreateJournalEntryInput[]>()
-    for (const { entry, expenseLine } of entryLines) {
-      const recipients = isBatch
-        ? toExpenseSplitRecipientsForEntryAmount(participants, advanceLiabilityAccountId, expenseLine.amount, allocationMode)
-        : toExpenseSplitRecipients(participants, advanceLiabilityAccountId)
-      if (recipients.length === 0) {
-        setError(t('noRecipientError'))
-        return
+      const entryDate = today ?? new Date().toISOString().slice(0, 10)
+      /**
+       * 分担者(recipient)ごとに、その分担者が絡む全ての元仕訳分の入力をまとめて保持する。
+       * 「分担者ごとに1件の複合仕訳にまとめ、選択した元仕訳が複数ある場合はその分も同じ
+       * 分担者の仕訳にまとめる」という設計(下記mergeExpenseSplittingJournalEntryInputsの
+       * JSDoc・docs/decisions.md(2026-09-06)参照)のためのグルーピング。
+       */
+      const inputsByRecipientKey = new Map<string, CreateJournalEntryInput[]>()
+      for (const { entry, expenseLine } of entryLines) {
+        const recipients = isBatch
+          ? toExpenseSplitRecipientsForEntryAmount(participants, advanceLiabilityAccountId, expenseLine.amount, allocationMode)
+          : toExpenseSplitRecipients(participants, advanceLiabilityAccountId)
+        if (recipients.length === 0) {
+          setError(t('noRecipientError'))
+          return
+        }
+        const inputs = buildExpenseSplittingJournalEntryInputs({
+          originalLineId: expenseLine.id,
+          expenseAccountId: expenseLine.accountId,
+          advanceAssetAccountId,
+          fromMemberId: entry.householdMemberId,
+          settlementBatchId: resolvedSettlementBatchId,
+          eventProjectId: expenseLine.projectId,
+          entryDate,
+          recipients,
+        })
+        recipients.forEach((recipient, index) => {
+          const key = recipient.kind === 'householdMember' ? `householdMember:${recipient.toMemberId}` : `counterparty:${recipient.counterpartyId}`
+          const existing = inputsByRecipientKey.get(key) ?? []
+          existing.push(inputs[index])
+          inputsByRecipientKey.set(key, existing)
+        })
       }
-      const inputs = buildExpenseSplittingJournalEntryInputs({
-        originalLineId: expenseLine.id,
-        expenseAccountId: expenseLine.accountId,
-        advanceAssetAccountId,
-        fromMemberId: entry.householdMemberId,
-        settlementBatchId: resolvedSettlementBatchId,
-        eventProjectId: expenseLine.projectId,
-        entryDate,
-        recipients,
-      })
-      recipients.forEach((recipient, index) => {
-        const key = recipient.kind === 'householdMember' ? `householdMember:${recipient.toMemberId}` : `counterparty:${recipient.counterpartyId}`
-        const existing = inputsByRecipientKey.get(key) ?? []
-        existing.push(inputs[index])
-        inputsByRecipientKey.set(key, existing)
-      })
-    }
 
-    /**
-     * 分担者ごとに、その分担者分のCreateJournalEntryInput(選択した元仕訳の件数分)を
-     * mergeExpenseSplittingJournalEntryInputsで1件の複合仕訳へ統合する(人間レビューでの
-     * 指摘「割勘の仕訳を作るときは複数明細をまとめて一本で仕訳を切るように(逆仕訳が
-     * 切りやすくなるから)」への対応、計画Issue #40)。統合の単位を「分担者ごと」に
-     * 限定しているのは、異なる分担者(household_member_id)の立替金(負債)行を同じ仕訳に
-     * 混在させると、精算画面がタグ(account・project・household_member)ごとに残高を
-     * 区別できず、ある世帯メンバーの精算操作で無関係な別の世帯メンバーの債務まで無警告で
-     * 消し込まれてしまう不具合が実際に見つかったため(evaluatorレビュー指摘、docs/domain/
-     * settlement.md 1.7の「タグの組み合わせごとに消込対象を一意に特定できる」という
-     * 既存の不変条件に反する状態を作ってしまっていた)。分担者が同じであれば、選択した
-     * 元仕訳が複数あっても常に同じ人物への同じ債務の一部であり、タグの混在は起こらない。
-     * 摘要はmemoInput(既定値はcomputeDefaultMemo、ユーザーが自由に編集できる)を全ての
-     * 仕訳で共通して使い、空欄のまま確定した場合はnull(無題)とする。起票者は選択した
-     * 元仕訳のうち先頭のもののhouseholdMemberIdを使う(全行に明示的なhousehold_member_id
-     * が設定されるため、実効メンバーの解決においてこの値がフォールバックとして参照される
-     * ことはない)。
-     */
-    const mergedInputs = [...inputsByRecipientKey.values()].map((inputs) =>
-      mergeExpenseSplittingJournalEntryInputs({
-        inputs,
-        entryDate,
-        memo: memoInput.trim() === '' ? null : memoInput,
-        householdMemberId: originalEntries[0].householdMemberId,
-      }),
-    )
+      /**
+       * 分担者ごとに、その分担者分のCreateJournalEntryInput(選択した元仕訳の件数分)を
+       * mergeExpenseSplittingJournalEntryInputsで1件の複合仕訳へ統合する(人間レビューでの
+       * 指摘「割勘の仕訳を作るときは複数明細をまとめて一本で仕訳を切るように(逆仕訳が
+       * 切りやすくなるから)」への対応、計画Issue #40)。統合の単位を「分担者ごと」に
+       * 限定しているのは、異なる分担者(household_member_id)の立替金(負債)行を同じ仕訳に
+       * 混在させると、精算画面がタグ(account・project・household_member)ごとに残高を
+       * 区別できず、ある世帯メンバーの精算操作で無関係な別の世帯メンバーの債務まで無警告で
+       * 消し込まれてしまう不具合が実際に見つかったため(evaluatorレビュー指摘、docs/domain/
+       * settlement.md 1.7の「タグの組み合わせごとに消込対象を一意に特定できる」という
+       * 既存の不変条件に反する状態を作ってしまっていた)。分担者が同じであれば、選択した
+       * 元仕訳が複数あっても常に同じ人物への同じ債務の一部であり、タグの混在は起こらない。
+       * 摘要はmemoInput(既定値はcomputeDefaultMemo、ユーザーが自由に編集できる)を全ての
+       * 仕訳で共通して使い、空欄のまま確定した場合はnull(無題)とする。起票者は選択した
+       * 元仕訳のうち先頭のもののhouseholdMemberIdを使う(全行に明示的なhousehold_member_id
+       * が設定されるため、実効メンバーの解決においてこの値がフォールバックとして参照される
+       * ことはない)。
+       */
+      const mergedInputs = [...inputsByRecipientKey.values()].map((inputs) =>
+        mergeExpenseSplittingJournalEntryInputs({
+          inputs,
+          entryDate,
+          memo: memoInput.trim() === '' ? null : memoInput,
+          householdMemberId: originalEntries[0].householdMemberId,
+        }),
+      )
 
-    setSubmitting(true)
-    try {
       const created: JournalEntry[] = []
       for (const mergedInput of mergedInputs) {
         created.push(await journalEntryRepository.create(mergedInput))
