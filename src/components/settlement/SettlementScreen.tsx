@@ -201,7 +201,7 @@ export function SettlementScreen({
       <h2>{t('settlementScreenTitle')}</h2>
 
       <div>
-        <label htmlFor="settlement-batch">{t('projectLabel')}</label>
+        <label htmlFor="settlement-batch">{t('settlementBatchLabel')}</label>
         <select
           id="settlement-batch"
           value={settlementBatchId ?? ''}

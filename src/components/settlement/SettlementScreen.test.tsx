@@ -99,8 +99,8 @@ function setUpSplitEntry() {
 }
 
 async function selectBatchAndSide(batchId: number, side: 'asset' | 'liability') {
-  await screen.findByLabelText('プロジェクト')
-  fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(batchId) } })
+  await screen.findByLabelText('精算バッチ')
+  fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(batchId) } })
   fireEvent.change(screen.getByLabelText('精算方向'), { target: { value: side } })
 }
 

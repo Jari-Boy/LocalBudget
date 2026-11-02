@@ -19,6 +19,12 @@ import {
 } from './expenseSplittingFormParticipant'
 import './ExpenseSplittingForm.css'
 
+/**
+ * 精算バッチセレクトの「新しい精算バッチを作成する」を表す特殊値(既定選択、ユーザーからの
+ * 指摘「プロジェクトを選択する必要はないのでは」への対応)。バッチidと衝突しない文字列を使う。
+ */
+const NEW_SETTLEMENT_BATCH_VALUE = '__new__'
+
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
 }
@@ -26,7 +32,11 @@ interface SettlementBatchFinder {
   findAll(): SettlementBatch[] | Promise<SettlementBatch[]>
 }
 interface SettlementBatchCreator {
-  create(input: { name: string; type: SettlementBatch['type'] }): SettlementBatch | Promise<SettlementBatch>
+  create(input: {
+    name: string
+    type: SettlementBatch['type']
+    counterpartyId?: number | null
+  }): SettlementBatch | Promise<SettlementBatch>
 }
 interface SettlementBatchUpdater {
   update(id: number, input: { counterpartyId?: number | null }): SettlementBatch | Promise<SettlementBatch>
@@ -153,7 +163,9 @@ export function ExpenseSplittingForm({
   const isBatch = originalEntries.length > 1
 
   const [masterData, setMasterData] = useState<MasterData | null>(null)
-  const [settlementBatchId, setSettlementBatchId] = useState<number | null>(null)
+  const [settlementBatchId, setSettlementBatchId] = useState<number | typeof NEW_SETTLEMENT_BATCH_VALUE>(
+    NEW_SETTLEMENT_BATCH_VALUE,
+  )
   const [allocationMode, setAllocationMode] = useState<ExpenseSplittingAllocationMode>('equal')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -270,7 +282,7 @@ export function ExpenseSplittingForm({
       entryLines.push({ entry, expenseLine })
     }
 
-    if (advanceAssetAccountId === null || settlementBatchId === null) {
+    if (advanceAssetAccountId === null) {
       setError(t('requiredFieldMissingError'))
       return
     }
@@ -307,18 +319,42 @@ export function ExpenseSplittingForm({
 
     /**
      * 世帯外の相手を含む割勘の場合、バッチにcounterparty_idを設定する(計画Issue #133)。
-     * バッチ作成(その場作成)は参加者確定前に行われることがあるため、ここで確定後の値を
-     * 書き戻す。複数の世帯外相手が混在する場合は先頭の1件を採用する(精算画面の「対象者」
-     * フィルターでの絞り込みという補助的な用途のための簡易な扱い、懸念点として既知)。
+     * 複数の世帯外相手が混在する場合は先頭の1件を採用する(精算画面の「対象者」フィルターでの
+     * 絞り込みという補助的な用途のための簡易な扱い、懸念点として既知)。
      */
     const firstCounterpartyId = counterpartyRows.find((row) => row.targetId !== null)?.targetId ?? null
-    const currentBatch = settlementBatches.find((batch) => batch.id === settlementBatchId)
-    if (firstCounterpartyId !== null && currentBatch?.counterpartyId == null) {
+
+    /**
+     * 精算バッチの選択UIは「既存バッチから選ぶ」か「新しい精算バッチを作成する」(既定選択)の
+     * 2択のみで、名前入力フォームは持たない(ユーザーからの指摘「精算バッチの名前はこの画面の
+     * 摘要がそのまま使えるのでは」への対応)。新規作成を選んだ状態のまま確定された場合、ここで
+     * 初めてこの時点の摘要(memoInput)を名前としてバッチを作成する。参加者確定後のこのタイミングで
+     * 作成するため、counterparty_idも作成時に直接設定でき、既存バッチの場合のような事後update
+     * 呼び出しは不要。
+     */
+    let resolvedSettlementBatchId: number
+    if (settlementBatchId === NEW_SETTLEMENT_BATCH_VALUE) {
       try {
-        await settlementBatchRepository.update(settlementBatchId, { counterpartyId: firstCounterpartyId })
+        const created = await settlementBatchRepository.create({
+          name: memoInput.trim(),
+          type: 'expense_splitting',
+          counterpartyId: firstCounterpartyId,
+        })
+        resolvedSettlementBatchId = created.id
       } catch {
         setError(t('submitError'))
         return
+      }
+    } else {
+      resolvedSettlementBatchId = settlementBatchId
+      const currentBatch = settlementBatches.find((batch) => batch.id === settlementBatchId)
+      if (firstCounterpartyId !== null && currentBatch?.counterpartyId == null) {
+        try {
+          await settlementBatchRepository.update(settlementBatchId, { counterpartyId: firstCounterpartyId })
+        } catch {
+          setError(t('submitError'))
+          return
+        }
       }
     }
 
@@ -343,7 +379,7 @@ export function ExpenseSplittingForm({
         expenseAccountId: expenseLine.accountId,
         advanceAssetAccountId,
         fromMemberId: entry.householdMemberId,
-        settlementBatchId,
+        settlementBatchId: resolvedSettlementBatchId,
         eventProjectId: expenseLine.projectId,
         entryDate,
         recipients,
@@ -424,19 +460,12 @@ export function ExpenseSplittingForm({
         />
       </div>
 
-      <SettlementBatchQuickAddSelect
+      <SettlementBatchSelect
         id="expense-splitting-settlement-batch"
-        label={t('projectLabel')}
+        label={t('settlementBatchLabel')}
         value={settlementBatchId}
         settlementBatches={masterData.settlementBatches}
         onChange={setSettlementBatchId}
-        onCreate={async (name) => {
-          const created = await settlementBatchRepository.create({ name, type: 'expense_splitting' })
-          setMasterData((prev) =>
-            prev === null ? prev : { ...prev, settlementBatches: [...prev.settlementBatches, created] },
-          )
-          return created
-        }}
       />
 
       {!isBatch && (
@@ -594,108 +623,43 @@ export function ExpenseSplittingForm({
   )
 }
 
-/** 精算バッチセレクトの「+ 新しい精算バッチを作成する」を表す特殊値。batch idと衝突しない文字列を使う */
-const NEW_SETTLEMENT_BATCH_OPTION_VALUE = '__new__'
-
-interface SettlementBatchQuickAddSelectProps {
+interface SettlementBatchSelectProps {
   id: string
   label: string
-  value: number | null
+  value: number | typeof NEW_SETTLEMENT_BATCH_VALUE
   settlementBatches: readonly SettlementBatch[]
-  onChange: (settlementBatchId: number | null) => void
-  /** 精算バッチ(type='expense_splitting')を新規作成する。作成後の一覧への反映は呼び出し元の責務 */
-  onCreate: (name: string) => Promise<SettlementBatch>
+  onChange: (settlementBatchId: number | typeof NEW_SETTLEMENT_BATCH_VALUE) => void
 }
 
 /**
  * 精算バッチ(type='expense_splitting')セレクト(計画Issue #40、計画Issue #133でproject
- * (kind='settlement')からsettlement_batchesへ置き換え)。既存の
- * CounterpartyQuickAddSelect(src/components/counterparty-management/CounterpartyQuickAddSelect.tsx)
- * と同じ「その場作成(quick add)」パターンを踏襲し、既存バッチからの選択に加え、
- * 「+ 新しい精算バッチを作成する」を選ぶと名前入力欄がインラインで現れ(モーダル不使用)、
- * その場でsettlementBatchRepository.createを呼び出して新規バッチを作成・選択できる。
- * 表示名は既存のUXを維持するため「プロジェクト」のラベルをそのまま使う(人間レビューでの
- * 指摘を踏襲、同一の見た目のまま裏側のエンティティだけがsettlement_batchesに変わる)。
+ * (kind='settlement')からsettlement_batchesへ置き換え)。既存バッチからの選択肢に加え、
+ * 「新しい精算バッチを作成する」を既定選択として持つ(ユーザーからの指摘「プロジェクトを
+ * 選択する必要はないのでは」「精算バッチの名前はこの画面の摘要がそのまま使えるのでは」への
+ * 対応)。新規作成時に名前を別途入力させる作成フロー自体を廃止しており、実際の作成は
+ * handleSubmit側が確定時の摘要を名前として行う(このコンポーネントはバッチidの選択状態のみを
+ * 持つ)。同じ相手との割勘を複数回に分けて同一バッチにまとめたい場合のために、既存バッチへの
+ * 選択も維持する。
  */
-function SettlementBatchQuickAddSelect({
-  id,
-  label,
-  value,
-  settlementBatches,
-  onChange,
-  onCreate,
-}: SettlementBatchQuickAddSelectProps) {
+function SettlementBatchSelect({ id, label, value, settlementBatches, onChange }: SettlementBatchSelectProps) {
   const { t } = useTranslation('expenseSplitting')
-  const [adding, setAdding] = useState(false)
-  const [nameInput, setNameInput] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleAdd(): Promise<void> {
-    const trimmedName = nameInput.trim()
-    if (trimmedName === '') return
-    setCreating(true)
-    setError(null)
-    try {
-      const created = await onCreate(trimmedName)
-      onChange(created.id)
-      setAdding(false)
-      setNameInput('')
-    } catch {
-      setError(t('newProjectError'))
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  if (adding) {
-    return (
-      <div className="expense-splitting-project-quick-add">
-        <label htmlFor={`${id}-new-name`}>{t('newProjectNameLabel')}</label>
-        <input
-          id={`${id}-new-name`}
-          type="text"
-          value={nameInput}
-          onChange={(event) => setNameInput(event.target.value)}
-        />
-        <button type="button" disabled={creating || nameInput.trim() === ''} onClick={() => void handleAdd()}>
-          {t('addProjectButton')}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setAdding(false)
-            setNameInput('')
-          }}
-        >
-          {t('cancelButton')}
-        </button>
-        {error && <p role="alert">{error}</p>}
-      </div>
-    )
-  }
 
   return (
     <div>
       <label htmlFor={id}>{label}</label>
       <select
         id={id}
-        value={value ?? ''}
-        onChange={(event) => {
-          if (event.target.value === NEW_SETTLEMENT_BATCH_OPTION_VALUE) {
-            setAdding(true)
-            return
-          }
-          onChange(event.target.value === '' ? null : Number(event.target.value))
-        }}
+        value={value}
+        onChange={(event) =>
+          onChange(event.target.value === NEW_SETTLEMENT_BATCH_VALUE ? NEW_SETTLEMENT_BATCH_VALUE : Number(event.target.value))
+        }
       >
-        <option value="">{t('unselected')}</option>
         {settlementBatches.map((batch) => (
           <option key={batch.id} value={batch.id}>
             {batch.name}
           </option>
         ))}
-        <option value={NEW_SETTLEMENT_BATCH_OPTION_VALUE}>{t('addNewProjectOption')}</option>
+        <option value={NEW_SETTLEMENT_BATCH_VALUE}>{t('addNewSettlementBatchOption')}</option>
       </select>
     </div>
   )
