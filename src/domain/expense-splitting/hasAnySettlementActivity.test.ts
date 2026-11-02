@@ -209,6 +209,37 @@ describe('hasAnySettlementActivity', () => {
     expect(hasAnySettlementActivity(splitEntry, ACCOUNTS, allLines)).toBe(true)
   })
 
+  it('同じ精算バッチに別の未精算の割勘仕訳が追加されただけでは、精算操作とみなさずfalseを返す(evaluatorレビュー指摘: 既存バッチへ複数の割勘を追記する正常な運用フローで誤ってtrueを返していた回帰)', () => {
+    const splitEntry1 = buildEntry(1, [
+      buildLine({ id: 1, accountId: EXPENSE_ACCOUNT_ID, counterpartyId: 30, side: 'debit', amount: 500 }),
+      buildLine({
+        id: 2,
+        accountId: ADVANCE_LIABILITY_ACCOUNT_ID,
+        householdMemberId: 20,
+        settlementBatchId: SETTLEMENT_BATCH_ID,
+        side: 'credit',
+        amount: 500,
+      }),
+    ])
+    // 同一バッチ・同一科目・同一世帯メンバーのタグを持つ、別の未精算の割勘仕訳(どちらも
+    // 精算画面のいう「既存バッチへの追記」で発生しうる正常な状態)。精算仕訳ではないため、
+    // どちらの一時勘定行も残高を増加させる向き(負債ならcredit)のまま
+    const splitEntry2 = buildEntry(2, [
+      buildLine({ id: 3, accountId: EXPENSE_ACCOUNT_ID, counterpartyId: 30, side: 'debit', amount: 300 }),
+      buildLine({
+        id: 4,
+        accountId: ADVANCE_LIABILITY_ACCOUNT_ID,
+        householdMemberId: 20,
+        settlementBatchId: SETTLEMENT_BATCH_ID,
+        side: 'credit',
+        amount: 300,
+      }),
+    ])
+    const allLines = [...splitEntry1.lines, ...splitEntry2.lines]
+
+    expect(hasAnySettlementActivity(splitEntry1, ACCOUNTS, allLines)).toBe(false)
+  })
+
   it('立替金(一時勘定)の行を持たない仕訳はfalseを返す(割勘仕訳以外に誤って使われた場合の安全策)', () => {
     const entry = buildEntry(1, [
       buildLine({ id: 1, accountId: EXPENSE_ACCOUNT_ID, side: 'debit', amount: 500 }),
