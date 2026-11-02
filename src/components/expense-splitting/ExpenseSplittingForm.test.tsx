@@ -187,6 +187,84 @@ describe('ExpenseSplittingForm', () => {
     })
   })
 
+  it('精算バッチを明示的に選択せず(新規作成の既定選択のまま)、世帯外の相手を含めて確定すると、自動作成されたバッチにcounterparty_idが設定される(計画Issue #133、evaluatorレビュー指摘対応)', async () => {
+    seedAdvanceAccounts(db)
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    const friend = counterpartyRepository.create({ name: '友人Cさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '友人との食事',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm([originalEntry])
+    await screen.findByText('友人との食事')
+
+    fireEvent.click(screen.getByRole('button', { name: '世帯外の相手を追加する' }))
+    const participantRows = screen.getAllByRole('group', { name: /分担者/ })
+    fireEvent.change(within(participantRows[0]).getByLabelText('相手', { exact: true }), {
+      target: { value: String(friend.id) },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(within(participantRows[0]).getByLabelText('金額')).toHaveValue(500))
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    await waitFor(() => {
+      const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      expect(createdEntries).toHaveLength(1)
+    })
+    expect(settlementBatchRepository.findAll()).toHaveLength(1)
+    expect(settlementBatchRepository.findAll()[0]).toMatchObject({ counterpartyId: friend.id })
+  })
+
+  it('counterparty_idが未設定の既存バッチを選択して世帯外の相手を含めて確定すると、そのバッチのcounterparty_idが更新される(計画Issue #133、evaluatorレビュー指摘対応)', async () => {
+    seedAdvanceAccounts(db)
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    const friend = counterpartyRepository.create({ name: '友人Cさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '友人との食事',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm([originalEntry])
+    await screen.findByText('友人との食事')
+
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '世帯外の相手を追加する' }))
+    const participantRows = screen.getAllByRole('group', { name: /分担者/ })
+    fireEvent.change(within(participantRows[0]).getByLabelText('相手', { exact: true }), {
+      target: { value: String(friend.id) },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(within(participantRows[0]).getByLabelText('金額')).toHaveValue(500))
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    await waitFor(() => {
+      const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      expect(createdEntries).toHaveLength(1)
+    })
+    expect(settlementBatchRepository.findAll()).toHaveLength(1)
+    expect(settlementBatchRepository.findAll()[0]).toMatchObject({ id: settlementBatch.id, counterpartyId: friend.id })
+  })
+
   it('世帯メンバー2人をチェックして均等割勘すると、分担者ごとに独立した2件の仕訳が作成される(複数人対応。異なる分担者の立替金行を同じ仕訳に混在させると精算画面がタグを区別できなくなるため、統合は分担者単位に限定する)', async () => {
     seedAdvanceAccounts(db)
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
