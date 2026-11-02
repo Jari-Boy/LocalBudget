@@ -163,6 +163,39 @@ describe('ON DELETE CASCADE / グループ自動削除', () => {
   })
 })
 
+describe('findAllGroups / renameGroup', () => {
+  it('作成直後のグループはnameがnullで、findAllGroupsで参照できる', () => {
+    const entryA = createEntry()
+    const entryB = createEntry()
+    const group = repository.createGroup([entryA, entryB])
+
+    const groups = repository.findAllGroups()
+
+    expect(groups.find((g) => g.id === group.id)?.name).toBeNull()
+  })
+
+  it('renameGroupで名前を設定すると、findAllGroupsに反映される', () => {
+    const entryA = createEntry()
+    const entryB = createEntry()
+    const group = repository.createGroup([entryA, entryB])
+
+    repository.renameGroup(group.id, '26/7生活費')
+
+    expect(repository.findAllGroups().find((g) => g.id === group.id)?.name).toBe('26/7生活費')
+  })
+
+  it('renameGroupにnullを渡すと、名前が未設定(null)に戻る', () => {
+    const entryA = createEntry()
+    const entryB = createEntry()
+    const group = repository.createGroup([entryA, entryB])
+    repository.renameGroup(group.id, '26/7生活費')
+
+    repository.renameGroup(group.id, null)
+
+    expect(repository.findAllGroups().find((g) => g.id === group.id)?.name).toBeNull()
+  })
+})
+
 function insertHouseholdMember(database: Database, name: string): number {
   database.run(`INSERT INTO household_members (name) VALUES (?)`, [name])
   return (database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number)

@@ -53,6 +53,8 @@
   "relatedEntriesButtonLabel": "関連仕訳({{count}}件)",
   "relatedEntriesTitle": "関連する仕訳",
   "relatedEntriesEmpty": "関連付けられた仕訳はありません",
+  "relatedEntryGroupDefaultName": "グループ{{index}}",
+  "editGroupNameLabel": "グループ名を編集",
   "addRelatedEntryButton": "+ 関連仕訳を追加",
   "relateEntryLabel": "関連付ける仕訳",
   "relateEntryError": "関連付けに失敗しました。もう一度お試しください。",

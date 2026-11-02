@@ -144,6 +144,7 @@
 - 作成契機: 割勘([expense-splitting.md](./expense-splitting.md)参照)の仕訳を作成する際は、システムが自動的にグループを作成・参加させ、関連する仕訳(元仕訳・割勘仕訳・精算仕訳)を同じグループに所属させる。それ以外のケースでは、ユーザーが仕訳詳細画面から既存の仕訳を検索して手動で関連付け、グループを作成・参加させる。
 - グループへの参加/新規作成の判定は、ドメイン層の純粋関数`planJoinOrCreateGroups`(`src/domain/journal-link-group/`)が担う。anchorEntryIds(既存の仕訳群)の既存グループを調べ、1つも無ければanchor・newEntryIdsをまとめた新規グループを作成し、1つ以上あればそれら全てのグループへnewEntryIdsを参加させる(anchor自身は既存グループへ追加しない)。`JournalEntryLinkGroupRepository.joinOrCreateGroups`がこの判定に従ってDB書き込みを行う単一のエントリポイントであり、割勘の自動グルーピング(`ExpenseSplittingForm`・`SettlementScreen`)・仕訳詳細画面からの手動関連付けの両方から使われる。
 - メンバーが0件になったグループ(全メンバーの仕訳が削除された等)は、DBトリガー(`journal_entry_link_groups_delete_when_empty`、[2.3](#23-関連仕訳グループマスタjournal_entry_link_groups)参照)により自動的に削除される。
+- 表示(関連仕訳ダイアログ`RelatedEntriesDialog`)は、1つの仕訳が複数の無関係なグループに同時に所属する場合(上記の精算仕訳の例)でも、全グループ分を1本のフラットな一覧に合算しない。`groupRelatedEntriesByLinkGroup`(`src/domain/journal-link-group/`)でグループ単位の塊に分けたまま渡し、どの仕訳がどのグループの関連かが見分けられるようにする(UIレビューでの指摘「多対多のグルーピングをUIが表現できていない」への対応)。各グループの表示名(`name`)はこのダイアログ上でその場編集でき(`JournalEntryLinkGroupRepository.renameGroup`)、未設定時はUI側で「グループN」(N=そのグループidの昇順での順序)を表示する。グループ数はユーザーの明示的な操作(手動関連付け・新規の割勘/精算起票)がない限り増えない(`planJoinOrCreateGroups`の判定上、既存グループに所属するanchorへの追加操作は新規グループを作らず既存グループへの参加にとどまる)。
 
 > **仕訳削除時のON DELETE CASCADE**
 > `journal_entry_link_group_memberships`の`journal_entry_id`は`journal_entries`への`ON DELETE CASCADE`であるため、仕訳が物理削除されると、その仕訳の所属行だけが削除される(他の仕訳の所属には影響しない)。[1.5 仕訳の編集・削除](#15-仕訳の編集削除)の「編集・削除は常に可能」方針をそのまま踏襲し、これを妨げるロックは設けない。journal_entry_links時代にあった保存前の警告UI(`findLinkedLinesToRemove`)は、関連仕訳グループが仕訳単位(明細行単位ではない)の緩い関連付けであり、仕訳の更新操作で明細行が削除されてもグループ所属には影響しないため、前提自体が成立せず廃止した。
@@ -214,6 +215,7 @@
 | カラム | 内容 | 制約・備考 |
 |---|---|---|
 | `id` | ID | PK |
+| `name` | 表示名 | NULL可(ユーザーが任意で設定、未設定時はUI側で「グループN」等の既定名を表示する。この既定名自体はDBに保存しない) |
 | `created_at` | 作成日時 | |
 
 **journal_entry_link_group_memberships**

@@ -24,6 +24,10 @@ export interface JournalEntryLinkGroupRepository {
   findGroupIdsForEntry(journalEntryId: number): number[]
   /** 全グループの所属関係を返す(buildRelatedEntryIdsByEntryIdに渡すためのスナップショット) */
   findAllMemberships(): JournalEntryLinkGroupMembership[]
+  /** 全グループ(id・name・createdAt)を返す(groupRelatedEntriesByLinkGroupに渡すためのスナップショット) */
+  findAllGroups(): JournalEntryLinkGroup[]
+  /** グループの表示名を変更する。nullまたは空文字を渡すと未設定(既定名表示)に戻す */
+  renameGroup(linkGroupId: number, name: string | null): void
   /**
    * anchorEntryIdsの既存グループを調べ、planJoinOrCreateGroupsの判定に従って
    * newEntryIdsを既存グループへ参加させる、または全entryIdをまとめた新規グループを

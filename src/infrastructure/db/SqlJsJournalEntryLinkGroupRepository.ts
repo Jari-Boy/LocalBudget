@@ -56,6 +56,17 @@ export class SqlJsJournalEntryLinkGroupRepository implements JournalEntryLinkGro
     return result.values.map((values) => mapRowToMembership(result.columns, values))
   }
 
+  findAllGroups(): JournalEntryLinkGroup[] {
+    const [result] = this.db.exec('SELECT * FROM journal_entry_link_groups ORDER BY id')
+    if (!result) return []
+    return result.values.map((values) => mapRowToGroup(result.columns, values))
+  }
+
+  renameGroup(linkGroupId: number, name: string | null): void {
+    const normalizedName = name === '' ? null : name
+    this.db.run('UPDATE journal_entry_link_groups SET name = ? WHERE id = ?', [normalizedName, linkGroupId])
+  }
+
   joinOrCreateGroups(anchorEntryIds: readonly number[], newEntryIds: readonly number[]): void {
     const existingGroupIdsByEntryId = new Map(
       anchorEntryIds.map((entryId) => [entryId, this.findGroupIdsForEntry(entryId)]),
@@ -95,7 +106,7 @@ function lastInsertRowId(db: Database): number {
 
 function mapRowToGroup(columns: string[], values: unknown[]): JournalEntryLinkGroup {
   const get = <T,>(name: string): T => values[columns.indexOf(name)] as T
-  return { id: get<number>('id'), createdAt: get<string>('created_at') }
+  return { id: get<number>('id'), name: get<string | null>('name'), createdAt: get<string>('created_at') }
 }
 
 function mapRowToMembership(columns: string[], values: unknown[]): JournalEntryLinkGroupMembership {

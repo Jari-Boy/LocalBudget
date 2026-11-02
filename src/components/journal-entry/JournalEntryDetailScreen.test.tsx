@@ -640,6 +640,136 @@ describe('JournalEntryDetailScreen', () => {
     expect(screen.getByRole('button', { name: '関連仕訳(1件)' })).toBeInTheDocument()
   })
 
+  it('1件の仕訳が無関係な2つの精算バッチを橋渡しする場合、関連仕訳ダイアログはグループ単位の別々の塊として表示する(UIレビュー指摘: 多対多のグルーピングを合算して1本のフラット一覧にすると、どの仕訳がどのバッチの関連か分からなくなる)', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const other = householdMemberRepository.create({ name: 'Bさん' })
+    const batchA = settlementBatchRepository.create({ name: '26/7生活費割勘A', type: 'expense_splitting' })
+    const batchB = settlementBatchRepository.create({ name: '26/8生活費割勘B', type: 'expense_splitting' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
+    const advanceLiability = accountRepository.create({
+      category: 'liability',
+      name: '立替金',
+      isReconcilable: false,
+      isSystemManaged: true,
+    })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+
+    function createSplitEntry(batchId: number, entryDate: string, memo: string) {
+      const original = journalEntryRepository.create({
+        entryDate,
+        memo: `${memo}(元の支出)`,
+        householdMemberId: member.id,
+        lines: [
+          { accountId: expense.id, side: 'debit', amount: 1000 },
+          { accountId: cash.id, side: 'credit', amount: 1000 },
+        ],
+      })
+      const splitEntry = journalEntryRepository.create({
+        entryDate,
+        memo,
+        householdMemberId: member.id,
+        lines: [
+          { accountId: expense.id, side: 'debit', amount: 500, householdMemberId: other.id },
+          { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batchId, householdMemberId: member.id },
+          { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
+          { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batchId, householdMemberId: other.id },
+        ],
+      })
+      journalEntryLinkGroupRepository.createGroup([original.id, splitEntry.id])
+      return splitEntry
+    }
+
+    const splitFromBatchA = createSplitEntry(batchA.id, '2026-08-02', 'バッチAの割勘')
+    const splitFromBatchB = createSplitEntry(batchB.id, '2026-08-10', 'バッチBの割勘')
+
+    // 1件の精算仕訳が、無関係な2つのバッチ(A・B)をまとめて精算する(SettlementScreenの実際の
+    // 運用: 同じ入出金口座でまとめて返金を受け取るケース)。この精算仕訳はbatchA・batchBそれぞれ
+    // の既存グループに橋渡しされるが、グループ自体は統合されない(planJoinOrCreateGroups参照)。
+    journalEntryLinkGroupRepository.joinOrCreateGroups([splitFromBatchA.id, splitFromBatchB.id], [
+      journalEntryRepository.create({
+        entryDate: '2026-08-15',
+        memo: 'まとめて精算受取',
+        householdMemberId: other.id,
+        lines: [
+          { accountId: advanceLiability.id, side: 'debit', amount: 500, settlementBatchId: batchA.id, householdMemberId: other.id },
+          { accountId: advanceLiability.id, side: 'debit', amount: 500, settlementBatchId: batchB.id, householdMemberId: other.id },
+          { accountId: cash.id, side: 'credit', amount: 1000 },
+        ],
+      }).id,
+    ])
+    const settlementEntry = journalEntryRepository
+      .findAll()
+      .find((candidate) => candidate.memo === 'まとめて精算受取')!
+
+    renderScreen(settlementEntry.id)
+
+    // ボタンの件数は重複排除後の合計(各グループの元の支出+割勘の2件ずつ=4件)。
+    // グループ単位の塊分けの検証は件数ではなく、各塊に含まれる仕訳の内容で行う。
+    const trigger = await screen.findByRole('button', { name: '関連仕訳(4件)' })
+    fireEvent.click(trigger)
+    const dialog = screen.getByRole('dialog')
+
+    expect(within(dialog).getByText('グループ1')).toBeInTheDocument()
+    expect(within(dialog).getByText('グループ2')).toBeInTheDocument()
+    const groupABox = within(dialog).getByText('グループ1').closest('.related-group')! as HTMLElement
+    const groupBBox = within(dialog).getByText('グループ2').closest('.related-group')! as HTMLElement
+    expect(within(groupABox).getByText('バッチAの割勘')).toBeInTheDocument()
+    expect(within(groupABox).queryByText('バッチBの割勘')).not.toBeInTheDocument()
+    expect(within(groupBBox).getByText('バッチBの割勘')).toBeInTheDocument()
+    expect(within(groupBBox).queryByText('バッチAの割勘')).not.toBeInTheDocument()
+  })
+
+  it('関連仕訳ダイアログでグループ名を変更すると、journalEntryLinkGroupRepository.renameGroupが呼ばれ再読み込み後も表示が保たれる', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const other = householdMemberRepository.create({ name: 'Bさん' })
+    const batch = settlementBatchRepository.create({ name: '26/7生活費割勘', type: 'expense_splitting' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
+    const advanceLiability = accountRepository.create({
+      category: 'liability',
+      name: '立替金',
+      isReconcilable: false,
+      isSystemManaged: true,
+    })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const original = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '食事代',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    const splitEntry = journalEntryRepository.create({
+      entryDate: '2026-08-02',
+      memo: '割勘',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 500, householdMemberId: other.id },
+        { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batch.id, householdMemberId: member.id },
+        { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
+        { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
+      ],
+    })
+    const group = journalEntryLinkGroupRepository.createGroup([original.id, splitEntry.id])
+
+    renderScreen(original.id)
+
+    fireEvent.click(await screen.findByRole('button', { name: '関連仕訳(1件)' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(within(dialog).getByText('グループ1'))
+    const input = within(dialog).getByRole('textbox')
+    fireEvent.change(input, { target: { value: '26/7生活費' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(journalEntryLinkGroupRepository.findAllGroups().find((g) => g.id === group.id)?.name).toBe('26/7生活費')
+    })
+    expect(await within(screen.getByRole('dialog')).findByText('26/7生活費')).toBeInTheDocument()
+  })
+
   it('戻るボタンを押すとonBackが呼ばれる', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })

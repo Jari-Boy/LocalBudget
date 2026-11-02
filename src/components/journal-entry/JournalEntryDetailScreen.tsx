@@ -4,12 +4,13 @@ import type { Account } from '../../domain/account/Account'
 import type { Counterparty, CreateCounterpartyInput } from '../../domain/counterparty/Counterparty'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { JournalEntry, JournalLineInput, JournalLineSide, UpdateJournalEntryInput } from '../../domain/journal/JournalEntry'
-import type { JournalEntryLinkGroupMembership } from '../../domain/journal-link-group/JournalEntryLinkGroup'
+import type { JournalEntryLinkGroup, JournalEntryLinkGroupMembership } from '../../domain/journal-link-group/JournalEntryLinkGroup'
 import type { Project } from '../../domain/project/Project'
 import { hasAnySettlementActivity } from '../../domain/expense-splitting/hasAnySettlementActivity'
 import { isExpenseSplitEntry } from '../../domain/expense-splitting/isExpenseSplitEntry'
 import { traceExpenseSplittingHistory } from '../../domain/expense-splitting/traceExpenseSplittingHistory'
 import { buildRelatedEntryIdsByEntryId } from '../../domain/journal-link-group/buildRelatedEntryIdsByEntryId'
+import { groupRelatedEntriesByLinkGroup } from '../../domain/journal-link-group/groupRelatedEntriesByLinkGroup'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { JournalEntryLinesTable, type JournalEntryLineRow } from './JournalEntryLinesTable'
@@ -31,10 +32,12 @@ interface JournalEntryFinder {
 }
 interface JournalEntryLinkGroupFinder {
   findAllMemberships(): JournalEntryLinkGroupMembership[] | Promise<JournalEntryLinkGroupMembership[]>
+  findAllGroups(): JournalEntryLinkGroup[] | Promise<JournalEntryLinkGroup[]>
   joinOrCreateGroups(
     anchorEntryIds: readonly number[],
     newEntryIds: readonly number[],
   ): void | Promise<void>
+  renameGroup(linkGroupId: number, name: string | null): void | Promise<void>
 }
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
@@ -72,7 +75,8 @@ interface LoadedData {
   householdMembers: HouseholdMember[]
   counterparties: Counterparty[]
   allEntries: JournalEntry[]
-  relatedEntryIdsByEntryId: Map<number, Set<number>>
+  memberships: JournalEntryLinkGroupMembership[]
+  groups: JournalEntryLinkGroup[]
 }
 
 interface EditState {
@@ -102,10 +106,16 @@ function buildLineStates(lines: JournalEntry['lines'], lineKeyRef: { current: nu
  *
  * 「関連する仕訳」(計画Issue #138)は、journal_entry_links(行対行のハード検証、計画Issue
  * #132・#133で残高計算・消込検証の役割を失い完全撤廃)に代わる関連仕訳グループ(多対多、
- * 表示専用)に基づく。この仕訳が所属する全グループ分の関連仕訳を合算し、画面右上の
- * 「関連仕訳」ボタン(件数表示)から開くダイアログ(RelatedEntriesDialog)に一覧表示する
- * (UIレビューにより、常時画面に表示する専用セクションではなくボタン起点のダイアログに変更)。
- * 既存の仕訳を検索して新たに関連付ける操作(手動でのグループ作成/参加、
+ * 表示専用)に基づく。画面右上の「関連仕訳」ボタン(件数表示)から開くダイアログ
+ * (RelatedEntriesDialog)に一覧表示する(UIレビューにより、常時画面に表示する専用セクション
+ * ではなくボタン起点のダイアログに変更)。1つの仕訳が複数の無関係なグループに同時に所属できる
+ * (例: SettlementScreenが複数の割勘バッチを1件の精算仕訳で橋渡しする場合)ため、表示も
+ * groupRelatedEntriesByLinkGroupでグループ単位の塊に分けたまま渡す(1本のフラットな一覧に
+ * 合算すると、どの仕訳がどのグループの関連か分からなくなるというUIレビューでの指摘への対応)。
+ * ボタンの件数バッジはbuildRelatedEntryIdsByEntryIdによる重複排除後の合計(同じ仕訳が複数グループ
+ * から見えても1件として数える)。各グループの表示名はダイアログ上でその場編集でき
+ * (journalEntryLinkGroupRepository.renameGroup)、未設定時はUI側で「グループN」を表示する
+ * (永続化はしない)。既存の仕訳を検索して新たに関連付ける操作(手動でのグループ作成/参加、
  * journalEntryLinkGroupRepository.joinOrCreateGroups)もこのダイアログから行える。かつて存在した
  * リンク削除警告UI(行削除時の2段階ボタン確認フロー)は、journal_entry_links自体の撤廃に伴い
  * 廃止した(関連仕訳グループは明細行ではなく仕訳単位の緩い関連付けであり、仕訳の更新操作で
@@ -144,7 +154,8 @@ export function JournalEntryDetailScreen({
       Promise.resolve(counterpartyRepository.findAll()),
       Promise.resolve(journalEntryRepository.findAll()),
       Promise.resolve(journalEntryLinkGroupRepository.findAllMemberships()),
-    ]).then(([entry, accounts, projects, householdMembers, counterparties, allEntries, memberships]) => {
+      Promise.resolve(journalEntryLinkGroupRepository.findAllGroups()),
+    ]).then(([entry, accounts, projects, householdMembers, counterparties, allEntries, memberships, groups]) => {
       if (entry === null) {
         setData(null)
         setEditState(null)
@@ -157,7 +168,8 @@ export function JournalEntryDetailScreen({
         householdMembers,
         counterparties,
         allEntries,
-        relatedEntryIdsByEntryId: buildRelatedEntryIdsByEntryId(memberships),
+        memberships,
+        groups,
       })
       setEditState({
         entryDate: entry.entryDate,
@@ -183,7 +195,8 @@ export function JournalEntryDetailScreen({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const { entry, accounts, projects, householdMembers, counterparties, allEntries, relatedEntryIdsByEntryId } = data
+  const { entry, accounts, projects, householdMembers, counterparties, allEntries, memberships, groups } = data
+  const relatedEntryIdsByEntryId = buildRelatedEntryIdsByEntryId(memberships)
 
   const isSplitEntry = isExpenseSplitEntry(entry, accounts)
   /**
@@ -197,11 +210,11 @@ export function JournalEntryDetailScreen({
   const trails = traceExpenseSplittingHistory(entry, allEntries, accounts, relatedEntryIdsByEntryId)
 
   const entriesById = new Map(allEntries.map((candidate) => [candidate.id, candidate]))
-  const relatedEntries = [...(relatedEntryIdsByEntryId.get(entry.id) ?? [])]
-    .map((id) => entriesById.get(id))
-    .filter((candidate): candidate is JournalEntry => candidate !== undefined)
+  const groupsById = new Map(groups.map((group) => [group.id, group]))
+  const relatedEntryIds = relatedEntryIdsByEntryId.get(entry.id) ?? new Set<number>()
+  const relatedEntryGroups = groupRelatedEntriesByLinkGroup(entry.id, memberships, groupsById, entriesById)
   const relateCandidates = allEntries.filter(
-    (candidate) => candidate.id !== entry.id && !relatedEntries.some((related) => related.id === candidate.id),
+    (candidate) => candidate.id !== entry.id && !relatedEntryIds.has(candidate.id),
   )
 
   function handleDelete(): void {
@@ -229,6 +242,20 @@ export function JournalEntryDetailScreen({
       setRelateError(t('relateEntryError'))
     } finally {
       setIsAddingRelatedEntry(false)
+    }
+  }
+
+  /**
+   * 関連仕訳ダイアログでのグループ名の変更(計画Issue #138、UIレビュー指摘)。失敗時はload()を
+   * 呼ばないため、ダイアログの表示は変更前の名前のまま自然に戻る(renameGroup自体は低リスクな
+   * 操作であり、専用のエラー表示は設けない)。
+   */
+  async function handleRenameGroup(groupId: number, name: string | null): Promise<void> {
+    try {
+      await Promise.resolve(journalEntryLinkGroupRepository.renameGroup(groupId, name))
+      load()
+    } catch {
+      // 失敗時は何もしない(上記JSDoc参照)
     }
   }
 
@@ -331,7 +358,7 @@ export function JournalEntryDetailScreen({
           className="journal-entry-detail-related-entries-trigger"
           onClick={() => setIsRelatedDialogOpen(true)}
         >
-          {t('relatedEntriesButtonLabel', { count: relatedEntries.length })}
+          {t('relatedEntriesButtonLabel', { count: relatedEntryIds.size })}
         </button>
       </div>
 
@@ -395,13 +422,14 @@ export function JournalEntryDetailScreen({
 
       {isRelatedDialogOpen && (
         <RelatedEntriesDialog
-          relatedEntries={relatedEntries}
+          relatedEntryGroups={relatedEntryGroups}
           relateCandidates={relateCandidates}
           onSelectEntry={(relatedEntry) => {
             setIsRelatedDialogOpen(false)
             onSelectRelatedEntry?.(relatedEntry)
           }}
           onAddEntry={handleAddRelatedEntry}
+          onRenameGroup={handleRenameGroup}
           onClose={() => setIsRelatedDialogOpen(false)}
           isAdding={isAddingRelatedEntry}
           addError={relateError}

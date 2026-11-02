@@ -114,8 +114,11 @@ END;
 -- ユーザーが一覧表示できる」役割を置き換える表示専用の軽量なグルーピング。link_type(種別タグ)
 -- は持たず、残高計算・消込判定には一切関与しない。1つの仕訳(journal_entries)が複数のグループに
 -- 同時に所属できる(所属数の上限なし)。ドメイン定義はdocs/domain/journal.md 1.8を参照。
+-- nameはユーザーが任意で付けられる表示名(未設定時はUI側で「グループ1」等の既定名を表示する、
+-- ドメイン層では永続化しない)。
 CREATE TABLE journal_entry_link_groups (
   id         INTEGER PRIMARY KEY,
+  name       TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
