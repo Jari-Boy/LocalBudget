@@ -39,6 +39,12 @@ interface JournalEntryLinkGroupFinder {
   ): void | Promise<void>
   renameGroup(linkGroupId: number, name: string | null): void | Promise<void>
   removeMember(linkGroupId: number, journalEntryId: number): void | Promise<void>
+  moveMember(
+    sourceGroupId: number,
+    targetGroupId: number | null,
+    anchorEntryId: number,
+    journalEntryId: number,
+  ): void | Promise<void>
 }
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
@@ -275,6 +281,23 @@ export function JournalEntryDetailScreen({
     }
   }
 
+  /**
+   * 関連仕訳ダイアログでのグループ間移動(計画Issue #138、UIレビュー指摘)。anchorEntryId
+   * (この仕訳自身)はtargetGroupIdがnull(新規グループ作成)の場合のみ使われる
+   * (JournalEntryLinkGroupRepository.moveMember参照)。失敗時はload()を呼ばないため、
+   * 行は移動前のグループに残る(renameGroup・removeMemberと同じ、専用のエラー表示は設けない)。
+   */
+  async function handleMoveRelatedEntry(sourceGroupId: number, targetGroupId: number | null, targetId: number): Promise<void> {
+    try {
+      await Promise.resolve(
+        journalEntryLinkGroupRepository.moveMember(sourceGroupId, targetGroupId, entry.id, targetId),
+      )
+      load()
+    } catch {
+      // 失敗時は何もしない(上記JSDoc参照)
+    }
+  }
+
   function updateEditLine(key: number, updater: (line: JournalEntryFormLine) => JournalEntryFormLine): void {
     setEditState((prev) =>
       prev === null
@@ -447,6 +470,7 @@ export function JournalEntryDetailScreen({
           onAddEntry={handleAddRelatedEntry}
           onRenameGroup={handleRenameGroup}
           onRemoveEntry={handleRemoveRelatedEntry}
+          onMoveEntry={handleMoveRelatedEntry}
           onClose={() => setIsRelatedDialogOpen(false)}
           isAdding={isAddingRelatedEntry}
           addError={relateError}

@@ -201,6 +201,59 @@ describe('removeMember', () => {
   })
 })
 
+describe('moveMember', () => {
+  it('既存のグループへ移動すると、移動元から除外され移動先に参加する', () => {
+    const anchor = createEntry()
+    const entryA = createEntry()
+    const entryB = createEntry()
+    const entryMoving = createEntry()
+    const sourceGroup = repository.createGroup([anchor, entryMoving])
+    const targetGroup = repository.createGroup([anchor, entryA, entryB])
+
+    repository.moveMember(sourceGroup.id, targetGroup.id, anchor, entryMoving)
+
+    expect(repository.findGroupIdsForEntry(entryMoving)).toEqual([targetGroup.id])
+    // 移動元グループ自体はanchorが残っているため削除されない
+    expect(repository.findGroupIdsForEntry(anchor).sort()).toEqual([sourceGroup.id, targetGroup.id].sort())
+    // 移動先の既存メンバーは影響を受けない
+    expect(repository.findGroupIdsForEntry(entryA)).toEqual([targetGroup.id])
+    expect(repository.findGroupIdsForEntry(entryB)).toEqual([targetGroup.id])
+  })
+
+  it('targetGroupIdにnullを渡すと、anchorEntryIdとjournalEntryIdをメンバーとする新規グループへ移動する', () => {
+    const anchor = createEntry()
+    const entryOther = createEntry()
+    const entryMoving = createEntry()
+    const sourceGroup = repository.createGroup([anchor, entryOther, entryMoving])
+
+    repository.moveMember(sourceGroup.id, null, anchor, entryMoving)
+
+    const newGroupIds = repository.findGroupIdsForEntry(entryMoving)
+    expect(newGroupIds).toHaveLength(1)
+    expect(newGroupIds[0]).not.toBe(sourceGroup.id)
+    expect(repository.findGroupIdsForEntry(anchor)).toEqual(expect.arrayContaining([sourceGroup.id, newGroupIds[0]]))
+    // 移動元グループのentryOtherは影響を受けない
+    expect(repository.findGroupIdsForEntry(entryOther)).toEqual([sourceGroup.id])
+  })
+
+  it('移動元グループの残りメンバーが0件になった場合、グループ自体も自動的に削除される', () => {
+    const anchor = createEntry()
+    const entryMoving = createEntry()
+    const otherGroupMember = createEntry()
+    const sourceGroup = repository.createGroup([anchor, entryMoving])
+    const targetGroup = repository.createGroup([anchor, otherGroupMember])
+    // 先にanchorを除外し、sourceGroupをentryMoving1件だけの状態にしておく
+    // (createGroupは2件未満を許可しないため、この手順でのみ到達できる状態)
+    repository.removeMember(sourceGroup.id, anchor)
+
+    repository.moveMember(sourceGroup.id, targetGroup.id, anchor, entryMoving)
+
+    const [result] = db.exec('SELECT id FROM journal_entry_link_groups WHERE id = ?', [sourceGroup.id])
+    expect(result).toBeUndefined()
+    expect(repository.findGroupIdsForEntry(entryMoving)).toEqual([targetGroup.id])
+  })
+})
+
 describe('findAllGroups / renameGroup', () => {
   it('作成直後のグループはnameがnullで、findAllGroupsで参照できる', () => {
     const entryA = createEntry()

@@ -820,6 +820,80 @@ describe('JournalEntryDetailScreen', () => {
     expect(journalEntryLinkGroupRepository.findAllGroups().some((g) => g.id === group.id)).toBe(true)
   })
 
+  it('関連仕訳ダイアログの移動セレクトで別のグループへ移動すると、journalEntryLinkGroupRepository.moveMemberが反映され移動先のグループに表示される', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const other = householdMemberRepository.create({ name: 'Bさん' })
+    const batchA = settlementBatchRepository.create({ name: '26/7生活費割勘A', type: 'expense_splitting' })
+    const batchB = settlementBatchRepository.create({ name: '26/8生活費割勘B', type: 'expense_splitting' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
+    const advanceLiability = accountRepository.create({
+      category: 'liability',
+      name: '立替金',
+      isReconcilable: false,
+      isSystemManaged: true,
+    })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+
+    function createSplitEntry(batchId: number, entryDate: string, memo: string) {
+      const original = journalEntryRepository.create({
+        entryDate,
+        memo: `${memo}(元の支出)`,
+        householdMemberId: member.id,
+        lines: [
+          { accountId: expense.id, side: 'debit', amount: 1000 },
+          { accountId: cash.id, side: 'credit', amount: 1000 },
+        ],
+      })
+      const splitEntry = journalEntryRepository.create({
+        entryDate,
+        memo,
+        householdMemberId: member.id,
+        lines: [
+          { accountId: expense.id, side: 'debit', amount: 500, householdMemberId: other.id },
+          { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batchId, householdMemberId: member.id },
+          { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
+          { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batchId, householdMemberId: other.id },
+        ],
+      })
+      journalEntryLinkGroupRepository.createGroup([original.id, splitEntry.id])
+      return splitEntry
+    }
+
+    const splitFromBatchA = createSplitEntry(batchA.id, '2026-08-02', 'バッチAの割勘')
+    const splitFromBatchB = createSplitEntry(batchB.id, '2026-08-10', 'バッチBの割勘')
+    const settlement = journalEntryRepository.create({
+      entryDate: '2026-08-15',
+      memo: 'まとめて精算受取',
+      householdMemberId: other.id,
+      lines: [
+        { accountId: advanceLiability.id, side: 'debit', amount: 500, settlementBatchId: batchA.id, householdMemberId: other.id },
+        { accountId: advanceLiability.id, side: 'debit', amount: 500, settlementBatchId: batchB.id, householdMemberId: other.id },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    journalEntryLinkGroupRepository.joinOrCreateGroups([splitFromBatchA.id, splitFromBatchB.id], [settlement.id])
+
+    const originalOfBatchA = `バッチAの割勘(元の支出)`
+    const originalEntryA = journalEntryRepository.findAll().find((e) => e.memo === originalOfBatchA)!
+    const [groupBeforeMove] = journalEntryLinkGroupRepository.findGroupIdsForEntry(originalEntryA.id)
+    const [group1Id, group2Id] = journalEntryLinkGroupRepository.findGroupIdsForEntry(settlement.id)
+    const targetGroupId = groupBeforeMove === group1Id ? group2Id : group1Id
+
+    renderScreen(settlement.id)
+
+    fireEvent.click(await screen.findByRole('button', { name: '関連仕訳(4件)' }))
+    const dialog = screen.getByRole('dialog')
+    const row = within(dialog).getByText(originalOfBatchA).closest('.related-entries-list-item')! as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: '別のグループへ移動' }))
+    const select = within(row).getByRole('combobox', { name: '別のグループへ移動' })
+    fireEvent.change(select, { target: { value: String(targetGroupId) } })
+
+    await waitFor(() => {
+      expect(journalEntryLinkGroupRepository.findGroupIdsForEntry(originalEntryA.id)).toEqual([targetGroupId])
+    })
+  })
+
   it('戻るボタンを押すとonBackが呼ばれる', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })

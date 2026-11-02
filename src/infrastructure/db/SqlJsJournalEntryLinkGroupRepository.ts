@@ -24,13 +24,25 @@ export class SqlJsJournalEntryLinkGroupRepository implements JournalEntryLinkGro
 
     this.db.run('BEGIN')
     try {
-      this.db.run('INSERT INTO journal_entry_link_groups DEFAULT VALUES')
-      const groupId = lastInsertRowId(this.db)
-      for (const journalEntryId of uniqueIds) {
-        this.insertMembership(groupId, journalEntryId)
-      }
+      const groupId = this.insertGroup(uniqueIds)
       this.db.run('COMMIT')
       return this.findGroupById(groupId)!
+    } catch (error) {
+      this.db.run('ROLLBACK')
+      throw error
+    }
+  }
+
+  moveMember(sourceGroupId: number, targetGroupId: number | null, anchorEntryId: number, journalEntryId: number): void {
+    this.db.run('BEGIN')
+    try {
+      this.removeMember(sourceGroupId, journalEntryId)
+      if (targetGroupId === null) {
+        this.insertGroup([anchorEntryId, journalEntryId])
+      } else {
+        this.insertMembership(targetGroupId, journalEntryId)
+      }
+      this.db.run('COMMIT')
     } catch (error) {
       this.db.run('ROLLBACK')
       throw error
@@ -90,6 +102,16 @@ export class SqlJsJournalEntryLinkGroupRepository implements JournalEntryLinkGro
         this.addMember(groupId, entryId)
       }
     }
+  }
+
+  /** グループ作成のトランザクション非依存な部分(createGroup・moveMemberの新規グループ作成分岐から共用) */
+  private insertGroup(journalEntryIds: readonly number[]): number {
+    this.db.run('INSERT INTO journal_entry_link_groups DEFAULT VALUES')
+    const groupId = lastInsertRowId(this.db)
+    for (const journalEntryId of journalEntryIds) {
+      this.insertMembership(groupId, journalEntryId)
+    }
+    return groupId
   }
 
   private findGroupById(id: number): JournalEntryLinkGroup | null {

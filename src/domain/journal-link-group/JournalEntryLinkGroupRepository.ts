@@ -26,6 +26,13 @@ export interface JournalEntryLinkGroupRepository {
    * により自動的に削除される
    */
   removeMember(linkGroupId: number, journalEntryId: number): void
+  /**
+   * journalEntryIdをsourceGroupIdから除外し、targetGroupId(nullの場合はanchorEntryId・
+   * journalEntryIdをメンバーとする新規グループ)へ参加させる。1つのトランザクションとして
+   * 実行する(関連仕訳ダイアログでのグループ間移動、計画Issue #138)。移動元グループの残りが
+   * 0件になった場合、removeMemberと同じDBトリガーにより自動的に削除される
+   */
+  moveMember(sourceGroupId: number, targetGroupId: number | null, anchorEntryId: number, journalEntryId: number): void
   /** 指定した仕訳が所属する全グループのidを返す(所属していなければ空配列) */
   findGroupIdsForEntry(journalEntryId: number): number[]
   /** 全グループの所属関係を返す(buildRelatedEntryIdsByEntryIdに渡すためのスナップショット) */

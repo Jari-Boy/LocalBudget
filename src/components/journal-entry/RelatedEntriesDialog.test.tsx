@@ -70,6 +70,7 @@ function renderDialog(props?: Partial<RelatedEntriesDialogProps>) {
   const onAddEntry = vi.fn()
   const onRenameGroup = vi.fn()
   const onRemoveEntry = vi.fn()
+  const onMoveEntry = vi.fn()
   const onClose = vi.fn()
   render(
     <I18nextProvider i18n={i18n}>
@@ -80,6 +81,7 @@ function renderDialog(props?: Partial<RelatedEntriesDialogProps>) {
         onAddEntry={onAddEntry}
         onRenameGroup={onRenameGroup}
         onRemoveEntry={onRemoveEntry}
+        onMoveEntry={onMoveEntry}
         onClose={onClose}
         isAdding={false}
         addError={null}
@@ -87,7 +89,16 @@ function renderDialog(props?: Partial<RelatedEntriesDialogProps>) {
       />
     </I18nextProvider>,
   )
-  return { onSelectEntry, onAddEntry, onRenameGroup, onRemoveEntry, onClose }
+  return { onSelectEntry, onAddEntry, onRenameGroup, onRemoveEntry, onMoveEntry, onClose }
+}
+
+function dataTransferStub() {
+  const store = new Map<string, string>()
+  return {
+    setData: (format: string, data: string) => store.set(format, data),
+    getData: (format: string) => store.get(format) ?? '',
+    effectAllowed: '',
+  }
 }
 
 describe('RelatedEntriesDialog', () => {
@@ -173,6 +184,107 @@ describe('RelatedEntriesDialog', () => {
 
     expect(onRemoveEntry).toHaveBeenCalledWith(10, 2)
     expect(onSelectEntry).not.toHaveBeenCalled()
+  })
+
+  it('行の移動ボタンを押すとセレクトが現れ、移動先グループを選ぶと(移動元が空にならない場合)確定ボタンなしに即座にonMoveEntryが呼ばれる', () => {
+    const entryA = buildEntry({ id: 2, memo: 'A' })
+    const entryB = buildEntry({ id: 3, memo: 'B' })
+    const entryC = buildEntry({ id: 4, memo: 'C' })
+    const { onMoveEntry } = renderDialog({
+      relatedEntryGroups: [buildGroup(10, null, [entryA, entryB]), buildGroup(20, null, [entryC])],
+    })
+
+    fireEvent.click(within(screen.getByText('A').closest('.related-entries-list-item')! as HTMLElement).getByRole('button', { name: '別のグループへ移動' }))
+    const select = screen.getByRole('combobox', { name: '別のグループへ移動' })
+    fireEvent.change(select, { target: { value: '20' } })
+
+    expect(onMoveEntry).toHaveBeenCalledWith(10, 20, 2)
+  })
+
+  it('移動先セレクトで「+ 新しいグループを作る」を選ぶと、targetGroupId=nullでonMoveEntryが呼ばれる', () => {
+    const entryA = buildEntry({ id: 2, memo: 'A' })
+    const entryB = buildEntry({ id: 3, memo: 'B' })
+    const { onMoveEntry } = renderDialog({ relatedEntryGroups: [buildGroup(10, null, [entryA, entryB])] })
+
+    fireEvent.click(within(screen.getByText('A').closest('.related-entries-list-item')! as HTMLElement).getByRole('button', { name: '別のグループへ移動' }))
+    fireEvent.change(screen.getByRole('combobox', { name: '別のグループへ移動' }), {
+      target: { value: '__new_group__' },
+    })
+
+    expect(onMoveEntry).toHaveBeenCalledWith(10, null, 2)
+  })
+
+  it('移動元グループの残りが移動対象1件のみの場合、セレクトで選んでも即座にはonMoveEntryが呼ばれず警告が表示され、「移動する」を押すと確定する', () => {
+    const entryA = buildEntry({ id: 2, memo: 'A' })
+    const entryB = buildEntry({ id: 3, memo: 'B' })
+    const { onMoveEntry } = renderDialog({
+      relatedEntryGroups: [buildGroup(10, null, [entryA]), buildGroup(20, null, [entryB])],
+    })
+
+    fireEvent.click(within(screen.getByText('A').closest('.related-entries-list-item')! as HTMLElement).getByRole('button', { name: '別のグループへ移動' }))
+    fireEvent.change(screen.getByRole('combobox', { name: '別のグループへ移動' }), { target: { value: '20' } })
+
+    expect(onMoveEntry).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('「グループ1」は空になり')
+
+    fireEvent.click(screen.getByRole('button', { name: '移動する' }))
+
+    expect(onMoveEntry).toHaveBeenCalledWith(10, 20, 2)
+  })
+
+  it('空になる警告で「キャンセル」を押すと、onMoveEntryは呼ばれず警告が消える', () => {
+    const entryA = buildEntry({ id: 2, memo: 'A' })
+    const entryB = buildEntry({ id: 3, memo: 'B' })
+    const { onMoveEntry } = renderDialog({
+      relatedEntryGroups: [buildGroup(10, null, [entryA]), buildGroup(20, null, [entryB])],
+    })
+
+    fireEvent.click(within(screen.getByText('A').closest('.related-entries-list-item')! as HTMLElement).getByRole('button', { name: '別のグループへ移動' }))
+    fireEvent.change(screen.getByRole('combobox', { name: '別のグループへ移動' }), { target: { value: '20' } })
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+
+    expect(onMoveEntry).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('行をドラッグして別のグループの枠にドロップすると、onMoveEntryが呼ばれる', () => {
+    const entryA = buildEntry({ id: 2, memo: 'A' })
+    const entryB = buildEntry({ id: 3, memo: 'B' })
+    const entryC = buildEntry({ id: 4, memo: 'C' })
+    const { onMoveEntry } = renderDialog({
+      relatedEntryGroups: [buildGroup(10, null, [entryA, entryB]), buildGroup(20, null, [entryC])],
+    })
+
+    const row = screen.getByText('A').closest('.related-entries-list-item')! as HTMLElement
+    const targetGroupBox = screen.getByText('グループ2').closest('.related-group')! as HTMLElement
+    const dataTransfer = dataTransferStub()
+
+    fireEvent.dragStart(row, { dataTransfer })
+    fireEvent.dragOver(targetGroupBox, { dataTransfer })
+    fireEvent.drop(targetGroupBox, { dataTransfer })
+
+    expect(onMoveEntry).toHaveBeenCalledWith(10, 20, 2)
+  })
+
+  it('行をドラッグして「+ 新しいグループを作る」にドロップすると、targetGroupId=nullでonMoveEntryが呼ばれる', () => {
+    const entryA = buildEntry({ id: 2, memo: 'A' })
+    const entryB = buildEntry({ id: 3, memo: 'B' })
+    const { onMoveEntry } = renderDialog({ relatedEntryGroups: [buildGroup(10, null, [entryA, entryB])] })
+
+    const row = screen.getByText('A').closest('.related-entries-list-item')! as HTMLElement
+    const newGroupZone = screen.getByText('+ 新しいグループを作る')
+    const dataTransfer = dataTransferStub()
+
+    fireEvent.dragStart(row, { dataTransfer })
+    fireEvent.dragOver(newGroupZone, { dataTransfer })
+    fireEvent.drop(newGroupZone, { dataTransfer })
+
+    expect(onMoveEntry).toHaveBeenCalledWith(10, null, 2)
+  })
+
+  it('関連する仕訳が無い場合、「+ 新しいグループを作る」は表示されない', () => {
+    renderDialog({ relatedEntryGroups: [] })
+    expect(screen.queryByText('+ 新しいグループを作る')).not.toBeInTheDocument()
   })
 
   it('関連付け候補が無い場合、追加行は表示されない', () => {
