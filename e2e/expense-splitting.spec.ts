@@ -326,6 +326,32 @@ test.describe('割勘起票', () => {
     await expect(page.getByText('世帯メンバー間割勘テスト用の食事代の割勘').first()).toBeVisible()
   })
 
+  test('元仕訳の詳細画面で関連仕訳ダイアログを開き、一覧の行をクリックすると割勘仕訳の詳細画面に遷移する(計画Issue #138、UIレビューで指摘された実機不具合の回帰確認)', async ({ page }) => {
+    await page.goto('/')
+    const data = await setupBaseData(page, '26/8生活費割勘(関連仕訳ダイアログ遷移確認)')
+    await createOriginalExpenseEntry(page, data, '関連仕訳ダイアログ遷移確認用の食事代', 1000)
+
+    await openSplittingForm(page, data, '関連仕訳ダイアログ遷移確認用の食事代')
+    await checkHouseholdMember(page, '割勘相手Bさん')
+    await page.getByRole('button', { name: '計算する' }).click()
+    await page.getByRole('button', { name: '割勘を確定する' }).click()
+    await waitForJournalEntryCount(page, 2)
+    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+
+    await page.getByRole('button', { name: '仕訳' }).click()
+    await page.getByRole('button', { name: '仕訳一覧' }).click()
+    const originalItem = findJournalEntryListRow(page, '関連仕訳ダイアログ遷移確認用の食事代')
+    await originalItem.getByRole('button', { name: '詳細を見る' }).click()
+
+    await page.getByRole('button', { name: /^関連仕訳/ }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await dialog.getByText('関連仕訳ダイアログ遷移確認用の食事代の割勘', { exact: true }).click()
+
+    await expect(dialog).not.toBeVisible()
+    await expect(page.getByLabel('摘要(任意)')).toHaveValue('関連仕訳ダイアログ遷移確認用の食事代の割勘')
+  })
+
   test('世帯外の相手との割勘を起票できる', async ({ page }) => {
     await page.goto('/')
     const data = await setupBaseData(page, '26/8生活費割勘(世帯外)')
