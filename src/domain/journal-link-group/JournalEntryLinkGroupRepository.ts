@@ -20,6 +20,12 @@ export interface JournalEntryLinkGroupRepository {
   createGroup(journalEntryIds: readonly number[]): JournalEntryLinkGroup
   /** 既存グループにjournalEntryIdをメンバーとして追加する。既に追加済みの場合は何もしない */
   addMember(linkGroupId: number, journalEntryId: number): void
+  /**
+   * グループからjournalEntryIdを除外する。所属していない場合は何もしない。残りのメンバーが
+   * 0件になった場合、グループ自体はDBトリガー(journal_entry_link_groups_delete_when_empty)
+   * により自動的に削除される
+   */
+  removeMember(linkGroupId: number, journalEntryId: number): void
   /** 指定した仕訳が所属する全グループのidを返す(所属していなければ空配列) */
   findGroupIdsForEntry(journalEntryId: number): number[]
   /** 全グループの所属関係を返す(buildRelatedEntryIdsByEntryIdに渡すためのスナップショット) */

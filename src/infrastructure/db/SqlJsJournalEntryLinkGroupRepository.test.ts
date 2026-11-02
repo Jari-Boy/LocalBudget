@@ -163,6 +163,44 @@ describe('ON DELETE CASCADE / グループ自動削除', () => {
   })
 })
 
+describe('removeMember', () => {
+  it('グループから仕訳を除外すると、findGroupIdsForEntryが空配列を返すようになる', () => {
+    const entryA = createEntry()
+    const entryB = createEntry()
+    const entryC = createEntry()
+    const group = repository.createGroup([entryA, entryB, entryC])
+
+    repository.removeMember(group.id, entryC)
+
+    expect(repository.findGroupIdsForEntry(entryC)).toEqual([])
+    expect(repository.findGroupIdsForEntry(entryA)).toEqual([group.id])
+    expect(repository.findGroupIdsForEntry(entryB)).toEqual([group.id])
+  })
+
+  it('残りのメンバーが0件になった場合、グループ自体も自動的に削除される', () => {
+    const entryA = createEntry()
+    const entryB = createEntry()
+    const group = repository.createGroup([entryA, entryB])
+
+    repository.removeMember(group.id, entryA)
+    repository.removeMember(group.id, entryB)
+
+    const [result] = db.exec('SELECT id FROM journal_entry_link_groups WHERE id = ?', [group.id])
+    expect(result).toBeUndefined()
+  })
+
+  it('所属していない仕訳を指定しても何もしない(エラーにならない)', () => {
+    const entryA = createEntry()
+    const entryB = createEntry()
+    const entryC = createEntry()
+    const group = repository.createGroup([entryA, entryB])
+
+    expect(() => repository.removeMember(group.id, entryC)).not.toThrow()
+    expect(repository.findGroupIdsForEntry(entryA)).toEqual([group.id])
+    expect(repository.findGroupIdsForEntry(entryB)).toEqual([group.id])
+  })
+})
+
 describe('findAllGroups / renameGroup', () => {
   it('作成直後のグループはnameがnullで、findAllGroupsで参照できる', () => {
     const entryA = createEntry()

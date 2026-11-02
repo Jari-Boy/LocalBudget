@@ -41,6 +41,13 @@ export class SqlJsJournalEntryLinkGroupRepository implements JournalEntryLinkGro
     this.insertMembership(linkGroupId, journalEntryId)
   }
 
+  removeMember(linkGroupId: number, journalEntryId: number): void {
+    this.db.run(
+      'DELETE FROM journal_entry_link_group_memberships WHERE link_group_id = ? AND journal_entry_id = ?',
+      [linkGroupId, journalEntryId],
+    )
+  }
+
   findGroupIdsForEntry(journalEntryId: number): number[] {
     const [result] = this.db.exec(
       'SELECT link_group_id FROM journal_entry_link_group_memberships WHERE journal_entry_id = ? ORDER BY link_group_id',

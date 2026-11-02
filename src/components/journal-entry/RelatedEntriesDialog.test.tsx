@@ -69,6 +69,7 @@ function renderDialog(props?: Partial<RelatedEntriesDialogProps>) {
   const onSelectEntry = vi.fn()
   const onAddEntry = vi.fn()
   const onRenameGroup = vi.fn()
+  const onRemoveEntry = vi.fn()
   const onClose = vi.fn()
   render(
     <I18nextProvider i18n={i18n}>
@@ -78,6 +79,7 @@ function renderDialog(props?: Partial<RelatedEntriesDialogProps>) {
         onSelectEntry={onSelectEntry}
         onAddEntry={onAddEntry}
         onRenameGroup={onRenameGroup}
+        onRemoveEntry={onRemoveEntry}
         onClose={onClose}
         isAdding={false}
         addError={null}
@@ -85,7 +87,7 @@ function renderDialog(props?: Partial<RelatedEntriesDialogProps>) {
       />
     </I18nextProvider>,
   )
-  return { onSelectEntry, onAddEntry, onRenameGroup, onClose }
+  return { onSelectEntry, onAddEntry, onRenameGroup, onRemoveEntry, onClose }
 }
 
 describe('RelatedEntriesDialog', () => {
@@ -161,6 +163,16 @@ describe('RelatedEntriesDialog', () => {
 
     expect(onRenameGroup).not.toHaveBeenCalled()
     expect(screen.getByText('26/7生活費')).toBeInTheDocument()
+  })
+
+  it('各行には関連付けを解除するボタンがあり、押すとそのグループid・仕訳idでonRemoveEntryが呼ばれ、onSelectEntry(遷移)は呼ばれない', () => {
+    const related = buildEntry({ id: 2, entryDate: '2026-08-02', memo: '割勘' })
+    const { onRemoveEntry, onSelectEntry } = renderDialog({ relatedEntryGroups: [buildGroup(10, null, [related])] })
+
+    fireEvent.click(screen.getByRole('button', { name: '関連付けを解除' }))
+
+    expect(onRemoveEntry).toHaveBeenCalledWith(10, 2)
+    expect(onSelectEntry).not.toHaveBeenCalled()
   })
 
   it('関連付け候補が無い場合、追加行は表示されない', () => {

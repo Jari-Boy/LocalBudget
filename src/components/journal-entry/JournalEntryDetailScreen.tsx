@@ -38,6 +38,7 @@ interface JournalEntryLinkGroupFinder {
     newEntryIds: readonly number[],
   ): void | Promise<void>
   renameGroup(linkGroupId: number, name: string | null): void | Promise<void>
+  removeMember(linkGroupId: number, journalEntryId: number): void | Promise<void>
 }
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
@@ -259,6 +260,21 @@ export function JournalEntryDetailScreen({
     }
   }
 
+  /**
+   * 関連仕訳ダイアログでの関連付け解除(計画Issue #138、UIレビュー指摘)。確認ダイアログは置かない
+   * (journal_entry_links撤廃時に廃止したリンク削除警告UIと同じ方針で、残高計算に関与しない
+   * 緩い関連付けの解除に重い確認は不要と判断)。失敗時はload()を呼ばないため、行は消えずに残る
+   * (renameGroupと同じ、専用のエラー表示は設けない)。
+   */
+  async function handleRemoveRelatedEntry(groupId: number, targetId: number): Promise<void> {
+    try {
+      await Promise.resolve(journalEntryLinkGroupRepository.removeMember(groupId, targetId))
+      load()
+    } catch {
+      // 失敗時は何もしない(上記JSDoc参照)
+    }
+  }
+
   function updateEditLine(key: number, updater: (line: JournalEntryFormLine) => JournalEntryFormLine): void {
     setEditState((prev) =>
       prev === null
@@ -430,6 +446,7 @@ export function JournalEntryDetailScreen({
           }}
           onAddEntry={handleAddRelatedEntry}
           onRenameGroup={handleRenameGroup}
+          onRemoveEntry={handleRemoveRelatedEntry}
           onClose={() => setIsRelatedDialogOpen(false)}
           isAdding={isAddingRelatedEntry}
           addError={relateError}

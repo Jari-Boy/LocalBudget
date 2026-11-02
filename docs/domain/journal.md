@@ -143,7 +143,8 @@
 - 用途は表示専用。仕訳詳細画面(`JournalEntryDetailScreen`)で「この仕訳に関連する他の仕訳」を、所属する全グループ分を合算して一覧表示するためだけに使う。残高計算・消込判定には一切関与しない。
 - 作成契機: 割勘([expense-splitting.md](./expense-splitting.md)参照)の仕訳を作成する際は、システムが自動的にグループを作成・参加させ、関連する仕訳(元仕訳・割勘仕訳・精算仕訳)を同じグループに所属させる。それ以外のケースでは、ユーザーが仕訳詳細画面から既存の仕訳を検索して手動で関連付け、グループを作成・参加させる。
 - グループへの参加/新規作成の判定は、ドメイン層の純粋関数`planJoinOrCreateGroups`(`src/domain/journal-link-group/`)が担う。anchorEntryIds(既存の仕訳群)の既存グループを調べ、1つも無ければanchor・newEntryIdsをまとめた新規グループを作成し、1つ以上あればそれら全てのグループへnewEntryIdsを参加させる(anchor自身は既存グループへ追加しない)。`JournalEntryLinkGroupRepository.joinOrCreateGroups`がこの判定に従ってDB書き込みを行う単一のエントリポイントであり、割勘の自動グルーピング(`ExpenseSplittingForm`・`SettlementScreen`)・仕訳詳細画面からの手動関連付けの両方から使われる。
-- メンバーが0件になったグループ(全メンバーの仕訳が削除された等)は、DBトリガー(`journal_entry_link_groups_delete_when_empty`、[2.3](#23-関連仕訳グループマスタjournal_entry_link_groups)参照)により自動的に削除される。
+- メンバーが0件になったグループ(全メンバーの仕訳が削除された等)は、DBトリガー(`journal_entry_link_groups_delete_when_empty`、[2.3](#23-関連仕訳グループマスタjournal_entry_link_groups)参照)により自動的に削除される。ユーザーが関連仕訳ダイアログから手動で関連付けを解除する操作(`JournalEntryLinkGroupRepository.removeMember`)も同じ経路で、残りが1件になった場合はトリガーが発火せずグループ自体は残る(表示側は自分以外のメンバーが0件のグループを表示しないため、UI上は見えなくなる)。
+- ユーザーが関連仕訳ダイアログの各行から任意の仕訳をグループから除外できる(確認ダイアログは置かない。journal_entry_links撤廃時に廃止したリンク削除警告UIと同じ方針、残高計算に関与しない緩い関連付けの解除に重い確認は不要と判断)。
 - 表示(関連仕訳ダイアログ`RelatedEntriesDialog`)は、1つの仕訳が複数の無関係なグループに同時に所属する場合(上記の精算仕訳の例)でも、全グループ分を1本のフラットな一覧に合算しない。`groupRelatedEntriesByLinkGroup`(`src/domain/journal-link-group/`)でグループ単位の塊に分けたまま渡し、どの仕訳がどのグループの関連かが見分けられるようにする(UIレビューでの指摘「多対多のグルーピングをUIが表現できていない」への対応)。各グループの表示名(`name`)はこのダイアログ上でその場編集でき(`JournalEntryLinkGroupRepository.renameGroup`)、未設定時はUI側で「グループN」(N=そのグループidの昇順での順序)を表示する。グループ数はユーザーの明示的な操作(手動関連付け・新規の割勘/精算起票)がない限り増えない(`planJoinOrCreateGroups`の判定上、既存グループに所属するanchorへの追加操作は新規グループを作らず既存グループへの参加にとどまる)。
 
 > **仕訳削除時のON DELETE CASCADE**

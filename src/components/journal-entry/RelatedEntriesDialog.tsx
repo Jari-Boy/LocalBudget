@@ -11,6 +11,7 @@ export interface RelatedEntriesDialogProps {
   onSelectEntry: (entry: JournalEntry) => void
   onAddEntry: (entryId: number) => void | Promise<void>
   onRenameGroup: (groupId: number, name: string | null) => void | Promise<void>
+  onRemoveEntry: (groupId: number, entryId: number) => void | Promise<void>
   onClose: () => void
   isAdding: boolean
   addError: string | null
@@ -101,10 +102,12 @@ function EditableGroupName({ defaultName, name, onRename }: EditableGroupNamePro
  * 精算仕訳で橋渡しする場合)。これを1本のフラットな一覧に合算して表示すると、どのグループが
  * どの関係かが分からなくなる(UIレビューでの指摘)ため、groupRelatedEntriesByLinkGroupの結果
  * (グループ単位の塊)をそのまま枠で区切って表示する。各グループの表示名はクリックした場で編集
- * できる(EditableGroupName)。関連付け候補が存在する場合のみ「+ 関連仕訳を追加」行を表示し、
- * 押すとセレクトが現れ、候補を選んだ瞬間にonAddEntryを呼ぶ(CounterpartyQuickAddSelectと同じ
- * 「選択=即確定」方式、確定・キャンセルボタンは置かない)。将来的に仕訳数が増えた場合、
- * このセレクトは専用の仕訳検索画面に置き換える想定(現時点では対応しない)。
+ * できる(EditableGroupName)。各行には関連付けを解除する「×」ボタンを併置する(行自体の
+ * クリックボタンとは別のボタンとして並べ、ボタン内ボタンというHTML上不正な入れ子を避ける)。
+ * 関連付け候補が存在する場合のみ「+ 関連仕訳を追加」行を表示し、押すとセレクトが現れ、
+ * 候補を選んだ瞬間にonAddEntryを呼ぶ(CounterpartyQuickAddSelectと同じ「選択=即確定」方式、
+ * 確定・キャンセルボタンは置かない)。将来的に仕訳数が増えた場合、このセレクトは専用の
+ * 仕訳検索画面に置き換える想定(現時点では対応しない)。
  */
 export function RelatedEntriesDialog({
   relatedEntryGroups,
@@ -112,6 +115,7 @@ export function RelatedEntriesDialog({
   onSelectEntry,
   onAddEntry,
   onRenameGroup,
+  onRemoveEntry,
   onClose,
   isAdding,
   addError,
@@ -162,7 +166,7 @@ export function RelatedEntriesDialog({
                 </div>
                 <ul className="related-entries-list">
                   {group.entries.map((relatedEntry) => (
-                    <li key={relatedEntry.id}>
+                    <li key={relatedEntry.id} className="related-entries-list-item">
                       <button
                         type="button"
                         className="related-entries-list-row"
@@ -173,6 +177,14 @@ export function RelatedEntriesDialog({
                         <span className="related-entries-list-amount">
                           {formatCurrency(calculateEntryTotal(relatedEntry), 'JPY')}
                         </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="related-entries-list-remove"
+                        aria-label={t('removeRelatedEntryLabel')}
+                        onClick={() => onRemoveEntry(group.groupId, relatedEntry.id)}
+                      >
+                        ×
                       </button>
                     </li>
                   ))}

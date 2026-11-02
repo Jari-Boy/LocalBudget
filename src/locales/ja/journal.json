@@ -56,6 +56,7 @@
   "relatedEntryGroupDefaultName": "グループ{{index}}",
   "editGroupNameLabel": "グループ名を編集",
   "addRelatedEntryButton": "+ 関連仕訳を追加",
+  "removeRelatedEntryLabel": "関連付けを解除",
   "relateEntryLabel": "関連付ける仕訳",
   "relateEntryError": "関連付けに失敗しました。もう一度お試しください。",
   "closeDialog": "閉じる",

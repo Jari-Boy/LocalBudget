@@ -770,6 +770,56 @@ describe('JournalEntryDetailScreen', () => {
     expect(await within(screen.getByRole('dialog')).findByText('26/7生活費')).toBeInTheDocument()
   })
 
+  it('関連仕訳ダイアログで関連付けを解除すると、journalEntryLinkGroupRepository.removeMemberが呼ばれ一覧とボタンの件数から消える', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const other = householdMemberRepository.create({ name: 'Bさん' })
+    const batch = settlementBatchRepository.create({ name: '26/7生活費割勘', type: 'expense_splitting' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
+    const advanceLiability = accountRepository.create({
+      category: 'liability',
+      name: '立替金',
+      isReconcilable: false,
+      isSystemManaged: true,
+    })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const original = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '食事代',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    const splitEntry = journalEntryRepository.create({
+      entryDate: '2026-08-02',
+      memo: '割勘',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 500, householdMemberId: other.id },
+        { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batch.id, householdMemberId: member.id },
+        { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
+        { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
+      ],
+    })
+    const group = journalEntryLinkGroupRepository.createGroup([original.id, splitEntry.id])
+
+    renderScreen(original.id)
+
+    fireEvent.click(await screen.findByRole('button', { name: '関連仕訳(1件)' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: '関連付けを解除' }))
+
+    await waitFor(() => {
+      expect(journalEntryLinkGroupRepository.findGroupIdsForEntry(splitEntry.id)).toEqual([])
+    })
+    expect(screen.getByRole('button', { name: '関連仕訳(0件)' })).toBeInTheDocument()
+    // グループにはoriginal自身がまだ1件残っているため(0件になった場合のみDBトリガーで
+    // 自動削除される、journal_entry_link_groups_delete_when_empty)、グループ自体はまだ残る
+    expect(journalEntryLinkGroupRepository.findAllGroups().some((g) => g.id === group.id)).toBe(true)
+  })
+
   it('戻るボタンを押すとonBackが呼ばれる', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })

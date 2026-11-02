@@ -125,7 +125,13 @@
   margin: 0;
 }
 
-.related-entries-list li:not(:last-child) .related-entries-list-row {
+.related-entries-list-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.related-entries-list li:not(:last-child) {
   border-bottom: 1px solid var(--border);
 }
 
@@ -133,7 +139,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 9px 10px;
   border: none;
   border-radius: 6px;
@@ -146,6 +153,28 @@
   &:hover,
   &:focus-visible {
     background: var(--accent-bg);
+  }
+}
+
+.related-entries-list-remove {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+
+  &:hover,
+  &:focus-visible {
+    opacity: 1;
+    background: var(--error-bg);
+    color: var(--error);
   }
 }
 
