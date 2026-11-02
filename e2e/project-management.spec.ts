@@ -1,14 +1,15 @@
 /**
  * プロジェクト管理画面(計画Issue #36)のE2Eテスト。実ブラウザ(Chromium)で
- * トップ画面からの遷移、新規作成(名称・kind)・編集・非アクティブ化・削除の
- * 一連の操作、および「紐づく仕訳明細が0件なら物理削除可、1件以上なら非アクティブ化
- * のみ」という削除可否の分岐(docs/domain/projects.md 1.3節)が実際のWeb Worker + RPC層を
- * 経由して機能することを検証する。個々の表示ロジックの詳細(kind併記・PL/BS科目残高内訳・
- * 非アクティブ化提案の表示条件等)はコンポーネントテスト(ProjectManagementScreen.*.test.tsx)
- * 側で検証済みのため、ここでは操作フローと削除可否分岐に絞る。account-list.spec.ts・
- * counterparty-management.spec.tsと同様、DB書き込みの永続化はwithAutoSaveのtrailing
- * debounce(2秒)を挟むため、作成したデータがRepository経由で確認できるまでpollで待って
- * からreloadする。
+ * トップ画面からの遷移、新規作成(名称)・編集・非アクティブ化・削除の一連の操作、
+ * および「紐づく仕訳明細が0件なら物理削除可、1件以上なら非アクティブ化のみ」という
+ * 削除可否の分岐(docs/domain/projects.md 1.3節)が実際のWeb Worker + RPC層を経由して
+ * 機能することを検証する。プロジェクトは計画Issue #133でイベント専用となり`kind`は
+ * 廃止された(精算バッチとしての役割はsettlement_batchesへ分離、expense-splitting.spec.ts
+ * 参照)。個々の表示ロジックの詳細(PL/BS科目残高内訳・非アクティブ化提案の表示条件等)は
+ * コンポーネントテスト(ProjectManagementScreen.*.test.tsx)側で検証済みのため、ここでは
+ * 操作フローと削除可否分岐に絞る。account-list.spec.ts・counterparty-management.spec.tsと
+ * 同様、DB書き込みの永続化はwithAutoSaveのtrailing debounce(2秒)を挟むため、作成した
+ * データがRepository経由で確認できるまでpollで待ってからreloadする。
  */
 import { test, expect, type Page } from '@playwright/test'
 
@@ -36,20 +37,18 @@ test.describe('プロジェクト管理画面', () => {
     await page.getByRole('button', { name: 'プロジェクトを管理する' }).click()
     await expect(page.getByText('登録済みのプロジェクトがありません')).toBeVisible()
 
-    // 新規作成(kind省略、既定event)
+    // 新規作成
     await page.getByRole('button', { name: 'プロジェクトを追加' }).click()
     await page.getByLabel('名称').fill('26年7月アメリカ旅行')
     await page.getByRole('button', { name: '作成する' }).click()
     await expect(page.getByRole('table').getByText('26年7月アメリカ旅行')).toBeVisible()
 
-    // 新規作成(kind=settlementを明示指定)
+    // 2件目の新規作成(削除可否分岐の検証用)
     await page.getByRole('button', { name: 'プロジェクトを追加' }).click()
-    await page.getByLabel('名称').fill('26/7生活費割勘')
-    await page.getByLabel('種別').selectOption('settlement')
+    await page.getByLabel('名称').fill('26年8月の帰省')
     await page.getByRole('button', { name: '作成する' }).click()
-    const settlementItem = page.getByRole('rowgroup').filter({ hasText: '26/7生活費割勘' })
-    await expect(settlementItem).toBeVisible()
-    await expect(settlementItem).toContainText('精算')
+    const secondItem = page.getByRole('rowgroup').filter({ hasText: '26年8月の帰省' })
+    await expect(secondItem).toBeVisible()
 
     // 編集
     const tripItem = page.getByRole('rowgroup').filter({ hasText: '26年7月アメリカ旅行' })
@@ -65,8 +64,8 @@ test.describe('プロジェクト管理画面', () => {
     await expect(confirmedTripItem.getByRole('button', { name: '非アクティブ化' })).toHaveCount(0)
 
     // 削除(紐づく仕訳明細が0件のため物理削除できる)
-    await settlementItem.getByRole('button', { name: '削除' }).click()
-    await expect(page.getByRole('rowgroup').filter({ hasText: '26/7生活費割勘' })).toHaveCount(0)
+    await secondItem.getByRole('button', { name: '削除' }).click()
+    await expect(page.getByRole('rowgroup').filter({ hasText: '26年8月の帰省' })).toHaveCount(0)
 
     await page.getByRole('button', { name: '戻る' }).click()
     await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()

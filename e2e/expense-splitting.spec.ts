@@ -4,7 +4,7 @@
  * 割勘起票フォーム・精算画面を操作し、Web Worker + RPC層を経由して以下を検証する:
  * (1)割勘対象選択画面での期間・科目・世帯メンバー・プロジェクトによる絞り込みと
  * findUnallocatedEntriesによる既割勘仕訳の除外、(2)世帯メンバー間・世帯外相手との
- * 割勘起票、(3)比率指定・複数人(3人以上)への割勘、(4)プロジェクトのその場作成、
+ * 割勘起票、(3)比率指定・複数人(3人以上)への割勘、(4)精算バッチの既定(新規作成)での自動作成、
  * (5)割勘の履歴表示(元の支出→割勘→精算のトレース)、(6)精算(立替金の消込)の起票、
  * (7)精算前の割勘仕訳の取り消し(物理削除)、(8)精算後の取り消し案内、(9)複数の元仕訳を
  * チェックボックスでまとめて選択し、一括で割勘起票できること(計画Issue #40 Attempt 4、
@@ -13,11 +13,14 @@
  * ホーム画面の独立した「割勘する」入口(割勘対象選択画面)から行う(計画Issue #40)。
  * さらに人間レビューでの追加指摘を受け、立替金(資産/負債)科目はseedAdvanceAccountsが
  * Worker起動時に自動投入する恒久的な科目を自動解決して使うため、UI上の選択操作は無い
- * (計画Issue #40)。「割勘バッチ」という独自の呼称も廃止し、既存のプロジェクト管理画面
- * (D6)と同じ「プロジェクト」に統一した。加えて、割勘フォームでの相手選択UIも
- * 再設計され、世帯メンバーは「相手の種類→相手」という2段階選択ではなく、割り振り
- * 可能な全員を常時チェックボックスの一覧として表示する方式になった(人間レビューでの
- * 再指摘、詳細はExpenseSplittingForm.tsxのJSDoc参照)。
+ * (計画Issue #40)。「割勘バッチ」という独自の呼称も廃止し、当初は既存のプロジェクト
+ * 管理画面(D6)と同じ「プロジェクト」に統一していたが、計画Issue #133で独立エンティティ
+ * `settlement_batches`に分離されたことに伴い「精算バッチ」という呼称・選択UIに変更された
+ * (既存バッチ選択/新しい精算バッチを作成する(既定選択、名前入力フォームなし、確定時点の
+ * 摘要をそのままバッチ名に使う)の2択、詳細はExpenseSplittingForm.tsxのJSDoc参照)。
+ * 加えて、割勘フォームでの相手選択UIも再設計され、世帯メンバーは「相手の種類→相手」という
+ * 2段階選択ではなく、割り振り可能な全員を常時チェックボックスの一覧として表示する方式に
+ * なった(人間レビューでの再指摘)。
  * さらに実機レビューで見つかった不具合・要望への対応も検証する: (10)費用科目の行を
  * 持たない仕訳(給与/普通預金のような収益・資産のみの仕訳)は割勘対象選択画面の候補から
  * 除外されること、(11)世帯外の相手は取引先マスタからの選択に加えその場での新規取引先
@@ -44,18 +47,19 @@ interface BaseData {
   friendId: number
   expenseAccountId: number
   cashAccountId: number
-  projectId: number
+  settlementBatchId: number
 }
 
 /**
- * 割勘/精算に共通して必要な世帯メンバー・取引先・科目・プロジェクトを1つのWorker内で
- * まとめて作成し、flush()で即座にIndexedDBへ永続化してからreloadする
- * (journal-entry.spec.tsのsetupAccountsAndReloadと同じ、別Workerの後勝ち上書きを避ける方針)。
- * 既定の世帯メンバー(seedDefaultHouseholdMemberで1件自動作成済み)はfromMemberとして使う。
- * 立替金(資産/負債)科目はWorker起動時にseedAdvanceAccountsが自動投入するため、ここでは
- * 作成しない(手動で同名の科目を作成すると科目名の一意制約に反する)。
+ * 割勘/精算に共通して必要な世帯メンバー・取引先・科目・精算バッチ(計画Issue #133、
+ * `settlement_batches`)を1つのWorker内でまとめて作成し、flush()で即座にIndexedDBへ
+ * 永続化してからreloadする(journal-entry.spec.tsのsetupAccountsAndReloadと同じ、
+ * 別Workerの後勝ち上書きを避ける方針)。既定の世帯メンバー(seedDefaultHouseholdMemberで
+ * 1件自動作成済み)はfromMemberとして使う。立替金(資産/負債)科目はWorker起動時に
+ * seedAdvanceAccountsが自動投入するため、ここでは作成しない(手動で同名の科目を作成すると
+ * 科目名の一意制約に反する)。
  */
-async function setupBaseData(page: Page, projectName: string): Promise<BaseData> {
+async function setupBaseData(page: Page, settlementBatchName: string): Promise<BaseData> {
   const result = await page.evaluate(async (name) => {
     const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
     const client = await createDbClient()
@@ -71,15 +75,15 @@ async function setupBaseData(page: Page, projectName: string): Promise<BaseData>
       name: '割勘用現金',
       isReconcilable: false,
     })
-    const project = await client.project.create({ name, kind: 'settlement' })
+    const settlementBatch = await client.settlementBatch.create({ name, type: 'expense_splitting' })
     await client.autoSave.flush()
     return {
       friendId: friend.id,
       expenseAccountId: expenseAccount.id,
       cashAccountId: cashAccount.id,
-      projectId: project.id,
+      settlementBatchId: settlementBatch.id,
     }
-  }, projectName)
+  }, settlementBatchName)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
   return result
@@ -167,22 +171,23 @@ async function selectEntriesForSplitting(page: Page, memos: string[]) {
 }
 
 /**
- * ホーム画面から割勘対象選択画面を開き、対象の摘要を持つ仕訳を1件選択、プロジェクトを
- * 選択するところまで進める(既存のプロジェクトを使う場合)。立替金(資産/負債)科目は
- * 自動解決されるためUI操作は不要。
+ * ホーム画面から割勘対象選択画面を開き、対象の摘要を持つ仕訳を1件選択、精算バッチを
+ * 選択するところまで進める(既存の精算バッチを使う場合。既定選択は「新しい精算バッチを
+ * 作成する」のため、既存バッチを使いたいテストはここで明示的に選び直す)。立替金
+ * (資産/負債)科目は自動解決されるためUI操作は不要。
  */
 async function openSplittingForm(page: Page, data: BaseData, originalMemo: string) {
   await selectEntriesForSplitting(page, [originalMemo])
 
   // 割勘対象選択画面(前の画面)のJournalEntryFilterFormも同じ「プロジェクト」ラベルの
-  // 絞り込みselectを持つため、画面遷移直後の一瞬page.getByLabel('プロジェクト')が
+  // 絞り込みselectを持つため、画面遷移直後の一瞬page.getByLabel('精算バッチ')が
   // 前の画面側の要素に解決されてしまうことがある(計画Issue #118のルーティング刷新後に
   // 顕在化)。割勘起票フォーム自身のコンテナ(.expense-splitting-form)に絞り込んで
   // 一意に解決する。
   await page
     .locator('.expense-splitting-form')
-    .getByLabel('プロジェクト')
-    .selectOption(String(data.projectId))
+    .getByLabel('精算バッチ')
+    .selectOption(String(data.settlementBatchId))
 }
 
 /**
@@ -370,7 +375,7 @@ test.describe('割勘起票', () => {
     await waitForJournalEntryCount(page, 1)
   })
 
-  test('割勘起票フォームでその場に新規のプロジェクトを作成でき、精算画面の選択肢にも表示される', async ({
+  test('精算バッチを明示的に選択しない場合、確定時点の摘要を名前として新しい精算バッチが自動作成され、精算画面の選択肢にも表示される(計画Issue #133)', async ({
     page,
   }) => {
     await page.goto('/')
@@ -379,11 +384,7 @@ test.describe('割勘起票', () => {
 
     await selectEntriesForSplitting(page, ['その場作成テスト用の食事代'])
 
-    await page.locator('.expense-splitting-form').getByLabel('プロジェクト').selectOption('__new__')
-    await page.getByLabel('新しいプロジェクトの名前').fill('26/8その場作成バッチ')
-    await page.getByRole('button', { name: '作成する' }).click()
-    await expect(page.getByLabel('新しいプロジェクトの名前')).not.toBeVisible()
-
+    // 精算バッチセレクトには触れない(既定で「新しい精算バッチを作成する」が選択されている)
     await checkHouseholdMember(page, '割勘相手Bさん')
     await page.getByRole('button', { name: '計算する' }).click()
     await page.getByRole('button', { name: '割勘を確定する' }).click()
@@ -392,9 +393,10 @@ test.describe('割勘起票', () => {
     await page.getByRole('button', { name: '仕訳' }).click()
     await page.getByRole('button', { name: '割勘', exact: true }).click()
     await page.getByRole('button', { name: '精算する', exact: true }).click()
-    await expect(page.getByLabel('プロジェクト').locator('option', { hasText: '26/8その場作成バッチ' })).toHaveCount(
-      1,
-    )
+    // 確定時点の摘要(「元の摘要+の割勘」が既定値)がそのまま新しい精算バッチの名前になる
+    await expect(
+      page.getByLabel('精算バッチ').locator('option', { hasText: 'その場作成テスト用の食事代の割勘' }),
+    ).toHaveCount(1)
   })
 
   test('カスタム比率を指定した割勘起票と、3人以上への複数人割勘起票ができる', async ({ page }) => {
@@ -438,7 +440,7 @@ test.describe('割勘起票', () => {
     await createOriginalExpenseEntry(page, data, '複数選択テスト用の食事代2', 500)
 
     await selectEntriesForSplitting(page, ['複数選択テスト用の食事代1', '複数選択テスト用の食事代2'])
-    await page.locator('.expense-splitting-form').getByLabel('プロジェクト').selectOption(String(data.projectId))
+    await page.locator('.expense-splitting-form').getByLabel('精算バッチ').selectOption(String(data.settlementBatchId))
 
     // 複数選択時は「按分する金額」欄は表示されず、配分方法に「金額を直接指定する」も出ない
     await expect(page.getByLabel('按分する金額')).not.toBeVisible()
@@ -526,7 +528,7 @@ test.describe('精算・履歴・取り消し', () => {
     await page.getByRole('button', { name: '仕訳' }).click()
     await page.getByRole('button', { name: '割勘', exact: true }).click()
     await page.getByRole('button', { name: '精算する', exact: true }).click()
-    await page.getByLabel('プロジェクト').selectOption(String(data.projectId))
+    await page.getByLabel('精算バッチ').selectOption(String(data.settlementBatchId))
     await page.getByLabel('精算方向').selectOption('liability')
 
     const unsettledItem = page.getByRole('listitem').filter({ hasText: '￥500' })
@@ -571,7 +573,7 @@ test.describe('精算・履歴・取り消し', () => {
     await page.getByRole('button', { name: '仕訳' }).click()
     await page.getByRole('button', { name: '割勘', exact: true }).click()
     await page.getByRole('button', { name: '精算する', exact: true }).click()
-    await page.getByLabel('プロジェクト').selectOption(String(data.projectId))
+    await page.getByLabel('精算バッチ').selectOption(String(data.settlementBatchId))
     await page.getByLabel('精算方向').selectOption('liability')
     const unsettledItem = page.getByRole('listitem').filter({ hasText: '￥500' })
     await unsettledItem.getByRole('button', { name: '精算する' }).click()
