@@ -14,6 +14,7 @@ import type {
   UpdateJournalEntryDraftInput,
 } from '../../domain/journal/JournalEntryDraft'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
+import type { JournalEntryLinkGroupRepository } from '../../domain/journal-link-group/JournalEntryLinkGroupRepository'
 import type { ProjectRepository } from '../../domain/project/ProjectRepository'
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
@@ -26,6 +27,7 @@ import { SqlJsHouseholdMemberRepository } from '../db/SqlJsHouseholdMemberReposi
 import { SqlJsImportMappingDefinitionRepository } from '../db/SqlJsImportMappingDefinitionRepository'
 import { SqlJsJournalEntryDraftRepository } from '../db/SqlJsJournalEntryDraftRepository'
 import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
+import { SqlJsJournalEntryLinkGroupRepository } from '../db/SqlJsJournalEntryLinkGroupRepository'
 import { SqlJsProjectRepository } from '../db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
 import { SqlJsSettlementBatchRepository } from '../db/SqlJsSettlementBatchRepository'
@@ -74,6 +76,8 @@ export interface RepositoryRegistry {
   importMappingDefinition: ImportMappingDefinitionRepository
   journalEntry: JournalEntryRepository
   journalEntryDraft: JournalEntryDraftRpcApi
+  /** 関連仕訳グループ(計画Issue #138)。表示専用、残高計算・消込判定には関与しない */
+  journalEntryLinkGroup: JournalEntryLinkGroupRepository
   project: ProjectRepository
   settlementBatch: SettlementBatchRepository
   recurringTransactionRule: RecurringTransactionRuleRepository
@@ -127,6 +131,7 @@ export function createRepositoryRegistry(
       delete: (id) => journalEntryDraftRepository.delete(id),
       confirm: (id) => journalEntryDraftRepository.confirm(id, journalEntryRepository),
     },
+    journalEntryLinkGroup: new SqlJsJournalEntryLinkGroupRepository(db),
     project: new SqlJsProjectRepository(db),
     settlementBatch: new SqlJsSettlementBatchRepository(db),
     recurringTransactionRule: new SqlJsRecurringTransactionRuleRepository(db),

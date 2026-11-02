@@ -156,7 +156,7 @@ CSVに残高列がない金融機関ではこの検証自体ができず、乖�
 
 `journal_entries`・`journal_lines`へのカラム追加は不要(FKは`external_transaction_refs`側が持つ)。ただし以下の点は他ドメインの反映が必要。
 
-- [1.2](#12-is_reconcilable資産負債への直接記帳の制限)の記帳経路制限は`JournalEntryRepository`(仕訳ドメイン、[journal.md](./journal.md))の実装要件になる。仕訳作成時に`journal_entries.source_type`([journal.md 1.7](./journal.md#17-作成経路source_type)参照)を適切に設定し、明細の科目が`is_reconcilable = true`であるにもかかわらず`source_type`がホワイトリスト外である場合は作成を拒否する。消込仕訳の場合は、あわせて`journal_entry_links`(`link_type = 'settles'`、[journal.md 1.8](./journal.md#18-仕訳間の関係journal_entry_links)参照)を作成し、元の利用明細仕訳との対応関係を記録する責務も持つ([settlement.md](./settlement.md)参照)。
+- [1.2](#12-is_reconcilable資産負債への直接記帳の制限)の記帳経路制限は`JournalEntryRepository`(仕訳ドメイン、[journal.md](./journal.md))の実装要件になる。仕訳作成時に`journal_entries.source_type`([journal.md 1.7](./journal.md#17-作成経路source_type)参照)を適切に設定し、明細の科目が`is_reconcilable = true`であるにもかかわらず`source_type`がホワイトリスト外である場合は作成を拒否する。消込仕訳の場合は、あわせて一時勘定行に`settlement_batch_id`タグを付与し、タグ集計方式([settlement.md](./settlement.md)参照)で元の利用明細仕訳との対応関係を表現する責務も持つ。
 - 重複防止(突合)の実装は[statement-import.md 1.6 重複防止フロー](./statement-import.md#16-重複防止フロー)側の責務であり、`is_reconcilable`の値によらない独立した処理として`JournalEntryRepository`が`external_transaction_refs`を作成する([2.1](#21-フィールド定義)「なぜ`account_id`にTRIGGER制約を設けないか」参照)。
 - [1.4](#14-ライフサイクル)の突合済み仕訳の編集・削除ルールは[GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)(仕訳自体のライフサイクル設計)で決着し、[journal.md 1.5](./journal.md#15-仕訳の編集削除)に反映済み。
 - [1.6](#16-原因不明差異への残高調整)の「費用・残高調整」科目は[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)の現金の実残調整と共通の科目であり、`accounts.md`側のシステム管理科目定義に反映が必要。

@@ -38,6 +38,7 @@ import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepo
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
+import { SqlJsJournalEntryLinkGroupRepository } from '../../infrastructure/db/SqlJsJournalEntryLinkGroupRepository'
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import { ExpenseSplittingForm } from './ExpenseSplittingForm'
@@ -48,6 +49,7 @@ let settlementBatchRepository: SqlJsSettlementBatchRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
 let counterpartyRepository: SqlJsCounterpartyRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
+let journalEntryLinkGroupRepository: SqlJsJournalEntryLinkGroupRepository
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -57,6 +59,7 @@ beforeEach(async () => {
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
   counterpartyRepository = new SqlJsCounterpartyRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
+  journalEntryLinkGroupRepository = new SqlJsJournalEntryLinkGroupRepository(db)
 })
 
 afterEach(cleanup)
@@ -80,6 +83,7 @@ function renderForm(originalEntries: JournalEntry[], overrides?: { onComplete?: 
         householdMemberRepository={householdMemberRepository}
         counterpartyRepository={counterpartyRepository}
         journalEntryRepository={journalEntryRepository}
+        journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
         onComplete={onComplete}
         onBack={onBack}
         today="2026-08-15"
@@ -134,16 +138,10 @@ describe('ExpenseSplittingForm', () => {
     expect(createdEntries[0].lines).toHaveLength(4)
     // 一覧画面で元仕訳と割勘仕訳を区別できるよう、元の摘要から自動生成した摘要を持つ
     expect(createdEntries[0].memo).toBe('スーパーで食材購入の割勘')
-    const links = journalEntryRepository.listLinksForEntry(createdEntries[0].id)
-    expect(links).toEqual([
-      expect.objectContaining({ fromEntryId: createdEntries[0].id, toEntryId: originalEntry.id, linkType: 'allocates', amount: 500 }),
-    ])
-    // リンクは明細行単位(計画Issue #132): 元仕訳の費用行(借方)から、割勘仕訳の費用の貸方行へ張られる
-    const originalExpenseLine = originalEntry.lines.find((line) => line.side === 'debit')!
-    const splitExpenseCreditLine = createdEntries[0].lines.find(
-      (line) => line.accountId === originalExpenseLine.accountId && line.side === 'credit',
-    )!
-    expect(links[0]).toMatchObject({ toLineId: originalExpenseLine.id, fromLineId: splitExpenseCreditLine.id })
+    // 割勘仕訳作成と同時に、元仕訳と同じ関連仕訳グループへ所属させる(計画Issue #138)
+    const groupIds = journalEntryLinkGroupRepository.findGroupIdsForEntry(createdEntries[0].id)
+    expect(groupIds).toHaveLength(1)
+    expect(journalEntryLinkGroupRepository.findGroupIdsForEntry(originalEntry.id)).toEqual(groupIds)
   })
 
   it('世帯外の相手に割勘を起票すると、2行仕訳が作成される', async () => {
@@ -305,13 +303,11 @@ describe('ExpenseSplittingForm', () => {
       expect(createdEntries).toHaveLength(2)
       expect(createdEntries[0].lines).toHaveLength(4)
       expect(createdEntries[1].lines).toHaveLength(4)
-      const allLinks = createdEntries.flatMap((entry) => journalEntryRepository.listLinksForEntry(entry.id))
-      expect(allLinks).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ toEntryId: originalEntry.id, linkType: 'allocates', amount: 333 }),
-          expect.objectContaining({ toEntryId: originalEntry.id, linkType: 'allocates', amount: 333 }),
-        ]),
-      )
+      // 両方の割勘仕訳が、元仕訳と同じ関連仕訳グループへ所属する(計画Issue #138)
+      const originalGroupIds = journalEntryLinkGroupRepository.findGroupIdsForEntry(originalEntry.id)
+      expect(originalGroupIds).toHaveLength(1)
+      expect(journalEntryLinkGroupRepository.findGroupIdsForEntry(createdEntries[0].id)).toEqual(originalGroupIds)
+      expect(journalEntryLinkGroupRepository.findGroupIdsForEntry(createdEntries[1].id)).toEqual(originalGroupIds)
     })
   })
 
@@ -919,19 +915,11 @@ describe('ExpenseSplittingForm(複数の元仕訳をまとめて割勘する場�
     expect(createdEntries).toHaveLength(1)
     expect(createdEntries[0].lines).toHaveLength(8)
 
-    const links = journalEntryRepository.listLinksForEntry(createdEntries[0].id)
-    // 元仕訳ごとに独立したallocatesリンクを保持する(1件の仕訳から複数の元仕訳への一対多)
-    expect(links).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ toEntryId: entry1.id, linkType: 'allocates', amount: 500 }),
-        expect.objectContaining({ toEntryId: entry2.id, linkType: 'allocates', amount: 250 }),
-      ]),
-    )
-    expect(links).toHaveLength(2)
-    // それぞれのリンクは、対応する元仕訳の費用行(借方)を指す
-    expect(links.map((link) => link.toLineId).sort()).toEqual(
-      [entry1, entry2].map((entry) => entry.lines.find((line) => line.side === 'debit')!.id).sort(),
-    )
+    // 選択した元仕訳2件(entry1・entry2)と割勘仕訳が、1つの関連仕訳グループに所属する(計画Issue #138)
+    const groupIds = journalEntryLinkGroupRepository.findGroupIdsForEntry(createdEntries[0].id)
+    expect(groupIds).toHaveLength(1)
+    expect(journalEntryLinkGroupRepository.findGroupIdsForEntry(entry1.id)).toEqual(groupIds)
+    expect(journalEntryLinkGroupRepository.findGroupIdsForEntry(entry2.id)).toEqual(groupIds)
   })
 
   it('元仕訳ごとに金額が異なる場合でも、按分比率は共通のまま元仕訳ごとの金額に対して個別に計算される', async () => {
@@ -976,16 +964,12 @@ describe('ExpenseSplittingForm(複数の元仕訳をまとめて割勘する場�
         .findAll()
         .filter((entry) => entry.id !== entry1.id && entry.id !== entry2.id)
       expect(createdEntries).toHaveLength(1)
-      const links = journalEntryRepository.listLinksForEntry(createdEntries[0].id)
       // 30%の比率は共通のまま、元仕訳自身の金額(2000円・300円)に対して個別に適用され、
-      // 元仕訳ごとに独立したallocatesリンクとして1件の仕訳にまとまる
-      expect(links).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ toEntryId: entry1.id, amount: 600 }),
-          expect.objectContaining({ toEntryId: entry2.id, amount: 90 }),
-        ]),
-      )
-      expect(links).toHaveLength(2)
+      // 元仕訳2件・割勘仕訳が1つの関連仕訳グループにまとまる(計画Issue #138)
+      const groupIds = journalEntryLinkGroupRepository.findGroupIdsForEntry(createdEntries[0].id)
+      expect(groupIds).toHaveLength(1)
+      expect(journalEntryLinkGroupRepository.findGroupIdsForEntry(entry1.id)).toEqual(groupIds)
+      expect(journalEntryLinkGroupRepository.findGroupIdsForEntry(entry2.id)).toEqual(groupIds)
     })
   })
 

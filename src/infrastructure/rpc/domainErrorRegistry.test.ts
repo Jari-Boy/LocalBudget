@@ -8,7 +8,6 @@
 import { describe, expect, it } from 'vitest'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
-import { JournalEntryLinkLineError } from '../../domain/journal/JournalEntryLinkLineError'
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
@@ -21,10 +20,9 @@ import {
 } from './domainErrorRegistry'
 
 describe('isDomainError', () => {
-  it('登録済みの8種のドメインエラーをtrueと判定する', () => {
+  it('登録済みの7種のドメインエラーをtrueと判定する', () => {
     expect(isDomainError(new UnbalancedJournalEntryError(100, 90))).toBe(true)
     expect(isDomainError(new RestrictedAccountPostingError(1, 'manual'))).toBe(true)
-    expect(isDomainError(new JournalEntryLinkLineError('line_not_found', 1, 2))).toBe(true)
     expect(isDomainError(new NoBalanceDiscrepancyError())).toBe(true)
     expect(isDomainError(new InvalidRecurringScheduleError('invalid'))).toBe(true)
     expect(isDomainError(new RecurringTransactionHouseholdMemberRequiredError(1))).toBe(true)
@@ -71,25 +69,6 @@ describe('serializeDomainError / deserializeDomainError', () => {
     expect(revived).toBeInstanceOf(RestrictedAccountPostingError)
     expect((revived as RestrictedAccountPostingError).accountId).toBe(42)
     expect((revived as RestrictedAccountPostingError).sourceType).toBe('manual')
-  })
-
-  it('JournalEntryLinkLineErrorのreason/fromLineId/toLineIdを保持して往復する(計画Issue #132)', () => {
-    const original = new JournalEntryLinkLineError('amount_exceeds_from_line', 7, 9)
-
-    const revived = deserializeDomainError(serializeDomainError(original))
-
-    expect(revived).toBeInstanceOf(JournalEntryLinkLineError)
-    expect((revived as JournalEntryLinkLineError).reason).toBe('amount_exceeds_from_line')
-    expect((revived as JournalEntryLinkLineError).fromLineId).toBe(7)
-    expect((revived as JournalEntryLinkLineError).toLineId).toBe(9)
-  })
-
-  it('JournalEntryLinkLineErrorのfromLineIdがnull(未採番の行を指していた場合)でも往復できる', () => {
-    const original = new JournalEntryLinkLineError('line_not_found', null, 9)
-
-    const revived = deserializeDomainError(serializeDomainError(original))
-
-    expect((revived as JournalEntryLinkLineError).fromLineId).toBeNull()
   })
 
   it('NoBalanceDiscrepancyErrorを往復する', () => {

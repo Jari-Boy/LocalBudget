@@ -714,33 +714,6 @@ describe('delete', () => {
     expect(countJournalLines(db)).toBe(0)
   })
 
-  it('仕訳の削除でjournal_entry_linksもカスケード削除する(from_entry_id側、計画Issue #40で発覚したdb.export()のPRAGMA foreign_keysリセット対応の回帰テスト)', () => {
-    const original = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-05',
-      lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
-        { accountId: cashAccountId, side: 'credit', amount: 500 },
-      ],
-    })
-    const splitEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-06',
-      lines: [
-        { accountId: foodExpenseAccountId, side: 'credit', amount: 500 },
-        { accountId: cashAccountId, side: 'debit', amount: 500 },
-      ],
-      links: [{ fromLineIndex: 0, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
-    })
-
-    expect(repository.listLinksForEntry(original.id)).toHaveLength(1)
-
-    repository.delete(splitEntry.id)
-
-    expect(repository.findById(splitEntry.id)).toBeNull()
-    expect(repository.listLinksForEntry(original.id)).toHaveLength(0)
-  })
-
   it('external_import仕訳の削除は常に許可される', () => {
     const created = repository.create({
       householdMemberId: memberId,
@@ -798,60 +771,6 @@ describe('deleteBySettlementBatchId(settlement_batch_id単位での一括物理�
     expect(repository.findById(other.id)).not.toBeNull()
   })
 
-  it('削除された仕訳のjournal_entry_links(from_entry/to_entryいずれの向きでも)もCASCADE削除される', () => {
-    const batchId = insertSettlementBatch(db, '按分対象')
-    const original = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
-      ],
-    })
-    const taggedFromEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-02',
-      lines: [
-        { accountId: foodExpenseAccountId, side: 'credit', amount: 500 },
-        { accountId: payableAccountId, side: 'debit', amount: 500, settlementBatchId: batchId },
-      ],
-      links: [{ fromLineIndex: 0, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
-    })
-
-    const untagged = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-03',
-      lines: [
-        { accountId: rentExpenseAccountId, side: 'credit', amount: 80000 },
-        { accountId: payableAccountId, side: 'debit', amount: 80000 },
-      ],
-    })
-    const taggedToEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-04',
-      sourceType: 'external_import',
-      lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000, settlementBatchId: batchId },
-        { accountId: bankAccountId, side: 'credit', amount: 80000 },
-      ],
-    })
-    repository.createLink({
-      fromLineId: untagged.lines[0].id,
-      toLineId: taggedToEntry.lines[0].id,
-      linkType: 'allocates',
-      amount: 80000,
-    })
-
-    repository.deleteBySettlementBatchId(batchId)
-
-    expect(repository.findById(taggedFromEntry.id)).toBeNull()
-    expect(repository.findById(taggedToEntry.id)).toBeNull()
-    expect(repository.findById(original.id)).not.toBeNull()
-    expect(repository.findById(untagged.id)).not.toBeNull()
-    expect(repository.listLinksForEntry(original.id)).toHaveLength(0)
-    expect(repository.listLinksForEntry(untagged.id)).toHaveLength(0)
-  })
-
   it('別のsettlement_batch_idを持つ仕訳やsettlement_batch_idが未設定の仕訳は削除されない', () => {
     const targetBatchId = insertSettlementBatch(db, '対象バッチ')
     const otherBatchId = insertSettlementBatch(db, '別バッチ')
@@ -888,7 +807,7 @@ describe('deleteBySettlementBatchId(settlement_batch_id単位での一括物理�
     expect(repository.findById(untagged.id)).not.toBeNull()
   })
 
-  it('精算済み(settlesリンクを持つ)仕訳が混在していてもガードなくすべて削除される(回帰テスト)', () => {
+  it('精算済み(同一settlement_batch_idへの精算行を持つ)仕訳が混在していてもガードなくすべて削除される(回帰テスト)', () => {
     const batchId = insertSettlementBatch(db, 'スマホ24回')
     const toEntry = repository.create({
       householdMemberId: memberId,
@@ -906,7 +825,6 @@ describe('deleteBySettlementBatchId(settlement_batch_id単位での一括物理�
         { accountId: payableAccountId, side: 'debit', amount: 80000, settlementBatchId: batchId },
         { accountId: bankAccountId, side: 'credit', amount: 80000 },
       ],
-      links: [{ fromLineIndex: 0, toLineId: toEntry.lines[1].id, linkType: 'settles', amount: 80000 }],
     })
 
     expect(() => repository.deleteBySettlementBatchId(batchId)).not.toThrow()

@@ -1,5 +1,3 @@
-import type { JournalEntryLinkTarget } from './JournalEntryLink'
-
 export type JournalLineSide = 'debit' | 'credit'
 
 export type JournalEntrySourceType =
@@ -49,7 +47,7 @@ export interface JournalEntry {
 export interface JournalLineInput {
   /**
    * 既存の明細行のid(計画Issue #132)。JournalEntryRepository.updateに渡した場合のみ意味を持ち、
-   * 指定された行は同じidのままUPDATEされる(行に紐づくjournal_entry_linksも維持される)。
+   * 指定された行は同じidのままUPDATEされる。
    * 未指定の行は新規INSERT、入力から消えた既存行はDELETEされる。createでは無視される。
    */
   id?: number
@@ -70,13 +68,6 @@ export interface CreateJournalEntryInput {
   /** 起票者(docs/domain/journal.md 1.1「起票者」)。必須、未指定では仕訳を作成できない */
   householdMemberId: number
   lines: JournalLineInput[]
-  /**
-   * この仕訳をfrom_entryとして同時に作成するjournal_entry_links(docs/domain/journal.md 1.8)。
-   * 消込(settles)仕訳の作成とリンクの作成を単一のDBトランザクションで行うためのもの
-   * (docs/domain/reconciliation.md 2.3)。settlesハード検証(docs/domain/settlement.md 1.8)に
-   * 失敗した場合、仕訳・明細・リンクのいずれも書き込まれない。
-   */
-  links?: JournalEntryLinkTarget[]
   /**
    * 外部明細取込(docs/domain/statement-import.md 1.5 手順7)の場合、この仕訳と同一DBトランザクション
    * で書き込むexternal_transaction_refs(docs/domain/reconciliation.md 2章)のスナップショット。

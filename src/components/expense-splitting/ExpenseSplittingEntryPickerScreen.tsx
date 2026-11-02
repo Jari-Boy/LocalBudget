@@ -3,10 +3,11 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
-import type { JournalEntryLink } from '../../domain/journal/JournalEntryLink'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
+import type { JournalEntryLinkGroupMembership } from '../../domain/journal-link-group/JournalEntryLinkGroup'
 import type { Project } from '../../domain/project/Project'
 import { filterJournalEntries } from '../../domain/journal/filterJournalEntries'
+import { buildRelatedEntryIdsByEntryId } from '../../domain/journal-link-group/buildRelatedEntryIdsByEntryId'
 import { findUnallocatedEntries } from '../../domain/expense-splitting/findUnallocatedEntries'
 import { findExpenseLine } from '../../domain/expense-splitting/findExpenseLine'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
@@ -15,7 +16,9 @@ import './ExpenseSplittingEntryPickerScreen.css'
 
 interface JournalEntryFinder {
   findAll(): JournalEntry[] | Promise<JournalEntry[]>
-  listLinksForEntry(entryId: number): JournalEntryLink[] | Promise<JournalEntryLink[]>
+}
+interface JournalEntryLinkGroupFinder {
+  findAllMemberships(): JournalEntryLinkGroupMembership[] | Promise<JournalEntryLinkGroupMembership[]>
 }
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
@@ -29,6 +32,7 @@ interface ProjectFinder {
 
 export interface ExpenseSplittingEntryPickerScreenProps {
   journalEntryRepository: JournalEntryFinder
+  journalEntryLinkGroupRepository: JournalEntryLinkGroupFinder
   accountRepository: AccountFinder
   householdMemberRepository: HouseholdMemberFinder
   projectRepository: ProjectFinder
@@ -66,6 +70,7 @@ function calculateEntryTotal(entry: JournalEntry): number {
  */
 export function ExpenseSplittingEntryPickerScreen({
   journalEntryRepository,
+  journalEntryLinkGroupRepository,
   accountRepository,
   householdMemberRepository,
   projectRepository,
@@ -93,22 +98,18 @@ export function ExpenseSplittingEntryPickerScreen({
   useEffect(() => {
     void Promise.all([
       Promise.resolve(journalEntryRepository.findAll()),
+      Promise.resolve(journalEntryLinkGroupRepository.findAllMemberships()),
       Promise.resolve(accountRepository.findAll()),
       Promise.resolve(householdMemberRepository.findAll()),
       Promise.resolve(projectRepository.findAll()),
-    ]).then(async ([entries, accounts, householdMembers, projects]) => {
-      const linksByEntryId = new Map<number, JournalEntryLink[]>()
-      await Promise.all(
-        entries.map(async (entry) => {
-          linksByEntryId.set(entry.id, await Promise.resolve(journalEntryRepository.listLinksForEntry(entry.id)))
-        }),
-      )
+    ]).then(([entries, memberships, accounts, householdMembers, projects]) => {
+      const relatedEntryIdsByEntryId = buildRelatedEntryIdsByEntryId(memberships)
       const unallocatedEntryIds = new Set(
-        findUnallocatedEntries(entries, linksByEntryId).map((entry) => entry.id),
+        findUnallocatedEntries(entries, accounts, relatedEntryIdsByEntryId).map((entry) => entry.id),
       )
       setData({ entries, unallocatedEntryIds, accounts, householdMembers, projects })
     })
-  }, [journalEntryRepository, accountRepository, householdMemberRepository, projectRepository])
+  }, [journalEntryRepository, journalEntryLinkGroupRepository, accountRepository, householdMemberRepository, projectRepository])
 
   if (data === null) {
     return <p role="status">{tCommon('loading')}</p>

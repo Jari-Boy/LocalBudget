@@ -7,6 +7,7 @@ import type { BudgetRepository } from '../domain/budget/BudgetRepository'
 import type { RecurringTransactionRuleRepository } from '../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { CounterpartyRepository } from '../domain/counterparty/CounterpartyRepository'
 import type { JournalEntryRepository } from '../domain/journal/JournalEntryRepository'
+import type { JournalEntryLinkGroupRepository } from '../domain/journal-link-group/JournalEntryLinkGroupRepository'
 import type { JournalEntryDraft } from '../domain/journal/JournalEntryDraft'
 import type { JournalEntry } from '../domain/journal/JournalEntry'
 import type { HouseholdMemberRepository } from '../domain/household-member/HouseholdMemberRepository'
@@ -107,6 +108,8 @@ export function AppRoutes() {
    */
   const accountRepository = client.account as unknown as Comlink.Remote<AccountRepository>
   const journalEntryRepository = client.journalEntry as unknown as Comlink.Remote<JournalEntryRepository>
+  const journalEntryLinkGroupRepository =
+    client.journalEntryLinkGroup as unknown as Comlink.Remote<JournalEntryLinkGroupRepository>
   const householdMemberRepository =
     client.householdMember as unknown as Comlink.Remote<HouseholdMemberRepository>
   const accountGroupRepository = client.accountGroup as unknown as Comlink.Remote<AccountGroupRepository>
@@ -353,6 +356,7 @@ export function AppRoutes() {
         element={
           <JournalEntryDetailRoute
             journalEntryRepository={journalEntryRepository}
+            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             accountRepository={accountRepository}
             projectRepository={projectRepository}
             householdMemberRepository={householdMemberRepository}
@@ -378,6 +382,7 @@ export function AppRoutes() {
         element={
           <ExpenseSplittingEntryPickerScreen
             journalEntryRepository={journalEntryRepository}
+            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             accountRepository={accountRepository}
             householdMemberRepository={householdMemberRepository}
             projectRepository={projectRepository}
@@ -395,6 +400,7 @@ export function AppRoutes() {
             householdMemberRepository={householdMemberRepository}
             counterpartyRepository={counterpartyRepository}
             journalEntryRepository={journalEntryRepository}
+            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
           />
         }
       />
@@ -406,6 +412,7 @@ export function AppRoutes() {
             accountRepository={accountRepository}
             householdMemberRepository={householdMemberRepository}
             journalEntryRepository={journalEntryRepository}
+            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             onBack={() => navigate('/journal/splitting')}
           />
         }
@@ -415,6 +422,7 @@ export function AppRoutes() {
         element={
           <ExpenseSplittingHistoryScreen
             journalEntryRepository={journalEntryRepository}
+            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             accountRepository={accountRepository}
             settlementBatchRepository={settlementBatchRepository}
             householdMemberRepository={householdMemberRepository}
@@ -493,6 +501,7 @@ function ResumeJournalEntryFormRoute({
 
 interface JournalEntryDetailRouteProps {
   journalEntryRepository: Comlink.Remote<JournalEntryRepository>
+  journalEntryLinkGroupRepository: Comlink.Remote<JournalEntryLinkGroupRepository>
   accountRepository: Comlink.Remote<AccountRepository>
   projectRepository: Comlink.Remote<ProjectRepository>
   householdMemberRepository: Comlink.Remote<HouseholdMemberRepository>
@@ -501,9 +510,11 @@ interface JournalEntryDetailRouteProps {
   onDeleted: () => void
 }
 
-/** URLの:idパラメータをentryIdとして仕訳詳細画面へ渡すルート。 */
+/** URLの:idパラメータをentryIdとして仕訳詳細画面へ渡すルート。関連する仕訳の選択は同じ
+ * 仕訳詳細画面(別のentryId)への遷移として扱う。 */
 function JournalEntryDetailRoute({
   journalEntryRepository,
+  journalEntryLinkGroupRepository,
   accountRepository,
   projectRepository,
   householdMemberRepository,
@@ -512,6 +523,7 @@ function JournalEntryDetailRoute({
   onDeleted,
 }: JournalEntryDetailRouteProps) {
   const { id } = useParams()
+  const navigate = useNavigate()
   const entryId = Number(id)
 
   if (!Number.isFinite(entryId)) {
@@ -522,10 +534,12 @@ function JournalEntryDetailRoute({
     <JournalEntryDetailScreen
       entryId={entryId}
       journalEntryRepository={journalEntryRepository}
+      journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
       accountRepository={accountRepository}
       projectRepository={projectRepository}
       householdMemberRepository={householdMemberRepository}
       counterpartyRepository={counterpartyRepository}
+      onSelectRelatedEntry={(entry) => navigate(`/journal/entries/${entry.id}`)}
       onBack={onBack}
       onDeleted={onDeleted}
     />
@@ -581,6 +595,7 @@ interface ExpenseSplittingFormRouteProps {
   householdMemberRepository: Comlink.Remote<HouseholdMemberRepository>
   counterpartyRepository: Comlink.Remote<CounterpartyRepository>
   journalEntryRepository: Comlink.Remote<JournalEntryRepository>
+  journalEntryLinkGroupRepository: Comlink.Remote<JournalEntryLinkGroupRepository>
 }
 
 /**
@@ -595,6 +610,7 @@ function ExpenseSplittingFormRoute({
   householdMemberRepository,
   counterpartyRepository,
   journalEntryRepository,
+  journalEntryLinkGroupRepository,
 }: ExpenseSplittingFormRouteProps) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -612,6 +628,7 @@ function ExpenseSplittingFormRoute({
       householdMemberRepository={householdMemberRepository}
       counterpartyRepository={counterpartyRepository}
       journalEntryRepository={journalEntryRepository}
+      journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
       onComplete={() => navigate('/')}
       onBack={() => navigate('/journal/splitting/new')}
     />

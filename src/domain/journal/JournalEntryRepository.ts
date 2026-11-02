@@ -3,7 +3,6 @@ import type {
   JournalEntry,
   UpdateJournalEntryInput,
 } from './JournalEntry'
-import type { CreateJournalEntryLinkInput, JournalEntryLink } from './JournalEntryLink'
 
 /**
  * 仕訳(journal_entries/journal_lines)の永続化を担うRepositoryのポート(インターフェース)。
@@ -14,21 +13,13 @@ import type { CreateJournalEntryLinkInput, JournalEntryLink } from './JournalEnt
  * counterparty_idのPL科目限定制約等はDDL側のトリガー(docs/schema/journal.sql)で強制されるため、
  * 実装はそちらの制約違反例外をそのまま呼び出し元に伝播させる。
  *
- * 仕訳間の関係(journal_entry_links、docs/domain/journal.md 1.8・2.3)も本Repositoryのメソッドとして
- * 扱う。リンクは明細行(journal_lines)単位で、from_line(消込・割勘する側)からto_line
- * (消込・割勘される側)へ張る(計画Issue #132)。settlesリンクの作成は消込仕訳自体の作成と同一
- * トランザクションで書き込む必要があるため(docs/domain/reconciliation.md 2.3)、別Repositoryに
- * 分離せず、CreateJournalEntryInput.linksを経由してcreate()内の単一トランザクションで
- * リンクも書き込めるようにしている(新しい仕訳の行はfromLineIndexで指す。検証に失敗した場合は
- * 仕訳・明細・リンクのいずれも書き込まれずROLLBACKされる)。createLinkは、既に存在する
- * 2つの明細行の間へ事後的にリンクを追加する場合のための別メソッドであり、こちらは独立した
- * トランザクションを持つ。リンク作成時は、科目一致・貸借が逆・from_lineの金額上限を検証し、
- * 違反はJournalEntryLinkLineErrorで拒否する(消込の残高計算・タグ整合性はsettlement_batch_id
- * による集計方式に置き換わったため検証しない、計画Issue #133)。
+ * 仕訳間の関係(journal_entry_links、明細行単位のsettles/allocatesリンク)は計画Issue #138で
+ * 完全に撤廃した。残高計算・消込判定はsettlement_batch_idタグの集計方式(計画Issue #133、
+ * docs/domain/settlement.md参照)に、関連仕訳の一覧表示は関連仕訳グループ(多対多、
+ * JournalEntryLinkGroupRepository、docs/domain/journal.md 1.8参照)にそれぞれ移管済み。
  *
- * update()は明細行のidによる差分更新(計画Issue #132): idを指定した行は同じidのままUPDATEされ、
- * 行に紐づくリンクが維持される。id未指定の行は新規INSERT、入力から消えた既存行はDELETE
- * され、その行のリンクもON DELETE CASCADEで一緒に削除される。
+ * update()は明細行のidによる差分更新(計画Issue #132): idを指定した行は同じidのままUPDATEされる。
+ * id未指定の行は新規INSERT、入力から消えた既存行はDELETEされる。
  */
 export interface JournalEntryRepository {
   create(input: CreateJournalEntryInput): JournalEntry
@@ -45,6 +36,4 @@ export interface JournalEntryRepository {
    * 仕訳が存在しない場合は何もしない。
    */
   deleteBySettlementBatchId(settlementBatchId: number): void
-  createLink(input: CreateJournalEntryLinkInput): JournalEntryLink
-  listLinksForEntry(entryId: number): JournalEntryLink[]
 }

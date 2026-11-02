@@ -22,6 +22,7 @@ import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepo
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
+import { SqlJsJournalEntryLinkGroupRepository } from '../../infrastructure/db/SqlJsJournalEntryLinkGroupRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import { JournalEntryDetailScreen } from './JournalEntryDetailScreen'
@@ -33,6 +34,7 @@ let settlementBatchRepository: SqlJsSettlementBatchRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
 let counterpartyRepository: SqlJsCounterpartyRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
+let journalEntryLinkGroupRepository: SqlJsJournalEntryLinkGroupRepository
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -43,6 +45,7 @@ beforeEach(async () => {
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
   counterpartyRepository = new SqlJsCounterpartyRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
+  journalEntryLinkGroupRepository = new SqlJsJournalEntryLinkGroupRepository(db)
 })
 
 afterEach(cleanup)
@@ -55,6 +58,7 @@ function renderScreen(entryId: number, overrides?: { onBack?: () => void; onDele
       <JournalEntryDetailScreen
         entryId={entryId}
         journalEntryRepository={journalEntryRepository}
+        journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
         accountRepository={accountRepository}
         projectRepository={projectRepository}
         householdMemberRepository={householdMemberRepository}
@@ -260,124 +264,6 @@ describe('JournalEntryDetailScreen', () => {
     expect(journalEntryRepository.findById(entry.id)?.lines.map((line) => line.id)).toEqual(originalLineIds)
   })
 
-  it('リンクが付いた明細行を削除する編集をして更新すると、警告が表示され確定前はDBが更新されない(計画Issue #132)', async () => {
-    const member = householdMemberRepository.create({ name: 'Aさん' })
-    const expense = accountRepository.create({ category: 'expense', name: '通信費', isReconcilable: null })
-    const liability = accountRepository.create({ category: 'liability', name: '未払金', isReconcilable: false })
-    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const original = journalEntryRepository.create({
-      entryDate: '2026-08-01',
-      memo: '暫定計上',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 1000 },
-        { accountId: liability.id, side: 'credit', amount: 1000 },
-      ],
-    })
-    const settlement = journalEntryRepository.create({
-      entryDate: '2026-08-10',
-      memo: '消込',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: liability.id, side: 'debit', amount: 1000 },
-        { accountId: cash.id, side: 'credit', amount: 1000 },
-      ],
-      links: [{ fromLineIndex: 0, toLineId: original.lines[1].id, linkType: 'settles', amount: 1000 }],
-    })
-
-    renderScreen(settlement.id)
-    const debitBlock = await findBlock('借方')
-    // 自動追加される空行が現れ切るまで待つ(自動追加前は残り1行のため削除ボタンが無効化される)
-    await waitFor(() => expect(getCards(debitBlock)).toHaveLength(2))
-    fireEvent.click(within(getCards(debitBlock)[0]).getByRole('button', { name: 'この行を削除する' }))
-    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('リンク')
-    expect(journalEntryRepository.findById(settlement.id)?.lines).toHaveLength(2)
-  })
-
-  it('警告の確定ボタンを押すと、更新が実行されリンクごと明細行が削除される(計画Issue #132)', async () => {
-    const member = householdMemberRepository.create({ name: 'Aさん' })
-    const liability = accountRepository.create({ category: 'liability', name: '未払金', isReconcilable: false })
-    const otherExpense = accountRepository.create({ category: 'expense', name: '雑費', isReconcilable: null })
-    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const original = journalEntryRepository.create({
-      entryDate: '2026-08-01',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: otherExpense.id, side: 'debit', amount: 1000 },
-        { accountId: liability.id, side: 'credit', amount: 1000 },
-      ],
-    })
-    const settlement = journalEntryRepository.create({
-      entryDate: '2026-08-10',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: liability.id, side: 'debit', amount: 1000 },
-        { accountId: otherExpense.id, side: 'debit', amount: 500 },
-        { accountId: cash.id, side: 'credit', amount: 1500 },
-      ],
-      links: [{ fromLineIndex: 0, toLineId: original.lines[1].id, linkType: 'settles', amount: 1000 }],
-    })
-
-    renderScreen(settlement.id)
-    const debitBlock = await findBlock('借方')
-    // 自動追加される空行が現れ切るまで待つ(自動追加前は削除ボタンが無効化される行数のため)
-    await waitFor(() => expect(getCards(debitBlock)).toHaveLength(3))
-    await waitFor(() => expect(getCards(getBlock('貸方'))).toHaveLength(2))
-    fireEvent.click(within(getCards(debitBlock)[0]).getByRole('button', { name: 'この行を削除する' }))
-    const creditCard = getCards(getBlock('貸方'))[0]
-    fireEvent.change(within(creditCard).getByLabelText('金額'), { target: { value: '500' } })
-
-    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
-    fireEvent.click(await screen.findByRole('button', { name: '削除して更新する' }))
-
-    await waitFor(() => {
-      const updated = journalEntryRepository.findById(settlement.id)
-      expect(updated?.lines).toHaveLength(2)
-    })
-    expect(
-      journalEntryRepository.findById(settlement.id)?.lines.some((line) => line.accountId === liability.id),
-    ).toBe(false)
-  })
-
-  it('警告のキャンセルボタンを押すと警告が消え、更新は実行されない(計画Issue #132)', async () => {
-    const member = householdMemberRepository.create({ name: 'Aさん' })
-    const expense = accountRepository.create({ category: 'expense', name: '通信費', isReconcilable: null })
-    const liability = accountRepository.create({ category: 'liability', name: '未払金', isReconcilable: false })
-    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const original = journalEntryRepository.create({
-      entryDate: '2026-08-01',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 1000 },
-        { accountId: liability.id, side: 'credit', amount: 1000 },
-      ],
-    })
-    const settlement = journalEntryRepository.create({
-      entryDate: '2026-08-10',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: liability.id, side: 'debit', amount: 1000 },
-        { accountId: cash.id, side: 'credit', amount: 1000 },
-      ],
-      links: [{ fromLineIndex: 0, toLineId: original.lines[1].id, linkType: 'settles', amount: 1000 }],
-    })
-
-    renderScreen(settlement.id)
-    const debitBlock = await findBlock('借方')
-    // 自動追加される空行が現れ切るまで待つ(自動追加前は残り1行のため削除ボタンが無効化される)
-    await waitFor(() => expect(getCards(debitBlock)).toHaveLength(2))
-    fireEvent.click(within(getCards(debitBlock)[0]).getByRole('button', { name: 'この行を削除する' }))
-    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
-    await screen.findByRole('alert')
-
-    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
-
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(journalEntryRepository.findById(settlement.id)?.lines).toHaveLength(2)
-  })
-
   it('貸借が不一致になる編集をして更新すると、エラーメッセージが表示され入力内容は保持されDBも更新されない', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
@@ -462,7 +348,7 @@ describe('JournalEntryDetailScreen', () => {
       isSystemManaged: true,
     })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const original = journalEntryRepository.create({
+    journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: '食事代',
       householdMemberId: member.id,
@@ -481,7 +367,6 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
         { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
       ],
-      links: [{ fromLineIndex: 2, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
 
     const { onDeleted } = renderScreen(splitEntry.id)
@@ -507,7 +392,7 @@ describe('JournalEntryDetailScreen', () => {
       isSystemManaged: true,
     })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const original1 = journalEntryRepository.create({
+    journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: '食事代1',
       householdMemberId: member.id,
@@ -526,11 +411,10 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
         { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
       ],
-      links: [{ fromLineIndex: 2, toLineId: original1.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
     // 同じ精算バッチへ、もう1件別の割勘仕訳を追記する(精算画面の「既存バッチへの追記」と
     // 同じ正常な運用フロー)。どちらも未精算のまま。
-    const original2 = journalEntryRepository.create({
+    journalEntryRepository.create({
       entryDate: '2026-08-03',
       memo: '食事代2',
       householdMemberId: member.id,
@@ -549,7 +433,6 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: expense.id, side: 'credit', amount: 150, householdMemberId: member.id },
         { accountId: advanceLiability.id, side: 'credit', amount: 150, settlementBatchId: batch.id, householdMemberId: other.id },
       ],
-      links: [{ fromLineIndex: 2, toLineId: original2.lines[0].id, linkType: 'allocates', amount: 150 }],
     })
 
     renderScreen(splitEntry1.id)
@@ -572,7 +455,7 @@ describe('JournalEntryDetailScreen', () => {
       isSystemManaged: true,
     })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const original = journalEntryRepository.create({
+    journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: '食事代',
       householdMemberId: member.id,
@@ -591,7 +474,6 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
         { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
       ],
-      links: [{ fromLineIndex: 2, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
     // 実際の精算画面(buildSettlementJournalEntryInput)と同じ形: 立替金(負債)行に
     // 同じbatch.id・householdMemberIdをタグ付けするだけで、journal_entry_linksは作らない。
@@ -637,7 +519,7 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: cash.id, side: 'credit', amount: 1000 },
       ],
     })
-    journalEntryRepository.create({
+    const splitEntry = journalEntryRepository.create({
       entryDate: '2026-08-02',
       memo: '割勘',
       householdMemberId: member.id,
@@ -647,13 +529,14 @@ describe('JournalEntryDetailScreen', () => {
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
         { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
       ],
-      links: [{ fromLineIndex: 2, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
+    // 本番(ExpenseSplittingForm)が割勘仕訳作成時に行う自動グルーピングを模擬する(計画Issue #138)
+    journalEntryLinkGroupRepository.createGroup([original.id, splitEntry.id])
 
     renderScreen(original.id)
 
     expect(await screen.findByText('この支出から生まれた割勘')).toBeInTheDocument()
-    expect(screen.getByText('2026-08-02')).toBeInTheDocument()
+    expect(within(screen.getByText('この支出から生まれた割勘').closest('div')!).getByText('2026-08-02')).toBeInTheDocument()
   })
 
   it('戻るボタンを押すとonBackが呼ばれる', async () => {

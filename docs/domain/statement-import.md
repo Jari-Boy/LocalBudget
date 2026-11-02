@@ -106,7 +106,7 @@ CSV文字列を「行×列」の生データ(セル値の文字列の二次元�
    > 取引先が特定できないレコード([1.7](#17-相手勘定科目サジェストの範囲)参照)が複数件ある場合、正規化後の摘要文字列でレコードをグルーピングし、「同じ摘要の明細がN件あります。まとめて取引先/相手科目を割り当てますか?」とまとめて確認できるようにする。1件ずつ確認する場合と比べ、初回取込での操作回数を実質「ユニークな摘要の数」まで減らせる。
    >
    > マッチしなかった明細に対して1件ずつ手動選択を強いる従来のフローの負担を軽減するための、レビュー画面側のUX上の対応であり、データモデル(`counterparty_patterns`・`default_account_id`)への変更は不要である。ユーザーが手動確定すると、いずれにせよ[counterparties.md 1.3](./counterparties.md#13-外部明細取込との関係)の学習によりパターンが登録されるため、次回以降は自動マッチの対象が増えていく。
-7. **永続化**: 確定した内容を`JournalEntryRepository`に渡し、[journal.md 1.3 貸借バランスの検証](./journal.md#13-貸借バランスの検証)を経て`journal_entries`(`source_type = 'external_import'`、[journal.md 1.7](./journal.md#17-作成経路source_type)参照)・`journal_lines`・`external_transaction_refs`を同一トランザクションで書き込む。手順5-aで未消込の未払金・未収金を消込対象として選んだ場合は、あわせて`journal_entry_links`(`link_type = 'settles'`、[journal.md 1.8](./journal.md#18-仕訳間の関係journal_entry_links)参照)も書き込む
+7. **永続化**: 確定した内容を`JournalEntryRepository`に渡し、[journal.md 1.3 貸借バランスの検証](./journal.md#13-貸借バランスの検証)を経て`journal_entries`(`source_type = 'external_import'`、[journal.md 1.7](./journal.md#17-作成経路source_type)参照)・`journal_lines`・`external_transaction_refs`を同一トランザクションで書き込む。手順5-aで未消込の未払金・未収金を消込対象として選んだ場合は、あわせて一時勘定行に`settlement_batch_id`タグを付与し、タグ集計方式([settlement.md](./settlement.md)参照)で対応関係を表現する
 
 ### 1.6 重複防止フロー
 

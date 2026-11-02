@@ -14,11 +14,11 @@
    - [1.5 仕訳の編集・削除](#15-仕訳の編集削除)
    - [1.6 外部明細取込との関係](#16-外部明細取込との関係)
    - [1.7 作成経路(source_type)](#17-作成経路source_type)
-   - [1.8 仕訳間の関係(journal_entry_links)](#18-仕訳間の関係journal_entry_links)
+   - [1.8 関連仕訳グループ(journal_entry_link_groups)](#18-関連仕訳グループjournal_entry_link_groups)
 2. [仕訳マスタ(journal_entries・journal_lines)](#2-仕訳マスタjournal_entriesjournal_lines)
    - [2.1 フィールド定義](#21-フィールド定義)
    - [2.2 DDL](#22-ddl)
-   - [2.3 仕訳間の関係マスタ(journal_entry_links)](#23-仕訳間の関係マスタjournal_entry_links)
+   - [2.3 関連仕訳グループマスタ(journal_entry_link_groups)](#23-関連仕訳グループマスタjournal_entry_link_groups)
 3. [仕訳の下書き(journal_entry_drafts)](#3-仕訳の下書きjournal_entry_drafts)
    - [3.1 位置づけ](#31-位置づけ)
    - [3.2 ライフサイクル](#32-ライフサイクル)
@@ -102,11 +102,11 @@
 - 明細行を編集する場合も、保存前に[1.3](#13-貸借バランスの検証)のバランス検証を通す。
 - 編集のたびに`journal_entries.updated_at`を更新する(明細行自体は`updated_at`を持たない。[2.1 フィールド定義](#21-フィールド定義)参照)。
 
-**物理削除は常に許可する**([GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)で決着)。反対仕訳を挟むことは強制しない。日常的な訂正では`journal_entry_links`を作らず、物理削除・直接編集のみで完結させる。
+**物理削除は常に許可する**([GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)で決着)。反対仕訳を挟むことは強制しない。日常的な訂正では関連仕訳グループを作らず、物理削除・直接編集のみで完結させる。
 
-**`JournalEntryRepository.deleteByProjectId(projectId)`で、あるプロジェクト([projects.md 1章](./projects.md#1-プロジェクト))にタグ付けされた仕訳をまとめて物理削除できる**([GitHub Issue #52](https://github.com/Jari-Boy/LocalBudget/issues/52)で決着)。誤って投入した割勘バッチ([expense-splitting.md 1.2 一時勘定(立替金)](./expense-splitting.md#12-一時勘定立替金)参照、割勘バッチは立替金行にタグ付けられた`project_id`で識別される)を1件ずつ`delete(id)`で消す代わりに、対象`project_id`が`journal_lines.project_id`にタグ付けされた`journal_entries`を一括で取り消せる。`SqlJsJournalEntryRepository`の実装は、単一のDBトランザクション(BEGIN〜COMMIT)内で対象仕訳をまとめてDELETEするall-or-nothing方式であり、`journal_lines`・`journal_entry_links`への波及は既存の`ON DELETE CASCADE`([2.3](#23-仕訳間の関係マスタjournal_entry_links))にすべて委ねる。上記の「物理削除は常に許可する」方針をそのまま踏襲するため、削除対象に精算済み(`settles`リンクを持つ)仕訳が混在していてもガードしない。対象`project_id`を持つ仕訳が0件の場合は何もせず正常終了する([expense-splitting.md 1.5 割勘の履歴と取り消し](./expense-splitting.md#15-割勘の履歴と取り消し)も参照)。
+**`JournalEntryRepository.deleteByProjectId(projectId)`で、あるプロジェクト([projects.md 1章](./projects.md#1-プロジェクト))にタグ付けされた仕訳をまとめて物理削除できる**([GitHub Issue #52](https://github.com/Jari-Boy/LocalBudget/issues/52)で決着)。誤って投入した割勘バッチ([expense-splitting.md 1.2 一時勘定(立替金)](./expense-splitting.md#12-一時勘定立替金)参照、割勘バッチは立替金行にタグ付けられた`project_id`で識別される)を1件ずつ`delete(id)`で消す代わりに、対象`project_id`が`journal_lines.project_id`にタグ付けされた`journal_entries`を一括で取り消せる。`SqlJsJournalEntryRepository`の実装は、単一のDBトランザクション(BEGIN〜COMMIT)内で対象仕訳をまとめてDELETEするall-or-nothing方式であり、`journal_lines`・`journal_entry_link_group_memberships`への波及は既存の`ON DELETE CASCADE`([2.3](#23-関連仕訳グループマスタjournal_entry_link_groups))にすべて委ねる。上記の「物理削除は常に許可する」方針をそのまま踏襲するため、削除対象に精算済み仕訳が混在していてもガードしない。対象`project_id`を持つ仕訳が0件の場合は何もせず正常終了する([expense-splitting.md 1.5 割勘の履歴と取り消し](./expense-splitting.md#15-割勘の履歴と取り消し)も参照)。
 
-[accounts.md 2.1](./accounts.md#21-操作ルール)の「別科目への実質変更」は反対仕訳([1.8](#18-仕訳間の関係journal_entry_links)の`reverses`)で扱う。これは科目マスタ側の大量の過去仕訳を一括付け替えする特殊な操作の文脈である。1件の仕訳を日常的に編集・削除する場面にまで同じ重さを求めると、入力ミスの訂正が煩雑になり、[domain.md 1.1 基本方針](../domain.md#11-基本方針)の「会計知識のない一般ユーザーにも使える」という方針に反する。[1.8](#18-仕訳間の関係journal_entry_links)の通り、フィールド単位の変更履歴(何をいつ変更したか)は引き続き持たない。
+[accounts.md 2.1](./accounts.md#21-操作ルール)の「別科目への実質変更」は反対仕訳([1.8](#18-関連仕訳グループjournal_entry_link_groups)の`reverses`)で扱う。これは科目マスタ側の大量の過去仕訳を一括付け替えする特殊な操作の文脈である。1件の仕訳を日常的に編集・削除する場面にまで同じ重さを求めると、入力ミスの訂正が煩雑になり、[domain.md 1.1 基本方針](../domain.md#11-基本方針)の「会計知識のない一般ユーザーにも使える」という方針に反する。[1.8](#18-関連仕訳グループjournal_entry_link_groups)の通り、フィールド単位の変更履歴(何をいつ変更したか)は引き続き持たない。
 
 **`source_type = 'external_import'`の仕訳(外部明細取込由来)も、`is_reconcilable`資産側の`account_id`/`amount`/`side`や`entry_date`を含め編集を許可する**(Issue #1で決着)。ただし編集すると、対応する`external_transaction_refs`が指す元のCSV明細との対応が崩れるため、UI上で警告する。[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)の「CSV由来のみ許可」はあくまで**作成経路(`source_type`)**の制約であり、事後の内容がCSVの生データと一致し続けることまでは保証しない。内容が誤っていた場合、削除して正しい内容で再取込する([reconciliation.md 1.4](./reconciliation.md#14-ライフサイクル)参照)か、その場で編集するかはユーザーの選択に委ねる。
 
@@ -131,31 +131,28 @@
 > **なぜ`external_transaction_refs`の存在ではなく`source_type`で判定するか**
 > 以前は「is_reconcilable = trueの科目を使う行に対応する`external_transaction_refs`があるか」を根拠にしていたが、これは「作成経路(この仕訳はどうやって生まれたか)」と「外部データとの突合材料(この科目の残高は外部の何と一致するはずか)」という別々の関心事を1つのテーブルに同居させていた。両者が食い違うケース(初期残高・残高調整の仕訳のように、is_reconcilable = true科目を使う仕訳でも対応する外部CSV行が存在しない場合等)で無理が生じていた。`source_type`は前者(作成経路)だけを担い、`external_transaction_refs`([reconciliation.md 2章](./reconciliation.md#2-突合マスタexternal_transaction_refs)参照)は後者(突合材料)だけを担うことで関心事を分離する。仕訳が複数のis_reconcilable = true科目にまたがる場合(口座間振替等)も、仕訳単位の`source_type`が1回チェックされるだけで済み、行ごとに参照の有無を確認する必要がない。
 
-### 1.8 仕訳間の関係(journal_entry_links)
+### 1.8 関連仕訳グループ(journal_entry_link_groups)
 
-消込・按分のように、ある仕訳の明細行が別の仕訳の明細行と関係を持つ場合、その関係を`journal_entry_links`([2.3](#23-仕訳間の関係マスタjournal_entry_links)参照)に記録する。関係は**明細行(JournalLine)単位**(`from_line_id`・`to_line_id`)で記録する(計画Issue #132)。以前は仕訳単位(`from_entry_id`・`to_entry_id`)で記録していたが、1件の仕訳が複数の一時勘定行(科目・世帯メンバーが異なる行)を持つ場合、どの行を対象にした関係かをリンク単体から区別できず、呼び出し側で絞り込みを行う回避策が必要になっていた(いずれも計画Issue #132で解消)。行単位にしたことで、これらの回避策は構造的に不要になった。
+消込・按分といった残高計算・消込判定(複式簿記の整合性検証、[1.3](#13-貸借バランスの検証))は、`settlement_batch_id`タグの集計方式([settlement.md](./settlement.md)参照)が全面的に担う。一方で「ある仕訳に関連する他の仕訳をユーザーが一覧表示できる」という表示専用の役割は、**関連仕訳グループ**(`journal_entry_link_groups`、[2.3](#23-関連仕訳グループマスタjournal_entry_link_groups)参照)という多対多のグルーピングで表現する(計画Issue #138)。
 
-> **計画Issue #133での訂正(暫定)**: `settles`リンクが担っていた消込残高の計算・タグ整合性の検証という役割は、計画Issue #133で`settlement_batch_id`タグの集計方式([settlement.md](./settlement.md)参照)に置き換わった。以下の記述のうち`settles`固有のタグ検証(`household_member_id`・`counterparty_id`・`project_id`の一致)は現在は行われない。`journal_entry_links`テーブル自体・`settles`/`allocates`の役割分担の全面的な整理は後続の計画Issue(#138、関連仕訳グループの導入)で行う。
+> **経緯(journal_entry_linksからの置き換え)**
+> 以前は明細行(JournalLine)単位の`journal_entry_links`(`settles`/`allocates`の2種、計画Issue #132)が、残高計算・消込検証・関連仕訳の表示を兼ねていた。残高計算・消込検証の役割は計画Issue #133で`settlement_batch_id`タグの集計方式に完全移管され、表示専用の役割だけが残っていた。計画Issue #138で、この表示専用の役割のためだけに行対行の厳密な検証(科目一致・貸借逆・金額上限)を伴う重いテーブルを維持する必要はないと判断し、`journal_entry_links`テーブル自体・関連する検証コード(`JournalEntryLinkLineError`等)・`JournalEntryDetailScreen`のリンク削除警告UI(2段階ボタン確認フロー)を完全に撤廃した。設計判断の経緯(単一FK方式・自己参照FK方式を検討して却下した理由)は`docs/decisions.md`(2026-11-02)参照。
 
-- `settles`(消込): `from_line`(消込仕訳側の明細行)が`to_line`(未払金・未収金・カード利用明細等の元仕訳の明細行)を消し込む。1件の消込が複数の元仕訳の行を一括で消し込む複合仕訳もあれば(多対一)、逆に1件の元仕訳の行が分割払いのように複数回のCSV取込にまたがって段階的に消し込まれることもある(一対多)。`to_line_id`にユニーク制約は課さず、いずれの方向の一対多・多対一も同じテーブル構造で表現する([settlement.md](./settlement.md)参照)。`amount`に消込額を持ち、金額が一致しない部分消込([settlement.md 消込は金額が一致するとは限らない](./settlement.md#12-家賃給与の例)参照)や、複数回にわたる分割消込の完了判定([settlement.md 1.6 分割消込](./settlement.md#16-分割消込消込残高による完了判定)参照)も表現できる。
-- `allocates`(按分): `from_line`(割勘仕訳側の明細行)が`to_line`(按分対象の元の支出仕訳の明細行)の一部を按分する対象であることを示す。元仕訳自体は変更せず、按分は追加の仕訳として積む([expense-splitting.md](./expense-splitting.md)参照)。1回の割勘バッチが複数の元仕訳の行をまとめて対象にすることもあるため、`settles`と同様に一対多になりうる。`amount`にはその元仕訳の行に対する按分額を持つ。
+- 関連仕訳グループは**仕訳(JournalEntry)単位**の関連付けであり、明細行単位ではない。`link_type`(種別タグ)は持たず、「関連している」という緩い関係のみを表す。
+- 1つの仕訳が複数のグループに同時に所属できる(所属数の上限なし)。これにより、例えば1つの口座引き落とし仕訳(精算仕訳)が、無関係な2つの異なる精算バッチ(それぞれ別のグループ)の両方を同時に消し込むようなケースでも、精算仕訳がその2つのグループへそれぞれ参加するだけで表現でき、無関係な2つのグループ自体が意図せず統合されることはない。
+- 用途は表示専用。仕訳詳細画面(`JournalEntryDetailScreen`)で「この仕訳に関連する他の仕訳」を、所属する全グループ分を合算して一覧表示するためだけに使う。残高計算・消込判定には一切関与しない。
+- 作成契機: 割勘([expense-splitting.md](./expense-splitting.md)参照)の仕訳を作成する際は、システムが自動的にグループを作成・参加させ、関連する仕訳(元仕訳・割勘仕訳・精算仕訳)を同じグループに所属させる。それ以外のケースでは、ユーザーが仕訳詳細画面から既存の仕訳を検索して手動で関連付け、グループを作成・参加させる。
+- グループへの参加/新規作成の判定は、ドメイン層の純粋関数`planJoinOrCreateGroups`(`src/domain/journal-link-group/`)が担う。anchorEntryIds(既存の仕訳群)の既存グループを調べ、1つも無ければanchor・newEntryIdsをまとめた新規グループを作成し、1つ以上あればそれら全てのグループへnewEntryIdsを参加させる(anchor自身は既存グループへ追加しない)。`JournalEntryLinkGroupRepository.joinOrCreateGroups`がこの判定に従ってDB書き込みを行う単一のエントリポイントであり、割勘の自動グルーピング(`ExpenseSplittingForm`・`SettlementScreen`)・仕訳詳細画面からの手動関連付けの両方から使われる。
+- メンバーが0件になったグループ(全メンバーの仕訳が削除された等)は、DBトリガー(`journal_entry_link_groups_delete_when_empty`、[2.3](#23-関連仕訳グループマスタjournal_entry_link_groups)参照)により自動的に削除される。
 
-ある仕訳の詳細画面から関連する仕訳を辿るトラバーサルは、`from_line_id`・`to_line_id`が属する仕訳id(`from_entry_id`・`to_entry_id`)を`journal_lines`とのJOINで導出して行う(DBには仕訳idを保持しない、[2.3](#23-仕訳間の関係マスタjournal_entry_links)参照)。複式簿記の整合性検証([1.3](#13-貸借バランスの検証))自体には関与しない。
-
-> **リンク作成時のハード検証(明細行単位、計画Issue #132・#133)**
-> `JournalEntryRepository`がリンクを作成する時点で、`from_line`・`to_line`の科目が一致し貸借が逆であること、`from_line`から出るリンクの金額合計(既存分+今回分)が`from_line.amount`を超えないことを検証する。この検証は`settles`・`allocates`両リンクタイプに共通する。`settles`リンクが以前行っていた消込先の一時勘定判定・タグ(`household_member_id`・`counterparty_id`・`project_id`)一致の検証は、計画Issue #133で`settlement_batch_id`タグの集計方式([settlement.md](./settlement.md)参照)に役割が移ったため撤廃した。いずれも検証に失敗すると書き込みを行わない([1.3](#13-貸借バランスの検証)と同じ「書き込み直前に検証し、不一致なら書き込みを行わない」パターン)。
-
-> **settlesリンクは消込仕訳自体の作成と同一トランザクションで書き込まれる**
-> `settles`リンクは、消込仕訳自体の仕訳ヘッダー・明細行の書き込みと同じDBトランザクション内でまとめて書き込む。これは上記のハード検証が失敗した場合に、仕訳・明細・リンクのいずれもコミットされないことを保証するためである。作成済みの2つの仕訳間へ事後的にリンクを追加する場合(例: `allocates`の追加付与)はこの限りではなく、独立したトランザクションで作成する。
-
-> **明細行の削除はリンクを連鎖削除する。削除自体は妨げない**
-> `journal_entry_links`の`from_line_id`・`to_line_id`は`journal_lines`への`ON DELETE CASCADE`であるため、リンクが付いた明細行が削除されると([2.1](#21-フィールド定義)の行単位差分更新によるDELETE、または仕訳自体の物理削除)、そのリンクも自動的に削除される。[1.5 仕訳の編集・削除](#15-仕訳の編集削除)の「編集・削除は常に可能」方針をそのまま踏襲し、これを妨げるロックは設けない。画面側(`JournalEntryDetailScreen`)は`findLinkedLinesToRemove`で保存前にこれを検知し、警告を表示したうえでユーザーの承認を得てから削除を実行する([settlement.md 1.8 タグの編集について](./settlement.md#18-タグの編集について)の「編集は妨げない」方針と同じ考え方)。
+> **仕訳削除時のON DELETE CASCADE**
+> `journal_entry_link_group_memberships`の`journal_entry_id`は`journal_entries`への`ON DELETE CASCADE`であるため、仕訳が物理削除されると、その仕訳の所属行だけが削除される(他の仕訳の所属には影響しない)。[1.5 仕訳の編集・削除](#15-仕訳の編集削除)の「編集・削除は常に可能」方針をそのまま踏襲し、これを妨げるロックは設けない。journal_entry_links時代にあった保存前の警告UI(`findLinkedLinesToRemove`)は、関連仕訳グループが仕訳単位(明細行単位ではない)の緩い関連付けであり、仕訳の更新操作で明細行が削除されてもグループ所属には影響しないため、前提自体が成立せず廃止した。
 
 > **監査ログ(誰が・いつ・何を変更したか)とは別物**
-> [1.5 仕訳の編集・削除](#15-仕訳の編集削除)の通り、フィールド単位の変更履歴(何をいつ変更したか)は持たない。`journal_entry_links`が記録するのは「独立した仕訳の明細行同士がどう関係するか」であり、1件の仕訳自体の編集履歴ではない。日常的な入力ミスの訂正(物理削除・直接編集)には`journal_entry_links`を作らず、[1.5](#15-仕訳の編集削除)の軽い訂正フローのままにする。
+> [1.5 仕訳の編集・削除](#15-仕訳の編集削除)の通り、フィールド単位の変更履歴(何をいつ変更したか)は持たない。関連仕訳グループが記録するのは「独立した仕訳同士がどう関連するか」であり、1件の仕訳自体の編集履歴ではない。
 >
 > **`reverses`(反対仕訳)は持たない**
-> 以前は科目統合([accounts.md 2.1](./accounts.md#21-操作ルール)の「別科目への実質変更」)のために反対仕訳+再計上という方式を想定していたが、これは仕訳件数が最大3倍に膨らむ割に、家計簿アプリの利用者層には監査証跡としての価値が薄いと判断した。科目統合・取引先統合は直接UPDATE+操作ログ([accounts.md 2.2](./accounts.md#22-過去仕訳の付け替え)・[counterparties.md 1.5](./counterparties.md#15-ライフサイクル)参照)に置き換え、`reverses`の唯一の用途が消滅したため設計から削除した。厳密な反対仕訳による訂正をしたいユーザーは、`journal_entry_links`を介さない通常の手入力仕訳として自分で管理すればよい。
+> 以前は科目統合([accounts.md 2.1](./accounts.md#21-操作ルール)の「別科目への実質変更」)のために反対仕訳+再計上という方式を想定していたが、これは仕訳件数が最大3倍に膨らむ割に、家計簿アプリの利用者層には監査証跡としての価値が薄いと判断した。科目統合・取引先統合は直接UPDATE+操作ログ([accounts.md 2.2](./accounts.md#22-過去仕訳の付け替え)・[counterparties.md 1.5](./counterparties.md#15-ライフサイクル)参照)に置き換え、`reverses`の唯一の用途が消滅したため設計から削除した。厳密な反対仕訳による訂正をしたいユーザーは、通常の手入力仕訳として自分で管理すればよい。
 
 ---
 
@@ -194,7 +191,7 @@
 > 明細行自体には`updated_at`を持たせない。明細の変更は「仕訳ヘッダー配下の行構成をまるごと差し替える」操作としてRepository層が扱い、変更の痕跡は親である`journal_entries.updated_at`側に集約する([1.5](#15-仕訳の編集削除)参照)。
 >
 > **`journal_lines.id`は更新時に行ごとの差分更新で維持される(計画Issue #132)**
-> `JournalEntryRepository.update`は、入力行が持つ`id`を既存行と対応付け、該当する既存行はUPDATE(idを維持)、`id`を持たない入力行はINSERT(新規採番)、入力に含まれなかった既存行はDELETEする差分更新である。これにより、日付・メモ・金額の修正だけでは明細行のidが変わらず、その行を指す`journal_entry_links`([1.8](#18-仕訳間の関係journal_entry_links)参照)が意図せず失われることはない。リンクが付いた行がDELETE対象になる場合は`ON DELETE CASCADE`によりリンクも一緒に削除されるため、画面側は保存前に警告したうえで削除自体は妨げない(`findLinkedLinesToRemove`、[settlement.md 1.8 タグ不整合の予防と検知](./settlement.md#18-タグ不整合の予防と検知)の「編集は妨げない」方針)。
+> `JournalEntryRepository.update`は、入力行が持つ`id`を既存行と対応付け、該当する既存行はUPDATE(idを維持)、`id`を持たない入力行はINSERT(新規採番)、入力に含まれなかった既存行はDELETEする差分更新である。関連仕訳グループ(計画Issue #138)は仕訳単位の関連付けであり明細行のidには依存しないため、この差分更新で行idが変わっても(あるいは行が削除されても)グループ所属には影響しない。
 
 ### 2.2 DDL
 
@@ -206,29 +203,36 @@
 > **科目の既定値がある明細行への異なる世帯メンバーの指定はDBトリガーで拒否する**
 > [household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)の通り、科目(`accounts.household_member_id`)に既定値がある場合、その科目を使う`journal_lines.household_member_id`は科目の既定値と異なる値を明示指定できない(`prevent_household_member_override_on_default_account_line_insert`/`_update`トリガー、`counterparty_id`のPL科目限定制約と同じINSERT/UPDATE両対応のTRIGGERパターン)。`NULL`(未指定)または科目の既定値と同じ値は許可する。
 
-### 2.3 仕訳間の関係マスタ(journal_entry_links)
+### 2.3 関連仕訳グループマスタ(journal_entry_link_groups)
 
-[1.8 仕訳間の関係](#18-仕訳間の関係journal_entry_links)の通り、消込・按分といった仕訳同士の関係を記録する。
+[1.8 関連仕訳グループ](#18-関連仕訳グループjournal_entry_link_groups)の通り、仕訳同士の緩い関連付けを多対多で記録する(計画Issue #138)。
 
 **フィールド定義**
+
+**journal_entry_link_groups**
 
 | カラム | 内容 | 制約・備考 |
 |---|---|---|
 | `id` | ID | PK |
-| `from_line_id` | 関係の起点となる明細行 | FK(`journal_lines.id`)、親削除時CASCADE。消込なら消込仕訳側の明細行、按分なら割勘仕訳側の明細行(計画Issue #132) |
-| `to_line_id` | 関係の対象となる明細行 | FK(`journal_lines.id`)、親削除時CASCADE。消込なら元の利用明細等の仕訳の明細行、按分なら按分対象の元の支出仕訳の明細行(計画Issue #132) |
-| `link_type` | 関係の種別 | ENUM: `settles`(消込)/`allocates`(按分、[expense-splitting.md](./expense-splitting.md)参照) |
-| `amount` | 関係する金額 | 必須。`settles`は消込額(部分消込を表現できる)、`allocates`はその元仕訳の行に対する按分額 |
 | `created_at` | 作成日時 | |
 
-> `from_line_id`・`to_line_id`が属する仕訳id(`from_entry_id`・`to_entry_id`)はDBに保持せず、仕訳単位のトラバーサルが必要な場合は`journal_lines`とのJOINで導出する([1.8](#18-仕訳間の関係journal_entry_links)参照)。
+**journal_entry_link_group_memberships**
+
+| カラム | 内容 | 制約・備考 |
+|---|---|---|
+| `id` | ID | PK |
+| `link_group_id` | 所属するグループ | FK(`journal_entry_link_groups.id`)、親削除時CASCADE |
+| `journal_entry_id` | 所属する仕訳 | FK(`journal_entries.id`)、親削除時CASCADE |
+| `created_at` | 作成日時 | |
+
+`(link_group_id, journal_entry_id)`にUNIQUE制約を課し、同じ仕訳が同じグループに重複して所属することを防ぐ。
 
 **DDL**
 
 実装: [schema/journal.sql](../schema/journal.sql)
 
-> **`journal_entries`(またはその明細行)が削除されたら関係も消える**
-> `journal_lines`の`journal_entries`への`ON DELETE CASCADE`と、`journal_entry_links`の`journal_lines`への`ON DELETE CASCADE`が連鎖することで、`from_line_id`・`to_line_id`いずれかの明細行(またはその仕訳自体)が削除されると、その関係行も自動的に削除される。[1.5 仕訳の編集・削除](#15-仕訳の編集削除)の通り仕訳の物理削除は常に許可され、[2.1](#21-フィールド定義)の通り仕訳の更新も行idによる差分更新で明細行のDELETEを伴いうるため、削除後に関係だけが宙に浮いた状態(存在しない明細行を指す行)が残ることはない。
+> **仕訳が削除されたら所属行も消え、メンバー0件のグループは自動的に削除される**
+> `journal_entry_link_group_memberships`の`journal_entry_id`は`journal_entries`への`ON DELETE CASCADE`であるため、仕訳が物理削除されると、その仕訳の所属行だけが削除される(他の仕訳の所属には影響しない)。さらに、ある`link_group_id`の所属行が1件も残らなくなった時点で、トリガー(`journal_entry_link_groups_delete_when_empty`)が`journal_entry_link_groups`側の該当行も削除する。これにより、全メンバーが削除されたグループが孤立したまま残り続けることはない([1.8](#18-関連仕訳グループjournal_entry_link_groups)の懸念点「グループに所属する仕訳が0件になった場合の後始末」への対応)。
 
 ---
 

@@ -6,6 +6,7 @@ import type { CreateJournalEntryInput, JournalEntry } from '../../domain/journal
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import { findUnsettledSettlementBatchBalances } from '../../domain/settlement-batch/findUnsettledSettlementBatchBalances'
 import { buildSettlementJournalEntryInput } from '../../domain/settlement/buildSettlementJournalEntryInput'
+import { findEntryIdsWithSettlementTag } from '../../domain/expense-splitting/findEntryIdsWithSettlementTag'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import './SettlementScreen.css'
 
@@ -22,12 +23,16 @@ interface JournalEntryFinder {
   findAll(): JournalEntry[] | Promise<JournalEntry[]>
   create(input: CreateJournalEntryInput): JournalEntry | Promise<JournalEntry>
 }
+interface JournalEntryLinkGroupJoiner {
+  joinOrCreateGroups(anchorEntryIds: readonly number[], newEntryIds: readonly number[]): void | Promise<void>
+}
 
 export interface SettlementScreenProps {
   settlementBatchRepository: SettlementBatchFinder
   accountRepository: AccountFinder
   householdMemberRepository: HouseholdMemberFinder
   journalEntryRepository: JournalEntryFinder
+  journalEntryLinkGroupRepository: JournalEntryLinkGroupJoiner
   onBack: () => void
   /** 精算仕訳の取引日の既定値(YYYY-MM-DD)。省略時は本日の日付 */
   today?: string
@@ -70,6 +75,7 @@ export function SettlementScreen({
   accountRepository,
   householdMemberRepository,
   journalEntryRepository,
+  journalEntryLinkGroupRepository,
   onBack,
   today,
 }: SettlementScreenProps) {
@@ -186,7 +192,26 @@ export function SettlementScreen({
     setSubmitting(true)
     setError(null)
     try {
-      await journalEntryRepository.create(input)
+      const createdEntry = await journalEntryRepository.create(input)
+      /**
+       * この精算仕訳が実際に解消する対象(同じタグ(settlementBatchId・科目・世帯メンバー)を
+       * 持つ割勘仕訳・既存の精算仕訳)を特定し、それらと同じ関連仕訳グループへ参加させる
+       * (計画Issue #138)。対象がそれぞれ別のグループに属していても(例: 同一バッチへの
+       * 複数回の割勘)、それらのグループ自体を統合せず、この精算仕訳が橋渡しするだけに
+       * とどめる(JournalEntryLinkGroupRepository.joinOrCreateGroupsのJSDoc参照、無関係な
+       * 精算バッチ同士が意図せず結合されることを防ぐ)。
+       */
+      const allEntries = await Promise.resolve(journalEntryRepository.findAll())
+      const allLines = allEntries.flatMap((entry) => entry.lines)
+      const relatedEntryIds = findEntryIdsWithSettlementTag(allLines, {
+        settlementBatchId,
+        accountId: settlementAccountId,
+        householdMemberId: row.householdMemberId,
+        counterpartyId: null,
+      })
+      if (relatedEntryIds.length > 0) {
+        await journalEntryLinkGroupRepository.joinOrCreateGroups(relatedEntryIds, [createdEntry.id])
+      }
       setExpandedRowKey(null)
       loadUnsettled(settlementBatchId, settlementAccountId, settlementSide)
     } catch {

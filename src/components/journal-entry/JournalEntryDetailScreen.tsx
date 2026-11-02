@@ -4,11 +4,12 @@ import type { Account } from '../../domain/account/Account'
 import type { Counterparty, CreateCounterpartyInput } from '../../domain/counterparty/Counterparty'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { JournalEntry, JournalLineInput, JournalLineSide, UpdateJournalEntryInput } from '../../domain/journal/JournalEntry'
-import type { JournalEntryLink } from '../../domain/journal/JournalEntryLink'
+import type { JournalEntryLinkGroupMembership } from '../../domain/journal-link-group/JournalEntryLinkGroup'
 import type { Project } from '../../domain/project/Project'
 import { hasAnySettlementActivity } from '../../domain/expense-splitting/hasAnySettlementActivity'
+import { isExpenseSplitEntry } from '../../domain/expense-splitting/isExpenseSplitEntry'
 import { traceExpenseSplittingHistory } from '../../domain/expense-splitting/traceExpenseSplittingHistory'
-import { findLinkedLinesToRemove, type LinkedLineToRemove } from '../../domain/journal/findLinkedLinesToRemove'
+import { buildRelatedEntryIdsByEntryId } from '../../domain/journal-link-group/buildRelatedEntryIdsByEntryId'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { JournalEntryLinesTable, type JournalEntryLineRow } from './JournalEntryLinesTable'
@@ -24,9 +25,15 @@ import './JournalEntryDetailScreen.css'
 interface JournalEntryFinder {
   findById(id: number): JournalEntry | null | Promise<JournalEntry | null>
   findAll(): JournalEntry[] | Promise<JournalEntry[]>
-  listLinksForEntry(entryId: number): JournalEntryLink[] | Promise<JournalEntryLink[]>
   update(id: number, input: UpdateJournalEntryInput): JournalEntry | Promise<JournalEntry>
   delete(id: number): void | Promise<void>
+}
+interface JournalEntryLinkGroupFinder {
+  findAllMemberships(): JournalEntryLinkGroupMembership[] | Promise<JournalEntryLinkGroupMembership[]>
+  joinOrCreateGroups(
+    anchorEntryIds: readonly number[],
+    newEntryIds: readonly number[],
+  ): void | Promise<void>
 }
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
@@ -45,6 +52,7 @@ interface CounterpartyFinder {
 export interface JournalEntryDetailScreenProps {
   entryId: number
   journalEntryRepository: JournalEntryFinder
+  journalEntryLinkGroupRepository: JournalEntryLinkGroupFinder
   accountRepository: AccountFinder
   projectRepository: ProjectFinder
   householdMemberRepository: HouseholdMemberFinder
@@ -52,6 +60,8 @@ export interface JournalEntryDetailScreenProps {
   onBack: () => void
   /** 精算前の割勘仕訳を取り消し(物理削除)した後に呼ばれる */
   onDeleted?: () => void
+  /** 「関連する仕訳」一覧のいずれかの行を選んだ際に呼ばれる(その仕訳の詳細画面への遷移を想定) */
+  onSelectRelatedEntry?: (entry: JournalEntry) => void
 }
 
 interface LoadedData {
@@ -61,7 +71,7 @@ interface LoadedData {
   householdMembers: HouseholdMember[]
   counterparties: Counterparty[]
   allEntries: JournalEntry[]
-  linksByEntryId: Map<number, JournalEntryLink[]>
+  relatedEntryIdsByEntryId: Map<number, Set<number>>
 }
 
 interface EditState {
@@ -84,22 +94,31 @@ function buildLineStates(lines: JournalEntry['lines'], lineKeyRef: { current: nu
  * 行の追加・削除・各セルの編集後に「更新する」操作でJournalEntryRepository.update
  * へ送信する。起票者(householdMemberId)はUpdateJournalEntryInputが対応していないため
  * 変更不可(JournalEntryLinesTableのonHeaderHouseholdMemberChangeを渡さないことで
- * 読み取り専用にする)。この仕訳が割勘仕訳(allocatesリンクのfrom_entry側)である
- * 場合、精算済みかどうかに応じて取り消し導線(精算前は物理削除、精算後は返金案内)を
- * 出し分ける。この仕訳が元の支出仕訳である場合、そこから生まれた割勘・精算の履歴
- * (traceExpenseSplittingHistory、docs/domain/expense-splitting.md 1.5節)を表示する。
- * リンクの実体解決にはentries全体が必要なため、全仕訳・全リンクを読み込んでから
- * トレースする(docs/decisions.md 2026-08-01「journal_entry_linksの汎用トラバーサル」参照)。
+ * 読み取り専用にする)。この仕訳が割勘仕訳である場合、精算済みかどうかに応じて取り消し導線
+ * (精算前は物理削除、精算後は返金案内)を出し分ける。この仕訳が元の支出仕訳である場合、
+ * そこから生まれた割勘・精算の履歴(traceExpenseSplittingHistory、docs/domain/
+ * expense-splitting.md 1.5節)を表示する。
+ *
+ * 「関連する仕訳」一覧(計画Issue #138)は、journal_entry_links(行対行のハード検証、計画Issue
+ * #132・#133で残高計算・消込検証の役割を失い完全撤廃)に代わる関連仕訳グループ(多対多、
+ * 表示専用)に基づく。この仕訳が所属する全グループ分の関連仕訳を合算して一覧表示し、
+ * 既存の仕訳を検索して新たに関連付ける操作(手動でのグループ作成/参加、
+ * journalEntryLinkGroupRepository.joinOrCreateGroups)もここから行える。かつて存在した
+ * リンク削除警告UI(行削除時の2段階ボタン確認フロー)は、journal_entry_links自体の撤廃に伴い
+ * 廃止した(関連仕訳グループは明細行ではなく仕訳単位の緩い関連付けであり、仕訳の更新操作で
+ * 行が削除されてもグループ所属には影響しないため、警告の前提自体が成立しない)。
  */
 export function JournalEntryDetailScreen({
   entryId,
   journalEntryRepository,
+  journalEntryLinkGroupRepository,
   accountRepository,
   projectRepository,
   householdMemberRepository,
   counterpartyRepository,
   onBack,
   onDeleted,
+  onSelectRelatedEntry,
 }: JournalEntryDetailScreenProps) {
   const { t } = useTranslation('journal')
   const { t: tCommon } = useTranslation('common')
@@ -108,10 +127,9 @@ export function JournalEntryDetailScreen({
   const [isDeleting, setIsDeleting] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
-  const [pendingLinkRemoval, setPendingLinkRemoval] = useState<{
-    lines: JournalLineInput[]
-    removals: LinkedLineToRemove[]
-  } | null>(null)
+  const [relateTargetId, setRelateTargetId] = useState<number | null>(null)
+  const [isRelating, setIsRelating] = useState(false)
+  const [relateError, setRelateError] = useState<string | null>(null)
   const lineKeyRef = useRef(0)
 
   const load = () => {
@@ -122,32 +140,37 @@ export function JournalEntryDetailScreen({
       Promise.resolve(householdMemberRepository.findAll()),
       Promise.resolve(counterpartyRepository.findAll()),
       Promise.resolve(journalEntryRepository.findAll()),
-    ]).then(async ([entry, accounts, projects, householdMembers, counterparties, allEntries]) => {
+      Promise.resolve(journalEntryLinkGroupRepository.findAllMemberships()),
+    ]).then(([entry, accounts, projects, householdMembers, counterparties, allEntries, memberships]) => {
       if (entry === null) {
         setData(null)
         setEditState(null)
         return
       }
-      const linksByEntryId = new Map<number, JournalEntryLink[]>()
-      await Promise.all(
-        allEntries.map(async (candidate) => {
-          const links = await Promise.resolve(journalEntryRepository.listLinksForEntry(candidate.id))
-          linksByEntryId.set(candidate.id, links)
-        }),
-      )
-      setData({ entry, accounts, projects, householdMembers, counterparties, allEntries, linksByEntryId })
+      setData({
+        entry,
+        accounts,
+        projects,
+        householdMembers,
+        counterparties,
+        allEntries,
+        relatedEntryIdsByEntryId: buildRelatedEntryIdsByEntryId(memberships),
+      })
       setEditState({
         entryDate: entry.entryDate,
         memo: entry.memo ?? '',
         lineStates: buildLineStates(entry.lines, lineKeyRef),
       })
       setUpdateError(null)
+      setRelateTargetId(null)
+      setRelateError(null)
     })
   }
 
   useEffect(load, [
     entryId,
     journalEntryRepository,
+    journalEntryLinkGroupRepository,
     accountRepository,
     projectRepository,
     householdMemberRepository,
@@ -158,25 +181,26 @@ export function JournalEntryDetailScreen({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const { entry, accounts, projects, householdMembers, counterparties, allEntries, linksByEntryId } = data
+  const { entry, accounts, projects, householdMembers, counterparties, allEntries, relatedEntryIdsByEntryId } = data
 
-  const entryLinks = linksByEntryId.get(entry.id) ?? []
-  const isSplitEntry = entryLinks.some((link) => link.fromEntryId === entry.id && link.linkType === 'allocates')
+  const isSplitEntry = isExpenseSplitEntry(entry, accounts)
   /**
-   * 取り消し導線の安全判定は、journal_entry_linksのsettlesリンクではなく、
-   * settlement_batch_idタグの集計方式(計画Issue #133、hasAnySettlementActivity)で行う。
-   * 精算画面(SettlementScreen・buildSettlementJournalEntryInput)はもはやsettlesリンクを
-   * 作らず、精算仕訳の立替金行にsettlement_batch_idタグを付けるだけのため、旧来のsettles
-   * リンク判定のままでは精算後も常にfalse(未精算)と誤判定し、取り消し導線が安全に機能
-   * しなくなる(実機・E2Eレビューで発見)。「全ての一時勘定行が精算済み」を要求する
+   * 取り消し導線の安全判定は、settlement_batch_idタグの集計方式(計画Issue #133、
+   * hasAnySettlementActivity)で行う。「全ての一時勘定行が精算済み」を要求する
    * isExpenseSplittingEntrySettled(履歴画面向け)ではなく、「少なくとも1件の精算操作が
-   * 行われたか」を判定するhasAnySettlementActivityを使う。旧settlesリンク判定も
-   * 「1件でも存在すれば精算済み扱い」という同じ緩い意味論だったため、資産側・負債側の
-   * 片方だけを精算した状態でも取り消しを禁止する(どちらか一方でも精算が進んだ割勘仕訳を
-   * 物理削除すると、既に起票済みの精算仕訳が参照先を失うため)。
+   * 行われたか」を判定するhasAnySettlementActivityを使う(どちらか一方でも精算が進んだ
+   * 割勘仕訳を物理削除すると、既に起票済みの精算仕訳が参照先を失うため)。
    */
   const isSettled = hasAnySettlementActivity(entry, accounts, allEntries.flatMap((e) => e.lines))
-  const trails = traceExpenseSplittingHistory(entry, allEntries, linksByEntryId)
+  const trails = traceExpenseSplittingHistory(entry, allEntries, accounts, relatedEntryIdsByEntryId)
+
+  const entriesById = new Map(allEntries.map((candidate) => [candidate.id, candidate]))
+  const relatedEntries = [...(relatedEntryIdsByEntryId.get(entry.id) ?? [])]
+    .map((id) => entriesById.get(id))
+    .filter((candidate): candidate is JournalEntry => candidate !== undefined)
+  const relateCandidates = allEntries.filter(
+    (candidate) => candidate.id !== entry.id && !relatedEntries.some((related) => related.id === candidate.id),
+  )
 
   function handleDelete(): void {
     if (isDeleting) return
@@ -186,8 +210,27 @@ export function JournalEntryDetailScreen({
       .finally(() => setIsDeleting(false))
   }
 
+  /**
+   * 手動での関連付け(計画Issue #138)。選択した仕訳(relateTargetId)をこの仕訳と関連付ける。
+   * この仕訳が既存のグループに所属していればそのグループへ選択した仕訳を参加させ、
+   * 所属していなければ両方をメンバーとする新規グループを作成する
+   * (JournalEntryLinkGroupRepository.joinOrCreateGroupsの判定、anchor=この仕訳)。
+   */
+  async function handleRelate(): Promise<void> {
+    if (isRelating || relateTargetId === null) return
+    setIsRelating(true)
+    setRelateError(null)
+    try {
+      await Promise.resolve(journalEntryLinkGroupRepository.joinOrCreateGroups([entry.id], [relateTargetId]))
+      load()
+    } catch {
+      setRelateError(t('relateEntryError'))
+    } finally {
+      setIsRelating(false)
+    }
+  }
+
   function updateEditLine(key: number, updater: (line: JournalEntryFormLine) => JournalEntryFormLine): void {
-    setPendingLinkRemoval(null)
     setEditState((prev) =>
       prev === null
         ? prev
@@ -196,7 +239,6 @@ export function JournalEntryDetailScreen({
   }
 
   function addEditLine(side: JournalLineSide): void {
-    setPendingLinkRemoval(null)
     lineKeyRef.current += 1
     const key = lineKeyRef.current
     setEditState((prev) =>
@@ -207,7 +249,6 @@ export function JournalEntryDetailScreen({
   }
 
   function removeEditLine(key: number): void {
-    setPendingLinkRemoval(null)
     setEditState((prev) =>
       prev === null ? prev : { ...prev, lineStates: prev.lineStates.filter((state) => state.key !== key) },
     )
@@ -260,7 +301,6 @@ export function JournalEntryDetailScreen({
         memo: updated.memo ?? '',
         lineStates: buildLineStates(updated.lines, lineKeyRef),
       })
-      setPendingLinkRemoval(null)
     } catch (err) {
       setUpdateError(mapErrorToMessage(err))
     } finally {
@@ -268,12 +308,6 @@ export function JournalEntryDetailScreen({
     }
   }
 
-  /**
-   * 「更新する」ボタンの押下を受け、入力中に削除された明細行のうちリンク(消込・割勘)が
-   * 付いているものをfindLinkedLinesToRemoveで検出する(計画Issue #132)。該当する行があれば
-   * docs/domain/settlement.md 1.8の「編集は妨げない」方針に合わせ、更新は実行せず警告を表示する
-   * に留める(拒否はしない)。承認(pendingLinkRemovalの確定ボタン)を得てからperformUpdateを呼ぶ。
-   */
   function handleUpdateClick(): void {
     if (editState === null) return
 
@@ -283,14 +317,6 @@ export function JournalEntryDetailScreen({
     }
 
     const lines = editState.lineStates.map((state) => toJournalLineInput(state.line)).filter((line) => line !== null)
-    const keptLineIds = new Set(lines.map((line) => line.id).filter((id): id is number => id !== undefined))
-    const removals = findLinkedLinesToRemove(entry, keptLineIds, entryLinks)
-
-    if (removals.length > 0) {
-      setPendingLinkRemoval({ lines, removals })
-      return
-    }
-
     void performUpdate(lines)
   }
 
@@ -300,15 +326,9 @@ export function JournalEntryDetailScreen({
 
       <JournalEntryLinesTable
         entryDate={editState.entryDate}
-        onEntryDateChange={(value) => {
-          setPendingLinkRemoval(null)
-          setEditState((prev) => (prev === null ? prev : { ...prev, entryDate: value }))
-        }}
+        onEntryDateChange={(value) => setEditState((prev) => (prev === null ? prev : { ...prev, entryDate: value }))}
         memo={editState.memo}
-        onMemoChange={(value) => {
-          setPendingLinkRemoval(null)
-          setEditState((prev) => (prev === null ? prev : { ...prev, memo: value }))
-        }}
+        onMemoChange={(value) => setEditState((prev) => (prev === null ? prev : { ...prev, memo: value }))}
         headerHouseholdMemberId={entry.householdMemberId}
         lineRows={editState.lineStates}
         onUpdateLine={updateEditLine}
@@ -319,18 +339,6 @@ export function JournalEntryDetailScreen({
       />
 
       {updateError && <p role="alert">{updateError}</p>}
-
-      {pendingLinkRemoval !== null && (
-        <div className="journal-entry-detail-link-removal-warning" role="alert">
-          <p>{t('linkRemovalWarning', { count: pendingLinkRemoval.removals.length })}</p>
-          <button type="button" onClick={() => void performUpdate(pendingLinkRemoval.lines)} disabled={isUpdating}>
-            {t('linkRemovalConfirm')}
-          </button>
-          <button type="button" onClick={() => setPendingLinkRemoval(null)} disabled={isUpdating}>
-            {t('cancelButton')}
-          </button>
-        </div>
-      )}
 
       <button type="button" disabled={isUpdating} onClick={handleUpdateClick}>
         {t('updateEntry')}
@@ -373,6 +381,47 @@ export function JournalEntryDetailScreen({
           </ul>
         </div>
       )}
+
+      <div className="journal-entry-detail-related-entries">
+        <h3>{t('relatedEntriesTitle')}</h3>
+        {relatedEntries.length === 0 ? (
+          <p>{t('relatedEntriesEmpty')}</p>
+        ) : (
+          <ul>
+            {relatedEntries.map((relatedEntry) => (
+              <li key={relatedEntry.id}>
+                <span>{relatedEntry.entryDate}</span>
+                <span>{relatedEntry.memo ?? t('entryNoMemo')}</span>
+                {onSelectRelatedEntry && (
+                  <button type="button" onClick={() => onSelectRelatedEntry(relatedEntry)}>
+                    {t('viewRelatedEntry')}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="journal-entry-detail-relate-form">
+          <label htmlFor="journal-entry-detail-relate-select">{t('relateEntryLabel')}</label>
+          <select
+            id="journal-entry-detail-relate-select"
+            value={relateTargetId ?? ''}
+            onChange={(event) => setRelateTargetId(event.target.value === '' ? null : Number(event.target.value))}
+          >
+            <option value="">{t('unselected')}</option>
+            {relateCandidates.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {candidate.entryDate} {candidate.memo ?? t('entryNoMemo')}
+              </option>
+            ))}
+          </select>
+          <button type="button" disabled={relateTargetId === null || isRelating} onClick={() => void handleRelate()}>
+            {t('relateEntryButton')}
+          </button>
+          {relateError !== null && <p role="alert">{relateError}</p>}
+        </div>
+      </div>
 
       <button type="button" onClick={onBack}>
         {t('back')}
