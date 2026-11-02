@@ -321,7 +321,9 @@ test.describe('割勘起票', () => {
     const originalItem = findJournalEntryListRow(page, '世帯メンバー間割勘テスト用の食事代')
     await originalItem.getByRole('button', { name: '詳細を見る' }).click()
     await expect(page.getByText('この支出から生まれた割勘')).toBeVisible()
-    await expect(page.getByText('世帯メンバー間割勘テスト用の食事代の割勘')).toBeVisible()
+    // 割勘仕訳は「この支出から生まれた割勘」(履歴trail)と「関連する仕訳」(関連仕訳グループの
+    // 合算一覧、計画Issue #138)の両方に表示されうるため、.first()で曖昧性を解消する
+    await expect(page.getByText('世帯メンバー間割勘テスト用の食事代の割勘').first()).toBeVisible()
   })
 
   test('世帯外の相手との割勘を起票できる', async ({ page }) => {
@@ -468,16 +470,18 @@ test.describe('割勘起票', () => {
     const splitItem = findJournalEntryListRow(page, '2件の支出の割勘')
     await expect(splitItem).toBeVisible()
 
+    // 割勘仕訳は「この支出から生まれた割勘」(履歴trail)と「関連する仕訳」(関連仕訳グループの
+    // 合算一覧、計画Issue #138)の両方に表示されうるため、.first()で曖昧性を解消する
     const entry1Item = findJournalEntryListRow(page, '複数選択テスト用の食事代1')
     await entry1Item.getByRole('button', { name: '詳細を見る' }).click()
     await expect(page.getByText('この支出から生まれた割勘')).toBeVisible()
-    await expect(page.getByText('2件の支出の割勘', { exact: true })).toBeVisible()
+    await expect(page.getByText('2件の支出の割勘', { exact: true }).first()).toBeVisible()
     await page.getByRole('button', { name: '戻る' }).click()
 
     const entry2Item = findJournalEntryListRow(page, '複数選択テスト用の食事代2')
     await entry2Item.getByRole('button', { name: '詳細を見る' }).click()
     await expect(page.getByText('この支出から生まれた割勘')).toBeVisible()
-    await expect(page.getByText('2件の支出の割勘', { exact: true })).toBeVisible()
+    await expect(page.getByText('2件の支出の割勘', { exact: true }).first()).toBeVisible()
   })
 
   test('割勘の割勘はできない(割勘仕訳自身は割勘対象選択画面の候補から除外される)', async ({ page }) => {
