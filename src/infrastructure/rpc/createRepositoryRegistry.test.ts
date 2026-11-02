@@ -26,6 +26,7 @@ import { SqlJsImportMappingDefinitionRepository } from '../db/SqlJsImportMapping
 import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
+import { SqlJsSettlementBatchRepository } from '../db/SqlJsSettlementBatchRepository'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import type { StorageAdapter } from '../storage/StorageAdapter'
 import type { AutoSaveController } from '../storage/withAutoSave'
@@ -63,7 +64,7 @@ afterEach(() => {
 })
 
 describe('createRepositoryRegistry', () => {
-  it('11種全てのキーに対応するSqlJs実装クラスのインスタンスを割り当てる', () => {
+  it('12種全てのキーに対応するSqlJs実装クラスのインスタンスを割り当てる', () => {
     expect(registry.account).toBeInstanceOf(SqlJsAccountRepository)
     expect(registry.accountGroup).toBeInstanceOf(SqlJsAccountGroupRepository)
     expect(registry.budget).toBeInstanceOf(SqlJsBudgetRepository)
@@ -77,6 +78,7 @@ describe('createRepositoryRegistry', () => {
     )
     expect(registry.journalEntry).toBeInstanceOf(SqlJsJournalEntryRepository)
     expect(registry.project).toBeInstanceOf(SqlJsProjectRepository)
+    expect(registry.settlementBatch).toBeInstanceOf(SqlJsSettlementBatchRepository)
     expect(registry.recurringTransactionRule).toBeInstanceOf(
       SqlJsRecurringTransactionRuleRepository,
     )

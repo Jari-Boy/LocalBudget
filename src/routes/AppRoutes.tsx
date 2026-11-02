@@ -11,6 +11,7 @@ import type { JournalEntryDraft } from '../domain/journal/JournalEntryDraft'
 import type { JournalEntry } from '../domain/journal/JournalEntry'
 import type { HouseholdMemberRepository } from '../domain/household-member/HouseholdMemberRepository'
 import type { ProjectRepository } from '../domain/project/ProjectRepository'
+import type { SettlementBatchRepository } from '../domain/settlement-batch/SettlementBatchRepository'
 import type { ImportMappingDefinitionRepository } from '../domain/statement-import/ImportMappingDefinitionRepository'
 import type { ExternalTransactionRefRepository } from '../domain/reconciliation/ExternalTransactionRefRepository'
 import type { JournalEntryDraftRpcApi } from '../infrastructure/rpc/createRepositoryRegistry'
@@ -110,6 +111,8 @@ export function AppRoutes() {
     client.householdMember as unknown as Comlink.Remote<HouseholdMemberRepository>
   const accountGroupRepository = client.accountGroup as unknown as Comlink.Remote<AccountGroupRepository>
   const projectRepository = client.project as unknown as Comlink.Remote<ProjectRepository>
+  const settlementBatchRepository =
+    client.settlementBatch as unknown as Comlink.Remote<SettlementBatchRepository>
   const counterpartyRepository = client.counterparty as unknown as Comlink.Remote<CounterpartyRepository>
   const journalEntryDraftRepository =
     client.journalEntryDraft as unknown as Comlink.Remote<JournalEntryDraftRpcApi>
@@ -388,7 +391,7 @@ export function AppRoutes() {
         element={
           <ExpenseSplittingFormRoute
             accountRepository={accountRepository}
-            projectRepository={projectRepository}
+            settlementBatchRepository={settlementBatchRepository}
             householdMemberRepository={householdMemberRepository}
             counterpartyRepository={counterpartyRepository}
             journalEntryRepository={journalEntryRepository}
@@ -399,8 +402,9 @@ export function AppRoutes() {
         path="/journal/splitting/settlement"
         element={
           <SettlementScreen
-            projectRepository={projectRepository}
+            settlementBatchRepository={settlementBatchRepository}
             accountRepository={accountRepository}
+            householdMemberRepository={householdMemberRepository}
             journalEntryRepository={journalEntryRepository}
             onBack={() => navigate('/journal/splitting')}
           />
@@ -412,7 +416,7 @@ export function AppRoutes() {
           <ExpenseSplittingHistoryScreen
             journalEntryRepository={journalEntryRepository}
             accountRepository={accountRepository}
-            projectRepository={projectRepository}
+            settlementBatchRepository={settlementBatchRepository}
             householdMemberRepository={householdMemberRepository}
             counterpartyRepository={counterpartyRepository}
             onSelectEntry={(entry) => navigate(`/journal/entries/${entry.id}`)}
@@ -573,7 +577,7 @@ function StatementImportReviewRoute({
 
 interface ExpenseSplittingFormRouteProps {
   accountRepository: Comlink.Remote<AccountRepository>
-  projectRepository: Comlink.Remote<ProjectRepository>
+  settlementBatchRepository: Comlink.Remote<SettlementBatchRepository>
   householdMemberRepository: Comlink.Remote<HouseholdMemberRepository>
   counterpartyRepository: Comlink.Remote<CounterpartyRepository>
   journalEntryRepository: Comlink.Remote<JournalEntryRepository>
@@ -587,7 +591,7 @@ interface ExpenseSplittingFormRouteProps {
  */
 function ExpenseSplittingFormRoute({
   accountRepository,
-  projectRepository,
+  settlementBatchRepository,
   householdMemberRepository,
   counterpartyRepository,
   journalEntryRepository,
@@ -604,7 +608,7 @@ function ExpenseSplittingFormRoute({
     <ExpenseSplittingForm
       originalEntries={state.entries}
       accountRepository={accountRepository}
-      projectRepository={projectRepository}
+      settlementBatchRepository={settlementBatchRepository}
       householdMemberRepository={householdMemberRepository}
       counterpartyRepository={counterpartyRepository}
       journalEntryRepository={journalEntryRepository}

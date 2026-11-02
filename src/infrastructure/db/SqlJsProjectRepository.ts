@@ -1,17 +1,13 @@
 import type { Database } from 'sql.js'
-import type {
-  CreateProjectInput,
-  Project,
-  ProjectKind,
-  UpdateProjectInput,
-} from '../../domain/project/Project'
+import type { CreateProjectInput, Project, UpdateProjectInput } from '../../domain/project/Project'
 import type { ProjectRepository } from '../../domain/project/ProjectRepository'
 
 /**
  * ProjectRepository(ドメイン層のポート)のsql.js実装。
- * kindのCHECK制約・紐づく仕訳明細が存在するプロジェクトの物理削除禁止トリガー等の
- * ドメインルールはDDL側のCHECK制約/トリガー(docs/schema/projects.sql)で強制されるため、
- * ここでは制約違反時にsql.jsの例外がそのまま呼び出し元に伝播する(docs/domain/projects.md参照)。
+ * kindは持たない(プロジェクトはイベント専用、計画Issue #133)。紐づく仕訳明細が存在する
+ * プロジェクトの物理削除禁止トリガー等のドメインルールはDDL側のトリガー
+ * (docs/schema/projects.sql)で強制されるため、ここでは制約違反時にsql.jsの例外がそのまま
+ * 呼び出し元に伝播する(docs/domain/projects.md参照)。
  */
 export class SqlJsProjectRepository implements ProjectRepository {
   private readonly db: Database
@@ -21,11 +17,7 @@ export class SqlJsProjectRepository implements ProjectRepository {
   }
 
   create(input: CreateProjectInput): Project {
-    if (input.kind === undefined) {
-      this.db.run('INSERT INTO projects (name) VALUES (?)', [input.name])
-    } else {
-      this.db.run('INSERT INTO projects (name, kind) VALUES (?, ?)', [input.name, input.kind])
-    }
+    this.db.run('INSERT INTO projects (name) VALUES (?)', [input.name])
     return this.findById(lastInsertRowId(this.db))!
   }
 
@@ -79,7 +71,6 @@ function mapRowToProject(columns: string[], values: unknown[]): Project {
   return {
     id: get<number>('id'),
     name: get<string>('name'),
-    kind: get<ProjectKind>('kind'),
     isActive: sqlToBool(get<number>('is_active')),
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),

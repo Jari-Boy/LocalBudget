@@ -19,6 +19,7 @@ function buildLine(id: number): JournalLine {
     projectId: null,
     householdMemberId: null,
     counterpartyId: null,
+    settlementBatchId: null,
     side: 'debit',
     amount: 1000,
     createdAt: '2026-01-01T00:00:00.000Z',

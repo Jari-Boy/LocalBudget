@@ -1,10 +1,10 @@
 /**
- * SqlJsJournalEntryRepository の行単位リンク(journal_entry_links、計画Issue #132)の統合テスト。
- * sql.js(SQLite WASM)をNode上で実際に動かし、docs/domain/journal.md 1.8・docs/domain/settlement.md
- * 1.6〜1.8・docs/schema/journal.sql に定義された、仕訳明細(journal_lines)同士を結ぶリンクの
- * 作成(createLink・create の links オプション)、作成時のハード検証(科目一致・貸借逆・世帯メンバー/
- * プロジェクト一致・from_line の金額上限)、仕訳更新(行idの差分更新)およびカスケード削除との整合を
- * 検証する。外部依存: sql.js(ネットワークアクセスなし)。
+ * SqlJsJournalEntryRepository の行単位リンク(journal_entry_links、計画Issue #132・#133)の統合テスト。
+ * sql.js(SQLite WASM)をNode上で実際に動かし、docs/domain/journal.md 1.8・docs/schema/journal.sql に
+ * 定義された、仕訳明細(journal_lines)同士を結ぶリンクの作成(createLink・create の links オプション)、
+ * 作成時のハード検証(科目一致・貸借逆・from_line の金額上限。タグ整合性の検証は計画Issue #133で
+ * settlement_batch_idの集計方式に置き換わったため対象外)、仕訳更新(行idの差分更新)および
+ * カスケード削除との整合を検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
@@ -13,7 +13,6 @@ import { runMigrations } from './migrations'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { JournalEntryLinkLineError } from '../../domain/journal/JournalEntryLinkLineError'
-import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMismatchError'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 
 let db: Database
@@ -83,8 +82,8 @@ function createSettlementEntry(
   })
 }
 
-describe('createLink: settlesリンクのハード検証(settlement.md 1.8)', () => {
-  it('消込元の行と消込先の一時勘定行が科目一致・貸借逆・タグ一致なら、行idと所属仕訳idを持つリンクを作成する', () => {
+describe('createLink: settlesリンク(行の存在・科目一致・貸借逆のみ検証、タグ整合性は検証しない)', () => {
+  it('科目一致・貸借逆の行同士なら、行idと所属仕訳idを持つリンクを作成する(タグが一致していなくてもよい、計画Issue #133)', () => {
     const toEntry = createRentAccrual()
     const fromEntry = createSettlementEntry(80000)
 
@@ -105,7 +104,7 @@ describe('createLink: settlesリンクのハード検証(settlement.md 1.8)', ()
     })
   })
 
-  it('消込元と消込先の科目が異なる場合はSettlementTagMismatchErrorをスローし何も書き込まない', () => {
+  it('消込元と消込先の科目が異なる場合はJournalEntryLinkLineError(account_mismatch)をスローし何も書き込まない', () => {
     const toEntry = createRentAccrual()
     const fromEntry = createSettlementEntry(80000, { accountId: otherPayableAccountId })
 
@@ -116,12 +115,12 @@ describe('createLink: settlesリンクのハード検証(settlement.md 1.8)', ()
         linkType: 'settles',
         amount: 80000,
       }),
-    ).toThrow(SettlementTagMismatchError)
+    ).toThrowError(expect.objectContaining({ reason: 'account_mismatch' }))
 
     expect(repository.listLinksForEntry(toEntry.id)).toHaveLength(0)
   })
 
-  it('貸借が逆でない(同じ側同士の)行を結ぼうとするとSettlementTagMismatchErrorをスローする', () => {
+  it('貸借が逆でない(同じ側同士の)行を結ぼうとするとJournalEntryLinkLineError(side_not_opposite)をスローする', () => {
     const toEntry = createRentAccrual()
     const sameSideEntry = repository.create({
       householdMemberId: memberId,
@@ -139,57 +138,7 @@ describe('createLink: settlesリンクのハード検証(settlement.md 1.8)', ()
         linkType: 'settles',
         amount: 5000,
       }),
-    ).toThrow(SettlementTagMismatchError)
-  })
-
-  it('世帯メンバーが一致しない場合はSettlementTagMismatchErrorをスローする', () => {
-    const toEntry = createRentAccrual({ householdMemberId: memberId })
-    const fromEntry = createSettlementEntry(80000, { householdMemberId: memberBId })
-
-    expect(() =>
-      repository.createLink({
-        fromLineId: fromEntry.lines[0].id,
-        toLineId: toEntry.lines[1].id,
-        linkType: 'settles',
-        amount: 80000,
-      }),
-    ).toThrow(SettlementTagMismatchError)
-  })
-
-  it('プロジェクトが一致しない場合はSettlementTagMismatchErrorをスローする(精算バッチ廃止までの既存仕様)', () => {
-    const projectId = insertProject(db, 'スマホ24回')
-    const toEntry = createRentAccrual({ projectId })
-    const fromEntry = createSettlementEntry(80000)
-
-    expect(() =>
-      repository.createLink({
-        fromLineId: fromEntry.lines[0].id,
-        toLineId: toEntry.lines[1].id,
-        linkType: 'settles',
-        amount: 80000,
-      }),
-    ).toThrow(SettlementTagMismatchError)
-  })
-
-  it('消込先が一時勘定(is_reconcilable = falseの資産・負債)でない行の場合はSettlementTagMismatchErrorをスローする', () => {
-    const rentEntry = createRentAccrual()
-    const expenseCreditEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-06',
-      lines: [
-        { accountId: rentExpenseAccountId, side: 'credit', amount: 5000 },
-        { accountId: payableAccountId, side: 'debit', amount: 5000 },
-      ],
-    })
-
-    expect(() =>
-      repository.createLink({
-        fromLineId: expenseCreditEntry.lines[0].id,
-        toLineId: rentEntry.lines[0].id,
-        linkType: 'settles',
-        amount: 5000,
-      }),
-    ).toThrow(SettlementTagMismatchError)
+    ).toThrowError(expect.objectContaining({ reason: 'side_not_opposite' }))
   })
 })
 
@@ -362,7 +311,7 @@ describe('create: linksオプション(fromLineIndexで新しい仕訳の行を�
         ],
         links: [{ fromLineIndex: 0, toLineId: toEntry.lines[1].id, linkType: 'settles', amount: 80000 }],
       }),
-    ).toThrow(SettlementTagMismatchError)
+    ).toThrowError(expect.objectContaining({ reason: 'account_mismatch' }))
 
     expect(repository.findAll()).toHaveLength(entryCountBefore)
     expect(repository.listLinksForEntry(toEntry.id)).toHaveLength(0)
@@ -480,28 +429,6 @@ describe('行単位リンクと仕訳更新(行idの差分更新)・削除の整
     expect(repository.listLinksForEntry(settleB.id)).toHaveLength(0)
   })
 
-  it('同じ仕訳に世帯メンバーの異なる一時勘定行が複数あっても、リンクは行ごとに独立して記録される(#40・#110の制約が不要になる)', () => {
-    const toEntry = repository.create({
-      householdMemberId: memberId,
-      entryDate: '2026-07-01',
-      lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 100000 },
-        { accountId: payableAccountId, side: 'credit', amount: 60000, householdMemberId: memberId },
-        { accountId: payableAccountId, side: 'credit', amount: 40000, householdMemberId: memberBId },
-      ],
-    })
-    const settleB = createSettlementEntry(40000, { householdMemberId: memberBId })
-
-    // Bさんの債務(行[2])だけを消し込む。Aさんの債務(行[1])は影響を受けない
-    repository.createLink({ fromLineId: settleB.lines[0].id, toLineId: toEntry.lines[2].id, linkType: 'settles', amount: 40000 })
-    // Aさんの行を、Bさんの精算で消し込もうとするとタグ(世帯メンバー)不一致で拒否される
-    expect(() =>
-      repository.createLink({ fromLineId: settleB.lines[0].id, toLineId: toEntry.lines[1].id, linkType: 'settles', amount: 1 }),
-    ).toThrow(SettlementTagMismatchError)
-
-    expect(repository.listLinksForEntry(toEntry.id).map((link) => link.toLineId)).toEqual([toEntry.lines[2].id])
-  })
-
   it('仕訳の削除でその明細に紐づくリンクがカスケード削除される(to側・from側いずれの仕訳でも)', () => {
     const toEntry = createRentAccrual()
     const fromEntry = createSettlementEntry(80000)
@@ -525,11 +452,6 @@ function countLinks(database: Database): number {
 
 function insertHouseholdMember(database: Database, name: string): number {
   database.run(`INSERT INTO household_members (name) VALUES (?)`, [name])
-  return lastInsertRowId(database)
-}
-
-function insertProject(database: Database, name: string): number {
-  database.run(`INSERT INTO projects (name) VALUES (?)`, [name])
   return lastInsertRowId(database)
 }
 

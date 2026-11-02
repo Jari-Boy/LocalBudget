@@ -17,7 +17,6 @@ import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRe
 import { assertJournalBalance } from '../../domain/journal/assertJournalBalance'
 import { JournalEntryLinkLineError } from '../../domain/journal/JournalEntryLinkLineError'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
-import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMismatchError'
 import { SqlJsExternalTransactionRefRepository } from './SqlJsExternalTransactionRefRepository'
 
 const RECONCILABLE_POSTING_WHITELIST: readonly JournalEntrySourceType[] = [
@@ -38,17 +37,12 @@ const LINK_SELECT = `SELECT l.id, l.from_line_id, l.to_line_id,
   JOIN journal_lines fl ON fl.id = l.from_line_id
   JOIN journal_lines tl ON tl.id = l.to_line_id`
 
-/** リンクの検証(assertLinkLinesCompatible)に必要な、明細行と科目の属性 */
+/** リンクの検証(assertLinkLinesCompatible)に必要な、明細行の属性 */
 interface LinkLine {
   entryId: number
   accountId: number
   side: JournalLineSide
   amount: number
-  householdMemberId: number | null
-  counterpartyId: number | null
-  projectId: number | null
-  category: string
-  isReconcilable: number | null
 }
 
 /**
@@ -171,14 +165,14 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     this.db.run('DELETE FROM journal_entries WHERE id = ?', [id])
   }
 
-  deleteByProjectId(projectId: number): void {
+  deleteBySettlementBatchId(settlementBatchId: number): void {
     this.db.run('BEGIN')
     try {
       this.db.run(
         `DELETE FROM journal_entries WHERE id IN (
-           SELECT DISTINCT journal_entry_id FROM journal_lines WHERE project_id = ?
+           SELECT DISTINCT journal_entry_id FROM journal_lines WHERE settlement_batch_id = ?
          )`,
-        [projectId],
+        [settlementBatchId],
       )
       this.db.run('COMMIT')
     } catch (error) {
@@ -231,14 +225,14 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
   }
 
   /**
-   * リンク作成時のハード検証(docs/domain/journal.md 1.8、docs/domain/settlement.md 1.8、計画Issue #132)。
-   * 両リンク種別に共通して、from_line・to_lineが存在し、科目が一致し、貸借が逆であり、
-   * from_lineから出るリンクの金額合計(既存分+今回分)がfrom_lineの金額を超えないことを確認する。
-   * settlesリンクはさらに、消込先が一時勘定(is_reconcilable = falseの資産・負債)であり、
-   * household_member_id・counterparty_id・project_idが一致することを確認する。allocatesリンクは
-   * 費用を別の世帯メンバー・取引先へ付け替える関係のため、タグの一致は求めない。
-   * to_lineに対する消込の累計が元の金額を超える過剰消込は、従来通りここでは検証しない
-   * (docs/domain/settlement.md 1.6)。
+   * リンク作成時のハード検証(docs/domain/journal.md 1.8、計画Issue #132・#133)。
+   * from_line・to_lineが存在し、科目が一致し、貸借が逆であり、from_lineから出るリンクの
+   * 金額合計(既存分+今回分)がfrom_lineの金額を超えないことを確認する。現在作成されるのは
+   * allocatesリンク(割勘仕訳の費用付け替え元の追跡用、表示目的)のみであり、タグ
+   * (household_member_id・counterparty_id・project_id)の一致は求めない。消込(settles)の
+   * 残高計算・タグ整合性は`settlement_batch_id`による集計方式に置き換わったため、ここでは
+   * 検証しない(計画Issue #133、docs/domain/settlement.md参照)。to_lineに対する消込の累計が
+   * 元の金額を超える過剰消込は、従来通りここでは検証しない。
    */
   private assertLinkLinesCompatible(input: CreateJournalEntryLinkInput): void {
     const from = this.findLinkLine(input.fromLineId)
@@ -247,25 +241,11 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
       throw new JournalEntryLinkLineError('line_not_found', input.fromLineId, input.toLineId)
     }
 
-    const isSettles = input.linkType === 'settles'
-    const raiseMismatch = (reason: 'account_mismatch' | 'side_not_opposite'): never => {
-      if (isSettles) throw new SettlementTagMismatchError(from.entryId, to.entryId)
-      throw new JournalEntryLinkLineError(reason, input.fromLineId, input.toLineId)
+    if (from.accountId !== to.accountId) {
+      throw new JournalEntryLinkLineError('account_mismatch', input.fromLineId, input.toLineId)
     }
-
-    if (from.accountId !== to.accountId) raiseMismatch('account_mismatch')
-    if (from.side === to.side) raiseMismatch('side_not_opposite')
-
-    if (isSettles) {
-      const isTemporaryAccount =
-        (to.category === 'asset' || to.category === 'liability') && to.isReconcilable === 0
-      const hasSameTags =
-        from.householdMemberId === to.householdMemberId &&
-        from.counterpartyId === to.counterpartyId &&
-        from.projectId === to.projectId
-      if (!isTemporaryAccount || !hasSameTags) {
-        throw new SettlementTagMismatchError(from.entryId, to.entryId)
-      }
+    if (from.side === to.side) {
+      throw new JournalEntryLinkLineError('side_not_opposite', input.fromLineId, input.toLineId)
     }
 
     const [sumResult] = this.db.exec(
@@ -280,12 +260,7 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
 
   private findLinkLine(lineId: number): LinkLine | null {
     const [result] = this.db.exec(
-      `SELECT jl.journal_entry_id, jl.account_id, jl.side, jl.amount,
-              jl.household_member_id, jl.counterparty_id, jl.project_id,
-              a.category, a.is_reconcilable
-       FROM journal_lines jl
-       JOIN accounts a ON a.id = jl.account_id
-       WHERE jl.id = ?`,
+      `SELECT journal_entry_id, account_id, side, amount FROM journal_lines WHERE id = ?`,
       [lineId],
     )
     if (!result) return null
@@ -295,11 +270,6 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
       accountId: row[1] as number,
       side: row[2] as JournalLineSide,
       amount: row[3] as number,
-      householdMemberId: row[4] as number | null,
-      counterpartyId: row[5] as number | null,
-      projectId: row[6] as number | null,
-      category: row[7] as string,
-      isReconcilable: row[8] as number | null,
     }
   }
 
@@ -338,14 +308,15 @@ function insertLines(db: Database, entryId: number, lines: readonly JournalLineI
 function insertLine(db: Database, entryId: number, line: JournalLineInput): number {
   db.run(
     `INSERT INTO journal_lines
-      (journal_entry_id, account_id, project_id, household_member_id, counterparty_id, side, amount)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      (journal_entry_id, account_id, project_id, household_member_id, counterparty_id, settlement_batch_id, side, amount)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       entryId,
       line.accountId,
       line.projectId ?? null,
       line.householdMemberId ?? null,
       line.counterpartyId ?? null,
+      line.settlementBatchId ?? null,
       line.side,
       line.amount,
     ],
@@ -394,13 +365,15 @@ function applyLineDiff(db: Database, current: JournalEntry, lines: readonly Jour
     }
     db.run(
       `UPDATE journal_lines
-       SET account_id = ?, project_id = ?, household_member_id = ?, counterparty_id = ?, side = ?, amount = ?
+       SET account_id = ?, project_id = ?, household_member_id = ?, counterparty_id = ?,
+           settlement_batch_id = ?, side = ?, amount = ?
        WHERE id = ?`,
       [
         line.accountId,
         line.projectId ?? null,
         line.householdMemberId ?? null,
         line.counterpartyId ?? null,
+        line.settlementBatchId ?? null,
         line.side,
         line.amount,
         line.id,
@@ -452,6 +425,7 @@ function mapRowToJournalLine(columns: string[], values: unknown[]): JournalLine 
     projectId: get<number | null>('project_id'),
     householdMemberId: get<number | null>('household_member_id'),
     counterpartyId: get<number | null>('counterparty_id'),
+    settlementBatchId: get<number | null>('settlement_batch_id'),
     side: get<JournalLineSide>('side'),
     amount: get<number>('amount'),
     createdAt: get<string>('created_at'),

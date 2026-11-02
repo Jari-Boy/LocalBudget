@@ -290,6 +290,13 @@
 **対策**: 1画面に複数の独立した非同期書き込み操作(ボタン)を持つUIを実装する際は、実装計画の時点で「この画面にはいくつの独立した非同期操作があるか」を列挙し、各操作について(1)冒頭で`isSubmitting`のガード(早期return)、(2)処理開始時の`setIsSubmitting(true)`、(3)完了時の解除(`finally`)、(4)対応するボタンの`disabled={isSubmitting}`、の4点が揃っているかをチェックリストとして確認する。実装後は、各操作について「Repository呼び出しの完了を待つ間はボタンが無効化され、連打しても1回しか実行されないこと」を検証する回帰テストを操作の数だけ用意する(1操作だけのテストでは他操作の実装漏れを検出できない)。画面全体で単一の`isSubmitting`stateを共有し、いずれかの操作が進行中は全ボタンを無効化する設計(操作ごとに個別のstateを持たない)にすると、実装・確認すべき箇所を1つの変数に集約できチェック漏れを減らせる。
 **該当箇所（例）**: `src/components/counterparty-management/CounterpartyManagementScreen.tsx`(`isSubmitting`、コミット3ce5397で5操作全てに追加)、`CounterpartyManagementScreen.doubleSubmit.test.tsx`(5操作それぞれの回帰テスト)、`docs/decisions.md`「取引先管理画面の二重送信防止は画面全体で共有する単一のisSubmitting stateとする」、Issue #38 Review Attempt 1(evaluator FAIL指摘)・Attempt 2で修正
 
+## 分岐のない単一フローのハンドラでも、関連マスタのその場作成(await)がバリデーション群の後に来ると、setSubmitting(true)を関数末尾に置いたままにしてしまい連打防止が機能しない
+
+**症状**: `ExpenseSplittingForm`の`handleSubmit`は分岐自体は単純(新規精算バッチ作成/既存バッチ選択のif/elseのみ)だったが、`setSubmitting(true)`は関数の末尾近く、複数の同期バリデーションと`settlementBatchRepository.create`(または`update`)の`await`が完了した後に置かれていた。精算バッチの新規作成を関数内の最初の非同期処理にしたことで、ボタンの連続クリック時に1回目の`await`が完了するまでの間、2回目のクリックが`submitting`ガード(`if (submitting) return`)を素通りしてバリデーションを再度通過し、精算バッチと仕訳が重複して作成される不具合が実機レビューで見つかった(コミット3964d22)。
+**原因**: 上記2件(「複数の分岐」「複数の独立した操作」)は、いずれも“ガードを置く箇所が複数あるうち一部が漏れる”という非対称な実装漏れだったが、本件は単一の経路しかない関数でも、`setSubmitting(true)`を機械的に「Repositoryへの書き込みが本格的に始まる直前」のような処理の途中に置いてしまうと同じ不具合が起きることを示す。「ボタン押下の同期的な処理(バリデーション)が先、重い処理(DB書き込み)が後」という直感的な実装順序に従うと、ガードをどこに置くかが「処理の重さ」基準になり、「関数内で最初にawaitが発生する地点より前か後か」という本来の基準から外れやすい。
+**対策**: 二重送信防止の`setSubmitting(true)`は、関数内の分岐の数やバリデーションの有無に関わらず、`handleSubmit`(または同等のイベントハンドラ)の文字通り最初の行(`if (submitting) return`の直後)に置き、以降の全処理(同期バリデーション・非同期の関連マスタ作成・本体の書き込み)を単一の`try`で包み`finally`で解除する。これにより「関数内で最初のawaitがどこにあるか」を実装時に数える必要自体がなくなる。実装後は、関連マスタのその場作成(quick-add等)を伴う新規作成フォームについて、連続クリックで対象マスタ・本体の書き込みが重複作成されないことを検証する回帰テストを用意する。
+**該当箇所（例）**: `src/components/expense-splitting/ExpenseSplittingForm.tsx`(`handleSubmit`冒頭への`setSubmitting(true)`移動、コミット3964d22)、`src/components/expense-splitting/ExpenseSplittingForm.test.tsx`(連続クリック時の精算バッチ・仕訳重複作成防止の回帰テスト)、計画Issue #133(実機レビュー指摘対応)
+
 ## 一覧のテキストとセレクトの選択肢テキストが同一DOM上に共存する画面で、getByTextが複数要素にマッチしてテストが失敗する
 
 **症状**: `CounterpartyManagementScreen`のように、取引先一覧の`<li>`内のテキスト(例:「ローソン 東京日本橋店」)と、統合先を選ぶ`<select>`内の`<option>`テキストが同じ文言で同一画面上に共存する構成では、Testing Libraryの`screen.getByText('ローソン 東京日本橋店')`が一覧側・セレクト側の両方にマッチし、「複数要素が見つかった」というエラーでテストが失敗する。

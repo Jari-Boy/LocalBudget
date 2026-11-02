@@ -4,7 +4,7 @@ import type { Account } from '../../domain/account/Account'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { CreateJournalEntryInput, JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
-import type { Project } from '../../domain/project/Project'
+import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import { buildExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/buildExpenseSplittingJournalEntryInputs'
 import { findExpenseLine } from '../../domain/expense-splitting/findExpenseLine'
 import { mergeExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/mergeExpenseSplittingJournalEntryInputs'
@@ -19,14 +19,27 @@ import {
 } from './expenseSplittingFormParticipant'
 import './ExpenseSplittingForm.css'
 
+/**
+ * 精算バッチセレクトの「新しい精算バッチを作成する」を表す特殊値(既定選択、ユーザーからの
+ * 指摘「プロジェクトを選択する必要はないのでは」への対応)。バッチidと衝突しない文字列を使う。
+ */
+const NEW_SETTLEMENT_BATCH_VALUE = '__new__'
+
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
 }
-interface ProjectFinder {
-  findAll(): Project[] | Promise<Project[]>
+interface SettlementBatchFinder {
+  findAll(): SettlementBatch[] | Promise<SettlementBatch[]>
 }
-interface ProjectCreator {
-  create(input: { name: string; kind?: Project['kind'] }): Project | Promise<Project>
+interface SettlementBatchCreator {
+  create(input: {
+    name: string
+    type: SettlementBatch['type']
+    counterpartyId?: number | null
+  }): SettlementBatch | Promise<SettlementBatch>
+}
+interface SettlementBatchUpdater {
+  update(id: number, input: { counterpartyId?: number | null }): SettlementBatch | Promise<SettlementBatch>
 }
 interface HouseholdMemberFinder {
   findAll(): HouseholdMember[] | Promise<HouseholdMember[]>
@@ -49,7 +62,7 @@ export interface ExpenseSplittingFormProps {
    */
   originalEntries: JournalEntry[]
   accountRepository: AccountFinder
-  projectRepository: ProjectFinder & ProjectCreator
+  settlementBatchRepository: SettlementBatchFinder & SettlementBatchCreator & SettlementBatchUpdater
   householdMemberRepository: HouseholdMemberFinder
   counterpartyRepository: CounterpartyFinder & CounterpartyCreator
   journalEntryRepository: JournalEntryCreator
@@ -61,7 +74,7 @@ export interface ExpenseSplittingFormProps {
 
 interface MasterData {
   accounts: Account[]
-  projects: Project[]
+  settlementBatches: SettlementBatch[]
   householdMembers: HouseholdMember[]
   counterparties: Counterparty[]
 }
@@ -136,7 +149,7 @@ function computeDefaultMemo(
 export function ExpenseSplittingForm({
   originalEntries,
   accountRepository,
-  projectRepository,
+  settlementBatchRepository,
   householdMemberRepository,
   counterpartyRepository,
   journalEntryRepository,
@@ -150,7 +163,9 @@ export function ExpenseSplittingForm({
   const isBatch = originalEntries.length > 1
 
   const [masterData, setMasterData] = useState<MasterData | null>(null)
-  const [projectId, setProjectId] = useState<number | null>(null)
+  const [settlementBatchId, setSettlementBatchId] = useState<number | typeof NEW_SETTLEMENT_BATCH_VALUE>(
+    NEW_SETTLEMENT_BATCH_VALUE,
+  )
   const [allocationMode, setAllocationMode] = useState<ExpenseSplittingAllocationMode>('equal')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -164,15 +179,15 @@ export function ExpenseSplittingForm({
   if (masterData === null) {
     void Promise.all([
       Promise.resolve(accountRepository.findAll()),
-      Promise.resolve(projectRepository.findAll()),
+      Promise.resolve(settlementBatchRepository.findAll()),
       Promise.resolve(householdMemberRepository.findAll()),
       Promise.resolve(counterpartyRepository.findAll()),
-    ]).then(([accounts, projects, householdMembers, counterparties]) => {
+    ]).then(([accounts, settlementBatches, householdMembers, counterparties]) => {
       if (originalEntries.length === 1) {
         const expenseLine = findExpenseLine(originalEntries[0], accounts)
         setTotalAmountInput(expenseLine ? String(expenseLine.amount) : '')
       }
-      setMasterData({ accounts, projects, householdMembers, counterparties })
+      setMasterData({ accounts, settlementBatches, householdMembers, counterparties })
     })
     return <p role="status">{tCommon('loading')}</p>
   }
@@ -181,6 +196,7 @@ export function ExpenseSplittingForm({
   // narrowingがクロージャ境界を越えて効かず"possibly null"エラーになるため、ここで
   // 非nullであることが確定した参照をローカル変数へ退避しておく。
   const accounts = masterData.accounts
+  const settlementBatches = masterData.settlementBatches
   /**
    * 立替金(資産/負債)科目はユーザーに選択させず、seedAdvanceAccounts(db.worker.ts、
    * docs/domain/expense-splitting.md 1.2節)が投入したis_system_managed科目を自動解決する。
@@ -190,7 +206,6 @@ export function ExpenseSplittingForm({
   const advanceAssetAccountId = accounts.find((account) => account.category === 'asset' && account.isSystemManaged)?.id ?? null
   const advanceLiabilityAccountId =
     accounts.find((account) => account.category === 'liability' && account.isSystemManaged)?.id ?? null
-  const settlementProjects = masterData.projects.filter((project) => project.kind === 'settlement')
   /** 世帯メンバーの選択肢から、選択中の元仕訳いずれかの立替者を除外する(自分自身との割勘を防ぐ) */
   const payerMemberIds = new Set(originalEntries.map((entry) => entry.householdMemberId))
   const eligibleHouseholdMembers = masterData.householdMembers.filter((member) => !payerMemberIds.has(member.id))
@@ -255,115 +270,154 @@ export function ExpenseSplittingForm({
 
   async function handleSubmit() {
     if (submitting) return
+    /**
+     * バリデーションより前、精算バッチ作成(await)より前の時点で同期的に無効化する。
+     * 精算バッチの新規作成(resolvedSettlementBatchId解決)がhandleSubmit内の最初のawaitに
+     * なったため、ここより後で無効化すると、連続クリック(二重送信)時に無効化が間に合わず
+     * 精算バッチ・仕訳が重複して作成される不具合が実機レビューで見つかったため、冒頭で
+     * 同期的に無効化する(以降の全ての分岐はtry/finallyでsetSubmitting(false)に戻す)。
+     */
+    setSubmitting(true)
     setError(null)
 
-    const entryLines: { entry: JournalEntry; expenseLine: JournalLine }[] = []
-    for (const entry of originalEntries) {
-      const expenseLine = findExpenseLine(entry, accounts)
-      if (expenseLine === undefined) {
-        setError(t('expenseAccountNotFoundError'))
-        return
-      }
-      entryLines.push({ entry, expenseLine })
-    }
-
-    if (advanceAssetAccountId === null || projectId === null) {
-      setError(t('requiredFieldMissingError'))
-      return
-    }
-
-    /**
-     * 世帯メンバー分担者はadvanceLiabilityAccountIdが無いと仕訳を組み立てられない
-     * (toExpenseSplitRecipients/toExpenseSplitRecipientsForEntryAmountが黙って除外する)。
-     * ここで事前に検証しないと、世帯外相手の行が1件でも有効な場合にnoRecipientErrorを
-     * すり抜け、世帯メンバー分の割勘だけが無警告で消失したまま確定されてしまう
-     * (evaluatorレビュー指摘、計画Issue #40 Review Attempt 1対応)。
-     */
-    const hasHouseholdMemberParticipant = participants.some(
-      (row) => row.kind === 'householdMember' && row.targetId !== null,
-    )
-    if (hasHouseholdMemberParticipant && advanceLiabilityAccountId === null) {
-      setError(t('advanceLiabilityAccountRequiredError'))
-      return
-    }
-
-    /**
-     * 世帯外の相手の行はtargetId(取引先)が無いと仕訳を組み立てられない
-     * (toExpenseSplitRecipients/toExpenseSplitRecipientsForEntryAmountが黙って除外する)。
-     * 上記の立替金(負債)科目の検証と同じ理由で、ここで事前に検証しないと、他に有効な
-     * 分担者がいる場合にnoRecipientErrorをすり抜け、相手未選択の行だけが無警告で
-     * 消失したまま確定されてしまう(人間レビューでの指摘、計画Issue #40)。
-     */
-    const hasIncompleteCounterpartyParticipant = participants.some(
-      (row) => row.kind === 'counterparty' && row.targetId === null,
-    )
-    if (hasIncompleteCounterpartyParticipant) {
-      setError(t('counterpartyTargetRequiredError'))
-      return
-    }
-
-    const entryDate = today ?? new Date().toISOString().slice(0, 10)
-    /**
-     * 分担者(recipient)ごとに、その分担者が絡む全ての元仕訳分の入力をまとめて保持する。
-     * 「分担者ごとに1件の複合仕訳にまとめ、選択した元仕訳が複数ある場合はその分も同じ
-     * 分担者の仕訳にまとめる」という設計(下記mergeExpenseSplittingJournalEntryInputsの
-     * JSDoc・docs/decisions.md(2026-09-06)参照)のためのグルーピング。
-     */
-    const inputsByRecipientKey = new Map<string, CreateJournalEntryInput[]>()
-    for (const { entry, expenseLine } of entryLines) {
-      const recipients = isBatch
-        ? toExpenseSplitRecipientsForEntryAmount(participants, advanceLiabilityAccountId, expenseLine.amount, allocationMode)
-        : toExpenseSplitRecipients(participants, advanceLiabilityAccountId)
-      if (recipients.length === 0) {
-        setError(t('noRecipientError'))
-        return
-      }
-      const inputs = buildExpenseSplittingJournalEntryInputs({
-        originalLineId: expenseLine.id,
-        expenseAccountId: expenseLine.accountId,
-        advanceAssetAccountId,
-        fromMemberId: entry.householdMemberId,
-        projectId,
-        entryDate,
-        recipients,
-      })
-      recipients.forEach((recipient, index) => {
-        const key = recipient.kind === 'householdMember' ? `householdMember:${recipient.toMemberId}` : `counterparty:${recipient.counterpartyId}`
-        const existing = inputsByRecipientKey.get(key) ?? []
-        existing.push(inputs[index])
-        inputsByRecipientKey.set(key, existing)
-      })
-    }
-
-    /**
-     * 分担者ごとに、その分担者分のCreateJournalEntryInput(選択した元仕訳の件数分)を
-     * mergeExpenseSplittingJournalEntryInputsで1件の複合仕訳へ統合する(人間レビューでの
-     * 指摘「割勘の仕訳を作るときは複数明細をまとめて一本で仕訳を切るように(逆仕訳が
-     * 切りやすくなるから)」への対応、計画Issue #40)。統合の単位を「分担者ごと」に
-     * 限定しているのは、異なる分担者(household_member_id)の立替金(負債)行を同じ仕訳に
-     * 混在させると、精算画面がタグ(account・project・household_member)ごとに残高を
-     * 区別できず、ある世帯メンバーの精算操作で無関係な別の世帯メンバーの債務まで無警告で
-     * 消し込まれてしまう不具合が実際に見つかったため(evaluatorレビュー指摘、docs/domain/
-     * settlement.md 1.7の「タグの組み合わせごとに消込対象を一意に特定できる」という
-     * 既存の不変条件に反する状態を作ってしまっていた)。分担者が同じであれば、選択した
-     * 元仕訳が複数あっても常に同じ人物への同じ債務の一部であり、タグの混在は起こらない。
-     * 摘要はmemoInput(既定値はcomputeDefaultMemo、ユーザーが自由に編集できる)を全ての
-     * 仕訳で共通して使い、空欄のまま確定した場合はnull(無題)とする。起票者は選択した
-     * 元仕訳のうち先頭のもののhouseholdMemberIdを使う(全行に明示的なhousehold_member_id
-     * が設定されるため、実効メンバーの解決においてこの値がフォールバックとして参照される
-     * ことはない)。
-     */
-    const mergedInputs = [...inputsByRecipientKey.values()].map((inputs) =>
-      mergeExpenseSplittingJournalEntryInputs({
-        inputs,
-        entryDate,
-        memo: memoInput.trim() === '' ? null : memoInput,
-        householdMemberId: originalEntries[0].householdMemberId,
-      }),
-    )
-
-    setSubmitting(true)
     try {
+      const entryLines: { entry: JournalEntry; expenseLine: JournalLine }[] = []
+      for (const entry of originalEntries) {
+        const expenseLine = findExpenseLine(entry, accounts)
+        if (expenseLine === undefined) {
+          setError(t('expenseAccountNotFoundError'))
+          return
+        }
+        entryLines.push({ entry, expenseLine })
+      }
+
+      if (advanceAssetAccountId === null) {
+        setError(t('requiredFieldMissingError'))
+        return
+      }
+
+      /**
+       * 世帯メンバー分担者はadvanceLiabilityAccountIdが無いと仕訳を組み立てられない
+       * (toExpenseSplitRecipients/toExpenseSplitRecipientsForEntryAmountが黙って除外する)。
+       * ここで事前に検証しないと、世帯外相手の行が1件でも有効な場合にnoRecipientErrorを
+       * すり抜け、世帯メンバー分の割勘だけが無警告で消失したまま確定されてしまう
+       * (evaluatorレビュー指摘、計画Issue #40 Review Attempt 1対応)。
+       */
+      const hasHouseholdMemberParticipant = participants.some(
+        (row) => row.kind === 'householdMember' && row.targetId !== null,
+      )
+      if (hasHouseholdMemberParticipant && advanceLiabilityAccountId === null) {
+        setError(t('advanceLiabilityAccountRequiredError'))
+        return
+      }
+
+      /**
+       * 世帯外の相手の行はtargetId(取引先)が無いと仕訳を組み立てられない
+       * (toExpenseSplitRecipients/toExpenseSplitRecipientsForEntryAmountが黙って除外する)。
+       * 上記の立替金(負債)科目の検証と同じ理由で、ここで事前に検証しないと、他に有効な
+       * 分担者がいる場合にnoRecipientErrorをすり抜け、相手未選択の行だけが無警告で
+       * 消失したまま確定されてしまう(人間レビューでの指摘、計画Issue #40)。
+       */
+      const hasIncompleteCounterpartyParticipant = participants.some(
+        (row) => row.kind === 'counterparty' && row.targetId === null,
+      )
+      if (hasIncompleteCounterpartyParticipant) {
+        setError(t('counterpartyTargetRequiredError'))
+        return
+      }
+
+      /**
+       * 世帯外の相手を含む割勘の場合、バッチにcounterparty_idを設定する(計画Issue #133)。
+       * 複数の世帯外相手が混在する場合は先頭の1件を採用する(精算画面の「対象者」フィルターでの
+       * 絞り込みという補助的な用途のための簡易な扱い、懸念点として既知)。
+       */
+      const firstCounterpartyId = counterpartyRows.find((row) => row.targetId !== null)?.targetId ?? null
+
+      /**
+       * 精算バッチの選択UIは「既存バッチから選ぶ」か「新しい精算バッチを作成する」(既定選択)の
+       * 2択のみで、名前入力フォームは持たない(ユーザーからの指摘「精算バッチの名前はこの画面の
+       * 摘要がそのまま使えるのでは」への対応)。新規作成を選んだ状態のまま確定された場合、ここで
+       * 初めてこの時点の摘要(memoInput)を名前としてバッチを作成する。参加者確定後のこのタイミングで
+       * 作成するため、counterparty_idも作成時に直接設定でき、既存バッチの場合のような事後update
+       * 呼び出しは不要。
+       */
+      let resolvedSettlementBatchId: number
+      if (settlementBatchId === NEW_SETTLEMENT_BATCH_VALUE) {
+        const created = await settlementBatchRepository.create({
+          name: memoInput.trim(),
+          type: 'expense_splitting',
+          counterpartyId: firstCounterpartyId,
+        })
+        resolvedSettlementBatchId = created.id
+      } else {
+        resolvedSettlementBatchId = settlementBatchId
+        const currentBatch = settlementBatches.find((batch) => batch.id === settlementBatchId)
+        if (firstCounterpartyId !== null && currentBatch?.counterpartyId == null) {
+          await settlementBatchRepository.update(settlementBatchId, { counterpartyId: firstCounterpartyId })
+        }
+      }
+
+      const entryDate = today ?? new Date().toISOString().slice(0, 10)
+      /**
+       * 分担者(recipient)ごとに、その分担者が絡む全ての元仕訳分の入力をまとめて保持する。
+       * 「分担者ごとに1件の複合仕訳にまとめ、選択した元仕訳が複数ある場合はその分も同じ
+       * 分担者の仕訳にまとめる」という設計(下記mergeExpenseSplittingJournalEntryInputsの
+       * JSDoc・docs/decisions.md(2026-09-06)参照)のためのグルーピング。
+       */
+      const inputsByRecipientKey = new Map<string, CreateJournalEntryInput[]>()
+      for (const { entry, expenseLine } of entryLines) {
+        const recipients = isBatch
+          ? toExpenseSplitRecipientsForEntryAmount(participants, advanceLiabilityAccountId, expenseLine.amount, allocationMode)
+          : toExpenseSplitRecipients(participants, advanceLiabilityAccountId)
+        if (recipients.length === 0) {
+          setError(t('noRecipientError'))
+          return
+        }
+        const inputs = buildExpenseSplittingJournalEntryInputs({
+          originalLineId: expenseLine.id,
+          expenseAccountId: expenseLine.accountId,
+          advanceAssetAccountId,
+          fromMemberId: entry.householdMemberId,
+          settlementBatchId: resolvedSettlementBatchId,
+          eventProjectId: expenseLine.projectId,
+          entryDate,
+          recipients,
+        })
+        recipients.forEach((recipient, index) => {
+          const key = recipient.kind === 'householdMember' ? `householdMember:${recipient.toMemberId}` : `counterparty:${recipient.counterpartyId}`
+          const existing = inputsByRecipientKey.get(key) ?? []
+          existing.push(inputs[index])
+          inputsByRecipientKey.set(key, existing)
+        })
+      }
+
+      /**
+       * 分担者ごとに、その分担者分のCreateJournalEntryInput(選択した元仕訳の件数分)を
+       * mergeExpenseSplittingJournalEntryInputsで1件の複合仕訳へ統合する(人間レビューでの
+       * 指摘「割勘の仕訳を作るときは複数明細をまとめて一本で仕訳を切るように(逆仕訳が
+       * 切りやすくなるから)」への対応、計画Issue #40)。統合の単位を「分担者ごと」に
+       * 限定しているのは、異なる分担者(household_member_id)の立替金(負債)行を同じ仕訳に
+       * 混在させると、精算画面がタグ(account・project・household_member)ごとに残高を
+       * 区別できず、ある世帯メンバーの精算操作で無関係な別の世帯メンバーの債務まで無警告で
+       * 消し込まれてしまう不具合が実際に見つかったため(evaluatorレビュー指摘、docs/domain/
+       * settlement.md 1.7の「タグの組み合わせごとに消込対象を一意に特定できる」という
+       * 既存の不変条件に反する状態を作ってしまっていた)。分担者が同じであれば、選択した
+       * 元仕訳が複数あっても常に同じ人物への同じ債務の一部であり、タグの混在は起こらない。
+       * 摘要はmemoInput(既定値はcomputeDefaultMemo、ユーザーが自由に編集できる)を全ての
+       * 仕訳で共通して使い、空欄のまま確定した場合はnull(無題)とする。起票者は選択した
+       * 元仕訳のうち先頭のもののhouseholdMemberIdを使う(全行に明示的なhousehold_member_id
+       * が設定されるため、実効メンバーの解決においてこの値がフォールバックとして参照される
+       * ことはない)。
+       */
+      const mergedInputs = [...inputsByRecipientKey.values()].map((inputs) =>
+        mergeExpenseSplittingJournalEntryInputs({
+          inputs,
+          entryDate,
+          memo: memoInput.trim() === '' ? null : memoInput,
+          householdMemberId: originalEntries[0].householdMemberId,
+        }),
+      )
+
       const created: JournalEntry[] = []
       for (const mergedInput of mergedInputs) {
         created.push(await journalEntryRepository.create(mergedInput))
@@ -403,17 +457,12 @@ export function ExpenseSplittingForm({
         />
       </div>
 
-      <ProjectQuickAddSelect
-        id="expense-splitting-project"
-        label={t('projectLabel')}
-        value={projectId}
-        projects={settlementProjects}
-        onChange={setProjectId}
-        onCreate={async (name) => {
-          const created = await projectRepository.create({ name, kind: 'settlement' })
-          setMasterData((prev) => (prev === null ? prev : { ...prev, projects: [...prev.projects, created] }))
-          return created
-        }}
+      <SettlementBatchSelect
+        id="expense-splitting-settlement-batch"
+        label={t('settlementBatchLabel')}
+        value={settlementBatchId}
+        settlementBatches={masterData.settlementBatches}
+        onChange={setSettlementBatchId}
       />
 
       {!isBatch && (
@@ -571,103 +620,43 @@ export function ExpenseSplittingForm({
   )
 }
 
-/** プロジェクトセレクトの「+ 新しいプロジェクトを作成する」を表す特殊値。project idと衝突しない文字列を使う */
-const NEW_PROJECT_OPTION_VALUE = '__new__'
-
-interface ProjectQuickAddSelectProps {
+interface SettlementBatchSelectProps {
   id: string
   label: string
-  value: number | null
-  projects: readonly Project[]
-  onChange: (projectId: number | null) => void
-  /** プロジェクト(kind='settlement')を新規作成する。作成後のprojects一覧への反映は呼び出し元の責務 */
-  onCreate: (name: string) => Promise<Project>
+  value: number | typeof NEW_SETTLEMENT_BATCH_VALUE
+  settlementBatches: readonly SettlementBatch[]
+  onChange: (settlementBatchId: number | typeof NEW_SETTLEMENT_BATCH_VALUE) => void
 }
 
 /**
- * プロジェクト(kind='settlement')セレクト(計画Issue #40)。既存の
- * CounterpartyQuickAddSelect(src/components/counterparty-management/CounterpartyQuickAddSelect.tsx)
- * と同じ「その場作成(quick add)」パターンを踏襲し、既存プロジェクトからの選択に加え、
- * 「+ 新しいプロジェクトを作成する」を選ぶと名前入力欄がインラインで現れ(モーダル不使用)、
- * その場でprojectRepository.createを呼び出して新規プロジェクトを作成・選択できる
- * (D6のプロジェクト管理画面へ事前に作成しに行く手間を無くすためのユーザー要望)。
- * 作成したプロジェクトは既存のDB永続化の仕組みにより精算画面(SettlementScreen)の
- * 選択肢にも自動的に表示される。表示名は既存のプロジェクト管理画面(D6)と同じ
- * 「プロジェクト」に統一し、「割勘バッチ」という独自の呼称は使わない(人間レビューでの
- * 指摘、同一エンティティが画面によって別名で呼ばれる不整合の解消)。
+ * 精算バッチ(type='expense_splitting')セレクト(計画Issue #40、計画Issue #133でproject
+ * (kind='settlement')からsettlement_batchesへ置き換え)。既存バッチからの選択肢に加え、
+ * 「新しい精算バッチを作成する」を既定選択として持つ(ユーザーからの指摘「プロジェクトを
+ * 選択する必要はないのでは」「精算バッチの名前はこの画面の摘要がそのまま使えるのでは」への
+ * 対応)。新規作成時に名前を別途入力させる作成フロー自体を廃止しており、実際の作成は
+ * handleSubmit側が確定時の摘要を名前として行う(このコンポーネントはバッチidの選択状態のみを
+ * 持つ)。同じ相手との割勘を複数回に分けて同一バッチにまとめたい場合のために、既存バッチへの
+ * 選択も維持する。
  */
-function ProjectQuickAddSelect({ id, label, value, projects, onChange, onCreate }: ProjectQuickAddSelectProps) {
+function SettlementBatchSelect({ id, label, value, settlementBatches, onChange }: SettlementBatchSelectProps) {
   const { t } = useTranslation('expenseSplitting')
-  const [adding, setAdding] = useState(false)
-  const [nameInput, setNameInput] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleAdd(): Promise<void> {
-    const trimmedName = nameInput.trim()
-    if (trimmedName === '') return
-    setCreating(true)
-    setError(null)
-    try {
-      const created = await onCreate(trimmedName)
-      onChange(created.id)
-      setAdding(false)
-      setNameInput('')
-    } catch {
-      setError(t('newProjectError'))
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  if (adding) {
-    return (
-      <div className="expense-splitting-project-quick-add">
-        <label htmlFor={`${id}-new-name`}>{t('newProjectNameLabel')}</label>
-        <input
-          id={`${id}-new-name`}
-          type="text"
-          value={nameInput}
-          onChange={(event) => setNameInput(event.target.value)}
-        />
-        <button type="button" disabled={creating || nameInput.trim() === ''} onClick={() => void handleAdd()}>
-          {t('addProjectButton')}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setAdding(false)
-            setNameInput('')
-          }}
-        >
-          {t('cancelButton')}
-        </button>
-        {error && <p role="alert">{error}</p>}
-      </div>
-    )
-  }
 
   return (
     <div>
       <label htmlFor={id}>{label}</label>
       <select
         id={id}
-        value={value ?? ''}
-        onChange={(event) => {
-          if (event.target.value === NEW_PROJECT_OPTION_VALUE) {
-            setAdding(true)
-            return
-          }
-          onChange(event.target.value === '' ? null : Number(event.target.value))
-        }}
+        value={value}
+        onChange={(event) =>
+          onChange(event.target.value === NEW_SETTLEMENT_BATCH_VALUE ? NEW_SETTLEMENT_BATCH_VALUE : Number(event.target.value))
+        }
       >
-        <option value="">{t('unselected')}</option>
-        {projects.map((project) => (
-          <option key={project.id} value={project.id}>
-            {project.name}
+        {settlementBatches.map((batch) => (
+          <option key={batch.id} value={batch.id}>
+            {batch.name}
           </option>
         ))}
-        <option value={NEW_PROJECT_OPTION_VALUE}>{t('addNewProjectOption')}</option>
+        <option value={NEW_SETTLEMENT_BATCH_VALUE}>{t('addNewSettlementBatchOption')}</option>
       </select>
     </div>
   )

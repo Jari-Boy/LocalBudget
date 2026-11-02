@@ -51,6 +51,7 @@ function buildEntry(overrides: {
       projectId: line.projectId ?? null,
       householdMemberId: line.householdMemberId ?? null,
       counterpartyId: null,
+      settlementBatchId: null,
       side: 'debit' as const,
       amount: 1000,
       createdAt: '2026-08-01T00:00:00.000Z',

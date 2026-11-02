@@ -5,7 +5,7 @@ import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type { JournalEntryLink } from '../../domain/journal/JournalEntryLink'
-import type { Project } from '../../domain/project/Project'
+import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import { listExpenseSplittingHistory } from '../../domain/expense-splitting/listExpenseSplittingHistory'
 import { resolveExpenseSplittingParticipant } from '../../domain/expense-splitting/resolveExpenseSplittingParticipant'
 import { isExpenseSplittingEntrySettled } from '../../domain/expense-splitting/isExpenseSplittingEntrySettled'
@@ -19,8 +19,8 @@ interface JournalEntryFinder {
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
 }
-interface ProjectFinder {
-  findAll(): Project[] | Promise<Project[]>
+interface SettlementBatchFinder {
+  findAll(): SettlementBatch[] | Promise<SettlementBatch[]>
 }
 interface HouseholdMemberFinder {
   findAll(): HouseholdMember[] | Promise<HouseholdMember[]>
@@ -32,7 +32,7 @@ interface CounterpartyFinder {
 export interface ExpenseSplittingHistoryScreenProps {
   journalEntryRepository: JournalEntryFinder
   accountRepository: AccountFinder
-  projectRepository: ProjectFinder
+  settlementBatchRepository: SettlementBatchFinder
   householdMemberRepository: HouseholdMemberFinder
   counterpartyRepository: CounterpartyFinder
   /** 一覧の行から仕訳詳細画面(既存のJournalEntryDetailScreen)へ遷移するために呼ばれる */
@@ -43,7 +43,7 @@ export interface ExpenseSplittingHistoryScreenProps {
 interface LoadedData {
   entries: JournalEntry[]
   accounts: Account[]
-  projects: Project[]
+  settlementBatches: SettlementBatch[]
   householdMembers: HouseholdMember[]
   counterparties: Counterparty[]
   linksByEntryId: Map<number, JournalEntryLink[]>
@@ -51,18 +51,19 @@ interface LoadedData {
 
 interface AdvanceLinesSummary {
   amount: number
-  projectId: number | null
+  settlementBatchId: number | null
 }
 
 /**
  * 割勘仕訳が持つ立替金(is_system_managed=trueの資産/負債)行から、表示用の金額・
- * 所属プロジェクトを求める(docs/domain/expense-splitting.md 1.2節)。複数の元仕訳を
- * まとめて1回で割勘した場合(計画Issue #40、mergeExpenseSplittingJournalEntryInputs)、
- * 1件の仕訳が元仕訳ごとに複数の立替金行(資産側・負債側それぞれ)を持つため、単純に
- * 最初の1行を採用すると合計額より少ない金額を表示してしまう。資産側の行が1件以上
- * あればその合計(世帯メンバー間の割勘は資産側・負債側が同額のため資産側で代表できる)、
- * 無ければ負債側の合計(通常発生しないが安全側)を金額とする。プロジェクトIDは全ての
- * 立替金行で同一のため(1回の割勘操作は単一のprojectIdに対して行う)、代表の1件から取得する。
+ * 所属精算バッチを求める(docs/domain/expense-splitting.md 1.2節、計画Issue #133で
+ * project_idからsettlement_batch_idへ変更)。複数の元仕訳をまとめて1回で割勘した場合
+ * (計画Issue #40、mergeExpenseSplittingJournalEntryInputs)、1件の仕訳が元仕訳ごとに
+ * 複数の立替金行(資産側・負債側それぞれ)を持つため、単純に最初の1行を採用すると合計額
+ * より少ない金額を表示してしまう。資産側の行が1件以上あればその合計(世帯メンバー間の
+ * 割勘は資産側・負債側が同額のため資産側で代表できる)、無ければ負債側の合計(通常発生
+ * しないが安全側)を金額とする。精算バッチIDは全ての立替金行で同一のため(1回の割勘操作は
+ * 単一のsettlement_batch_idに対して行う)、代表の1件から取得する。
  */
 function summarizeAdvanceLines(entry: JournalEntry, accounts: readonly Account[]): AdvanceLinesSummary {
   const accountsById = new Map(accounts.map((account) => [account.id, account]))
@@ -77,7 +78,7 @@ function summarizeAdvanceLines(entry: JournalEntry, accounts: readonly Account[]
 
   return {
     amount: targetLines.reduce((sum, line) => sum + line.amount, 0),
-    projectId: targetLines[0]?.projectId ?? null,
+    settlementBatchId: targetLines[0]?.settlementBatchId ?? null,
   }
 }
 
@@ -110,7 +111,7 @@ function resolveParticipantName(
 export function ExpenseSplittingHistoryScreen({
   journalEntryRepository,
   accountRepository,
-  projectRepository,
+  settlementBatchRepository,
   householdMemberRepository,
   counterpartyRepository,
   onSelectEntry,
@@ -124,22 +125,22 @@ export function ExpenseSplittingHistoryScreen({
     void Promise.all([
       Promise.resolve(journalEntryRepository.findAll()),
       Promise.resolve(accountRepository.findAll()),
-      Promise.resolve(projectRepository.findAll()),
+      Promise.resolve(settlementBatchRepository.findAll()),
       Promise.resolve(householdMemberRepository.findAll()),
       Promise.resolve(counterpartyRepository.findAll()),
-    ]).then(async ([entries, accounts, projects, householdMembers, counterparties]) => {
+    ]).then(async ([entries, accounts, settlementBatches, householdMembers, counterparties]) => {
       const linksByEntryId = new Map<number, JournalEntryLink[]>()
       await Promise.all(
         entries.map(async (entry) => {
           linksByEntryId.set(entry.id, await Promise.resolve(journalEntryRepository.listLinksForEntry(entry.id)))
         }),
       )
-      setData({ entries, accounts, projects, householdMembers, counterparties, linksByEntryId })
+      setData({ entries, accounts, settlementBatches, householdMembers, counterparties, linksByEntryId })
     })
   }, [
     journalEntryRepository,
     accountRepository,
-    projectRepository,
+    settlementBatchRepository,
     householdMemberRepository,
     counterpartyRepository,
   ])
@@ -148,9 +149,11 @@ export function ExpenseSplittingHistoryScreen({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const { entries, accounts, projects, householdMembers, counterparties, linksByEntryId } = data
+  const { entries, accounts, settlementBatches, householdMembers, counterparties, linksByEntryId } = data
+  const allLines = entries.flatMap((entry) => entry.lines)
   const historyEntries = listExpenseSplittingHistory(entries, linksByEntryId)
-  const projectName = (id: number | null) => (id === null ? null : (projects.find((p) => p.id === id)?.name ?? null))
+  const settlementBatchName = (id: number | null) =>
+    id === null ? null : (settlementBatches.find((batch) => batch.id === id)?.name ?? null)
 
   return (
     <div className="expense-splitting-history-screen">
@@ -163,16 +166,12 @@ export function ExpenseSplittingHistoryScreen({
           {historyEntries.map(({ splitEntry, originalEntries }) => {
             const advanceSummary = summarizeAdvanceLines(splitEntry, accounts)
             const participantName = resolveParticipantName(splitEntry, accounts, householdMembers, counterparties)
-            const isSettled = isExpenseSplittingEntrySettled(
-              splitEntry,
-              accounts,
-              linksByEntryId.get(splitEntry.id) ?? [],
-            )
+            const isSettled = isExpenseSplittingEntrySettled(splitEntry, accounts, allLines)
             const originalSummary =
               originalEntries.length === 1
                 ? (originalEntries[0].memo ?? t('entryNoMemo'))
                 : t('historyOriginalEntriesSummary', { count: originalEntries.length })
-            const belongingProjectName = projectName(advanceSummary.projectId)
+            const belongingProjectName = settlementBatchName(advanceSummary.settlementBatchId)
 
             return (
               <li key={splitEntry.id}>

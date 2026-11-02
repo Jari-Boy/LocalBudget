@@ -33,16 +33,24 @@ CREATE TABLE journal_lines (
     REFERENCES household_members(id),
   counterparty_id       INTEGER
     REFERENCES counterparties(id),
+  -- 精算バッチのタグ(計画Issue #133)。project_idとは独立したカラムであり、1行に
+  -- 両方を同時に設定できる(例: 割勘仕訳の費用行はproject_id(イベント)、立替金行は
+  -- settlement_batch_id(精算バッチ)をそれぞれ持つ)。未精算残高は
+  -- (settlement_batch_id, account_id, household_member_id/counterparty_id)の
+  -- 集計で算出する(docs/domain/settlement.md参照)。
+  settlement_batch_id   INTEGER
+    REFERENCES settlement_batches(id),
   side                  TEXT NOT NULL CHECK (side IN ('debit', 'credit')),
   amount                INTEGER NOT NULL CHECK (amount > 0),
   created_at            TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_journal_lines_entry        ON journal_lines(journal_entry_id);
-CREATE INDEX idx_journal_lines_account      ON journal_lines(account_id);
-CREATE INDEX idx_journal_lines_project      ON journal_lines(project_id);
-CREATE INDEX idx_journal_lines_member       ON journal_lines(household_member_id);
-CREATE INDEX idx_journal_lines_counterparty ON journal_lines(counterparty_id);
+CREATE INDEX idx_journal_lines_entry            ON journal_lines(journal_entry_id);
+CREATE INDEX idx_journal_lines_account          ON journal_lines(account_id);
+CREATE INDEX idx_journal_lines_project          ON journal_lines(project_id);
+CREATE INDEX idx_journal_lines_member           ON journal_lines(household_member_id);
+CREATE INDEX idx_journal_lines_counterparty     ON journal_lines(counterparty_id);
+CREATE INDEX idx_journal_lines_settlement_batch ON journal_lines(settlement_batch_id);
 
 -- journal_entries.updated_at の自動更新
 CREATE TRIGGER journal_entries_set_updated_at

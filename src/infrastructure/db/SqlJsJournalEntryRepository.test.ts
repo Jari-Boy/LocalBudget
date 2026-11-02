@@ -757,15 +757,15 @@ describe('delete', () => {
   })
 })
 
-describe('deleteByProjectId(project_id単位での一括物理削除、expense-splitting.md 1.2)', () => {
-  it('対象project_idにタグ付けされた仕訳が複数件ある場合はまとめて物理削除する', () => {
-    const projectId = insertProject(db, '旅行2026')
+describe('deleteBySettlementBatchId(settlement_batch_id単位での一括物理削除、計画Issue #133)', () => {
+  it('対象settlement_batch_idにタグ付けされた仕訳が複数件ある場合はまとめて物理削除する', () => {
+    const batchId = insertSettlementBatch(db, '旅行2026')
     const entryA = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: payableAccountId, side: 'credit', amount: 1000, projectId },
+        { accountId: payableAccountId, side: 'credit', amount: 1000, settlementBatchId: batchId },
       ],
     })
     const entryB = repository.create({
@@ -773,18 +773,18 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       entryDate: '2026-07-02',
       lines: [
         { accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
-        { accountId: payableAccountId, side: 'credit', amount: 2000, projectId },
+        { accountId: payableAccountId, side: 'credit', amount: 2000, settlementBatchId: batchId },
       ],
     })
 
-    repository.deleteByProjectId(projectId)
+    repository.deleteBySettlementBatchId(batchId)
 
     expect(repository.findById(entryA.id)).toBeNull()
     expect(repository.findById(entryB.id)).toBeNull()
   })
 
-  it('対象project_idを持つ仕訳が0件の場合は何もせず正常終了する', () => {
-    const projectId = insertProject(db, '空プロジェクト')
+  it('対象settlement_batch_idを持つ仕訳が0件の場合は何もせず正常終了する', () => {
+    const batchId = insertSettlementBatch(db, '空バッチ')
     const other = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-03',
@@ -794,12 +794,12 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       ],
     })
 
-    expect(() => repository.deleteByProjectId(projectId)).not.toThrow()
+    expect(() => repository.deleteBySettlementBatchId(batchId)).not.toThrow()
     expect(repository.findById(other.id)).not.toBeNull()
   })
 
   it('削除された仕訳のjournal_entry_links(from_entry/to_entryいずれの向きでも)もCASCADE削除される', () => {
-    const projectId = insertProject(db, '按分対象')
+    const batchId = insertSettlementBatch(db, '按分対象')
     const original = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-01',
@@ -813,7 +813,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       entryDate: '2026-07-02',
       lines: [
         { accountId: foodExpenseAccountId, side: 'credit', amount: 500 },
-        { accountId: payableAccountId, side: 'debit', amount: 500, projectId },
+        { accountId: payableAccountId, side: 'debit', amount: 500, settlementBatchId: batchId },
       ],
       links: [{ fromLineIndex: 0, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
@@ -831,7 +831,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       entryDate: '2026-07-04',
       sourceType: 'external_import',
       lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000, projectId },
+        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000, settlementBatchId: batchId },
         { accountId: bankAccountId, side: 'credit', amount: 80000 },
       ],
     })
@@ -842,7 +842,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       amount: 80000,
     })
 
-    repository.deleteByProjectId(projectId)
+    repository.deleteBySettlementBatchId(batchId)
 
     expect(repository.findById(taggedFromEntry.id)).toBeNull()
     expect(repository.findById(taggedToEntry.id)).toBeNull()
@@ -852,16 +852,16 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
     expect(repository.listLinksForEntry(untagged.id)).toHaveLength(0)
   })
 
-  it('別のproject_idを持つ仕訳やproject_idが未設定の仕訳は削除されない', () => {
-    const targetProjectId = insertProject(db, '対象プロジェクト')
-    const otherProjectId = insertProject(db, '別プロジェクト')
+  it('別のsettlement_batch_idを持つ仕訳やsettlement_batch_idが未設定の仕訳は削除されない', () => {
+    const targetBatchId = insertSettlementBatch(db, '対象バッチ')
+    const otherBatchId = insertSettlementBatch(db, '別バッチ')
 
     const target = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: payableAccountId, side: 'credit', amount: 1000, projectId: targetProjectId },
+        { accountId: payableAccountId, side: 'credit', amount: 1000, settlementBatchId: targetBatchId },
       ],
     })
     const other = repository.create({
@@ -869,7 +869,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       entryDate: '2026-07-02',
       lines: [
         { accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
-        { accountId: payableAccountId, side: 'credit', amount: 2000, projectId: otherProjectId },
+        { accountId: payableAccountId, side: 'credit', amount: 2000, settlementBatchId: otherBatchId },
       ],
     })
     const untagged = repository.create({
@@ -881,7 +881,7 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       ],
     })
 
-    repository.deleteByProjectId(targetProjectId)
+    repository.deleteBySettlementBatchId(targetBatchId)
 
     expect(repository.findById(target.id)).toBeNull()
     expect(repository.findById(other.id)).not.toBeNull()
@@ -889,13 +889,13 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
   })
 
   it('精算済み(settlesリンクを持つ)仕訳が混在していてもガードなくすべて削除される(回帰テスト)', () => {
-    const projectId = insertProject(db, 'スマホ24回')
+    const batchId = insertSettlementBatch(db, 'スマホ24回')
     const toEntry = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
         { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
-        { accountId: payableAccountId, side: 'credit', amount: 80000, projectId },
+        { accountId: payableAccountId, side: 'credit', amount: 80000, settlementBatchId: batchId },
       ],
     })
     const fromEntry = repository.create({
@@ -903,13 +903,13 @@ describe('deleteByProjectId(project_id単位での一括物理削除、expense-s
       entryDate: '2026-07-05',
       sourceType: 'external_import',
       lines: [
-        { accountId: payableAccountId, side: 'debit', amount: 80000, projectId },
+        { accountId: payableAccountId, side: 'debit', amount: 80000, settlementBatchId: batchId },
         { accountId: bankAccountId, side: 'credit', amount: 80000 },
       ],
       links: [{ fromLineIndex: 0, toLineId: toEntry.lines[1].id, linkType: 'settles', amount: 80000 }],
     })
 
-    expect(() => repository.deleteByProjectId(projectId)).not.toThrow()
+    expect(() => repository.deleteBySettlementBatchId(batchId)).not.toThrow()
     expect(repository.findById(toEntry.id)).toBeNull()
     expect(repository.findById(fromEntry.id)).toBeNull()
   })
@@ -931,6 +931,11 @@ function insertProject(database: Database, name: string): number {
 
 function insertCounterparty(database: Database, name: string): number {
   database.run(`INSERT INTO counterparties (name) VALUES (?)`, [name])
+  return lastInsertRowId(database)
+}
+
+function insertSettlementBatch(database: Database, name: string): number {
+  database.run(`INSERT INTO settlement_batches (name, type) VALUES (?, 'expense_splitting')`, [name])
   return lastInsertRowId(database)
 }
 

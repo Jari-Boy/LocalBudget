@@ -45,7 +45,7 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
 
   const projectRepository = new SqlJsProjectRepository(db)
   for (const seed of DEV_SAMPLE_PROJECTS) {
-    projectRepository.create({ name: seed.name, kind: seed.kind })
+    projectRepository.create({ name: seed.name })
   }
 
   const accountIdByName = new Map(

@@ -6,6 +6,7 @@ import type { HouseholdMember } from '../../domain/household-member/HouseholdMem
 import type { JournalEntry, JournalLineInput, JournalLineSide, UpdateJournalEntryInput } from '../../domain/journal/JournalEntry'
 import type { JournalEntryLink } from '../../domain/journal/JournalEntryLink'
 import type { Project } from '../../domain/project/Project'
+import { hasAnySettlementActivity } from '../../domain/expense-splitting/hasAnySettlementActivity'
 import { traceExpenseSplittingHistory } from '../../domain/expense-splitting/traceExpenseSplittingHistory'
 import { findLinkedLinesToRemove, type LinkedLineToRemove } from '../../domain/journal/findLinkedLinesToRemove'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
@@ -161,7 +162,20 @@ export function JournalEntryDetailScreen({
 
   const entryLinks = linksByEntryId.get(entry.id) ?? []
   const isSplitEntry = entryLinks.some((link) => link.fromEntryId === entry.id && link.linkType === 'allocates')
-  const isSettled = entryLinks.some((link) => link.toEntryId === entry.id && link.linkType === 'settles')
+  /**
+   * 取り消し導線の安全判定は、journal_entry_linksのsettlesリンクではなく、
+   * settlement_batch_idタグの集計方式(計画Issue #133、hasAnySettlementActivity)で行う。
+   * 精算画面(SettlementScreen・buildSettlementJournalEntryInput)はもはやsettlesリンクを
+   * 作らず、精算仕訳の立替金行にsettlement_batch_idタグを付けるだけのため、旧来のsettles
+   * リンク判定のままでは精算後も常にfalse(未精算)と誤判定し、取り消し導線が安全に機能
+   * しなくなる(実機・E2Eレビューで発見)。「全ての一時勘定行が精算済み」を要求する
+   * isExpenseSplittingEntrySettled(履歴画面向け)ではなく、「少なくとも1件の精算操作が
+   * 行われたか」を判定するhasAnySettlementActivityを使う。旧settlesリンク判定も
+   * 「1件でも存在すれば精算済み扱い」という同じ緩い意味論だったため、資産側・負債側の
+   * 片方だけを精算した状態でも取り消しを禁止する(どちらか一方でも精算が進んだ割勘仕訳を
+   * 物理削除すると、既に起票済みの精算仕訳が参照先を失うため)。
+   */
+  const isSettled = hasAnySettlementActivity(entry, accounts, allEntries.flatMap((e) => e.lines))
   const trails = traceExpenseSplittingHistory(entry, allEntries, linksByEntryId)
 
   function handleDelete(): void {

@@ -22,9 +22,9 @@ import type { CreateJournalEntryLinkInput, JournalEntryLink } from './JournalEnt
  * リンクも書き込めるようにしている(新しい仕訳の行はfromLineIndexで指す。検証に失敗した場合は
  * 仕訳・明細・リンクのいずれも書き込まれずROLLBACKされる)。createLinkは、既に存在する
  * 2つの明細行の間へ事後的にリンクを追加する場合のための別メソッドであり、こちらは独立した
- * トランザクションを持つ。リンク作成時は、科目一致・貸借が逆・from_lineの金額上限
- * (settlesはさらに一時勘定であることと世帯メンバー・取引先・プロジェクトの一致)を検証し、
- * 違反はSettlementTagMismatchError(settles)またはJournalEntryLinkLineErrorで拒否する。
+ * トランザクションを持つ。リンク作成時は、科目一致・貸借が逆・from_lineの金額上限を検証し、
+ * 違反はJournalEntryLinkLineErrorで拒否する(消込の残高計算・タグ整合性はsettlement_batch_id
+ * による集計方式に置き換わったため検証しない、計画Issue #133)。
  *
  * update()は明細行のidによる差分更新(計画Issue #132): idを指定した行は同じidのままUPDATEされ、
  * 行に紐づくリンクが維持される。id未指定の行は新規INSERT、入力から消えた既存行はDELETE
@@ -37,13 +37,14 @@ export interface JournalEntryRepository {
   update(id: number, input: UpdateJournalEntryInput): JournalEntry
   delete(id: number): void
   /**
-   * project_id(docs/domain/projects.md 1章)にタグ付けされたjournal_linesを持つjournal_entriesを
-   * 単一のDBトランザクションでまとめて物理削除する(all-or-nothing)。誤って投入した割勘バッチ
-   * (docs/domain/expense-splitting.md 1.2)を丸ごと取り消す用途を想定している。対象の仕訳が
-   * 精算済み(settlesリンクを持つ)かどうかによるガードは行わない(docs/domain/journal.md 1.5の
-   * 「物理削除は常に許可する」方針をそのまま踏襲)。該当する仕訳が存在しない場合は何もしない。
+   * settlement_batch_id(docs/domain/settlement.md、計画Issue #133)にタグ付けされた
+   * journal_linesを持つjournal_entriesを単一のDBトランザクションでまとめて物理削除する
+   * (all-or-nothing)。誤って投入した割勘バッチ(docs/domain/expense-splitting.md 1.2)を
+   * 丸ごと取り消す用途を想定している。対象の仕訳が精算済みかどうかによるガードは行わない
+   * (docs/domain/journal.md 1.5の「物理削除は常に許可する」方針をそのまま踏襲)。該当する
+   * 仕訳が存在しない場合は何もしない。
    */
-  deleteByProjectId(projectId: number): void
+  deleteBySettlementBatchId(settlementBatchId: number): void
   createLink(input: CreateJournalEntryLinkInput): JournalEntryLink
   listLinksForEntry(entryId: number): JournalEntryLink[]
 }

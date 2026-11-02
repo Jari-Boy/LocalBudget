@@ -4,7 +4,8 @@
  * 1,000円の食事(本来は友人Bさんと折半)をし、Bさんから500円を受け取る予定」例の通りに、
  * 立替金資産1行+費用(counterparty_id付き)1行から成る2行仕訳を組み立てられることと、
  * 負債側の立替金は発生しないこと、元仕訳の費用行へのallocatesリンク(費用の貸方行から張る、計画Issue #132)がlinksに含まれることを検証する。
- * DB非依存、外部依存なし。
+ * 計画Issue #133により、立替金行のタグはproject_id(精算バッチ)からsettlementBatchIdに変わり、
+ * 費用行には元仕訳のproject_id(イベント)が引き継がれることも検証する。DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import { buildCounterpartyExpenseSplittingJournalEntryInput } from './buildCounterpartyExpenseSplittingJournalEntryInput'
@@ -13,7 +14,7 @@ const EXPENSE_ACCOUNT_ID = 1 // 食費
 const ADVANCE_ASSET_ACCOUNT_ID = 10 // 資産・立替金
 const MEMBER_A = 100
 const FRIEND_COUNTERPARTY_ID = 300 // 友人Bさん
-const PROJECT_ID = 26 // 26/7生活費割勘
+const SETTLEMENT_BATCH_ID = 26 // 田中さんとの飲み代
 const ORIGINAL_LINE_ID = 999 // 元仕訳の費用行のid
 
 describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
@@ -24,7 +25,7 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
       counterpartyId: FRIEND_COUNTERPARTY_ID,
-      projectId: PROJECT_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
       amount: 500,
       entryDate: '2026-07-15',
     })
@@ -35,7 +36,7 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
       {
         accountId: ADVANCE_ASSET_ACCOUNT_ID,
         householdMemberId: MEMBER_A,
-        projectId: PROJECT_ID,
+        settlementBatchId: SETTLEMENT_BATCH_ID,
         side: 'debit',
         amount: 500,
       },
@@ -43,10 +44,30 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
         accountId: EXPENSE_ACCOUNT_ID,
         householdMemberId: MEMBER_A,
         counterpartyId: FRIEND_COUNTERPARTY_ID,
+        projectId: null,
         side: 'credit',
         amount: 500,
       },
     ])
+  })
+
+  it('eventProjectIdを渡すと、費用行(lines[1])にのみ引き継がれる(計画Issue #133、イベント別PL過大バグの解消)', () => {
+    const EVENT_PROJECT_ID = 77 // 26年7月アメリカ旅行
+    const input = buildCounterpartyExpenseSplittingJournalEntryInput({
+      originalLineId: ORIGINAL_LINE_ID,
+      expenseAccountId: EXPENSE_ACCOUNT_ID,
+      advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
+      payerMemberId: MEMBER_A,
+      counterpartyId: FRIEND_COUNTERPARTY_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
+      eventProjectId: EVENT_PROJECT_ID,
+      amount: 500,
+      entryDate: '2026-07-15',
+    })
+
+    expect(input.lines[1]).toMatchObject({ accountId: EXPENSE_ACCOUNT_ID, projectId: EVENT_PROJECT_ID })
+    expect(input.lines[0]).not.toHaveProperty('projectId')
+    expect(input.lines[0]).toMatchObject({ settlementBatchId: SETTLEMENT_BATCH_ID })
   })
 
   it('負債側の立替金(advanceLiabilityAccountId相当)は行として発生しない', () => {
@@ -56,7 +77,7 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
       counterpartyId: FRIEND_COUNTERPARTY_ID,
-      projectId: PROJECT_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
       amount: 500,
       entryDate: '2026-07-15',
     })
@@ -71,7 +92,7 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
       counterpartyId: FRIEND_COUNTERPARTY_ID,
-      projectId: PROJECT_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
       amount: 500,
       entryDate: '2026-07-15',
     })
@@ -90,7 +111,7 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
       counterpartyId: FRIEND_COUNTERPARTY_ID,
-      projectId: PROJECT_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
       amount: 500,
       entryDate: '2026-07-15',
       memo: '友人Bさんとの食事代割勘',
@@ -107,7 +128,7 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
       counterpartyId: FRIEND_COUNTERPARTY_ID,
-      projectId: PROJECT_ID,
+      settlementBatchId: SETTLEMENT_BATCH_ID,
       amount: 500,
       entryDate: '2026-07-15',
     })

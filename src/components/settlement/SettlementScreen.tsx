@@ -1,30 +1,32 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
+import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { CreateJournalEntryInput, JournalEntry } from '../../domain/journal/JournalEntry'
-import type { JournalEntryLink } from '../../domain/journal/JournalEntryLink'
-import type { Project } from '../../domain/project/Project'
-import { allocateSettlementToLines } from '../../domain/settlement/allocateSettlementToLines'
+import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
+import { findUnsettledSettlementBatchBalances } from '../../domain/settlement-batch/findUnsettledSettlementBatchBalances'
 import { buildSettlementJournalEntryInput } from '../../domain/settlement/buildSettlementJournalEntryInput'
-import { findUnsettledLines, type UnsettledLine } from '../../domain/settlement/findUnsettledEntries'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import './SettlementScreen.css'
 
-interface ProjectFinder {
-  findAll(): Project[] | Promise<Project[]>
+interface SettlementBatchFinder {
+  findAll(): SettlementBatch[] | Promise<SettlementBatch[]>
 }
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
 }
+interface HouseholdMemberFinder {
+  findAll(): HouseholdMember[] | Promise<HouseholdMember[]>
+}
 interface JournalEntryFinder {
   findAll(): JournalEntry[] | Promise<JournalEntry[]>
-  listLinksForEntry(entryId: number): JournalEntryLink[] | Promise<JournalEntryLink[]>
   create(input: CreateJournalEntryInput): JournalEntry | Promise<JournalEntry>
 }
 
 export interface SettlementScreenProps {
-  projectRepository: ProjectFinder
+  settlementBatchRepository: SettlementBatchFinder
   accountRepository: AccountFinder
+  householdMemberRepository: HouseholdMemberFinder
   journalEntryRepository: JournalEntryFinder
   onBack: () => void
   /** 精算仕訳の取引日の既定値(YYYY-MM-DD)。省略時は本日の日付 */
@@ -32,54 +34,29 @@ export interface SettlementScreenProps {
 }
 
 interface MasterData {
-  projects: Project[]
+  settlementBatches: SettlementBatch[]
   accounts: Account[]
+  householdMembers: HouseholdMember[]
 }
 
 type SettlementSide = 'asset' | 'liability'
 
-/**
- * 画面の1行(精算の単位)。1件の仕訳が持つ未消込の一時勘定行を、世帯メンバーごとに束ねたもの。
- * 通常は1仕訳1行だが、複数の元仕訳をまとめて割勘した仕訳(同じ分担者分)は一時勘定行が複数あり、
- * 精算額はそれらへ先頭から順に割り当てる(allocateSettlementToLines)。世帯メンバーの異なる
- * 一時勘定行は別の行として扱い、一方の精算で他方の債務を消し込んでしまうことはない。
- */
+/** 画面の1行(精算バッチ内で、世帯メンバーごとに集計した未精算残高の単位) */
 interface SettlementRow {
   key: string
-  entry: JournalEntry
-  householdMemberId: number | null
-  lines: UnsettledLine[]
+  householdMemberId: number
   balance: number
 }
 
-function groupUnsettledLines(unsettledLines: readonly UnsettledLine[]): SettlementRow[] {
-  const rowsByKey = new Map<string, SettlementRow>()
-  for (const unsettled of unsettledLines) {
-    const memberId = unsettled.line.householdMemberId
-    const key = `${unsettled.entry.id}:${memberId ?? 'none'}`
-    const existing = rowsByKey.get(key)
-    if (existing === undefined) {
-      rowsByKey.set(key, {
-        key,
-        entry: unsettled.entry,
-        householdMemberId: memberId,
-        lines: [unsettled],
-        balance: unsettled.balance,
-      })
-    } else {
-      existing.lines.push(unsettled)
-      existing.balance += unsettled.balance
-    }
-  }
-  return Array.from(rowsByKey.values())
-}
 /**
- * 精算(立替金の消込)画面(計画Issue #40)。プロジェクト(kind='settlement')・
- * 精算方向を選択すると、A7消込ロジック(findUnsettledLines、明細行単位の消込残高)を用いて
- * 未精算の割勘仕訳の一時勘定行を、仕訳・世帯メンバーごとの行にまとめて一覧表示する。各行の
- * 「精算する」操作で実際の入出金口座・金額を指定し、精算額を未消込の明細行へ先頭から順に
- * 割り当てたうえで(allocateSettlementToLines)、buildSettlementJournalEntryInput
- * (一時勘定の区分に応じて借方/貸方を決定)で組み立てた精算仕訳を起票する。
+ * 精算(立替金の消込)画面(計画Issue #40、計画Issue #133でsettlement_batches・集計方式に移行)。
+ * 対象の精算バッチ・精算方向(資産/負債)を選択すると、
+ * findUnsettledSettlementBatchBalances(settlement_batch_id・科目・世帯メンバーでグルーピングした
+ * 未精算残高の集計、docs/domain/settlement.md参照)で未精算残高を世帯メンバーごとの行として
+ * 一覧表示する。各行の「精算する」操作で実際の入出金口座・金額を指定し、
+ * buildSettlementJournalEntryInput(一時勘定の区分に応じて借方/貸方を決定、settlement_batch_idを
+ * タグ付与するのみ)で組み立てた精算仕訳を起票する。journal_entry_linksによる明示的な消込リンクは
+ * 作らない(計画Issue #133)。
  *
  * 立替金(資産/負債)科目はユーザーに選択させず、seedAdvanceAccounts(docs/domain/
  * expense-splitting.md 1.2節)が投入したis_system_managed科目を自動解決して使う
@@ -89,8 +66,9 @@ function groupUnsettledLines(unsettledLines: readonly UnsettledLine[]): Settleme
  * 2択(SettlementSide)をユーザーに選ばせ、対応する科目idへ変換する。
  */
 export function SettlementScreen({
-  projectRepository,
+  settlementBatchRepository,
   accountRepository,
+  householdMemberRepository,
   journalEntryRepository,
   onBack,
   today,
@@ -99,7 +77,7 @@ export function SettlementScreen({
   const { t: tCommon } = useTranslation('common')
 
   const [masterData, setMasterData] = useState<MasterData | null>(null)
-  const [projectId, setProjectId] = useState<number | null>(null)
+  const [settlementBatchId, setSettlementBatchId] = useState<number | null>(null)
   const [settlementSide, setSettlementSide] = useState<SettlementSide | null>(null)
   const [unsettledRows, setUnsettledRows] = useState<SettlementRow[] | null>(null)
   const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null)
@@ -109,32 +87,28 @@ export function SettlementScreen({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    void Promise.all([Promise.resolve(projectRepository.findAll()), Promise.resolve(accountRepository.findAll())]).then(
-      ([projects, accounts]) => setMasterData({ projects, accounts }),
+    void Promise.all([
+      Promise.resolve(settlementBatchRepository.findAll()),
+      Promise.resolve(accountRepository.findAll()),
+      Promise.resolve(householdMemberRepository.findAll()),
+    ]).then(([settlementBatches, accounts, householdMembers]) =>
+      setMasterData({ settlementBatches, accounts, householdMembers }),
     )
-  }, [projectRepository, accountRepository])
+  }, [settlementBatchRepository, accountRepository, householdMemberRepository])
 
-  const loadUnsettled = (targetProjectId: number, targetSettlementAccountId: number) => {
-    void Promise.resolve(journalEntryRepository.findAll()).then(async (allEntries) => {
-      const projectEntries = allEntries.filter((entry) =>
-        entry.lines.some((line) => line.projectId === targetProjectId && line.accountId === targetSettlementAccountId),
+  const loadUnsettled = (targetBatchId: number, targetSettlementAccountId: number, side: SettlementSide) => {
+    void Promise.resolve(journalEntryRepository.findAll()).then((allEntries) => {
+      const allLines = allEntries.flatMap((entry) => entry.lines)
+      const balances = findUnsettledSettlementBatchBalances(allLines, targetBatchId, targetSettlementAccountId, side)
+      setUnsettledRows(
+        balances
+          .filter((balance) => balance.householdMemberId !== null)
+          .map((balance) => ({
+            key: `${balance.householdMemberId}`,
+            householdMemberId: balance.householdMemberId!,
+            balance: balance.balance,
+          })),
       )
-      const linksByEntryId = new Map<number, JournalEntryLink[]>()
-      await Promise.all(
-        projectEntries.map(async (entry) => {
-          linksByEntryId.set(entry.id, await Promise.resolve(journalEntryRepository.listLinksForEntry(entry.id)))
-        }),
-      )
-      /**
-       * 精算仕訳自体も一時勘定(立替金)行を持つが、その行はsettlesリンクのfrom_lineとして
-       * 明細行単位で識別でき、findUnsettledLinesが消込対象から除く(計画Issue #132。以前は
-       * 仕訳単位のリンクではタグ一致だけで精算仕訳自身と区別できず、呼び出し側で除外していた)。
-       * 絞り込むのはプロジェクトのタグが付いた行のみ。
-       */
-      const unsettledLines = findUnsettledLines(projectEntries, targetSettlementAccountId, linksByEntryId).filter(
-        ({ line }) => line.projectId === targetProjectId,
-      )
-      setUnsettledRows(groupUnsettledLines(unsettledLines))
     })
   }
 
@@ -142,7 +116,6 @@ export function SettlementScreen({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const settlementProjects = masterData.projects.filter((project) => project.kind === 'settlement')
   const counterAccounts = masterData.accounts.filter((account) => account.category === 'asset')
   /**
    * 立替金(資産/負債)科目はユーザーに科目一覧から選ばせず、seedAdvanceAccountsが
@@ -158,12 +131,16 @@ export function SettlementScreen({
   }
   const settlementAccountId = settlementSide === null ? null : settlementAccountIdBySide[settlementSide]
 
-  function handleSelectProject(nextProjectId: number | null) {
-    setProjectId(nextProjectId)
+  function memberName(householdMemberId: number): string {
+    return masterData!.householdMembers.find((member) => member.id === householdMemberId)?.name ?? ''
+  }
+
+  function handleSelectBatch(nextBatchId: number | null) {
+    setSettlementBatchId(nextBatchId)
     setUnsettledRows(null)
     setExpandedRowKey(null)
-    if (nextProjectId !== null && settlementAccountId !== null) {
-      loadUnsettled(nextProjectId, settlementAccountId)
+    if (nextBatchId !== null && settlementAccountId !== null && settlementSide !== null) {
+      loadUnsettled(nextBatchId, settlementAccountId, settlementSide)
     }
   }
 
@@ -172,8 +149,8 @@ export function SettlementScreen({
     setUnsettledRows(null)
     setExpandedRowKey(null)
     const nextAccountId = nextSide === null ? null : settlementAccountIdBySide[nextSide]
-    if (projectId !== null && nextAccountId !== null) {
-      loadUnsettled(projectId, nextAccountId)
+    if (settlementBatchId !== null && nextAccountId !== null && nextSide !== null) {
+      loadUnsettled(settlementBatchId, nextAccountId, nextSide)
     }
   }
 
@@ -185,7 +162,7 @@ export function SettlementScreen({
   }
 
   async function handleSettle(row: SettlementRow) {
-    if (submitting || settlementAccountId === null || settlementSide === null) return
+    if (submitting || settlementAccountId === null || settlementSide === null || settlementBatchId === null) return
     if (counterAccountId === null) {
       setError(t('settlementFieldMissingError'))
       return
@@ -196,20 +173,13 @@ export function SettlementScreen({
       return
     }
 
-    const targets = allocateSettlementToLines(
-      row.lines.map(({ line, balance }) => ({ lineId: line.id, balance })),
-      amount,
-    )
-    if (targets.length === 0) return
-
     const input = buildSettlementJournalEntryInput({
-      targets,
+      settlementBatchId,
       settlementAccountId,
       settlementAccountCategory: settlementSide,
       counterAccountId,
       amount,
-      householdMemberId: row.householdMemberId ?? row.entry.householdMemberId,
-      projectId,
+      householdMemberId: row.householdMemberId,
       entryDate: today ?? new Date().toISOString().slice(0, 10),
     })
 
@@ -218,9 +188,7 @@ export function SettlementScreen({
     try {
       await journalEntryRepository.create(input)
       setExpandedRowKey(null)
-      if (projectId !== null && settlementAccountId !== null) {
-        loadUnsettled(projectId, settlementAccountId)
-      }
+      loadUnsettled(settlementBatchId, settlementAccountId, settlementSide)
     } catch {
       setError(t('submitError'))
     } finally {
@@ -233,16 +201,16 @@ export function SettlementScreen({
       <h2>{t('settlementScreenTitle')}</h2>
 
       <div>
-        <label htmlFor="settlement-project">{t('projectLabel')}</label>
+        <label htmlFor="settlement-batch">{t('settlementBatchLabel')}</label>
         <select
-          id="settlement-project"
-          value={projectId ?? ''}
-          onChange={(event) => handleSelectProject(event.target.value === '' ? null : Number(event.target.value))}
+          id="settlement-batch"
+          value={settlementBatchId ?? ''}
+          onChange={(event) => handleSelectBatch(event.target.value === '' ? null : Number(event.target.value))}
         >
           <option value="">{t('unselected')}</option>
-          {settlementProjects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
+          {masterData.settlementBatches.map((batch) => (
+            <option key={batch.id} value={batch.id}>
+              {batch.name}
             </option>
           ))}
         </select>
@@ -268,57 +236,51 @@ export function SettlementScreen({
           <p>{t('unsettledEntryListEmpty')}</p>
         ) : (
           <ul>
-            {unsettledRows.map((row) => {
-              const { entry, balance } = row
-              return (
-                <li key={row.key}>
-                  <div className="settlement-entry-row">
-                    <span>{entry.entryDate}</span>
-                    <span>{entry.memo}</span>
-                    <span>{formatCurrency(balance, 'JPY')}</span>
-                    <button type="button" onClick={() => openSettleForm(row.key)}>
-                      {t('settleButton')}
+            {unsettledRows.map((row) => (
+              <li key={row.key}>
+                <div className="settlement-entry-row">
+                  <span>{memberName(row.householdMemberId)}</span>
+                  <span>{formatCurrency(row.balance, 'JPY')}</span>
+                  <button type="button" onClick={() => openSettleForm(row.key)}>
+                    {t('settleButton')}
+                  </button>
+                </div>
+
+                {expandedRowKey === row.key && (
+                  <div className="settlement-entry-form">
+                    <label htmlFor={`settlement-counter-account-${row.key}`}>{t('counterAccountLabel')}</label>
+                    <select
+                      id={`settlement-counter-account-${row.key}`}
+                      value={counterAccountId ?? ''}
+                      onChange={(event) =>
+                        setCounterAccountId(event.target.value === '' ? null : Number(event.target.value))
+                      }
+                    >
+                      <option value="">{t('unselected')}</option>
+                      {counterAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <label htmlFor={`settlement-amount-${row.key}`}>{t('settlementAmountLabel')}</label>
+                    <input
+                      id={`settlement-amount-${row.key}`}
+                      type="number"
+                      value={amountInput}
+                      onChange={(event) => setAmountInput(event.target.value)}
+                    />
+
+                    {error !== null && <p role="alert">{error}</p>}
+
+                    <button type="button" disabled={submitting} onClick={() => void handleSettle(row)}>
+                      {t('confirmSettlement')}
                     </button>
                   </div>
-
-                  {expandedRowKey === row.key && (
-                    <div className="settlement-entry-form">
-                      <label htmlFor={`settlement-counter-account-${row.key}`}>
-                        {t('counterAccountLabel')}
-                      </label>
-                      <select
-                        id={`settlement-counter-account-${row.key}`}
-                        value={counterAccountId ?? ''}
-                        onChange={(event) =>
-                          setCounterAccountId(event.target.value === '' ? null : Number(event.target.value))
-                        }
-                      >
-                        <option value="">{t('unselected')}</option>
-                        {counterAccounts.map((account) => (
-                          <option key={account.id} value={account.id}>
-                            {account.name}
-                          </option>
-                        ))}
-                      </select>
-
-                      <label htmlFor={`settlement-amount-${row.key}`}>{t('settlementAmountLabel')}</label>
-                      <input
-                        id={`settlement-amount-${row.key}`}
-                        type="number"
-                        value={amountInput}
-                        onChange={(event) => setAmountInput(event.target.value)}
-                      />
-
-                      {error !== null && <p role="alert">{error}</p>}
-
-                      <button type="button" disabled={submitting} onClick={() => void handleSettle(row)}>
-                        {t('confirmSettlement')}
-                      </button>
-                    </div>
-                  )}
-                </li>
-              )
-            })}
+                )}
+              </li>
+            ))}
           </ul>
         ))}
 

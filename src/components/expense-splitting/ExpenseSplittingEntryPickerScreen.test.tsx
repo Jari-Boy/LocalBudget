@@ -22,6 +22,7 @@ import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepo
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
+import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import { buildHouseholdMemberExpenseSplittingJournalEntryInput } from '../../domain/expense-splitting/buildHouseholdMemberExpenseSplittingJournalEntryInput'
 import { ExpenseSplittingEntryPickerScreen } from './ExpenseSplittingEntryPickerScreen'
@@ -31,6 +32,7 @@ let accountRepository: SqlJsAccountRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
 let projectRepository: SqlJsProjectRepository
+let settlementBatchRepository: SqlJsSettlementBatchRepository
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -39,6 +41,7 @@ beforeEach(async () => {
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
   projectRepository = new SqlJsProjectRepository(db)
+  settlementBatchRepository = new SqlJsSettlementBatchRepository(db)
 })
 
 afterEach(cleanup)
@@ -65,7 +68,7 @@ describe('ExpenseSplittingEntryPickerScreen', () => {
   it('未割勘の仕訳が候補として一覧表示され、既に割勘済みの仕訳は除外される', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const other = householdMemberRepository.create({ name: 'Bさん' })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
@@ -100,7 +103,7 @@ describe('ExpenseSplittingEntryPickerScreen', () => {
         advanceLiabilityAccountId: advanceLiability.id,
         fromMemberId: member.id,
         toMemberId: other.id,
-        projectId: project.id,
+        settlementBatchId: settlementBatch.id,
         amount: 250,
         entryDate: '2026-08-03',
       }),

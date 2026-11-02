@@ -1,6 +1,5 @@
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
-import { SettlementTagMismatchError } from '../../domain/journal/SettlementTagMismatchError'
 import {
   JournalEntryLinkLineError,
   type JournalEntryLinkLineErrorReason,
@@ -34,8 +33,6 @@ const DOMAIN_ERROR_REVIVERS: Record<string, DomainErrorReviver> = {
     ),
   RestrictedAccountPostingError: (_message, extra) =>
     new RestrictedAccountPostingError(extra.accountId as number, extra.sourceType as string),
-  SettlementTagMismatchError: (_message, extra) =>
-    new SettlementTagMismatchError(extra.fromEntryId as number, extra.toEntryId as number),
   JournalEntryLinkLineError: (_message, extra) =>
     new JournalEntryLinkLineError(
       extra.reason as JournalEntryLinkLineErrorReason,

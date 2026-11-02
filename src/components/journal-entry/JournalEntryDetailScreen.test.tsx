@@ -23,11 +23,13 @@ import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounte
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
+import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import { JournalEntryDetailScreen } from './JournalEntryDetailScreen'
 
 let db: Database
 let accountRepository: SqlJsAccountRepository
 let projectRepository: SqlJsProjectRepository
+let settlementBatchRepository: SqlJsSettlementBatchRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
 let counterpartyRepository: SqlJsCounterpartyRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
@@ -37,6 +39,7 @@ beforeEach(async () => {
   runMigrations(db)
   accountRepository = new SqlJsAccountRepository(db)
   projectRepository = new SqlJsProjectRepository(db)
+  settlementBatchRepository = new SqlJsSettlementBatchRepository(db)
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
   counterpartyRepository = new SqlJsCounterpartyRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
@@ -449,13 +452,14 @@ describe('JournalEntryDetailScreen', () => {
   it('精算前の割勘仕訳では、取り消し(物理削除)ボタンが表示され、押すと削除されonDeletedが呼ばれる', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const other = householdMemberRepository.create({ name: 'Bさん' })
-    const project = projectRepository.create({ name: '26/7生活費割勘' })
+    const batch = settlementBatchRepository.create({ name: '26/7生活費割勘', type: 'expense_splitting' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
-    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
     const advanceLiability = accountRepository.create({
       category: 'liability',
       name: '立替金',
       isReconcilable: false,
+      isSystemManaged: true,
     })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const original = journalEntryRepository.create({
@@ -473,9 +477,9 @@ describe('JournalEntryDetailScreen', () => {
       householdMemberId: member.id,
       lines: [
         { accountId: expense.id, side: 'debit', amount: 500, householdMemberId: other.id },
-        { accountId: advanceAsset.id, side: 'debit', amount: 500, projectId: project.id, householdMemberId: member.id },
+        { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batch.id, householdMemberId: member.id },
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
-        { accountId: advanceLiability.id, side: 'credit', amount: 500, projectId: project.id, householdMemberId: other.id },
+        { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
       ],
       links: [{ fromLineIndex: 2, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
@@ -490,16 +494,82 @@ describe('JournalEntryDetailScreen', () => {
     expect(journalEntryRepository.findById(splitEntry.id)).toBeNull()
   })
 
-  it('精算済みの割勘仕訳では、取り消しボタンの代わりに返金案内メッセージが表示される', async () => {
+  it('同じ精算バッチに別の未精算の割勘仕訳が追加されただけでは、取り消し(物理削除)ボタンが表示され続ける(evaluatorレビュー指摘: hasAnySettlementActivityの回帰修正を、実際のRepository経由・JournalEntryDetailScreenの配線込みで検証する。既存バッチへ複数の割勘を追記する運用フローは正常であり、精算が行われていない限り取り消しを妨げてはならない)', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const other = householdMemberRepository.create({ name: 'Bさん' })
-    const project = projectRepository.create({ name: '26/7生活費割勘' })
+    const batch = settlementBatchRepository.create({ name: '26/7生活費割勘', type: 'expense_splitting' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
-    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
     const advanceLiability = accountRepository.create({
       category: 'liability',
       name: '立替金',
       isReconcilable: false,
+      isSystemManaged: true,
+    })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const original1 = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '食事代1',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    const splitEntry1 = journalEntryRepository.create({
+      entryDate: '2026-08-02',
+      memo: '割勘1',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 500, householdMemberId: other.id },
+        { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batch.id, householdMemberId: member.id },
+        { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
+        { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
+      ],
+      links: [{ fromLineIndex: 2, toLineId: original1.lines[0].id, linkType: 'allocates', amount: 500 }],
+    })
+    // 同じ精算バッチへ、もう1件別の割勘仕訳を追記する(精算画面の「既存バッチへの追記」と
+    // 同じ正常な運用フロー)。どちらも未精算のまま。
+    const original2 = journalEntryRepository.create({
+      entryDate: '2026-08-03',
+      memo: '食事代2',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 300 },
+        { accountId: cash.id, side: 'credit', amount: 300 },
+      ],
+    })
+    journalEntryRepository.create({
+      entryDate: '2026-08-04',
+      memo: '割勘2',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 150, householdMemberId: other.id },
+        { accountId: advanceAsset.id, side: 'debit', amount: 150, settlementBatchId: batch.id, householdMemberId: member.id },
+        { accountId: expense.id, side: 'credit', amount: 150, householdMemberId: member.id },
+        { accountId: advanceLiability.id, side: 'credit', amount: 150, settlementBatchId: batch.id, householdMemberId: other.id },
+      ],
+      links: [{ fromLineIndex: 2, toLineId: original2.lines[0].id, linkType: 'allocates', amount: 150 }],
+    })
+
+    renderScreen(splitEntry1.id)
+    await screen.findByLabelText('取引日')
+
+    expect(await screen.findByRole('button', { name: 'この割勘を取り消す' })).toBeInTheDocument()
+    expect(screen.queryByText('精算後は新しい取引として現実の返金を記録してください')).not.toBeInTheDocument()
+  })
+
+  it('精算済みの割勘仕訳では、取り消しボタンの代わりに返金案内メッセージが表示される(計画Issue #133、精算状況はsettlement_batch_idタグの集計で判定する。かつてjournal_entry_linksのsettlesリンクで判定していたが、精算画面がsettlesリンクを作らなくなったため、実際の精算フローを再現してisSettledがタグ集計方式で正しく判定できることを検証する)', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const other = householdMemberRepository.create({ name: 'Bさん' })
+    const batch = settlementBatchRepository.create({ name: '26/7生活費割勘', type: 'expense_splitting' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
+    const advanceLiability = accountRepository.create({
+      category: 'liability',
+      name: '立替金',
+      isReconcilable: false,
+      isSystemManaged: true,
     })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const original = journalEntryRepository.create({
@@ -517,21 +587,26 @@ describe('JournalEntryDetailScreen', () => {
       householdMemberId: member.id,
       lines: [
         { accountId: expense.id, side: 'debit', amount: 500, householdMemberId: other.id },
-        { accountId: advanceAsset.id, side: 'debit', amount: 500, projectId: project.id, householdMemberId: member.id },
+        { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batch.id, householdMemberId: member.id },
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
-        { accountId: advanceLiability.id, side: 'credit', amount: 500, projectId: project.id, householdMemberId: other.id },
+        { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
       ],
       links: [{ fromLineIndex: 2, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })
+    // 実際の精算画面(buildSettlementJournalEntryInput)と同じ形: 立替金(負債)行に
+    // 同じbatch.id・householdMemberIdをタグ付けするだけで、journal_entry_linksは作らない。
+    // hasAnySettlementActivityは「少なくとも1件の精算操作が行われたか」を判定するため、
+    // 資産側(立替者memberの債権)・負債側(分担者otherの債務)のどちらか一方の精算だけで
+    // 取り消し導線が切り替わることを検証する(実際の精算画面も1回の操作では片方向のみ
+    // 精算する、docs/domain/expense-splitting.md 1.3節)。
     journalEntryRepository.create({
       entryDate: '2026-08-10',
       memo: '精算',
       householdMemberId: other.id,
       lines: [
-        { accountId: advanceLiability.id, side: 'debit', amount: 500, projectId: project.id, householdMemberId: other.id },
+        { accountId: advanceLiability.id, side: 'debit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
         { accountId: cash.id, side: 'credit', amount: 500 },
       ],
-      links: [{ fromLineIndex: 0, toLineId: splitEntry.lines[3].id, linkType: 'settles', amount: 500 }],
     })
 
     renderScreen(splitEntry.id)
@@ -543,13 +618,14 @@ describe('JournalEntryDetailScreen', () => {
   it('元の支出仕訳の詳細画面で、割勘の履歴(元の支出→割勘→精算)が表示される', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const other = householdMemberRepository.create({ name: 'Bさん' })
-    const project = projectRepository.create({ name: '26/7生活費割勘' })
+    const batch = settlementBatchRepository.create({ name: '26/7生活費割勘', type: 'expense_splitting' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
-    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
     const advanceLiability = accountRepository.create({
       category: 'liability',
       name: '立替金',
       isReconcilable: false,
+      isSystemManaged: true,
     })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const original = journalEntryRepository.create({
@@ -567,9 +643,9 @@ describe('JournalEntryDetailScreen', () => {
       householdMemberId: member.id,
       lines: [
         { accountId: expense.id, side: 'debit', amount: 500, householdMemberId: other.id },
-        { accountId: advanceAsset.id, side: 'debit', amount: 500, projectId: project.id, householdMemberId: member.id },
+        { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batch.id, householdMemberId: member.id },
         { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
-        { accountId: advanceLiability.id, side: 'credit', amount: 500, projectId: project.id, householdMemberId: other.id },
+        { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
       ],
       links: [{ fromLineIndex: 2, toLineId: original.lines[0].id, linkType: 'allocates', amount: 500 }],
     })

@@ -21,7 +21,7 @@ import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepo
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
-import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
+import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import { buildHouseholdMemberExpenseSplittingJournalEntryInput } from '../../domain/expense-splitting/buildHouseholdMemberExpenseSplittingJournalEntryInput'
 import { mergeExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/mergeExpenseSplittingJournalEntryInputs'
@@ -33,7 +33,7 @@ let db: Database
 let accountRepository: SqlJsAccountRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
-let projectRepository: SqlJsProjectRepository
+let settlementBatchRepository: SqlJsSettlementBatchRepository
 let counterpartyRepository: SqlJsCounterpartyRepository
 
 beforeEach(async () => {
@@ -42,7 +42,7 @@ beforeEach(async () => {
   accountRepository = new SqlJsAccountRepository(db)
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
-  projectRepository = new SqlJsProjectRepository(db)
+  settlementBatchRepository = new SqlJsSettlementBatchRepository(db)
   counterpartyRepository = new SqlJsCounterpartyRepository(db)
 })
 
@@ -56,7 +56,7 @@ function renderScreen(overrides?: { onSelectEntry?: (entry: JournalEntry) => voi
       <ExpenseSplittingHistoryScreen
         journalEntryRepository={journalEntryRepository}
         accountRepository={accountRepository}
-        projectRepository={projectRepository}
+        settlementBatchRepository={settlementBatchRepository}
         householdMemberRepository={householdMemberRepository}
         counterpartyRepository={counterpartyRepository}
         onSelectEntry={onSelectEntry}
@@ -94,7 +94,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     const { advanceAsset, advanceLiability } = setUpAdvanceAccounts()
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const other = householdMemberRepository.create({ name: 'Bさん' })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const batch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const originalEntry = journalEntryRepository.create({
@@ -114,7 +114,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
         advanceLiabilityAccountId: advanceLiability.id,
         fromMemberId: member.id,
         toMemberId: other.id,
-        projectId: project.id,
+        settlementBatchId: batch.id,
         amount: 500,
         entryDate: '2026-08-03',
       }),
@@ -135,7 +135,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     const { advanceAsset } = setUpAdvanceAccounts()
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const friend = counterpartyRepository.create({ name: '友人Cさん' })
-    const project = projectRepository.create({ name: '26/8旅行費割勘', kind: 'settlement' })
+    const batch = settlementBatchRepository.create({ name: '26/8旅行費割勘', type: 'expense_splitting' })
     const expense = accountRepository.create({ category: 'expense', name: '旅行費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const originalEntry = journalEntryRepository.create({
@@ -154,7 +154,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
         advanceAssetAccountId: advanceAsset.id,
         payerMemberId: member.id,
         counterpartyId: friend.id,
-        projectId: project.id,
+        settlementBatchId: batch.id,
         amount: 1000,
         entryDate: '2026-08-06',
       }),
@@ -170,7 +170,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     const { advanceAsset, advanceLiability } = setUpAdvanceAccounts()
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const other = householdMemberRepository.create({ name: 'Bさん' })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const batch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const smartphoneEntry = journalEntryRepository.create({
@@ -198,7 +198,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
       advanceLiabilityAccountId: advanceLiability.id,
       fromMemberId: member.id,
       toMemberId: other.id,
-      projectId: project.id,
+      settlementBatchId: batch.id,
       amount: 500,
       entryDate: '2026-08-03',
     })
@@ -209,7 +209,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
       advanceLiabilityAccountId: advanceLiability.id,
       fromMemberId: member.id,
       toMemberId: other.id,
-      projectId: project.id,
+      settlementBatchId: batch.id,
       amount: 250,
       entryDate: '2026-08-03',
     })
@@ -234,7 +234,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     const { advanceAsset, advanceLiability } = setUpAdvanceAccounts()
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const other = householdMemberRepository.create({ name: 'Bさん' })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const batch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const originalEntry = journalEntryRepository.create({
@@ -246,7 +246,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
         { accountId: cash.id, side: 'credit', amount: 1000 },
       ],
     })
-    const splitEntry = journalEntryRepository.create(
+    journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
         originalLineId: originalEntry.lines[0].id,
         expenseAccountId: expense.id,
@@ -254,32 +254,30 @@ describe('ExpenseSplittingHistoryScreen', () => {
         advanceLiabilityAccountId: advanceLiability.id,
         fromMemberId: member.id,
         toMemberId: other.id,
-        projectId: project.id,
+        settlementBatchId: batch.id,
         amount: 500,
         entryDate: '2026-08-03',
       }),
     )
     journalEntryRepository.create(
       buildSettlementJournalEntryInput({
-        targets: [{ toLineId: splitEntry.lines[3].id, amount: 500 }],
         settlementAccountId: advanceLiability.id,
         settlementAccountCategory: 'liability',
         counterAccountId: cash.id,
         amount: 500,
         householdMemberId: other.id,
-        projectId: project.id,
+        settlementBatchId: batch.id,
         entryDate: '2026-08-10',
       }),
     )
     journalEntryRepository.create(
       buildSettlementJournalEntryInput({
-        targets: [{ toLineId: splitEntry.lines[1].id, amount: 500 }],
         settlementAccountId: advanceAsset.id,
         settlementAccountCategory: 'asset',
         counterAccountId: cash.id,
         amount: 500,
         householdMemberId: member.id,
-        projectId: project.id,
+        settlementBatchId: batch.id,
         entryDate: '2026-08-11',
       }),
     )
@@ -294,7 +292,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     const { advanceAsset, advanceLiability } = setUpAdvanceAccounts()
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const other = householdMemberRepository.create({ name: 'Bさん' })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const batch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
     const originalEntry = journalEntryRepository.create({
@@ -314,7 +312,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
         advanceLiabilityAccountId: advanceLiability.id,
         fromMemberId: member.id,
         toMemberId: other.id,
-        projectId: project.id,
+        settlementBatchId: batch.id,
         amount: 500,
         entryDate: '2026-08-03',
       }),

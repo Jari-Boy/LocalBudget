@@ -11,8 +11,10 @@ export interface BuildCounterpartyExpenseSplittingJournalEntryInputParams {
   payerMemberId: number
   /** 精算待ちの相手(世帯外)のcounterparty_id */
   counterpartyId: number
-  /** 割勘バッチを表すproject_id(kind = 'settlement') */
-  projectId: number
+  /** 精算バッチのid(計画Issue #133、settlement_batches)。立替金行に付与する */
+  settlementBatchId: number
+  /** 元仕訳の行のproject_id(イベント)。費用行に引き継ぐ(計画Issue #133) */
+  eventProjectId?: number | null
   amount: number
   entryDate: string
   memo?: string | null
@@ -24,8 +26,13 @@ export interface BuildCounterpartyExpenseSplittingJournalEntryInputParams {
  * counterparty_idを付与する2行仕訳を組み立てる。household_member_id間の負債側立替金
  * (buildHouseholdMemberExpenseSplittingJournalEntryInputのadvanceLiabilityAccountId相当)は
  * 発生しない。JournalEntryRepository.create()にそのまま渡せるCreateJournalEntryInput
- * (source_typeは既定の'manual'のまま)を返す。科目id・counterparty_id・project_idの解決は
- * 呼び出し側の責務。
+ * (source_typeは既定の'manual'のまま)を返す。科目id・counterparty_id・settlementBatchIdの
+ * 解決は呼び出し側の責務。
+ *
+ * 立替金(資産)行は`settlementBatchId`(計画Issue #133、精算バッチのタグ)を持ち、費用行は
+ * `eventProjectId`(元仕訳のproject_id、イベントのタグ)を引き継ぐ。2つのタグは独立した
+ * カラムであり、どちらも同じ仕訳の異なる行に同時に存在できる(イベント別PLが割勘の友人
+ * 負担分で過大になるバグの解消)。
  *
  * 返り値のlinksに、割勘仕訳の費用の貸方行(from_line)から元仕訳の費用行(to_line)への
  * allocatesリンクを含めることで、割勘仕訳自体の作成とallocatesリンクの作成を単一のDB
@@ -44,7 +51,7 @@ export function buildCounterpartyExpenseSplittingJournalEntryInput(
       {
         accountId: params.advanceAssetAccountId,
         householdMemberId: params.payerMemberId,
-        projectId: params.projectId,
+        settlementBatchId: params.settlementBatchId,
         side: 'debit',
         amount: params.amount,
       },
@@ -52,6 +59,7 @@ export function buildCounterpartyExpenseSplittingJournalEntryInput(
         accountId: params.expenseAccountId,
         householdMemberId: params.payerMemberId,
         counterpartyId: params.counterpartyId,
+        projectId: params.eventProjectId ?? null,
         side: 'credit',
         amount: params.amount,
       },

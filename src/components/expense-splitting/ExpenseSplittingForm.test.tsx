@@ -9,9 +9,13 @@
  * 人間レビューでの再指摘(計画Issue #40 Attempt 4)を受け、複数の元仕訳をまとめて
  * 選択して一括で割勘起票できることも検証する(originalEntries配列対応)。
  * さらに人間レビューでの追加指摘を受け、立替金(資産/負債)科目はseedAdvanceAccountsで
- * 自動投入された恒久的な科目を自動解決して使う(ユーザーによる選択UIを持たない)ことと、
- * 「割勘バッチ」ではなく既存のプロジェクト管理画面(D6)と同じ「プロジェクト」という
- * 用語で統一されていることも検証する。
+ * 自動投入された恒久的な科目を自動解決して使う(ユーザーによる選択UIを持たない)ことも
+ * 検証する。精算バッチ(settlement_batches、計画Issue #133)の選択は、ユーザーからの
+ * 指摘(「プロジェクトを選択する必要はないのでは」「精算バッチの名前はこの画面の摘要が
+ * そのまま使えるのでは」)を受け、名前を別途入力させる作成フローを廃止し、既定で
+ * 「新しい精算バッチを作成する」が選択された状態にして、確定時の摘要をそのまま新規
+ * バッチの名前として使う形にしたことも検証する。既存バッチへの追記(同じ相手との
+ * 割勘を複数回に分けて同一バッチにまとめたい場合)のための選択も維持する。
  *
  * 再度の人間レビューでの指摘(相手の種類を明示的に選ばせるUIはナンセンスで、参加者の
  * 由来(世帯メンバーの一覧からチェック/世帯外相手として追加)自体がkindを一意に決める
@@ -34,13 +38,13 @@ import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepo
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
-import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
+import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import { ExpenseSplittingForm } from './ExpenseSplittingForm'
 
 let db: Database
 let accountRepository: SqlJsAccountRepository
-let projectRepository: SqlJsProjectRepository
+let settlementBatchRepository: SqlJsSettlementBatchRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
 let counterpartyRepository: SqlJsCounterpartyRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
@@ -49,7 +53,7 @@ beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
   accountRepository = new SqlJsAccountRepository(db)
-  projectRepository = new SqlJsProjectRepository(db)
+  settlementBatchRepository = new SqlJsSettlementBatchRepository(db)
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
   counterpartyRepository = new SqlJsCounterpartyRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
@@ -72,7 +76,7 @@ function renderForm(originalEntries: JournalEntry[], overrides?: { onComplete?: 
       <ExpenseSplittingForm
         originalEntries={originalEntries}
         accountRepository={accountRepository}
-        projectRepository={projectRepository}
+        settlementBatchRepository={settlementBatchRepository}
         householdMemberRepository={householdMemberRepository}
         counterpartyRepository={counterpartyRepository}
         journalEntryRepository={journalEntryRepository}
@@ -102,7 +106,7 @@ describe('ExpenseSplittingForm', () => {
     householdMemberRepository.create({ name: 'Bさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const originalEntry = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: 'スーパーで食材購入',
@@ -116,7 +120,7 @@ describe('ExpenseSplittingForm', () => {
     const { onComplete } = renderForm([originalEntry])
     await screen.findByText('スーパーで食材購入')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
     checkHouseholdMember('Bさん')
 
     fireEvent.click(screen.getByRole('button', { name: '計算する' }))
@@ -148,7 +152,7 @@ describe('ExpenseSplittingForm', () => {
     const friend = counterpartyRepository.create({ name: '友人Cさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const originalEntry = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: '友人との食事',
@@ -162,7 +166,7 @@ describe('ExpenseSplittingForm', () => {
     renderForm([originalEntry])
     await screen.findByText('友人との食事')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
 
     fireEvent.click(screen.getByRole('button', { name: '世帯外の相手を追加する' }))
     const participantRows = screen.getAllByRole('group', { name: /分担者/ })
@@ -183,6 +187,84 @@ describe('ExpenseSplittingForm', () => {
     })
   })
 
+  it('精算バッチを明示的に選択せず(新規作成の既定選択のまま)、世帯外の相手を含めて確定すると、自動作成されたバッチにcounterparty_idが設定される(計画Issue #133、evaluatorレビュー指摘対応)', async () => {
+    seedAdvanceAccounts(db)
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    const friend = counterpartyRepository.create({ name: '友人Cさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '友人との食事',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm([originalEntry])
+    await screen.findByText('友人との食事')
+
+    fireEvent.click(screen.getByRole('button', { name: '世帯外の相手を追加する' }))
+    const participantRows = screen.getAllByRole('group', { name: /分担者/ })
+    fireEvent.change(within(participantRows[0]).getByLabelText('相手', { exact: true }), {
+      target: { value: String(friend.id) },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(within(participantRows[0]).getByLabelText('金額')).toHaveValue(500))
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    await waitFor(() => {
+      const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      expect(createdEntries).toHaveLength(1)
+    })
+    expect(settlementBatchRepository.findAll()).toHaveLength(1)
+    expect(settlementBatchRepository.findAll()[0]).toMatchObject({ counterpartyId: friend.id })
+  })
+
+  it('counterparty_idが未設定の既存バッチを選択して世帯外の相手を含めて確定すると、そのバッチのcounterparty_idが更新される(計画Issue #133、evaluatorレビュー指摘対応)', async () => {
+    seedAdvanceAccounts(db)
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    const friend = counterpartyRepository.create({ name: '友人Cさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '友人との食事',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm([originalEntry])
+    await screen.findByText('友人との食事')
+
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '世帯外の相手を追加する' }))
+    const participantRows = screen.getAllByRole('group', { name: /分担者/ })
+    fireEvent.change(within(participantRows[0]).getByLabelText('相手', { exact: true }), {
+      target: { value: String(friend.id) },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(within(participantRows[0]).getByLabelText('金額')).toHaveValue(500))
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    await waitFor(() => {
+      const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      expect(createdEntries).toHaveLength(1)
+    })
+    expect(settlementBatchRepository.findAll()).toHaveLength(1)
+    expect(settlementBatchRepository.findAll()[0]).toMatchObject({ id: settlementBatch.id, counterpartyId: friend.id })
+  })
+
   it('世帯メンバー2人をチェックして均等割勘すると、分担者ごとに独立した2件の仕訳が作成される(複数人対応。異なる分担者の立替金行を同じ仕訳に混在させると精算画面がタグを区別できなくなるため、統合は分担者単位に限定する)', async () => {
     seedAdvanceAccounts(db)
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
@@ -190,7 +272,7 @@ describe('ExpenseSplittingForm', () => {
     householdMemberRepository.create({ name: 'Cさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8旅行割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8旅行割勘', type: 'expense_splitting' })
     const originalEntry = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: '旅行の食事代',
@@ -204,7 +286,7 @@ describe('ExpenseSplittingForm', () => {
     renderForm([originalEntry])
     await screen.findByText('旅行の食事代')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
     checkHouseholdMember('Bさん')
     checkHouseholdMember('Cさん')
 
@@ -267,7 +349,7 @@ describe('ExpenseSplittingForm', () => {
     householdMemberRepository.create({ name: 'Bさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const originalEntry = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: 'スーパーで食材購入',
@@ -281,7 +363,7 @@ describe('ExpenseSplittingForm', () => {
     renderForm([originalEntry])
     await screen.findByText('スーパーで食材購入')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
     fireEvent.change(screen.getByLabelText('配分方法'), { target: { value: 'ratio' } })
     checkHouseholdMember('Bさん')
     fireEvent.change(householdMemberRow('Bさん').getByLabelText('比率(%)'), { target: { value: '30' } })
@@ -306,7 +388,7 @@ describe('ExpenseSplittingForm', () => {
     householdMemberRepository.create({ name: 'Bさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const originalEntry = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: 'スーパーで食材購入',
@@ -320,7 +402,7 @@ describe('ExpenseSplittingForm', () => {
     renderForm([originalEntry])
     await screen.findByText('スーパーで食材購入')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
     fireEvent.change(screen.getByLabelText('配分方法'), { target: { value: 'amount' } })
     checkHouseholdMember('Bさん')
     fireEvent.change(householdMemberRow('Bさん').getByLabelText('金額'), { target: { value: '400' } })
@@ -343,7 +425,7 @@ describe('ExpenseSplittingForm', () => {
     householdMemberRepository.create({ name: 'Bさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const originalEntry = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: 'スーパーで食材購入',
@@ -357,7 +439,7 @@ describe('ExpenseSplittingForm', () => {
     const { onComplete } = renderForm([originalEntry])
     await screen.findByText('スーパーで食材購入')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
     checkHouseholdMember('Bさん')
     fireEvent.click(screen.getByRole('button', { name: '計算する' }))
     await waitFor(() => expect(householdMemberRow('Bさん').getByLabelText('金額')).toHaveValue(500))
@@ -369,7 +451,7 @@ describe('ExpenseSplittingForm', () => {
     expect(journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)).toHaveLength(0)
   })
 
-  it('プロジェクトをその場で新規作成でき、作成したプロジェクトがそのまま選択された状態で割勘を起票できる', async () => {
+  it('確定ボタンをクリックすると即座に無効化され、連続クリックしても精算バッチ・仕訳が重複して作成されない(実機レビューでの指摘対応。精算バッチの新規作成がhandleSubmit内のawaitを含むため、ボタン無効化がそれより後だと二重送信で重複が発生していた)', async () => {
     seedAdvanceAccounts(db)
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
     householdMemberRepository.create({ name: 'Bさん' })
@@ -388,15 +470,63 @@ describe('ExpenseSplittingForm', () => {
     renderForm([originalEntry])
     await screen.findByText('スーパーで食材購入')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: '__new__' } })
-    fireEvent.change(screen.getByLabelText('新しいプロジェクトの名前'), {
-      target: { value: '26/8生活費割勘' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '作成する' }))
+    checkHouseholdMember('Bさん')
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(householdMemberRow('Bさん').getByLabelText('金額')).toHaveValue(500))
 
-    await waitFor(() => expect(screen.queryByLabelText('新しいプロジェクトの名前')).not.toBeInTheDocument())
-    expect(projectRepository.findAll()).toHaveLength(1)
-    expect(projectRepository.findAll()[0]).toMatchObject({ name: '26/8生活費割勘', kind: 'settlement' })
+    const confirmButton = screen.getByRole('button', { name: '割勘を確定する' })
+    fireEvent.click(confirmButton)
+    // クリック直後、精算バッチ作成のawaitより前に同期的に無効化されているべき
+    expect(confirmButton).toBeDisabled()
+    // 無効化されたボタンへのクリックはブラウザ上では発火しないため、連続クリックの再現として扱える
+    fireEvent.click(confirmButton)
+
+    await waitFor(() => {
+      const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      expect(createdEntries).toHaveLength(1)
+    })
+    expect(settlementBatchRepository.findAll()).toHaveLength(1)
+  })
+
+  it('精算バッチのセレクトには既定で「新しい精算バッチを作成する」が選択されており、名前入力フォームは存在しない', async () => {
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm([originalEntry])
+    await screen.findByText('スーパーで食材購入')
+
+    expect(screen.getByLabelText('精算バッチ')).toHaveValue('__new__')
+    expect(screen.queryByLabelText('新しい精算バッチの名前')).not.toBeInTheDocument()
+  })
+
+  it('精算バッチを明示的に選択せずに確定すると、その時点の摘要を名前として新しい精算バッチが自動的に作成される', async () => {
+    seedAdvanceAccounts(db)
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    householdMemberRepository.create({ name: 'Bさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm([originalEntry])
+    await screen.findByText('スーパーで食材購入')
 
     checkHouseholdMember('Bさん')
     fireEvent.click(screen.getByRole('button', { name: '計算する' }))
@@ -408,6 +538,45 @@ describe('ExpenseSplittingForm', () => {
       const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
       expect(createdEntries).toHaveLength(1)
     })
+    expect(settlementBatchRepository.findAll()).toHaveLength(1)
+    expect(settlementBatchRepository.findAll()[0]).toMatchObject({
+      name: 'スーパーで食材購入の割勘',
+      type: 'expense_splitting',
+    })
+  })
+
+  it('既存の精算バッチを選択して確定すると、新しいバッチは作成されずそのバッチが使われる', async () => {
+    seedAdvanceAccounts(db)
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    householdMemberRepository.create({ name: 'Bさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    renderForm([originalEntry])
+    await screen.findByText('スーパーで食材購入')
+
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
+    checkHouseholdMember('Bさん')
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(householdMemberRow('Bさん').getByLabelText('金額')).toHaveValue(500))
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    await waitFor(() => {
+      const createdEntries = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      expect(createdEntries).toHaveLength(1)
+    })
+    expect(settlementBatchRepository.findAll()).toHaveLength(1)
   })
 
   it('摘要欄には「元の摘要+の割勘」が既定値として入力されており、変更せず確定するとその既定値が使われる', async () => {
@@ -416,7 +585,7 @@ describe('ExpenseSplittingForm', () => {
     householdMemberRepository.create({ name: 'Bさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const originalEntry = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: 'スーパーで食材購入',
@@ -432,7 +601,7 @@ describe('ExpenseSplittingForm', () => {
 
     expect(screen.getByLabelText('摘要')).toHaveValue('スーパーで食材購入の割勘')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
     checkHouseholdMember('Bさん')
     fireEvent.click(screen.getByRole('button', { name: '計算する' }))
     await waitFor(() => expect(householdMemberRow('Bさん').getByLabelText('金額')).toHaveValue(500))
@@ -451,7 +620,7 @@ describe('ExpenseSplittingForm', () => {
     householdMemberRepository.create({ name: 'Bさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const originalEntry = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: 'スーパーで食材購入',
@@ -466,7 +635,7 @@ describe('ExpenseSplittingForm', () => {
     await screen.findByText('スーパーで食材購入')
 
     fireEvent.change(screen.getByLabelText('摘要'), { target: { value: '旅行費用の割勘(自由記述)' } })
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
     checkHouseholdMember('Bさん')
     fireEvent.click(screen.getByRole('button', { name: '計算する' }))
     await waitFor(() => expect(householdMemberRow('Bさん').getByLabelText('金額')).toHaveValue(500))
@@ -582,7 +751,7 @@ describe('ExpenseSplittingForm(相手の選択UI)', () => {
     const friend = counterpartyRepository.create({ name: '友人Cさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8旅行割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8旅行割勘', type: 'expense_splitting' })
     const originalEntry = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: '旅行の食事代',
@@ -596,7 +765,7 @@ describe('ExpenseSplittingForm(相手の選択UI)', () => {
     renderForm([originalEntry])
     await screen.findByText('旅行の食事代')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
     checkHouseholdMember('Bさん')
     fireEvent.click(screen.getByRole('button', { name: '世帯外の相手を追加する' }))
     const counterpartyRows = screen.getAllByRole('group', { name: /分担者/ })
@@ -624,7 +793,7 @@ describe('ExpenseSplittingForm(相手の選択UI)', () => {
     const memberA = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8旅行割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8旅行割勘', type: 'expense_splitting' })
     const originalEntry = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: '旅行の食事代',
@@ -638,7 +807,7 @@ describe('ExpenseSplittingForm(相手の選択UI)', () => {
     renderForm([originalEntry])
     await screen.findByText('旅行の食事代')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
     fireEvent.click(screen.getByRole('button', { name: '世帯外の相手を追加する' }))
     const counterpartyRow = screen.getAllByRole('group', { name: /分担者/ })[0]
 
@@ -669,7 +838,7 @@ describe('ExpenseSplittingForm(相手の選択UI)', () => {
     householdMemberRepository.create({ name: 'Bさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8旅行割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8旅行割勘', type: 'expense_splitting' })
     const originalEntry = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: '旅行の食事代',
@@ -683,7 +852,7 @@ describe('ExpenseSplittingForm(相手の選択UI)', () => {
     const { onComplete } = renderForm([originalEntry])
     await screen.findByText('旅行の食事代')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
     // 世帯メンバー分担者は正しく選ぶが、世帯外の相手の行は「相手」を未選択のまま金額だけ入力する
     fireEvent.change(screen.getByLabelText('配分方法'), { target: { value: 'amount' } })
     checkHouseholdMember('Bさん')
@@ -707,7 +876,7 @@ describe('ExpenseSplittingForm(複数の元仕訳をまとめて割勘する場�
     householdMemberRepository.create({ name: 'Bさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const entry1 = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: 'スーパーで食材購入1',
@@ -731,7 +900,7 @@ describe('ExpenseSplittingForm(複数の元仕訳をまとめて割勘する場�
     await screen.findByText('スーパーで食材購入1')
     await screen.findByText('スーパーで食材購入2')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
     checkHouseholdMember('Bさん')
 
     fireEvent.click(screen.getByRole('button', { name: '計算する' }))
@@ -771,7 +940,7 @@ describe('ExpenseSplittingForm(複数の元仕訳をまとめて割勘する場�
     householdMemberRepository.create({ name: 'Bさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const project = projectRepository.create({ name: '26/8生活費割勘', kind: 'settlement' })
+    const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const entry1 = journalEntryRepository.create({
       entryDate: '2026-08-01',
       memo: '外食代',
@@ -795,7 +964,7 @@ describe('ExpenseSplittingForm(複数の元仕訳をまとめて割勘する場�
     await screen.findByText('外食代')
     await screen.findByText('日用品代')
 
-    fireEvent.change(screen.getByLabelText('プロジェクト'), { target: { value: String(project.id) } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(settlementBatch.id) } })
     fireEvent.change(screen.getByLabelText('配分方法'), { target: { value: 'ratio' } })
     checkHouseholdMember('Bさん')
     fireEvent.change(householdMemberRow('Bさん').getByLabelText('比率(%)'), { target: { value: '30' } })
