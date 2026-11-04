@@ -26,9 +26,15 @@ import { seedDevSampleData } from './seedDevSampleData'
 import {
   DEV_SAMPLE_ACCOUNTS,
   DEV_SAMPLE_COUNTERPARTIES,
+  DEV_SAMPLE_HOUSEHOLD_MEMBERS,
   DEV_SAMPLE_JOURNAL_ENTRIES,
   DEV_SAMPLE_PROJECTS,
+  DEV_SAMPLE_SETTLEMENT_BATCHES,
+  DEV_SAMPLE_SETTLEMENT_PAYABLE_ENTRIES,
+  DEV_SAMPLE_SETTLEMENT_REPAYMENT_CANDIDATES,
+  DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES,
 } from './devSampleData'
+import { SqlJsSettlementBatchRepository } from './SqlJsSettlementBatchRepository'
 
 let db: Database
 let accountRepository: SqlJsAccountRepository
@@ -68,10 +74,99 @@ describe('seedDevSampleData', () => {
     }
   })
 
-  it('journal_entriesが0件の場合、DEV_SAMPLE_JOURNAL_ENTRIESの件数だけ仕訳を投入する', () => {
+  it('journal_entriesが0件の場合、DEV_SAMPLE_JOURNAL_ENTRIES・精算画面確認用の仕訳(DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES/PAYABLE_ENTRIES/REPAYMENT_CANDIDATES)の件数分だけ仕訳を投入する(計画Issue #139)', () => {
     seedDevSampleData(db)
 
-    expect(journalEntryRepository.findAll()).toHaveLength(DEV_SAMPLE_JOURNAL_ENTRIES.length)
+    expect(journalEntryRepository.findAll()).toHaveLength(
+      DEV_SAMPLE_JOURNAL_ENTRIES.length +
+        DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES.length +
+        DEV_SAMPLE_SETTLEMENT_PAYABLE_ENTRIES.length +
+        DEV_SAMPLE_SETTLEMENT_REPAYMENT_CANDIDATES.length,
+    )
+  })
+
+  it('journal_entriesが0件の場合、DEV_SAMPLE_HOUSEHOLD_MEMBERSで定義した世帯メンバーを投入する(計画Issue #139)', () => {
+    seedDevSampleData(db)
+
+    const names = new SqlJsHouseholdMemberRepository(db).findAll().map((member) => member.name)
+    for (const seed of DEV_SAMPLE_HOUSEHOLD_MEMBERS) {
+      expect(names).toContain(seed.name)
+    }
+  })
+
+  it('journal_entriesが0件の場合、DEV_SAMPLE_SETTLEMENT_BATCHESで定義した精算バッチを投入し、取引先指定のバッチはcounterparty_idが紐づく(計画Issue #139)', () => {
+    seedDevSampleData(db)
+
+    const batches = new SqlJsSettlementBatchRepository(db).findAll()
+    const counterpartyByName = new Map(counterpartyRepository.findAll().map((c) => [c.name, c.id]))
+    for (const seed of DEV_SAMPLE_SETTLEMENT_BATCHES) {
+      const batch = batches.find((b) => b.name === seed.name)
+      expect(batch).toBeDefined()
+      expect(batch!.type).toBe(seed.type)
+      expect(batch!.counterpartyId).toBe(seed.counterpartyName ? counterpartyByName.get(seed.counterpartyName)! : null)
+    }
+  })
+
+  it('精算画面(計画Issue #139)の「割り当て済み/未割り当て」両方のパターンが揃っている', () => {
+    seedDevSampleData(db)
+
+    const advanceLiability = accountRepository.findAll().find((a) => a.category === 'liability' && a.isSystemManaged)!
+    const liabilityLines = journalEntryRepository
+      .findAll()
+      .flatMap((entry) => entry.lines)
+      .filter((line) => line.accountId === advanceLiability.id)
+
+    expect(liabilityLines.some((line) => line.settlementBatchId !== null)).toBe(true)
+    expect(liabilityLines.some((line) => line.settlementBatchId === null)).toBe(true)
+  })
+
+  it('精算画面(計画Issue #139)で「一致」判定になる候補と「不一致」判定になる候補の両方が揃っている(世帯メンバー・立替金負債)', () => {
+    seedDevSampleData(db)
+
+    const advanceLiability = accountRepository.findAll().find((a) => a.category === 'liability' && a.isSystemManaged)!
+    const spouse = new SqlJsHouseholdMemberRepository(db).findAll().find((m) => m.name === '配偶者')!
+    const batches = new SqlJsSettlementBatchRepository(db).findAll()
+    const allLines = journalEntryRepository.findAll().flatMap((entry) => entry.lines)
+
+    const balanceByBatchName = new Map(
+      DEV_SAMPLE_SETTLEMENT_BATCHES.filter((b) => b.counterpartyName === undefined).map((seed) => {
+        const batch = batches.find((b) => b.name === seed.name)!
+        const balance = allLines
+          .filter(
+            (line) =>
+              line.settlementBatchId === batch.id && line.accountId === advanceLiability.id && line.householdMemberId === spouse.id,
+          )
+          .reduce((sum, line) => sum + (line.side === 'credit' ? line.amount : -line.amount), 0)
+        return [seed.name, balance] as const
+      }),
+    )
+    const unassignedTotal = allLines
+      .filter(
+        (line) =>
+          line.accountId === advanceLiability.id && line.settlementBatchId === null && line.householdMemberId === spouse.id,
+      )
+      .reduce((sum, line) => sum + line.amount, 0)
+
+    // 6月飲み会の割勘(1500円)は、未割当返済の一部(1500円)とちょうど一致する組み合わせが存在する
+    expect([...balanceByBatchName.values()]).toContain(1500)
+    // 7月生活費の割勘(2000円)に対し、未割当返済の合計(1500+1200=2700円)のどの組み合わせでも
+    // ちょうど一致しない(不一致パターンが試せる)
+    expect(balanceByBatchName.get('7月生活費の割勘')).toBe(2000)
+    expect(unassignedTotal).not.toBe(0)
+  })
+
+  it('精算画面(計画Issue #139)の取引先側(未払金)のパターンが含まれる(イオンの後払い分)', () => {
+    seedDevSampleData(db)
+
+    const advanceLiability = accountRepository.findAll().find((a) => a.category === 'liability' && a.isSystemManaged)!
+    const batch = new SqlJsSettlementBatchRepository(db).findAll().find((b) => b.name === 'イオンの後払い分')!
+    expect(batch.counterpartyId).not.toBeNull()
+
+    const taggedLine = journalEntryRepository
+      .findAll()
+      .flatMap((entry) => entry.lines)
+      .find((line) => line.settlementBatchId === batch.id && line.accountId === advanceLiability.id)
+    expect(taggedLine).toBeDefined()
   })
 
   it('投入される仕訳はいずれも貸借バランスが取れている(docs/domain/journal.md 1.3)', () => {
@@ -130,7 +225,12 @@ describe('seedDevSampleData', () => {
     seedDevSampleData(db)
     seedDevSampleData(db)
 
-    expect(journalEntryRepository.findAll()).toHaveLength(DEV_SAMPLE_JOURNAL_ENTRIES.length)
+    expect(journalEntryRepository.findAll()).toHaveLength(
+      DEV_SAMPLE_JOURNAL_ENTRIES.length +
+        DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES.length +
+        DEV_SAMPLE_SETTLEMENT_PAYABLE_ENTRIES.length +
+        DEV_SAMPLE_SETTLEMENT_REPAYMENT_CANDIDATES.length,
+    )
     const seededNames = DEV_SAMPLE_ACCOUNTS.map((account) => account.name)
     const accounts = accountRepository.findAll().filter((account) => seededNames.includes(account.name))
     expect(accounts).toHaveLength(DEV_SAMPLE_ACCOUNTS.length)
