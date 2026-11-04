@@ -319,4 +319,49 @@ describe('RelatedEntriesDialog', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('開いた直後、閉じるボタンに自動でフォーカスが当たる', () => {
+    renderDialog()
+    expect(screen.getByRole('button', { name: '閉じる' })).toHaveFocus()
+  })
+
+  it('ダイアログ内の末尾の要素でTabを押すと、背後の要素ではなくダイアログ内の先頭(閉じるボタン)に循環する', () => {
+    const outsideButton = document.createElement('button')
+    outsideButton.textContent = '背後のボタン'
+    document.body.appendChild(outsideButton)
+    try {
+      const related = buildEntry({ id: 2, memo: '割勘' })
+      renderDialog({ relatedEntryGroups: [buildGroup(10, null, [related])] })
+
+      const closeButton = screen.getByRole('button', { name: '閉じる' })
+      const focusable = screen
+        .getByRole('dialog')
+        .querySelectorAll<HTMLElement>('button, input, [href], select, textarea, [tabindex]:not([tabindex="-1"])')
+      const last = focusable[focusable.length - 1]
+      last.focus()
+
+      fireEvent.keyDown(document, { key: 'Tab' })
+
+      expect(document.activeElement).toBe(closeButton)
+      expect(document.activeElement).not.toBe(outsideButton)
+    } finally {
+      outsideButton.remove()
+    }
+  })
+
+  it('ダイアログ内の先頭(閉じるボタン)でShift+Tabを押すと、末尾の要素に循環する', () => {
+    const related = buildEntry({ id: 2, memo: '割勘' })
+    renderDialog({ relatedEntryGroups: [buildGroup(10, null, [related])] })
+
+    const closeButton = screen.getByRole('button', { name: '閉じる' })
+    closeButton.focus()
+    const focusable = screen
+      .getByRole('dialog')
+      .querySelectorAll<HTMLElement>('button, input, [href], select, textarea, [tabindex]:not([tabindex="-1"])')
+    const last = focusable[focusable.length - 1]
+
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+
+    expect(document.activeElement).toBe(last)
+  })
 })

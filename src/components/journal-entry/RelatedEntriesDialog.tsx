@@ -18,6 +18,9 @@ export interface RelatedEntriesDialogProps {
   addError: string | null
 }
 
+/** フォーカストラップ(IosInstallPrompt.tsxと同じFOCUSABLE_SELECTOR)対象の要素セレクタ */
+const FOCUSABLE_SELECTOR = 'button, input, [href], select, textarea, [tabindex]:not([tabindex="-1"])'
+
 /** 移動先セレクトの「+ 新しいグループを作る」を表す特殊値(CounterpartyQuickAddSelectの
  * NEW_COUNTERPARTY_OPTION_VALUEと同じパターン)。グループidと衝突しない文字列を使う */
 const NEW_GROUP_OPTION_VALUE = '__new_group__'
@@ -131,6 +134,11 @@ interface PendingMove {
  * 候補を選んだ瞬間にonAddEntryを呼ぶ(CounterpartyQuickAddSelectと同じ「選択=即確定」方式、
  * 確定・キャンセルボタンは置かない)。将来的に仕訳数が増えた場合、このセレクトは専用の
  * 仕訳検索画面に置き換える想定(現時点では対応しない)。
+ *
+ * aria-modal="true"のダイアログのため、表示中はフォーカストラップ(自動フォーカス・
+ * Tab/Shift+Tab循環・Escapeクローズ)を実装する(IosInstallPrompt.tsxと同じ
+ * FOCUSABLE_SELECTORパターン。docs/guides/patterns.mdの既知パターン「aria-modal="true"の
+ * ダイアログを実装する際、フォーカストラップの実装を伴わない」への対応、evaluatorレビュー指摘)。
  */
 export function RelatedEntriesDialog({
   relatedEntryGroups,
@@ -150,19 +158,48 @@ export function RelatedEntriesDialog({
   const [dragOverTargetId, setDragOverTargetId] = useState<number | null>(null)
   const [movingRow, setMovingRow] = useState<{ groupId: number; entryId: number } | null>(null)
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
 
+  // onCloseを最新のまま参照できるようにrefに保持する(IosInstallPrompt.tsxの
+  // handleCloseRefと同じパターン)。これにより下のuseEffectの依存配列を空にでき、
+  // 親の再レンダー(行の追加・削除・移動・グループ名変更後のload())のたびにonCloseの
+  // クロージャ参照が変わっても、フォーカスが閉じるボタンへ戻されてユーザーの操作を
+  // 中断してしまう副作用を避けられる。
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
+  // ダイアログを開いた時点で閉じるボタンへ自動フォーカスし、Tab/Shift+Tabでダイアログ外
+  // (背後のJournalEntryLinesTable等)へフォーカスが漏れないよう先頭/末尾の要素間で循環させ、
+  // Escapeで閉じられるようにする(aria-modal="true"のダイアログに必須のフォーカストラップ、
+  // docs/guides/patterns.mdの既知パターン・IosInstallPrompt.tsxと同じ実装)。
   useEffect(() => {
     closeButtonRef.current?.focus()
-  }, [])
 
-  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') {
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      if (!focusable || focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
     }
+
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  }, [])
 
   const groupIndexById = new Map(relatedEntryGroups.map((group, index) => [group.groupId, index]))
   function groupLabel(group: RelatedEntryGroup): string {
@@ -189,7 +226,13 @@ export function RelatedEntriesDialog({
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      <div role="dialog" aria-modal="true" aria-label={t('relatedEntriesTitle')} className="related-entries-dialog">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('relatedEntriesTitle')}
+        className="related-entries-dialog"
+      >
         <div className="related-entries-dialog-header">
           <h3>{t('relatedEntriesTitle')}</h3>
           <button ref={closeButtonRef} type="button" className="related-entries-dialog-close" onClick={onClose}>
