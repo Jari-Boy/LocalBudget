@@ -166,3 +166,9 @@
 
 **内容**: vitest v3までは`ReturnType<typeof vi.fn>`（型引数なしの`vi.fn`自体の戻り値型）をpropsの型注釈として使うだけで、実際に`vi.fn()`で生成したモック関数が十分に型チェックされていた。vitest v5では`Mock`の型定義が変わり、型引数を渡さない`vi.fn()`・`ReturnType<typeof vi.fn>`は実質的に緩い型になる。モック関数の呼び出しシグネチャ（引数・戻り値の型）を厳密に検証したい場合は、`vi.fn<(key: number, updater: (line: T) => T) => void>()`のように`vi.fn`自体に関数シグネチャを型引数として明示し、propsの型注釈側も`Mock<(key: number, ...) => void>`のように同じシグネチャを渡す必要がある。この変更はnpm auditのcritical脆弱性（tinypool）対応でvitestを3.2.4→5.0.5にメジャーバージョンアップした際にtypecheckで検出された。
 **参考**: `src/components/journal-entry/JournalEntryLinesTable.test.tsx`（`onUpdateLine`/`onAddLine`/`onRemoveLine`、計画Issue #136）
+
+## Comlinkのプロパティアクセスはアクセスごとに新しいProxyオブジェクトを生成するため、同一ルート内でURLパラメータのみ変わる遷移ではReact 19.2のdevログ機構が例外を投げ、画面が固まる
+
+**内容**: Comlinkの`wrap()`が返すプロキシは、`client.account`のようなプロパティアクセスのたびに新しい`Proxy`オブジェクトを生成する（同じプロパティへの2回のアクセスでも参照は毎回異なる）。通常はコンポーネントが再マウントされる遷移（例: 別のルートパターンへの移動）ではこの不安定な参照がReactの再レンダーに影響しないが、同一のルートパターン内でURLパラメータだけが変わる遷移（例: 関連仕訳ダイアログの行クリックで`entryId`のみ変わる遷移）では対象コンポーネントが再マウントされず同一Fiberのまま再レンダーされる。このとき、`client.account`等をレンダーのたびに生成し直していると、React 19.2のdevログ機構（Chrome Performanceパネルの Components トラック用、`logComponentRender`相当）がprops差分を検出するためにComlinkプロキシへ`Symbol.toPrimitive`相当のアクセスを行い、Comlink側がこれを正しく処理できず例外を投げる。この例外によりpassiveエフェクト（データ再読み込みの`useEffect`）がコミットされず、画面が古いデータのまま固まる（開発ビルドでのみ再現し、本番ビルドでは発生しない）。
+**対策**: `client`配下のComlinkリポジトリ生成（`client.xxx as unknown as Comlink.Remote<XxxRepository>`の列）を、個々の`const`宣言ではなく`useMemo(() => ({ ... }), [client])`でまとめて安定化する。これにより同一Fiberの再レンダーをまたいで同じプロキシ参照が維持され、React 19.2のdevログ機構が不安定な参照に遭遇しなくなる。
+**参考**: `src/routes/AppRoutes.tsx`、`e2e/expense-splitting.spec.ts`（関連仕訳ダイアログ経由の画面遷移の回帰テスト）、計画Issue #138（UIレビューで発覚）

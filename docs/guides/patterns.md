@@ -155,6 +155,8 @@
 **対策**: `aria-modal="true"`を持つダイアログを新設する際は、(1)表示時にダイアログ内の適切な要素（閉じるボタン等）へ自動フォーカスする、(2)Tab/Shift+Tabキー押下時にダイアログ内の先頭/末尾要素間で循環させフォーカスがダイアログ外へ漏れないようにする、(3)Escapeキー押下でダイアログを閉じられるようにする、の3点を必ず実装する。Escapeキー等のハンドラが最新のコンポーネント状態（チェックボックスの選択状態等）を参照する必要がある場合は、`useRef`で最新のクロージャを保持し`useEffect`の依存配列を最小限（例: 表示状態のみ）に絞ることで、状態変化のたびにeffectが再実行されフォーカスが意図せずリセットされる副作用を避ける。E2Eテストでフォーカス位置・Tab循環・Escapeキーでのクローズを直接検証する。
 **該当箇所（例）**: `src/components/IosInstallPrompt.tsx`（`FOCUSABLE_SELECTOR`によるTab循環、`handleCloseRef`による最新状態の参照）、`e2e/ios-install-prompt.spec.ts`、`docs/decisions.md`「IosInstallPromptにフォーカストラップ(自動フォーカス・Tab/Shift+Tab循環・Escapeクローズ)を実装する」、Issue #28 Implementation Attempt 1 Review(evaluator FAIL指摘、重大度MEDIUM)
 
+**再発（計画Issue #138）**: 新設した`RelatedEntriesDialog`（`role="dialog"` `aria-modal="true"`）でも、初回実装では同じフォーカストラップの実装（自動フォーカス・Tab循環・Escapeクローズ）が漏れており、evaluatorレビューで再度指摘された。`IosInstallPrompt`と同じ`FOCUSABLE_SELECTOR`・`onCloseRef`パターンをそのまま移植して修正した（`src/components/journal-entry/RelatedEntriesDialog.tsx`、`docs/decisions.md`該当なし・本パターンへの追記のみで対応）。aria-modalなダイアログを新設するたびに本パターンが個別に再発しうるため、新規ダイアログ実装時は本節の3点（自動フォーカス・Tab循環・Escapeクローズ）をチェックリストとして確認すること。
+
 ## 複数のposition: fixedコンポーネントが同時に表示されうる設計で、z-indexをDOM配置順任せにしてしまう
 
 **症状**: `UpdateBanner`（非モーダル）・`IosInstallPrompt`（モーダル）はいずれも独立した`position: fixed`のコンポーネントで、共に`z-index: 1000`のまま実装されていた。両者が同時に表示される条件（例: iOS Safariで新しいService Workerを検出した場合）での重なり順は、z-indexの数値ではなく`App.tsx`内でのDOM配置順にのみ依存する不安定な状態だった。同じz-indexの要素はDOM順で後に配置された方が前面に表示されるため、たまたま意図通りの見た目になっていても、コンポーネントの配置順を変更した途端に重なり順が崩れる。
