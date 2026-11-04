@@ -444,6 +444,7 @@ export function AppRoutes() {
             settlementBatchRepository={settlementBatchRepository}
             accountRepository={accountRepository}
             householdMemberRepository={householdMemberRepository}
+            counterpartyRepository={counterpartyRepository}
             journalEntryRepository={journalEntryRepository}
             journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             onBack={() => navigate('/journal/splitting')}

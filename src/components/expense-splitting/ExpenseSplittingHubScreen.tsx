@@ -30,7 +30,7 @@ export function ExpenseSplittingHubScreen({
         {t('entryPickerMenuTitle')}
       </button>
       <button type="button" onClick={onSettlement}>
-        {t('settlementScreenTitle')}
+        {t('settlementMenuButton')}
       </button>
       <button type="button" onClick={onHistory}>
         {t('historyMenuTitle')}

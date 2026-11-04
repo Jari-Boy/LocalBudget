@@ -1,18 +1,22 @@
 // @vitest-environment jsdom
 /**
- * 精算(立替金の消込)画面(計画Issue #40、計画Issue #133でsettlement_batches・集計方式に移行)の
- * コンポーネントテスト。精算バッチ・精算方向(受け取る/支払う、立替金の資産/負債の別)を選択すると、
- * findUnsettledSettlementBatchBalances(settlement_batch_id・科目・世帯メンバーでグルーピングした
- * 未精算残高の集計)を用いて世帯メンバーごとの未精算残高が一覧表示され、精算操作で実際の入出金
- * 口座・金額を指定して精算仕訳(2行、docs/domain/expense-splitting.md 1.3節の精算1・精算2)を
- * 起票できることを、sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして
- * 検証する。journal_entry_linksによる明示的な消込リンクは作らず、settlement_batch_idタグの
- * 付与と集計だけで未精算残高が正しく更新されることを確認する。立替金(資産/負債)科目自体は
- * seedAdvanceAccountsで自動投入された恒久的な科目を自動解決し、ユーザーには「精算方向」という
- * 2択のみを選ばせる。外部依存: sql.js(ネットワークアクセスなし)。
+ * 精算画面(計画Issue #40、計画Issue #133でsettlement_batches・集計方式に移行、計画Issue #139で
+ * 操作モデルを全面刷新)のコンポーネントテスト。
+ *
+ * 計画Issue #139により、旧来の「精算バッチ・精算方向を選ぶ→精算額を入力して新規仕訳を作成する」
+ * 操作モデルは完全に廃止された。新しい操作モデルは「対象者(世帯メンバー or 取引先)・科目
+ * (立替金/未払金)を選ぶ→未精算バッチの一覧(バッチ単位の残高)を見る→消込む既存仕訳を選ぶ→
+ * 金額の一致/不一致に応じて精算完了・未精算として残す・差額損益計上を選ぶ」という、既存仕訳を
+ * 選んでsettlement_batch_idを割り当てる形になっている。候補仕訳が存在しない場合のみ、新規仕訳を
+ * 手動作成できる。
+ *
+ * sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリングテストとして、上記の操作モデル
+ * 全体(バッチ一覧表示・候補仕訳の絞り込み・一致時のタグ付け・不一致時の2択・差額の損益計上・
+ * 取引先が対象者の場合・候補仕訳が無い場合の手動作成)を検証する。外部依存: sql.js
+ * (ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -20,7 +24,9 @@ import i18n from '../../infrastructure/i18n/i18n'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
 import { seedAdvanceAccounts } from '../../infrastructure/db/seedAdvanceAccounts'
+import { seedSettlementAdjustmentAccounts } from '../../infrastructure/db/seedSettlementAdjustmentAccounts'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
+import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { SqlJsJournalEntryLinkGroupRepository } from '../../infrastructure/db/SqlJsJournalEntryLinkGroupRepository'
@@ -33,6 +39,7 @@ let db: Database
 let accountRepository: SqlJsAccountRepository
 let settlementBatchRepository: SqlJsSettlementBatchRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
+let counterpartyRepository: SqlJsCounterpartyRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
 let journalEntryLinkGroupRepository: SqlJsJournalEntryLinkGroupRepository
 
@@ -42,8 +49,11 @@ beforeEach(async () => {
   accountRepository = new SqlJsAccountRepository(db)
   settlementBatchRepository = new SqlJsSettlementBatchRepository(db)
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
+  counterpartyRepository = new SqlJsCounterpartyRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
   journalEntryLinkGroupRepository = new SqlJsJournalEntryLinkGroupRepository(db)
+  seedAdvanceAccounts(db)
+  seedSettlementAdjustmentAccounts(db)
 })
 
 afterEach(cleanup)
@@ -55,6 +65,7 @@ function renderScreen() {
         settlementBatchRepository={settlementBatchRepository}
         accountRepository={accountRepository}
         householdMemberRepository={householdMemberRepository}
+        counterpartyRepository={counterpartyRepository}
         journalEntryRepository={journalEntryRepository}
         journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
         onBack={() => {}}
@@ -64,234 +75,202 @@ function renderScreen() {
   )
 }
 
-/** 立替金(資産/負債)科目を自動投入し、A→Bへの500円の割勘(負債側立替金はBさん)を1件作成する */
-function setUpSplitEntry() {
-  seedAdvanceAccounts(db)
-  const advanceAsset = accountRepository.findAll().find((a) => a.category === 'asset' && a.isSystemManaged)!
-  const advanceLiability = accountRepository
-    .findAll()
-    .find((a) => a.category === 'liability' && a.isSystemManaged)!
+function advanceAccounts() {
+  const accounts = accountRepository.findAll()
+  return {
+    asset: accounts.find((a) => a.category === 'asset' && a.isSystemManaged)!,
+    liability: accounts.find((a) => a.category === 'liability' && a.isSystemManaged)!,
+  }
+}
+
+/** Aさんが立て替えてBさんが負う500円の割勘(負債側立替金、settlementBatchId付きで起票済み)を1件作成する */
+function setUpHouseholdMemberBatch(amount = 500) {
+  const { asset, liability } = advanceAccounts()
   const memberA = householdMemberRepository.create({ name: 'Aさん' })
   const memberB = householdMemberRepository.create({ name: 'Bさん' })
   const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
-  const cashA = accountRepository.create({ category: 'asset', name: '現金(A)', isReconcilable: false })
   const cashB = accountRepository.create({ category: 'asset', name: '現金(B)', isReconcilable: false })
-  const batch = settlementBatchRepository.create({ name: '26/7生活費割勘', type: 'expense_splitting' })
-  journalEntryRepository.create({
-    entryDate: '2026-07-01',
-    memo: '食事代',
-    householdMemberId: memberA.id,
-    lines: [
-      { accountId: expense.id, side: 'debit', amount: 1000 },
-      { accountId: cashA.id, side: 'credit', amount: 1000 },
-    ],
-  })
-  const splitInput = buildHouseholdMemberExpenseSplittingJournalEntryInput({
-    expenseAccountId: expense.id,
-    advanceAssetAccountId: advanceAsset.id,
-    advanceLiabilityAccountId: advanceLiability.id,
-    fromMemberId: memberA.id,
-    toMemberId: memberB.id,
-    settlementBatchId: batch.id,
-    amount: 500,
-    entryDate: '2026-07-15',
-    memo: '割勘',
-  })
-  const splitEntry = journalEntryRepository.create(splitInput)
-  return { memberA, memberB, advanceAsset, advanceLiability, cashB, batch, splitEntry }
+  const batch = settlementBatchRepository.create({ name: '6月生活費', type: 'expense_splitting' })
+  journalEntryRepository.create(
+    buildHouseholdMemberExpenseSplittingJournalEntryInput({
+      expenseAccountId: expense.id,
+      advanceAssetAccountId: asset.id,
+      advanceLiabilityAccountId: liability.id,
+      fromMemberId: memberA.id,
+      toMemberId: memberB.id,
+      settlementBatchId: batch.id,
+      amount,
+      entryDate: '2026-07-15',
+      memo: '生活費の割勘',
+    }),
+  )
+  return { memberA, memberB, asset, liability, cashB, batch, expense }
 }
 
-async function selectBatchAndSide(batchId: number, side: 'asset' | 'liability') {
-  await screen.findByLabelText('精算バッチ')
-  fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: String(batchId) } })
-  fireEvent.change(screen.getByLabelText('精算方向'), { target: { value: side } })
+/** liability科目で、settlement_batch_id未設定(未割当)のBさん向け返済仕訳を1件作成する */
+function createCandidateEntry(liabilityAccountId: number, memberId: number, cashAccountId: number, amount: number) {
+  return journalEntryRepository.create({
+    entryDate: '2026-08-01',
+    memo: 'Bさんからの返済',
+    householdMemberId: memberId,
+    lines: [
+      { accountId: liabilityAccountId, side: 'debit', amount, householdMemberId: memberId },
+      { accountId: cashAccountId, side: 'credit', amount },
+    ],
+  })
+}
+
+async function selectTargetAndSide(targetLabel: string, sideLabel: string) {
+  await screen.findByLabelText('対象者')
+  fireEvent.change(screen.getByLabelText('対象者'), { target: { value: targetLabel } })
+  fireEvent.change(screen.getByLabelText('科目'), { target: { value: sideLabel } })
 }
 
 describe('SettlementScreen', () => {
-  it('精算バッチ・精算方向を選択すると、未精算の世帯メンバーが残高とともに一覧表示される', async () => {
-    const { memberB, batch } = setUpSplitEntry()
+  it('対象者(世帯メンバー)・科目を選択すると、未精算バッチがバッチ名・残高とともに一覧表示される', async () => {
+    const { memberB, batch } = setUpHouseholdMemberBatch(500)
 
     renderScreen()
-    // 割勘の相手(Bさん)側なので、支払う(負債側の立替金)を選ぶ
-    await selectBatchAndSide(batch.id, 'liability')
+    await selectTargetAndSide(`member:${memberB.id}`, 'liability')
 
-    const item = (await screen.findByText(memberB.name)).closest('li')!
-    expect(item).toHaveTextContent('￥500')
+    const row = (await screen.findByText(batch.name)).closest('tr')!
+    expect(row).toHaveTextContent('￥500')
   })
 
-  it('精算するボタンを押すと精算入力欄が展開し、確定すると精算仕訳が作成され一覧から消える', async () => {
-    const { memberB, cashB, batch, splitEntry } = setUpSplitEntry()
+  it('「消込む仕訳を選ぶ」を押すと、未割当の候補仕訳がチェックボックス付きで一覧表示される', async () => {
+    const { memberB, liability, cashB } = setUpHouseholdMemberBatch(500)
+    const candidate = createCandidateEntry(liability.id, memberB.id, cashB.id, 500)
 
     renderScreen()
-    await selectBatchAndSide(batch.id, 'liability')
-    const item = (await screen.findByText(memberB.name)).closest('li') as HTMLElement
+    await selectTargetAndSide(`member:${memberB.id}`, 'liability')
+    fireEvent.click(await screen.findByRole('button', { name: '消込む仕訳を選ぶ' }))
 
-    fireEvent.click(within(item).getByRole('button', { name: '精算する' }))
-    fireEvent.change(within(item).getByLabelText('精算元/精算先の口座'), { target: { value: String(cashB.id) } })
-    fireEvent.change(within(item).getByLabelText('精算金額'), { target: { value: '500' } })
-    fireEvent.click(within(item).getByRole('button', { name: '精算を確定する' }))
+    expect(await screen.findByLabelText(`${candidate.memo}を選択する`)).toBeInTheDocument()
+  })
 
-    await waitFor(() => expect(screen.queryByText(memberB.name)).not.toBeInTheDocument())
-    const settlementEntries = journalEntryRepository
+  it('選択した仕訳の合計がバッチ残高と一致すると「精算完了」ボタンのみ表示され、確定すると対象行にsettlement_batch_idが割り当てられ一覧から消える', async () => {
+    const { memberB, liability, cashB, batch } = setUpHouseholdMemberBatch(500)
+    const candidate = createCandidateEntry(liability.id, memberB.id, cashB.id, 500)
+
+    renderScreen()
+    await selectTargetAndSide(`member:${memberB.id}`, 'liability')
+    fireEvent.click(await screen.findByRole('button', { name: '消込む仕訳を選ぶ' }))
+    fireEvent.click(await screen.findByLabelText(`${candidate.memo}を選択する`))
+
+    expect(await screen.findByText(/一致しています/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '未精算として残す' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '精算完了' }))
+
+    await waitFor(() => expect(screen.queryByText(batch.name)).not.toBeInTheDocument())
+    const updatedCandidate = journalEntryRepository.findById(candidate.id)!
+    expect(updatedCandidate.lines.find((l) => l.accountId === liability.id)?.settlementBatchId).toBe(batch.id)
+  })
+
+  it('選択した仕訳の合計がバッチ残高と不一致の場合、差額と2つのボタン(未精算として残す/精算完了)が表示される', async () => {
+    const { memberB, liability, cashB } = setUpHouseholdMemberBatch(500)
+    const candidate = createCandidateEntry(liability.id, memberB.id, cashB.id, 300)
+
+    renderScreen()
+    await selectTargetAndSide(`member:${memberB.id}`, 'liability')
+    fireEvent.click(await screen.findByRole('button', { name: '消込む仕訳を選ぶ' }))
+    fireEvent.click(await screen.findByLabelText(`${candidate.memo}を選択する`))
+
+    expect(await screen.findByText(/不一致/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '未精算として残す' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '精算完了' })).toBeInTheDocument()
+  })
+
+  it('不一致時に「未精算として残す」を選ぶと、選択した仕訳だけタグ付けされ差額がバッチ残高として残る', async () => {
+    const { memberB, liability, cashB, batch } = setUpHouseholdMemberBatch(500)
+    const candidate = createCandidateEntry(liability.id, memberB.id, cashB.id, 300)
+
+    renderScreen()
+    await selectTargetAndSide(`member:${memberB.id}`, 'liability')
+    fireEvent.click(await screen.findByRole('button', { name: '消込む仕訳を選ぶ' }))
+    fireEvent.click(await screen.findByLabelText(`${candidate.memo}を選択する`))
+    fireEvent.click(await screen.findByRole('button', { name: '未精算として残す' }))
+
+    await waitFor(() => {
+      const row = screen.getByText(batch.name).closest('tr')!
+      expect(row).toHaveTextContent('￥200')
+    })
+    const updatedCandidate = journalEntryRepository.findById(candidate.id)!
+    expect(updatedCandidate.lines.find((l) => l.accountId === liability.id)?.settlementBatchId).toBe(batch.id)
+    // 調整仕訳(雑収入/雑損失)は作成されない
+    const adjustmentEntries = journalEntryRepository
       .findAll()
-      .filter((entry) => entry.lines.some((line) => line.accountId === cashB.id))
-    expect(settlementEntries).toHaveLength(1)
-    expect(settlementEntries[0].lines).toHaveLength(2)
-    expect(settlementEntries[0].lines.find((line) => line.accountId !== cashB.id)).toMatchObject({
-      settlementBatchId: batch.id,
-      householdMemberId: memberB.id,
+      .filter((entry) => entry.lines.some((line) => accountRepository.findById(line.accountId)?.name === '雑損失'))
+    expect(adjustmentEntries).toHaveLength(0)
+  })
+
+  it('不一致時に「精算完了」を選ぶと、差額が雑収入として計上され調整仕訳が作成されバッチ残高が0になる(負債側で選択合計が残高より少ない=残りを免除された場合)', async () => {
+    const { memberB, liability, cashB, batch } = setUpHouseholdMemberBatch(500)
+    const candidate = createCandidateEntry(liability.id, memberB.id, cashB.id, 300)
+
+    renderScreen()
+    await selectTargetAndSide(`member:${memberB.id}`, 'liability')
+    fireEvent.click(await screen.findByRole('button', { name: '消込む仕訳を選ぶ' }))
+    fireEvent.click(await screen.findByLabelText(`${candidate.memo}を選択する`))
+    fireEvent.click(await screen.findByRole('button', { name: '精算完了' }))
+
+    await waitFor(() => expect(screen.queryByText(batch.name)).not.toBeInTheDocument())
+    const gainAccount = accountRepository.findAll().find((a) => a.name === '雑収入')!
+    const adjustmentEntry = journalEntryRepository
+      .findAll()
+      .find((entry) => entry.lines.some((line) => line.accountId === gainAccount.id))
+    expect(adjustmentEntry).toBeDefined()
+    const gainLine = adjustmentEntry!.lines.find((l) => l.accountId === gainAccount.id)!
+    expect(gainLine.side).toBe('credit')
+    expect(gainLine.amount).toBe(200)
+    const advanceLine = adjustmentEntry!.lines.find((l) => l.accountId === liability.id)!
+    expect(advanceLine).toMatchObject({ settlementBatchId: batch.id, side: 'debit', amount: 200 })
+  })
+
+  it('候補仕訳が0件の場合、手動で仕訳を作成するボタンが表示され、作成するとバッチにタグ付けされる', async () => {
+    const { memberB, liability, cashB, batch } = setUpHouseholdMemberBatch(500)
+
+    renderScreen()
+    await selectTargetAndSide(`member:${memberB.id}`, 'liability')
+    fireEvent.click(await screen.findByRole('button', { name: '消込む仕訳を選ぶ' }))
+
+    expect(await screen.findByText('該当する仕訳が見当たりません')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '手動で仕訳を作成する' }))
+    fireEvent.change(screen.getByLabelText('精算元/精算先の口座'), { target: { value: String(cashB.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '作成する' }))
+
+    await waitFor(() => expect(screen.queryByText(batch.name)).not.toBeInTheDocument())
+    const manualEntries = journalEntryRepository
+      .findAll()
+      .filter((entry) => entry.lines.some((line) => line.accountId === liability.id && line.settlementBatchId === batch.id))
+    expect(manualEntries.length).toBeGreaterThan(0)
+  })
+
+  it('取引先が対象者の場合、settlement_batches.counterparty_idが一致するバッチが一覧表示される', async () => {
+    const { liability } = advanceAccounts()
+    const member = householdMemberRepository.create({ name: '自分' })
+    const counterparty = counterpartyRepository.create({ name: 'イオン' })
+    const expense = accountRepository.create({ category: 'expense', name: '日用品費', isReconcilable: null })
+    const batch = settlementBatchRepository.create({
+      name: 'イオンの後払い分',
+      type: 'installment',
+      counterpartyId: counterparty.id,
     })
-    // 精算仕訳自体も一時勘定(立替金)行を持つため、未精算候補の絞り込みに誤って
-    // 混入していないか(=一覧が完全に空になるか)を確認する(空状態メッセージの表示)
-    await waitFor(() => expect(screen.getByText('未精算の割勘はありません')).toBeInTheDocument())
-    // 精算仕訳作成時、同じタグ(settlementBatchId・科目・世帯メンバー)を持つ割勘仕訳と
-    // 同じ関連仕訳グループへ自動的に参加する(計画Issue #138)
-    const splitGroupIds = journalEntryLinkGroupRepository.findGroupIdsForEntry(splitEntry.id)
-    expect(splitGroupIds).toHaveLength(1)
-    expect(journalEntryLinkGroupRepository.findGroupIdsForEntry(settlementEntries[0].id)).toEqual(splitGroupIds)
-  })
-
-  it('未精算の仕訳が0件の場合、空状態メッセージが表示される', async () => {
-    seedAdvanceAccounts(db)
-    const batch = settlementBatchRepository.create({ name: '空のバッチ', type: 'expense_splitting' })
-
-    renderScreen()
-    await selectBatchAndSide(batch.id, 'liability')
-
-    expect(await screen.findByText('未精算の割勘はありません')).toBeInTheDocument()
-  })
-
-  it('異なる世帯メンバーの割勘仕訳が同じ精算バッチに存在する場合、独立した行として表示され、片方の精算がもう片方の残高に影響しない(計画Issue #133、集計方式でも#40の裏付けは成立する)', async () => {
-    seedAdvanceAccounts(db)
-    const advanceAsset = accountRepository.findAll().find((a) => a.category === 'asset' && a.isSystemManaged)!
-    const advanceLiability = accountRepository.findAll().find((a) => a.category === 'liability' && a.isSystemManaged)!
-    const memberA = householdMemberRepository.create({ name: 'Aさん' })
-    const memberB = householdMemberRepository.create({ name: 'Bさん' })
-    const memberC = householdMemberRepository.create({ name: 'Cさん' })
-    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
-    const cashA = accountRepository.create({ category: 'asset', name: '現金(A)', isReconcilable: false })
-    const cashB = accountRepository.create({ category: 'asset', name: '現金(B)', isReconcilable: false })
-    const batch = settlementBatchRepository.create({ name: '26/7旅行割勘', type: 'expense_splitting' })
     journalEntryRepository.create({
-      entryDate: '2026-07-01',
-      memo: '旅行の食事代',
-      householdMemberId: memberA.id,
+      entryDate: '2026-07-20',
+      memo: 'イオンでの買い物',
+      householdMemberId: member.id,
       lines: [
-        { accountId: expense.id, side: 'debit', amount: 800 },
-        { accountId: cashA.id, side: 'credit', amount: 800 },
-      ],
-    })
-    // ExpenseSplittingFormが分担者(B・C)ごとに独立して作成する仕訳を模擬する
-    journalEntryRepository.create(
-      buildHouseholdMemberExpenseSplittingJournalEntryInput({
-        expenseAccountId: expense.id,
-        advanceAssetAccountId: advanceAsset.id,
-        advanceLiabilityAccountId: advanceLiability.id,
-        fromMemberId: memberA.id,
-        toMemberId: memberB.id,
-        settlementBatchId: batch.id,
-        amount: 500,
-        entryDate: '2026-07-15',
-      }),
-    )
-    journalEntryRepository.create(
-      buildHouseholdMemberExpenseSplittingJournalEntryInput({
-        expenseAccountId: expense.id,
-        advanceAssetAccountId: advanceAsset.id,
-        advanceLiabilityAccountId: advanceLiability.id,
-        fromMemberId: memberA.id,
-        toMemberId: memberC.id,
-        settlementBatchId: batch.id,
-        amount: 300,
-        entryDate: '2026-07-15',
-      }),
-    )
-
-    renderScreen()
-    await selectBatchAndSide(batch.id, 'liability')
-
-    // BさんとCさんがそれぞれ独立した行として表示され、金額が混同されていないことを確認する
-    const memberBItem = (await screen.findByText(memberB.name)).closest('li')!
-    const memberCItem = screen.getByText(memberC.name).closest('li')!
-    expect(memberBItem).toHaveTextContent('￥500')
-    expect(memberCItem).toHaveTextContent('￥300')
-
-    // Bさんの分だけを精算する
-    fireEvent.click(within(memberBItem).getByRole('button', { name: '精算する' }))
-    fireEvent.change(within(memberBItem).getByLabelText('精算元/精算先の口座'), { target: { value: String(cashB.id) } })
-    fireEvent.change(within(memberBItem).getByLabelText('精算金額'), { target: { value: '500' } })
-    fireEvent.click(within(memberBItem).getByRole('button', { name: '精算を確定する' }))
-
-    // Bさんは一覧から消えるが、Cさん(300円)は影響を受けず残り続ける
-    await waitFor(() => expect(screen.queryByText(memberB.name)).not.toBeInTheDocument())
-    const remainingItem = screen.getByText(memberC.name).closest('li')!
-    expect(remainingItem).toHaveTextContent('￥300')
-  })
-
-  it('一部だけ精算すると、精算した金額を差し引いた未精算残高が一覧に残る(計画Issue #133: 集計方式)', async () => {
-    const { memberB, cashB, batch } = setUpSplitEntry()
-
-    renderScreen()
-    await selectBatchAndSide(batch.id, 'liability')
-    const item = (await screen.findByText(memberB.name)).closest('li') as HTMLElement
-
-    fireEvent.click(within(item).getByRole('button', { name: '精算する' }))
-    fireEvent.change(within(item).getByLabelText('精算元/精算先の口座'), { target: { value: String(cashB.id) } })
-    fireEvent.change(within(item).getByLabelText('精算金額'), { target: { value: '200' } })
-    fireEvent.click(within(item).getByRole('button', { name: '精算を確定する' }))
-
-    await waitFor(() => expect(screen.getByText(memberB.name).closest('li')).toHaveTextContent('￥300'))
-  })
-
-  it('1件の仕訳に世帯メンバーの異なる一時勘定行が混在していても、メンバーごとに別の行として表示され、片方の精算がもう片方に影響しない(#40の制約が不要になる)', async () => {
-    seedAdvanceAccounts(db)
-    const advanceLiability = accountRepository.findAll().find((a) => a.category === 'liability' && a.isSystemManaged)!
-    const memberA = householdMemberRepository.create({ name: 'Aさん' })
-    const memberB = householdMemberRepository.create({ name: 'Bさん' })
-    const memberC = householdMemberRepository.create({ name: 'Cさん' })
-    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
-    const cashB = accountRepository.create({ category: 'asset', name: '現金(B)', isReconcilable: false })
-    const batch = settlementBatchRepository.create({ name: '26/7旅行割勘', type: 'expense_splitting' })
-    // 旧設計では禁止していた、1件の仕訳にメンバーの異なる負債側の立替金行を持たせた状態
-    journalEntryRepository.create({
-      entryDate: '2026-07-15',
-      memo: '混在した割勘',
-      householdMemberId: memberA.id,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 800 },
-        {
-          accountId: advanceLiability.id,
-          side: 'credit',
-          amount: 500,
-          settlementBatchId: batch.id,
-          householdMemberId: memberB.id,
-        },
-        {
-          accountId: advanceLiability.id,
-          side: 'credit',
-          amount: 300,
-          settlementBatchId: batch.id,
-          householdMemberId: memberC.id,
-        },
+        { accountId: expense.id, side: 'debit', amount: 4000 },
+        { accountId: liability.id, side: 'credit', amount: 4000, householdMemberId: member.id, settlementBatchId: batch.id },
       ],
     })
 
     renderScreen()
-    await selectBatchAndSide(batch.id, 'liability')
+    await selectTargetAndSide(`counterparty:${counterparty.id}`, 'liability')
 
-    const itemB = (await screen.findByText(memberB.name)).closest('li')!
-    const itemC = screen.getByText(memberC.name).closest('li')!
-    expect(itemB).toHaveTextContent('￥500')
-    expect(itemC).toHaveTextContent('￥300')
-
-    // 500円の行(Bさん)だけを精算する
-    fireEvent.click(within(itemB).getByRole('button', { name: '精算する' }))
-    fireEvent.change(within(itemB).getByLabelText('精算元/精算先の口座'), { target: { value: String(cashB.id) } })
-    fireEvent.change(within(itemB).getByLabelText('精算金額'), { target: { value: '500' } })
-    fireEvent.click(within(itemB).getByRole('button', { name: '精算を確定する' }))
-
-    await waitFor(() => expect(screen.queryByText(memberB.name)).not.toBeInTheDocument())
-    expect(screen.getByText(memberC.name).closest('li')).toHaveTextContent('￥300')
+    const row = (await screen.findByText(batch.name)).closest('tr')!
+    expect(row).toHaveTextContent('￥4,000')
   })
 
   it('戻るボタンが表示される', async () => {
