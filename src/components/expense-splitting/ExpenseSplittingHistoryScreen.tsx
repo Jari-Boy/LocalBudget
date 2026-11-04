@@ -4,17 +4,20 @@ import type { Account } from '../../domain/account/Account'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
-import type { JournalEntryLink } from '../../domain/journal/JournalEntryLink'
+import type { JournalEntryLinkGroupMembership } from '../../domain/journal-link-group/JournalEntryLinkGroup'
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import { listExpenseSplittingHistory } from '../../domain/expense-splitting/listExpenseSplittingHistory'
 import { resolveExpenseSplittingParticipant } from '../../domain/expense-splitting/resolveExpenseSplittingParticipant'
 import { isExpenseSplittingEntrySettled } from '../../domain/expense-splitting/isExpenseSplittingEntrySettled'
+import { buildRelatedEntryIdsByEntryId } from '../../domain/journal-link-group/buildRelatedEntryIdsByEntryId'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import './ExpenseSplittingHistoryScreen.css'
 
 interface JournalEntryFinder {
   findAll(): JournalEntry[] | Promise<JournalEntry[]>
-  listLinksForEntry(entryId: number): JournalEntryLink[] | Promise<JournalEntryLink[]>
+}
+interface JournalEntryLinkGroupFinder {
+  findAllMemberships(): JournalEntryLinkGroupMembership[] | Promise<JournalEntryLinkGroupMembership[]>
 }
 interface AccountFinder {
   findAll(): Account[] | Promise<Account[]>
@@ -31,6 +34,7 @@ interface CounterpartyFinder {
 
 export interface ExpenseSplittingHistoryScreenProps {
   journalEntryRepository: JournalEntryFinder
+  journalEntryLinkGroupRepository: JournalEntryLinkGroupFinder
   accountRepository: AccountFinder
   settlementBatchRepository: SettlementBatchFinder
   householdMemberRepository: HouseholdMemberFinder
@@ -46,7 +50,7 @@ interface LoadedData {
   settlementBatches: SettlementBatch[]
   householdMembers: HouseholdMember[]
   counterparties: Counterparty[]
-  linksByEntryId: Map<number, JournalEntryLink[]>
+  relatedEntryIdsByEntryId: Map<number, Set<number>>
 }
 
 interface AdvanceLinesSummary {
@@ -101,15 +105,17 @@ function resolveParticipantName(
 
 /**
  * 割勘履歴一覧画面(計画Issue #110)。個々の元仕訳を事前に把握していなくても、
- * これまでに行われた割勘(allocatesリンクのfrom_entry側の仕訳)を横断的に一覧表示する
- * (docs/domain/expense-splitting.md 1.5節「履歴の閲覧」)。listExpenseSplittingHistory
- * (全仕訳からの履歴一覧構築)・resolveExpenseSplittingParticipant(分担者特定)・
- * isExpenseSplittingEntrySettled(精算状況判定)を組み合わせて表示用データを組み立てる。
- * 一覧の各行から既存のJournalEntryDetailScreenへ遷移でき、そこで「元の支出→割勘→精算」の
- * 詳細な追跡ができる(本画面はあくまで横断的な一覧に徹し、詳細追跡ロジックは再実装しない)。
+ * これまでに行われた割勘(関連仕訳グループ+科目構成で割勘仕訳と判定できる仕訳、計画Issue
+ * #138)を横断的に一覧表示する(docs/domain/expense-splitting.md 1.5節「履歴の閲覧」)。
+ * listExpenseSplittingHistory(全仕訳からの履歴一覧構築)・resolveExpenseSplittingParticipant
+ * (分担者特定)・isExpenseSplittingEntrySettled(精算状況判定)を組み合わせて表示用データを
+ * 組み立てる。一覧の各行から既存のJournalEntryDetailScreenへ遷移でき、そこで「元の支出→
+ * 割勘→精算」の詳細な追跡ができる(本画面はあくまで横断的な一覧に徹し、詳細追跡ロジックは
+ * 再実装しない)。
  */
 export function ExpenseSplittingHistoryScreen({
   journalEntryRepository,
+  journalEntryLinkGroupRepository,
   accountRepository,
   settlementBatchRepository,
   householdMemberRepository,
@@ -124,21 +130,18 @@ export function ExpenseSplittingHistoryScreen({
   useEffect(() => {
     void Promise.all([
       Promise.resolve(journalEntryRepository.findAll()),
+      Promise.resolve(journalEntryLinkGroupRepository.findAllMemberships()),
       Promise.resolve(accountRepository.findAll()),
       Promise.resolve(settlementBatchRepository.findAll()),
       Promise.resolve(householdMemberRepository.findAll()),
       Promise.resolve(counterpartyRepository.findAll()),
-    ]).then(async ([entries, accounts, settlementBatches, householdMembers, counterparties]) => {
-      const linksByEntryId = new Map<number, JournalEntryLink[]>()
-      await Promise.all(
-        entries.map(async (entry) => {
-          linksByEntryId.set(entry.id, await Promise.resolve(journalEntryRepository.listLinksForEntry(entry.id)))
-        }),
-      )
-      setData({ entries, accounts, settlementBatches, householdMembers, counterparties, linksByEntryId })
+    ]).then(([entries, memberships, accounts, settlementBatches, householdMembers, counterparties]) => {
+      const relatedEntryIdsByEntryId = buildRelatedEntryIdsByEntryId(memberships)
+      setData({ entries, accounts, settlementBatches, householdMembers, counterparties, relatedEntryIdsByEntryId })
     })
   }, [
     journalEntryRepository,
+    journalEntryLinkGroupRepository,
     accountRepository,
     settlementBatchRepository,
     householdMemberRepository,
@@ -149,9 +152,9 @@ export function ExpenseSplittingHistoryScreen({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const { entries, accounts, settlementBatches, householdMembers, counterparties, linksByEntryId } = data
+  const { entries, accounts, settlementBatches, householdMembers, counterparties, relatedEntryIdsByEntryId } = data
   const allLines = entries.flatMap((entry) => entry.lines)
-  const historyEntries = listExpenseSplittingHistory(entries, linksByEntryId)
+  const historyEntries = listExpenseSplittingHistory(entries, accounts, relatedEntryIdsByEntryId)
   const settlementBatchName = (id: number | null) =>
     id === null ? null : (settlementBatches.find((batch) => batch.id === id)?.name ?? null)
 

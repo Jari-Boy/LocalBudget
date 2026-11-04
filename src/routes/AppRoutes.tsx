@@ -1,4 +1,5 @@
 import type * as Comlink from 'comlink'
+import { useMemo } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import type { AccountRepository } from '../domain/account/AccountRepository'
@@ -7,6 +8,7 @@ import type { BudgetRepository } from '../domain/budget/BudgetRepository'
 import type { RecurringTransactionRuleRepository } from '../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { CounterpartyRepository } from '../domain/counterparty/CounterpartyRepository'
 import type { JournalEntryRepository } from '../domain/journal/JournalEntryRepository'
+import type { JournalEntryLinkGroupRepository } from '../domain/journal-link-group/JournalEntryLinkGroupRepository'
 import type { JournalEntryDraft } from '../domain/journal/JournalEntryDraft'
 import type { JournalEntry } from '../domain/journal/JournalEntry'
 import type { HouseholdMemberRepository } from '../domain/household-member/HouseholdMemberRepository'
@@ -104,27 +106,61 @@ export function AppRoutes() {
    * 実行時にはExpose対象オブジェクトのプロパティとして正しくRemoteオブジェクトになる
    * (e2e/worker-rpc.spec.tsで検証済み)ため、Comlink.Remote<T>を経由した型アサーションで
    * ウィザードコンポーネントが要求する構造的型(AccountCreator等)に合わせる。
+   *
+   * clientへのプロパティアクセス(client.account等)自体をuseMemoでclientにのみ依存させて
+   * 安定化する。Comlinkのプロキシ実装(createProxy)はプロパティアクセスのたびに新しい
+   * Proxyオブジェクトを生成するため、メモ化しないと毎レンダーで全リポジトリが別オブジェクト
+   * になる。通常は問題にならないが、同じルートパターン内でURLパラメータだけが変わる遷移
+   * (例: 関連仕訳ダイアログの行から別のentryIdへの遷移)では対象のRoute配下コンポーネントが
+   * 再マウントされず同一Fiberのまま再レンダーされるため、React 19.2のdevログ機構
+   * (logComponentRender、Chrome PerformanceパネルのComponentsトラック用)がpropsの差分を
+   * 検出して文字列化しようとし、ComlinkのプロキシがSymbol.toPrimitive相当のアクセスを
+   * 正しく処理できないため例外を投げる。この例外によりpassiveエフェクト(データ再読み込みの
+   * useEffect)がコミットされず、画面が古い仕訳のまま固まる実機不具合があった
+   * (計画Issue #138のUIレビューで発覚)。
    */
-  const accountRepository = client.account as unknown as Comlink.Remote<AccountRepository>
-  const journalEntryRepository = client.journalEntry as unknown as Comlink.Remote<JournalEntryRepository>
-  const householdMemberRepository =
-    client.householdMember as unknown as Comlink.Remote<HouseholdMemberRepository>
-  const accountGroupRepository = client.accountGroup as unknown as Comlink.Remote<AccountGroupRepository>
-  const projectRepository = client.project as unknown as Comlink.Remote<ProjectRepository>
-  const settlementBatchRepository =
-    client.settlementBatch as unknown as Comlink.Remote<SettlementBatchRepository>
-  const counterpartyRepository = client.counterparty as unknown as Comlink.Remote<CounterpartyRepository>
-  const journalEntryDraftRepository =
-    client.journalEntryDraft as unknown as Comlink.Remote<JournalEntryDraftRpcApi>
-  const importMappingDefinitionRepository =
-    client.importMappingDefinition as unknown as Comlink.Remote<ImportMappingDefinitionRepository>
-  const externalTransactionRefRepository =
-    client.externalTransactionRef as unknown as Comlink.Remote<ExternalTransactionRefRepository>
-  const budgetRepository = client.budget as unknown as Comlink.Remote<BudgetRepository>
-  const recurringTransactionRuleRepository =
-    client.recurringTransactionRule as unknown as Comlink.Remote<RecurringTransactionRuleRepository>
-  const recurringTransactionProposalApi =
-    client.recurringTransactionProposal as unknown as Comlink.Remote<RecurringTransactionProposalRpcApi>
+  const {
+    accountRepository,
+    journalEntryRepository,
+    journalEntryLinkGroupRepository,
+    householdMemberRepository,
+    accountGroupRepository,
+    projectRepository,
+    settlementBatchRepository,
+    counterpartyRepository,
+    journalEntryDraftRepository,
+    importMappingDefinitionRepository,
+    externalTransactionRefRepository,
+    budgetRepository,
+    recurringTransactionRuleRepository,
+    recurringTransactionProposalApi,
+  } = useMemo(
+    () => ({
+      accountRepository: client.account as unknown as Comlink.Remote<AccountRepository>,
+      journalEntryRepository: client.journalEntry as unknown as Comlink.Remote<JournalEntryRepository>,
+      journalEntryLinkGroupRepository:
+        client.journalEntryLinkGroup as unknown as Comlink.Remote<JournalEntryLinkGroupRepository>,
+      householdMemberRepository:
+        client.householdMember as unknown as Comlink.Remote<HouseholdMemberRepository>,
+      accountGroupRepository: client.accountGroup as unknown as Comlink.Remote<AccountGroupRepository>,
+      projectRepository: client.project as unknown as Comlink.Remote<ProjectRepository>,
+      settlementBatchRepository:
+        client.settlementBatch as unknown as Comlink.Remote<SettlementBatchRepository>,
+      counterpartyRepository: client.counterparty as unknown as Comlink.Remote<CounterpartyRepository>,
+      journalEntryDraftRepository:
+        client.journalEntryDraft as unknown as Comlink.Remote<JournalEntryDraftRpcApi>,
+      importMappingDefinitionRepository:
+        client.importMappingDefinition as unknown as Comlink.Remote<ImportMappingDefinitionRepository>,
+      externalTransactionRefRepository:
+        client.externalTransactionRef as unknown as Comlink.Remote<ExternalTransactionRefRepository>,
+      budgetRepository: client.budget as unknown as Comlink.Remote<BudgetRepository>,
+      recurringTransactionRuleRepository:
+        client.recurringTransactionRule as unknown as Comlink.Remote<RecurringTransactionRuleRepository>,
+      recurringTransactionProposalApi:
+        client.recurringTransactionProposal as unknown as Comlink.Remote<RecurringTransactionProposalRpcApi>,
+    }),
+    [client],
+  )
 
   const goBackFromEntryDetail = useHistoryBackOrFallback('/journal/entries')
 
@@ -353,6 +389,7 @@ export function AppRoutes() {
         element={
           <JournalEntryDetailRoute
             journalEntryRepository={journalEntryRepository}
+            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             accountRepository={accountRepository}
             projectRepository={projectRepository}
             householdMemberRepository={householdMemberRepository}
@@ -378,6 +415,7 @@ export function AppRoutes() {
         element={
           <ExpenseSplittingEntryPickerScreen
             journalEntryRepository={journalEntryRepository}
+            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             accountRepository={accountRepository}
             householdMemberRepository={householdMemberRepository}
             projectRepository={projectRepository}
@@ -395,6 +433,7 @@ export function AppRoutes() {
             householdMemberRepository={householdMemberRepository}
             counterpartyRepository={counterpartyRepository}
             journalEntryRepository={journalEntryRepository}
+            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
           />
         }
       />
@@ -406,6 +445,7 @@ export function AppRoutes() {
             accountRepository={accountRepository}
             householdMemberRepository={householdMemberRepository}
             journalEntryRepository={journalEntryRepository}
+            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             onBack={() => navigate('/journal/splitting')}
           />
         }
@@ -415,6 +455,7 @@ export function AppRoutes() {
         element={
           <ExpenseSplittingHistoryScreen
             journalEntryRepository={journalEntryRepository}
+            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             accountRepository={accountRepository}
             settlementBatchRepository={settlementBatchRepository}
             householdMemberRepository={householdMemberRepository}
@@ -493,6 +534,7 @@ function ResumeJournalEntryFormRoute({
 
 interface JournalEntryDetailRouteProps {
   journalEntryRepository: Comlink.Remote<JournalEntryRepository>
+  journalEntryLinkGroupRepository: Comlink.Remote<JournalEntryLinkGroupRepository>
   accountRepository: Comlink.Remote<AccountRepository>
   projectRepository: Comlink.Remote<ProjectRepository>
   householdMemberRepository: Comlink.Remote<HouseholdMemberRepository>
@@ -501,9 +543,11 @@ interface JournalEntryDetailRouteProps {
   onDeleted: () => void
 }
 
-/** URLの:idパラメータをentryIdとして仕訳詳細画面へ渡すルート。 */
+/** URLの:idパラメータをentryIdとして仕訳詳細画面へ渡すルート。関連する仕訳の選択は同じ
+ * 仕訳詳細画面(別のentryId)への遷移として扱う。 */
 function JournalEntryDetailRoute({
   journalEntryRepository,
+  journalEntryLinkGroupRepository,
   accountRepository,
   projectRepository,
   householdMemberRepository,
@@ -512,6 +556,7 @@ function JournalEntryDetailRoute({
   onDeleted,
 }: JournalEntryDetailRouteProps) {
   const { id } = useParams()
+  const navigate = useNavigate()
   const entryId = Number(id)
 
   if (!Number.isFinite(entryId)) {
@@ -522,10 +567,12 @@ function JournalEntryDetailRoute({
     <JournalEntryDetailScreen
       entryId={entryId}
       journalEntryRepository={journalEntryRepository}
+      journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
       accountRepository={accountRepository}
       projectRepository={projectRepository}
       householdMemberRepository={householdMemberRepository}
       counterpartyRepository={counterpartyRepository}
+      onSelectRelatedEntry={(entry) => navigate(`/journal/entries/${entry.id}`)}
       onBack={onBack}
       onDeleted={onDeleted}
     />
@@ -581,6 +628,7 @@ interface ExpenseSplittingFormRouteProps {
   householdMemberRepository: Comlink.Remote<HouseholdMemberRepository>
   counterpartyRepository: Comlink.Remote<CounterpartyRepository>
   journalEntryRepository: Comlink.Remote<JournalEntryRepository>
+  journalEntryLinkGroupRepository: Comlink.Remote<JournalEntryLinkGroupRepository>
 }
 
 /**
@@ -595,6 +643,7 @@ function ExpenseSplittingFormRoute({
   householdMemberRepository,
   counterpartyRepository,
   journalEntryRepository,
+  journalEntryLinkGroupRepository,
 }: ExpenseSplittingFormRouteProps) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -612,6 +661,7 @@ function ExpenseSplittingFormRoute({
       householdMemberRepository={householdMemberRepository}
       counterpartyRepository={counterpartyRepository}
       journalEntryRepository={journalEntryRepository}
+      journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
       onComplete={() => navigate('/')}
       onBack={() => navigate('/journal/splitting/new')}
     />

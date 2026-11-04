@@ -5,7 +5,7 @@
 > **関連ドメイン**
 > 本ドメインは、暫定計上された一時勘定を、CSV到着後に実際の外部取引と対応付けて解消する「消込」という会計処理そのものを定義する。消込の対応関係は、明示的なリンクテーブルではなく、一時勘定の明細行に付与する`settlement_batch_id`タグ(`settlement_batches`、計画Issue #133)の集計によって求める。1つの精算バッチ(割勘・分割払い等)に属する一時勘定行・精算行が同じ`settlement_batch_id`を共有し、残高はタグが一致する行の合算だけで決まる「補助元帳」方式である。サジェスト(外部明細取込時に未消込の一時勘定をサジェストする処理)は[statement-import.md 1.5 レコード処理フロー](./statement-import.md#15-レコード処理フロー)側で行う。一時勘定を経由する必要がある理由は[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)・[recurring-transactions.md 1.1](./recurring-transactions.md#11-位置づけ)側で扱う。
 >
-> **経緯**: 当初(〜計画Issue #132)は仕訳単位、その後明細行単位の`journal_entry_links`(`link_type = 'settles'`)というリンクテーブル方式だったが、計画Issue #133で実際の仕訳例を検討した結果、タグによるグルーピング・集計方式のほうがシンプルかつ堅牢と判断し置き換えた(経緯の詳細は`docs/decisions.md`参照)。`journal_entry_links`が本来担っていた「関連する仕訳の表示」という役割は、残高計算とは独立した軽量な仕組みとして別途検討する(後続の計画Issue)。
+> **経緯**: 当初(〜計画Issue #132)は仕訳単位、その後明細行単位の`journal_entry_links`(`link_type = 'settles'`)というリンクテーブル方式だったが、計画Issue #133で実際の仕訳例を検討した結果、タグによるグルーピング・集計方式のほうがシンプルかつ堅牢と判断し置き換えた(経緯の詳細は`docs/decisions.md`参照)。`journal_entry_links`が本来担っていた「関連する仕訳の表示」という役割は、計画Issue #138で残高計算とは独立した軽量な仕組み(関連仕訳グループ、`journal_entry_link_groups`、[journal.md 1.8](./journal.md#18-関連仕訳グループjournal_entry_link_groups)参照)として実装され、`journal_entry_links`テーブル自体も完全に撤廃された。
 
 ---
 

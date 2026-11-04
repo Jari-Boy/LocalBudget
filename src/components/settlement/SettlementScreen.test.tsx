@@ -23,6 +23,7 @@ import { seedAdvanceAccounts } from '../../infrastructure/db/seedAdvanceAccounts
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
+import { SqlJsJournalEntryLinkGroupRepository } from '../../infrastructure/db/SqlJsJournalEntryLinkGroupRepository'
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import { buildHouseholdMemberExpenseSplittingJournalEntryInput } from '../../domain/expense-splitting/buildHouseholdMemberExpenseSplittingJournalEntryInput'
 
@@ -33,6 +34,7 @@ let accountRepository: SqlJsAccountRepository
 let settlementBatchRepository: SqlJsSettlementBatchRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
+let journalEntryLinkGroupRepository: SqlJsJournalEntryLinkGroupRepository
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -41,6 +43,7 @@ beforeEach(async () => {
   settlementBatchRepository = new SqlJsSettlementBatchRepository(db)
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
+  journalEntryLinkGroupRepository = new SqlJsJournalEntryLinkGroupRepository(db)
 })
 
 afterEach(cleanup)
@@ -53,6 +56,7 @@ function renderScreen() {
         accountRepository={accountRepository}
         householdMemberRepository={householdMemberRepository}
         journalEntryRepository={journalEntryRepository}
+        journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
         onBack={() => {}}
         today="2026-08-15"
       />
@@ -73,7 +77,7 @@ function setUpSplitEntry() {
   const cashA = accountRepository.create({ category: 'asset', name: '現金(A)', isReconcilable: false })
   const cashB = accountRepository.create({ category: 'asset', name: '現金(B)', isReconcilable: false })
   const batch = settlementBatchRepository.create({ name: '26/7生活費割勘', type: 'expense_splitting' })
-  const original = journalEntryRepository.create({
+  journalEntryRepository.create({
     entryDate: '2026-07-01',
     memo: '食事代',
     householdMemberId: memberA.id,
@@ -83,7 +87,6 @@ function setUpSplitEntry() {
     ],
   })
   const splitInput = buildHouseholdMemberExpenseSplittingJournalEntryInput({
-    originalLineId: original.lines[0].id,
     expenseAccountId: expense.id,
     advanceAssetAccountId: advanceAsset.id,
     advanceLiabilityAccountId: advanceLiability.id,
@@ -117,7 +120,7 @@ describe('SettlementScreen', () => {
   })
 
   it('精算するボタンを押すと精算入力欄が展開し、確定すると精算仕訳が作成され一覧から消える', async () => {
-    const { memberB, cashB, batch } = setUpSplitEntry()
+    const { memberB, cashB, batch, splitEntry } = setUpSplitEntry()
 
     renderScreen()
     await selectBatchAndSide(batch.id, 'liability')
@@ -141,6 +144,11 @@ describe('SettlementScreen', () => {
     // 精算仕訳自体も一時勘定(立替金)行を持つため、未精算候補の絞り込みに誤って
     // 混入していないか(=一覧が完全に空になるか)を確認する(空状態メッセージの表示)
     await waitFor(() => expect(screen.getByText('未精算の割勘はありません')).toBeInTheDocument())
+    // 精算仕訳作成時、同じタグ(settlementBatchId・科目・世帯メンバー)を持つ割勘仕訳と
+    // 同じ関連仕訳グループへ自動的に参加する(計画Issue #138)
+    const splitGroupIds = journalEntryLinkGroupRepository.findGroupIdsForEntry(splitEntry.id)
+    expect(splitGroupIds).toHaveLength(1)
+    expect(journalEntryLinkGroupRepository.findGroupIdsForEntry(settlementEntries[0].id)).toEqual(splitGroupIds)
   })
 
   it('未精算の仕訳が0件の場合、空状態メッセージが表示される', async () => {
@@ -164,7 +172,7 @@ describe('SettlementScreen', () => {
     const cashA = accountRepository.create({ category: 'asset', name: '現金(A)', isReconcilable: false })
     const cashB = accountRepository.create({ category: 'asset', name: '現金(B)', isReconcilable: false })
     const batch = settlementBatchRepository.create({ name: '26/7旅行割勘', type: 'expense_splitting' })
-    const original = journalEntryRepository.create({
+    journalEntryRepository.create({
       entryDate: '2026-07-01',
       memo: '旅行の食事代',
       householdMemberId: memberA.id,
@@ -176,7 +184,6 @@ describe('SettlementScreen', () => {
     // ExpenseSplittingFormが分担者(B・C)ごとに独立して作成する仕訳を模擬する
     journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
-        originalLineId: original.lines[0].id,
         expenseAccountId: expense.id,
         advanceAssetAccountId: advanceAsset.id,
         advanceLiabilityAccountId: advanceLiability.id,
@@ -189,7 +196,6 @@ describe('SettlementScreen', () => {
     )
     journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
-        originalLineId: original.lines[0].id,
         expenseAccountId: expense.id,
         advanceAssetAccountId: advanceAsset.id,
         advanceLiabilityAccountId: advanceLiability.id,

@@ -3,9 +3,11 @@
  * 純粋関数としてのユニットテスト。docs/domain/expense-splitting.md 1.4節の「Aさんのカードで
  * 1,000円の食事(本来は友人Bさんと折半)をし、Bさんから500円を受け取る予定」例の通りに、
  * 立替金資産1行+費用(counterparty_id付き)1行から成る2行仕訳を組み立てられることと、
- * 負債側の立替金は発生しないこと、元仕訳の費用行へのallocatesリンク(費用の貸方行から張る、計画Issue #132)がlinksに含まれることを検証する。
- * 計画Issue #133により、立替金行のタグはproject_id(精算バッチ)からsettlementBatchIdに変わり、
- * 費用行には元仕訳のproject_id(イベント)が引き継がれることも検証する。DB非依存、外部依存なし。
+ * 負債側の立替金は発生しないことを検証する。元仕訳との関連付けはjournal_entry_links
+ * (計画Issue #132)から関連仕訳グループ(計画Issue #138)に置き換わり、本関数の責務では
+ * なくなった(呼び出し側がjoinOrCreateGroupsで別途行う)。計画Issue #133により、
+ * 立替金行のタグはproject_id(精算バッチ)からsettlementBatchIdに変わり、費用行には
+ * 元仕訳のproject_id(イベント)が引き継がれることも検証する。DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import { buildCounterpartyExpenseSplittingJournalEntryInput } from './buildCounterpartyExpenseSplittingJournalEntryInput'
@@ -15,12 +17,10 @@ const ADVANCE_ASSET_ACCOUNT_ID = 10 // 資産・立替金
 const MEMBER_A = 100
 const FRIEND_COUNTERPARTY_ID = 300 // 友人Bさん
 const SETTLEMENT_BATCH_ID = 26 // 田中さんとの飲み代
-const ORIGINAL_LINE_ID = 999 // 元仕訳の費用行のid
 
 describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
   it('1.4節の例(世帯外の友人との割勘)通りに、立替金資産1行+費用(counterparty_id付き)1行の2行仕訳を組み立てる', () => {
     const input = buildCounterpartyExpenseSplittingJournalEntryInput({
-      originalLineId: ORIGINAL_LINE_ID,
       expenseAccountId: EXPENSE_ACCOUNT_ID,
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
@@ -54,7 +54,6 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
   it('eventProjectIdを渡すと、費用行(lines[1])にのみ引き継がれる(計画Issue #133、イベント別PL過大バグの解消)', () => {
     const EVENT_PROJECT_ID = 77 // 26年7月アメリカ旅行
     const input = buildCounterpartyExpenseSplittingJournalEntryInput({
-      originalLineId: ORIGINAL_LINE_ID,
       expenseAccountId: EXPENSE_ACCOUNT_ID,
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
@@ -72,7 +71,6 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
 
   it('負債側の立替金(advanceLiabilityAccountId相当)は行として発生しない', () => {
     const input = buildCounterpartyExpenseSplittingJournalEntryInput({
-      originalLineId: ORIGINAL_LINE_ID,
       expenseAccountId: EXPENSE_ACCOUNT_ID,
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
@@ -85,28 +83,8 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
     expect(input.lines).toHaveLength(2)
   })
 
-  it('費用の貸方行(lines[1])から元仕訳の費用行へのallocatesリンクを、仕訳作成と同一トランザクションで書き込めるようlinksに含める', () => {
-    const input = buildCounterpartyExpenseSplittingJournalEntryInput({
-      originalLineId: ORIGINAL_LINE_ID,
-      expenseAccountId: EXPENSE_ACCOUNT_ID,
-      advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
-      payerMemberId: MEMBER_A,
-      counterpartyId: FRIEND_COUNTERPARTY_ID,
-      settlementBatchId: SETTLEMENT_BATCH_ID,
-      amount: 500,
-      entryDate: '2026-07-15',
-    })
-
-    expect(input.links).toEqual([
-      { fromLineIndex: 1, toLineId: ORIGINAL_LINE_ID, linkType: 'allocates', amount: 500 },
-    ])
-    // from_lineは元の費用行と科目が同じ・貸借が逆(費用の貸方)になっている
-    expect(input.lines[1]).toMatchObject({ accountId: EXPENSE_ACCOUNT_ID, side: 'credit' })
-  })
-
   it('memoを渡した場合はそのままentryのmemoに使われる', () => {
     const input = buildCounterpartyExpenseSplittingJournalEntryInput({
-      originalLineId: ORIGINAL_LINE_ID,
       expenseAccountId: EXPENSE_ACCOUNT_ID,
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,
@@ -123,7 +101,6 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
   it('生成した仕訳は貸借バランスの検証(assertJournalBalance)を通過する', async () => {
     const { assertJournalBalance } = await import('../journal/assertJournalBalance')
     const input = buildCounterpartyExpenseSplittingJournalEntryInput({
-      originalLineId: ORIGINAL_LINE_ID,
       expenseAccountId: EXPENSE_ACCOUNT_ID,
       advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
       payerMemberId: MEMBER_A,

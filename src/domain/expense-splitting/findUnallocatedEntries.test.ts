@@ -1,18 +1,59 @@
 /**
  * findUnallocatedEntries(割勘対象候補の絞り込み)の純粋関数としてのユニットテスト。
- * 既にallocatesリンク(to_entry_id側)を持つ仕訳を「割勘済み」とみなし、割勘対象の
- * 候補一覧から除外するルールを、src/domain/settlement/findUnsettledEntries.tsと対称的な
- * ケース(リンクなし・allocates済み・別のlinkTypeのみ・複数仕訳からの絞り込み)を含めて
- * 検証する。さらに、allocatesリンクのfrom_entry側(=割勘によって作られた仕訳自身)も
- * 候補から除外することを検証する(「割勘の割勘」を防ぐ、人間レビューでの指摘)。
- * DB非依存、外部依存なし。
+ * journal_entry_links(計画Issue #132)のallocatesリンクによる絞り込みは計画Issue #138で
+ * 関連仕訳グループ+科目構成による分類(isExpenseSplitEntry)に置き換わった。既に割勘仕訳と
+ * 同一グループに属する元仕訳(=割勘済み)、および仕訳自身が割勘仕訳であるもの(「割勘の割勘」
+ * を防ぐ、人間レビューでの指摘)を候補から除外することを検証する。DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
-import type { JournalEntry } from '../journal/JournalEntry'
-import type { JournalEntryLink } from '../journal/JournalEntryLink'
+import type { Account } from '../account/Account'
+import type { JournalEntry, JournalLine } from '../journal/JournalEntry'
 import { findUnallocatedEntries } from './findUnallocatedEntries'
 
-function buildEntry(id: number): JournalEntry {
+const EXPENSE_ACCOUNT_ID = 1
+const ADVANCE_ACCOUNT_ID = 2
+const PAYABLE_ACCOUNT_ID = 3
+
+function account(overrides: Partial<Account>): Account {
+  return {
+    id: 0,
+    category: 'expense',
+    name: '',
+    isReconcilable: null,
+    isActive: true,
+    isSystemManaged: false,
+    householdMemberId: null,
+    accountGroupId: null,
+    initialBalanceForAccountId: null,
+    sortOrder: 0,
+    createdAt: '2026-06-01T00:00:00.000Z',
+    updatedAt: '2026-06-01T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+const ACCOUNTS: Account[] = [
+  account({ id: EXPENSE_ACCOUNT_ID, category: 'expense', name: '食費' }),
+  account({ id: ADVANCE_ACCOUNT_ID, category: 'asset', name: '立替金', isSystemManaged: true, isReconcilable: false }),
+  account({ id: PAYABLE_ACCOUNT_ID, category: 'liability', name: '未払金', isReconcilable: false }),
+]
+
+function buildLine(entryId: number, accountId: number, side: JournalLine['side']): JournalLine {
+  return {
+    id: entryId * 10 + accountId,
+    journalEntryId: entryId,
+    accountId,
+    projectId: null,
+    householdMemberId: null,
+    counterpartyId: null,
+    settlementBatchId: null,
+    side,
+    amount: 500,
+    createdAt: '2026-06-01T00:00:00.000Z',
+  }
+}
+
+function buildEntry(id: number, lines: JournalLine[]): JournalEntry {
   return {
     id,
     entryDate: '2026-06-01',
@@ -23,95 +64,81 @@ function buildEntry(id: number): JournalEntry {
     generatedFromRuleId: null,
     createdAt: '2026-06-01T00:00:00.000Z',
     updatedAt: '2026-06-01T00:00:00.000Z',
-    lines: [],
+    lines,
   }
 }
 
-function buildLink(
-  id: number,
-  fromEntryId: number,
-  toEntryId: number,
-  linkType: JournalEntryLink['linkType'],
-): JournalEntryLink {
-  return {
-    id,
-    // 本テストは仕訳単位のトラバーサルを検証するため、明細行idは仕訳idから機械的に補う(計画Issue #132)
-    fromLineId: fromEntryId * 10,
-    toLineId: toEntryId * 10,
-    fromEntryId,
-    toEntryId,
-    linkType,
-    amount: 500,
-    createdAt: '2026-06-02T00:00:00.000Z',
-  }
+function buildOriginalEntry(id: number): JournalEntry {
+  return buildEntry(id, [buildLine(id, EXPENSE_ACCOUNT_ID, 'debit'), buildLine(id, PAYABLE_ACCOUNT_ID, 'credit')])
+}
+
+function buildSplitEntry(id: number): JournalEntry {
+  return buildEntry(id, [buildLine(id, EXPENSE_ACCOUNT_ID, 'debit'), buildLine(id, ADVANCE_ACCOUNT_ID, 'credit')])
 }
 
 describe('findUnallocatedEntries', () => {
-  it('allocatesリンクが1件もない仕訳は未割勘として抽出する', () => {
-    const entry = buildEntry(1)
+  it('関連仕訳グループに属さない仕訳は未割勘として抽出する', () => {
+    const entry = buildOriginalEntry(1)
 
-    const result = findUnallocatedEntries([entry], new Map())
+    const result = findUnallocatedEntries([entry], ACCOUNTS, new Map())
 
     expect(result).toEqual([entry])
   })
 
-  it('既にallocatesリンク(to_entry側)を持つ仕訳(=割勘済み)は抽出しない', () => {
-    const originalEntry = buildEntry(1)
-    const splitEntry = buildEntry(2)
-    const link = buildLink(1, splitEntry.id, originalEntry.id, 'allocates')
-    const linksByEntryId = new Map([[originalEntry.id, [link]]])
+  it('既に割勘仕訳と同一グループに属する元仕訳(=割勘済み)は抽出しない', () => {
+    const originalEntry = buildOriginalEntry(1)
+    const splitEntry = buildSplitEntry(2)
+    const relatedEntryIdsByEntryId = new Map([
+      [1, new Set([2])],
+      [2, new Set([1])],
+    ])
 
-    const result = findUnallocatedEntries([originalEntry], linksByEntryId)
+    const result = findUnallocatedEntries([originalEntry, splitEntry], ACCOUNTS, relatedEntryIdsByEntryId)
 
     expect(result).toEqual([])
   })
 
-  it('settlesリンクしか持たない仕訳(allocatesではない)は未割勘として抽出する', () => {
-    const entry = buildEntry(1)
-    const settlementEntry = buildEntry(2)
-    const link = buildLink(1, settlementEntry.id, entry.id, 'settles')
-    const linksByEntryId = new Map([[entry.id, [link]]])
-
-    const result = findUnallocatedEntries([entry], linksByEntryId)
-
-    expect(result).toEqual([entry])
-  })
-
   it('複数の仕訳から未割勘のものだけを抽出する(26/6分は除外、26/7分は候補として残る)', () => {
-    const alreadySplitJuneEntry = buildEntry(1)
-    const candidateJulyEntry = buildEntry(2)
-    const splitEntry = buildEntry(3)
-    const link = buildLink(1, splitEntry.id, alreadySplitJuneEntry.id, 'allocates')
-    const linksByEntryId = new Map([[alreadySplitJuneEntry.id, [link]]])
+    const alreadySplitJuneEntry = buildOriginalEntry(1)
+    const candidateJulyEntry = buildOriginalEntry(2)
+    const splitEntry = buildSplitEntry(3)
+    const relatedEntryIdsByEntryId = new Map([
+      [1, new Set([3])],
+      [3, new Set([1])],
+    ])
 
     const result = findUnallocatedEntries(
-      [alreadySplitJuneEntry, candidateJulyEntry],
-      linksByEntryId,
+      [alreadySplitJuneEntry, candidateJulyEntry, splitEntry],
+      ACCOUNTS,
+      relatedEntryIdsByEntryId,
     )
 
     expect(result).toEqual([candidateJulyEntry])
   })
 
-  it('自分自身が割勘仕訳(allocatesリンクのfrom_entry側)である仕訳は候補から除外する(割勘の割勘を防ぐ)', () => {
-    const originalEntry = buildEntry(1)
-    const splitEntry = buildEntry(2)
-    const link = buildLink(1, splitEntry.id, originalEntry.id, 'allocates')
-    const linksByEntryId = new Map([[splitEntry.id, [link]]])
+  it('仕訳自身が割勘仕訳である場合は候補から除外する(割勘の割勘を防ぐ)', () => {
+    const splitEntry = buildSplitEntry(2)
 
-    const result = findUnallocatedEntries([splitEntry], linksByEntryId)
+    const result = findUnallocatedEntries([splitEntry], ACCOUNTS, new Map())
 
     expect(result).toEqual([])
   })
 
-  it('割勘仕訳自身が複数の元仕訳に対するallocatesリンク(from_entry側)を持つ場合でも候補から除外する', () => {
-    const originalEntryA = buildEntry(1)
-    const originalEntryB = buildEntry(2)
-    const splitEntry = buildEntry(3)
-    const linkToA = buildLink(1, splitEntry.id, originalEntryA.id, 'allocates')
-    const linkToB = buildLink(2, splitEntry.id, originalEntryB.id, 'allocates')
-    const linksByEntryId = new Map([[splitEntry.id, [linkToA, linkToB]]])
+  it('割勘仕訳が複数の元仕訳と同一グループに属する場合、いずれの元仕訳も候補から除外する', () => {
+    const originalEntryA = buildOriginalEntry(1)
+    const originalEntryB = buildOriginalEntry(2)
+    const splitEntry = buildSplitEntry(3)
+    const relatedEntryIdsByEntryId = new Map([
+      [1, new Set([3])],
+      [2, new Set([3])],
+      [3, new Set([1, 2])],
+    ])
 
-    const result = findUnallocatedEntries([splitEntry], linksByEntryId)
+    const result = findUnallocatedEntries(
+      [originalEntryA, originalEntryB, splitEntry],
+      ACCOUNTS,
+      relatedEntryIdsByEntryId,
+    )
 
     expect(result).toEqual([])
   })

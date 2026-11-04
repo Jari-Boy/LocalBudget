@@ -53,6 +53,9 @@ interface CounterpartyCreator {
 interface JournalEntryCreator {
   create(input: CreateJournalEntryInput): JournalEntry | Promise<JournalEntry>
 }
+interface JournalEntryLinkGroupJoiner {
+  joinOrCreateGroups(anchorEntryIds: readonly number[], newEntryIds: readonly number[]): void | Promise<void>
+}
 
 export interface ExpenseSplittingFormProps {
   /**
@@ -66,6 +69,7 @@ export interface ExpenseSplittingFormProps {
   householdMemberRepository: HouseholdMemberFinder
   counterpartyRepository: CounterpartyFinder & CounterpartyCreator
   journalEntryRepository: JournalEntryCreator
+  journalEntryLinkGroupRepository: JournalEntryLinkGroupJoiner
   onComplete: (createdEntries: JournalEntry[]) => void
   onBack: () => void
   /** 割勘仕訳の取引日の既定値(YYYY-MM-DD)。省略時は本日の日付 */
@@ -153,6 +157,7 @@ export function ExpenseSplittingForm({
   householdMemberRepository,
   counterpartyRepository,
   journalEntryRepository,
+  journalEntryLinkGroupRepository,
   onComplete,
   onBack,
   today,
@@ -374,7 +379,6 @@ export function ExpenseSplittingForm({
           return
         }
         const inputs = buildExpenseSplittingJournalEntryInputs({
-          originalLineId: expenseLine.id,
           expenseAccountId: expenseLine.accountId,
           advanceAssetAccountId,
           fromMemberId: entry.householdMemberId,
@@ -420,7 +424,19 @@ export function ExpenseSplittingForm({
 
       const created: JournalEntry[] = []
       for (const mergedInput of mergedInputs) {
-        created.push(await journalEntryRepository.create(mergedInput))
+        const createdEntry = await journalEntryRepository.create(mergedInput)
+        created.push(createdEntry)
+        /**
+         * 割勘仕訳の作成と同時に、元仕訳(originalEntries)と同じ関連仕訳グループへ所属させる
+         * (計画Issue #138、journal_entry_linksのallocatesリンクが担っていた「関連仕訳の
+         * 一覧表示」の役割の置き換え)。anchorを元仕訳側にすることで、元仕訳が既に(別の割勘
+         * 操作等で)グループに所属していればそのグループへ合流し、未所属なら新規グループを
+         * 作成する(JournalEntryLinkGroupRepository.joinOrCreateGroups参照)。
+         */
+        await journalEntryLinkGroupRepository.joinOrCreateGroups(
+          originalEntries.map((entry) => entry.id),
+          [createdEntry.id],
+        )
       }
       onComplete(created)
     } catch {

@@ -21,6 +21,7 @@ import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepo
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
+import { SqlJsJournalEntryLinkGroupRepository } from '../../infrastructure/db/SqlJsJournalEntryLinkGroupRepository'
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import { buildHouseholdMemberExpenseSplittingJournalEntryInput } from '../../domain/expense-splitting/buildHouseholdMemberExpenseSplittingJournalEntryInput'
@@ -35,6 +36,7 @@ let householdMemberRepository: SqlJsHouseholdMemberRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
 let settlementBatchRepository: SqlJsSettlementBatchRepository
 let counterpartyRepository: SqlJsCounterpartyRepository
+let journalEntryLinkGroupRepository: SqlJsJournalEntryLinkGroupRepository
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -44,6 +46,7 @@ beforeEach(async () => {
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
   settlementBatchRepository = new SqlJsSettlementBatchRepository(db)
   counterpartyRepository = new SqlJsCounterpartyRepository(db)
+  journalEntryLinkGroupRepository = new SqlJsJournalEntryLinkGroupRepository(db)
 })
 
 afterEach(cleanup)
@@ -55,6 +58,7 @@ function renderScreen(overrides?: { onSelectEntry?: (entry: JournalEntry) => voi
     <I18nextProvider i18n={i18n}>
       <ExpenseSplittingHistoryScreen
         journalEntryRepository={journalEntryRepository}
+        journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
         accountRepository={accountRepository}
         settlementBatchRepository={settlementBatchRepository}
         householdMemberRepository={householdMemberRepository}
@@ -106,9 +110,8 @@ describe('ExpenseSplittingHistoryScreen', () => {
         { accountId: cash.id, side: 'credit', amount: 1000 },
       ],
     })
-    journalEntryRepository.create(
+    const splitEntry = journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
-        originalLineId: originalEntry.lines[0].id,
         expenseAccountId: expense.id,
         advanceAssetAccountId: advanceAsset.id,
         advanceLiabilityAccountId: advanceLiability.id,
@@ -119,6 +122,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
         entryDate: '2026-08-03',
       }),
     )
+    journalEntryLinkGroupRepository.createGroup([originalEntry.id, splitEntry.id])
 
     renderScreen()
 
@@ -147,9 +151,8 @@ describe('ExpenseSplittingHistoryScreen', () => {
         { accountId: cash.id, side: 'credit', amount: 2000 },
       ],
     })
-    journalEntryRepository.create(
+    const splitEntry = journalEntryRepository.create(
       buildCounterpartyExpenseSplittingJournalEntryInput({
-        originalLineId: originalEntry.lines[0].id,
         expenseAccountId: expense.id,
         advanceAssetAccountId: advanceAsset.id,
         payerMemberId: member.id,
@@ -159,6 +162,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
         entryDate: '2026-08-06',
       }),
     )
+    journalEntryLinkGroupRepository.createGroup([originalEntry.id, splitEntry.id])
 
     renderScreen()
 
@@ -192,7 +196,6 @@ describe('ExpenseSplittingHistoryScreen', () => {
       ],
     })
     const splitInputForSmartphone = buildHouseholdMemberExpenseSplittingJournalEntryInput({
-      originalLineId: smartphoneEntry.lines[0].id,
       expenseAccountId: expense.id,
       advanceAssetAccountId: advanceAsset.id,
       advanceLiabilityAccountId: advanceLiability.id,
@@ -203,7 +206,6 @@ describe('ExpenseSplittingHistoryScreen', () => {
       entryDate: '2026-08-03',
     })
     const splitInputForTablet = buildHouseholdMemberExpenseSplittingJournalEntryInput({
-      originalLineId: tabletEntry.lines[0].id,
       expenseAccountId: expense.id,
       advanceAssetAccountId: advanceAsset.id,
       advanceLiabilityAccountId: advanceLiability.id,
@@ -213,9 +215,8 @@ describe('ExpenseSplittingHistoryScreen', () => {
       amount: 250,
       entryDate: '2026-08-03',
     })
-    // 本番(ExpenseSplittingForm)と同じ統合関数を使う。リンクの起点(fromLineIndex)は
-    // 結合後の行位置へずらす必要があるため、手作業での結合はしない(計画Issue #132)
-    journalEntryRepository.create(
+    // 本番(ExpenseSplittingForm)と同じ統合関数を使う
+    const splitEntry = journalEntryRepository.create(
       mergeExpenseSplittingJournalEntryInputs({
         inputs: [splitInputForSmartphone, splitInputForTablet],
         entryDate: '2026-08-03',
@@ -223,6 +224,9 @@ describe('ExpenseSplittingHistoryScreen', () => {
         householdMemberId: member.id,
       }),
     )
+    // 本番(ExpenseSplittingForm)が割勘仕訳作成時に行う自動グルーピングを模擬する
+    // (複数の元仕訳をまとめて1回で割勘した場合、全元仕訳+割勘仕訳が1つのグループに所属する)
+    journalEntryLinkGroupRepository.createGroup([smartphoneEntry.id, tabletEntry.id, splitEntry.id])
 
     renderScreen()
 
@@ -246,9 +250,8 @@ describe('ExpenseSplittingHistoryScreen', () => {
         { accountId: cash.id, side: 'credit', amount: 1000 },
       ],
     })
-    journalEntryRepository.create(
+    const splitEntry = journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
-        originalLineId: originalEntry.lines[0].id,
         expenseAccountId: expense.id,
         advanceAssetAccountId: advanceAsset.id,
         advanceLiabilityAccountId: advanceLiability.id,
@@ -259,7 +262,8 @@ describe('ExpenseSplittingHistoryScreen', () => {
         entryDate: '2026-08-03',
       }),
     )
-    journalEntryRepository.create(
+    journalEntryLinkGroupRepository.createGroup([originalEntry.id, splitEntry.id])
+    const settlementEntry1 = journalEntryRepository.create(
       buildSettlementJournalEntryInput({
         settlementAccountId: advanceLiability.id,
         settlementAccountCategory: 'liability',
@@ -270,7 +274,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
         entryDate: '2026-08-10',
       }),
     )
-    journalEntryRepository.create(
+    const settlementEntry2 = journalEntryRepository.create(
       buildSettlementJournalEntryInput({
         settlementAccountId: advanceAsset.id,
         settlementAccountCategory: 'asset',
@@ -281,6 +285,9 @@ describe('ExpenseSplittingHistoryScreen', () => {
         entryDate: '2026-08-11',
       }),
     )
+    // 本番(SettlementScreen)が精算仕訳作成時に行う自動グルーピングを模擬する
+    journalEntryLinkGroupRepository.joinOrCreateGroups([splitEntry.id], [settlementEntry1.id])
+    journalEntryLinkGroupRepository.joinOrCreateGroups([splitEntry.id], [settlementEntry2.id])
 
     renderScreen()
 
@@ -306,7 +313,6 @@ describe('ExpenseSplittingHistoryScreen', () => {
     })
     const splitEntry = journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
-        originalLineId: originalEntry.lines[0].id,
         expenseAccountId: expense.id,
         advanceAssetAccountId: advanceAsset.id,
         advanceLiabilityAccountId: advanceLiability.id,
@@ -317,6 +323,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
         entryDate: '2026-08-03',
       }),
     )
+    journalEntryLinkGroupRepository.createGroup([originalEntry.id, splitEntry.id])
 
     const { onSelectEntry } = renderScreen()
     await screen.findByText('スーパーで食材購入')

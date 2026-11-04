@@ -1,9 +1,5 @@
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
-import {
-  JournalEntryLinkLineError,
-  type JournalEntryLinkLineErrorReason,
-} from '../../domain/journal/JournalEntryLinkLineError'
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
@@ -33,12 +29,6 @@ const DOMAIN_ERROR_REVIVERS: Record<string, DomainErrorReviver> = {
     ),
   RestrictedAccountPostingError: (_message, extra) =>
     new RestrictedAccountPostingError(extra.accountId as number, extra.sourceType as string),
-  JournalEntryLinkLineError: (_message, extra) =>
-    new JournalEntryLinkLineError(
-      extra.reason as JournalEntryLinkLineErrorReason,
-      extra.fromLineId as number | null,
-      extra.toLineId as number,
-    ),
   NoBalanceDiscrepancyError: () => new NoBalanceDiscrepancyError(),
   InvalidRecurringScheduleError: (message) => new InvalidRecurringScheduleError(message),
   RecurringTransactionHouseholdMemberRequiredError: (_message, extra) =>

@@ -106,21 +106,43 @@ END;
 -- 貸借バランス(借方合計=貸方合計)はDBで強制しない。journal.md 1.3参照。
 -- JournalEntryRepository がトランザクション書き込み前に検証する。
 
--- 仕訳間の関係は明細行(journal_lines)単位で記録する(計画Issue #132、docs/domain/journal.md 1.8)。
--- 仕訳単位のid(from_entry_id/to_entry_id)は持たず、必要な場合は journal_lines との JOIN で導出する。
--- 明細行(または明細行を持つ仕訳)が削除されるとリンクも一緒に削除される(ON DELETE CASCADE)。
--- 仕訳の更新は行idによる差分更新のため、日付・メモ・金額の修正でリンクが失われることはない。
-CREATE TABLE journal_entry_links (
-  id              INTEGER PRIMARY KEY,
-  from_line_id    INTEGER NOT NULL REFERENCES journal_lines(id) ON DELETE CASCADE,
-  to_line_id      INTEGER NOT NULL REFERENCES journal_lines(id) ON DELETE CASCADE,
-  link_type       TEXT NOT NULL CHECK (link_type IN ('settles', 'allocates')),
-  amount          INTEGER NOT NULL CHECK (amount > 0),
-  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+-- 関連仕訳グループ(多対多、計画Issue #138)。journal_entry_links(明細行単位のsettles/allocates
+-- リンク)は計画Issue #138で完全に撤廃した。残高計算・消込判定の役割は計画Issue #133で
+-- settlement_batch_idタグの集計方式に移管済みであり、残っていた表示系の役割(関連仕訳の
+-- 一覧表示)は以下の多対多グループに置き換わった(経緯はdocs/decisions.md参照)。
+-- 「関連仕訳を
+-- ユーザーが一覧表示できる」役割を置き換える表示専用の軽量なグルーピング。link_type(種別タグ)
+-- は持たず、残高計算・消込判定には一切関与しない。1つの仕訳(journal_entries)が複数のグループに
+-- 同時に所属できる(所属数の上限なし)。ドメイン定義はdocs/domain/journal.md 1.8を参照。
+-- nameはユーザーが任意で付けられる表示名(未設定時はUI側で「グループ1」等の既定名を表示する、
+-- ドメイン層では永続化しない)。
+CREATE TABLE journal_entry_link_groups (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_journal_entry_links_from ON journal_entry_links(from_line_id);
-CREATE INDEX idx_journal_entry_links_to   ON journal_entry_links(to_line_id);
+CREATE TABLE journal_entry_link_group_memberships (
+  id               INTEGER PRIMARY KEY,
+  link_group_id    INTEGER NOT NULL REFERENCES journal_entry_link_groups(id) ON DELETE CASCADE,
+  journal_entry_id INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+  created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (link_group_id, journal_entry_id)
+);
+
+CREATE INDEX idx_journal_entry_link_group_memberships_group ON journal_entry_link_group_memberships(link_group_id);
+CREATE INDEX idx_journal_entry_link_group_memberships_entry ON journal_entry_link_group_memberships(journal_entry_id);
+
+-- メンバーが0件になったグループ(全メンバーの仕訳が削除された等)は自動的に削除する
+-- (計画Issue #138の懸念点「グループに所属する仕訳が0件になった場合の後始末」への対応)。
+CREATE TRIGGER journal_entry_link_groups_delete_when_empty
+AFTER DELETE ON journal_entry_link_group_memberships
+WHEN NOT EXISTS (
+  SELECT 1 FROM journal_entry_link_group_memberships WHERE link_group_id = OLD.link_group_id
+)
+BEGIN
+  DELETE FROM journal_entry_link_groups WHERE id = OLD.link_group_id;
+END;
 
 -- journal_entry_drafts / journal_entry_draft_lines のDDL
 -- journal_entries とは異なり貸借バランス・NOT NULL制約を課さない(入力途中の状態を許容するため)

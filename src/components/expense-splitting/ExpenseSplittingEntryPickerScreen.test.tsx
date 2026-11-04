@@ -21,6 +21,7 @@ import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
+import { SqlJsJournalEntryLinkGroupRepository } from '../../infrastructure/db/SqlJsJournalEntryLinkGroupRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
@@ -33,6 +34,7 @@ let householdMemberRepository: SqlJsHouseholdMemberRepository
 let journalEntryRepository: SqlJsJournalEntryRepository
 let projectRepository: SqlJsProjectRepository
 let settlementBatchRepository: SqlJsSettlementBatchRepository
+let journalEntryLinkGroupRepository: SqlJsJournalEntryLinkGroupRepository
 
 beforeEach(async () => {
   db = await createTestDatabase()
@@ -42,6 +44,7 @@ beforeEach(async () => {
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
   projectRepository = new SqlJsProjectRepository(db)
   settlementBatchRepository = new SqlJsSettlementBatchRepository(db)
+  journalEntryLinkGroupRepository = new SqlJsJournalEntryLinkGroupRepository(db)
 })
 
 afterEach(cleanup)
@@ -53,6 +56,7 @@ function renderScreen(overrides?: { onSelectEntries?: (entries: JournalEntry[]) 
     <I18nextProvider i18n={i18n}>
       <ExpenseSplittingEntryPickerScreen
         journalEntryRepository={journalEntryRepository}
+        journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
         accountRepository={accountRepository}
         householdMemberRepository={householdMemberRepository}
         projectRepository={projectRepository}
@@ -71,11 +75,17 @@ describe('ExpenseSplittingEntryPickerScreen', () => {
     const settlementBatch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+    const advanceAsset = accountRepository.create({
+      category: 'asset',
+      name: '立替金',
+      isReconcilable: false,
+      isSystemManaged: true,
+    })
     const advanceLiability = accountRepository.create({
       category: 'liability',
       name: '立替金',
       isReconcilable: false,
+      isSystemManaged: true,
     })
     journalEntryRepository.create({
       entryDate: '2026-08-01',
@@ -95,9 +105,8 @@ describe('ExpenseSplittingEntryPickerScreen', () => {
         { accountId: cash.id, side: 'credit', amount: 500 },
       ],
     })
-    journalEntryRepository.create(
+    const splitEntry = journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
-        originalLineId: alreadySplit.lines[0].id,
         expenseAccountId: expense.id,
         advanceAssetAccountId: advanceAsset.id,
         advanceLiabilityAccountId: advanceLiability.id,
@@ -108,6 +117,9 @@ describe('ExpenseSplittingEntryPickerScreen', () => {
         entryDate: '2026-08-03',
       }),
     )
+    // 割勘仕訳作成時に自動的に行われる関連仕訳グループへの参加(計画Issue #138、
+    // ExpenseSplittingForm.tsxの配線)を模擬する
+    journalEntryLinkGroupRepository.createGroup([alreadySplit.id, splitEntry.id])
 
     renderScreen()
 

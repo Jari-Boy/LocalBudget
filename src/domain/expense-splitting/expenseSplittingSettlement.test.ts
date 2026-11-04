@@ -20,12 +20,10 @@ const ADVANCE_LIABILITY_ACCOUNT_ID = 11 // 負債・立替金(Bさんの債務)
 const MEMBER_A = 100
 const MEMBER_B = 200
 const SETTLEMENT_BATCH_ID = 26
-const ORIGINAL_LINE_ID = 999
 const SPLIT_ENTRY_ID = 1000
 
 function toSplitLines(): JournalLine[] {
   const input = buildHouseholdMemberExpenseSplittingJournalEntryInput({
-    originalLineId: ORIGINAL_LINE_ID,
     expenseAccountId: EXPENSE_ACCOUNT_ID,
     advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
     advanceLiabilityAccountId: ADVANCE_LIABILITY_ACCOUNT_ID,
