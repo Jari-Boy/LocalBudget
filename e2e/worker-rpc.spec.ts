@@ -9,7 +9,7 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('Web Worker + RPC層', () => {
-  test('Worker起動時にDBが初期化されマイグレーションが適用され、標準の収益・費用科目(計画Issue #96)・割勘の一時勘定(立替金、計画Issue #40)があわせて投入される', async ({
+  test('Worker起動時にDBが初期化されマイグレーションが適用され、標準の収益・費用科目(計画Issue #96)・割勘の一時勘定(立替金、計画Issue #40)・精算画面の差額計上科目(雑収入/雑損失、計画Issue #139)があわせて投入される', async ({
     page,
   }) => {
     await page.goto('/')
@@ -20,6 +20,9 @@ test.describe('Web Worker + RPC層', () => {
         '/src/infrastructure/db/defaultAccountSeedData.ts'
       )
       const { ADVANCE_ACCOUNT_NAME } = await import('/src/infrastructure/db/seedAdvanceAccounts.ts')
+      const { SETTLEMENT_ADJUSTMENT_GAIN_ACCOUNT_NAME, SETTLEMENT_ADJUSTMENT_LOSS_ACCOUNT_NAME } = await import(
+        '/src/infrastructure/db/seedSettlementAdjustmentAccounts.ts'
+      )
       const client = await createDbClient()
       const accounts = await client.account.findAll()
       return {
@@ -30,6 +33,8 @@ test.describe('Web Worker + RPC層', () => {
           ...DEFAULT_EXPENSE_ACCOUNT_NAMES,
           ADVANCE_ACCOUNT_NAME,
           ADVANCE_ACCOUNT_NAME,
+          SETTLEMENT_ADJUSTMENT_GAIN_ACCOUNT_NAME,
+          SETTLEMENT_ADJUSTMENT_LOSS_ACCOUNT_NAME,
         ].sort(),
       }
     })

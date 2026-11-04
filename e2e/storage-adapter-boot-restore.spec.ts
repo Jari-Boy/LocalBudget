@@ -60,7 +60,7 @@ test.describe('StorageAdapterによる起動時ロード・保存フロー', () 
     expect(restoredAccountNames).toContain('テスト費目')
   })
 
-  test('IndexedDBに保存済みデータがない場合、Worker起動時は標準の収益・費用科目(計画Issue #96)・割勘の一時勘定(立替金、計画Issue #40)のみが投入された状態になる', async ({
+  test('IndexedDBに保存済みデータがない場合、Worker起動時は標準の収益・費用科目(計画Issue #96)・割勘の一時勘定(立替金、計画Issue #40)・精算画面の差額計上科目(雑収入/雑損失、計画Issue #139)のみが投入された状態になる', async ({
     page,
   }) => {
     await page.goto('/')
@@ -71,6 +71,9 @@ test.describe('StorageAdapterによる起動時ロード・保存フロー', () 
         '/src/infrastructure/db/defaultAccountSeedData.ts'
       )
       const { ADVANCE_ACCOUNT_NAME } = await import('/src/infrastructure/db/seedAdvanceAccounts.ts')
+      const { SETTLEMENT_ADJUSTMENT_GAIN_ACCOUNT_NAME, SETTLEMENT_ADJUSTMENT_LOSS_ACCOUNT_NAME } = await import(
+        '/src/infrastructure/db/seedSettlementAdjustmentAccounts.ts'
+      )
       const client = await createDbClient()
       const accounts = await client.account.findAll()
       return {
@@ -80,6 +83,8 @@ test.describe('StorageAdapterによる起動時ロード・保存フロー', () 
           ...DEFAULT_EXPENSE_ACCOUNT_NAMES,
           ADVANCE_ACCOUNT_NAME,
           ADVANCE_ACCOUNT_NAME,
+          SETTLEMENT_ADJUSTMENT_GAIN_ACCOUNT_NAME,
+          SETTLEMENT_ADJUSTMENT_LOSS_ACCOUNT_NAME,
         ].sort(),
       }
     })
