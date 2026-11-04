@@ -8,11 +8,17 @@ export interface BuildSettlementJournalEntryInputParams {
   settlementAccountId: number
   /** 一時勘定科目の区分。借方/貸方の組み立てを左右する */
   settlementAccountCategory: Extract<AccountCategory, 'asset' | 'liability'>
-  /** 実際の入出金が発生した口座科目のid */
+  /** 実際の入出金が発生した口座科目のid(精算画面(計画Issue #139)では差額計上先の雑収入/雑損失科目) */
   counterAccountId: number
   amount: number
-  /** 精算する当人(一時勘定行のhousehold_member_id、精算仕訳の起票者にもなる) */
-  householdMemberId: number
+  /**
+   * 一時勘定行のhousehold_member_id。対象者が世帯メンバーの場合はそのid、取引先の場合はnull
+   * (journal_lines.counterparty_idは資産・負債の行に設定できないため、advance行は誰にも紐付けない。
+   * docs/domain/counterparties.md 1.2、計画Issue #139)。
+   */
+  settlementHouseholdMemberId: number | null
+  /** 仕訳の起票者(CreateJournalEntryInput.householdMemberId、NOT NULL)。取引先が対象者の場合も必須 */
+  entryHouseholdMemberId: number
   entryDate: string
   memo?: string | null
 }
@@ -27,6 +33,11 @@ export interface BuildSettlementJournalEntryInputParams {
  * リンクは作らない(計画Issue #133)。未精算残高は`settlement_batch_id`・科目・世帯メンバー/
  * 取引先でグルーピングした集計方式(calculateSettlementBatchBalance)で算出されるため、
  * タグを正しく付与するだけで消込が成立する。
+ *
+ * 計画Issue #139で、精算画面の「金額不一致時に差額を損益計上して精算完了する」操作
+ * (counterAccountIdに雑収入/雑損失科目を渡す)にも再利用する。取引先が対象者の調整仕訳では
+ * 一時勘定行のhousehold_member_idを設定できないため、settlementHouseholdMemberIdをnullに
+ * できるようにし、仕訳の起票者(entryHouseholdMemberId)を別パラメータとして分離した。
  */
 export function buildSettlementJournalEntryInput(
   params: BuildSettlementJournalEntryInputParams,
@@ -34,7 +45,7 @@ export function buildSettlementJournalEntryInput(
   const settlementLine = {
     accountId: params.settlementAccountId,
     settlementBatchId: params.settlementBatchId,
-    householdMemberId: params.householdMemberId,
+    householdMemberId: params.settlementHouseholdMemberId,
     amount: params.amount,
   }
   const counterLine = { accountId: params.counterAccountId, amount: params.amount }
@@ -53,7 +64,7 @@ export function buildSettlementJournalEntryInput(
   return {
     entryDate: params.entryDate,
     memo: params.memo ?? null,
-    householdMemberId: params.householdMemberId,
+    householdMemberId: params.entryHouseholdMemberId,
     lines,
   }
 }
