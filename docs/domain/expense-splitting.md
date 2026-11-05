@@ -11,7 +11,7 @@
 
 1. [割勘](#1-割勘)
    - [1.1 位置づけ](#11-位置づけ)
-   - [1.2 一時勘定(立替金)](#12-一時勘定立替金)
+   - [1.2 一時勘定(立替金/未払金)](#12-一時勘定立替金未払金)
    - [1.3 世帯メンバー間の割勘](#13-世帯メンバー間の割勘)
    - [1.4 世帯外の相手との割勘](#14-世帯外の相手との割勘)
    - [1.5 割勘の履歴と取り消し](#15-割勘の履歴と取り消し)
@@ -30,19 +30,22 @@
 > **なぜ元仕訳に触れないか**
 > 元仕訳(カード利用明細等)は既に消込([settlement.md](./settlement.md))を経ていることが多く、外部の実際の入出金と対応している。割勘によって発覚するのは「実はこの支出の一部はBさんの負担だった」という後から判明した事実であり、過去の記録の訂正ではない。[journal.md 1.5 仕訳の編集・削除](./journal.md#15-仕訳の編集削除)の「日常的な入力ミスの訂正」とは性質が異なる。そのため、直接編集や反対仕訳ではなく、元仕訳・消込仕訳を一切変更しない追加の仕訳(割勘・精算)として表現する。
 
-### 1.2 一時勘定(立替金)
+### 1.2 一時勘定(立替金/未払金)
 
 割勘は、精算が済むまでの間だけ立替額を保持する一時勘定を経由する。[settlement.md 1.4 一時勘定のis_reconcilable設定](./settlement.md#14-一時勘定のis_reconcilable設定)と同じ考え方で、`is_reconcilable = false`の資産・負債科目として登録する([accounts.md 1.2 区分(5要素)](./accounts.md#12-区分5要素)に例示されている「立替金」がこれにあたる)。
 
 | 科目 | 区分 | 役割 |
 |---|---|---|
 | 立替金(資産) | asset | 自分が立て替えた分の債権 |
-| 立替金(負債) | liability | 自分が立て替えてもらった分の債務 |
+| 未払金(負債) | liability | 自分が立て替えてもらった分の債務 |
 
 **科目自体は割勘のたびに新規作成しない。** 恒久的な汎用科目として1組だけ用意し、以降のすべての割勘で使い回す。「誰の債権/債務か」は`journal_lines.household_member_id`([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)、全区分に適用可)で区別する。「どの割勘バッチに属する残高か」は`journal_lines.settlement_batch_id`([settlement.md 2章](./settlement.md#2-精算バッチマスタsettlement_batches)、計画Issue #133)で区別する。
 
-> **立替金科目は初回起動時に自動投入され、ユーザーには選択させない(計画Issue #40)**
-> `seedAdvanceAccounts`(`src/infrastructure/db/seedAdvanceAccounts.ts`、Worker起動時に`seedDefaultAccounts`の直後で呼び出す)が、asset・liability区分それぞれについて`is_system_managed = true`の科目が1件も存在しなければ「立替金」を1件投入する(区分ごとに独立した冪等シード)。`is_system_managed = true`にすることで、削除・区分変更・is_reconcilable変更をDBスキーマのトリガー(`docs/schema/accounts.sql`)で防ぎつつ、科目一覧画面・手動仕訳フォームの選択肢からも除外する([accounts.md 3.1](./accounts.md#31-フィールド定義)の初期残高科目と同じ扱い)。割勘起票フォーム・精算画面は、投入された科目を`category`・`isSystemManaged`で自動解決して使い、ユーザーに科目一覧から選ばせるUIは持たない。当初の実装(Implementation Attempt 1〜4)はこの方針に反し全資産/負債科目から毎回手動選択させるUIになっており、PR作成前のユーザーレビューで指摘され本方針に修正した。詳細は`docs/decisions.md`(2026-08-18)参照。既存の同名(`is_system_managed = false`)科目とのUNIQUE制約衝突時は、Worker起動全体をクラッシュさせずログに残すだけでその区分の投入をスキップし、起動を継続する(該当区分の割勘/精算機能のみ利用不可のままになる)。詳細は`docs/decisions.md`(2026-08-31)参照。
+> **立替金/未払金科目は初回起動時に自動投入され、ユーザーには選択させない(計画Issue #40)**
+> `seedAdvanceAccounts`(`src/infrastructure/db/seedAdvanceAccounts.ts`、Worker起動時に`seedDefaultAccounts`の直後で呼び出す)が、asset・liability区分それぞれについて`is_system_managed = true`の科目が1件も存在しなければ、資産側は「立替金」・負債側は「未払金」を1件投入する(区分ごとに独立した冪等シード)。`is_system_managed = true`にすることで、削除・区分変更・is_reconcilable変更をDBスキーマのトリガー(`docs/schema/accounts.sql`)で防ぎつつ、科目一覧画面・手動仕訳フォームの選択肢からも除外する([accounts.md 3.1](./accounts.md#31-フィールド定義)の初期残高科目と同じ扱い)。割勘起票フォーム・精算画面は、投入された科目を`category`・`isSystemManaged`で自動解決して使い、ユーザーに科目一覧から選ばせるUIは持たない。当初の実装(Implementation Attempt 1〜4)はこの方針に反し全資産/負債科目から毎回手動選択させるUIになっており、PR作成前のユーザーレビューで指摘され本方針に修正した。詳細は`docs/decisions.md`(2026-08-18)参照。既存の同名(`is_system_managed = false`)科目とのUNIQUE制約衝突時は、Worker起動全体をクラッシュさせずログに残すだけでその区分の投入をスキップし、起動を継続する(該当区分の割勘/精算機能のみ利用不可のままになる)。詳細は`docs/decisions.md`(2026-08-31)参照。
+>
+> **資産側・負債側で科目名を分けた理由(計画Issue #139)**
+> 計画Issue #40時点では、資産側・負債側とも同名の「立替金」として投入していた。計画Issue #139で精算画面(`SettlementScreen`)の「科目」選択に「立替金(資産)」「未払金(負債)」という表示ラベルを導入した際、ユーザーの実機レビューで「画面上はラベルで区別しているのに、裏付けとなる科目の実名がどちらも『立替金』なのはわかりにくい」という指摘を受け、負債側の科目名を「未払金」に改めた(詳細は`docs/decisions.md`参照)。
 
 > **なぜ人・バッチごとに専用科目を作らないか**
 > 検討の初期段階では「未収入金(Aさん)」「未払金(Bさん)」のように人ごとの専用科目や、割勘バッチごとの一時的な科目を都度作成する案も検討したが、いずれも使い捨ての科目で科目一覧が肥大化する。精算バッチ(`settlement_batch_id`)を「どのバッチか」を表す軸として使えば、科目自体は`household_member_id`と組み合わせた汎用の2科目だけで足りる。
@@ -65,9 +68,9 @@
 割勘:                  (借) 費用・食費(B)              500
                        (借) 資産・立替金                500   household_member_id=A, settlement_batch_id=26/7生活費割勘
                        (貸) 費用・食費(A)                     500
-                       (貸) 負債・立替金                      500   household_member_id=B, settlement_batch_id=26/7生活費割勘
+                       (貸) 負債・未払金                      500   household_member_id=B, settlement_batch_id=26/7生活費割勘
 
-精算1(Bさんの口座CSV): (借) 負債・立替金               500   household_member_id=B, settlement_batch_id=26/7生活費割勘
+精算1(Bさんの口座CSV): (借) 負債・未払金               500   household_member_id=B, settlement_batch_id=26/7生活費割勘
                        (貸) 資産・口座(B)                    500
 
 精算2(Aさんの口座CSV): (借) 資産・口座(A)              500

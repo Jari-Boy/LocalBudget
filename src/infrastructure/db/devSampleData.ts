@@ -121,7 +121,7 @@ export const DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES: readonly {
 /**
  * seedDevSampleData(計画Issue #139)が投入する開発専用ダミーの後払い仕訳(取引先・未払金)の
  * 確定リスト。対応するDEV_SAMPLE_SETTLEMENT_BATCHESのbatchName(counterpartyName指定)に
- * settlement_batch_idを付与した状態(割り当て済み)で起票する。立替金(負債)行の
+ * settlement_batch_idを付与した状態(割り当て済み)で起票する。未払金(負債)行の
  * household_member_idはpayerMemberNameが支払った当人を指す(docs/domain/settlement.md、
  * journal_lines.counterparty_idは資産・負債の行に設定できないため、取引先との紐付けは
  * バッチ側のcounterparty_idで表現する)。

@@ -31,7 +31,7 @@
   "back": "戻る",
   "expenseAccountNotFoundError": "元の仕訳から費用科目が見つかりませんでした。",
   "requiredFieldMissingError": "立替金(資産)科目が見つかりませんでした。",
-  "advanceLiabilityAccountRequiredError": "分担者に世帯メンバーが含まれる場合、立替金(負債)科目を選択してください。",
+  "advanceLiabilityAccountRequiredError": "分担者に世帯メンバーが含まれる場合、未払金(負債)科目を選択してください。",
   "counterpartyTargetRequiredError": "世帯外の相手を選択または新規作成してください。",
   "noRecipientError": "分担者を1人以上選択してください。",
   "submitError": "割勘の起票に失敗しました。もう一度お試しください。",

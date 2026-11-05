@@ -165,7 +165,7 @@ CSV到着後の消込(CSV由来): (借) 資産・普通預金        250,000
 
 ### 1.7 タグ付き一時勘定の消込(settlement_batch_idによるタグ付け)
 
-一時勘定(未払金・未収金、[expense-splitting.md 1.2 一時勘定(立替金)](./expense-splitting.md#12-一時勘定立替金)の立替金も含む)を使い回す設計では、`journal_lines.settlement_batch_id`([settlement_batches](#2-精算バッチマスタsettlement_batches)、計画Issue #133)・`household_member_id`([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承))で「どの分割払い契約/どの割勘バッチの残高か」をタグ付けする。これにより、[1.6](#16-分割消込消込残高による完了判定)の集計でタグ別残高を追うことができる。精算残高が0になった時点で、そのバッチの非アクティブ化が`settlement_batches`側からユーザーに提案される。
+一時勘定(未払金・未収金、[expense-splitting.md 1.2 一時勘定(立替金/未払金)](./expense-splitting.md#12-一時勘定立替金未払金)の立替金も含む)を使い回す設計では、`journal_lines.settlement_batch_id`([settlement_batches](#2-精算バッチマスタsettlement_batches)、計画Issue #133)・`household_member_id`([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承))で「どの分割払い契約/どの割勘バッチの残高か」をタグ付けする。これにより、[1.6](#16-分割消込消込残高による完了判定)の集計でタグ別残高を追うことができる。精算残高が0になった時点で、そのバッチの非アクティブ化が`settlement_batches`側からユーザーに提案される。
 
 一時勘定行に`settlement_batch_id`タグを設定する経路は2つある。割勘起票フォームでは、新規の割勘仕訳を起票する時点で対象のバッチ・対象者をユーザーが明示的に選択し、その一時勘定行へ`settlement_batch_id`・`household_member_id`を直接設定する。精算画面では、既に起票済みの仕訳(CSV取込等で作成済みだが、まだどの精算バッチにも割り当てられていない一時勘定行を持つ仕訳)を選び、その行へ事後的に`settlement_batch_id`を割り当てる(計画Issue #139、[1.9](#19-精算画面の操作モデル計画issue-139)参照)。いずれの経路でも最終的には一時勘定行に`settlement_batch_id`・`household_member_id`を設定するだけであり、[1.6](#16-分割消込消込残高による完了判定)のタグ集計方式では「消込残高」と「タグ別残高」は同じ1つの計算(集計)に一本化されているため、旧来のリンク方式(計画Issue #132)で存在した「entry単位の消込残高とタグ単位の行集計が別経路で食い違う」という問題自体が構造上発生しない。
 
