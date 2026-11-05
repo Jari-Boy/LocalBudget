@@ -5,8 +5,10 @@
  * (1)割勘対象選択画面での期間・科目・世帯メンバー・プロジェクトによる絞り込みと
  * findUnallocatedEntriesによる既割勘仕訳の除外、(2)世帯メンバー間・世帯外相手との
  * 割勘起票、(3)比率指定・複数人(3人以上)への割勘、(4)精算バッチの既定(新規作成)での自動作成、
- * (5)割勘の履歴表示(元の支出→割勘→精算のトレース)、(6)精算(立替金の消込)の起票、
- * (7)精算前の割勘仕訳の取り消し(物理削除)、(8)精算後の取り消し案内、(9)複数の元仕訳を
+ * (5)割勘の履歴表示(元の支出→割勘→精算のトレース)、(6)精算画面(計画Issue #139で「既存仕訳を
+ * 選ぶ」操作モデルに刷新、候補仕訳が無い場合の手動作成ダイアログ)での精算(立替金の消込)の起票、
+ * (7)割勘履歴画面からの精算前の割勘仕訳の取り消し(物理削除、計画Issue #139で仕訳詳細画面から
+ * 移設)、(8)精算後の取り消し案内、(9)複数の元仕訳を
  * チェックボックスでまとめて選択し、一括で割勘起票できること(計画Issue #40 Attempt 4、
  * 人間レビューでの「複数の元仕訳をまとめて選択して一括起票したい」との指摘への対応)。
  * ユーザーレビューでの見直しにより、割勘対象の選択は仕訳一覧(確認専用画面)からではなく
@@ -421,10 +423,11 @@ test.describe('割勘起票', () => {
     await page.getByRole('button', { name: '仕訳' }).click()
     await page.getByRole('button', { name: '割勘', exact: true }).click()
     await page.getByRole('button', { name: '精算する', exact: true }).click()
-    // 確定時点の摘要(「元の摘要+の割勘」が既定値)がそのまま新しい精算バッチの名前になる
-    await expect(
-      page.getByLabel('精算バッチ').locator('option', { hasText: 'その場作成テスト用の食事代の割勘' }),
-    ).toHaveCount(1)
+    await page.getByLabel('対象者').selectOption({ label: '割勘相手Bさん(世帯メンバー)' })
+    await page.getByLabel('科目').selectOption('liability')
+    // 確定時点の摘要(「元の摘要+の割勘」が既定値)がそのまま新しい精算バッチの名前になり、
+    // 精算画面の未精算バッチ一覧に表示される
+    await expect(page.getByRole('row').filter({ hasText: 'その場作成テスト用の食事代の割勘' })).toBeVisible()
   })
 
   test('カスタム比率を指定した割勘起票と、3人以上への複数人割勘起票ができる', async ({ page }) => {
@@ -552,41 +555,59 @@ test.describe('精算・履歴・取り消し', () => {
     return data
   }
 
-  test('精算(立替金の消込)を起票できる', async ({ page }) => {
-    const data = await setUpSplitEntryForSettlement(page)
-
+  /**
+   * 精算画面(計画Issue #139で「既存仕訳を選ぶ」操作モデルに刷新)を操作し、対象者(世帯メンバー)・
+   * 科目(立替金/未払金)を選んでから、対象バッチの「消込む仕訳を選ぶ」を開く。このE2Eシナリオでは
+   * 候補となる未割当の仕訳を別途用意していないため、候補仕訳が0件の場合のみ現れる「手動で仕訳を
+   * 作成する」ダイアログ(初期金額はバッチ残高)を使って精算を完了する。
+   */
+  async function settleViaManualEntry(page: Page, data: BaseData) {
     await page.getByRole('button', { name: '仕訳' }).click()
     await page.getByRole('button', { name: '割勘', exact: true }).click()
     await page.getByRole('button', { name: '精算する', exact: true }).click()
-    await page.getByLabel('精算バッチ').selectOption(String(data.settlementBatchId))
-    await page.getByLabel('精算方向').selectOption('liability')
+    await page.getByLabel('対象者').selectOption({ label: '割勘相手Bさん(世帯メンバー)' })
+    await page.getByLabel('科目').selectOption('liability')
 
-    const unsettledItem = page.getByRole('listitem').filter({ hasText: '￥500' })
-    await expect(unsettledItem).toBeVisible()
-    await unsettledItem.getByRole('button', { name: '精算する' }).click()
-    await unsettledItem.getByLabel('精算元/精算先の口座').selectOption(String(data.cashAccountId))
-    await unsettledItem.getByLabel('精算金額').fill('500')
-    await unsettledItem.getByRole('button', { name: '精算を確定する' }).click()
+    const batchRow = page.getByRole('row').filter({ hasText: '￥500' })
+    await expect(batchRow).toBeVisible()
+    await batchRow.getByRole('button', { name: '消込む仕訳を選ぶ' }).click()
 
-    await expect(page.getByText('未精算の割勘はありません')).toBeVisible()
+    await expect(page.getByText('該当する仕訳が見当たりません')).toBeVisible()
+    await page.getByRole('button', { name: '手動で仕訳を作成する' }).click()
+    await expect(page.getByLabel('金額')).toHaveValue('500')
+    await page.getByLabel('精算元/精算先の口座').selectOption(String(data.cashAccountId))
+    await page.getByRole('button', { name: '作成する' }).click()
+
+    await expect(page.getByText('未精算のバッチはありません')).toBeVisible()
+  }
+
+  test('精算(立替金の消込)を起票できる', async ({ page }) => {
+    const data = await setUpSplitEntryForSettlement(page)
+
+    await settleViaManualEntry(page, data)
+
     await waitForJournalEntryCount(page, 3)
   })
 
-  test('精算前の割勘仕訳は詳細画面から取り消し(物理削除)でき、精算後は返金案内が表示される', async ({
+  test('精算前の割勘仕訳は割勘履歴画面から取り消し(物理削除)でき、精算後は返金案内が表示される(計画Issue #139、取り消し導線を仕訳詳細画面から割勘履歴画面へ移設)', async ({
     page,
   }) => {
     const data = await setUpSplitEntryForSettlement(page)
 
-    // 精算前の取り消し
+    // 精算前の取り消し(割勘履歴画面から)
     await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '仕訳一覧' }).click()
-    const splitItem = findJournalEntryListRow(page, '精算テスト用の食事代の割勘')
-    await splitItem.getByRole('button', { name: '詳細を見る' }).click()
-    await page.getByRole('button', { name: 'この割勘を取り消す' }).click()
+    await page.getByRole('button', { name: '割勘', exact: true }).click()
+    await page.getByRole('button', { name: '割勘の履歴', exact: true }).click()
+    const historyRow = page.getByRole('listitem').filter({ hasText: '精算テスト用の食事代' })
+    await expect(historyRow).toBeVisible()
+    await historyRow.getByRole('button', { name: 'この割勘を取り消す' }).click()
+    await expect(page.getByText('割勘の履歴はありません')).toBeVisible()
     await waitForJournalEntryCount(page, 1)
 
-    // 削除後はjournal-entry-list画面に戻る(onDeletedコールバック、ブラウザ履歴経由)。
-    // 割勘対象選択画面を開く前に、仕訳ハブ→ホームの順に「戻る」で遡る。
+    // 割勘履歴画面の「戻る」は割勘サブハブへ、そこからさらに「戻る」で仕訳ハブ、
+    // もう一度「戻る」でホームへ戻る
+    await page.getByRole('button', { name: '戻る' }).click()
+    await expect(page.getByRole('heading', { name: '割勘', exact: true })).toBeVisible()
     await page.getByRole('button', { name: '戻る' }).click()
     await expect(page.getByRole('heading', { name: '仕訳' })).toBeVisible()
     await page.getByRole('button', { name: '戻る' }).click()
@@ -600,26 +621,15 @@ test.describe('精算・履歴・取り消し', () => {
     await waitForJournalEntryCount(page, 2)
     await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
 
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '割勘', exact: true }).click()
-    await page.getByRole('button', { name: '精算する', exact: true }).click()
-    await page.getByLabel('精算バッチ').selectOption(String(data.settlementBatchId))
-    await page.getByLabel('精算方向').selectOption('liability')
-    const unsettledItem = page.getByRole('listitem').filter({ hasText: '￥500' })
-    await unsettledItem.getByRole('button', { name: '精算する' }).click()
-    await unsettledItem.getByLabel('精算元/精算先の口座').selectOption(String(data.cashAccountId))
-    await unsettledItem.getByLabel('精算金額').fill('500')
-    await unsettledItem.getByRole('button', { name: '精算を確定する' }).click()
+    await settleViaManualEntry(page, data)
     await waitForJournalEntryCount(page, 3)
 
-    // 精算画面の「戻る」は割勘サブハブへ、そこからさらに「戻る」で仕訳ハブへ戻る
+    // 精算画面の「戻る」は割勘サブハブへ
     await page.getByRole('button', { name: '戻る' }).click()
     await expect(page.getByRole('heading', { name: '割勘', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: '戻る' }).click()
-    await page.getByRole('button', { name: '仕訳一覧' }).click()
-    const settledSplitItem = findJournalEntryListRow(page, '精算テスト用の食事代の割勘')
-    await settledSplitItem.getByRole('button', { name: '詳細を見る' }).click()
-    await expect(page.getByText('精算後は新しい取引として現実の返金を記録してください')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'この割勘を取り消す' })).toHaveCount(0)
+    await page.getByRole('button', { name: '割勘の履歴', exact: true }).click()
+    const settledHistoryRow = page.getByRole('listitem').filter({ hasText: '精算テスト用の食事代' })
+    await expect(settledHistoryRow.getByText('精算後は新しい取引として現実の返金を記録してください')).toBeVisible()
+    await expect(settledHistoryRow.getByRole('button', { name: 'この割勘を取り消す' })).toHaveCount(0)
   })
 })

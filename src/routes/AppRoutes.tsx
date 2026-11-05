@@ -395,7 +395,6 @@ export function AppRoutes() {
             householdMemberRepository={householdMemberRepository}
             counterpartyRepository={counterpartyRepository}
             onBack={goBackFromEntryDetail}
-            onDeleted={goBackFromEntryDetail}
           />
         }
       />
@@ -541,7 +540,6 @@ interface JournalEntryDetailRouteProps {
   householdMemberRepository: Comlink.Remote<HouseholdMemberRepository>
   counterpartyRepository: Comlink.Remote<CounterpartyRepository>
   onBack: () => void
-  onDeleted: () => void
 }
 
 /** URLの:idパラメータをentryIdとして仕訳詳細画面へ渡すルート。関連する仕訳の選択は同じ
@@ -554,7 +552,6 @@ function JournalEntryDetailRoute({
   householdMemberRepository,
   counterpartyRepository,
   onBack,
-  onDeleted,
 }: JournalEntryDetailRouteProps) {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -575,7 +572,6 @@ function JournalEntryDetailRoute({
       counterpartyRepository={counterpartyRepository}
       onSelectRelatedEntry={(entry) => navigate(`/journal/entries/${entry.id}`)}
       onBack={onBack}
-      onDeleted={onDeleted}
     />
   )
 }

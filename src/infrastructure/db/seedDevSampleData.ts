@@ -4,6 +4,7 @@ import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsCounterpartyRepository } from './SqlJsCounterpartyRepository'
 import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
+import { SqlJsJournalEntryLinkGroupRepository } from './SqlJsJournalEntryLinkGroupRepository'
 import { SqlJsProjectRepository } from './SqlJsProjectRepository'
 import { SqlJsSettlementBatchRepository } from './SqlJsSettlementBatchRepository'
 import { seedAdvanceAccounts } from './seedAdvanceAccounts'
@@ -133,11 +134,13 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
     .findAll()
     .find((account) => account.category === 'liability' && account.isSystemManaged)!.id
 
+  const journalEntryLinkGroupRepository = new SqlJsJournalEntryLinkGroupRepository(db)
+
   for (const seed of DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES) {
     const fromMemberId = householdMemberIdByName.get(seed.fromMemberName)!
     // 割勘仕訳は、実際に支払いが発生した元仕訳の存在を前提に、その一部を付け替えるものであり
     // 単独では成立しない(docs/domain/expense-splitting.md 1.3節の例「元仕訳(カード利用)」参照)
-    journalEntryRepository.create({
+    const originalEntry = journalEntryRepository.create({
       entryDate: formatDateDaysAgo(today, seed.originalDaysAgo),
       memo: seed.originalMemo,
       householdMemberId: fromMemberId,
@@ -146,7 +149,7 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
         { accountId: accountIdByName.get(seed.originalCashAccountName)!, side: 'credit', amount: seed.originalAmount },
       ],
     })
-    journalEntryRepository.create(
+    const splitEntry = journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
         expenseAccountId: accountIdByName.get(seed.expenseAccountName)!,
         advanceAssetAccountId,
@@ -159,6 +162,10 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
         memo: seed.memo,
       }),
     )
+    // 元仕訳・割勘仕訳を関連仕訳グループで紐付ける(本番のExpenseSplittingFormが起票時に行う
+    // 自動グルーピングを模擬する、docs/domain/journal.md 1.8参照)。これが無いと「割勘の履歴」
+    // 画面(traceExpenseSplittingHistory)が元仕訳から割勘仕訳を辿れず一覧に表示されない。
+    journalEntryLinkGroupRepository.joinOrCreateGroups([originalEntry.id], [splitEntry.id])
   }
 
   for (const seed of DEV_SAMPLE_SETTLEMENT_PAYABLE_ENTRIES) {

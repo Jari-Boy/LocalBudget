@@ -10,7 +10,7 @@
  * 使った統合的なレンダリングテストとする。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -334,5 +334,94 @@ describe('ExpenseSplittingHistoryScreen', () => {
 
     expect(onSelectEntry).toHaveBeenCalledTimes(1)
     expect(onSelectEntry).toHaveBeenCalledWith(expect.objectContaining({ id: splitEntry.id }))
+  })
+
+  it('精算前の割勘には取り消し(物理削除)ボタンが表示され、押すと削除され一覧から消える(計画Issue #139、仕訳詳細画面から本画面へ取り消し導線を移設)', async () => {
+    const { advanceAsset, advanceLiability } = setUpAdvanceAccounts()
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const other = householdMemberRepository.create({ name: 'Bさん' })
+    const batch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    const splitEntry = journalEntryRepository.create(
+      buildHouseholdMemberExpenseSplittingJournalEntryInput({
+        expenseAccountId: expense.id,
+        advanceAssetAccountId: advanceAsset.id,
+        advanceLiabilityAccountId: advanceLiability.id,
+        fromMemberId: member.id,
+        toMemberId: other.id,
+        settlementBatchId: batch.id,
+        amount: 500,
+        entryDate: '2026-08-03',
+      }),
+    )
+    journalEntryLinkGroupRepository.createGroup([originalEntry.id, splitEntry.id])
+
+    renderScreen()
+    const row = (await screen.findByText('スーパーで食材購入')).closest('li')!
+
+    fireEvent.click(within(row).getByRole('button', { name: 'この割勘を取り消す' }))
+
+    await waitFor(() => expect(screen.queryByText('スーパーで食材購入')).not.toBeInTheDocument())
+    expect(journalEntryRepository.findById(splitEntry.id)).toBeNull()
+  })
+
+  it('精算済みの割勘には取り消しボタンの代わりに返金案内メッセージが表示される(計画Issue #139)', async () => {
+    const { advanceAsset, advanceLiability } = setUpAdvanceAccounts()
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const other = householdMemberRepository.create({ name: 'Bさん' })
+    const batch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    const splitEntry = journalEntryRepository.create(
+      buildHouseholdMemberExpenseSplittingJournalEntryInput({
+        expenseAccountId: expense.id,
+        advanceAssetAccountId: advanceAsset.id,
+        advanceLiabilityAccountId: advanceLiability.id,
+        fromMemberId: member.id,
+        toMemberId: other.id,
+        settlementBatchId: batch.id,
+        amount: 500,
+        entryDate: '2026-08-03',
+      }),
+    )
+    journalEntryLinkGroupRepository.createGroup([originalEntry.id, splitEntry.id])
+    // 実際の精算画面と同じ形: 立替金(負債)行に同じbatch.id・householdMemberIdをタグ付けするだけ
+    journalEntryRepository.create(
+      buildSettlementJournalEntryInput({
+        settlementBatchId: batch.id,
+        settlementAccountId: advanceLiability.id,
+        settlementAccountCategory: 'liability',
+        counterAccountId: cash.id,
+        amount: 500,
+        settlementHouseholdMemberId: other.id,
+        entryHouseholdMemberId: other.id,
+        entryDate: '2026-08-10',
+      }),
+    )
+
+    renderScreen()
+    const row = (await screen.findByText('スーパーで食材購入')).closest('li')!
+
+    expect(await within(row).findByText('精算後は新しい取引として現実の返金を記録してください')).toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: 'この割勘を取り消す' })).not.toBeInTheDocument()
   })
 })

@@ -6,9 +6,10 @@
  * 明細の編集・行の追加削除(行追加ボタンは廃止、ブロック最終行が入力済みになると
  * 自動で次の空行が現れる)・更新操作(JournalEntryRepository.updateの呼び出し、
  * 貸借不一致時のエラー表示と入力保持)、割勘の履歴表示(元の支出→割勘→精算のトレース、
- * docs/domain/expense-splitting.md 1.5節)、取り消し導線(精算前は割勘仕訳の物理削除、
- * 精算後は返金案内メッセージ)を、sql.jsのNode実装(createTestDatabase)を使った統合的な
- * レンダリングテストとして検証する。外部依存: sql.js(ネットワークアクセスなし)。
+ * docs/domain/expense-splitting.md 1.5節)を、sql.jsのNode実装(createTestDatabase)を
+ * 使った統合的なレンダリングテストとして検証する。割勘の取り消し導線は計画Issue #139で
+ * ExpenseSplittingHistoryScreen(割勘の履歴画面)へ移設したため、本画面のテスト対象外
+ * (ExpenseSplittingHistoryScreen.test.tsx参照)。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -50,9 +51,8 @@ beforeEach(async () => {
 
 afterEach(cleanup)
 
-function renderScreen(entryId: number, overrides?: { onBack?: () => void; onDeleted?: () => void }) {
+function renderScreen(entryId: number, overrides?: { onBack?: () => void }) {
   const onBack = overrides?.onBack ?? vi.fn()
-  const onDeleted = overrides?.onDeleted ?? vi.fn()
   render(
     <I18nextProvider i18n={i18n}>
       <JournalEntryDetailScreen
@@ -64,11 +64,10 @@ function renderScreen(entryId: number, overrides?: { onBack?: () => void; onDele
         householdMemberRepository={householdMemberRepository}
         counterpartyRepository={counterpartyRepository}
         onBack={onBack}
-        onDeleted={onDeleted}
       />
     </I18nextProvider>,
   )
-  return { onBack, onDeleted }
+  return { onBack }
 }
 
 /**
@@ -314,187 +313,6 @@ describe('JournalEntryDetailScreen', () => {
     // 入力済みの行(食費)が最終行のままのため、削除直後に再び空行が自動追加され行数は2のまま。
     await waitFor(() => expect(getCards(debitBlock)).toHaveLength(2))
     expect(within(getCards(debitBlock)[0]).getByLabelText('科目')).toHaveValue(String(expense.id))
-  })
-
-  it('割勘・精算と無関係な通常の仕訳では、取り消しセクションが表示されない', async () => {
-    const member = householdMemberRepository.create({ name: 'Aさん' })
-    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
-    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    const entry = journalEntryRepository.create({
-      entryDate: '2026-08-01',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 1000 },
-        { accountId: cash.id, side: 'credit', amount: 1000 },
-      ],
-    })
-
-    renderScreen(entry.id)
-
-    await screen.findByLabelText('取引日')
-    expect(screen.queryByRole('button', { name: 'この割勘を取り消す' })).not.toBeInTheDocument()
-  })
-
-  it('精算前の割勘仕訳では、取り消し(物理削除)ボタンが表示され、押すと削除されonDeletedが呼ばれる', async () => {
-    const member = householdMemberRepository.create({ name: 'Aさん' })
-    const other = householdMemberRepository.create({ name: 'Bさん' })
-    const batch = settlementBatchRepository.create({ name: '26/7生活費割勘', type: 'expense_splitting' })
-    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
-    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
-    const advanceLiability = accountRepository.create({
-      category: 'liability',
-      name: '立替金',
-      isReconcilable: false,
-      isSystemManaged: true,
-    })
-    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    journalEntryRepository.create({
-      entryDate: '2026-08-01',
-      memo: '食事代',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 1000 },
-        { accountId: cash.id, side: 'credit', amount: 1000 },
-      ],
-    })
-    const splitEntry = journalEntryRepository.create({
-      entryDate: '2026-08-02',
-      memo: '割勘',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 500, householdMemberId: other.id },
-        { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batch.id, householdMemberId: member.id },
-        { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
-        { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
-      ],
-    })
-
-    const { onDeleted } = renderScreen(splitEntry.id)
-    await screen.findByLabelText('取引日')
-
-    const deleteButton = await screen.findByRole('button', { name: 'この割勘を取り消す' })
-    fireEvent.click(deleteButton)
-
-    await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1))
-    expect(journalEntryRepository.findById(splitEntry.id)).toBeNull()
-  })
-
-  it('同じ精算バッチに別の未精算の割勘仕訳が追加されただけでは、取り消し(物理削除)ボタンが表示され続ける(evaluatorレビュー指摘: hasAnySettlementActivityの回帰修正を、実際のRepository経由・JournalEntryDetailScreenの配線込みで検証する。既存バッチへ複数の割勘を追記する運用フローは正常であり、精算が行われていない限り取り消しを妨げてはならない)', async () => {
-    const member = householdMemberRepository.create({ name: 'Aさん' })
-    const other = householdMemberRepository.create({ name: 'Bさん' })
-    const batch = settlementBatchRepository.create({ name: '26/7生活費割勘', type: 'expense_splitting' })
-    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
-    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
-    const advanceLiability = accountRepository.create({
-      category: 'liability',
-      name: '立替金',
-      isReconcilable: false,
-      isSystemManaged: true,
-    })
-    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    journalEntryRepository.create({
-      entryDate: '2026-08-01',
-      memo: '食事代1',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 1000 },
-        { accountId: cash.id, side: 'credit', amount: 1000 },
-      ],
-    })
-    const splitEntry1 = journalEntryRepository.create({
-      entryDate: '2026-08-02',
-      memo: '割勘1',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 500, householdMemberId: other.id },
-        { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batch.id, householdMemberId: member.id },
-        { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
-        { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
-      ],
-    })
-    // 同じ精算バッチへ、もう1件別の割勘仕訳を追記する(精算画面の「既存バッチへの追記」と
-    // 同じ正常な運用フロー)。どちらも未精算のまま。
-    journalEntryRepository.create({
-      entryDate: '2026-08-03',
-      memo: '食事代2',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 300 },
-        { accountId: cash.id, side: 'credit', amount: 300 },
-      ],
-    })
-    journalEntryRepository.create({
-      entryDate: '2026-08-04',
-      memo: '割勘2',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 150, householdMemberId: other.id },
-        { accountId: advanceAsset.id, side: 'debit', amount: 150, settlementBatchId: batch.id, householdMemberId: member.id },
-        { accountId: expense.id, side: 'credit', amount: 150, householdMemberId: member.id },
-        { accountId: advanceLiability.id, side: 'credit', amount: 150, settlementBatchId: batch.id, householdMemberId: other.id },
-      ],
-    })
-
-    renderScreen(splitEntry1.id)
-    await screen.findByLabelText('取引日')
-
-    expect(await screen.findByRole('button', { name: 'この割勘を取り消す' })).toBeInTheDocument()
-    expect(screen.queryByText('精算後は新しい取引として現実の返金を記録してください')).not.toBeInTheDocument()
-  })
-
-  it('精算済みの割勘仕訳では、取り消しボタンの代わりに返金案内メッセージが表示される(計画Issue #133、精算状況はsettlement_batch_idタグの集計で判定する。かつてjournal_entry_linksのsettlesリンクで判定していたが、精算画面がsettlesリンクを作らなくなったため、実際の精算フローを再現してisSettledがタグ集計方式で正しく判定できることを検証する)', async () => {
-    const member = householdMemberRepository.create({ name: 'Aさん' })
-    const other = householdMemberRepository.create({ name: 'Bさん' })
-    const batch = settlementBatchRepository.create({ name: '26/7生活費割勘', type: 'expense_splitting' })
-    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
-    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
-    const advanceLiability = accountRepository.create({
-      category: 'liability',
-      name: '立替金',
-      isReconcilable: false,
-      isSystemManaged: true,
-    })
-    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
-    journalEntryRepository.create({
-      entryDate: '2026-08-01',
-      memo: '食事代',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 1000 },
-        { accountId: cash.id, side: 'credit', amount: 1000 },
-      ],
-    })
-    const splitEntry = journalEntryRepository.create({
-      entryDate: '2026-08-02',
-      memo: '割勘',
-      householdMemberId: member.id,
-      lines: [
-        { accountId: expense.id, side: 'debit', amount: 500, householdMemberId: other.id },
-        { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batch.id, householdMemberId: member.id },
-        { accountId: expense.id, side: 'credit', amount: 500, householdMemberId: member.id },
-        { accountId: advanceLiability.id, side: 'credit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
-      ],
-    })
-    // 実際の精算画面(buildSettlementJournalEntryInput)と同じ形: 立替金(負債)行に
-    // 同じbatch.id・householdMemberIdをタグ付けするだけで、journal_entry_linksは作らない。
-    // hasAnySettlementActivityは「少なくとも1件の精算操作が行われたか」を判定するため、
-    // 資産側(立替者memberの債権)・負債側(分担者otherの債務)のどちらか一方の精算だけで
-    // 取り消し導線が切り替わることを検証する(実際の精算画面も1回の操作では片方向のみ
-    // 精算する、docs/domain/expense-splitting.md 1.3節)。
-    journalEntryRepository.create({
-      entryDate: '2026-08-10',
-      memo: '精算',
-      householdMemberId: other.id,
-      lines: [
-        { accountId: advanceLiability.id, side: 'debit', amount: 500, settlementBatchId: batch.id, householdMemberId: other.id },
-        { accountId: cash.id, side: 'credit', amount: 500 },
-      ],
-    })
-
-    renderScreen(splitEntry.id)
-
-    expect(await screen.findByText('精算後は新しい取引として現実の返金を記録してください')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'この割勘を取り消す' })).not.toBeInTheDocument()
   })
 
   it('元の支出仕訳の詳細画面で、割勘の履歴(元の支出→割勘→精算)が表示される', async () => {

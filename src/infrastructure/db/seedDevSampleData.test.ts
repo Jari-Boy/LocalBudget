@@ -21,6 +21,7 @@ import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsCounterpartyRepository } from './SqlJsCounterpartyRepository'
 import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
+import { SqlJsJournalEntryLinkGroupRepository } from './SqlJsJournalEntryLinkGroupRepository'
 import { SqlJsProjectRepository } from './SqlJsProjectRepository'
 import { seedDevSampleData } from './seedDevSampleData'
 import {
@@ -167,6 +168,19 @@ describe('seedDevSampleData', () => {
       .flatMap((entry) => entry.lines)
       .find((line) => line.settlementBatchId === batch.id && line.accountId === advanceLiability.id)
     expect(taggedLine).toBeDefined()
+  })
+
+  it('世帯メンバー間の割勘仕訳(DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES)は元仕訳と同じ関連仕訳グループに属し、「割勘の履歴」画面で辿れる状態になっている(計画Issue #139)', () => {
+    seedDevSampleData(db)
+
+    const journalEntryLinkGroupRepository = new SqlJsJournalEntryLinkGroupRepository(db)
+    const splitEntry = journalEntryRepository.findAll().find((entry) => entry.memo === '飲み会代の割勘')!
+    const originalEntry = journalEntryRepository.findAll().find((entry) => entry.memo === '飲み会代(全額立替)')!
+
+    const splitGroupIds = journalEntryLinkGroupRepository.findGroupIdsForEntry(splitEntry.id)
+    const originalGroupIds = journalEntryLinkGroupRepository.findGroupIdsForEntry(originalEntry.id)
+    expect(splitGroupIds).toHaveLength(1)
+    expect(originalGroupIds).toEqual(splitGroupIds)
   })
 
   it('投入される仕訳はいずれも貸借バランスが取れている(docs/domain/journal.md 1.3)', () => {
