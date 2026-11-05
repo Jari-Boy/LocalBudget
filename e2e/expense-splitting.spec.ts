@@ -601,6 +601,8 @@ test.describe('精算・履歴・取り消し', () => {
     const historyRow = page.getByRole('listitem').filter({ hasText: '精算テスト用の食事代' })
     await expect(historyRow).toBeVisible()
     await historyRow.getByRole('button', { name: 'この割勘を取り消す' }).click()
+    await expect(historyRow.getByRole('alert')).toBeVisible()
+    await historyRow.getByRole('button', { name: '取り消す' }).click()
     await expect(page.getByText('割勘の履歴はありません')).toBeVisible()
     await waitForJournalEntryCount(page, 1)
 
