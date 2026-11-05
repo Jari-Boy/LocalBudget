@@ -138,6 +138,7 @@ export function ExpenseSplittingHistoryScreen({
   const { t: tCommon } = useTranslation('common')
   const [data, setData] = useState<LoadedData | null>(null)
   const [cancelingEntryId, setCancelingEntryId] = useState<number | null>(null)
+  const [confirmingCancelEntryId, setConfirmingCancelEntryId] = useState<number | null>(null)
 
   function load() {
     return Promise.all([
@@ -180,7 +181,10 @@ export function ExpenseSplittingHistoryScreen({
     setCancelingEntryId(splitEntryId)
     void Promise.resolve(journalEntryRepository.delete(splitEntryId))
       .then(() => load())
-      .finally(() => setCancelingEntryId(null))
+      .finally(() => {
+        setCancelingEntryId(null)
+        setConfirmingCancelEntryId(null)
+      })
   }
 
   return (
@@ -216,13 +220,31 @@ export function ExpenseSplittingHistoryScreen({
                   {t('viewEntryDetail')}
                 </button>
                 {canCancel ? (
-                  <button
-                    type="button"
-                    onClick={() => handleCancel(splitEntry.id)}
-                    disabled={cancelingEntryId === splitEntry.id}
-                  >
-                    {tJournal('cancelSplitEntry')}
-                  </button>
+                  confirmingCancelEntryId === splitEntry.id ? (
+                    <div className="expense-splitting-history-cancel-warning" role="alert">
+                      <p>{tJournal('cancelSplitEntryWarning')}</p>
+                      <div className="expense-splitting-history-cancel-warning-actions">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingCancelEntryId(null)}
+                          disabled={cancelingEntryId === splitEntry.id}
+                        >
+                          {tJournal('cancelButton')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCancel(splitEntry.id)}
+                          disabled={cancelingEntryId === splitEntry.id}
+                        >
+                          {tJournal('cancelSplitEntryConfirmButton')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setConfirmingCancelEntryId(splitEntry.id)}>
+                      {tJournal('cancelSplitEntry')}
+                    </button>
+                  )
                 ) : (
                   <span>{tJournal('splitCancellationAfterSettlementNotice')}</span>
                 )}

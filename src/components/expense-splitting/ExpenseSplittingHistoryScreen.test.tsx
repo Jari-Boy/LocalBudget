@@ -336,7 +336,7 @@ describe('ExpenseSplittingHistoryScreen', () => {
     expect(onSelectEntry).toHaveBeenCalledWith(expect.objectContaining({ id: splitEntry.id }))
   })
 
-  it('精算前の割勘には取り消し(物理削除)ボタンが表示され、押すと削除され一覧から消える(計画Issue #139、仕訳詳細画面から本画面へ取り消し導線を移設)', async () => {
+  it('取り消しボタンを押すと警告ポップアップが表示され、まだ削除されない(計画Issue #139)', async () => {
     const { advanceAsset, advanceLiability } = setUpAdvanceAccounts()
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const other = householdMemberRepository.create({ name: 'Bさん' })
@@ -370,6 +370,87 @@ describe('ExpenseSplittingHistoryScreen', () => {
     const row = (await screen.findByText('スーパーで食材購入')).closest('li')!
 
     fireEvent.click(within(row).getByRole('button', { name: 'この割勘を取り消す' }))
+
+    expect(within(row).getByRole('alert')).toBeInTheDocument()
+    expect(journalEntryRepository.findById(splitEntry.id)).not.toBeNull()
+  })
+
+  it('警告ポップアップでキャンセルを選ぶと削除されず、ポップアップが閉じる(計画Issue #139)', async () => {
+    const { advanceAsset, advanceLiability } = setUpAdvanceAccounts()
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const other = householdMemberRepository.create({ name: 'Bさん' })
+    const batch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    const splitEntry = journalEntryRepository.create(
+      buildHouseholdMemberExpenseSplittingJournalEntryInput({
+        expenseAccountId: expense.id,
+        advanceAssetAccountId: advanceAsset.id,
+        advanceLiabilityAccountId: advanceLiability.id,
+        fromMemberId: member.id,
+        toMemberId: other.id,
+        settlementBatchId: batch.id,
+        amount: 500,
+        entryDate: '2026-08-03',
+      }),
+    )
+    journalEntryLinkGroupRepository.createGroup([originalEntry.id, splitEntry.id])
+
+    renderScreen()
+    const row = (await screen.findByText('スーパーで食材購入')).closest('li')!
+    fireEvent.click(within(row).getByRole('button', { name: 'この割勘を取り消す' }))
+
+    fireEvent.click(within(row).getByRole('button', { name: 'キャンセル' }))
+
+    expect(within(row).queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByText('スーパーで食材購入')).toBeInTheDocument()
+    expect(journalEntryRepository.findById(splitEntry.id)).not.toBeNull()
+  })
+
+  it('警告ポップアップで取り消しを確定すると削除され一覧から消える(計画Issue #139、仕訳詳細画面から本画面へ取り消し導線を移設)', async () => {
+    const { advanceAsset, advanceLiability } = setUpAdvanceAccounts()
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const other = householdMemberRepository.create({ name: 'Bさん' })
+    const batch = settlementBatchRepository.create({ name: '26/8生活費割勘', type: 'expense_splitting' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+    const splitEntry = journalEntryRepository.create(
+      buildHouseholdMemberExpenseSplittingJournalEntryInput({
+        expenseAccountId: expense.id,
+        advanceAssetAccountId: advanceAsset.id,
+        advanceLiabilityAccountId: advanceLiability.id,
+        fromMemberId: member.id,
+        toMemberId: other.id,
+        settlementBatchId: batch.id,
+        amount: 500,
+        entryDate: '2026-08-03',
+      }),
+    )
+    journalEntryLinkGroupRepository.createGroup([originalEntry.id, splitEntry.id])
+
+    renderScreen()
+    const row = (await screen.findByText('スーパーで食材購入')).closest('li')!
+
+    fireEvent.click(within(row).getByRole('button', { name: 'この割勘を取り消す' }))
+    fireEvent.click(within(row).getByRole('button', { name: '取り消す' }))
 
     await waitFor(() => expect(screen.queryByText('スーパーで食材購入')).not.toBeInTheDocument())
     expect(journalEntryRepository.findById(splitEntry.id)).toBeNull()

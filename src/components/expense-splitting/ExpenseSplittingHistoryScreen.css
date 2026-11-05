@@ -27,6 +27,32 @@
   color: var(--text-h);
 }
 
+.expense-splitting-history-screen .expense-splitting-history-cancel-warning {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 13px;
+}
+
+.expense-splitting-history-screen .expense-splitting-history-cancel-warning p {
+  margin: 0 0 8px;
+}
+
+.expense-splitting-history-screen .expense-splitting-history-cancel-warning-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.expense-splitting-history-screen .expense-splitting-history-cancel-warning-actions button {
+  font-size: 13px;
+  padding: 4px 14px;
+  border: 1px solid var(--error);
+  background: transparent;
+  color: var(--error);
+}
+
 .expense-splitting-history-screen button {
   font-size: 16px;
   padding: 8px 20px;
