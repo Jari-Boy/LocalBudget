@@ -43,13 +43,6 @@
   margin-bottom: 1rem;
 }
 
-.journal-entry-detail-screen .journal-entry-detail-cancellation {
-  margin-bottom: 1rem;
-  padding: 8px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
-}
-
 .journal-entry-detail-screen .journal-entry-detail-history {
   margin-bottom: 1rem;
 }

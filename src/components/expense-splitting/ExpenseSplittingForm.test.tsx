@@ -442,7 +442,7 @@ describe('ExpenseSplittingForm', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('立替金(負債)科目を選択してください')
+    expect(await screen.findByRole('alert')).toHaveTextContent('未払金(負債)科目を選択してください')
     expect(onComplete).not.toHaveBeenCalled()
     expect(journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)).toHaveLength(0)
   })

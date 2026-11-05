@@ -1,5 +1,5 @@
 .settlement-screen {
-  max-width: 480px;
+  max-width: 720px;
   margin: 0 auto;
   padding: 1rem;
 }
@@ -20,38 +20,44 @@
   box-sizing: border-box;
 }
 
-.settlement-screen ul {
-  list-style: none;
-  margin: 0 0 1rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+.settlement-screen table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
 }
 
-.settlement-screen li {
-  padding: 8px 12px;
-  border-radius: 5px;
+.settlement-screen th,
+.settlement-screen td {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.settlement-screen thead th {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+.settlement-screen tbody tr {
+  border-bottom: 1px solid var(--border);
+}
+
+.settlement-screen .settlement-picker {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg);
-  color: var(--text-h);
 }
 
-.settlement-screen .settlement-entry-row {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.settlement-screen .settlement-entry-form {
+.settlement-screen .settlement-manual-entry {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--border);
 }
 
-.settlement-screen .settlement-entry-form input {
+.settlement-screen .settlement-manual-entry input {
   width: 100%;
   padding: 8px 12px;
   margin-bottom: 0.5rem;
@@ -61,6 +67,34 @@
   color: var(--text-h);
   font: inherit;
   box-sizing: border-box;
+}
+
+.settlement-screen .settlement-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+}
+
+.settlement-screen .settlement-summary-matched {
+  border-color: var(--success);
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.settlement-screen .settlement-summary-mismatched {
+  border-color: var(--warning);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.settlement-screen .settlement-mismatch-note {
+  font-size: 12px;
+  color: var(--text);
 }
 
 .settlement-screen button {

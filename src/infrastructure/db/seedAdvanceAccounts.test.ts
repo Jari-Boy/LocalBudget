@@ -1,10 +1,15 @@
 /**
- * seedAdvanceAccounts の統合テスト(計画Issue #40、人間レビューでの追加指摘)。
+ * seedAdvanceAccounts の統合テスト(計画Issue #40、人間レビューでの追加指摘。計画Issue #139で
+ * 資産側・負債側の科目名を分離)。
  * docs/domain/expense-splitting.md 1.2節「科目自体は割勘のたびに新規作成しない。
  * 恒久的な汎用科目として1組だけ用意し、以降のすべての割勘で使い回す」を実現するため、
  * asset・liability区分それぞれについて、is_system_managed = trueの科目が1件も存在しない
- * 場合に「立替金」を1件自動投入すること、区分ごとに独立した冪等シードであることを、
- * seedDefaultAccounts・seedDefaultHouseholdMemberと同じ設計方針で検証する。
+ * 場合に資産側は「立替金」・負債側は「未払金」を1件自動投入すること、区分ごとに独立した
+ * 冪等シードであることを、seedDefaultAccounts・seedDefaultHouseholdMemberと同じ設計方針で
+ * 検証する。資産・負債で別名にしたのは、精算画面(SettlementScreen、計画Issue #139)の
+ * 「科目」選択が「立替金(資産)」「未払金(負債)」という表示ラベルを使っており、裏付けとなる
+ * 科目の実名も同じ言葉で区別できる方がわかりやすいため(計画Issue #139、ユーザーレビューでの
+ * 指摘対応、詳細はdocs/decisions.md参照)。
  * Review Attempt 5(evaluator FAIL指摘、計画Issue #40)を受け、既に同名(is_system_managed
  * = false)の科目が存在する場合にUNIQUE制約違反でWorker起動全体をクラッシュさせないことも
  * 検証する。外部依存: sql.js(ネットワークアクセスなし)。
@@ -26,7 +31,7 @@ beforeEach(async () => {
 })
 
 describe('seedAdvanceAccounts', () => {
-  it('is_system_managedの資産・負債科目が0件の場合、立替金(資産)・立替金(負債)をそれぞれ1件ずつ投入する', () => {
+  it('is_system_managedの資産・負債科目が0件の場合、立替金(資産)・未払金(負債)をそれぞれ1件ずつ投入する', () => {
     seedAdvanceAccounts(db)
 
     const accounts = repository.findAll()
@@ -35,7 +40,7 @@ describe('seedAdvanceAccounts', () => {
       (account) => account.category === 'liability' && account.isSystemManaged,
     )
     expect(advanceAsset).toMatchObject({ name: '立替金', isReconcilable: false, isSystemManaged: true })
-    expect(advanceLiability).toMatchObject({ name: '立替金', isReconcilable: false, isSystemManaged: true })
+    expect(advanceLiability).toMatchObject({ name: '未払金', isReconcilable: false, isSystemManaged: true })
   })
 
   it('通常のユーザー作成科目(is_system_managed = false)がいくつあっても、is_system_managedの立替金は独立して投入される', () => {
@@ -82,5 +87,19 @@ describe('seedAdvanceAccounts', () => {
     expect(assetAccounts).toEqual([expect.objectContaining({ id: existing.id, isSystemManaged: false })])
     // 資産側が衝突してスキップされても、負債側は独立して投入される
     expect(accounts.some((account) => account.category === 'liability' && account.isSystemManaged)).toBe(true)
+  })
+
+  it('既に同名(is_system_managed = false)の負債科目「未払金」が存在する場合、UNIQUE制約違反で例外を投げずに投入をスキップする(計画Issue #139、資産側と同じ安全策を負債側にも適用)', () => {
+    const existing = repository.create({ category: 'liability', name: '未払金', isReconcilable: false })
+
+    expect(() => seedAdvanceAccounts(db)).not.toThrow()
+
+    const accounts = repository.findAll()
+    const liabilityAccounts = accounts.filter(
+      (account) => account.category === 'liability' && account.name === '未払金',
+    )
+    expect(liabilityAccounts).toEqual([expect.objectContaining({ id: existing.id, isSystemManaged: false })])
+    // 負債側が衝突してスキップされても、資産側は独立して投入される
+    expect(accounts.some((account) => account.category === 'asset' && account.isSystemManaged)).toBe(true)
   })
 })

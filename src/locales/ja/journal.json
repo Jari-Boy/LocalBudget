@@ -48,6 +48,8 @@
   "updateEntry": "更新する",
   "updateError": "更新に失敗しました。もう一度お試しください。",
   "cancelSplitEntry": "この割勘を取り消す",
+  "cancelSplitEntryWarning": "この操作は元に戻せません。本当にこの割勘を取り消しますか?",
+  "cancelSplitEntryConfirmButton": "取り消す",
   "splitCancellationAfterSettlementNotice": "精算後は新しい取引として現実の返金を記録してください",
   "splitHistoryTitle": "この支出から生まれた割勘",
   "relatedEntriesButtonLabel": "関連仕訳({{count}}件)",

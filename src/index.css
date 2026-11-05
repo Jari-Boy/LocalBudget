@@ -12,6 +12,12 @@
   --accent-contrast: #8f2fd9;
   --error: #c0392b;
   --error-bg: rgba(192, 57, 43, 0.1);
+  /* 精算画面(計画Issue #139)の一致/不一致表示用。白背景とのコントラスト比は
+     それぞれ約5.0:1・約5.2:1でWCAG AA(4.5:1)を満たす */
+  --success: #15803d;
+  --success-bg: rgba(21, 128, 61, 0.1);
+  --warning: #c2410c;
+  --warning-bg: rgba(194, 65, 12, 0.1);
   --social-bg: rgba(244, 243, 236, 0.5);
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
@@ -50,6 +56,12 @@
     --accent-contrast: #c084fc;
     --error: #f87171;
     --error-bg: rgba(248, 113, 113, 0.15);
+    /* 精算画面(計画Issue #139)の一致/不一致表示用。ダーク背景(--bg: #16171d)との
+       コントラスト比はそれぞれ約10.3:1・約7.9:1でWCAG AA(4.5:1)を満たす */
+    --success: #4ade80;
+    --success-bg: rgba(74, 222, 128, 0.15);
+    --warning: #fb923c;
+    --warning-bg: rgba(251, 146, 60, 0.15);
     --social-bg: rgba(47, 48, 58, 0.5);
     --shadow:
       rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;

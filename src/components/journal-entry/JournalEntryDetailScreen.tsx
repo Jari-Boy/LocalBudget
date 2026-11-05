@@ -6,8 +6,6 @@ import type { HouseholdMember } from '../../domain/household-member/HouseholdMem
 import type { JournalEntry, JournalLineInput, JournalLineSide, UpdateJournalEntryInput } from '../../domain/journal/JournalEntry'
 import type { JournalEntryLinkGroup, JournalEntryLinkGroupMembership } from '../../domain/journal-link-group/JournalEntryLinkGroup'
 import type { Project } from '../../domain/project/Project'
-import { hasAnySettlementActivity } from '../../domain/expense-splitting/hasAnySettlementActivity'
-import { isExpenseSplitEntry } from '../../domain/expense-splitting/isExpenseSplitEntry'
 import { traceExpenseSplittingHistory } from '../../domain/expense-splitting/traceExpenseSplittingHistory'
 import { buildRelatedEntryIdsByEntryId } from '../../domain/journal-link-group/buildRelatedEntryIdsByEntryId'
 import { groupRelatedEntriesByLinkGroup } from '../../domain/journal-link-group/groupRelatedEntriesByLinkGroup'
@@ -28,7 +26,6 @@ interface JournalEntryFinder {
   findById(id: number): JournalEntry | null | Promise<JournalEntry | null>
   findAll(): JournalEntry[] | Promise<JournalEntry[]>
   update(id: number, input: UpdateJournalEntryInput): JournalEntry | Promise<JournalEntry>
-  delete(id: number): void | Promise<void>
 }
 interface JournalEntryLinkGroupFinder {
   findAllMemberships(): JournalEntryLinkGroupMembership[] | Promise<JournalEntryLinkGroupMembership[]>
@@ -69,8 +66,6 @@ export interface JournalEntryDetailScreenProps {
   householdMemberRepository: HouseholdMemberFinder
   counterpartyRepository: CounterpartyFinder
   onBack: () => void
-  /** 精算前の割勘仕訳を取り消し(物理削除)した後に呼ばれる */
-  onDeleted?: () => void
   /** 「関連する仕訳」一覧のいずれかの行を選んだ際に呼ばれる(その仕訳の詳細画面への遷移を想定) */
   onSelectRelatedEntry?: (entry: JournalEntry) => void
 }
@@ -106,10 +101,10 @@ function buildLineStates(lines: JournalEntry['lines'], lineKeyRef: { current: nu
  * 行の追加・削除・各セルの編集後に「更新する」操作でJournalEntryRepository.update
  * へ送信する。起票者(householdMemberId)はUpdateJournalEntryInputが対応していないため
  * 変更不可(JournalEntryLinesTableのonHeaderHouseholdMemberChangeを渡さないことで
- * 読み取り専用にする)。この仕訳が割勘仕訳である場合、精算済みかどうかに応じて取り消し導線
- * (精算前は物理削除、精算後は返金案内)を出し分ける。この仕訳が元の支出仕訳である場合、
- * そこから生まれた割勘・精算の履歴(traceExpenseSplittingHistory、docs/domain/
- * expense-splitting.md 1.5節)を表示する。
+ * 読み取り専用にする)。この仕訳が元の支出仕訳である場合、そこから生まれた割勘・精算の履歴
+ * (traceExpenseSplittingHistory、docs/domain/expense-splitting.md 1.5節)を表示する
+ * (割勘仕訳自体の取り消し導線は計画Issue #139でExpenseSplittingHistoryScreen(割勘の履歴
+ * 画面)へ移設したため、本画面は持たない)。
  *
  * 「関連する仕訳」(計画Issue #138)は、journal_entry_links(行対行のハード検証、計画Issue
  * #132・#133で残高計算・消込検証の役割を失い完全撤廃)に代わる関連仕訳グループ(多対多、
@@ -137,14 +132,12 @@ export function JournalEntryDetailScreen({
   householdMemberRepository,
   counterpartyRepository,
   onBack,
-  onDeleted,
   onSelectRelatedEntry,
 }: JournalEntryDetailScreenProps) {
   const { t } = useTranslation('journal')
   const { t: tCommon } = useTranslation('common')
   const [data, setData] = useState<LoadedData | null>(null)
   const [editState, setEditState] = useState<EditState | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
   const [isRelatedDialogOpen, setIsRelatedDialogOpen] = useState(false)
@@ -205,15 +198,6 @@ export function JournalEntryDetailScreen({
   const { entry, accounts, projects, householdMembers, counterparties, allEntries, memberships, groups } = data
   const relatedEntryIdsByEntryId = buildRelatedEntryIdsByEntryId(memberships)
 
-  const isSplitEntry = isExpenseSplitEntry(entry, accounts)
-  /**
-   * 取り消し導線の安全判定は、settlement_batch_idタグの集計方式(計画Issue #133、
-   * hasAnySettlementActivity)で行う。「全ての一時勘定行が精算済み」を要求する
-   * isExpenseSplittingEntrySettled(履歴画面向け)ではなく、「少なくとも1件の精算操作が
-   * 行われたか」を判定するhasAnySettlementActivityを使う(どちらか一方でも精算が進んだ
-   * 割勘仕訳を物理削除すると、既に起票済みの精算仕訳が参照先を失うため)。
-   */
-  const isSettled = hasAnySettlementActivity(entry, accounts, allEntries.flatMap((e) => e.lines))
   const trails = traceExpenseSplittingHistory(entry, allEntries, accounts, relatedEntryIdsByEntryId)
 
   const entriesById = new Map(allEntries.map((candidate) => [candidate.id, candidate]))
@@ -223,14 +207,6 @@ export function JournalEntryDetailScreen({
   const relateCandidates = allEntries.filter(
     (candidate) => candidate.id !== entry.id && !relatedEntryIds.has(candidate.id),
   )
-
-  function handleDelete(): void {
-    if (isDeleting) return
-    setIsDeleting(true)
-    void Promise.resolve(journalEntryRepository.delete(entry.id))
-      .then(() => onDeleted?.())
-      .finally(() => setIsDeleting(false))
-  }
 
   /**
    * 手動での関連付け(計画Issue #138)。関連仕訳ダイアログ(RelatedEntriesDialog)で選んだ仕訳
@@ -420,18 +396,6 @@ export function JournalEntryDetailScreen({
       <button type="button" disabled={isUpdating} onClick={handleUpdateClick}>
         {t('updateEntry')}
       </button>
-
-      {isSplitEntry && (
-        <div className="journal-entry-detail-cancellation" role="status">
-          {isSettled ? (
-            <p>{t('splitCancellationAfterSettlementNotice')}</p>
-          ) : (
-            <button type="button" onClick={handleDelete} disabled={isDeleting}>
-              {t('cancelSplitEntry')}
-            </button>
-          )}
-        </div>
-      )}
 
       {trails.length > 0 && (
         <div className="journal-entry-detail-history">
