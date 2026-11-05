@@ -81,15 +81,15 @@
 }
 
 .settlement-screen .settlement-summary-matched {
-  border-color: var(--accent-border);
-  background: var(--accent-bg);
-  color: var(--accent-contrast);
+  border-color: var(--success);
+  background: var(--success-bg);
+  color: var(--success);
 }
 
 .settlement-screen .settlement-summary-mismatched {
-  border-color: var(--error);
-  background: var(--error-bg);
-  color: var(--error);
+  border-color: var(--warning);
+  background: var(--warning-bg);
+  color: var(--warning);
 }
 
 .settlement-screen .settlement-mismatch-note {

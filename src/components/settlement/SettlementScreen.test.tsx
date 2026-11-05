@@ -227,7 +227,7 @@ describe('SettlementScreen', () => {
     expect(advanceLine).toMatchObject({ settlementBatchId: batch.id, side: 'debit', amount: 200 })
   })
 
-  it('候補仕訳が0件の場合、手動で仕訳を作成するボタンが表示され、作成するとバッチにタグ付けされる', async () => {
+  it('候補仕訳が0件の場合、手動で仕訳を作成するボタンが表示され、初期金額がバッチ残高になっており、作成するとバッチにタグ付けされる', async () => {
     const { memberB, liability, cashB, batch } = setUpHouseholdMemberBatch(500)
 
     renderScreen()
@@ -236,6 +236,7 @@ describe('SettlementScreen', () => {
 
     expect(await screen.findByText('該当する仕訳が見当たりません')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '手動で仕訳を作成する' }))
+    expect(screen.getByLabelText('金額')).toHaveValue(500)
     fireEvent.change(screen.getByLabelText('精算元/精算先の口座'), { target: { value: String(cashB.id) } })
     fireEvent.click(screen.getByRole('button', { name: '作成する' }))
 
@@ -244,6 +245,8 @@ describe('SettlementScreen', () => {
       .findAll()
       .filter((entry) => entry.lines.some((line) => line.accountId === liability.id && line.settlementBatchId === batch.id))
     expect(manualEntries.length).toBeGreaterThan(0)
+    const manualLine = manualEntries[0]!.lines.find((line) => line.accountId === liability.id)!
+    expect(manualLine.amount).toBe(500)
   })
 
   it('取引先が対象者の場合、settlement_batches.counterparty_idが一致するバッチが一覧表示される', async () => {
