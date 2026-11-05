@@ -79,7 +79,7 @@ describe('seedDevSampleData', () => {
 
     expect(journalEntryRepository.findAll()).toHaveLength(
       DEV_SAMPLE_JOURNAL_ENTRIES.length +
-        DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES.length +
+        DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES.length * 2 + // 元仕訳+割勘仕訳の2件1組
         DEV_SAMPLE_SETTLEMENT_PAYABLE_ENTRIES.length +
         DEV_SAMPLE_SETTLEMENT_REPAYMENT_CANDIDATES.length,
     )
@@ -227,7 +227,7 @@ describe('seedDevSampleData', () => {
 
     expect(journalEntryRepository.findAll()).toHaveLength(
       DEV_SAMPLE_JOURNAL_ENTRIES.length +
-        DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES.length +
+        DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES.length * 2 + // 元仕訳+割勘仕訳の2件1組
         DEV_SAMPLE_SETTLEMENT_PAYABLE_ENTRIES.length +
         DEV_SAMPLE_SETTLEMENT_REPAYMENT_CANDIDATES.length,
     )

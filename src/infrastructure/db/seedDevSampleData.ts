@@ -134,12 +134,24 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
     .find((account) => account.category === 'liability' && account.isSystemManaged)!.id
 
   for (const seed of DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES) {
+    const fromMemberId = householdMemberIdByName.get(seed.fromMemberName)!
+    // 割勘仕訳は、実際に支払いが発生した元仕訳の存在を前提に、その一部を付け替えるものであり
+    // 単独では成立しない(docs/domain/expense-splitting.md 1.3節の例「元仕訳(カード利用)」参照)
+    journalEntryRepository.create({
+      entryDate: formatDateDaysAgo(today, seed.originalDaysAgo),
+      memo: seed.originalMemo,
+      householdMemberId: fromMemberId,
+      lines: [
+        { accountId: accountIdByName.get(seed.expenseAccountName)!, side: 'debit', amount: seed.originalAmount },
+        { accountId: accountIdByName.get(seed.originalCashAccountName)!, side: 'credit', amount: seed.originalAmount },
+      ],
+    })
     journalEntryRepository.create(
       buildHouseholdMemberExpenseSplittingJournalEntryInput({
         expenseAccountId: accountIdByName.get(seed.expenseAccountName)!,
         advanceAssetAccountId,
         advanceLiabilityAccountId,
-        fromMemberId: householdMemberIdByName.get(seed.fromMemberName)!,
+        fromMemberId,
         toMemberId: householdMemberIdByName.get(seed.toMemberName)!,
         settlementBatchId: settlementBatchIdByName.get(seed.batchName)!,
         amount: seed.amount,

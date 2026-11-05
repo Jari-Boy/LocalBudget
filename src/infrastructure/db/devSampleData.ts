@@ -67,10 +67,15 @@ export const DEV_SAMPLE_SETTLEMENT_BATCHES: readonly {
 
 /**
  * seedDevSampleData(計画Issue #139)が投入する開発専用ダミーの割勘仕訳(世帯メンバー間)の
- * 確定リスト。buildHouseholdMemberExpenseSplittingJournalEntryInputで、settlement_batch_idを
- * 付与した状態(割り当て済み)で起票する(精算画面の新しい操作モデルでは、割勘仕訳自体は
- * 起票時にバッチへ割り当てられている前提のため)。fromMemberName/toMemberNameは
- * DEV_SAMPLE_HOUSEHOLD_MEMBERS、またはseedDefaultHouseholdMemberが投入する「自分」を指す。
+ * 確定リスト。docs/domain/expense-splitting.md 1.3節の例の通り、割勘仕訳は「元仕訳(実際に
+ * 支払いが発生した仕訳)」の存在を前提に、その一部をfromMemberNameからtoMemberNameへ付け替える
+ * ものであり、単独では成立しない。そのため、各割勘仕訳の前に元仕訳(originalAmount/
+ * originalDaysAgo/originalMemo/originalCashAccountName、fromMemberNameが全額を支払った体の
+ * 単純な2行仕訳)を投入してから、buildHouseholdMemberExpenseSplittingJournalEntryInputで
+ * settlement_batch_idを付与した状態(割り当て済み)の割勘仕訳(amount、通常は元仕訳の一部)を
+ * 起票する(精算画面の新しい操作モデルでは、割勘仕訳自体は起票時にバッチへ割り当てられている
+ * 前提のため)。fromMemberName/toMemberNameはDEV_SAMPLE_HOUSEHOLD_MEMBERS、または
+ * seedDefaultHouseholdMemberが投入する「自分」を指す。
  */
 export const DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES: readonly {
   daysAgo: number
@@ -80,6 +85,10 @@ export const DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES: readonly {
   fromMemberName: string
   toMemberName: string
   expenseAccountName: string
+  originalAmount: number
+  originalDaysAgo: number
+  originalMemo: string
+  originalCashAccountName: string
 }[] = [
   {
     daysAgo: 20,
@@ -89,6 +98,10 @@ export const DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES: readonly {
     fromMemberName: '自分',
     toMemberName: '配偶者',
     expenseAccountName: '交際費',
+    originalAmount: 3000,
+    originalDaysAgo: 22,
+    originalMemo: '飲み会代(全額立替)',
+    originalCashAccountName: '現金',
   },
   {
     daysAgo: 15,
@@ -98,6 +111,10 @@ export const DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES: readonly {
     fromMemberName: '自分',
     toMemberName: '配偶者',
     expenseAccountName: '日用品費',
+    originalAmount: 4000,
+    originalDaysAgo: 17,
+    originalMemo: '生活用品のまとめ買い(全額立替)',
+    originalCashAccountName: '普通預金',
   },
 ] as const
 
