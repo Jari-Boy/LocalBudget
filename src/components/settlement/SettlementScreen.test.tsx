@@ -280,4 +280,15 @@ describe('SettlementScreen', () => {
     renderScreen()
     expect(await screen.findByRole('button', { name: '戻る' })).toBeInTheDocument()
   })
+
+  it('初期表示時、対象者・科目候補がある場合は「未選択」のままにせず自動で選択する(都度選び直す手間を減らすため)', async () => {
+    setUpHouseholdMemberBatch(500)
+
+    renderScreen()
+
+    const targetSelect = (await screen.findByLabelText('対象者')) as HTMLSelectElement
+    await waitFor(() => expect(targetSelect.value).not.toBe(''))
+    const sideSelect = screen.getByLabelText('科目') as HTMLSelectElement
+    expect(sideSelect.value).not.toBe('')
+  })
 })

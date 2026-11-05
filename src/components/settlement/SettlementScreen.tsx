@@ -138,6 +138,31 @@ export function SettlementScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settlementBatchRepository, accountRepository, householdMemberRepository, counterpartyRepository, journalEntryRepository])
 
+  // 対象者・科目の候補がある場合、「未選択」のままにせず自動で選択する(都度選び直す手間を
+  // 減らすため、ユーザーレビューでの指摘対応)。既にユーザーが選択済みの場合は上書きしない。
+  useEffect(() => {
+    if (masterData === null) return
+    const assetAccountId = masterData.accounts.find((account) => account.category === 'asset' && account.isSystemManaged)?.id ?? null
+    const liabilityAccountId =
+      masterData.accounts.find((account) => account.category === 'liability' && account.isSystemManaged)?.id ?? null
+    const accountIds = [assetAccountId, liabilityAccountId].filter((id): id is number => id !== null)
+    const lines = masterData.entries.flatMap((entry) => entry.lines)
+    const options = listSettlementTargetOptions(
+      lines,
+      masterData.settlementBatches,
+      masterData.householdMembers,
+      masterData.counterparties,
+      accountIds,
+    )
+    setTargetKey((prev) => {
+      if (prev !== '' || options.length === 0) return prev
+      const first = options[0]!
+      return `${first.kind === 'householdMember' ? 'member' : 'counterparty'}:${first.id}`
+    })
+    setSide((prev) => (prev !== '' ? prev : 'asset'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [masterData])
+
   function loadMasterData() {
     return Promise.all([
       Promise.resolve(settlementBatchRepository.findAll()),

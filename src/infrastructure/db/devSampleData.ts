@@ -147,30 +147,56 @@ export const DEV_SAMPLE_SETTLEMENT_PAYABLE_ENTRIES: readonly {
 /**
  * seedDevSampleData(計画Issue #139)が投入する開発専用ダミーの返済仕訳(精算バッチに未割当)の
  * 確定リスト。精算画面(SettlementScreen)の「消込む仕訳を選ぶ」候補として表示される、
- * settlement_batch_id未設定の立替金/未払金(負債)行を持つ仕訳。memberNameを指定したものは
+ * settlement_batch_id未設定の立替金(資産)/未払金(負債)行を持つ仕訳。accountCategoryで
+ * 資産側(自分が受け取る側)・負債側(自分が支払う側)のどちらの候補かを指定する(docs/domain/
+ * expense-splitting.md 1.3節の精算1(負債側)・精算2(資産側)に対応、口座ごとに別々のタイミング・
+ * 別々のCSVで到着するため、資産側・負債側は独立した仕訳になる)。memberNameを指定したものは
  * 世帯メンバーが対象者の候補(household_member_idを明細行に設定)、省略したものは取引先が
  * 対象者の候補(household_member_idをnullにする、findUnassignedAdvanceEntriesForTargetの
- * 検索条件に合わせる)。1500円の返済はDEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIESの1件目(1500円)と
- * 一致(精算画面で「一致」判定を確認できる)、1200円の返済は2件目(2000円)と不一致
- * (「不一致」判定・差額損益計上を確認できる)、4000円の返済はDEV_SAMPLE_SETTLEMENT_PAYABLE_ENTRIES
- * (4000円、取引先: イオン)と一致する。
+ * 検索条件に合わせる)。1500円の返済(負債側・資産側それぞれ)はDEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES
+ * の1件目(1500円)と一致(精算画面で対象者=自分/配偶者どちらでも「一致」判定を確認できる)、
+ * 1200円の返済は2件目(2000円、負債側)と不一致(「不一致」判定・差額損益計上を確認できる)、
+ * 4000円の返済はDEV_SAMPLE_SETTLEMENT_PAYABLE_ENTRIES(4000円、取引先: イオン)と一致する。
  */
 export const DEV_SAMPLE_SETTLEMENT_REPAYMENT_CANDIDATES: readonly {
   daysAgo: number
   memo: string
   amount: number
+  accountCategory: 'asset' | 'liability'
   memberName?: string
   cashAccountName: string
 }[] = [
-  { daysAgo: 18, memo: '配偶者からの立替金返済(飲み会代)', amount: 1500, memberName: '配偶者', cashAccountName: '現金' },
+  {
+    daysAgo: 18,
+    memo: '配偶者からの立替金返済(飲み会代)',
+    amount: 1500,
+    accountCategory: 'liability',
+    memberName: '配偶者',
+    cashAccountName: '現金',
+  },
+  {
+    daysAgo: 16,
+    memo: '飲み会代の立替分を現金で受け取り',
+    amount: 1500,
+    accountCategory: 'asset',
+    memberName: '自分',
+    cashAccountName: '現金',
+  },
   {
     daysAgo: 12,
     memo: '配偶者からの立替金返済(生活費・一部)',
     amount: 1200,
+    accountCategory: 'liability',
     memberName: '配偶者',
     cashAccountName: '現金',
   },
-  { daysAgo: 5, memo: 'イオンへの後払い分の支払い', amount: 4000, cashAccountName: '普通預金' },
+  {
+    daysAgo: 5,
+    memo: 'イオンへの後払い分の支払い',
+    amount: 4000,
+    accountCategory: 'liability',
+    cashAccountName: '普通預金',
+  },
 ] as const
 
 export const DEV_SAMPLE_JOURNAL_ENTRIES: readonly {

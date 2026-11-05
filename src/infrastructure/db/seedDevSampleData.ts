@@ -182,13 +182,17 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
 
   for (const seed of DEV_SAMPLE_SETTLEMENT_REPAYMENT_CANDIDATES) {
     const memberId = seed.memberName ? householdMemberIdByName.get(seed.memberName)! : null
+    const advanceAccountId = seed.accountCategory === 'asset' ? advanceAssetAccountId : advanceLiabilityAccountId
+    // 資産の減少・負債の減少は逆の借方/貸方になる(docs/domain/expense-splitting.md 1.3節の精算1・精算2)
+    const decreasingSide = seed.accountCategory === 'asset' ? 'credit' : 'debit'
+    const increasingSide = decreasingSide === 'credit' ? 'debit' : 'credit'
     journalEntryRepository.create({
       entryDate: formatDateDaysAgo(today, seed.daysAgo),
       memo: seed.memo,
       householdMemberId: memberId ?? householdMemberId,
       lines: [
-        { accountId: advanceLiabilityAccountId, side: 'debit', amount: seed.amount, householdMemberId: memberId },
-        { accountId: accountIdByName.get(seed.cashAccountName)!, side: 'credit', amount: seed.amount },
+        { accountId: advanceAccountId, side: decreasingSide, amount: seed.amount, householdMemberId: memberId },
+        { accountId: accountIdByName.get(seed.cashAccountName)!, side: increasingSide, amount: seed.amount },
       ],
     })
   }
