@@ -327,6 +327,60 @@ describe('JournalEntryDetailScreen', () => {
     await waitFor(() => expect(journalEntryRepository.findById(entry.id)?.comment).toBeNull())
   })
 
+  it('タグ付き明細の科目を別の一時勘定に変更して更新しても、同じ行のタグが維持される(計画Issue #144)', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+    const receivable = accountRepository.create({ category: 'asset', name: '未収金', isReconcilable: false })
+    const batch = settlementBatchRepository.create({ name: '26/8割勘', type: 'expense_splitting' })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '立替',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batch.id },
+        { accountId: cash.id, side: 'credit', amount: 500 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    const debitCard = getCards(await findBlock('借方'))[0]
+    fireEvent.change(within(debitCard).getByLabelText('科目'), { target: { value: String(receivable.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+
+    await waitFor(() => {
+      expect(journalEntryRepository.findById(entry.id)?.lines[0].accountId).toBe(receivable.id)
+    })
+    expect(journalEntryRepository.findById(entry.id)?.lines[0].settlementBatchId).toBe(batch.id)
+  })
+
+  it('タグ付き明細の科目を一時勘定以外に変更して更新すると、専用のエラーメッセージを表示して更新を拒否する(計画Issue #144)', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const advanceAsset = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+    const batch = settlementBatchRepository.create({ name: '26/8割勘', type: 'expense_splitting' })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '立替',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batch.id },
+        { accountId: cash.id, side: 'credit', amount: 500 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    const debitCard = getCards(await findBlock('借方'))[0]
+    fireEvent.change(within(debitCard).getByLabelText('科目'), { target: { value: String(expense.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('一時勘定')
+    const unchanged = journalEntryRepository.findById(entry.id)
+    expect(unchanged?.lines[0].accountId).toBe(advanceAsset.id)
+    expect(unchanged?.lines[0].settlementBatchId).toBe(batch.id)
+  })
+
   it('更新を2回続けて行っても、最初の更新後に読み込んだ行idで差分更新できる', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })

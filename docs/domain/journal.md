@@ -196,7 +196,7 @@
 > `memo`(摘要)は「何の取引か」を表す取引の要約であり、明細取込では取込元の`description`が初期値になる。`comment`はそれとは別に、ユーザーが仕訳ごとに残せる自由な補足(理由・経緯など)である。履歴は持たず、上書きで更新する。手入力フォーム・下書き・仕訳詳細の更新・明細取込のレビュー確定の各経路で保存・表示できる。
 >
 > **`journal_lines.settlement_batch_id`は一時勘定の行にのみ設定できる(計画Issue #144)**
-> `is_reconcilable = false`の資産・負債科目の行以外にはタグを設定できない。ドメイン判定`isSettlementBatchTaggableAccount`と専用エラー`SettlementBatchOnNonTemporaryAccountError`を使い、`JournalEntryRepository`のcreate/updateが書き込み前に検証する([settlement.md 1.7](./settlement.md#17-タグ付き一時勘定の消込settlement_batch_idによるタグ付け)参照)。
+> `is_reconcilable = false`の資産・負債科目の行以外にはタグを設定できない。ドメイン判定`isSettlementBatchTaggableAccount`と専用エラー`SettlementBatchOnNonTemporaryAccountError`を使い、`JournalEntryRepository`のcreate/updateが書き込み前に検証する([settlement.md 1.7](./settlement.md#17-タグ付き一時勘定の消込settlement_batch_idによるタグ付け)参照)。仕訳詳細で、タグ付きの行の科目を一時勘定以外へ変更して更新すると、タグを黙って消さずにこのエラーで更新を拒否する(別の一時勘定への変更ではタグを維持する)。
 >
 > 明細行自体には`updated_at`を持たせない。明細の変更は「仕訳ヘッダー配下の行構成をまるごと差し替える」操作としてRepository層が扱い、変更の痕跡は親である`journal_entries.updated_at`側に集約する([1.5](#15-仕訳の編集削除)参照)。
 >

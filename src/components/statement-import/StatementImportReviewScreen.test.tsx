@@ -26,6 +26,7 @@ import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSet
 import type { StatementImportReviewResult } from '../../domain/statement-import/buildStatementImportReview'
 import type { ImportedRecord } from '../../domain/statement-import/ImportedRecord'
 import { normalizeDescriptionForMatching } from '../../domain/statement-import/estimateCounterparty'
+import { findUnsettledSettlementBatchBalances } from '../../domain/settlement-batch/findUnsettledSettlementBatchBalances'
 import { StatementImportReviewScreen } from './StatementImportReviewScreen'
 
 let db: Database
@@ -1445,6 +1446,24 @@ describe('精算バッチとコメントの設定(計画Issue #144)', () => {
     await screen.findByText('1件を確定しました(0件失敗)')
     const [entry] = journalEntryRepository.findAll()
     expect(entry.lines.every((line) => line.settlementBatchId === null)).toBe(true)
+  })
+
+  it('精算バッチを設定して確定した一時勘定行は、未精算残高に反映される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const advance = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+    const batch = settlementBatchRepository.create({ name: '26/8割勘', type: 'expense_splitting' })
+
+    renderScreen(account, reviewOf('友人との食事', -3000))
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(advance.id) } })
+    fireEvent.change(within(group).getByLabelText('精算バッチ'), { target: { value: String(batch.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+    const lines = journalEntryRepository.findAll().flatMap((entry) => entry.lines)
+    const balances = findUnsettledSettlementBatchBalances(lines, batch.id, advance.id, 'asset')
+    expect(balances).toHaveLength(1)
+    expect(balances[0].balance).toBe(3000)
   })
 
   it('コメントを入力して確定すると仕訳のコメントに保存され、摘要はCSVの摘要のままになる', async () => {

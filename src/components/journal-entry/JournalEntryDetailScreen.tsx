@@ -10,6 +10,7 @@ import { traceExpenseSplittingHistory } from '../../domain/expense-splitting/tra
 import { buildRelatedEntryIdsByEntryId } from '../../domain/journal-link-group/buildRelatedEntryIdsByEntryId'
 import { groupRelatedEntriesByLinkGroup } from '../../domain/journal-link-group/groupRelatedEntriesByLinkGroup'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
+import { SettlementBatchOnNonTemporaryAccountError } from '../../domain/journal/SettlementBatchOnNonTemporaryAccountError'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { JournalEntryLinesTable, type JournalEntryLineRow } from './JournalEntryLinesTable'
 import { RelatedEntriesDialog } from './RelatedEntriesDialog'
@@ -317,6 +318,9 @@ export function JournalEntryDetailScreen({
     }
     if (err instanceof RestrictedAccountPostingError) {
       return t('restrictedAccountError')
+    }
+    if (err instanceof SettlementBatchOnNonTemporaryAccountError) {
+      return t('settlementBatchOnNonTemporaryAccountError')
     }
     return t('updateError')
   }

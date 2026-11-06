@@ -11,6 +11,7 @@ import type {
   UpdateJournalEntryDraftInput,
 } from '../../domain/journal/JournalEntryDraft'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
+import { SettlementBatchOnNonTemporaryAccountError } from '../../domain/journal/SettlementBatchOnNonTemporaryAccountError'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import {
   JournalEntryLinesTable,
@@ -291,6 +292,9 @@ export function JournalEntryForm({
     }
     if (err instanceof RestrictedAccountPostingError) {
       return t('restrictedAccountError')
+    }
+    if (err instanceof SettlementBatchOnNonTemporaryAccountError) {
+      return t('settlementBatchOnNonTemporaryAccountError')
     }
     return t('confirmError')
   }
