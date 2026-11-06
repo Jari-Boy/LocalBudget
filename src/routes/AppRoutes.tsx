@@ -368,6 +368,7 @@ export function AppRoutes() {
             counterpartyRepository={counterpartyRepository}
             projectRepository={projectRepository}
             householdMemberRepository={householdMemberRepository}
+            settlementBatchRepository={settlementBatchRepository}
           />
         }
       />
@@ -582,6 +583,7 @@ interface StatementImportReviewRouteProps {
   counterpartyRepository: Comlink.Remote<CounterpartyRepository>
   projectRepository: Comlink.Remote<ProjectRepository>
   householdMemberRepository: Comlink.Remote<HouseholdMemberRepository>
+  settlementBatchRepository: Comlink.Remote<SettlementBatchRepository>
 }
 
 /**
@@ -596,6 +598,7 @@ function StatementImportReviewRoute({
   counterpartyRepository,
   projectRepository,
   householdMemberRepository,
+  settlementBatchRepository,
 }: StatementImportReviewRouteProps) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -614,6 +617,7 @@ function StatementImportReviewRoute({
       counterpartyRepository={counterpartyRepository}
       projectRepository={projectRepository}
       householdMemberRepository={householdMemberRepository}
+      settlementBatchRepository={settlementBatchRepository}
       onBack={() => navigate('/journal/create/import')}
     />
   )

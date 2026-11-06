@@ -18,6 +18,8 @@
   "counterAccountLabel": "相手科目",
   "projectLabel": "プロジェクト",
   "householdMemberLabel": "世帯メンバー",
+  "settlementBatchLabel": "精算バッチ",
+  "commentLabel": "コメント",
   "addNewCounterpartyOption": "+ 新規取引先を追加",
   "newCounterpartyNameLabel": "新しい取引先名",
   "addCounterpartyButton": "追加",
