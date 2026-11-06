@@ -25,6 +25,8 @@ export interface JournalEntry {
   id: number
   entryDate: string
   memo: string | null
+  /** 自由な補足(計画Issue #144)。摘要(memo)とは別の任意項目で、仕訳ごとに1つ */
+  comment: string | null
   currency: string
   sourceType: JournalEntrySourceType
   /**
@@ -63,6 +65,7 @@ export interface JournalLineInput {
 export interface CreateJournalEntryInput {
   entryDate: string
   memo?: string | null
+  comment?: string | null
   currency?: string
   sourceType?: JournalEntrySourceType
   /** 起票者(docs/domain/journal.md 1.1「起票者」)。必須、未指定では仕訳を作成できない */
@@ -91,5 +94,7 @@ export interface CreateExternalTransactionRefTarget {
 export interface UpdateJournalEntryInput {
   entryDate: string
   memo?: string | null
+  /** 未指定の場合は既存のコメントを維持する。nullを指定すると消去する(計画Issue #144) */
+  comment?: string | null
   lines: JournalLineInput[]
 }

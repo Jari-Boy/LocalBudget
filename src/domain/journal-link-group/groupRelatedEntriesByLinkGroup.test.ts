@@ -16,6 +16,7 @@ function entry(id: number): JournalEntry {
     id,
     entryDate: '2026-11-01',
     memo: null,
+    comment: null,
     currency: 'JPY',
     sourceType: 'manual',
     householdMemberId: 1,

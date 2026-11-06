@@ -47,6 +47,7 @@ function buildEntry(lines: JournalLine[]): JournalEntry {
     id: 1,
     entryDate: '2026-01-01',
     memo: null,
+    comment: null,
     currency: 'JPY',
     sourceType: 'manual',
     householdMemberId: 999,

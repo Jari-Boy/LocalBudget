@@ -33,6 +33,7 @@ function entry(id: number, entryDate: string, lines: JournalLine[]): JournalEntr
     id,
     entryDate,
     memo: null,
+    comment: null,
     currency: 'JPY',
     sourceType: 'manual',
     householdMemberId: 1,

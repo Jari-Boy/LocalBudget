@@ -11,6 +11,9 @@ import type {
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import { assertJournalBalance } from '../../domain/journal/assertJournalBalance'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
+import { SettlementBatchOnNonTemporaryAccountError } from '../../domain/journal/SettlementBatchOnNonTemporaryAccountError'
+import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
+import type { AccountCategory } from '../../domain/account/Account'
 import { SqlJsExternalTransactionRefRepository } from './SqlJsExternalTransactionRefRepository'
 
 const RECONCILABLE_POSTING_WHITELIST: readonly JournalEntrySourceType[] = [
@@ -40,16 +43,18 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     assertJournalBalance(input.lines)
     const sourceType = input.sourceType ?? 'manual'
     this.assertNoRestrictedAccountPosting(input.lines, sourceType)
+    this.assertSettlementBatchOnlyOnTemporaryAccounts(input.lines)
 
     this.db.run('BEGIN')
     try {
       this.db.run(
         `INSERT INTO journal_entries
-          (entry_date, memo, currency, source_type, household_member_id, generated_from_rule_id)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+          (entry_date, memo, comment, currency, source_type, household_member_id, generated_from_rule_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           input.entryDate,
           input.memo ?? null,
+          input.comment ?? null,
           input.currency ?? 'JPY',
           sourceType,
           input.householdMemberId,
@@ -104,13 +109,15 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
       throw new Error(`journal entry not found: ${id}`)
     }
     this.assertNoRestrictedAccountPosting(input.lines, current.sourceType)
+    this.assertSettlementBatchOnlyOnTemporaryAccounts(input.lines)
     assertLineIdsBelongToEntry(input.lines, current)
 
     this.db.run('BEGIN')
     try {
-      this.db.run(`UPDATE journal_entries SET entry_date = ?, memo = ? WHERE id = ?`, [
+      this.db.run(`UPDATE journal_entries SET entry_date = ?, memo = ?, comment = ? WHERE id = ?`, [
         input.entryDate,
         input.memo ?? null,
+        input.comment === undefined ? current.comment : input.comment,
         id,
       ])
       applyLineDiff(this.db, current, input.lines)
@@ -155,6 +162,26 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
       const isReconcilable = result?.values[0]?.[0]
       if (isReconcilable === 1) {
         throw new RestrictedAccountPostingError(line.accountId, sourceType)
+      }
+    }
+  }
+
+  /**
+   * 精算バッチのタグは一時勘定(is_reconcilable = falseの資産・負債科目)の行にのみ設定できる
+   * (計画Issue #144、docs/domain/settlement.md)。科目区分に依存するためDDLでは表現しづらく、
+   * Repository層で書き込み前に検証する。
+   */
+  private assertSettlementBatchOnlyOnTemporaryAccounts(lines: readonly JournalLineInput[]): void {
+    for (const line of lines) {
+      if (line.settlementBatchId === undefined || line.settlementBatchId === null) continue
+      const [result] = this.db.exec('SELECT category, is_reconcilable FROM accounts WHERE id = ?', [
+        line.accountId,
+      ])
+      const row = result?.values[0]
+      if (!row) continue
+      const isReconcilable = row[1] === null ? null : row[1] === 1
+      if (!isSettlementBatchTaggableAccount({ category: row[0] as AccountCategory, isReconcilable })) {
+        throw new SettlementBatchOnNonTemporaryAccountError(line.accountId)
       }
     }
   }
@@ -259,6 +286,7 @@ function mapRowToJournalEntry(columns: string[], values: unknown[]): JournalEntr
     id: get<number>('id'),
     entryDate: get<string>('entry_date'),
     memo: get<string | null>('memo'),
+    comment: get<string | null>('comment'),
     currency: get<string>('currency'),
     sourceType: get<JournalEntrySourceType>('source_type'),
     householdMemberId: get<number>('household_member_id'),

@@ -13,6 +13,7 @@ function makeEntry(): JournalEntry {
     id: 1,
     entryDate: '2026-10-05',
     memo: '配偶者からの立替金返済',
+    comment: null,
     currency: 'JPY',
     sourceType: 'manual',
     householdMemberId: 1,

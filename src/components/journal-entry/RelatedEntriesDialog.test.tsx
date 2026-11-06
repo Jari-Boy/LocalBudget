@@ -25,6 +25,7 @@ function buildEntry(overrides: Partial<JournalEntry> & { id: number }): JournalE
   return {
     entryDate: '2026-08-01',
     memo: null,
+    comment: null,
     currency: 'JPY',
     sourceType: 'manual',
     householdMemberId: 1,
