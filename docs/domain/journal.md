@@ -169,7 +169,8 @@
 |---|---|---|
 | `id` | 仕訳ID | PK |
 | `entry_date` | 取引日 | `YYYY-MM-DD` |
-| `memo` | 摘要 | 任意 |
+| `memo` | 摘要 | 任意。「何の取引か」を表す |
+| `comment` | コメント | 任意。摘要とは役割を分けた自由な補足(計画Issue #144)。仕訳ごとに1つで履歴は持たない。更新時は未指定なら既存を維持し、`null`で消去する(`UpdateJournalEntryInput.comment`) |
 | `currency` | 通貨コード | ISO 4217、MVPでは`JPY`固定 |
 | `source_type` | 作成経路 | ENUM、既定`manual`([1.7 作成経路(source_type)](#17-作成経路source_type)参照) |
 | `household_member_id` | 起票者 | FK、NOT NULL。この仕訳を切った主体([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照、計画Issue #88) |
@@ -191,6 +192,12 @@
 | `amount`              | 金額            | 通貨最小単位の正の整数                                                                     |
 | `created_at`          | 作成日時          |                                                                                 |
 
+> **`comment`と`memo`の違い(計画Issue #144)**
+> `memo`(摘要)は「何の取引か」を表す取引の要約であり、明細取込では取込元の`description`が初期値になる。`comment`はそれとは別に、ユーザーが仕訳ごとに残せる自由な補足(理由・経緯など)である。履歴は持たず、上書きで更新する。手入力フォーム・下書き・仕訳詳細の更新・明細取込のレビュー確定の各経路で保存・表示できる。
+>
+> **`journal_lines.settlement_batch_id`は一時勘定の行にのみ設定できる(計画Issue #144)**
+> `is_reconcilable = false`の資産・負債科目の行以外にはタグを設定できない。ドメイン判定`isSettlementBatchTaggableAccount`と専用エラー`SettlementBatchOnNonTemporaryAccountError`を使い、`JournalEntryRepository`のcreate/updateが書き込み前に検証する([settlement.md 1.7](./settlement.md#17-タグ付き一時勘定の消込settlement_batch_idによるタグ付け)参照)。
+>
 > 明細行自体には`updated_at`を持たせない。明細の変更は「仕訳ヘッダー配下の行構成をまるごと差し替える」操作としてRepository層が扱い、変更の痕跡は親である`journal_entries.updated_at`側に集約する([1.5](#15-仕訳の編集削除)参照)。
 >
 > **`journal_lines.id`は更新時に行ごとの差分更新で維持される(計画Issue #132)**
@@ -279,6 +286,7 @@
 | `purpose` | 用途タグ | ENUM、現状`manual_entry`のみ([3.1](#31-位置づけ)参照) |
 | `entry_date` | 取引日 | 任意。未入力の途中状態を許容するためNULL可 |
 | `memo` | 摘要 | 任意 |
+| `comment` | コメント | 任意。`journal_entries.comment`に対応し、自動保存・復元・確定時にそのまま引き継ぐ(計画Issue #144) |
 | `currency` | 通貨コード | 任意。未選択状態を許容するためNULL可([2.1](#21-フィールド定義)の`journal_entries.currency`と異なりNOT NULLにしない) |
 | `household_member_id` | 起票者 | FK、任意。[2.1](#21-フィールド定義)の`journal_entries.household_member_id`と異なりNOT NULLにしない(下書き段階では未入力を許容、計画Issue #88)。確定時にNULLのままだと`journal_entries`側のNOT NULL制約により確定操作(3.2)が失敗する |
 | `created_at` | 作成日時 | |

@@ -107,7 +107,7 @@ CSV到着後の消込(CSV由来): (借) 資産・普通預金        250,000
 ### 1.5 他ドメインへの影響
 
 - [accounts.md](./accounts.md)は、口座登録UXとは別に「一時勘定」として`is_reconcilable = false`の資産・負債科目をユーザーが作成できる必要がある([1.4](#14-一時勘定のis_reconcilable設定)参照)。
-- 一時勘定行への`settlement_batch_id`タグの付与は、仕訳作成・精算操作を行うUI層(割勘起票フォーム・精算画面)の責務である。`JournalEntryRepository`は`settlement_batch_id`を他の明細行カラムと同様に保存するのみで、特別な検証は行わない([1.8](#18-タグ不整合の予防と検知)参照)。
+- 一時勘定行への`settlement_batch_id`タグの付与は、仕訳作成・精算操作を行うUI層(割勘起票フォーム・精算画面)の責務である。`JournalEntryRepository`は、タグが一時勘定(`is_reconcilable = false`の資産・負債科目、`isSettlementBatchTaggableAccount`)の行にのみ付いていることを書き込み前に検証し、それ以外の行に付いていれば`SettlementBatchOnNonTemporaryAccountError`で拒否する(create/update共通、計画Issue #144)。タグの値そのものの正しさ(どのバッチに付けるか)は検証せず、[1.8](#18-タグ不整合の予防と検知)の通りユーザーが残高表示で確認する。
 - サジェスト(未消込の未払金・未収金の金額・日付の近似度等)の方法は、外部明細取込のレビュー画面側の実装課題として[statement-import.md 1.5 レコード処理フロー](./statement-import.md#15-レコード処理フロー)側に委ねる。本ドメインは「消込は複合仕訳として組める」という枠組みのみを規定する。「未消込」の判定基準そのものは[1.6 分割消込](#16-分割消込消込残高による完了判定)の消込残高に基づく。
 - [settlement_batches](#2-精算バッチマスタsettlement_batches)(計画Issue #133): 割勘・分割払い等の精算バッチを識別する専用テーブル。`projects`とは独立しており、`project_id`(イベント)と`settlement_batch_id`(精算バッチ)は`journal_lines`上の別カラムとして同時に設定できる。精算残高が0になった時点の非アクティブ化提案は`settlement_batches`側の責務であり、本ドメインは消込残高([1.6](#16-分割消込消込残高による完了判定))を通じてその判定材料を提供するだけに留める(`projects.md`の非アクティブ化提案は計画Issue #133でイベント専用に縮小され、この責務を持たない)。
 
