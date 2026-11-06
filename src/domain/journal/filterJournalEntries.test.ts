@@ -20,7 +20,6 @@ function buildAccount(id: number, overrides?: Partial<Account>): Account {
     isSystemManaged: false,
     householdMemberId: null,
     accountGroupId: null,
-    initialBalanceForAccountId: null,
     sortOrder: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-01T00:00:00.000Z',

@@ -5,6 +5,7 @@ import { runMigrations } from '../db/migrations'
 import { seedAdvanceAccounts } from '../db/seedAdvanceAccounts'
 import { seedBuiltInMappingDefinitions } from '../db/seedBuiltInMappingDefinitions'
 import { seedDefaultAccounts } from '../db/seedDefaultAccounts'
+import { seedInitialBalanceAccount } from '../db/seedInitialBalanceAccount'
 import { seedDefaultHouseholdMember } from '../db/seedDefaultHouseholdMember'
 import { seedDevSampleDataIfDev } from '../db/seedDevSampleDataIfDev'
 import { seedSettlementAdjustmentAccounts } from '../db/seedSettlementAdjustmentAccounts'
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
   seedBuiltInMappingDefinitions(db)
   seedDefaultAccounts(db)
   seedAdvanceAccounts(db)
+  seedInitialBalanceAccount(db)
   seedSettlementAdjustmentAccounts(db)
   seedDevSampleDataIfDev(db)
   const autoSaveController = withAutoSave(db, storageAdapter)

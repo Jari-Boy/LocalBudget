@@ -24,8 +24,8 @@ export class SqlJsAccountRepository implements AccountRepository {
     this.db.run(
       `INSERT INTO accounts
         (category, name, is_reconcilable, is_system_managed,
-         household_member_id, account_group_id, initial_balance_for_account_id, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         household_member_id, account_group_id, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         input.category,
         input.name,
@@ -33,7 +33,6 @@ export class SqlJsAccountRepository implements AccountRepository {
         boolToSql(input.isSystemManaged ?? false),
         input.householdMemberId ?? null,
         input.accountGroupId ?? null,
-        input.initialBalanceForAccountId ?? null,
         input.sortOrder ?? 0,
       ],
     )
@@ -113,7 +112,6 @@ function mapRowToAccount(columns: string[], values: unknown[]): Account {
     isSystemManaged: sqlToBool(get<number>('is_system_managed')) as boolean,
     householdMemberId: get<number | null>('household_member_id'),
     accountGroupId: get<number | null>('account_group_id'),
-    initialBalanceForAccountId: get<number | null>('initial_balance_for_account_id'),
     sortOrder: get<number>('sort_order'),
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),

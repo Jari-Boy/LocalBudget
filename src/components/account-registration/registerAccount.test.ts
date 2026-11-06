@@ -16,6 +16,7 @@ import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
+import { seedInitialBalanceAccount } from '../../infrastructure/db/seedInitialBalanceAccount'
 import { registerAccount } from './registerAccount'
 
 let db: Database
@@ -27,11 +28,22 @@ let creatorId: number
 beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
+  seedInitialBalanceAccount(db)
   accountRepository = new SqlJsAccountRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
   creatorId = householdMemberRepository.create({ name: '自分' }).id
 })
+
+/** 単一のシステム管理科目「初期残高」(計画Issue #143)を取得する */
+function findInitialBalanceAccount() {
+  return accountRepository.findAll().find((a) => a.category === 'equity' && a.name === '初期残高')!
+}
+
+/** シード済みの「初期残高」科目を除いた、ユーザーが登録した科目の一覧 */
+function findRegisteredAccounts() {
+  return accountRepository.findAll().filter((a) => a.name !== '初期残高')
+}
 
 describe('registerAccount', () => {
   it('初期残高を入力しない場合、資産科目のみが作成される', async () => {
@@ -51,7 +63,7 @@ describe('registerAccount', () => {
       isReconcilable: true,
     })
     expect(journalEntryRepository.findAll()).toHaveLength(0)
-    expect(accountRepository.findAll()).toHaveLength(1)
+    expect(findRegisteredAccounts()).toHaveLength(1)
   })
 
   it('isReconcilable = falseを指定した場合、falseで作成される(例: 現金・外部明細なしの資産)', async () => {
@@ -98,7 +110,7 @@ describe('registerAccount', () => {
     expect(account.householdMemberId).toBe(member.id)
   })
 
-  it('初期残高を入力した場合、口座専用の初期残高科目(equity)と初期仕訳が自動生成される', async () => {
+  it('初期残高を入力した場合、単一の初期残高科目(equity)を相手科目とする初期仕訳が自動生成される', async () => {
     const account = await registerAccount(accountRepository, journalEntryRepository, {
       category: 'asset',
       isReconcilable: true,
@@ -109,12 +121,10 @@ describe('registerAccount', () => {
       journalEntryHouseholdMemberId: creatorId,
     })
 
-    const allAccounts = accountRepository.findAll()
-    const initialBalanceAccount = allAccounts.find(
-      (a) => a.initialBalanceForAccountId === account.id,
-    )
+    const initialBalanceAccount = findInitialBalanceAccount()
     expect(initialBalanceAccount).toMatchObject({
       category: 'equity',
+      name: '初期残高',
       isSystemManaged: true,
     })
 
@@ -134,7 +144,7 @@ describe('registerAccount', () => {
           householdMemberId: null,
         }),
         expect.objectContaining({
-          accountId: initialBalanceAccount!.id,
+          accountId: initialBalanceAccount.id,
           side: 'credit',
           amount: 100000,
         }),
@@ -143,7 +153,7 @@ describe('registerAccount', () => {
   })
 
   it('初期残高に0を指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
-    const account = await registerAccount(accountRepository, journalEntryRepository, {
+    await registerAccount(accountRepository, journalEntryRepository, {
       category: 'asset',
       isReconcilable: true,
       name: '三菱UFJ銀行',
@@ -153,9 +163,8 @@ describe('registerAccount', () => {
       journalEntryHouseholdMemberId: creatorId,
     })
 
-    expect(accountRepository.findAll()).toHaveLength(1)
+    expect(findRegisteredAccounts()).toHaveLength(1)
     expect(journalEntryRepository.findAll()).toHaveLength(0)
-    expect(account.initialBalanceForAccountId).toBeNull()
   })
 
   it('初期残高に負数を指定した場合、初期残高なしとして扱われ初期残高科目・仕訳は作成されない', async () => {
@@ -169,7 +178,7 @@ describe('registerAccount', () => {
       journalEntryHouseholdMemberId: creatorId,
     })
 
-    expect(accountRepository.findAll()).toHaveLength(1)
+    expect(findRegisteredAccounts()).toHaveLength(1)
     expect(journalEntryRepository.findAll()).toHaveLength(0)
   })
 
@@ -184,7 +193,7 @@ describe('registerAccount', () => {
       journalEntryHouseholdMemberId: creatorId,
     })
 
-    expect(accountRepository.findAll()).toHaveLength(1)
+    expect(findRegisteredAccounts()).toHaveLength(1)
     expect(journalEntryRepository.findAll()).toHaveLength(0)
   })
 
@@ -199,7 +208,7 @@ describe('registerAccount', () => {
       journalEntryHouseholdMemberId: creatorId,
     })
 
-    expect(accountRepository.findAll()).toHaveLength(1)
+    expect(findRegisteredAccounts()).toHaveLength(1)
     expect(journalEntryRepository.findAll()).toHaveLength(0)
   })
 
@@ -220,10 +229,7 @@ describe('registerAccount', () => {
       journalEntryHouseholdMemberId: creatorId,
     })
 
-    const allAccounts = accountRepository.findAll()
-    const initialBalanceAccount = allAccounts.find(
-      (a) => a.initialBalanceForAccountId === account.id,
-    )
+    const initialBalanceAccount = findInitialBalanceAccount()
 
     const entries = journalEntryRepository.findAll()
     expect(entries).toHaveLength(1)
@@ -242,7 +248,7 @@ describe('registerAccount', () => {
           householdMemberId: hanako.id,
         }),
         expect.objectContaining({
-          accountId: initialBalanceAccount!.id,
+          accountId: initialBalanceAccount.id,
           side: 'credit',
           amount: 8000,
         }),
@@ -294,7 +300,132 @@ describe('registerAccount', () => {
       journalEntryHouseholdMemberId: creatorId,
     })
 
-    expect(accountRepository.findAll()).toHaveLength(1)
+    expect(findRegisteredAccounts()).toHaveLength(1)
     expect(journalEntryRepository.findAll()).toHaveLength(0)
+  })
+
+  it('負債の初期残高は「借方: 初期残高 / 貸方: 負債」で記帳される(符号バグの回帰防止、計画Issue #143)', async () => {
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
+      category: 'liability',
+      isReconcilable: true,
+      name: '楽天カード',
+      householdMemberId: null,
+      initialBalanceLines: [{ householdMemberId: null, amount: 30000 }],
+      entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
+    })
+
+    const entries = journalEntryRepository.findAll()
+    expect(entries).toHaveLength(1)
+    expect(entries[0].sourceType).toBe('initial_balance')
+    expect(entries[0].lines).toHaveLength(2)
+    expect(entries[0].lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountId: findInitialBalanceAccount().id, side: 'debit', amount: 30000 }),
+        expect.objectContaining({ accountId: account.id, side: 'credit', amount: 30000 }),
+      ]),
+    )
+  })
+
+  it('資産の初期残高は「借方: 口座 / 貸方: 初期残高」で記帳される(計画Issue #143)', async () => {
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
+      category: 'asset',
+      isReconcilable: false,
+      name: '現金',
+      householdMemberId: null,
+      initialBalanceLines: [{ householdMemberId: null, amount: 8000 }],
+      entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
+    })
+
+    expect(journalEntryRepository.findAll()[0].lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountId: account.id, side: 'debit', amount: 8000 }),
+        expect.objectContaining({ accountId: findInitialBalanceAccount().id, side: 'credit', amount: 8000 }),
+      ]),
+    )
+  })
+
+  it('初期残高ありの口座を複数登録しても、初期残高科目は1件のまま増えない(計画Issue #143)', async () => {
+    for (const [category, name] of [
+      ['asset', '現金'],
+      ['asset', '銀行'],
+      ['liability', 'カード'],
+    ] as const) {
+      await registerAccount(accountRepository, journalEntryRepository, {
+        category,
+        isReconcilable: false,
+        name,
+        householdMemberId: null,
+        initialBalanceLines: [{ householdMemberId: null, amount: 1000 }],
+        entryDate: '2026-08-03',
+        journalEntryHouseholdMemberId: creatorId,
+      })
+    }
+
+    expect(accountRepository.findAll().filter((a) => a.category === 'equity')).toHaveLength(1)
+    expect(journalEntryRepository.findAll()).toHaveLength(3)
+  })
+
+  it('資産と負債に同名の口座を初期残高付きで登録しても、初期残高科目が原因のエラーは起きない(計画Issue #143)', async () => {
+    const register = (category: 'asset' | 'liability') =>
+      registerAccount(accountRepository, journalEntryRepository, {
+        category,
+        isReconcilable: false,
+        name: '立替',
+        householdMemberId: null,
+        initialBalanceLines: [{ householdMemberId: null, amount: 1000 }],
+        entryDate: '2026-08-03',
+        journalEntryHouseholdMemberId: creatorId,
+      })
+
+    await register('asset')
+    await expect(register('liability')).resolves.toMatchObject({ category: 'liability' })
+  })
+
+  it('非アクティブ化した口座と同名で初期残高付きで再登録しても、エラーにならない(計画Issue #143)', async () => {
+    const first = await registerAccount(accountRepository, journalEntryRepository, {
+      category: 'asset',
+      isReconcilable: false,
+      name: '現金',
+      householdMemberId: null,
+      initialBalanceLines: [{ householdMemberId: null, amount: 1000 }],
+      entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
+    })
+    accountRepository.deactivate(first.id)
+
+    await expect(
+      registerAccount(accountRepository, journalEntryRepository, {
+        category: 'asset',
+        isReconcilable: false,
+        name: '現金',
+        householdMemberId: null,
+        initialBalanceLines: [{ householdMemberId: null, amount: 2000 }],
+        entryDate: '2026-08-04',
+        journalEntryHouseholdMemberId: creatorId,
+      }),
+    ).resolves.toMatchObject({ name: '現金' })
+  })
+
+  it('「初期残高」科目が未投入の場合、口座を作成する前にエラーとし、口座だけが残らない(計画Issue #143)', async () => {
+    const unseededDb = await createTestDatabase()
+    runMigrations(unseededDb)
+    const unseededAccountRepository = new SqlJsAccountRepository(unseededDb)
+    const unseededJournalEntryRepository = new SqlJsJournalEntryRepository(unseededDb)
+
+    await expect(
+      registerAccount(unseededAccountRepository, unseededJournalEntryRepository, {
+        category: 'asset',
+        isReconcilable: false,
+        name: '現金',
+        householdMemberId: null,
+        initialBalanceLines: [{ householdMemberId: null, amount: 1000 }],
+        entryDate: '2026-08-03',
+        journalEntryHouseholdMemberId: creatorId,
+      }),
+    ).rejects.toThrow('初期残高')
+
+    expect(unseededAccountRepository.findAll()).toHaveLength(0)
   })
 })
