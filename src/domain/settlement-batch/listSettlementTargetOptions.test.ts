@@ -32,7 +32,7 @@ function member(id: number, name: string): HouseholdMember {
 }
 
 function counterparty(id: number, name: string): Counterparty {
-  return { id, name, defaultAccountId: null, isActive: true, createdAt: '2026-08-01', updatedAt: '2026-08-01' }
+  return { id, name, defaultAccountId: null, counterpartyGroupId: null, sortOrder: 0, isActive: true, createdAt: '2026-08-01', updatedAt: '2026-08-01' }
 }
 
 function batch(id: number, name: string, counterpartyId: number | null): SettlementBatch {

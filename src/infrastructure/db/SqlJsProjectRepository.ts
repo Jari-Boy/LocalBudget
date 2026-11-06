@@ -17,7 +17,11 @@ export class SqlJsProjectRepository implements ProjectRepository {
   }
 
   create(input: CreateProjectInput): Project {
-    this.db.run('INSERT INTO projects (name) VALUES (?)', [input.name])
+    this.db.run('INSERT INTO projects (name, project_group_id, sort_order) VALUES (?, ?, ?)', [
+      input.name,
+      input.projectGroupId ?? null,
+      input.sortOrder ?? 0,
+    ])
     return this.findById(lastInsertRowId(this.db))!
   }
 
@@ -39,7 +43,12 @@ export class SqlJsProjectRepository implements ProjectRepository {
       throw new Error(`project not found: ${id}`)
     }
 
-    this.db.run('UPDATE projects SET name = ? WHERE id = ?', [input.name ?? current.name, id])
+    this.db.run('UPDATE projects SET name = ?, project_group_id = ?, sort_order = ? WHERE id = ?', [
+      input.name ?? current.name,
+      input.projectGroupId === undefined ? current.projectGroupId : input.projectGroupId,
+      input.sortOrder === undefined ? current.sortOrder : input.sortOrder,
+      id,
+    ])
     return this.findById(id)!
   }
 
@@ -71,6 +80,8 @@ function mapRowToProject(columns: string[], values: unknown[]): Project {
   return {
     id: get<number>('id'),
     name: get<string>('name'),
+    projectGroupId: get<number | null>('project_group_id'),
+    sortOrder: get<number>('sort_order'),
     isActive: sqlToBool(get<number>('is_active')),
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),

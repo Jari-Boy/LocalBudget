@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
+import { SqlJsAccountGroupRepository } from './SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 
 let db: Database
@@ -244,6 +245,48 @@ describe('system-managed科目は name 以外の変更を禁止(domain/accounts.
     expect(() =>
       repository.update(systemManaged.id, { householdMemberId: member }),
     ).toThrow()
+  })
+})
+
+describe('システム管理科目のグループ・並び順の変更(計画Issue #143)', () => {
+  it('システム管理科目のグループ(equityのグループ含む)と並び順を変更できる', () => {
+    const groupRepository = new SqlJsAccountGroupRepository(db)
+    const group = groupRepository.create({ name: '元手', category: 'equity' })
+    const systemManaged = repository.create({
+      category: 'equity',
+      name: '初期残高',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+
+    const updated = repository.update(systemManaged.id, { accountGroupId: group.id, sortOrder: 3 })
+
+    expect(updated).toMatchObject({ accountGroupId: group.id, sortOrder: 3 })
+  })
+
+  it('システム管理の資産科目(立替金)もグループへ所属させられる', () => {
+    const groupRepository = new SqlJsAccountGroupRepository(db)
+    const group = groupRepository.create({ name: '一時勘定', category: 'asset' })
+    const advance = repository.create({
+      category: 'asset',
+      name: '立替金',
+      isReconcilable: false,
+      isSystemManaged: true,
+    })
+
+    expect(repository.update(advance.id, { accountGroupId: group.id }).accountGroupId).toBe(group.id)
+  })
+
+  it('システム管理科目の無効化・削除は引き続き拒否される', () => {
+    const systemManaged = repository.create({
+      category: 'equity',
+      name: '初期残高',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+
+    expect(() => repository.deactivate(systemManaged.id)).toThrow()
+    expect(() => repository.delete(systemManaged.id)).toThrow()
   })
 })
 

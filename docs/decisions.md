@@ -867,3 +867,10 @@
 **決定**: 初期残高の相手科目を単一のシステム管理科目「初期残高」(equity)に統合し、`seedInitialBalanceAccount`(Worker起動時、冪等)で投入する。`registerAccount`はこの科目を(equity かつ is_system_managed で)解決し、未投入なら口座作成前にエラーとする。記帳の向きは資産が「借方: 口座 / 貸方: 初期残高」、負債が「借方: 初期残高 / 貸方: 負債」。`initial_balance_for_account_id`列・関連CHECK・インデックスは削除した。BSの純資産部の初期残高は1行になる。
 **データ移行を行わない理由**: 残したい実データはなく(ローカルDBは開発用ダミーデータのみ、ユーザー確認済み)、`docs/schema/accounts.sql`を直接修正して`LATEST_SCHEMA_VERSION`は1のままとした(これまでのスキーマ変更と同じ前例)。既存の開発用DBは作り直す前提である。不採用案は、v2差分マイグレーション(過去DDLの凍結が必要で影響が大きい)と、データ付け替えのみ(不要な列と科目が残る)。
 **影響**: 旧スキーマのDB・バックアップを復元すると列の不一致で問題が出る可能性がある(復元時の検証`assertValidDatabaseSchema`はテーブル名のみを見る)が、開発用データのみのため許容する。本格利用を始める前に差分マイグレーションの仕組みが別途必要になる(スコープ外のフォローアップ)。`registerAccount`全体のトランザクション化は別Issueとする。
+
+## 2026-11-06: 取引先・プロジェクトのグループを種類ごとの表として新設し、システム管理科目のグループ変更を許可する(計画Issue #143)
+
+**背景**: 取引先はCSV取込で増えやすく、仕訳検索で「スーパー全部」「旅行全部」のようにまとめて絞り込みたい。勘定科目には`account_groups`(入れ子可・単一所属・表示専用)があるが、取引先とプロジェクトには無かった。また`prevent_non_name_change_on_system_managed_account`が`account_group_id`の変更を禁止し、`account_groups.category`のCHECKが`equity`を除外していたため、システム管理科目(立替金、未払金、初期残高)にはグループも並び順も設定できなかった。
+**決定**: `counterparty_groups`・`project_groups`を種類ごとの表として新設し、`counterparties`・`projects`に単一所属の`*_group_id`と`sort_order`を持たせた。3種類のグループは同じ仕様(入れ子可、単一所属、表示専用、中身があるグループは削除不可、循環参照の親変更を拒否)で、集計ロジックには関与しない。取引先・プロジェクトのグループは`category`を持たない。グループに属さない状態(未分類)を許し、CSV取込で作られる取引先は`counterpartyGroupId`未指定のため未分類になる。システム管理科目は、トリガーから`account_group_id`の禁止を外してグループと並び順(`sort_order`は元々禁止対象外)を変更可能にし、`account_groups.category`のCHECKに`equity`を追加した。ユーザーによるequity科目の新規作成禁止(`prevent_user_created_equity_account`)と、システム管理科目の無効化・削除・区分変更などの制限は維持した。循環参照検証の`isDescendantGroup`は、`id`・`parentGroupId`だけを要求する構造的型(`GroupNode`)に緩めて3種類で共用する。
+**不採用案**: 共通のグループテーブルに種類列を持たせる案(種類ごとにFK・削除禁止トリガーを張れず、参照整合性をDDLで強制できない)、タグ(多対多)案(単一所属・入れ子の表示という既存のグループ体験と異なり、スコープが大きい)。ドラッグ移動の判定`resolveAccountGroupDrop`などの3種類での共通化は、マスタ画面のUI刷新(スコープ外)で必要になった時点で判断する。
+**影響**: DDLは直接修正し差分マイグレーションは作っていない(開発用DBは作り直す、本ファイル同日の初期残高統合の決定と同じ前例)。マスタ画面のUIと検索条件の拡張は別Issueで扱う。`AccountGroupManagementScreen`は引き続きequity以外の4区分のみを表示する(equityのグループを画面から作る導線は、UI刷新のIssueで扱う)。

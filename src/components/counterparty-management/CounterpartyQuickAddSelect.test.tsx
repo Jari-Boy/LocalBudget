@@ -19,7 +19,7 @@ import { CounterpartyQuickAddSelect } from './CounterpartyQuickAddSelect'
 afterEach(cleanup)
 
 const counterparties: Counterparty[] = [
-  { id: 1, name: '友人Cさん', defaultAccountId: null, isActive: true, createdAt: '', updatedAt: '' },
+  { id: 1, name: '友人Cさん', defaultAccountId: null, counterpartyGroupId: null, sortOrder: 0, isActive: true, createdAt: '', updatedAt: '' },
 ]
 
 function renderSelect(overrides?: {
@@ -30,7 +30,7 @@ function renderSelect(overrides?: {
 }) {
   const onChange = vi.fn()
   const onCreate =
-    overrides?.onCreate ?? vi.fn(async (name: string) => ({ id: 99, name, defaultAccountId: null, isActive: true, createdAt: '', updatedAt: '' }))
+    overrides?.onCreate ?? vi.fn(async (name: string) => ({ id: 99, name, defaultAccountId: null, counterpartyGroupId: null, sortOrder: 0, isActive: true, createdAt: '', updatedAt: '' }))
   render(
     <I18nextProvider i18n={i18n}>
       <CounterpartyQuickAddSelect

@@ -4,6 +4,7 @@ import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { AccountGroupRepository } from '../../domain/account-group/AccountGroupRepository'
 import type { BudgetRepository } from '../../domain/budget/BudgetRepository'
 import type { CounterpartyRepository } from '../../domain/counterparty/CounterpartyRepository'
+import type { CounterpartyGroupRepository } from '../../domain/counterparty-group/CounterpartyGroupRepository'
 import type { ExternalTransactionRefRepository } from '../../domain/reconciliation/ExternalTransactionRefRepository'
 import type { HouseholdMemberRepository } from '../../domain/household-member/HouseholdMemberRepository'
 import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
@@ -16,12 +17,14 @@ import type {
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import type { JournalEntryLinkGroupRepository } from '../../domain/journal-link-group/JournalEntryLinkGroupRepository'
 import type { ProjectRepository } from '../../domain/project/ProjectRepository'
+import type { ProjectGroupRepository } from '../../domain/project-group/ProjectGroupRepository'
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
 import { SqlJsAccountRepository } from '../db/SqlJsAccountRepository'
 import { SqlJsAccountGroupRepository } from '../db/SqlJsAccountGroupRepository'
 import { SqlJsBudgetRepository } from '../db/SqlJsBudgetRepository'
 import { SqlJsCounterpartyRepository } from '../db/SqlJsCounterpartyRepository'
+import { SqlJsCounterpartyGroupRepository } from '../db/SqlJsCounterpartyGroupRepository'
 import { SqlJsExternalTransactionRefRepository } from '../db/SqlJsExternalTransactionRefRepository'
 import { SqlJsHouseholdMemberRepository } from '../db/SqlJsHouseholdMemberRepository'
 import { SqlJsImportMappingDefinitionRepository } from '../db/SqlJsImportMappingDefinitionRepository'
@@ -29,6 +32,7 @@ import { SqlJsJournalEntryDraftRepository } from '../db/SqlJsJournalEntryDraftRe
 import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsJournalEntryLinkGroupRepository } from '../db/SqlJsJournalEntryLinkGroupRepository'
 import { SqlJsProjectRepository } from '../db/SqlJsProjectRepository'
+import { SqlJsProjectGroupRepository } from '../db/SqlJsProjectGroupRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
 import { SqlJsSettlementBatchRepository } from '../db/SqlJsSettlementBatchRepository'
 import { importDatabaseBackup } from '../backup/importDatabaseBackup'
@@ -71,6 +75,8 @@ export interface RepositoryRegistry {
   accountGroup: AccountGroupRepository
   budget: BudgetRepository
   counterparty: CounterpartyRepository
+  /** 取引先グループ(計画Issue #143)。表示専用、集計には関与しない */
+  counterpartyGroup: CounterpartyGroupRepository
   externalTransactionRef: ExternalTransactionRefRepository
   householdMember: HouseholdMemberRepository
   importMappingDefinition: ImportMappingDefinitionRepository
@@ -79,6 +85,8 @@ export interface RepositoryRegistry {
   /** 関連仕訳グループ(計画Issue #138)。表示専用、残高計算・消込判定には関与しない */
   journalEntryLinkGroup: JournalEntryLinkGroupRepository
   project: ProjectRepository
+  /** プロジェクトグループ(計画Issue #143)。表示専用、集計には関与しない */
+  projectGroup: ProjectGroupRepository
   settlementBatch: SettlementBatchRepository
   recurringTransactionRule: RecurringTransactionRuleRepository
   /** 定期取引の提案評価・仕訳生成(計画Issue #121、docs/domain/recurring-transactions.md 1.2節)のRPC API */
@@ -119,6 +127,7 @@ export function createRepositoryRegistry(
     accountGroup: new SqlJsAccountGroupRepository(db),
     budget: new SqlJsBudgetRepository(db),
     counterparty: new SqlJsCounterpartyRepository(db),
+    counterpartyGroup: new SqlJsCounterpartyGroupRepository(db),
     externalTransactionRef: new SqlJsExternalTransactionRefRepository(db),
     householdMember: new SqlJsHouseholdMemberRepository(db),
     importMappingDefinition: new SqlJsImportMappingDefinitionRepository(db),
@@ -133,6 +142,7 @@ export function createRepositoryRegistry(
     },
     journalEntryLinkGroup: new SqlJsJournalEntryLinkGroupRepository(db),
     project: new SqlJsProjectRepository(db),
+    projectGroup: new SqlJsProjectGroupRepository(db),
     settlementBatch: new SqlJsSettlementBatchRepository(db),
     recurringTransactionRule: new SqlJsRecurringTransactionRuleRepository(db),
     recurringTransactionProposal: createRecurringTransactionProposalApi(db, journalEntryRepository),

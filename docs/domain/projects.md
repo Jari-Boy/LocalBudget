@@ -86,9 +86,26 @@
 |---|---|---|
 | `id` | プロジェクトID | PK |
 | `name` | プロジェクト名 | 例:「26年7月アメリカ旅行」、自由記述 |
+| `project_group_id` | 表示用グループ | FK(`project_groups`)、任意。単一所属。NULL=未分類(計画Issue #143) |
+| `sort_order` | 表示順 | 同じ入れ物(同一`project_group_id`)の中での表示順。表示専用 |
 | `is_active` | アクティブ/非アクティブ | falseにしても過去仕訳・過去集計に影響なし |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
+
+**project_groups**(計画Issue #143)
+
+「旅行全部」のようにまとめて絞り込めるよう、勘定科目グループ([accounts.md 3.3](./accounts.md#33-勘定科目グループマスタaccount_groups))と同じ仕様のグループを持つ。種類ごとの表として新設し(共通テーブル案・タグ(多対多)案は不採用)、集計ロジックには一切関与しない表示専用のラベルである。
+
+| カラム | 内容 | 制約・備考 |
+|---|---|---|
+| `id` | グループID | PK |
+| `name` | グループ名 | 同じ親グループ内でユニーク(非アクティブは除外) |
+| `parent_group_id` | 親グループ | FK(自己参照)、任意。NULL=最上位。循環参照になる親変更はRepository層で拒否する |
+| `sort_order` | 表示順 | 同じ入れ物の中での表示順。サブグループと直属のプロジェクトで1つの表示順を共有する |
+| `is_active` | 有効/非アクティブ | |
+| `created_at` / `updated_at` | 作成・更新日時 | |
+
+子グループまたは所属するプロジェクトがあるグループは物理削除できない(トリガーで強制)。`category`は持たない。
 
 勘定科目マスタと異なり、`is_reconcilable`・`is_system_managed`に相当するフィールドは持たない([1.3 ライフサイクル](#13-ライフサイクル)参照)。`kind`も持たない(計画Issue #133で廃止、[settlement.md](./settlement.md)の`settlement_batches`へ分離)。
 
