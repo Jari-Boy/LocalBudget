@@ -84,6 +84,7 @@ interface LoadedData {
 interface EditState {
   entryDate: string
   memo: string
+  comment: string
   lineStates: JournalEntryLineRow[]
 }
 
@@ -174,6 +175,7 @@ export function JournalEntryDetailScreen({
       setEditState({
         entryDate: entry.entryDate,
         memo: entry.memo ?? '',
+        comment: entry.comment ?? '',
         lineStates: buildLineStates(entry.lines, lineKeyRef),
       })
       setUpdateError(null)
@@ -336,6 +338,7 @@ export function JournalEntryDetailScreen({
         journalEntryRepository.update(entry.id, {
           entryDate: editState.entryDate,
           memo: editState.memo === '' ? null : editState.memo,
+          comment: editState.comment === '' ? null : editState.comment,
           lines,
         }),
       )
@@ -343,6 +346,7 @@ export function JournalEntryDetailScreen({
       setEditState({
         entryDate: updated.entryDate,
         memo: updated.memo ?? '',
+        comment: updated.comment ?? '',
         lineStates: buildLineStates(updated.lines, lineKeyRef),
       })
     } catch (err) {
@@ -382,6 +386,8 @@ export function JournalEntryDetailScreen({
         onEntryDateChange={(value) => setEditState((prev) => (prev === null ? prev : { ...prev, entryDate: value }))}
         memo={editState.memo}
         onMemoChange={(value) => setEditState((prev) => (prev === null ? prev : { ...prev, memo: value }))}
+        comment={editState.comment}
+        onCommentChange={(value) => setEditState((prev) => (prev === null ? prev : { ...prev, comment: value }))}
         headerHouseholdMemberId={entry.householdMemberId}
         lineRows={editState.lineStates}
         onUpdateLine={updateEditLine}

@@ -7,6 +7,8 @@
   "entryDateLabel": "取引日",
   "memoLabel": "摘要(任意)",
   "memoPlaceholder": "例: スーパーで食材購入",
+  "commentLabel": "コメント(任意)",
+  "commentPlaceholder": "例: 来月の家計会議で確認する",
   "creatorHouseholdMemberLabel": "起票者",
   "lineAccountLabel": "科目",
   "unselected": "—",

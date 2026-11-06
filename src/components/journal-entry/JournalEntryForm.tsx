@@ -117,6 +117,7 @@ export function JournalEntryForm({
     () => initialDraft?.entryDate ?? today ?? new Date().toISOString().slice(0, 10),
   )
   const [memoInput, setMemoInput] = useState(() => initialDraft?.memo ?? '')
+  const [commentInput, setCommentInput] = useState(() => initialDraft?.comment ?? '')
   /**
    * 起票者(docs/domain/journal.md 1.1、計画Issue #88)。初期値はinitialDraftの値を
    * 引き継ぎ、無ければmasterData読み込み完了時に世帯メンバー一覧の先頭を既定値として
@@ -161,6 +162,7 @@ export function JournalEntryForm({
     return {
       entryDate: entryDateInput === '' ? null : entryDateInput,
       memo: memoInput === '' ? null : memoInput,
+      comment: commentInput === '' ? null : commentInput,
       householdMemberId: headerHouseholdMemberId,
       lines: lineStates.map((state) => toJournalEntryDraftLineInput(state.line)),
     }
@@ -177,7 +179,7 @@ export function JournalEntryForm({
 
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entryDateInput, memoInput, headerHouseholdMemberId, lineStates])
+  }, [entryDateInput, memoInput, commentInput, headerHouseholdMemberId, lineStates])
 
   async function saveDraft(): Promise<void> {
     const input = buildDraftInput()
@@ -268,6 +270,7 @@ export function JournalEntryForm({
         created = await journalEntryRepository.create({
           entryDate: entryDateInput,
           memo: memoInput === '' ? null : memoInput,
+          comment: commentInput === '' ? null : commentInput,
           householdMemberId: headerHouseholdMemberId as number,
           lines,
         })
@@ -310,6 +313,11 @@ export function JournalEntryForm({
         onMemoChange={(value) => {
           markEdited()
           setMemoInput(value)
+        }}
+        comment={commentInput}
+        onCommentChange={(value) => {
+          markEdited()
+          setCommentInput(value)
         }}
         headerHouseholdMemberId={headerHouseholdMemberId}
         onHeaderHouseholdMemberChange={(id) => {

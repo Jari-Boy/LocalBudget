@@ -14,6 +14,13 @@ export interface BuildConfirmedJournalEntryInputParams {
   counterpartyId?: number | null
   projectId?: number | null
   householdMemberId?: number | null
+  /**
+   * 精算バッチ(計画Issue #144)。相手科目の行にのみ付与する。相手科目が一時勘定でない場合の
+   * 拒否はJournalEntryRepositoryが行う(SettlementBatchOnNonTemporaryAccountError)
+   */
+  settlementBatchId?: number | null
+  /** 仕訳のコメント(計画Issue #144)。摘要(CSVの摘要が入るmemo)とは別。空白のみは未設定扱い */
+  comment?: string | null
   /** 起票者(CreateJournalEntryInput.householdMemberId、計画Issue #88)。解決は呼び出し側の責務 */
   entryHouseholdMemberId: number
 }
@@ -42,11 +49,14 @@ export function buildConfirmedJournalEntryInput(
     counterpartyId: params.counterpartyId ?? null,
     projectId: params.projectId ?? null,
     householdMemberId: params.householdMemberId ?? null,
+    ...(params.settlementBatchId == null ? {} : { settlementBatchId: params.settlementBatchId }),
   }
+  const comment = params.comment?.trim() ? params.comment : null
 
   return {
     entryDate: record.entryDate,
     memo: record.description,
+    ...(comment === null ? {} : { comment }),
     sourceType: 'external_import',
     householdMemberId: params.entryHouseholdMemberId,
     lines: counterSide === 'debit' ? [counterLine, targetLine] : [targetLine, counterLine],

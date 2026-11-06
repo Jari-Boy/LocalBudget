@@ -281,6 +281,52 @@ describe('JournalEntryDetailScreen', () => {
     expect(journalEntryRepository.findById(entry.id)?.lines.map((line) => line.settlementBatchId)).toEqual([batch.id, null])
   })
 
+  it('仕訳のコメントが表示され、編集して更新するとコメントが保存される(計画Issue #144)', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '摘要',
+      comment: '更新前のコメント',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 3000 },
+        { accountId: cash.id, side: 'credit', amount: 3000 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    const commentInput = await screen.findByLabelText('コメント(任意)')
+    expect(commentInput).toHaveValue('更新前のコメント')
+    fireEvent.change(commentInput, { target: { value: '更新後のコメント' } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+
+    await waitFor(() => expect(journalEntryRepository.findById(entry.id)?.comment).toBe('更新後のコメント'))
+    expect(journalEntryRepository.findById(entry.id)?.memo).toBe('摘要')
+  })
+
+  it('コメントを空にして更新するとコメントが消去される(計画Issue #144)', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const entry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      comment: '消えるコメント',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 3000 },
+        { accountId: cash.id, side: 'credit', amount: 3000 },
+      ],
+    })
+
+    renderScreen(entry.id)
+    fireEvent.change(await screen.findByLabelText('コメント(任意)'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: '更新する' }))
+
+    await waitFor(() => expect(journalEntryRepository.findById(entry.id)?.comment).toBeNull())
+  })
+
   it('更新を2回続けて行っても、最初の更新後に読み込んだ行idで差分更新できる', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
