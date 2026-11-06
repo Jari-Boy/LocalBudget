@@ -29,7 +29,6 @@ function makeAccount(overrides: Partial<Account> & Pick<Account, 'id' | 'name'>)
     isSystemManaged: false,
     householdMemberId: null,
     accountGroupId: null,
-    initialBalanceForAccountId: null,
     sortOrder: 0,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',

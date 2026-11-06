@@ -49,8 +49,8 @@ interface LoadedData {
   accountCountByGroupId: Map<number, number>
 }
 
-const CATEGORY_ORDER: AccountGroupCategory[] = ['asset', 'liability', 'revenue', 'expense']
-const CATEGORY_LABEL_KEY: Record<AccountGroupCategory, string> = {
+const CATEGORY_ORDER: Array<Exclude<AccountGroupCategory, 'equity'>> = ['asset', 'liability', 'revenue', 'expense']
+const CATEGORY_LABEL_KEY: Record<Exclude<AccountGroupCategory, 'equity'>, string> = {
   asset: 'listCategoryAsset',
   liability: 'listCategoryLiability',
   revenue: 'listCategoryRevenue',

@@ -9,7 +9,6 @@ export interface Account {
   isSystemManaged: boolean
   householdMemberId: number | null
   accountGroupId: number | null
-  initialBalanceForAccountId: number | null
   /** 所属グループ内での表示順(未分類の場合は意味を持たない、計画Issue #129) */
   sortOrder: number
   createdAt: string
@@ -23,7 +22,6 @@ export interface CreateAccountInput {
   isSystemManaged?: boolean
   householdMemberId?: number | null
   accountGroupId?: number | null
-  initialBalanceForAccountId?: number | null
   sortOrder?: number
 }
 

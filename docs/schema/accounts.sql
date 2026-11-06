@@ -11,22 +11,16 @@ CREATE TABLE accounts (
   is_system_managed    BOOLEAN NOT NULL DEFAULT FALSE,
   household_member_id  INTEGER REFERENCES household_members(id),
   account_group_id     INTEGER REFERENCES account_groups(id),
-  initial_balance_for_account_id INTEGER REFERENCES accounts(id),
   sort_order           INTEGER NOT NULL DEFAULT 0,
   created_at           TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK (
     (category IN ('asset','liability') AND is_reconcilable IS NOT NULL) OR
     (category NOT IN ('asset','liability') AND is_reconcilable IS NULL)
-  ),
-  CHECK (
-    initial_balance_for_account_id IS NULL OR
-    (category = 'equity' AND is_system_managed = TRUE)
   )
 );
 
 CREATE INDEX idx_accounts_group ON accounts(account_group_id);
-CREATE INDEX idx_accounts_initial_balance_for ON accounts(initial_balance_for_account_id);
 
 -- 区分の変更を禁止
 CREATE TRIGGER prevent_category_change
@@ -64,7 +58,7 @@ ON accounts(category, name)
 WHERE is_active = TRUE;
 
 -- システム管理科目(is_system_managed = TRUE)の削除を禁止
--- (domain/accounts.md 3.1: 口座ごとの初期残高科目・残高調整などは削除・区分変更・
+-- (domain/accounts.md 3.1: 初期残高・残高調整などは削除・区分変更・
 --  非アクティブ化を禁止し、nameの変更のみ許可する)
 CREATE TRIGGER prevent_delete_system_managed_account
 BEFORE DELETE ON accounts
@@ -73,7 +67,8 @@ BEGIN
   SELECT RAISE(ABORT, 'cannot delete a system-managed account');
 END;
 
--- システム管理科目のname以外のフィールド変更を禁止(非アクティブ化を含む)
+-- システム管理科目のname・account_group_id・sort_order以外のフィールド変更を禁止(非アクティブ化を含む)。
+-- グループと並び順は表示専用のため自由に変更できる(計画Issue #143)
 -- 区分(category)の変更はprevent_category_changeで全科目共通に禁止済みのためここでは扱わない
 CREATE TRIGGER prevent_non_name_change_on_system_managed_account
 BEFORE UPDATE ON accounts
@@ -81,10 +76,8 @@ WHEN OLD.is_system_managed = TRUE
   AND (
     NEW.is_active IS NOT OLD.is_active OR
     NEW.household_member_id IS NOT OLD.household_member_id OR
-    NEW.account_group_id IS NOT OLD.account_group_id OR
     NEW.is_reconcilable IS NOT OLD.is_reconcilable OR
-    NEW.is_system_managed IS NOT OLD.is_system_managed OR
-    NEW.initial_balance_for_account_id IS NOT OLD.initial_balance_for_account_id
+    NEW.is_system_managed IS NOT OLD.is_system_managed
   )
 BEGIN
   SELECT RAISE(ABORT, 'system-managed accounts can only change name');
@@ -118,8 +111,8 @@ CREATE TABLE account_groups (
   name              TEXT NOT NULL,
   parent_group_id   INTEGER REFERENCES account_groups(id),
   -- 作成時点で確定し、以後変更できない(prevent_account_group_category_change、計画Issue #129)。
-  -- equityは対象外(equity科目はis_system_managed専用でグループ化UIの対象外)
-  category          TEXT NOT NULL CHECK (category IN ('asset','liability','revenue','expense')),
+  -- equityも許可する(システム管理科目のグループ化のため、計画Issue #143)
+  category          TEXT NOT NULL CHECK (category IN ('asset','liability','equity','revenue','expense')),
   sort_order        INTEGER NOT NULL DEFAULT 0,
   is_active         BOOLEAN NOT NULL DEFAULT TRUE,
   created_at        TEXT NOT NULL DEFAULT (datetime('now')),

@@ -21,10 +21,16 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
   }
 
   create(input: CreateCounterpartyInput): Counterparty {
-    this.db.run('INSERT INTO counterparties (name, default_account_id) VALUES (?, ?)', [
-      input.name,
-      input.defaultAccountId ?? null,
-    ])
+    this.db.run(
+      `INSERT INTO counterparties (name, default_account_id, counterparty_group_id, sort_order)
+       VALUES (?, ?, ?, ?)`,
+      [
+        input.name,
+        input.defaultAccountId ?? null,
+        input.counterpartyGroupId ?? null,
+        input.sortOrder ?? 0,
+      ],
+    )
     return this.findById(lastInsertRowId(this.db))!
   }
 
@@ -48,11 +54,19 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
 
     const defaultAccountId =
       input.defaultAccountId === undefined ? current.defaultAccountId : input.defaultAccountId
-    this.db.run('UPDATE counterparties SET name = ?, default_account_id = ? WHERE id = ?', [
-      input.name ?? current.name,
-      defaultAccountId,
-      id,
-    ])
+    this.db.run(
+      `UPDATE counterparties
+       SET name = ?, default_account_id = ?, counterparty_group_id = ?, sort_order = ? WHERE id = ?`,
+      [
+        input.name ?? current.name,
+        defaultAccountId,
+        input.counterpartyGroupId === undefined
+          ? current.counterpartyGroupId
+          : input.counterpartyGroupId,
+        input.sortOrder === undefined ? current.sortOrder : input.sortOrder,
+        id,
+      ],
+    )
     return this.findById(id)!
   }
 
@@ -175,6 +189,8 @@ function mapRowToCounterparty(columns: string[], values: unknown[]): Counterpart
     id: get<number>('id'),
     name: get<string>('name'),
     defaultAccountId: get<number | null>('default_account_id'),
+    counterpartyGroupId: get<number | null>('counterparty_group_id'),
+    sortOrder: get<number>('sort_order'),
     isActive: sqlToBool(get<number>('is_active')),
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),

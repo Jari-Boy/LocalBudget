@@ -37,7 +37,6 @@ function createAccount(overrides: Partial<Account> & { id: number; name: string 
     isSystemManaged: false,
     householdMemberId: null,
     accountGroupId: null,
-    initialBalanceForAccountId: null,
     sortOrder: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-01T00:00:00.000Z',
@@ -323,6 +322,8 @@ describe('JournalEntryLinesTable', () => {
     const activeProject: Project = {
       id: 1,
       name: '26年7月アメリカ旅行',
+      projectGroupId: null,
+      sortOrder: 0,
       isActive: true,
       createdAt: '2026-08-01T00:00:00.000Z',
       updatedAt: '2026-08-01T00:00:00.000Z',
@@ -330,6 +331,8 @@ describe('JournalEntryLinesTable', () => {
     const inactiveProject: Project = {
       id: 2,
       name: '25年冬の旅行',
+      projectGroupId: null,
+      sortOrder: 0,
       isActive: false,
       createdAt: '2026-08-01T00:00:00.000Z',
       updatedAt: '2026-08-01T00:00:00.000Z',

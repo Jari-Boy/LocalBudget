@@ -22,7 +22,6 @@ function createAccount(overrides: Partial<Account> & { id: number; name: string 
     isSystemManaged: false,
     householdMemberId: null,
     accountGroupId: null,
-    initialBalanceForAccountId: null,
     sortOrder: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-01T00:00:00.000Z',

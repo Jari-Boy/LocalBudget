@@ -61,6 +61,8 @@ function selectValidInitialBalanceLines(
  */
 export interface AccountCreator {
   create(input: CreateAccountInput): Account | Promise<Account>
+  /** 初期残高の相手科目(単一のequityシステム管理科目)の解決に使う(計画Issue #143) */
+  findAll(): Account[] | Promise<Account[]>
 }
 
 export interface JournalEntryCreator {
@@ -69,15 +71,22 @@ export interface JournalEntryCreator {
 
 /**
  * 資産・負債の統合登録フローの確定処理(docs/domain/accounts.md 4章、計画Issue #102)。
- * 資産または負債科目を1件作成し、初期残高が入力されていれば口座専用の初期残高科目
- * (equity区分・is_system_managed = true)と初期仕訳(source_type = 'initial_balance')を
- * 自動生成する(4.3節)。ユーザーには「区分」「純資産」等の簿記用語を見せない。
+ * 資産または負債科目を1件作成し、初期残高が入力されていれば単一のシステム管理科目
+ * 「初期残高」(equity、seedInitialBalanceAccountがWorker起動時に投入、計画Issue #143)を
+ * 相手科目とする初期仕訳(source_type = 'initial_balance')を自動生成する(4.3節)。
+ * 記帳の向きは区分で変わる: 資産は「借方: 口座 / 貸方: 初期残高」、負債は
+ * 「借方: 初期残高 / 貸方: 負債」。ユーザーには「区分」「純資産」等の簿記用語を見せない。
+ * 相手科目が未投入の場合は、口座だけが残らないよう口座作成より前にエラーとする。
  */
 export async function registerAccount(
   accountRepository: AccountCreator,
   journalEntryRepository: JournalEntryCreator,
   input: RegisterAccountInput,
 ): Promise<Account> {
+  const validLines = selectValidInitialBalanceLines(input.initialBalanceLines)
+  const initialBalanceAccount =
+    validLines.length > 0 ? await findInitialBalanceAccount(accountRepository) : null
+
   const account = await accountRepository.create({
     category: input.category,
     name: input.name,
@@ -85,20 +94,13 @@ export async function registerAccount(
     householdMemberId: input.householdMemberId,
   })
 
-  const validLines = selectValidInitialBalanceLines(input.initialBalanceLines)
-  if (validLines.length === 0) {
+  if (initialBalanceAccount === null) {
     return account
   }
 
   const total = validLines.reduce((sum, line) => sum + line.amount, 0)
-
-  const initialBalanceAccount = await accountRepository.create({
-    category: 'equity',
-    name: `初期残高(${input.name})`,
-    isReconcilable: null,
-    isSystemManaged: true,
-    initialBalanceForAccountId: account.id,
-  })
+  const accountSide = input.category === 'asset' ? 'debit' : 'credit'
+  const counterSide = input.category === 'asset' ? 'credit' : 'debit'
 
   await journalEntryRepository.create({
     entryDate: input.entryDate,
@@ -107,13 +109,22 @@ export async function registerAccount(
     lines: [
       ...validLines.map((line) => ({
         accountId: account.id,
-        side: 'debit' as const,
+        side: accountSide as 'debit' | 'credit',
         amount: line.amount,
         householdMemberId: line.householdMemberId,
       })),
-      { accountId: initialBalanceAccount.id, side: 'credit', amount: total },
+      { accountId: initialBalanceAccount.id, side: counterSide, amount: total },
     ],
   })
 
   return account
+}
+
+async function findInitialBalanceAccount(accountRepository: AccountCreator): Promise<Account> {
+  const accounts = await accountRepository.findAll()
+  const found = accounts.find((account) => account.category === 'equity' && account.isSystemManaged)
+  if (!found) {
+    throw new Error('初期残高科目(equity・システム管理)が見つかりません。アプリを再起動してください')
+  }
+  return found
 }

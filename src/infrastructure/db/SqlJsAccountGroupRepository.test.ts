@@ -73,6 +73,12 @@ describe('category(計画Issue #129)', () => {
     expect(repository.findById(created.id)?.category).toBe('asset')
   })
 
+  it('equityのグループを作成できる(計画Issue #143、システム管理科目をグループ化するため)', () => {
+    const created = repository.create({ name: '元手', category: 'equity' })
+
+    expect(repository.findById(created.id)?.category).toBe('equity')
+  })
+
   it('親グループと異なるcategoryの子グループを新規作成しようとすると拒否される', () => {
     const parent = repository.create({ name: '固定費', category: 'expense' })
 

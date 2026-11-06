@@ -21,6 +21,7 @@ import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
+import { seedInitialBalanceAccount } from '../../infrastructure/db/seedInitialBalanceAccount'
 import { AccountRegistrationFlow } from './AccountRegistrationFlow'
 
 let db: Database
@@ -31,12 +32,18 @@ let householdMemberRepository: SqlJsHouseholdMemberRepository
 beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
+  seedInitialBalanceAccount(db)
   accountRepository = new SqlJsAccountRepository(db)
   journalEntryRepository = new SqlJsJournalEntryRepository(db)
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
 })
 
 afterEach(cleanup)
+
+/** シード済みの単一システム管理科目「初期残高」(計画Issue #143)を除いた、登録された科目の一覧 */
+function findRegisteredAccounts() {
+  return accountRepository.findAll().filter((account) => account.category !== 'equity')
+}
 
 function renderFlow(onComplete: (account: unknown) => void, onBack: () => void = vi.fn()) {
   return render(
@@ -114,7 +121,7 @@ describe('AccountRegistrationFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: '登録する' }))
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
-    const createdAccount = accountRepository.findAll()[0]
+    const createdAccount = findRegisteredAccounts()[0]
     expect(createdAccount).toMatchObject({
       category: 'asset',
       name: '三菱UFJ銀行',
@@ -136,7 +143,7 @@ describe('AccountRegistrationFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: '登録する' }))
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
-    const createdAccount = accountRepository.findAll()[0]
+    const createdAccount = findRegisteredAccounts()[0]
     expect(createdAccount).toMatchObject({
       category: 'liability',
       name: '楽天カード',
@@ -159,7 +166,7 @@ describe('AccountRegistrationFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: '登録する' }))
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
-    expect(accountRepository.findAll()[0].isReconcilable).toBe(false)
+    expect(findRegisteredAccounts()[0].isReconcilable).toBe(false)
   })
 
   it('外部明細「ある」の場合、世帯メンバーが登録済みなら名義選択が必須になる(「全員」ボタンは表示されず、選ぶまで次へ進めない)', async () => {
@@ -198,7 +205,7 @@ describe('AccountRegistrationFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: '登録する' }))
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
-    expect(accountRepository.findAll()[0].householdMemberId).toBeNull()
+    expect(findRegisteredAccounts()[0].householdMemberId).toBeNull()
   })
 
   it('初期残高を入力すると、初期残高科目と初期仕訳が自動生成される', async () => {
@@ -237,7 +244,7 @@ describe('AccountRegistrationFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: '登録する' }))
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
-    expect(accountRepository.findAll()).toHaveLength(1)
+    expect(findRegisteredAccounts()).toHaveLength(1)
     expect(journalEntryRepository.findAll()).toHaveLength(0)
   })
 
@@ -254,7 +261,7 @@ describe('AccountRegistrationFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: '登録する' }))
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
-    const createdAccount = accountRepository.findAll()[0]
+    const createdAccount = findRegisteredAccounts()[0]
     expect(createdAccount).toMatchObject({
       category: 'revenue',
       name: '副業収入',
@@ -267,6 +274,7 @@ describe('AccountRegistrationFlow', () => {
   it('Repository呼び出しが失敗した場合、エラーメッセージを表示し再度登録操作ができる状態に戻す', async () => {
     const failingAccountRepository = {
       create: () => Promise.reject(new Error('DB error')),
+      findAll: () => Promise.resolve([]),
     }
     const onComplete = vi.fn()
     render(

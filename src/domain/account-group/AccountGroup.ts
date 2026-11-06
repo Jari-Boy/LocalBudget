@@ -1,8 +1,8 @@
 /**
- * 勘定科目グループの区分。accounts.categoryのうちequityを除いたもの
- * (equity科目はis_system_managed専用でグループ化UIの対象外、docs/domain/accounts.md参照)。
+ * 勘定科目グループの区分。accounts.categoryと同じ5区分。equityは、ユーザーが作成できない
+ * システム管理科目(初期残高等)をグループ化するために許可する(計画Issue #143)。
  */
-export type AccountGroupCategory = 'asset' | 'liability' | 'revenue' | 'expense'
+export type AccountGroupCategory = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense'
 
 export interface AccountGroup {
   id: number

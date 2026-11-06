@@ -29,7 +29,6 @@ const accounts: Account[] = [
     isSystemManaged: false,
     householdMemberId: null,
     accountGroupId: null,
-    initialBalanceForAccountId: null,
     sortOrder: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-01T00:00:00.000Z',
@@ -39,7 +38,7 @@ const householdMembers: HouseholdMember[] = [
   { id: 100, name: 'Aさん', isGroup: false, isActive: true, createdAt: '', updatedAt: '' },
 ]
 const projects: Project[] = [
-  { id: 5, name: '26/8生活費割勘', isActive: true, createdAt: '', updatedAt: '' },
+  { id: 5, name: '26/8生活費割勘', projectGroupId: null, sortOrder: 0, isActive: true, createdAt: '', updatedAt: '' },
 ]
 
 function renderForm(filter: JournalEntryFilter = {}) {

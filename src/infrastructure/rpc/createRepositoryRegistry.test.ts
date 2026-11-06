@@ -18,6 +18,8 @@ import { createTestDatabase } from '../db/createTestDatabase'
 import { runMigrations } from '../db/migrations'
 import { SqlJsAccountRepository } from '../db/SqlJsAccountRepository'
 import { SqlJsAccountGroupRepository } from '../db/SqlJsAccountGroupRepository'
+import { SqlJsCounterpartyGroupRepository } from '../db/SqlJsCounterpartyGroupRepository'
+import { SqlJsProjectGroupRepository } from '../db/SqlJsProjectGroupRepository'
 import { SqlJsBudgetRepository } from '../db/SqlJsBudgetRepository'
 import { SqlJsCounterpartyRepository } from '../db/SqlJsCounterpartyRepository'
 import { SqlJsExternalTransactionRefRepository } from '../db/SqlJsExternalTransactionRefRepository'
@@ -64,11 +66,13 @@ afterEach(() => {
 })
 
 describe('createRepositoryRegistry', () => {
-  it('12種全てのキーに対応するSqlJs実装クラスのインスタンスを割り当てる', () => {
+  it('14種全てのキーに対応するSqlJs実装クラスのインスタンスを割り当てる', () => {
     expect(registry.account).toBeInstanceOf(SqlJsAccountRepository)
     expect(registry.accountGroup).toBeInstanceOf(SqlJsAccountGroupRepository)
     expect(registry.budget).toBeInstanceOf(SqlJsBudgetRepository)
     expect(registry.counterparty).toBeInstanceOf(SqlJsCounterpartyRepository)
+    expect(registry.counterpartyGroup).toBeInstanceOf(SqlJsCounterpartyGroupRepository)
+    expect(registry.projectGroup).toBeInstanceOf(SqlJsProjectGroupRepository)
     expect(registry.externalTransactionRef).toBeInstanceOf(
       SqlJsExternalTransactionRefRepository,
     )

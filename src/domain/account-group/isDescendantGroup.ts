@@ -1,4 +1,8 @@
-import type { AccountGroup } from './AccountGroup'
+/** 循環参照検証に必要な最小限の構造。勘定科目・取引先・プロジェクトの3種類のグループで共用する */
+export interface GroupNode {
+  id: number
+  parentGroupId: number | null
+}
 
 /**
  * 循環参照検証の純粋関数(docs/domain/accounts.md 3.3節「循環参照の防止はRepository層で
@@ -8,7 +12,7 @@ import type { AccountGroup } from './AccountGroup'
  * DB非依存。groupsは呼び出し側(インフラ層のRepository実装)が事前に全件取得して渡す。
  */
 export function isDescendantGroup(
-  groups: readonly AccountGroup[],
+  groups: readonly GroupNode[],
   groupId: number,
   candidateParentId: number,
 ): boolean {

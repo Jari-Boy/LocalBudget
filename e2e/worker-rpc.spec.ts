@@ -22,6 +22,9 @@ test.describe('Web Worker + RPC層', () => {
       const { ADVANCE_ASSET_ACCOUNT_NAME, ADVANCE_LIABILITY_ACCOUNT_NAME } = await import(
         '/src/infrastructure/db/seedAdvanceAccounts.ts'
       )
+      const { INITIAL_BALANCE_ACCOUNT_NAME } = await import(
+        '/src/infrastructure/db/seedInitialBalanceAccount.ts'
+      )
       const { SETTLEMENT_ADJUSTMENT_GAIN_ACCOUNT_NAME, SETTLEMENT_ADJUSTMENT_LOSS_ACCOUNT_NAME } = await import(
         '/src/infrastructure/db/seedSettlementAdjustmentAccounts.ts'
       )
@@ -35,6 +38,8 @@ test.describe('Web Worker + RPC層', () => {
           ...DEFAULT_EXPENSE_ACCOUNT_NAMES,
           ADVANCE_ASSET_ACCOUNT_NAME,
           ADVANCE_LIABILITY_ACCOUNT_NAME,
+          // 初期仕訳の相手科目となる単一のシステム管理科目(seedInitialBalanceAccount、計画Issue #143)
+          INITIAL_BALANCE_ACCOUNT_NAME,
           SETTLEMENT_ADJUSTMENT_GAIN_ACCOUNT_NAME,
           SETTLEMENT_ADJUSTMENT_LOSS_ACCOUNT_NAME,
         ].sort(),
