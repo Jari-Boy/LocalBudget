@@ -53,7 +53,7 @@ beforeEach(async () => {
   memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '自分' }).id
   bank = accounts.create({ category: 'asset', name: '普通預金', isReconcilable: true })
   food = accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
-  accounts.create({ category: 'asset', name: '立替金', isReconcilable: false })
+  accounts.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
   onEditMappings = vi.fn()
 })
 
@@ -191,6 +191,21 @@ describe('StatementImportScreen', () => {
     pick(bulk, '一括のプロジェクト', '沖縄旅行')
     expect(bulk.getByText('2件に設定しました')).toBeInTheDocument()
     expect(rowOf(/スーパー/).getByRole('button', { name: new RegExp(`^プロジェクト: ${trip.name}`) })).toBeInTheDocument()
+  })
+
+  it('精算バッチは立替金・未払金の行だけに出て、利用者が作った資産(有価証券など)の行には出ない', async () => {
+    makeMapping()
+    accounts.create({ category: 'asset', name: '有価証券', isReconcilable: false })
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+2026/10/06,ランチ,-800,96200
+`)
+
+    pick(rowOf(/スーパー/), '相手科目', '有価証券')
+    pick(rowOf(/ランチ/), '相手科目', '立替金')
+
+    expect(rowOf(/スーパー/).queryByLabelText('スーパーの精算バッチ')).not.toBeInTheDocument()
+    expect(rowOf(/ランチ/).getByLabelText('ランチの精算バッチ')).toBeInTheDocument()
   })
 
   it('確定すると仕訳が作られ、同じ画面で続けて次のCSVを取り込める', async () => {

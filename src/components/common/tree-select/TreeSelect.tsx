@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import {
   buildTreeSelectRows,
   GROUP_VALUE_PREFIX,
@@ -72,6 +73,8 @@ export function TreeSelect({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const popupRef = useRef<HTMLDivElement>(null)
+  const [popupStyle, setPopupStyle] = useState<CSSProperties>({ position: 'fixed' })
   const popupId = useId()
 
   const rows = useMemo(
@@ -96,11 +99,39 @@ export function TreeSelect({
     return value
   }, [categories, value, placeholder])
 
+  // ポップアップは画面全体に固定して描画する。表のようにoverflowで切れる親の中でも見切れないようにするため。
+  // ボタンの直下に出し、下に十分な余白が無く上の方が広ければ上に出す。スクロール・リサイズに追従する。
+  useLayoutEffect(() => {
+    if (!isOpen) return
+    const place = () => {
+      const trigger = triggerRef.current?.getBoundingClientRect()
+      if (!trigger) return
+      const width = Math.min(300, window.innerWidth * 0.8)
+      const left = Math.max(8, Math.min(trigger.left, window.innerWidth - width - 8))
+      const below = window.innerHeight - trigger.bottom - 12
+      const above = trigger.top - 12
+      const openUp = below < 280 && above > below
+      setPopupStyle(
+        openUp
+          ? { position: 'fixed', left, bottom: window.innerHeight - trigger.top + 4, maxHeight: above }
+          : { position: 'fixed', left, top: trigger.bottom + 4, maxHeight: Math.max(below, 160) },
+      )
+    }
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [isOpen])
+
   useEffect(() => {
     if (!isOpen) return
     searchRef.current?.focus()
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setIsOpen(false)
+      const target = event.target as Node
+      if (!rootRef.current?.contains(target) && !popupRef.current?.contains(target)) setIsOpen(false)
     }
     document.addEventListener('pointerdown', onPointerDown)
     return () => document.removeEventListener('pointerdown', onPointerDown)
@@ -161,8 +192,11 @@ export function TreeSelect({
           ▾
         </span>
       </button>
-      {isOpen && (
+      {isOpen &&
+        createPortal(
         <div
+          ref={popupRef}
+          style={popupStyle}
           id={popupId}
           role="dialog"
           aria-label={label}
@@ -253,8 +287,9 @@ export function TreeSelect({
               </button>
             )}
           </div>
-        </div>
-      )}
+        </div>,
+        document.body,
+        )}
     </div>
   )
 }

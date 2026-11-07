@@ -31,10 +31,12 @@ function account(id: number, overrides: Partial<Account>): Account {
 
 const FOOD = account(1, { category: 'expense', name: '食費' })
 const SALARY = account(2, { category: 'revenue', name: '給与' })
-const ADVANCE = account(3, { category: 'asset', name: '立替金', isReconcilable: false })
-const CASH = account(4, { category: 'asset', name: '財布', isReconcilable: false, householdMemberId: 9 })
+const ADVANCE = account(3, { category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
+/** 利用者が作った、照合しない資産(有価証券など)。精算バッチは付けられない */
+const SECURITIES = account(6, { category: 'asset', name: '有価証券', isReconcilable: false })
+const CASH = account(4, { category: 'asset', name: '財布', isReconcilable: false, householdMemberId: 9, isSystemManaged: true })
 const BANK = account(5, { category: 'asset', name: '普通預金', isReconcilable: true })
-const ACCOUNTS = [FOOD, SALARY, ADVANCE, CASH, BANK]
+const ACCOUNTS = [FOOD, SALARY, ADVANCE, CASH, BANK, SECURITIES]
 
 const record = (overrides: Partial<{ isExactDuplicate: boolean; approximateCandidates: unknown[] }> = {}) =>
   ({ isExactDuplicate: false, approximateCandidates: [], ...overrides }) as never
@@ -91,6 +93,15 @@ describe('applyBulkSetting', () => {
     expect(result.states[0].settlementBatchId).toBeNull()
     expect(result.states[1].settlementBatchId).toBe(3)
     expect(result).toMatchObject({ applied: 1, skipped: 1 })
+  })
+
+  it('精算バッチは、利用者が作った照合しない資産(有価証券など)の行には設定しない', () => {
+    const states = [state({ counterAccountId: SECURITIES.id }), state(), state()]
+
+    const result = applyBulkSetting({ states, records: rows, selected: new Set([0]), accounts: ACCOUNTS, change: { field: 'settlementBatch', value: 3 } })
+
+    expect(result.states[0].settlementBatchId).toBeNull()
+    expect(result).toMatchObject({ applied: 0, skipped: 1 })
   })
 
   it('世帯メンバーは、科目に既定の世帯メンバーがある行(変更できない行)には設定しない', () => {

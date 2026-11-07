@@ -186,6 +186,23 @@ describe('TreeSelect', () => {
     expect(search).toHaveFocus()
   })
 
+  it('ポップアップは、overflowで切れる親の枠の中ではなく画面全体に固定して描画する(表の中でも見切れない、計画Issue #151)', () => {
+    const { container } = renderSelect()
+    fireEvent.click(trigger())
+
+    expect(container.contains(popup())).toBe(false)
+    expect(popup()).toHaveStyle({ position: 'fixed' })
+  })
+
+  it('外側のクリックで閉じる動きは、画面に固定したポップアップの中のクリックでは起きない', () => {
+    renderSelect()
+    fireEvent.click(trigger())
+
+    fireEvent.pointerDown(within(popup()).getByRole('searchbox'))
+
+    expect(popup()).toBeInTheDocument()
+  })
+
   it('onCreateを渡すと一覧の末尾に新規追加のボタンが出て、押すと閉じてonCreateが呼ばれる(計画Issue #151)', () => {
     const onCreate = vi.fn()
     renderSelect({ onCreate, createLabel: '科目を新規追加' })

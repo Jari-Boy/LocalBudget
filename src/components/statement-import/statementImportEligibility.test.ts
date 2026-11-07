@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isStatementImportCounterAccountEligible,
   isStatementImportEligibleAccount,
+  isStatementImportSettlementBatchAccount,
 } from './statementImportEligibility'
 
 function account(overrides: Partial<Parameters<typeof isStatementImportEligibleAccount>[0]> = {}) {
@@ -42,12 +43,38 @@ describe('isStatementImportEligibleAccount', () => {
   })
 })
 
+const counter = (overrides: Partial<Parameters<typeof isStatementImportCounterAccountEligible>[0]> = {}) => ({
+  category: 'expense' as const,
+  isReconcilable: null,
+  isSystemManaged: false,
+  ...overrides,
+})
+
 describe('isStatementImportCounterAccountEligible', () => {
   it('is_reconcilable=true科目(銀行口座等)も相手科目の候補になる(口座間振替、external_importはis_reconcilable制限のホワイトリストに含まれる)', () => {
-    expect(isStatementImportCounterAccountEligible({ isSystemManaged: false })).toBe(true)
+    expect(isStatementImportCounterAccountEligible(counter({ category: 'asset', isReconcilable: true }))).toBe(true)
   })
 
-  it('システム管理科目は相手科目の候補にならない', () => {
-    expect(isStatementImportCounterAccountEligible({ isSystemManaged: true })).toBe(false)
+  it('システム管理科目のうち、割勘の一時勘定である立替金(資産)・未払金(負債)は相手科目の候補になる(計画Issue #151)', () => {
+    expect(isStatementImportCounterAccountEligible(counter({ category: 'asset', isReconcilable: false, isSystemManaged: true }))).toBe(true)
+    expect(isStatementImportCounterAccountEligible(counter({ category: 'liability', isReconcilable: false, isSystemManaged: true }))).toBe(true)
+  })
+
+  it('それ以外のシステム管理科目(初期残高・残高調整等)は相手科目の候補にならない', () => {
+    expect(isStatementImportCounterAccountEligible(counter({ category: 'equity', isSystemManaged: true }))).toBe(false)
+    expect(isStatementImportCounterAccountEligible(counter({ category: 'expense', isSystemManaged: true }))).toBe(false)
+  })
+})
+
+describe('isStatementImportSettlementBatchAccount', () => {
+  it('精算バッチを付けられるのは、システム管理の立替金(資産)・未払金(負債)だけ', () => {
+    expect(isStatementImportSettlementBatchAccount(counter({ category: 'asset', isReconcilable: false, isSystemManaged: true }))).toBe(true)
+    expect(isStatementImportSettlementBatchAccount(counter({ category: 'liability', isReconcilable: false, isSystemManaged: true }))).toBe(true)
+  })
+
+  it('利用者が作った資産・負債科目(有価証券など、照合しない科目を含む)には付けられない', () => {
+    expect(isStatementImportSettlementBatchAccount(counter({ category: 'asset', isReconcilable: false }))).toBe(false)
+    expect(isStatementImportSettlementBatchAccount(counter({ category: 'liability', isReconcilable: false }))).toBe(false)
+    expect(isStatementImportSettlementBatchAccount(counter({ category: 'asset', isReconcilable: true }))).toBe(false)
   })
 })

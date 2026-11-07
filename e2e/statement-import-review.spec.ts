@@ -185,6 +185,18 @@ test.describe('明細取込画面', () => {
     await expect(page.getByRole('row', { name: /スーパー/ })).toHaveCount(0)
   })
 
+  test('相手科目の選択ツリーは、表の枠で見切れず、画面の中に全体が表示される', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
+    await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING)
+
+    await startImport(page, '普通預金', '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n')
+    await rowOf(page, /スーパー/).getByRole('button', { name: /^相手科目/ }).click()
+
+    // 一覧が1行だけでも、ポップアップは表の枠(overflow)の外に出て、全体が画面内に収まる
+    await expect(page.getByRole('dialog', { name: '相手科目' })).toBeInViewport({ ratio: 1 })
+  })
+
   test('列構成がどの候補定義とも一致しないCSVでは、エラーメッセージが表示され一覧は出ない', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()

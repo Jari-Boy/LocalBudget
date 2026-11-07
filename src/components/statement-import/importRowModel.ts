@@ -1,8 +1,8 @@
 import type { Account } from '../../domain/account/Account'
-import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import { normalizeDescriptionForMatching } from '../../domain/statement-import/estimateCounterparty'
 import type { StatementImportReviewRecord } from '../../domain/statement-import/buildStatementImportReview'
 import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFormLine'
+import { isStatementImportSettlementBatchAccount } from './statementImportEligibility'
 
 /**
  * 明細取込画面の1行ごとの入力状態と、その操作(計画Issue #151、docs/domain/statement-import.md 1.5)。
@@ -87,7 +87,7 @@ export function resolveEligibleCounterpartyId(
 
 export function isTaggableAccountId(accountId: number | null, accounts: readonly Account[]): boolean {
   const account = findAccount(accounts, accountId)
-  return account !== undefined && isSettlementBatchTaggableAccount(account)
+  return account !== undefined && isStatementImportSettlementBatchAccount(account)
 }
 
 /** 科目に既定の世帯メンバーがあれば、明細側では変えられない(docs/domain/household-members.md 1.2)。 */

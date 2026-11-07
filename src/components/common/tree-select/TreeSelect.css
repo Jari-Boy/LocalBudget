@@ -39,10 +39,9 @@
 }
 
 .tree-select__popup {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 11;
+  /* 位置(position: fixed、top・left)はTreeSelect.tsxがボタンの位置から決める */
+  overflow-y: auto;
+  z-index: 30;
   width: 300px;
   max-width: 80vw;
   box-sizing: border-box;
