@@ -3,7 +3,9 @@
  * sql.js(SQLite WASM)をNode上で実際に動かし、docs/domain/statement-import.md 2章・
  * docs/schema/statement_import.sql に定義されたマッピング定義(import_mapping_definitions)の
  * 作成・参照・更新・削除、amount_modeに応じた列指定の整合性を強制するDDL側CHECK制約との連携、
- * accountIdに紐づく専用定義+汎用定義(account_id IS NULL)をあわせて返すfindAvailableForAccountを検証する。
+ * 定義と科目の多対多の紐づけ(import_mapping_definition_accounts、accountIds)、紐づいた科目の定義を先頭に
+ * 並べつつ全定義を返すfindAvailableForAccount、紐づけを追加するlinkAccount、科目・定義の削除時の
+ * 紐づけの連鎖削除を検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -50,7 +52,7 @@ describe('create / findById', () => {
     expect(found?.amountColumn).toBe('2')
     expect(found?.debitColumn).toBeNull()
     expect(found?.creditColumn).toBeNull()
-    expect(found?.accountId).toBeNull()
+    expect(found?.accountIds).toEqual([])
     expect(found?.encoding).toBe('utf-8')
     expect(found?.delimiter).toBe(',')
     expect(found?.headerRowCount).toBe(1)
@@ -58,7 +60,7 @@ describe('create / findById', () => {
 
   it('debit_credit_split形式の定義を作成しidで参照できる', () => {
     const created = repository.create({
-      accountId: bankAccountId,
+      accountIds: [bankAccountId],
       formatGroupId: 'rakuten-card',
       label: '楽天カード(確定明細)',
       isSettled: true,
@@ -75,7 +77,7 @@ describe('create / findById', () => {
 
     const found = repository.findById(created.id)
 
-    expect(found?.accountId).toBe(bankAccountId)
+    expect(found?.accountIds).toEqual([bankAccountId])
     expect(found?.amountMode).toBe('debit_credit_split')
     expect(found?.debitColumn).toBe('出金額')
     expect(found?.creditColumn).toBe('入金額')
@@ -135,7 +137,7 @@ describe('findAll', () => {
 })
 
 describe('update', () => {
-  it('labelとaccountIdを更新できる', () => {
+  it('labelとaccountIdsを更新できる', () => {
     const created = repository.create({
       formatGroupId: 'my-bank',
       label: '仮ラベル',
@@ -148,11 +150,11 @@ describe('update', () => {
 
     const updated = repository.update(created.id, {
       label: '確定ラベル',
-      accountId: bankAccountId,
+      accountIds: [bankAccountId],
     })
 
     expect(updated.label).toBe('確定ラベル')
-    expect(updated.accountId).toBe(bankAccountId)
+    expect(updated.accountIds).toEqual([bankAccountId])
     expect(updated.formatGroupId).toBe('my-bank')
   })
 
@@ -179,49 +181,104 @@ describe('delete', () => {
   })
 })
 
-describe('findAvailableForAccount', () => {
-  it('accountIdに紐づく専用定義と、account_idがNULLの汎用定義の両方を返す', () => {
-    const otherAccounts = new SqlJsAccountRepository(db)
-    const otherAccountId = otherAccounts.create({
-      category: 'liability',
-      name: 'カード未払金',
-      isReconcilable: false,
-    }).id
+const SAMPLE = {
+  formatGroupId: 'my-bank',
+  dateColumn: '0',
+  dateFormat: 'YYYY/MM/DD',
+  descriptionColumn: '1',
+  amountMode: 'single_signed' as const,
+  amountColumn: '2',
+}
 
-    const genericDefinition = repository.create({
-      formatGroupId: 'generic-bank',
-      label: '汎用定義',
-      dateColumn: '0',
-      dateFormat: 'YYYY/MM/DD',
-      descriptionColumn: '1',
-      amountMode: 'single_signed',
-      amountColumn: '2',
-    })
-    const specificDefinition = repository.create({
-      accountId: bankAccountId,
-      formatGroupId: 'my-bank',
-      label: '専用定義',
-      dateColumn: '0',
-      dateFormat: 'YYYY/MM/DD',
-      descriptionColumn: '1',
-      amountMode: 'single_signed',
-      amountColumn: '2',
-    })
-    repository.create({
-      accountId: otherAccountId,
-      formatGroupId: 'other-bank',
-      label: '他の科目専用の定義',
-      dateColumn: '0',
-      dateFormat: 'YYYY/MM/DD',
-      descriptionColumn: '1',
-      amountMode: 'single_signed',
-      amountColumn: '2',
-    })
+describe('accountIds(対応する科目の複数指定)', () => {
+  it('1つの定義に複数の科目を紐づけて保存・参照でき、科目ID順に返る', () => {
+    const accounts = new SqlJsAccountRepository(db)
+    const cardId = accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false }).id
+
+    const created = repository.create({ ...SAMPLE, label: '共有定義', accountIds: [cardId, bankAccountId] })
+
+    expect(repository.findById(created.id)?.accountIds).toEqual([bankAccountId, cardId].sort((a, b) => a - b))
+  })
+
+  it('updateでaccountIdsを差し替えると、外した科目との紐づけが消える', () => {
+    const accounts = new SqlJsAccountRepository(db)
+    const cardId = accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false }).id
+    const created = repository.create({ ...SAMPLE, label: '共有定義', accountIds: [bankAccountId, cardId] })
+
+    const updated = repository.update(created.id, { accountIds: [cardId] })
+
+    expect(updated.accountIds).toEqual([cardId])
+  })
+
+  it('updateでaccountIdsを指定しなければ紐づけは変わらない', () => {
+    const created = repository.create({ ...SAMPLE, label: '定義', accountIds: [bankAccountId] })
+
+    const updated = repository.update(created.id, { label: '改名' })
+
+    expect(updated.accountIds).toEqual([bankAccountId])
+  })
+
+  it('科目を物理削除すると、その科目との紐づけだけが消え定義は残る', () => {
+    const accounts = new SqlJsAccountRepository(db)
+    const cardId = accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false }).id
+    const created = repository.create({ ...SAMPLE, label: '共有定義', accountIds: [bankAccountId, cardId] })
+
+    accounts.delete(bankAccountId)
+
+    expect(repository.findById(created.id)?.accountIds).toEqual([cardId])
+  })
+
+  it('定義を削除すると紐づけも消える', () => {
+    const created = repository.create({ ...SAMPLE, label: '定義', accountIds: [bankAccountId] })
+
+    repository.delete(created.id)
+
+    const [rows] = db.exec('SELECT COUNT(*) FROM import_mapping_definition_accounts')
+    expect(rows.values[0][0]).toBe(0)
+  })
+})
+
+describe('linkAccount', () => {
+  it('定義に科目との紐づけを追加する', () => {
+    const created = repository.create({ ...SAMPLE, label: '定義' })
+
+    repository.linkAccount(created.id, bankAccountId)
+
+    expect(repository.findById(created.id)?.accountIds).toEqual([bankAccountId])
+  })
+
+  it('同じ紐づけを繰り返し追加しても重複せず、例外にもならない', () => {
+    const created = repository.create({ ...SAMPLE, label: '定義' })
+
+    repository.linkAccount(created.id, bankAccountId)
+    repository.linkAccount(created.id, bankAccountId)
+
+    expect(repository.findById(created.id)?.accountIds).toEqual([bankAccountId])
+  })
+})
+
+describe('findAvailableForAccount', () => {
+  it('紐づけは制限ではなく優先順位であり、全定義を返す(紐づいた定義が先頭、残りはid順)', () => {
+    const accounts = new SqlJsAccountRepository(db)
+    const otherAccountId = accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false }).id
+
+    const unlinked = repository.create({ ...SAMPLE, label: '紐づけなし' })
+    const linkedToOther = repository.create({ ...SAMPLE, label: '他の科目に紐づく', accountIds: [otherAccountId] })
+    const linkedToBank = repository.create({ ...SAMPLE, label: 'この科目に紐づく', accountIds: [bankAccountId] })
 
     const available = repository.findAvailableForAccount(bankAccountId)
 
-    expect(available.map((d) => d.id).sort()).toEqual(
-      [genericDefinition.id, specificDefinition.id].sort(),
-    )
+    expect(available.map((d) => d.id)).toEqual([linkedToBank.id, unlinked.id, linkedToOther.id])
+  })
+
+  it('複数の科目に紐づく定義は、そのどの科目の取込でも先頭になる', () => {
+    const accounts = new SqlJsAccountRepository(db)
+    const cardId = accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false }).id
+    const first = repository.create({ ...SAMPLE, label: '先に作った無関係な定義' })
+    const shared = repository.create({ ...SAMPLE, label: '共有定義', accountIds: [bankAccountId, cardId] })
+
+    expect(repository.findAvailableForAccount(bankAccountId)[0].id).toBe(shared.id)
+    expect(repository.findAvailableForAccount(cardId)[0].id).toBe(shared.id)
+    expect(repository.findAvailableForAccount(cardId).map((d) => d.id)).toContain(first.id)
   })
 })

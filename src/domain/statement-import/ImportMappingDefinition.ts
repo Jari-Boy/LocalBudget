@@ -2,7 +2,8 @@ export type AmountMode = 'single_signed' | 'debit_credit_split'
 
 export interface ImportMappingDefinition {
   id: number
-  accountId: number | null
+  /** 対応する科目のID(科目ID昇順)。制限ではなく取込時の候補の優先順位に使う。未紐づけなら空配列 */
+  accountIds: number[]
   formatGroupId: string
   isSettled: boolean | null
   label: string
@@ -23,7 +24,7 @@ export interface ImportMappingDefinition {
 }
 
 export interface CreateImportMappingDefinitionInput {
-  accountId?: number | null
+  accountIds?: number[]
   formatGroupId: string
   isSettled?: boolean | null
   label: string
@@ -42,7 +43,7 @@ export interface CreateImportMappingDefinitionInput {
 }
 
 export interface UpdateImportMappingDefinitionInput {
-  accountId?: number | null
+  accountIds?: number[]
   formatGroupId?: string
   isSettled?: boolean | null
   label?: string

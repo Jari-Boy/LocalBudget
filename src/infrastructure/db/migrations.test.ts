@@ -49,6 +49,7 @@ describe('runMigrations', () => {
         'recurring_transaction_rules',
         'external_transaction_refs',
         'import_mapping_definitions',
+        'import_mapping_definition_accounts',
       ]),
     )
   })

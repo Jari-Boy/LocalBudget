@@ -13,7 +13,7 @@ import type { ExistingTransactionSummary } from './duplicateDetection'
 function definition(overrides: Partial<ImportMappingDefinition> = {}): ImportMappingDefinition {
   return {
     id: 1,
-    accountId: 10,
+    accountIds: [10],
     formatGroupId: 'test-bank',
     isSettled: null,
     label: 'テスト銀行',

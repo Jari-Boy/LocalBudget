@@ -13,7 +13,7 @@ import { resolveMappingDefinitionCandidates } from './resolveMappingDefinitionCa
 function definition(overrides: Partial<ImportMappingDefinition> = {}): ImportMappingDefinition {
   return {
     id: 1,
-    accountId: null,
+    accountIds: [],
     formatGroupId: 'test-bank',
     isSettled: null,
     label: 'テスト銀行',

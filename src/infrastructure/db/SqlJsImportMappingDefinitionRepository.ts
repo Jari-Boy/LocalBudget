@@ -22,12 +22,11 @@ export class SqlJsImportMappingDefinitionRepository implements ImportMappingDefi
   create(input: CreateImportMappingDefinitionInput): ImportMappingDefinition {
     this.db.run(
       `INSERT INTO import_mapping_definitions
-         (account_id, format_group_id, is_settled, label, encoding, delimiter, header_row_count,
+         (format_group_id, is_settled, label, encoding, delimiter, header_row_count,
           date_column, date_format, description_column, amount_mode,
           amount_column, debit_column, credit_column, balance_column, external_id_column)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        input.accountId ?? null,
         input.formatGroupId,
         boolToSql(input.isSettled ?? null),
         input.label,
@@ -45,19 +44,21 @@ export class SqlJsImportMappingDefinitionRepository implements ImportMappingDefi
         input.externalIdColumn ?? null,
       ],
     )
-    return this.findById(lastInsertRowId(this.db))!
+    const id = lastInsertRowId(this.db)
+    this.replaceAccountLinks(id, input.accountIds ?? [])
+    return this.findById(id)!
   }
 
   findById(id: number): ImportMappingDefinition | null {
     const [result] = this.db.exec('SELECT * FROM import_mapping_definitions WHERE id = ?', [id])
     if (!result) return null
-    return mapRowToImportMappingDefinition(result.columns, result.values[0])
+    return mapRowToImportMappingDefinition(result.columns, result.values[0], this.accountIdsOf(id))
   }
 
   findAll(): ImportMappingDefinition[] {
     const [result] = this.db.exec('SELECT * FROM import_mapping_definitions ORDER BY id')
     if (!result) return []
-    return result.values.map((values) => mapRowToImportMappingDefinition(result.columns, values))
+    return this.mapRows(result.columns, result.values)
   }
 
   update(id: number, input: UpdateImportMappingDefinitionInput): ImportMappingDefinition {
@@ -68,7 +69,6 @@ export class SqlJsImportMappingDefinitionRepository implements ImportMappingDefi
 
     const next: ImportMappingDefinition = {
       ...current,
-      accountId: input.accountId === undefined ? current.accountId : input.accountId,
       formatGroupId: input.formatGroupId ?? current.formatGroupId,
       isSettled: input.isSettled === undefined ? current.isSettled : input.isSettled,
       label: input.label ?? current.label,
@@ -89,13 +89,12 @@ export class SqlJsImportMappingDefinitionRepository implements ImportMappingDefi
 
     this.db.run(
       `UPDATE import_mapping_definitions
-       SET account_id = ?, format_group_id = ?, is_settled = ?, label = ?, encoding = ?,
+       SET format_group_id = ?, is_settled = ?, label = ?, encoding = ?,
            delimiter = ?, header_row_count = ?, date_column = ?, date_format = ?,
            description_column = ?, amount_mode = ?, amount_column = ?, debit_column = ?,
            credit_column = ?, balance_column = ?, external_id_column = ?
        WHERE id = ?`,
       [
-        next.accountId,
         next.formatGroupId,
         boolToSql(next.isSettled),
         next.label,
@@ -114,6 +113,7 @@ export class SqlJsImportMappingDefinitionRepository implements ImportMappingDefi
         id,
       ],
     )
+    if (input.accountIds !== undefined) this.replaceAccountLinks(id, input.accountIds)
     return this.findById(id)!
   }
 
@@ -123,11 +123,41 @@ export class SqlJsImportMappingDefinitionRepository implements ImportMappingDefi
 
   findAvailableForAccount(accountId: number): ImportMappingDefinition[] {
     const [result] = this.db.exec(
-      'SELECT * FROM import_mapping_definitions WHERE account_id = ? OR account_id IS NULL ORDER BY id',
+      `SELECT d.* FROM import_mapping_definitions d
+       ORDER BY EXISTS (
+         SELECT 1 FROM import_mapping_definition_accounts l
+         WHERE l.definition_id = d.id AND l.account_id = ?
+       ) DESC, d.id`,
       [accountId],
     )
     if (!result) return []
-    return result.values.map((values) => mapRowToImportMappingDefinition(result.columns, values))
+    return this.mapRows(result.columns, result.values)
+  }
+
+  linkAccount(definitionId: number, accountId: number): void {
+    this.db.run(
+      'INSERT OR IGNORE INTO import_mapping_definition_accounts (definition_id, account_id) VALUES (?, ?)',
+      [definitionId, accountId],
+    )
+  }
+
+  private replaceAccountLinks(definitionId: number, accountIds: readonly number[]): void {
+    this.db.run('DELETE FROM import_mapping_definition_accounts WHERE definition_id = ?', [definitionId])
+    for (const accountId of new Set(accountIds)) this.linkAccount(definitionId, accountId)
+  }
+
+  private accountIdsOf(definitionId: number): number[] {
+    const [result] = this.db.exec(
+      'SELECT account_id FROM import_mapping_definition_accounts WHERE definition_id = ? ORDER BY account_id',
+      [definitionId],
+    )
+    return result ? result.values.map((row) => row[0] as number) : []
+  }
+
+  private mapRows(columns: string[], rows: unknown[][]): ImportMappingDefinition[] {
+    return rows.map((values) =>
+      mapRowToImportMappingDefinition(columns, values, this.accountIdsOf(values[columns.indexOf('id')] as number)),
+    )
   }
 }
 
@@ -148,11 +178,12 @@ function lastInsertRowId(db: Database): number {
 function mapRowToImportMappingDefinition(
   columns: string[],
   values: unknown[],
+  accountIds: number[],
 ): ImportMappingDefinition {
   const get = <T,>(name: string): T => values[columns.indexOf(name)] as T
   return {
     id: get<number>('id'),
-    accountId: get<number | null>('account_id'),
+    accountIds,
     formatGroupId: get<string>('format_group_id'),
     isSettled: sqlToBool(get<number | null>('is_settled')),
     label: get<string>('label'),

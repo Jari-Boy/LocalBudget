@@ -9,6 +9,7 @@ import type {
  * amount_mode(single_signed/debit_credit_split)に応じた列指定の整合性はDDL側のCHECK制約
  * (docs/schema/statement_import.sql)で強制されるため、実装(インフラ層)は制約違反時の例外を
  * そのまま呼び出し元に伝播させる(docs/domain/statement-import.md 2章参照)。
+ * 対応する科目(accountIds)は中間テーブルimport_mapping_definition_accountsで多対多に持つ。
  */
 export interface ImportMappingDefinitionRepository {
   create(input: CreateImportMappingDefinitionInput): ImportMappingDefinition
@@ -18,9 +19,12 @@ export interface ImportMappingDefinitionRepository {
   delete(id: number): void
 
   /**
-   * accountIdに紐づく専用定義と、まだどの科目にも紐づいていない汎用定義(account_id IS NULL)を
-   * あわせて返す。取込対象科目を選んだ際の定義選択候補の一覧に使う
-   * (docs/domain/statement-import.md 1.5 手順1・2.3参照)。
+   * 取込先の科目で選べる定義として、全定義を返す。紐づけは制限ではなく優先順位なので、
+   * accountIdに紐づく定義を先頭(id順)に、残りをid順に並べる。紐づく定義がなければ、
+   * 全定義がid順に並ぶ(docs/domain/statement-import.md 1.5 手順1・2.3参照)。
    */
   findAvailableForAccount(accountId: number): ImportMappingDefinition[]
+
+  /** 定義と科目の紐づけを追加する。すでに紐づいていれば何もしない(冪等)。 */
+  linkAccount(definitionId: number, accountId: number): void
 }

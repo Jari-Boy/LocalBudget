@@ -96,7 +96,7 @@ describe('StatementImportUploadScreen', () => {
       isSystemManaged: true,
     })
     importMappingDefinitionRepository.create({
-      accountId: account.id,
+      accountIds: [account.id],
       formatGroupId: 'my-bank',
       label: 'マイ銀行 普通預金',
       dateColumn: '日付',
@@ -142,7 +142,7 @@ describe('StatementImportUploadScreen', () => {
     })
     const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     importMappingDefinitionRepository.create({
-      accountId: account.id,
+      accountIds: [account.id],
       formatGroupId: 'my-bank',
       label: 'マイ銀行 普通預金',
       dateColumn: '日付',
@@ -191,7 +191,7 @@ describe('StatementImportUploadScreen', () => {
       isReconcilable: true,
     })
     importMappingDefinitionRepository.create({
-      accountId: account.id,
+      accountIds: [account.id],
       formatGroupId: 'my-bank',
       label: 'マイ銀行 普通預金',
       dateColumn: '日付',
@@ -217,7 +217,7 @@ describe('StatementImportUploadScreen', () => {
       isReconcilable: true,
     })
     const definition = importMappingDefinitionRepository.create({
-      accountId: account.id,
+      accountIds: [account.id],
       formatGroupId: 'my-bank',
       label: 'マイ銀行 普通預金',
       dateColumn: '日付',
@@ -252,7 +252,7 @@ describe('StatementImportUploadScreen', () => {
       isReconcilable: true,
     })
     importMappingDefinitionRepository.create({
-      accountId: account.id,
+      accountIds: [account.id],
       formatGroupId: 'bank-a',
       label: '銀行A形式',
       dateColumn: '日付',
@@ -262,7 +262,7 @@ describe('StatementImportUploadScreen', () => {
       amountColumn: '金額',
     })
     const definitionB = importMappingDefinitionRepository.create({
-      accountId: account.id,
+      accountIds: [account.id],
       formatGroupId: 'bank-b',
       label: '銀行B形式',
       dateColumn: '日付',
@@ -300,7 +300,7 @@ describe('StatementImportUploadScreen', () => {
       isReconcilable: true,
     })
     importMappingDefinitionRepository.create({
-      accountId: account.id,
+      accountIds: [account.id],
       formatGroupId: 'bank-a',
       label: '銀行A形式',
       dateColumn: '日付',
@@ -310,7 +310,7 @@ describe('StatementImportUploadScreen', () => {
       amountColumn: '金額',
     })
     const definitionB = importMappingDefinitionRepository.create({
-      accountId: account.id,
+      accountIds: [account.id],
       formatGroupId: 'bank-b',
       label: '銀行B形式',
       dateColumn: '日付',
@@ -365,7 +365,7 @@ describe('StatementImportUploadScreen', () => {
       isReconcilable: true,
     })
     importMappingDefinitionRepository.create({
-      accountId: account.id,
+      accountIds: [account.id],
       formatGroupId: 'my-bank',
       label: 'マイ銀行 普通預金',
       dateColumn: '日付',
@@ -412,7 +412,7 @@ describe('StatementImportUploadScreen', () => {
       isReconcilable: true,
     })
     importMappingDefinitionRepository.create({
-      accountId: account.id,
+      accountIds: [account.id],
       formatGroupId: 'my-bank',
       label: 'マイ銀行 普通預金',
       dateColumn: '日付',
