@@ -40,7 +40,11 @@
     "deleteError": "削除に失敗しました。もう一度お試しください。",
     "moveError": "移動に失敗しました。もう一度お試しください。",
     "toggleError": "状態の変更に失敗しました。もう一度お試しください。",
-    "createError": "作成に失敗しました。もう一度お試しください。"
+    "createError": "作成に失敗しました。もう一度お試しください。",
+    "blockSettlementBatches": "精算バッチの相手{{count}}件",
+    "blockEntryAuthors": "仕訳の起票者{{count}}件",
+    "blockAccountOwners": "科目の名義{{count}}件",
+    "blockGeneratedEntries": "生成済みの仕訳{{count}}件"
   },
   "createForm": {
     "title": "科目を登録",
@@ -65,5 +69,13 @@
     "submit": "登録",
     "cancel": "キャンセル",
     "error": "登録に失敗しました。もう一度お試しください。"
+  },
+  "groupedTab": {
+    "editLeaf": "{{leaf}}の編集",
+    "editGroup": "グループの編集",
+    "addLeaf": "{{leaf}}を追加",
+    "addGroup": "グループを追加",
+    "newLeafName": "新しい{{leaf}}",
+    "allLabel": "すべての{{leaf}}"
   }
 }
