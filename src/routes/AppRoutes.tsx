@@ -354,6 +354,7 @@ export function AppRoutes() {
             accountRepository={accountRepository}
             importMappingDefinitionRepository={importMappingDefinitionRepository}
             externalTransactionRefRepository={externalTransactionRefRepository}
+            journalEntryRepository={journalEntryRepository}
             onUploaded={(result) => navigate('/journal/create/import/review', { state: { result } })}
             onBack={() => navigate('/journal')}
           />

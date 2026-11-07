@@ -48,31 +48,44 @@ describe('isCounterpartyEligibleCategory', () => {
 })
 
 describe('isManualEntryEligibleAccount', () => {
-  it('isReconcilable = trueの科目はfalseを返す(マニュアル仕訳では直接記帳できないため選択肢から除外する)', () => {
-    expect(isManualEntryEligibleAccount({ isReconcilable: true, isSystemManaged: false })).toBe(false)
+  /** 実際の科目と同じ形のオブジェクト(判定に使うのはisActiveのみ)。省略時は有効・通常科目 */
+  const account = (overrides: { isReconcilable?: boolean | null; isSystemManaged?: boolean; isActive?: boolean }) => ({
+    isReconcilable: null,
+    isSystemManaged: false,
+    ...overrides,
+  })
+
+  it('isReconcilable = trueの科目もtrueを返す(手入力で全科目を選べる、計画Issue #145)', () => {
+    expect(isManualEntryEligibleAccount(account({ isReconcilable: true, isSystemManaged: false }))).toBe(true)
   })
 
   it('isReconcilable = falseの科目はtrueを返す', () => {
-    expect(isManualEntryEligibleAccount({ isReconcilable: false, isSystemManaged: false })).toBe(true)
+    expect(isManualEntryEligibleAccount(account({ isReconcilable: false, isSystemManaged: false }))).toBe(true)
   })
 
   it('isReconcilable = null(PL科目・純資産科目等)の科目はtrueを返す', () => {
-    expect(isManualEntryEligibleAccount({ isReconcilable: null, isSystemManaged: false })).toBe(true)
+    expect(isManualEntryEligibleAccount(account({ isReconcilable: null, isSystemManaged: false }))).toBe(true)
   })
 
-  it('isSystemManaged = trueの科目(初期残高科目等)はfalseを返す(システム内部管理用であり手入力対象外)', () => {
-    expect(isManualEntryEligibleAccount({ isReconcilable: null, isSystemManaged: true })).toBe(false)
+  it('isSystemManaged = trueの科目(初期残高科目等)もtrueを返す(手入力で選べる、計画Issue #145)', () => {
+    expect(isManualEntryEligibleAccount(account({ isReconcilable: null, isSystemManaged: true }))).toBe(true)
   })
 
   it('isActive = falseの科目はfalseを返す(非アクティブ化済み科目は新規仕訳で選択不可、docs/domain/accounts.md 2.3)', () => {
     expect(
-      isManualEntryEligibleAccount({ isReconcilable: null, isSystemManaged: false, isActive: false }),
+      isManualEntryEligibleAccount(account({ isReconcilable: null, isSystemManaged: false, isActive: false })),
+    ).toBe(false)
+  })
+
+  it('isActive = falseならis_reconcilable・システム管理科目でもfalseを返す(除外条件は無効化のみ)', () => {
+    expect(
+      isManualEntryEligibleAccount(account({ isReconcilable: true, isSystemManaged: true, isActive: false })),
     ).toBe(false)
   })
 
   it('isActive = trueの科目はtrueを返す', () => {
     expect(
-      isManualEntryEligibleAccount({ isReconcilable: null, isSystemManaged: false, isActive: true }),
+      isManualEntryEligibleAccount(account({ isReconcilable: null, isSystemManaged: false, isActive: true })),
     ).toBe(true)
   })
 })

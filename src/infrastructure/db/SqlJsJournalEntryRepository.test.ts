@@ -3,8 +3,8 @@
  * sql.js(SQLite WASM)をNode上で実際に動かし、docs/domain/journal.md・docs/schema/journal.sql
  * に定義された仕訳(JournalEntry)・仕訳明細(JournalLine)の作成・参照・更新(行idによる差分更新、
  * 計画Issue #132)・削除(物理削除)、貸借バランス検証(不一致時は書き込まずUnbalancedJournalEntryErrorを投げる)、
- * is_reconcilable資産・負債への直接記帳制限(docs/domain/reconciliation.md 1.2、不一致時は
- * RestrictedAccountPostingErrorを投げる)、FK制約有効化によるDB側エラー時のロールバック保証を検証する。
+ * is_reconcilable資産・負債への記帳がsource_typeによらず許可されること(docs/domain/reconciliation.md 1.2、
+ * 計画Issue #145で直接記帳制限を廃止)、FK制約有効化によるDB側エラー時のロールバック保証を検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -14,7 +14,6 @@ import { runMigrations } from './migrations'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
-import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
 import { SettlementBatchOnNonTemporaryAccountError } from '../../domain/journal/SettlementBatchOnNonTemporaryAccountError'
 
 let db: Database
@@ -264,70 +263,29 @@ describe('貸借バランス検証', () => {
   })
 })
 
-describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.md 1.2)', () => {
-  it('is_reconcilable科目に記帳するmanual仕訳の作成はRestrictedAccountPostingErrorをスローし何も書き込まない', () => {
-    expect(() =>
-      repository.create({
-        householdMemberId: memberId,
-        entryDate: '2026-07-24',
-        sourceType: 'manual',
-        lines: [
-          { accountId: bankAccountId, side: 'debit', amount: 1000 },
-          { accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
-        ],
-      }),
-    ).toThrow(RestrictedAccountPostingError)
+describe('is_reconcilable資産・負債への記帳(計画Issue #145で直接記帳制限を廃止)', () => {
+  it.each([
+    'manual',
+    'recurring_generated',
+    'external_import',
+    'initial_balance',
+    'balance_adjustment',
+  ] as const)('sourceTypeが%sでもis_reconcilable科目への記帳を許可する', (sourceType) => {
+    const created = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-24',
+      sourceType,
+      lines: [
+        { accountId: bankAccountId, side: 'debit', amount: 1000 },
+        { accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
 
-    expect(repository.findAll()).toHaveLength(0)
-    expect(countJournalLines(db)).toBe(0)
+    expect(created.sourceType).toBe(sourceType)
+    expect(countJournalLines(db)).toBe(2)
   })
 
-  it('is_reconcilable科目に記帳するrecurring_generated仕訳もRestrictedAccountPostingErrorをスローする', () => {
-    expect(() =>
-      repository.create({
-        householdMemberId: memberId,
-        entryDate: '2026-07-24',
-        sourceType: 'recurring_generated',
-        lines: [
-          { accountId: bankAccountId, side: 'debit', amount: 1000 },
-          { accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
-        ],
-      }),
-    ).toThrow(RestrictedAccountPostingError)
-  })
-
-  it.each(['external_import', 'initial_balance', 'balance_adjustment'] as const)(
-    'sourceTypeが%sの場合はis_reconcilable科目への記帳を許可する',
-    (sourceType) => {
-      const created = repository.create({
-        householdMemberId: memberId,
-        entryDate: '2026-07-24',
-        sourceType,
-        lines: [
-          { accountId: bankAccountId, side: 'debit', amount: 1000 },
-          { accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
-        ],
-      })
-
-      expect(created.sourceType).toBe(sourceType)
-    },
-  )
-
-  it('non-is_reconcilable科目のみに記帳するmanual仕訳は許可される', () => {
-    expect(() =>
-      repository.create({
-        householdMemberId: memberId,
-        entryDate: '2026-07-24',
-        sourceType: 'manual',
-        lines: [
-          { accountId: cashAccountId, side: 'debit', amount: 1000 },
-          { accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
-        ],
-      }),
-    ).not.toThrow()
-  })
-
-  it('manual仕訳をis_reconcilable科目への記帳に更新するとRestrictedAccountPostingErrorをスローし元の明細を変更しない', () => {
+  it('manual仕訳をis_reconcilable科目への記帳に更新できる', () => {
     const created = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-24',
@@ -338,19 +296,16 @@ describe('is_reconcilable資産・負債への直接記帳制限(reconciliation.
       ],
     })
 
-    expect(() =>
-      repository.update(created.id, {
-        entryDate: '2026-07-24',
-        lines: [
-          { accountId: bankAccountId, side: 'debit', amount: 1000 },
-          { accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
-        ],
-      }),
-    ).toThrow(RestrictedAccountPostingError)
+    const updated = repository.update(created.id, {
+      entryDate: '2026-07-24',
+      lines: [
+        { id: created.lines[0].id, accountId: bankAccountId, side: 'debit', amount: 1000 },
+        { id: created.lines[1].id, accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
 
-    const stillOriginal = repository.findById(created.id)
-    expect(stillOriginal?.lines.map((l) => l.accountId)).toEqual(
-      expect.arrayContaining([cashAccountId, foodExpenseAccountId]),
+    expect(updated.lines.map((l) => l.accountId)).toEqual(
+      expect.arrayContaining([bankAccountId, foodExpenseAccountId]),
     )
   })
 })

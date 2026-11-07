@@ -73,14 +73,14 @@ describe('RecurringTransactionRuleManagementScreen', () => {
     expect(await screen.findByText('登録済みの定期取引ルールがありません')).toBeInTheDocument()
   })
 
-  it('is_reconcilable=trueの科目は借方・貸方の選択肢から除外される', async () => {
+  it('is_reconcilable=trueの科目も借方・貸方の選択肢に表示される(計画Issue #145)', async () => {
     renderScreen()
     fireEvent.click(await screen.findByRole('button', { name: '定期取引ルールを追加' }))
 
     const debitSelect = screen.getByLabelText('借方科目') as HTMLSelectElement
     const optionNames = Array.from(debitSelect.options).map((o) => o.textContent)
     expect(optionNames).toContain('通信費')
-    expect(optionNames).not.toContain('普通預金')
+    expect(optionNames).toContain('普通預金')
   })
 
   it('weeklyのルールを作成すると一覧に「毎週◯曜日」形式で表示される', async () => {

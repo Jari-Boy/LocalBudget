@@ -69,8 +69,8 @@
   後日振込(消込)      : (借) 資産・普通預金  / (貸) 資産・未収金
 ```
 
-> **is_reconcilable資産への記帳経路の制約**
-> 「普通預金」のような`is_reconcilable = true`の資産科目を直接使う仕訳は、`source_type`が`external_import`・`initial_balance`・`balance_adjustment`のいずれかに限られる。この制約は[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)による([1.7 作成経路(source_type)](#17-作成経路source_type)参照)。「給与が振り込まれる」の例はCSV到着時にその場で記帳するケースを表す。CSV到着前に先に記帳したい場合は「給与を先に見込み計上」のように未収金・未払金を経由した暫定計上を行い、CSV到着後にそれを消し込む([settlement.md](./settlement.md)参照)。
+> **is_reconcilable資産への記帳**
+> 「普通預金」のような`is_reconcilable = true`の資産科目も、`source_type`によらず手入力で記帳できる(計画Issue #145で直接記帳制限を廃止、[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限))。手入力とCSVのズレは[reconciliation.md 1.5 残高照合](./reconciliation.md#15-残高照合)の警告で検知する。「給与が振り込まれる」の例はCSV到着時にその場で記帳するケースを表す。CSV到着前に先に記帳したい場合は「給与を先に見込み計上」のように未収金・未払金を経由した暫定計上を行い、CSV到着後にそれを消し込む([settlement.md](./settlement.md)参照)。
 
 ### 1.3 貸借バランスの検証
 
@@ -126,9 +126,9 @@
 | `initial_balance` | 口座/カード開設時の初期残高仕訳([accounts.md 4.3 初期残高の自動仕訳](./accounts.md#43-初期残高の自動仕訳)) |
 | `balance_adjustment` | 残高調整([reconciliation.md 1.6](./reconciliation.md#16-原因不明差異への残高調整)、[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)) |
 
-`source_type`は、[reconciliation.md 1.2 is_reconcilable資産・負債への直接記帳の制限](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)が「この仕訳はis_reconcilable = trueの科目に記帳してよいか」を判定する唯一の根拠になる。
+`source_type`は仕訳の作成経路を表す。以前は[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)が「この仕訳はis_reconcilable = trueの科目に記帳してよいか」を判定する根拠にしていたが、計画Issue #145でその制限を廃止したため、現在は一覧の出どころ表示など、経路を区別する用途に使う。
 
-> **なぜ`external_transaction_refs`の存在ではなく`source_type`で判定するか**
+> **なぜ`external_transaction_refs`の存在ではなく`source_type`で判定したか(旧ルールの経緯)**
 > 以前は「is_reconcilable = trueの科目を使う行に対応する`external_transaction_refs`があるか」を根拠にしていたが、これは「作成経路(この仕訳はどうやって生まれたか)」と「外部データとの突合材料(この科目の残高は外部の何と一致するはずか)」という別々の関心事を1つのテーブルに同居させていた。両者が食い違うケース(初期残高・残高調整の仕訳のように、is_reconcilable = true科目を使う仕訳でも対応する外部CSV行が存在しない場合等)で無理が生じていた。`source_type`は前者(作成経路)だけを担い、`external_transaction_refs`([reconciliation.md 2章](./reconciliation.md#2-突合マスタexternal_transaction_refs)参照)は後者(突合材料)だけを担うことで関心事を分離する。仕訳が複数のis_reconcilable = true科目にまたがる場合(口座間振替等)も、仕訳単位の`source_type`が1回チェックされるだけで済み、行ごとに参照の有無を確認する必要がない。
 
 ### 1.8 関連仕訳グループ(journal_entry_link_groups)

@@ -289,6 +289,50 @@ describe('StatementImportReviewScreen', () => {
     await screen.findByText('帳簿残高と外部残高は一致しています。')
   })
 
+  it('手入力(manual)の仕訳を含む口座でCSVの取引後残高とズレると不一致警告を出す(計画Issue #145)', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    const equityAccount = accountRepository.create({
+      category: 'equity',
+      name: '初期残高',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+    const expenseAccount = accountRepository.create({
+      category: 'expense',
+      name: '食費',
+      isReconcilable: null,
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-01',
+      sourceType: 'initial_balance',
+      lines: [
+        { accountId: account.id, side: 'debit', amount: 100000 },
+        { accountId: equityAccount.id, side: 'credit', amount: 100000 },
+      ],
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-10',
+      sourceType: 'manual',
+      lines: [
+        { accountId: expenseAccount.id, side: 'debit', amount: 500 },
+        { accountId: account.id, side: 'credit', amount: 500 },
+      ],
+    })
+
+    // 手入力の500円を含めると帳簿残高は99,500円。CSVは手入力分を知らないので100,000円を示す
+    const review: StatementImportReviewResult = { records: [], latestExternalBalance: 100000 }
+
+    renderScreen(account, review)
+
+    await screen.findByText(/帳簿残高.*と外部残高.*が一致しません/)
+  })
+
   it('完全一致重複でチェックが入っていない行は帳簿残高の計算から除外される', async () => {
     const account = accountRepository.create({
       category: 'asset',

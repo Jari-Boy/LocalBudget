@@ -9,7 +9,6 @@ import type { Project } from '../../domain/project/Project'
 import { traceExpenseSplittingHistory } from '../../domain/expense-splitting/traceExpenseSplittingHistory'
 import { buildRelatedEntryIdsByEntryId } from '../../domain/journal-link-group/buildRelatedEntryIdsByEntryId'
 import { groupRelatedEntriesByLinkGroup } from '../../domain/journal-link-group/groupRelatedEntriesByLinkGroup'
-import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
 import { SettlementBatchOnNonTemporaryAccountError } from '../../domain/journal/SettlementBatchOnNonTemporaryAccountError'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { JournalEntryLinesTable, type JournalEntryLineRow } from './JournalEntryLinesTable'
@@ -315,9 +314,6 @@ export function JournalEntryDetailScreen({
   function mapErrorToMessage(err: unknown): string {
     if (err instanceof UnbalancedJournalEntryError) {
       return err.message.includes('at least 2 lines') ? t('insufficientLinesError') : t('unbalancedError')
-    }
-    if (err instanceof RestrictedAccountPostingError) {
-      return t('restrictedAccountError')
     }
     if (err instanceof SettlementBatchOnNonTemporaryAccountError) {
       return t('settlementBatchOnNonTemporaryAccountError')

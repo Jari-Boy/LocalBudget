@@ -210,7 +210,7 @@ describe('JournalEntryForm', () => {
     expect(within(creditCard).queryByLabelText('取引先(任意)')).not.toBeInTheDocument()
   })
 
-  it('isReconcilable = trueの科目(普通預金等)はマニュアル仕訳では直接記帳できないため科目選択の選択肢に表示されない', async () => {
+  it('isReconcilable = trueの科目(普通預金等)も手入力の科目選択の選択肢に表示される(計画Issue #145)', async () => {
     accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
     const expense = createAccount({ name: '食費', category: 'expense' })
     void expense
@@ -219,7 +219,7 @@ describe('JournalEntryForm', () => {
     const debitCard = getCards(await findBlock('借方'))[0]
     const select = within(debitCard).getByLabelText('科目') as HTMLSelectElement
     const optionTexts = Array.from(select.options).map((option) => option.textContent)
-    expect(optionTexts).not.toContain('普通預金')
+    expect(optionTexts).toContain('普通預金')
     expect(optionTexts).toContain('食費')
   })
 
@@ -257,7 +257,7 @@ describe('JournalEntryForm', () => {
     )
   })
 
-  it('isSystemManaged = trueの科目(初期残高科目等)はシステム内部管理用のため科目選択の選択肢に表示されない', async () => {
+  it('isSystemManaged = trueの科目(初期残高科目等)も手入力の科目選択の選択肢に表示される(計画Issue #145)', async () => {
     accountRepository.create({
       category: 'equity',
       name: '初期残高(普通預金)',
@@ -271,7 +271,7 @@ describe('JournalEntryForm', () => {
     const debitCard = getCards(await findBlock('借方'))[0]
     const select = within(debitCard).getByLabelText('科目') as HTMLSelectElement
     const optionTexts = Array.from(select.options).map((option) => option.textContent)
-    expect(optionTexts).not.toContain('初期残高(普通預金)')
+    expect(optionTexts).toContain('初期残高(普通預金)')
     expect(optionTexts).toContain('食費')
   })
 
