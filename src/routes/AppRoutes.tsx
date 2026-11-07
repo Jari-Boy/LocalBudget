@@ -30,11 +30,7 @@ import { ExpenseSplittingEntryPickerScreen } from '../components/expense-splitti
 import { ExpenseSplittingForm } from '../components/expense-splitting/ExpenseSplittingForm'
 import { ExpenseSplittingHistoryScreen } from '../components/expense-splitting/ExpenseSplittingHistoryScreen'
 import { SettlementScreen } from '../components/settlement/SettlementScreen'
-import {
-  StatementImportUploadScreen,
-  type StatementImportUploadResult,
-} from '../components/statement-import/StatementImportUploadScreen'
-import { StatementImportReviewScreen } from '../components/statement-import/StatementImportReviewScreen'
+import { StatementImportScreen } from '../components/statement-import/StatementImportScreen'
 import { AppShell } from '../components/layout/AppShell'
 import { AccountMasterTab } from '../components/master/AccountMasterTab'
 import { CounterpartyMasterTab } from '../components/master/CounterpartyMasterTab'
@@ -313,29 +309,23 @@ export function AppRoutes() {
           />
         }
       />
+      <Route path="/journal/create/import/review" element={<Navigate to="/journal/create/import" replace />} />
       <Route
         path="/journal/create/import"
         element={
-          <StatementImportUploadScreen
+          <StatementImportScreen
             accountRepository={accountRepository}
+            accountGroupRepository={accountGroupRepository}
             importMappingDefinitionRepository={importMappingDefinitionRepository}
             externalTransactionRefRepository={externalTransactionRefRepository}
             journalEntryRepository={journalEntryRepository}
-            onUploaded={(result) => navigate('/journal/create/import/review', { state: { result } })}
-            onBack={() => navigate('/journal/entries')}
-          />
-        }
-      />
-      <Route
-        path="/journal/create/import/review"
-        element={
-          <StatementImportReviewRoute
-            accountRepository={accountRepository}
-            journalEntryRepository={journalEntryRepository}
             counterpartyRepository={counterpartyRepository}
+            counterpartyGroupRepository={counterpartyGroupRepository}
             projectRepository={projectRepository}
+            projectGroupRepository={projectGroupRepository}
             householdMemberRepository={householdMemberRepository}
             settlementBatchRepository={settlementBatchRepository}
+            onEditMappings={() => navigate('/master/mappings')}
           />
         }
       />
@@ -531,52 +521,6 @@ function JournalEntryDetailRoute({
       counterpartyRepository={counterpartyRepository}
       onSelectRelatedEntry={(entry) => navigate(`/journal/entries/${entry.id}`)}
       onBack={onBack}
-    />
-  )
-}
-
-interface StatementImportReviewRouteProps {
-  accountRepository: Comlink.Remote<AccountRepository>
-  journalEntryRepository: Comlink.Remote<JournalEntryRepository>
-  counterpartyRepository: Comlink.Remote<CounterpartyRepository>
-  projectRepository: Comlink.Remote<ProjectRepository>
-  householdMemberRepository: Comlink.Remote<HouseholdMemberRepository>
-  settlementBatchRepository: Comlink.Remote<SettlementBatchRepository>
-}
-
-/**
- * 明細取込レビュールート(/journal/create/import/review)。アップロード画面から
- * `navigate()`の`state`経由で渡された取込結果を使う。リロード・直接URL入力等で
- * stateが失われた場合は、アップロード画面(ウィザード入口相当)へフォールバックする
- * (旧実装のuploadResultガード条件を踏襲、計画Issue #118の制約)。
- */
-function StatementImportReviewRoute({
-  accountRepository,
-  journalEntryRepository,
-  counterpartyRepository,
-  projectRepository,
-  householdMemberRepository,
-  settlementBatchRepository,
-}: StatementImportReviewRouteProps) {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const state = location.state as { result?: StatementImportUploadResult } | null
-
-  if (!state?.result) {
-    return <Navigate to="/journal/create/import" replace />
-  }
-
-  return (
-    <StatementImportReviewScreen
-      targetAccount={state.result.targetAccount}
-      review={state.result.review}
-      accountRepository={accountRepository}
-      journalEntryRepository={journalEntryRepository}
-      counterpartyRepository={counterpartyRepository}
-      projectRepository={projectRepository}
-      householdMemberRepository={householdMemberRepository}
-      settlementBatchRepository={settlementBatchRepository}
-      onBack={() => navigate('/journal/create/import')}
     />
   )
 }

@@ -1,0 +1,294 @@
+/* 明細取込画面(計画Issue #151)。値はdesign/tokens.cssのトークンを使う。 */
+.import-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  text-align: left;
+  color: var(--color-text);
+}
+
+.import-screen__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.import-screen__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.import-screen__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.import-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.import-field__label {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.import-control {
+  font: inherit;
+  font-size: var(--font-size-base);
+  min-height: 36px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.import-control--small {
+  min-height: 30px;
+  font-size: 13px;
+  padding: 0 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.import-btn {
+  font: inherit;
+  font-size: var(--font-size-base);
+  min-height: 36px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.import-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.import-btn--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.import-btn--small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.import-link {
+  font: inherit;
+  font-size: 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.import-summary {
+  margin: 0;
+  font-size: var(--font-size-base);
+  color: var(--color-text-muted);
+}
+
+.import-error {
+  margin: 0;
+  color: var(--color-danger);
+}
+
+.import-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--color-accent-soft);
+  border-radius: var(--radius-lg);
+}
+
+.import-bulk__count {
+  font-weight: 600;
+}
+
+.import-bulk__message {
+  flex: 1 1 100%;
+  font-size: 13px;
+  color: var(--color-accent);
+}
+
+.import-table-wrap {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+}
+
+.import-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.import-table th {
+  padding: 8px 6px;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  text-align: left;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.import-table td {
+  padding: 6px;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.import-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.import-nowrap {
+  white-space: nowrap;
+}
+
+.import-desc {
+  min-width: 110px;
+  font-weight: 500;
+}
+
+.import-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 110px;
+}
+
+.import-note {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.import-row--dup {
+  opacity: 0.75;
+}
+
+.import-dup-note {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.import-status {
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.import-status--new {
+  color: var(--color-accent);
+}
+
+.import-status--duplicate {
+  color: var(--color-text-muted);
+}
+
+.import-status--check {
+  color: #8a4b00;
+}
+
+.import-sub td {
+  border-bottom: 1px solid var(--color-border);
+  padding-top: 0;
+}
+
+.import-sub__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.import-check {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.import-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.import-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(23, 35, 31, 0.4);
+}
+
+.import-dialog {
+  width: 420px;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 20px;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.import-dialog--wide {
+  width: 520px;
+}
+
+.import-dialog__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.import-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.import-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
