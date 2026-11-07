@@ -9,6 +9,8 @@
 - 実装中にハマった点がコードやコミット履歴から読み取れる
 - 既存パターンの記述が実態と乖離している（修正）
 
+> **注記(計画Issue #154)**: 以下の「該当箇所」に挙がる旧マスタ画面(`AccountListScreen`・`AccountGroupManagementScreen`・`AccountRegistrationFlow`・`CounterpartyManagementScreen`・`HouseholdMemberManagementScreen`・`ProjectManagementScreen`・`RecurringTransactionRuleManagementScreen`)とそのテスト・旧E2E(`account-list.spec.ts`・`account-registration.spec.ts`等)は削除済みである。現在の画面は`src/components/master/`のタブ(`AccountMasterTab`・`CounterpartyMasterTab`・`MemberMasterTab`・`ProjectMasterTab`・`RuleMasterTab`)で、E2Eは`e2e/master-screen.spec.ts`。各パターン自体は実装上の教訓として有効だが、ファイルパスは過去のコミットを参照すること。
+
 ## フォーマット
 
 ```
