@@ -257,6 +257,8 @@
 **対策**: 科目の選択可否を判定する既存の関数を別の記帳経路(`source_type`)の画面で再利用する前に、その制約がどの`source_type`を前提にしたものか(`docs/domain/reconciliation.md` 1.2のホワイトリスト等)を確認する。前提となる`source_type`が異なる場合は、関数名を流用元と区別できる形(本件の`isStatementImportCounterAccountEligible`)で新設し、docstringに両者の違い(除外条件がなぜ異なるか)を明記する。実装後は、流用元の関数では除外されていたはずの科目(`is_reconcilable = true`)が新しい画面では正しく選択できることを確認する回帰テストを追加する。
 **該当箇所（例）**: `src/components/statement-import/statementImportEligibility.ts`(`isStatementImportCounterAccountEligible`)、`src/components/journal-entry/journalEntryFormLine.ts`(`isManualEntryEligibleAccount`)、`docs/domain/reconciliation.md` 1.2、`docs/decisions.md`「CSV取込レビュー画面の相手勘定科目候補は、マニュアル起票用のisManualEntryEligibleAccountを流用せず専用のisStatementImportCounterAccountEligibleを新設する」、Issue #76 Review Attempt 1(evaluator FAIL指摘、コミット24e65a2で修正)
 
+**追記(2026-11-07、計画Issue #145)**: 上記の「`is_reconcilable = true`科目を除外する制約」と`reconciliation.md` 1.2のホワイトリストは、計画Issue #145で廃止した(手入力・定期取引ルールでも全科目を選べる。除外するのは無効化した科目だけ)。このため`isManualEntryEligibleAccount`と`isStatementImportCounterAccountEligible`の除外条件の違いは、`is_reconcilable`から「システム管理科目を除くかどうか」に変わっている。ただし教訓(科目の選択可否を判定する既存関数を別の記帳経路の画面へ流用するときは、制約が前提とする経路を確認する)はそのまま有効である。
+
 ## 確定前のプレビュー計算が、まだ永続化されていない今回の入力自身の効果を積み上げから見落とす
 
 **症状**: `StatementImportReviewScreen`の残高照合が、対象科目の永続化済み(過去分)`journal_lines`のみから帳簿残高を計算していた。しかし`docs/domain/reconciliation.md` 1.5は「この新しいCSVの内容を仮に反映したとして」帳簿残高を計算すると明記しており、今回アップロードしたCSVバッチ自身の効果(まだ未確定・未永続化のレビュー中レコード)を含めるべき設計だった。過去分のみで計算した結果、正しく取り込めるCSVでも常に過去残高と外部残高がズレて見え、誤った不一致警告が表示されていた(計画Issue #76 evaluator Attempt 1 FAIL指摘)。この修正の直後、今度は逆に「確定版候補で『これは確定版です』を選んだレコードの置き換え対象(旧仕訳)」を過去分の積み上げから除外し忘れ、旧仕訳+新レコードが二重計上される別の不具合が発覚した(実装中に自己発見)。
