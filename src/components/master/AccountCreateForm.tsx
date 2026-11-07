@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
+import { reconciliationAnswerToIsReconcilable } from '../account-registration/reconciliationQuestion'
 import { registerAccount, type AccountCreator, type JournalEntryCreator } from '../account-registration/registerAccount'
 import { registerRevenueOrExpenseAccount } from '../account-registration/registerRevenueOrExpenseAccount'
 import { resolveDefaultAccountGroupId } from '../account-registration/resolveDefaultAccountGroupId'
@@ -86,7 +87,10 @@ export function AccountCreateForm({
       const account = isBalanceSheet
         ? await registerAccount(accountRepository, journalEntryRepository, {
             category: category as 'asset' | 'liability',
-            isReconcilable: csvExists && hasBalance === 'yes',
+            isReconcilable: reconciliationAnswerToIsReconcilable({
+              hasExternalStatement: csvExists,
+              hasBalanceInStatement: csvExists ? hasBalance === 'yes' : null,
+            }),
             name: name.trim(),
             householdMemberId: memberId,
             accountGroupId,
