@@ -6,26 +6,21 @@ import type { AccountGroupRepository } from '../domain/account-group/AccountGrou
 import type { BudgetRepository } from '../domain/budget/BudgetRepository'
 import type { RecurringTransactionRuleRepository } from '../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { CounterpartyRepository } from '../domain/counterparty/CounterpartyRepository'
+import type { CounterpartyGroupRepository } from '../domain/counterparty-group/CounterpartyGroupRepository'
 import type { JournalEntryRepository } from '../domain/journal/JournalEntryRepository'
 import type { JournalEntryLinkGroupRepository } from '../domain/journal-link-group/JournalEntryLinkGroupRepository'
 import type { JournalEntryDraft } from '../domain/journal/JournalEntryDraft'
 import type { JournalEntry } from '../domain/journal/JournalEntry'
 import type { HouseholdMemberRepository } from '../domain/household-member/HouseholdMemberRepository'
 import type { ProjectRepository } from '../domain/project/ProjectRepository'
+import type { ProjectGroupRepository } from '../domain/project-group/ProjectGroupRepository'
 import type { SettlementBatchRepository } from '../domain/settlement-batch/SettlementBatchRepository'
 import type { ImportMappingDefinitionRepository } from '../domain/statement-import/ImportMappingDefinitionRepository'
 import type { ExternalTransactionRefRepository } from '../domain/reconciliation/ExternalTransactionRefRepository'
 import type { JournalEntryDraftRpcApi } from '../infrastructure/rpc/createRepositoryRegistry'
 import type { RecurringTransactionProposalRpcApi } from '../infrastructure/rpc/createRecurringTransactionProposalApi'
 import { useDbClient } from '../infrastructure/rpc/DbClientProvider'
-import { AccountRegistrationFlow } from '../components/account-registration/AccountRegistrationFlow'
-import { AccountGroupManagementScreen } from '../components/account-group-management/AccountGroupManagementScreen'
-import { AccountListScreen } from '../components/account-list/AccountListScreen'
-import { CounterpartyManagementScreen } from '../components/counterparty-management/CounterpartyManagementScreen'
-import { HouseholdMemberManagementScreen } from '../components/household-member-management/HouseholdMemberManagementScreen'
-import { ProjectManagementScreen } from '../components/project-management/ProjectManagementScreen'
 import { FinancialStatementScreen } from '../components/financial-statement/FinancialStatementScreen'
-import { RecurringTransactionRuleManagementScreen } from '../components/recurring-transaction-management/RecurringTransactionRuleManagementScreen'
 import { RecurringTransactionProposalReviewScreen } from '../components/recurring-transaction-proposal/RecurringTransactionProposalReviewScreen'
 import { JournalEntryDraftListScreen } from '../components/journal-entry/JournalEntryDraftListScreen'
 import { JournalEntryForm } from '../components/journal-entry/JournalEntryForm'
@@ -41,6 +36,11 @@ import {
 } from '../components/statement-import/StatementImportUploadScreen'
 import { StatementImportReviewScreen } from '../components/statement-import/StatementImportReviewScreen'
 import { AppShell } from '../components/layout/AppShell'
+import { AccountMasterTab } from '../components/master/AccountMasterTab'
+import { CounterpartyMasterTab } from '../components/master/CounterpartyMasterTab'
+import { MemberMasterTab } from '../components/master/MemberMasterTab'
+import { ProjectMasterTab } from '../components/master/ProjectMasterTab'
+import { RuleMasterTab } from '../components/master/RuleMasterTab'
 
 /** 仕訳詳細画面(/journal/entries/:id)への遷移元は複数(仕訳一覧・割勘履歴)あるため、
  * 個別の状態で戻り先を管理せずブラウザの履歴機構(navigate(-1))に委ねる。
@@ -128,6 +128,8 @@ export function AppRoutes() {
     projectRepository,
     settlementBatchRepository,
     counterpartyRepository,
+    counterpartyGroupRepository,
+    projectGroupRepository,
     journalEntryDraftRepository,
     importMappingDefinitionRepository,
     externalTransactionRefRepository,
@@ -147,6 +149,9 @@ export function AppRoutes() {
       settlementBatchRepository:
         client.settlementBatch as unknown as Comlink.Remote<SettlementBatchRepository>,
       counterpartyRepository: client.counterparty as unknown as Comlink.Remote<CounterpartyRepository>,
+      counterpartyGroupRepository:
+        client.counterpartyGroup as unknown as Comlink.Remote<CounterpartyGroupRepository>,
+      projectGroupRepository: client.projectGroup as unknown as Comlink.Remote<ProjectGroupRepository>,
       journalEntryDraftRepository:
         client.journalEntryDraft as unknown as Comlink.Remote<JournalEntryDraftRpcApi>,
       importMappingDefinitionRepository:
@@ -171,92 +176,78 @@ export function AppRoutes() {
     <Routes>
       {/* 中継(ハブ)画面とホーム画面は廃止した。旧URLは各領域の入口画面へリダイレクトする */}
       <Route path="/" element={<Navigate to="/journal/entries" replace />} />
-      <Route path="/master" element={<Navigate to="/master/accounts/list" replace />} />
-      <Route path="/master/accounts" element={<Navigate to="/master/accounts/list" replace />} />
+      <Route path="/master" element={<Navigate to="/master/accounts" replace />} />
+      {/* 科目の一覧・追加・グループ、定期取引ルールは、マスタ画面のタブに統合した(計画Issue #154) */}
+      <Route path="/master/accounts/list" element={<Navigate to="/master/accounts" replace />} />
+      <Route path="/master/accounts/new" element={<Navigate to="/master/accounts" replace />} />
+      <Route path="/master/accounts/groups" element={<Navigate to="/master/accounts" replace />} />
+      <Route path="/journal/recurring/rules" element={<Navigate to="/master/recurring" replace />} />
       <Route path="/journal" element={<Navigate to="/journal/entries" replace />} />
       <Route path="/journal/recurring" element={<Navigate to="/journal/recurring/proposals" replace />} />
       <Route path="/journal/splitting" element={<Navigate to="/journal/splitting/new" replace />} />
 
       <Route element={<AppShell pendingProposalCount={pendingProposalCount} />}>
       <Route
-        path="/master/accounts/new"
+        path="/master/accounts"
         element={
-          <AccountRegistrationFlow
+          <AccountMasterTab
             accountRepository={accountRepository}
-            journalEntryRepository={journalEntryRepository}
+            accountGroupRepository={accountGroupRepository}
             householdMemberRepository={householdMemberRepository}
-            onComplete={() => navigate('/master/accounts/list')}
-            onBack={() => navigate('/master/accounts/list')}
-          />
-        }
-      />
-      <Route
-        path="/master/accounts/list"
-        element={
-          <AccountListScreen
-            accountRepository={accountRepository}
             journalEntryRepository={journalEntryRepository}
-            householdMemberRepository={householdMemberRepository}
             budgetRepository={budgetRepository}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
-            onBack={() => navigate('/master/accounts/list')}
-          />
-        }
-      />
-      <Route
-        path="/master/accounts/groups"
-        element={
-          <AccountGroupManagementScreen
-            accountGroupRepository={accountGroupRepository}
-            accountRepository={accountRepository}
-            onBack={() => navigate('/master/accounts/list')}
           />
         }
       />
       <Route
         path="/master/counterparties"
         element={
-          <CounterpartyManagementScreen
+          <CounterpartyMasterTab
             counterpartyRepository={counterpartyRepository}
+            counterpartyGroupRepository={counterpartyGroupRepository}
             accountRepository={accountRepository}
             journalEntryRepository={journalEntryRepository}
-            onBack={() => navigate('/master/accounts/list')}
+            recurringTransactionRuleRepository={recurringTransactionRuleRepository}
+            settlementBatchRepository={settlementBatchRepository}
           />
         }
       />
       <Route
         path="/master/household-members"
         element={
-          <HouseholdMemberManagementScreen
+          <MemberMasterTab
             householdMemberRepository={householdMemberRepository}
             accountRepository={accountRepository}
             journalEntryRepository={journalEntryRepository}
-            onBack={() => navigate('/master/accounts/list')}
+            recurringTransactionRuleRepository={recurringTransactionRuleRepository}
           />
         }
       />
       <Route
         path="/master/projects"
         element={
-          <ProjectManagementScreen
-            projectRepository={projectRepository}
+          <ProjectMasterTab
             accountRepository={accountRepository}
+            projectRepository={projectRepository}
+            projectGroupRepository={projectGroupRepository}
             journalEntryRepository={journalEntryRepository}
-            onBack={() => navigate('/master/accounts/list')}
+            recurringTransactionRuleRepository={recurringTransactionRuleRepository}
           />
         }
       />
-
       <Route
-        path="/journal/recurring/rules"
+        path="/master/recurring"
         element={
-          <RecurringTransactionRuleManagementScreen
+          <RuleMasterTab
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
             accountRepository={accountRepository}
-            projectRepository={projectRepository}
-            householdMemberRepository={householdMemberRepository}
+            accountGroupRepository={accountGroupRepository}
             counterpartyRepository={counterpartyRepository}
-            onBack={() => navigate('/master/accounts/list')}
+            counterpartyGroupRepository={counterpartyGroupRepository}
+            projectRepository={projectRepository}
+            projectGroupRepository={projectGroupRepository}
+            householdMemberRepository={householdMemberRepository}
           />
         }
       />

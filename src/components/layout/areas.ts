@@ -1,8 +1,8 @@
 /**
  * サイドナビの5領域と、領域内のタブ(旧ハブ画面の入口)の定義(計画Issue #150)。
  * 各領域は「入口のパス」と、その領域に属するパスの接頭辞(prefixes)を持つ。
- * 定期取引ルールは画面の配置が/journal/recurring配下だが、ユーザー決定により
- * マスタ領域のタブに置く(提案の確認は仕訳領域のタブ)。
+ * 定期取引のルールはマスタ領域のタブ(/master/recurring)に置き、提案の確認は仕訳領域のタブに置く
+ * (計画Issue #154で、ルールの画面を旧/journal/recurring/rulesからマスタ配下へ移した)。
  */
 export type AreaKey = 'import' | 'journal' | 'split' | 'master' | 'analysis'
 
@@ -43,16 +43,14 @@ export const AREAS: Area[] = [
   },
   {
     key: 'master',
-    to: '/master/accounts/list',
-    prefixes: ['/master', '/journal/recurring/rules'],
+    to: '/master/accounts',
+    prefixes: ['/master'],
     tabs: [
-      { labelKey: 'accountList', to: '/master/accounts/list' },
-      { labelKey: 'accountNew', to: '/master/accounts/new' },
-      { labelKey: 'accountGroups', to: '/master/accounts/groups' },
+      { labelKey: 'accounts', to: '/master/accounts' },
       { labelKey: 'counterparties', to: '/master/counterparties' },
       { labelKey: 'householdMembers', to: '/master/household-members' },
       { labelKey: 'projects', to: '/master/projects' },
-      { labelKey: 'recurringRules', to: '/journal/recurring/rules' },
+      { labelKey: 'recurringRules', to: '/master/recurring' },
     ],
   },
   { key: 'analysis', to: '/reports/financial-statements', prefixes: ['/reports'], tabs: [] },

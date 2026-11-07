@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
+import { SqlJsAccountGroupRepository } from '../../infrastructure/db/SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { registerRevenueOrExpenseAccount } from './registerRevenueOrExpenseAccount'
 
@@ -34,6 +35,18 @@ describe('registerRevenueOrExpenseAccount', () => {
       isReconcilable: null,
       householdMemberId: null,
     })
+  })
+
+  it('所属グループ(accountGroupId)を指定して作成できる(計画Issue #154)', async () => {
+    const group = new SqlJsAccountGroupRepository(db).create({ name: '生活費', category: 'expense' })
+
+    const account = await registerRevenueOrExpenseAccount(accountRepository, {
+      category: 'expense',
+      name: '食費',
+      accountGroupId: group.id,
+    })
+
+    expect(account.accountGroupId).toBe(group.id)
   })
 
   it('費用科目を作成すると is_reconcilable = null で登録される', async () => {

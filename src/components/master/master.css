@@ -1,0 +1,240 @@
+/* マスタ画面(計画Issue #154)の右パネル・フォーム部品。値はdesign/tokens.cssのトークンを使う。 */
+.master-panel {
+  box-sizing: border-box;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  text-align: left;
+  color: var(--color-text);
+}
+
+.master-panel__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.master-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.master-field__label {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.master-field__control {
+  font: inherit;
+  font-size: var(--font-size-base);
+  min-height: 36px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.master-field__control:disabled {
+  background: var(--color-field-subtle);
+  color: var(--color-text-muted);
+}
+
+.master-note {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.master-error {
+  margin: 0;
+  font-size: var(--font-size-base);
+  color: var(--color-danger);
+}
+
+.master-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.master-btn {
+  font: inherit;
+  font-size: var(--font-size-base);
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.master-btn:hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+.master-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.master-btn--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #ffffff;
+}
+
+.master-btn--primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.master-btn--danger {
+  color: var(--color-danger);
+}
+
+.master-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.master-split__main {
+  flex: 3 1 520px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.master-split > .master-panel {
+  flex: 2 1 300px;
+}
+
+.master-split__alert {
+  flex: 1 1 100%;
+  order: -1;
+}
+
+.master-btn--small {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: var(--font-size-xs);
+}
+
+.master-flash {
+  font-size: var(--font-size-base);
+  color: var(--color-accent);
+}
+
+.master-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.master-subsection__title {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+.master-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.master-list__item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.master-list__item > .master-field__control {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.master-list__text {
+  flex: 1 1 120px;
+  min-width: 0;
+  font-size: var(--font-size-base);
+  overflow-wrap: anywhere;
+}
+
+.master-table-wrap {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+}
+
+.master-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-base);
+  text-align: left;
+  color: var(--color-text);
+}
+
+.master-table th {
+  font-weight: 500;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.master-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.master-table__row--selected {
+  background: var(--color-accent-soft);
+}
+
+.master-link {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.master-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.master-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-base);
+}

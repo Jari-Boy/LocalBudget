@@ -24,7 +24,7 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
     await expect(page).toHaveURL(/#\/journal\/entries$/)
 
     await currentLink(page, 'マスタ').click()
-    await expect(page).toHaveURL(/#\/master\/accounts\/list$/)
+    await expect(page).toHaveURL(/#\/master\/accounts$/)
     await expect(currentLink(page, 'マスタ')).toHaveAttribute('aria-current', 'page')
 
     await currentLink(page, '割勘・精算').click()
@@ -32,7 +32,7 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
 
     // ブラウザの戻るボタン(page.goBack())で1階層ずつ正しく戻れる
     await page.goBack()
-    await expect(page).toHaveURL(/#\/master\/accounts\/list$/)
+    await expect(page).toHaveURL(/#\/master\/accounts$/)
     await expect(currentLink(page, 'マスタ')).toHaveAttribute('aria-current', 'page')
 
     await page.goBack()
@@ -40,7 +40,7 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
 
     // ブラウザの進むボタン(page.goForward())で正しく進める
     await page.goForward()
-    await expect(page).toHaveURL(/#\/master\/accounts\/list$/)
+    await expect(page).toHaveURL(/#\/master\/accounts$/)
 
     await page.goForward()
     await expect(currentLink(page, '割勘・精算')).toHaveAttribute('aria-current', 'page')
@@ -57,12 +57,12 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
     await expect(currentLink(page, '割勘する')).toHaveAttribute('aria-current', 'page')
   })
 
-  test('ネストしたルート(/master/accounts/list)でリロードしても同じ画面に留まる(HashRouterによりURLが維持される)', async ({
+  test('ネストしたルート(/master/accounts)でリロードしても同じ画面に留まる(HashRouterによりURLが維持される)', async ({
     page,
   }) => {
     await page.goto('/')
     await currentLink(page, 'マスタ').click()
-    await expect(currentLink(page, '科目一覧')).toHaveAttribute('aria-current', 'page')
+    await expect(currentLink(page, '勘定科目')).toHaveAttribute('aria-current', 'page')
 
     await page.reload()
 
@@ -70,17 +70,24 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
     // 続く操作がexpect(既定5000ms)のため、CI環境の低速なランナーでは既定のままだと不足
     // することがある(計画Issue #136でcounterparty-management.spec.tsの同種の箇所がCIでのみ
     // 失敗したのを踏まえた対策)。
-    await expect(currentLink(page, '科目一覧')).toHaveAttribute('aria-current', 'page', {
+    await expect(currentLink(page, '勘定科目')).toHaveAttribute('aria-current', 'page', {
       timeout: 10000,
     })
-    await expect(page).toHaveURL(/#\/master\/accounts\/list$/)
+    await expect(page).toHaveURL(/#\/master\/accounts$/)
   })
 
   test('廃止した中継画面のURL(/master・/journal等)は各領域の入口画面へリダイレクトされる', async ({
     page,
   }) => {
     await page.goto('/#/master')
-    await expect(page).toHaveURL(/#\/master\/accounts\/list$/)
+    await expect(page).toHaveURL(/#\/master\/accounts$/)
+
+    // 科目の一覧・追加・グループ、定期取引ルールの旧URLは、マスタ画面の該当タブへ(計画Issue #154)
+    await page.goto('/#/master/accounts/list')
+    await expect(page).toHaveURL(/#\/master\/accounts$/)
+
+    await page.goto('/#/journal/recurring/rules')
+    await expect(page).toHaveURL(/#\/master\/recurring$/)
 
     await page.goto('/#/journal/splitting')
     await expect(page).toHaveURL(/#\/journal\/splitting\/new$/)

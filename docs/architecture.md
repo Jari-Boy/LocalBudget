@@ -135,6 +135,8 @@ interface StorageAdapter {
 
 **実装状況の更新（Issue #150、UI刷新の土台）**: 上記Issue #118のホーム画面とハブ画面（`MasterHubScreen`・`JournalHubScreen`・`ExpenseSplittingHubScreen`・`RecurringTransactionHubScreen`・`AccountManagementScreen`）は廃止した。代わりに、常設の左サイドナビ（明細取込・仕訳・割勘・精算・マスタ・分析）と領域上部のタブ帯を持つ`AppShell`（`src/components/layout/`、領域とタブの定義は`areas.ts`）を全ルートの外枠とし、現在の領域はパスの接頭辞で判定する。旧URL（`/`・`/master`・`/journal`・`/journal/recurring`・`/journal/splitting`）は各領域の入口へリダイレクトする。確認待ちの定期取引提案の件数は、画面遷移のたびに取り直してサイドナビの「仕訳」にバッジ表示する。デザイントークンは`src/design/tokens.css`に集約し、フォントはIBM Plex Sans JPを`@fontsource`で同梱してwoff2をPWAのprecache対象に加えた（外部フォント配信は使わない）。共通部品として`src/components/common/`に選択ツリー（`tree-select`）・仕訳の絞り込み（`journal-filter`）・仕訳の結果一覧（`journal-result`）・ツリー表（`tree-table`）・グラフ（`chart`、自作SVG）を追加した（この時点では既存画面から未使用。個別の設計判断は`docs/decisions.md`の計画Issue #150の項を参照）。
 
+**実装状況の更新（Issue #154、マスタ画面の刷新）**: マスタ領域のタブ帯を勘定科目・取引先・世帯メンバー・プロジェクト・定期取引の5つにし（`/master/accounts`・`/master/counterparties`・`/master/household-members`・`/master/projects`・`/master/recurring`）、各タブを`src/components/master/`の画面部品（`AccountMasterTab`・`CounterpartyMasterTab`・`MemberMasterTab`・`ProjectMasterTab`・`RuleMasterTab`）に置き換えた。一覧と右パネルで画面遷移なしに編集でき、取引先・プロジェクトの共通部分は`GroupedMasterTab`にまとめた。ツリー表（`tree-table`）と選択ツリー（`tree-select`）は、このIssueで初めて画面から使われた。旧画面（科目一覧・科目グループ管理・科目登録フロー・取引先・世帯メンバー・プロジェクト・定期取引ルールの各管理画面）は削除し、旧URL（`/master/accounts/list`・`/master/accounts/new`・`/master/accounts/groups`・`/journal/recurring/rules`）は新しいタブへリダイレクトする。画面のデータ取得・更新はRepositoryの同期・非同期どちらの戻り値も受け取れる型（`MaybeAsync`）で受け、削除可否は`summarizeMasterUsage`・`listDeletionBlocks`（`src/domain/master/`）で事前に判定して理由を表示する（DBの制約は最終防御線）。
+
 ## 7. PWA構成
 
 - ビルドはVite、PWA化は`vite-plugin-pwa`（Workbox）を用いる。

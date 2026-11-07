@@ -88,7 +88,13 @@
 - `counterparty_id`は[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)の通りPL科目(収益・費用)の行にのみ設定可能(TRIGGERで強制)なため、`debit_account_id`・`credit_account_id`のうちPL区分(revenue/expense)である側の行にのみ設定する。両方ともBS科目のルール([3章 大口費用の按分](#3-大口費用の按分)の支払いルール等)ではPL行が存在しないため、`counterparty_id`を設定しても実質無視される。
 
 > **実装状況(計画Issue #39)**
-> `RecurringTransactionRuleManagementScreen`(`src/components/recurring-transaction-management/`)は、借方・貸方いずれかの科目がPL区分(revenue/expense)である場合にのみ取引先選択欄を表示する(`showCounterpartyField`)。判定には`JournalEntryForm`・`StatementImportReviewScreen`・`CounterpartyManagementScreen`と共通の`isCounterpartyEligibleCategory`(`src/components/journal-entry/journalEntryFormLine.ts`)を再利用しており、上記「UI側で入力欄自体を非表示にするかは実装課題とする」は解消済み。
+> `RuleMasterTab`(`src/components/master/`、計画Issue #154で旧`RecurringTransactionRuleManagementScreen`から置き換え)は、借方・貸方いずれかの科目がPL区分(revenue/expense)である場合にのみ取引先選択欄を表示する(`showCounterpartyField`)。判定には`JournalEntryForm`・`StatementImportReviewScreen`と共通の`isCounterpartyEligibleCategory`(`src/components/journal-entry/journalEntryFormLine.ts`)を再利用しており、上記「UI側で入力欄自体を非表示にするかは実装課題とする」は解消済み。
+
+> **マスタ画面の定期取引タブの挙動(計画Issue #154)**
+> `RuleMasterTab`は、ルールの一覧(名称・借方→貸方・繰り返し・金額・次回・状態)と、右パネルの作成・編集フォームを持つ。繰り返し(毎週・毎月の日付または第N曜日・毎年)に応じて入力欄が切り替わる。
+> - **一覧の「次回」**: `nextRuleDate`(`src/components/master/nextRuleDate.ts`)で求める。今日を含む今日以降で最初にルールに合致する日(日付計算は`enumerateDueDates.ts`の`nextOccurrenceDate`に従い、月末への丸めも同じ)。無効なルールと、生成済みの仕訳の件数が`max_occurrences`に達したルールは次回が無いため「次回」を出さない。提案の見送り([1.7](#17-提案の見送り))や未確認の保留分は考慮しない、ルールから見た次の予定日である。
+> - **無効化のみで再有効化の手段は無い**: `is_active`を`false`にする操作だけを提供する。Repositoryに再有効化の手段が無いため、画面にも設けていない。再開したい場合は新しいルールを作る。
+> - **削除**: 生成済みの`journal_entries`が0件のルールだけ、2回押しで物理削除できる。生成済みの仕訳があるルールは削除できず、理由を画面に表示する([1.6](#16-ライフサイクル)の画面側の扱い)。
 
 ### 1.5 生成された仕訳との関係
 

@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
+import { SqlJsAccountGroupRepository } from '../../infrastructure/db/SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
@@ -92,6 +93,31 @@ describe('registerAccount', () => {
     })
 
     expect(account).toMatchObject({ category: 'liability', name: '楽天カード', isReconcilable: false })
+  })
+
+  it('所属グループ(accountGroupId)を指定して作成でき、未指定ならグループなしで作成される(計画Issue #154)', async () => {
+    const group = new SqlJsAccountGroupRepository(db).create({ name: '普通預金', category: 'asset' })
+    const base = {
+      category: 'asset' as const,
+      isReconcilable: true,
+      householdMemberId: null,
+      initialBalanceLines: [],
+      entryDate: '2026-08-03',
+      journalEntryHouseholdMemberId: creatorId,
+    }
+
+    const grouped = await registerAccount(accountRepository, journalEntryRepository, {
+      ...base,
+      name: '楽天銀行',
+      accountGroupId: group.id,
+    })
+    const ungrouped = await registerAccount(accountRepository, journalEntryRepository, {
+      ...base,
+      name: '三井住友銀行',
+    })
+
+    expect(grouped.accountGroupId).toBe(group.id)
+    expect(ungrouped.accountGroupId).toBeNull()
   })
 
   it('名義(householdMemberId)を指定して作成できる', async () => {
