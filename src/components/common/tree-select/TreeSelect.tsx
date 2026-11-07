@@ -121,7 +121,9 @@ export function TreeSelect({
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape') {
+      // 外側のポップアップ(絞り込み等)の中で使われても、閉じるのはこのツリーだけにする
       event.preventDefault()
+      event.stopPropagation()
       close()
       return
     }
