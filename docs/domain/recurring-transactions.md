@@ -88,7 +88,7 @@
 - `counterparty_id`は[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)の通りPL科目(収益・費用)の行にのみ設定可能(TRIGGERで強制)なため、`debit_account_id`・`credit_account_id`のうちPL区分(revenue/expense)である側の行にのみ設定する。両方ともBS科目のルール([3章 大口費用の按分](#3-大口費用の按分)の支払いルール等)ではPL行が存在しないため、`counterparty_id`を設定しても実質無視される。
 
 > **実装状況(計画Issue #39)**
-> `RecurringTransactionRuleManagementScreen`(`src/components/recurring-transaction-management/`)は、借方・貸方いずれかの科目がPL区分(revenue/expense)である場合にのみ取引先選択欄を表示する(`showCounterpartyField`)。判定には`JournalEntryForm`・`StatementImportReviewScreen`・`CounterpartyManagementScreen`と共通の`isCounterpartyEligibleCategory`(`src/components/journal-entry/journalEntryFormLine.ts`)を再利用しており、上記「UI側で入力欄自体を非表示にするかは実装課題とする」は解消済み。
+> `RuleMasterTab`(`src/components/master/`、計画Issue #154で旧`RecurringTransactionRuleManagementScreen`から置き換え)は、借方・貸方いずれかの科目がPL区分(revenue/expense)である場合にのみ取引先選択欄を表示する(`showCounterpartyField`)。判定には`JournalEntryForm`・`StatementImportReviewScreen`と共通の`isCounterpartyEligibleCategory`(`src/components/journal-entry/journalEntryFormLine.ts`)を再利用しており、上記「UI側で入力欄自体を非表示にするかは実装課題とする」は解消済み。
 
 ### 1.5 生成された仕訳との関係
 
