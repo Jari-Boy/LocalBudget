@@ -4,6 +4,8 @@ import type { AccountCreator } from './registerAccount'
 export interface RegisterRevenueOrExpenseAccountInput {
   category: 'revenue' | 'expense'
   name: string
+  /** 所属グループ(計画Issue #154)。未指定・nullならグループなしで登録する */
+  accountGroupId?: number | null
 }
 
 /**
@@ -21,5 +23,6 @@ export async function registerRevenueOrExpenseAccount(
     name: input.name,
     isReconcilable: null,
     householdMemberId: null,
+    accountGroupId: input.accountGroupId ?? null,
   })
 }

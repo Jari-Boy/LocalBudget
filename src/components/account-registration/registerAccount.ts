@@ -25,6 +25,8 @@ export interface RegisterAccountInput {
   isReconcilable: boolean
   name: string
   householdMemberId: number | null
+  /** 所属グループ(計画Issue #154)。未指定・nullならグループなしで登録する */
+  accountGroupId?: number | null
   /** 初期残高の内訳(InitialBalanceLineのフィールドコメント参照) */
   initialBalanceLines: InitialBalanceLine[]
   /** 初期残高がある場合の初期仕訳の日付(YYYY-MM-DD) */
@@ -92,6 +94,7 @@ export async function registerAccount(
     name: input.name,
     isReconcilable: input.isReconcilable,
     householdMemberId: input.householdMemberId,
+    accountGroupId: input.accountGroupId ?? null,
   })
 
   if (initialBalanceAccount === null) {
