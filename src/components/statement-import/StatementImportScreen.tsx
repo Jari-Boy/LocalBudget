@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
@@ -34,6 +34,7 @@ import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { AccountCreateForm } from '../master/AccountCreateForm'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
 import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../master/masterTreeNodes'
+import type { MappingForm } from '../master/mappingForm'
 import type { MaybeAsync } from '../master/maybeAsync'
 import { isStatementImportEligibleAccount, isStatementImportCounterAccountEligible } from './statementImportEligibility'
 import {
@@ -51,6 +52,8 @@ import {
   type ImportRowState,
 } from './importRowModel'
 import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFormLine'
+import { MappingCreateDialog } from './MappingCreateDialog'
+import { mappingFormToInput } from '../master/mappingForm'
 import { QuickCreateDialog } from './QuickCreateDialog'
 import './StatementImportScreen.css'
 
@@ -68,7 +71,7 @@ export interface StatementImportScreenProps {
   accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll' | 'create'>>
   accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
   importMappingDefinitionRepository: MaybeAsync<
-    Pick<ImportMappingDefinitionRepository, 'findAvailableForAccount' | 'linkAccount'>
+    Pick<ImportMappingDefinitionRepository, 'findAll' | 'create' | 'linkAccount'>
   >
   externalTransactionRefRepository: { findByAccount(accountId: number): ExternalTransactionRef[] | Promise<ExternalTransactionRef[]> }
   journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'delete'>>
@@ -109,8 +112,14 @@ interface ImportSession {
 }
 
 type CreateTarget =
-  | { kind: 'counterAccount' | 'counterparty' | 'project'; apply: (id: number) => void }
+  | { kind: 'counterAccount' | 'counterparty' | 'project' | 'targetAccount'; apply: (id: number) => void }
   | null
+
+/** 取込画面で選んだCSV。定義の作成ダイアログや、文字コードの違う定義での読み直しに元のバイト列を持つ */
+interface LoadedCsv {
+  fileName: string
+  bytes: Uint8Array
+}
 
 interface ConfirmFailure {
   index: number
@@ -144,9 +153,15 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const { t: tCommon } = useTranslation('common')
 
   const [data, setData] = useState<LoadedData | null>(null)
+  const [csv, setCsv] = useState<LoadedCsv | null>(null)
+  /** 実パースが通った定義の候補(2件以上のときだけ表示名で選ばせる) */
+  const [candidates, setCandidates] = useState<MappingDefinitionCandidateMatch[]>([])
+  const [match, setMatch] = useState<MappingDefinitionCandidateMatch | null>(null)
+  const [noMatch, setNoMatch] = useState(false)
+  const [showMappingDialog, setShowMappingDialog] = useState(false)
   const [targetAccountId, setTargetAccountId] = useState<number | null>(null)
   const [session, setSession] = useState<ImportSession | null>(null)
-  const [pending, setPending] = useState<{ fileName: string; matches: MappingDefinitionCandidateMatch[] } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [bulkMessage, setBulkMessage] = useState('')
   const [bulkComment, setBulkComment] = useState('')
@@ -185,7 +200,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     settlementBatchRepository,
   ])
 
-  const targetAccount = session?.targetAccount ?? data?.accounts.find((a) => a.id === targetAccountId) ?? null
+  const targetAccount = data?.accounts.find((a) => a.id === targetAccountId) ?? null
   const externalBalance = session?.review.latestExternalBalance ?? null
 
   // 残高照合に使う、取込先の確定済み(過去分)の明細行
@@ -305,27 +320,43 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setEditingLearn(new Set())
   }
 
+  /** 定義が決まったら、紐づく科目(取込先に選べるもの)の先頭を初期値にして取り込む。無ければ選ばせる */
+  async function selectMatch(next: MappingDefinitionCandidateMatch, fileName: string) {
+    setMatch(next)
+    setSession(null)
+    const linked = next.definition.accountIds
+      .map((id) => data!.accounts.find((a) => a.id === id))
+      .filter((a): a is Account => a !== undefined && isStatementImportEligibleAccount(a))
+    const initial = linked[0] ?? null
+    setTargetAccountId(initial?.id ?? null)
+    if (initial) await buildSession(initial, fileName, next)
+  }
+
   async function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     event.target.value = ''
-    const account = data!.accounts.find((a) => a.id === targetAccountId)
-    if (!file || !account) return
+    if (!file) return
     setBusy(true)
     setError('')
     setDoneMessage('')
     setFailures([])
     setSession(null)
-    setPending(null)
+    setMatch(null)
+    setCandidates([])
+    setNoMatch(false)
+    setTargetAccountId(null)
     try {
       const bytes = new Uint8Array(await file.arrayBuffer())
-      const definitions = await Promise.resolve(importMappingDefinitionRepository.findAvailableForAccount(account.id))
+      setCsv({ fileName: file.name, bytes })
+      // 取込先は定義から決まるので、まず全定義に実際のパースを試して絞り込む
+      const definitions = await Promise.resolve(importMappingDefinitionRepository.findAll())
       const matches = resolveMappingDefinitionCandidates(bytes, definitions)
       if (matches.length === 0) {
-        setError(t('noMappingMatchError'))
+        setNoMatch(true)
       } else if (matches.length === 1) {
-        await buildSession(account, file.name, matches[0])
+        await selectMatch(matches[0], file.name)
       } else {
-        setPending({ fileName: file.name, matches })
+        setCandidates(matches)
       }
     } catch {
       setError(t('uploadError'))
@@ -335,18 +366,43 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   async function chooseDefinition(definitionId: number) {
-    const match = pending?.matches.find((m) => m.definition.id === definitionId)
-    const account = data!.accounts.find((a) => a.id === targetAccountId)
-    if (!match || !account || !pending) return
+    const next = candidates.find((m) => m.definition.id === definitionId)
+    if (!next || !csv) return
     setBusy(true)
     try {
-      await buildSession(account, pending.fileName, match)
-      setPending(null)
+      await selectMatch(next, csv.fileName)
     } catch {
       setError(t('uploadError'))
     } finally {
       setBusy(false)
     }
+  }
+
+  /** 取込先を選び直す。重複・確定版の候補・残高照合は取込先ごとなので、一覧を作り直す */
+  async function changeTargetAccount(id: number | null) {
+    setTargetAccountId(id)
+    setSession(null)
+    const account = data!.accounts.find((a) => a.id === id)
+    if (!account || !match || !csv) return
+    setBusy(true)
+    try {
+      await buildSession(account, csv.fileName, match)
+    } catch {
+      setError(t('uploadError'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 画面内で作った定義を保存し、そのまま取り込みに進む */
+  async function saveMappingAndContinue(form: MappingForm) {
+    if (!csv) return
+    const created = await Promise.resolve(importMappingDefinitionRepository.create(mappingFormToInput(form)))
+    const matches = resolveMappingDefinitionCandidates(csv.bytes, [created])
+    if (matches.length === 0) throw new Error('created mapping does not parse the csv')
+    setShowMappingDialog(false)
+    setNoMatch(false)
+    await selectMatch(matches[0], csv.fileName)
   }
 
   const records = session?.review.records ?? []
@@ -513,33 +569,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       <div className="import-screen__head">
         <h1 className="import-screen__title">{t('screenTitle')}</h1>
         <div className="import-screen__controls">
-          <div className="import-field">
-            <label className="import-field__label" htmlFor="import-account">
-              {t('targetAccount')}
-            </label>
-            <select
-              id="import-account"
-              className="import-control"
-              value={targetAccountId ?? ''}
-              onChange={(e) => {
-                setTargetAccountId(toId(e.target.value))
-                setSession(null)
-                setPending(null)
-                setError('')
-                setDoneMessage('')
-              }}
-            >
-              <option value="">{t('unselected')}</option>
-              {eligibleTargets.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </div>
           <label className="import-btn">
             {t('chooseCsv')}
-            <input type="file" accept=".csv" hidden aria-label={t('chooseCsv')} disabled={targetAccountId === null || busy} onChange={(e) => void handleFile(e)} />
+            <input ref={fileInputRef} type="file" accept=".csv" hidden aria-label={t('chooseCsv')} disabled={busy} onChange={(e) => void handleFile(e)} />
           </label>
           <button type="button" className="import-btn" onClick={onEditMappings}>
             {t('editMappings')}
@@ -549,25 +581,116 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
       {error && <p role="alert" className="import-error">{error}</p>}
 
-      {pending && (
-        <div className="import-field">
-          <label className="import-field__label" htmlFor="import-definition">
-            {t('definitionLabel')}
-          </label>
-          <select
-            id="import-definition"
-            className="import-control"
-            value=""
-            onChange={(e) => e.target.value !== '' && void chooseDefinition(Number(e.target.value))}
-          >
-            <option value="">{t('chooseDefinition')}</option>
-            {pending.matches.map((m) => (
-              <option key={m.definition.id} value={m.definition.id}>
-                {m.definition.label}
-              </option>
-            ))}
-          </select>
-        </div>
+      {csv && noMatch && (
+        <section role="alert" aria-label={t('noMatchTitle', { fileName: csv.fileName })} className="import-panel">
+          <p className="import-panel__title import-error">{t('noMatchTitle', { fileName: csv.fileName })}</p>
+          <p className="import-note">{t('noMatchBody')}</p>
+          <div className="import-panel__actions">
+            <button type="button" className="import-btn import-btn--primary" onClick={() => setShowMappingDialog(true)}>
+              {t('createMappingFromCsv')}
+            </button>
+            <button type="button" className="import-btn" onClick={() => fileInputRef.current?.click()}>
+              {t('chooseOtherCsv')}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {csv && !noMatch && (candidates.length > 1 || match) && (
+        <section aria-label={t('settingsLabel')} className="import-panel">
+          <div className="import-panel__row">
+            <div className="import-field">
+              <span className="import-field__label">CSV</span>
+              <span className="import-panel__value">{csv.fileName}</span>
+            </div>
+            {candidates.length > 1 ? (
+              <div className="import-field">
+                <label className="import-field__label" htmlFor="import-definition">
+                  {t('definitionLabel')}
+                </label>
+                <select
+                  id="import-definition"
+                  className="import-control"
+                  value={match?.definition.id ?? ''}
+                  onChange={(e) => e.target.value !== '' && void chooseDefinition(Number(e.target.value))}
+                >
+                  <option value="">{t('chooseDefinition')}</option>
+                  {candidates.map((m) => (
+                    <option key={m.definition.id} value={m.definition.id}>
+                      {m.definition.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              match && (
+                <div className="import-field">
+                  <span className="import-field__label">{t('mappingLabel')}</span>
+                  <span className="import-panel__value">{match.definition.label}</span>
+                </div>
+              )
+            )}
+            {match && (
+              <div className="import-field">
+                <label className="import-field__label" htmlFor="import-account">
+                  {t('targetAccountLabel')}
+                </label>
+                <select
+                  id="import-account"
+                  className={`import-control import-control--wide${targetAccountId === null ? ' import-control--attention' : ''}`}
+                  value={targetAccountId ?? ''}
+                  onChange={(e) => void changeTargetAccount(toId(e.target.value))}
+                >
+                  <option value="">{t('chooseDefinition')}</option>
+                  {(() => {
+                    const linkedIds = new Set(match.definition.accountIds)
+                    const linked = eligibleTargets.filter((a) => linkedIds.has(a.id))
+                    const others = eligibleTargets.filter((a) => !linkedIds.has(a.id))
+                    const option = (a: Account) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    )
+                    return linked.length > 0 ? (
+                      <>
+                        <optgroup label={t('accountGroupLinked')}>{linked.map(option)}</optgroup>
+                        {others.length > 0 && <optgroup label={t('accountGroupOther')}>{others.map(option)}</optgroup>}
+                      </>
+                    ) : (
+                      eligibleTargets.map(option)
+                    )
+                  })()}
+                </select>
+              </div>
+            )}
+            {match && match.definition.accountIds.length === 0 && (
+              <button
+                type="button"
+                className="import-btn"
+                onClick={() => setCreateTarget({ kind: 'targetAccount', apply: (id) => void changeTargetAccount(id) })}
+              >
+                {t('addTargetAccount')}
+              </button>
+            )}
+          </div>
+          {match && (
+            <p className="import-note">
+              {match.definition.accountIds.length > 0
+                ? t('accountLinkedNote', {
+                    accounts: match.definition.accountIds
+                      .map((id) => data.accounts.find((a) => a.id === id)?.name)
+                      .filter(Boolean)
+                      .map((name) => `「${name}」`)
+                      .join(''),
+                  })
+                : t('accountUnlinkedNote')}
+            </p>
+          )}
+        </section>
+      )}
+
+      {csv && match && targetAccountId === null && !noMatch && (
+        <p className="import-empty">{t('pickAccountPrompt')}</p>
       )}
 
       {session && visibleIndices.length > 0 && (
@@ -952,7 +1075,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           {doneMessage && <span role="status" className="import-summary">{doneMessage}</span>}
           {session && importable.length > 0 && (
             <button type="button" className="import-btn import-btn--primary" disabled={busy} onClick={() => void handleConfirm()}>
-              {t('confirmCount', { count: importable.length })}
+              {t('confirmCount', { count: importable.length, account: session.targetAccount.name })}
             </button>
           )}
         </div>
@@ -974,7 +1097,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           onCancel={() => setCreateTarget(null)}
         />
       )}
-      {createTarget?.kind === 'counterAccount' && (
+      {showMappingDialog && csv && (
+        <MappingCreateDialog bytes={csv.bytes} onSave={saveMappingAndContinue} onCancel={() => setShowMappingDialog(false)} />
+      )}
+      {(createTarget?.kind === 'counterAccount' || createTarget?.kind === 'targetAccount') && (
         <div className="import-dialog__backdrop">
           <div role="dialog" aria-modal="true" aria-label={t('createAccountTitle')} className="import-dialog import-dialog--wide">
             <AccountCreateForm

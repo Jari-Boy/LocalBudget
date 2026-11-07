@@ -292,3 +292,75 @@
   gap: 8px;
   justify-content: flex-end;
 }
+
+/* 取込の設定パネル・一致なしの案内(計画Issue #151、取込先を定義から決める流れ) */
+.import-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.import-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-end;
+}
+
+.import-panel__title {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+.import-panel__value {
+  font-size: var(--font-size-base);
+  font-weight: 500;
+}
+
+.import-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.import-empty {
+  margin: 0;
+  padding: 28px 0;
+  text-align: center;
+  font-size: var(--font-size-base);
+  color: var(--color-text-muted);
+}
+
+.import-control--wide {
+  min-width: 220px;
+}
+
+.import-control--attention {
+  border: 2px solid var(--color-accent);
+}
+
+.import-dialog--xwide {
+  width: 880px;
+}
+
+.import-dialog__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.import-dialog__cell {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.import-dialog__subtitle {
+  margin: 4px 0 0;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}

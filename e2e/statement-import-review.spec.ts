@@ -149,11 +149,16 @@ function csvFile(content: string) {
   return { name: 'statement.csv', mimeType: 'text/csv', buffer: Buffer.from(content, 'utf-8') }
 }
 
-/** サイドナビの「明細取込」を開き、取込先とCSVを選ぶ */
-async function startImport(page: Page, accountName: string, csv: string) {
+/**
+ * サイドナビの「明細取込」を開き、CSVを選ぶ。取込先は、マッピング定義に紐づく科目が初期値になる
+ * (accountNameはその初期値の確認に使う)。紐づく科目が無い定義では取込先が未選択のまま。
+ */
+async function startImport(page: Page, accountName: string | null, csv: string) {
   await page.getByRole('link', { name: '明細取込', exact: true }).click()
-  await page.getByLabel('取込先').selectOption({ label: accountName })
   await page.getByLabel('CSVを選択').setInputFiles(csvFile(csv))
+  if (accountName !== null) {
+    await expect(page.getByLabel(/^取込先/).locator('option:checked')).toHaveText(accountName)
+  }
 }
 
 /** 行の中の選択ツリーを開き、検索して項目を選ぶ */
@@ -179,7 +184,7 @@ test.describe('明細取込画面', () => {
     await expect(row).toContainText('2026/07/20')
     await expect(row).toContainText('-¥3,000')
     await pickTree(page, row, '相手科目', 'テスト費目')
-    await page.getByRole('button', { name: '1 件を確定' }).click()
+    await page.getByRole('button', { name: '1 件を「普通預金」に確定' }).click()
 
     await expect(page.getByText('確定しました。続けて次のCSVを取り込めます。')).toBeVisible()
     await expect(page.getByRole('row', { name: /スーパー/ })).toHaveCount(0)
@@ -202,13 +207,13 @@ test.describe('明細取込画面', () => {
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING)
 
-    await startImport(page, '普通預金', '違う列1,違う列2\na,b\n')
+    await startImport(page, null, '違う列1,違う列2\na,b\n')
 
-    await expect(page.getByRole('alert')).toContainText('一致するマッピング定義が見つかりませんでした')
+    await expect(page.getByRole('alert')).toContainText('に一致するマッピングが見つかりませんでした')
     await expect(page.getByRole('table', { name: '明細の一覧' })).toHaveCount(0)
   })
 
-  test('パースに成功する候補定義が複数あるときは、取込先に紐づく定義の選択欄が出て、選ぶと一覧に進む', async ({ page }) => {
+  test('パースに成功する候補定義が複数あるときは、表示名の選択欄が出て、選ぶと取込先の確認に進む', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     await setupAccountsAndMapping(page, BANK_AND_EXPENSE, [
@@ -216,10 +221,32 @@ test.describe('明細取込画面', () => {
       { ...BANK_MAPPING, formatGroupId: 'test-bank-2', label: 'テスト銀行 別形式' },
     ])
 
-    await startImport(page, '普通預金', '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n')
+    await startImport(page, null, '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n')
 
     await page.getByLabel('マッピング定義').selectOption({ label: 'テスト銀行 別形式' })
+    await expect(page.getByLabel(/^取込先/).locator('option:checked')).toHaveText('普通預金')
     await expect(page.getByRole('table', { name: '明細の一覧' })).toBeVisible()
+    await expect(rowOf(page, /スーパー/)).toBeVisible()
+  })
+
+  test('一致する定義が無いCSVは、画面内のダイアログでマッピングを作り、取込先を選んで続けて取り込める', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
+    await setupAccountsAndMapping(page, BANK_AND_EXPENSE, { ...BANK_MAPPING, dateColumn: '存在しない列' })
+
+    await startImport(page, null, '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n')
+    await page.getByRole('button', { name: 'このCSVでマッピングを新規作成' }).click()
+
+    const dialog = page.getByRole('dialog', { name: 'マッピングを新規作成' })
+    await expect(dialog.getByText('列を推測しました。内容を確認してください')).toBeVisible()
+    await dialog.getByLabel('表示名').fill('新しい銀行')
+    await dialog.getByLabel('金融機関の識別子').fill('new-bank')
+    await expect(dialog.getByText('✓ 全1行を読み取れます')).toBeVisible()
+    await dialog.getByRole('button', { name: '保存して取り込む' }).click()
+
+    // 作った定義はどの科目にも紐づいていないので、取込先を選ぶと一覧が出る
+    await page.getByLabel(/^取込先/).selectOption({ label: '普通預金' })
+    await expect(page.getByText(/statement\.csv を読み込み済み/)).toBeVisible()
     await expect(rowOf(page, /スーパー/)).toBeVisible()
   })
 
@@ -317,7 +344,7 @@ test.describe('明細取込画面', () => {
     await pickTree(page, bulk, '一括の相手科目', 'エンタメ費')
     await expect(bulk).toContainText('2件に設定しました')
 
-    await page.getByRole('button', { name: '3 件を確定' }).click()
+    await page.getByRole('button', { name: '3 件を「普通預金」に確定' }).click()
     await expect(page.getByText('確定しました。', { exact: false })).toBeVisible()
 
     // 仕訳が永続化され、普通預金の残高に反映されている。withAutoSaveのtrailing debounce(2秒)を

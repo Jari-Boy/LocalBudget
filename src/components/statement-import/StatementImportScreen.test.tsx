@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
  * StatementImportScreen(明細取込画面、計画Issue #151)のコンポーネントテスト。
- * アップロードとレビューを1画面にまとめた画面: 取込先とCSVの選択、マッピング定義の絞り込み
- * (1つなら自動選択・複数なら選択、取り込むと取込先との紐づけを追加)、1件1行の一覧、取引先推定と
+ * アップロードとレビューを1画面にまとめた画面: CSVの選択、全マッピング定義への実パース試行による絞り込み
+ * (1つなら自動選択・複数なら選択)、定義に紐づく科目を初期値にした取込先の確認と変更(紐づく科目が無ければ
+ * 選ぶまで一覧を出さない、取り込むと紐づけを追加)、一致する定義が無いときの画面内での定義の作成、1件1行の一覧、取引先推定と
  * 相手科目のサジェスト、重複の行(入力・選択なし、「取り込む」で戻せる)、選択した行への一括設定
  * (対象外の件数)、確定版の候補の置き換え、残高照合、確定とパターン登録、確定後に続けて次のCSVを
  * 取り込めることを、sql.jsのNode実装(createTestDatabase)を使って確認する。
@@ -90,6 +91,8 @@ function makeMapping(overrides: Partial<Parameters<typeof mappings.create>[0]> =
     amountMode: 'single_signed',
     amountColumn: '金額',
     balanceColumn: '残高',
+    // 既定は普通預金に紐づく定義(取込先の初期値になる)
+    accountIds: [bank.id],
     ...overrides,
   })
 }
@@ -97,10 +100,9 @@ function makeMapping(overrides: Partial<Parameters<typeof mappings.create>[0]> =
 const HEADER = '日付,摘要,金額,残高\n'
 const csvFile = (content: string, name = 'statement.csv') => new File([content], name, { type: 'text/csv' })
 
-/** 取込先とCSVを選ぶ。waitLoadedがtrue(既定)なら、一覧が表示されるまで待つ */
+/** CSVを選ぶ(取込先は定義に紐づく科目が初期値になる)。waitLoadedがtrue(既定)なら、一覧が表示されるまで待つ */
 async function chooseCsv(content: string, waitLoaded = true) {
-  fireEvent.change(await screen.findByLabelText('取込先'), { target: { value: String(bank.id) } })
-  fireEvent.change(screen.getByLabelText('CSVを選択'), { target: { files: [csvFile(content)] } })
+  fireEvent.change(await screen.findByLabelText('CSVを選択'), { target: { files: [csvFile(content)] } })
   if (waitLoaded) await screen.findByText(/statement\.csv を読み込み済み/)
 }
 
@@ -112,7 +114,7 @@ const pick = (scope: ReturnType<typeof within>, label: string, item: string) => 
 }
 
 describe('StatementImportScreen', () => {
-  it('取込先とCSVを選ぶと、同じ画面に1件1行で日付・摘要・金額・状態が表示され、件数が要約される', async () => {
+  it('CSVを選ぶと、定義に紐づく取込先が初期値になり、同じ画面に1件1行で日付・摘要・金額・状態が表示され、件数が要約される', async () => {
     makeMapping()
     renderScreen()
 
@@ -131,7 +133,7 @@ describe('StatementImportScreen', () => {
 
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('一致するマッピング定義が見つかりませんでした')
+    expect(await screen.findByRole('alert')).toHaveTextContent('に一致するマッピングが見つかりませんでした')
   })
 
   it('取引先の推定と、取引先の既定の科目が初期値として入る', async () => {
@@ -153,7 +155,7 @@ describe('StatementImportScreen', () => {
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
     pick(rowOf(/スーパー/), '相手科目', '食費')
-    fireEvent.click(screen.getByRole('button', { name: '1 件を確定' }))
+    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
     await screen.findByText(/確定しました/)
 
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
@@ -215,7 +217,7 @@ describe('StatementImportScreen', () => {
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.change(rowOf(/スーパー/).getByLabelText('スーパーのコメント'), { target: { value: 'まとめ買い' } })
 
-    fireEvent.click(screen.getByRole('button', { name: '1 件を確定' }))
+    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
 
     expect(await screen.findByText(/確定しました。続けて次のCSVを取り込めます。/)).toBeInTheDocument()
     const created = entries.findAll()
@@ -232,7 +234,7 @@ describe('StatementImportScreen', () => {
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
 
-    fireEvent.click(await screen.findByRole('button', { name: '1 件を確定' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
 
     expect(await screen.findByText(/相手科目が未選択です/)).toBeInTheDocument()
     expect(entries.findAll()).toHaveLength(0)
@@ -254,7 +256,7 @@ describe('StatementImportScreen', () => {
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.click(await screen.findByLabelText('これは確定版です'))
 
-    fireEvent.click(screen.getByRole('button', { name: '1 件を確定' }))
+    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
 
     await screen.findByText(/確定しました/)
     // 削除した仕訳のIDは新しい仕訳に再利用されうるので、手入力の仕訳が残っていないことを起源で確認する
@@ -283,7 +285,7 @@ describe('StatementImportScreen', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'スーパー 新宿店のパターンを変更' }))
     fireEvent.change(screen.getByLabelText('スーパー 新宿店から登録するパターン'), { target: { value: 'スーパー' } })
-    fireEvent.click(screen.getByRole('button', { name: '1 件を確定' }))
+    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
 
     expect(await screen.findByText(/パターンを1件登録しました/)).toBeInTheDocument()
     expect(counterparties.findByPattern('スーパー').map((p) => p.counterpartyId)).toEqual([cp.id])
@@ -304,35 +306,89 @@ describe('StatementImportScreen', () => {
     expect(await rowOf(/スーパー/).findByRole('button', { name: /^取引先: 新しい店/ })).toBeInTheDocument()
   })
 
-  it('列が同じで複数の定義に一致するときは、取込先に紐づく定義を先頭に選ばせ、取り込むと紐づけを追加する', async () => {
-    const other = makeMapping({ label: '汎用の定義' })
-    const linked = makeMapping({ label: '普通預金用', accountIds: [bank.id] })
+  it('列が同じで複数の定義に一致するときは、表示名で選ばせ、選ぶと取込先の確認に進む', async () => {
+    makeMapping({ label: '汎用の定義', accountIds: [] })
+    const linked = makeMapping({ label: '普通預金用' })
     renderScreen()
 
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
 
     const select = await screen.findByLabelText('マッピング定義')
-    expect(Array.from(select.querySelectorAll('option')).map((o) => o.textContent)).toEqual(['選択してください', '普通預金用', '汎用の定義'])
-    fireEvent.change(select, { target: { value: String(other.id) } })
+    expect(Array.from(select.querySelectorAll('option')).map((o) => o.textContent)).toEqual(['選択してください', '汎用の定義', '普通預金用'])
+    fireEvent.change(select, { target: { value: String(linked.id) } })
     await screen.findByText(/statement\.csv を読み込み済み/)
-    pick(rowOf(/スーパー/), '相手科目', '食費')
-    fireEvent.click(await screen.findByRole('button', { name: '1 件を確定' }))
-
-    await screen.findByText(/確定しました/)
-    expect(mappings.findById(other.id)?.accountIds).toEqual([bank.id])
-    expect(mappings.findById(linked.id)?.accountIds).toEqual([bank.id])
+    expect(screen.getByLabelText(/^取込先/)).toHaveValue(String(bank.id))
   })
 
-  it('候補が1つなら自動で選ばれ、確定するとその科目との紐づけが追加される', async () => {
-    const only = makeMapping()
+  it('定義に紐づく科目が複数あるときは先頭が初期値で、別の科目に変更して取り込める', async () => {
+    const card = accounts.create({ category: 'liability', name: '楽天VISA', isReconcilable: false })
+    makeMapping({ accountIds: [bank.id, card.id] })
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
-    pick(rowOf(/スーパー/), '相手科目', '食費')
 
-    fireEvent.click(screen.getByRole('button', { name: '1 件を確定' }))
+    const target = screen.getByLabelText(/^取込先/)
+    expect(target).toHaveValue(String(bank.id))
+    fireEvent.change(target, { target: { value: String(card.id) } })
+    await screen.findByRole('button', { name: /^1 件を「楽天VISA」に確定$/ })
+    pick(rowOf(/スーパー/), '相手科目', '食費')
+    fireEvent.click(screen.getByRole('button', { name: /^1 件を「楽天VISA」に確定$/ }))
+
+    await screen.findByText(/確定しました/)
+    const accountIds = entries.findAll()[0].lines.map((l) => l.accountId)
+    expect(accountIds).toContain(card.id)
+    expect(accountIds).not.toContain(bank.id)
+  })
+
+  it('紐づく科目が無い定義では、取込先を選ぶまで一覧を出さず、選んで確定すると紐づけを追加する', async () => {
+    const only = makeMapping({ accountIds: [] })
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+
+    const target = await screen.findByLabelText(/^取込先/)
+    expect(target).toHaveValue('')
+    expect(screen.getByText('取込先を選ぶと、明細の一覧を表示します。')).toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: '明細の一覧' })).not.toBeInTheDocument()
+
+    fireEvent.change(target, { target: { value: String(bank.id) } })
+    await screen.findByText(/statement\.csv を読み込み済み/)
+    pick(rowOf(/スーパー/), '相手科目', '食費')
+    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
 
     await screen.findByText(/確定しました/)
     expect(mappings.findById(only.id)?.accountIds).toEqual([bank.id])
+  })
+
+  it('一致する定義が無いときは、CSVを元に画面内でマッピングを作って続けて取り込める', async () => {
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'このCSVでマッピングを新規作成' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'マッピングを新規作成' }))
+    expect(dialog.getByText('列を推測しました。内容を確認してください')).toBeInTheDocument()
+    expect(dialog.getByRole('button', { name: '保存して取り込む' })).toBeDisabled()
+    fireEvent.change(dialog.getByLabelText('表示名'), { target: { value: '新しい銀行' } })
+    fireEvent.change(dialog.getByLabelText('金融機関の識別子'), { target: { value: 'new-bank' } })
+    expect(dialog.getByText('✓ 全1行を読み取れます')).toBeInTheDocument()
+    fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
+
+    // 作った定義はどの科目にも紐づいていないので、取込先を選ぶ
+    const target = await screen.findByLabelText(/^取込先/)
+    await waitFor(() => expect(mappings.findAll()).toHaveLength(1))
+    expect(mappings.findAll()[0]).toMatchObject({ label: '新しい銀行', formatGroupId: 'new-bank', dateColumn: '日付' })
+    fireEvent.change(target, { target: { value: String(bank.id) } })
+    expect(await screen.findByText(/statement\.csv を読み込み済み/)).toBeInTheDocument()
+  })
+
+  it('一致する定義が無いとき、ダイアログをキャンセルすると元の案内に戻る', async () => {
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+    fireEvent.click(await screen.findByRole('button', { name: 'このCSVでマッピングを新規作成' }))
+
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'マッピングを新規作成' })).getByRole('button', { name: 'キャンセル' }))
+
+    expect(screen.queryByRole('dialog', { name: 'マッピングを新規作成' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'このCSVでマッピングを新規作成' })).toBeInTheDocument()
   })
 
   it('「マッピングを編集」を押すと、マスタの明細マッピングへ移動するコールバックが呼ばれる', async () => {
