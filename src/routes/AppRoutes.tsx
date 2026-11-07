@@ -1,7 +1,6 @@
 import type * as Comlink from 'comlink'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router'
-import { useTranslation } from 'react-i18next'
 import type { AccountRepository } from '../domain/account/AccountRepository'
 import type { AccountGroupRepository } from '../domain/account-group/AccountGroupRepository'
 import type { BudgetRepository } from '../domain/budget/BudgetRepository'
@@ -22,21 +21,16 @@ import { useDbClient } from '../infrastructure/rpc/DbClientProvider'
 import { AccountRegistrationFlow } from '../components/account-registration/AccountRegistrationFlow'
 import { AccountGroupManagementScreen } from '../components/account-group-management/AccountGroupManagementScreen'
 import { AccountListScreen } from '../components/account-list/AccountListScreen'
-import { AccountManagementScreen } from '../components/account-management/AccountManagementScreen'
 import { CounterpartyManagementScreen } from '../components/counterparty-management/CounterpartyManagementScreen'
 import { HouseholdMemberManagementScreen } from '../components/household-member-management/HouseholdMemberManagementScreen'
 import { ProjectManagementScreen } from '../components/project-management/ProjectManagementScreen'
 import { FinancialStatementScreen } from '../components/financial-statement/FinancialStatementScreen'
-import { MasterHubScreen } from '../components/master/MasterHubScreen'
-import { RecurringTransactionHubScreen } from '../components/recurring-transaction/RecurringTransactionHubScreen'
 import { RecurringTransactionRuleManagementScreen } from '../components/recurring-transaction-management/RecurringTransactionRuleManagementScreen'
 import { RecurringTransactionProposalReviewScreen } from '../components/recurring-transaction-proposal/RecurringTransactionProposalReviewScreen'
-import { JournalHubScreen } from '../components/journal-entry/JournalHubScreen'
 import { JournalEntryDraftListScreen } from '../components/journal-entry/JournalEntryDraftListScreen'
 import { JournalEntryForm } from '../components/journal-entry/JournalEntryForm'
 import { JournalEntryListScreen } from '../components/journal-entry/JournalEntryListScreen'
 import { JournalEntryDetailScreen } from '../components/journal-entry/JournalEntryDetailScreen'
-import { ExpenseSplittingHubScreen } from '../components/expense-splitting/ExpenseSplittingHubScreen'
 import { ExpenseSplittingEntryPickerScreen } from '../components/expense-splitting/ExpenseSplittingEntryPickerScreen'
 import { ExpenseSplittingForm } from '../components/expense-splitting/ExpenseSplittingForm'
 import { ExpenseSplittingHistoryScreen } from '../components/expense-splitting/ExpenseSplittingHistoryScreen'
@@ -46,7 +40,7 @@ import {
   type StatementImportUploadResult,
 } from '../components/statement-import/StatementImportUploadScreen'
 import { StatementImportReviewScreen } from '../components/statement-import/StatementImportReviewScreen'
-import '../components/HubMenu.css'
+import { AppShell } from '../components/layout/AppShell'
 
 /** 仕訳詳細画面(/journal/entries/:id)への遷移元は複数(仕訳一覧・割勘履歴)あるため、
  * 個別の状態で戻り先を管理せずブラウザの履歴機構(navigate(-1))に委ねる。
@@ -64,30 +58,36 @@ function useHistoryBackOrFallback(fallbackPath: string) {
   }
 }
 
-function Home() {
-  const { t } = useTranslation('master')
-  const { t: tJournal } = useTranslation('journal')
-  const { t: tFinancialStatement } = useTranslation('financialStatement')
-  const navigate = useNavigate()
-
-  return (
-    <div className="hub-menu-screen">
-      <h1>LocalBudget</h1>
-      <button type="button" onClick={() => navigate('/master')}>
-        {t('masterManagementTitle')}
-      </button>
-      <button type="button" onClick={() => navigate('/journal')}>
-        {tJournal('journalHubTitle')}
-      </button>
-      <button type="button" onClick={() => navigate('/reports/financial-statements')}>
-        {tFinancialStatement('viewFinancialStatementsTitle')}
-      </button>
-    </div>
-  )
+/**
+ * 確認待ちの定期取引提案の件数(サイドナビの「仕訳」のバッジ用、計画Issue #150)。
+ * 提案は永続化せず都度評価される(listPendingが毎回DBから再評価)ため、画面遷移のたびに
+ * 取り直す。確認・見送りの直後に件数が古いまま残らないようにするため。取得に失敗しても
+ * 画面操作は妨げず、バッジを出さない(0件扱い)。
+ */
+function usePendingProposalCount(
+  api: { listPending(): Promise<readonly unknown[]> },
+  pathname: string,
+): number {
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const pending = await api.listPending()
+        if (!cancelled) setCount(pending.length)
+      } catch {
+        if (!cancelled) setCount(0)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [api, pathname])
+  return count
 }
 
 /**
- * トップ画面からの各ハブ・ウィザード起動と、完了後の遷移を扱うルート定義
+ * ウィザードの起動と完了後の遷移を扱うルート定義
  * (計画Issue #118)。旧`Screen`型union + `useState`による分岐をreact-routerの
  * 宣言的なルート定義に置き換えた。ウィザードが引き継ぐ複雑な中間データ
  * (下書き・取込結果・割勘対象仕訳)は、URLパラメータ化せず`navigate()`の`state`
@@ -164,33 +164,20 @@ export function AppRoutes() {
 
   const goBackFromEntryDetail = useHistoryBackOrFallback('/journal/entries')
 
+  const location = useLocation()
+  const pendingProposalCount = usePendingProposalCount(recurringTransactionProposalApi, location.pathname)
+
   return (
     <Routes>
-      <Route path="/" element={<Home />} />
+      {/* 中継(ハブ)画面とホーム画面は廃止した。旧URLは各領域の入口画面へリダイレクトする */}
+      <Route path="/" element={<Navigate to="/journal/entries" replace />} />
+      <Route path="/master" element={<Navigate to="/master/accounts/list" replace />} />
+      <Route path="/master/accounts" element={<Navigate to="/master/accounts/list" replace />} />
+      <Route path="/journal" element={<Navigate to="/journal/entries" replace />} />
+      <Route path="/journal/recurring" element={<Navigate to="/journal/recurring/proposals" replace />} />
+      <Route path="/journal/splitting" element={<Navigate to="/journal/splitting/new" replace />} />
 
-      <Route
-        path="/master"
-        element={
-          <MasterHubScreen
-            onManageAccounts={() => navigate('/master/accounts')}
-            onManageCounterparties={() => navigate('/master/counterparties')}
-            onManageHouseholdMembers={() => navigate('/master/household-members')}
-            onManageProjects={() => navigate('/master/projects')}
-            onBack={() => navigate('/')}
-          />
-        }
-      />
-      <Route
-        path="/master/accounts"
-        element={
-          <AccountManagementScreen
-            onAddAccount={() => navigate('/master/accounts/new')}
-            onViewList={() => navigate('/master/accounts/list')}
-            onManageGroups={() => navigate('/master/accounts/groups')}
-            onBack={() => navigate('/master')}
-          />
-        }
-      />
+      <Route element={<AppShell pendingProposalCount={pendingProposalCount} />}>
       <Route
         path="/master/accounts/new"
         element={
@@ -198,8 +185,8 @@ export function AppRoutes() {
             accountRepository={accountRepository}
             journalEntryRepository={journalEntryRepository}
             householdMemberRepository={householdMemberRepository}
-            onComplete={() => navigate('/master/accounts')}
-            onBack={() => navigate('/master/accounts')}
+            onComplete={() => navigate('/master/accounts/list')}
+            onBack={() => navigate('/master/accounts/list')}
           />
         }
       />
@@ -212,7 +199,7 @@ export function AppRoutes() {
             householdMemberRepository={householdMemberRepository}
             budgetRepository={budgetRepository}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
-            onBack={() => navigate('/master/accounts')}
+            onBack={() => navigate('/master/accounts/list')}
           />
         }
       />
@@ -222,7 +209,7 @@ export function AppRoutes() {
           <AccountGroupManagementScreen
             accountGroupRepository={accountGroupRepository}
             accountRepository={accountRepository}
-            onBack={() => navigate('/master/accounts')}
+            onBack={() => navigate('/master/accounts/list')}
           />
         }
       />
@@ -233,7 +220,7 @@ export function AppRoutes() {
             counterpartyRepository={counterpartyRepository}
             accountRepository={accountRepository}
             journalEntryRepository={journalEntryRepository}
-            onBack={() => navigate('/master')}
+            onBack={() => navigate('/master/accounts/list')}
           />
         }
       />
@@ -244,7 +231,7 @@ export function AppRoutes() {
             householdMemberRepository={householdMemberRepository}
             accountRepository={accountRepository}
             journalEntryRepository={journalEntryRepository}
-            onBack={() => navigate('/master')}
+            onBack={() => navigate('/master/accounts/list')}
           />
         }
       />
@@ -255,34 +242,11 @@ export function AppRoutes() {
             projectRepository={projectRepository}
             accountRepository={accountRepository}
             journalEntryRepository={journalEntryRepository}
-            onBack={() => navigate('/master')}
+            onBack={() => navigate('/master/accounts/list')}
           />
         }
       />
 
-      <Route
-        path="/journal"
-        element={
-          <JournalHubScreen
-            onManualEntry={() => navigate('/journal/create/manual')}
-            onStatementImport={() => navigate('/journal/create/import')}
-            onViewEntries={() => navigate('/journal/entries')}
-            onSplitting={() => navigate('/journal/splitting')}
-            onRecurringTransactions={() => navigate('/journal/recurring')}
-            onBack={() => navigate('/')}
-          />
-        }
-      />
-      <Route
-        path="/journal/recurring"
-        element={
-          <RecurringTransactionHubScreen
-            onManageRules={() => navigate('/journal/recurring/rules')}
-            onReviewProposals={() => navigate('/journal/recurring/proposals')}
-            onBack={() => navigate('/journal')}
-          />
-        }
-      />
       <Route
         path="/journal/recurring/rules"
         element={
@@ -292,7 +256,7 @@ export function AppRoutes() {
             projectRepository={projectRepository}
             householdMemberRepository={householdMemberRepository}
             counterpartyRepository={counterpartyRepository}
-            onBack={() => navigate('/journal/recurring')}
+            onBack={() => navigate('/master/accounts/list')}
           />
         }
       />
@@ -303,7 +267,7 @@ export function AppRoutes() {
             recurringTransactionProposalApi={recurringTransactionProposalApi}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
             householdMemberRepository={householdMemberRepository}
-            onBack={() => navigate('/journal/recurring')}
+            onBack={() => navigate('/journal/recurring/proposals')}
           />
         }
       />
@@ -314,7 +278,7 @@ export function AppRoutes() {
             journalEntryDraftRepository={journalEntryDraftRepository}
             onResume={(draft) => navigate(`/journal/create/manual/${draft.id}`, { state: { draft } })}
             onNew={() => navigate('/journal/create/manual/new')}
-            onBack={() => navigate('/journal')}
+            onBack={() => navigate('/journal/entries')}
           />
         }
       />
@@ -329,7 +293,7 @@ export function AppRoutes() {
             journalEntryRepository={journalEntryRepository}
             journalEntryDraftRepository={journalEntryDraftRepository}
             initialDraft={null}
-            onComplete={() => navigate('/')}
+            onComplete={() => navigate('/journal/entries')}
             onBack={() => navigate('/journal/create/manual')}
           />
         }
@@ -356,7 +320,7 @@ export function AppRoutes() {
             externalTransactionRefRepository={externalTransactionRefRepository}
             journalEntryRepository={journalEntryRepository}
             onUploaded={(result) => navigate('/journal/create/import/review', { state: { result } })}
-            onBack={() => navigate('/journal')}
+            onBack={() => navigate('/journal/entries')}
           />
         }
       />
@@ -382,7 +346,7 @@ export function AppRoutes() {
             householdMemberRepository={householdMemberRepository}
             projectRepository={projectRepository}
             onSelectEntry={(entry) => navigate(`/journal/entries/${entry.id}`)}
-            onBack={() => navigate('/journal')}
+            onBack={() => navigate('/journal/entries')}
           />
         }
       />
@@ -401,17 +365,6 @@ export function AppRoutes() {
         }
       />
       <Route
-        path="/journal/splitting"
-        element={
-          <ExpenseSplittingHubScreen
-            onNewSplit={() => navigate('/journal/splitting/new')}
-            onSettlement={() => navigate('/journal/splitting/settlement')}
-            onHistory={() => navigate('/journal/splitting/history')}
-            onBack={() => navigate('/journal')}
-          />
-        }
-      />
-      <Route
         path="/journal/splitting/new"
         element={
           <ExpenseSplittingEntryPickerScreen
@@ -421,7 +374,7 @@ export function AppRoutes() {
             householdMemberRepository={householdMemberRepository}
             projectRepository={projectRepository}
             onSelectEntries={(entries) => navigate('/journal/splitting/new/form', { state: { entries } })}
-            onBack={() => navigate('/journal/splitting')}
+            onBack={() => navigate('/journal/splitting/new')}
           />
         }
       />
@@ -448,7 +401,7 @@ export function AppRoutes() {
             counterpartyRepository={counterpartyRepository}
             journalEntryRepository={journalEntryRepository}
             journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
-            onBack={() => navigate('/journal/splitting')}
+            onBack={() => navigate('/journal/splitting/new')}
           />
         }
       />
@@ -463,7 +416,7 @@ export function AppRoutes() {
             householdMemberRepository={householdMemberRepository}
             counterpartyRepository={counterpartyRepository}
             onSelectEntry={(entry) => navigate(`/journal/entries/${entry.id}`)}
-            onBack={() => navigate('/journal/splitting')}
+            onBack={() => navigate('/journal/splitting/new')}
           />
         }
       />
@@ -477,12 +430,14 @@ export function AppRoutes() {
             projectRepository={projectRepository}
             householdMemberRepository={householdMemberRepository}
             counterpartyRepository={counterpartyRepository}
-            onBack={() => navigate('/')}
+            onBack={() => navigate('/journal/entries')}
           />
         }
       />
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+
+      <Route path="*" element={<Navigate to="/journal/entries" replace />} />
     </Routes>
   )
 }
@@ -528,7 +483,7 @@ function ResumeJournalEntryFormRoute({
       journalEntryRepository={journalEntryRepository}
       journalEntryDraftRepository={journalEntryDraftRepository}
       initialDraft={state.draft}
-      onComplete={() => navigate('/')}
+      onComplete={() => navigate('/journal/entries')}
       onBack={() => navigate('/journal/create/manual')}
     />
   )
@@ -664,7 +619,7 @@ function ExpenseSplittingFormRoute({
       counterpartyRepository={counterpartyRepository}
       journalEntryRepository={journalEntryRepository}
       journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
-      onComplete={() => navigate('/')}
+      onComplete={() => navigate('/journal/entries')}
       onBack={() => navigate('/journal/splitting/new')}
     />
   )

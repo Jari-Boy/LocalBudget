@@ -1,0 +1,30 @@
+.journal-filter-popup {
+  position: relative;
+  display: inline-block;
+}
+
+.journal-filter-popup__trigger {
+  min-height: var(--control-height);
+  padding: 0 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.journal-filter-popup__trigger:hover {
+  background: var(--color-hover);
+}
+
+.journal-filter-popup__body {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 10;
+  width: min(720px, 90vw);
+  box-shadow: var(--shadow-popup);
+}

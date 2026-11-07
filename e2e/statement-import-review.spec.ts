@@ -146,7 +146,7 @@ async function setupAccountsAndMapping(
     { accountInputs: accounts, mappings, journalEntries, counterparties },
   )
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
   return accountIds
 }
 
@@ -161,8 +161,8 @@ function csvBuffer(content: string): Buffer {
  * 一致しないため候補には残らず、テストで作成した専用定義のみがパースに成功する)。
  */
 async function startUpload(page: Page, accountName: string) {
-  await page.getByRole('button', { name: '仕訳' }).click()
-  await page.getByRole('button', { name: '明細取込' }).click()
+  await page.getByRole('link', { name: '仕訳', exact: true }).click()
+  await page.getByRole('link', { name: '明細取込', exact: true }).click()
   await page.getByLabel('対象科目').selectOption({ label: accountName })
 }
 
@@ -171,7 +171,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await setupAccountsAndMapping(
       page,
@@ -218,7 +218,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await setupAccountsAndMapping(page, [{ category: 'asset', name: '普通預金', isReconcilable: true }], {
       accountIndex: 0,
@@ -249,7 +249,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await setupAccountsAndMapping(
       page,
@@ -304,7 +304,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await setupAccountsAndMapping(
       page,
@@ -365,7 +365,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await setupAccountsAndMapping(
       page,
@@ -429,7 +429,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await setupAccountsAndMapping(
       page,
@@ -498,7 +498,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await setupAccountsAndMapping(
       page,
@@ -547,7 +547,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await setupAccountsAndMapping(
       page,
@@ -596,7 +596,7 @@ test.describe('CSV取込〜レビュー一覧', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     const accountIds = await setupAccountsAndMapping(
       page,

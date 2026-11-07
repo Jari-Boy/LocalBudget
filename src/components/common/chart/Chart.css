@@ -1,0 +1,271 @@
+.chart {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text);
+  text-align: left;
+}
+
+.chart__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.chart__title {
+  margin: 0;
+  font-size: var(--font-size-nav);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chart__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.chart__plot {
+  position: relative;
+}
+
+.chart__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* グリッドと軸は控えめに(データより目立たせない) */
+.chart__grid {
+  stroke: var(--color-border-soft);
+  stroke-width: 1;
+}
+
+.chart__baseline {
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+}
+
+.chart__axis-label {
+  font-size: var(--font-size-xs);
+  fill: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart__axis-label--y {
+  text-anchor: end;
+}
+
+.chart__axis-label--x {
+  text-anchor: middle;
+}
+
+.chart__end-label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  fill: var(--color-text);
+  text-anchor: end;
+}
+
+/* 重なる点は面の色の縁で分離する */
+.chart__dot {
+  stroke: var(--color-surface);
+  stroke-width: 2;
+}
+
+.chart__hit {
+  cursor: pointer;
+  outline: none;
+}
+
+.chart__hit:focus-visible {
+  stroke: var(--color-accent);
+  stroke-width: 2;
+}
+
+.chart__tooltip {
+  position: absolute;
+  top: 4px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  width: 240px;
+  max-width: 80vw;
+  padding: 8px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(23, 35, 31, 0.16);
+  font-size: var(--font-size-xs);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.chart__tooltip-title {
+  font-weight: 600;
+}
+
+.chart__tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chart__num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.chart__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.chart__detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chart__detail-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.chart__close {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.chart__close:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.chart__table summary {
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.chart__table-scroll {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+
+.chart__table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.chart__table th,
+.chart__table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border-soft);
+  text-align: left;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.chart__table thead th {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.chart__table th.chart__num,
+.chart__table td.chart__num {
+  text-align: right;
+}
+
+/* 横棒 */
+.chart__hbars {
+  display: flex;
+  flex-direction: column;
+}
+
+.chart__hbar-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 86px 44px;
+  gap: 8px;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chart__hbar-row:hover {
+  background: var(--color-accent-soft);
+}
+
+.chart__hbar-track {
+  display: block;
+  height: 14px;
+}
+
+/* 横棒の基準線側(左)は角のまま、データ側(右)だけ4px丸める */
+.chart__hbar {
+  display: block;
+  height: 14px;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+}
+
+.chart__share {
+  color: var(--color-text-muted);
+}
+
+.chart__empty {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}

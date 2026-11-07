@@ -59,7 +59,7 @@ export default defineConfig({
       },
       workbox: {
         // アプリシェル(HTML/CSS/JS/WASMバイナリ/アイコン)をprecache対象にする。
-        globPatterns: ['**/*.{js,css,html,wasm,svg,png,ico,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,wasm,svg,png,ico,webmanifest,woff2}'],
       },
     }),
   ],

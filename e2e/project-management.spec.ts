@@ -31,10 +31,10 @@ async function waitForProjectCreated(page: Page, name: string) {
 test.describe('プロジェクト管理画面', () => {
   test('作成・編集・非アクティブ化・削除の一連の操作ができる', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: 'プロジェクトを管理する' }).click()
+    await page.getByRole('link', { name: 'マスタ', exact: true }).click()
+    await page.getByRole('link', { name: 'プロジェクト', exact: true }).click()
     await expect(page.getByText('登録済みのプロジェクトがありません')).toBeVisible()
 
     // 新規作成
@@ -68,14 +68,12 @@ test.describe('プロジェクト管理画面', () => {
     await expect(page.getByRole('rowgroup').filter({ hasText: '26年8月の帰省' })).toHaveCount(0)
 
     await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()
-    await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '科目一覧', exact: true })).toHaveAttribute('aria-current', 'page')
   })
 
   test('紐づく仕訳明細が1件以上あるプロジェクトは削除できず、非アクティブ化のみ可能', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
@@ -105,8 +103,8 @@ test.describe('プロジェクト管理画面', () => {
     await waitForProjectCreated(page, '記帳済みの旅行')
     await page.reload()
 
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: 'プロジェクトを管理する' }).click()
+    await page.getByRole('link', { name: 'マスタ', exact: true }).click()
+    await page.getByRole('link', { name: 'プロジェクト', exact: true }).click()
     const item = page.getByRole('rowgroup').filter({ hasText: '記帳済みの旅行' })
     await expect(item).toBeVisible()
     await expect(item.getByRole('button', { name: '削除' })).toHaveCount(0)

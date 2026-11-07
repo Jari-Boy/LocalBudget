@@ -1,0 +1,112 @@
+.journal-result-list {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  text-align: left;
+  color: var(--color-text);
+}
+
+.journal-result-list__items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.journal-result-list__row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+}
+
+.journal-result-list__row--button {
+  cursor: pointer;
+}
+
+.journal-result-list__row--button:hover {
+  background: var(--color-hover);
+}
+
+.journal-result-list__row--selected {
+  background: var(--color-accent-soft);
+}
+
+.journal-result-list__row--selected:hover {
+  background: var(--color-accent-soft);
+}
+
+/* 複数選択では、チェック欄と本文を横に並べる */
+.journal-result-list__row[role='checkbox'] {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.journal-result-list__box {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+}
+
+.journal-result-list__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.journal-result-list__line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--font-size-base);
+}
+
+.journal-result-list__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.journal-result-list__tag {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.journal-result-list__memo {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.journal-result-list__amount {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.journal-result-list__sub {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.journal-result-list__empty {
+  margin: 0;
+  padding: 16px 12px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}

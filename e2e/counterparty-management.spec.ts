@@ -47,10 +47,10 @@ async function waitForPatternCount(page: Page, counterpartyName: string, expecte
 test.describe('取引先管理画面', () => {
   test('作成・編集・非アクティブ化・削除・統合の一連の操作ができる', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: '取引先を管理する' }).click()
+    await page.getByRole('link', { name: 'マスタ', exact: true }).click()
+    await page.getByRole('link', { name: '取引先', exact: true }).click()
     await expect(page.getByText('登録済みの取引先がありません')).toBeVisible()
 
     // 新規作成
@@ -108,18 +108,16 @@ test.describe('取引先管理画面', () => {
     await osakaItem.getByRole('button', { name: '非アクティブ化' }).click()
     await expect(osakaItem.getByRole('button', { name: 'アクティブ化' })).toBeVisible()
 
-    // トップ画面へ戻る(マスタ管理ハブ画面を経由する)
+    // 「戻る」で領域の入口(科目一覧)へ戻る
     await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()
-    await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '科目一覧', exact: true })).toHaveAttribute('aria-current', 'page')
   })
 
   test('紐づく仕訳明細が1件以上ある取引先には削除ボタンが表示されず、非アクティブ化のみ可能', async ({
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
@@ -148,8 +146,8 @@ test.describe('取引先管理画面', () => {
     await waitForCounterpartyCreated(page, 'イオン')
     await page.reload()
 
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: '取引先を管理する' }).click()
+    await page.getByRole('link', { name: 'マスタ', exact: true }).click()
+    await page.getByRole('link', { name: '取引先', exact: true }).click()
     const item = page.getByRole('rowgroup').filter({ hasText: 'イオン' })
     await expect(item.getByRole('button', { name: '削除' })).toHaveCount(0)
     await expect(item.getByRole('button', { name: '非アクティブ化' })).toBeVisible()
@@ -157,10 +155,10 @@ test.describe('取引先管理画面', () => {
 
   test('学習済みパターンの一覧表示・編集・削除ができる', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: '取引先を管理する' }).click()
+    await page.getByRole('link', { name: 'マスタ', exact: true }).click()
+    await page.getByRole('link', { name: '取引先', exact: true }).click()
     await page.getByRole('button', { name: '取引先を追加' }).click()
     await page.getByLabel('名称').fill('イオン')
     await page.getByRole('button', { name: '作成する' }).click()
