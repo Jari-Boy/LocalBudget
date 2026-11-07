@@ -163,5 +163,14 @@
     "weekOption5": "第5",
     "weekOptionLast": "最終",
     "registerError": "登録に失敗しました。もう一度お試しください。"
+  },
+  "projectTab": {
+    "balanceTitle": "科目残高の内訳",
+    "balanceAssets": "資産",
+    "balanceLiabilities": "負債",
+    "balanceEquity": "純資産",
+    "balanceRevenues": "収益",
+    "balanceExpenses": "費用",
+    "balanceEmpty": "残高のある科目がありません"
   }
 }

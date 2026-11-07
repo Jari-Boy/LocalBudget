@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { Account } from '../../domain/account/Account'
+import type { AccountRepository } from '../../domain/account/AccountRepository'
 import { listDeletionBlocks, summarizeMasterUsage } from '../../domain/master/summarizeMasterUsage'
+import {
+  summarizeProjectAccountBalances,
+  type ProjectAccountBalances,
+} from '../../domain/project/summarizeProjectAccountBalances'
+import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import type { Project } from '../../domain/project/Project'
@@ -16,6 +23,7 @@ import type { MaybeAsync } from './maybeAsync'
 import { uniqueName } from './uniqueName'
 
 export interface ProjectMasterTabProps {
+  accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll'>>
   projectRepository: MaybeAsync<
     Pick<ProjectRepository, 'findAll' | 'create' | 'update' | 'delete' | 'deactivate' | 'activate'>
   >
@@ -25,6 +33,7 @@ export interface ProjectMasterTabProps {
 }
 
 interface LoadedData {
+  accounts: Account[]
   projects: Project[]
   groups: ProjectGroup[]
   entries: JournalEntry[]
@@ -39,6 +48,7 @@ const LEAF_LABEL = 'プロジェクト'
  * プロジェクトは削除できず、理由を表示する。
  */
 export function ProjectMasterTab({
+  accountRepository,
   projectRepository,
   projectGroupRepository,
   journalEntryRepository,
@@ -49,14 +59,15 @@ export function ProjectMasterTab({
   const [data, setData] = useState<LoadedData | null>(null)
 
   const load = useCallback(async () => {
-    const [projects, groups, entries, rules] = await Promise.all([
+    const [accounts, projects, groups, entries, rules] = await Promise.all([
+      accountRepository.findAll(),
       projectRepository.findAll(),
       projectGroupRepository.findAll(),
       journalEntryRepository.findAll(),
       recurringTransactionRuleRepository.findAll(),
     ])
-    setData({ projects, groups, entries, rules })
-  }, [projectRepository, projectGroupRepository, journalEntryRepository, recurringTransactionRuleRepository])
+    setData({ accounts, projects, groups, entries, rules })
+  }, [accountRepository, projectRepository, projectGroupRepository, journalEntryRepository, recurringTransactionRuleRepository])
 
   useEffect(() => {
     void load()
@@ -130,6 +141,42 @@ export function ProjectMasterTab({
       isLeafActive={(id) => data.projects.find((p) => p.id === id)?.isActive ?? true}
       leafBlockedText={(id) => describeDeletionBlocks(listDeletionBlocks('project', usage.get('project', id)), t)}
       onChanged={load}
+      renderLeafExtra={(id) => (
+        <BalanceBreakdown balances={summarizeProjectAccountBalances(data.entries, data.accounts, id)} />
+      )}
     />
+  )
+}
+
+const BALANCE_CATEGORIES: ReadonlyArray<{ key: keyof ProjectAccountBalances; titleKey: string }> = [
+  { key: 'assets', titleKey: 'projectTab.balanceAssets' },
+  { key: 'liabilities', titleKey: 'projectTab.balanceLiabilities' },
+  { key: 'equity', titleKey: 'projectTab.balanceEquity' },
+  { key: 'revenues', titleKey: 'projectTab.balanceRevenues' },
+  { key: 'expenses', titleKey: 'projectTab.balanceExpenses' },
+]
+
+/** プロジェクトに紐づく仕訳明細の、区分別の科目残高の内訳(旧・プロジェクト管理画面の「内訳を表示」を引き継ぐ) */
+function BalanceBreakdown({ balances }: { balances: ProjectAccountBalances }) {
+  const { t } = useTranslation('master')
+  const shown = BALANCE_CATEGORIES.filter(({ key }) => balances[key].length > 0)
+  return (
+    <section className="master-subsection" aria-label={t('projectTab.balanceTitle')}>
+      <h3 className="master-subsection__title">{t('projectTab.balanceTitle')}</h3>
+      {shown.length === 0 && <p className="master-note">{t('projectTab.balanceEmpty')}</p>}
+      {shown.map(({ key, titleKey }) => (
+        <div key={key}>
+          <h4 className="master-field__label">{t(titleKey)}</h4>
+          <ul className="master-list">
+            {balances[key].map((item) => (
+              <li key={item.accountId} className="master-list__item">
+                <span className="master-list__text">{item.accountName}</span>
+                <span>{formatCurrency(item.amount, 'JPY')}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
   )
 }

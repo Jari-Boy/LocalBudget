@@ -228,6 +228,7 @@ export function AppRoutes() {
         path="/master/projects"
         element={
           <ProjectMasterTab
+            accountRepository={accountRepository}
             projectRepository={projectRepository}
             projectGroupRepository={projectGroupRepository}
             journalEntryRepository={journalEntryRepository}

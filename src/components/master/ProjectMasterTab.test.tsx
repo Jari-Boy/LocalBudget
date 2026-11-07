@@ -47,6 +47,7 @@ function renderTab() {
   render(
     <I18nextProvider i18n={i18n}>
       <ProjectMasterTab
+        accountRepository={new SqlJsAccountRepository(db)}
         projectRepository={projects}
         projectGroupRepository={groups}
         journalEntryRepository={new SqlJsJournalEntryRepository(db)}
@@ -178,6 +179,102 @@ describe('ProjectMasterTab', () => {
     await open('沖縄旅行')
 
     expect(panel('プロジェクトの編集').getByText(/定期取引ルール1件で使用中/)).toBeInTheDocument()
+  })
+
+  it('右パネルに、プロジェクトに紐づく区分別の科目残高の内訳が表示される(旧画面の「内訳を表示」を引き継ぐ)', async () => {
+    const project = projects.create({ name: '沖縄旅行' })
+    new SqlJsJournalEntryRepository(db).create({
+      entryDate: '2026-07-15',
+      householdMemberId: memberId,
+      lines: [
+        { accountId: expenseId, side: 'debit', amount: 5000, projectId: project.id },
+        { accountId: cashId, side: 'credit', amount: 5000 },
+      ],
+    })
+    renderTab()
+    await open('沖縄旅行')
+
+    const breakdown = panel('プロジェクトの編集').getByRole('region', { name: '科目残高の内訳' })
+
+    expect(within(breakdown).getByText('交際費')).toBeInTheDocument()
+    expect(within(breakdown).getByText('￥5,000')).toBeInTheDocument()
+  })
+
+  it('紐づく残高が1件もないプロジェクトは、内訳に空状態のメッセージが出る', async () => {
+    projects.create({ name: '計画中の旅行' })
+    renderTab()
+    await open('計画中の旅行')
+
+    expect(panel('プロジェクトの編集').getByText('残高のある科目がありません')).toBeInTheDocument()
+  })
+
+  it('削除の完了を待つ間は、「本当に削除する」を連打しても削除は1回だけ実行される', async () => {
+    const project = projects.create({ name: '沖縄旅行' })
+    let calls = 0
+    const release: Array<() => void> = []
+    const slow = {
+      findAll: () => projects.findAll(),
+      create: projects.create.bind(projects),
+      update: projects.update.bind(projects),
+      deactivate: projects.deactivate.bind(projects),
+      activate: projects.activate.bind(projects),
+      delete: (id: number) => {
+        calls += 1
+        return new Promise<void>((resolve) => release.push(() => resolve(projects.delete(id))))
+      },
+    }
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ProjectMasterTab
+          accountRepository={new SqlJsAccountRepository(db)}
+          projectRepository={slow}
+          projectGroupRepository={groups}
+          journalEntryRepository={new SqlJsJournalEntryRepository(db)}
+          recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
+        />
+      </I18nextProvider>,
+    )
+    await open('沖縄旅行')
+    fireEvent.click(panel('プロジェクトの編集').getByRole('button', { name: '削除' }))
+
+    const confirm = panel('プロジェクトの編集').getByRole('button', { name: '本当に削除する' })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+
+    expect(calls).toBe(1)
+    expect(confirm).toBeDisabled()
+    release.forEach((r) => r())
+    await waitFor(() => expect(projects.findById(project.id)).toBeNull())
+  })
+
+  it('削除に失敗したときは、エラーを表示する', async () => {
+    projects.create({ name: '沖縄旅行' })
+    const failing = {
+      findAll: () => projects.findAll(),
+      create: projects.create.bind(projects),
+      update: projects.update.bind(projects),
+      deactivate: projects.deactivate.bind(projects),
+      activate: projects.activate.bind(projects),
+      delete: () => {
+        throw new Error('constraint')
+      },
+    }
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ProjectMasterTab
+          accountRepository={new SqlJsAccountRepository(db)}
+          projectRepository={failing}
+          projectGroupRepository={groups}
+          journalEntryRepository={new SqlJsJournalEntryRepository(db)}
+          recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
+        />
+      </I18nextProvider>,
+    )
+    await open('沖縄旅行')
+    fireEvent.click(panel('プロジェクトの編集').getByRole('button', { name: '削除' }))
+    fireEvent.click(panel('プロジェクトの編集').getByRole('button', { name: '本当に削除する' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('削除に失敗しました')
   })
 
   it('プロジェクトを「無効にする」と、DBで無効になり、「有効にする」で戻る', async () => {

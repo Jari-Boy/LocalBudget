@@ -115,6 +115,19 @@ describe('AccountMasterTab', () => {
     expect(await screen.findByRole('button', { name: '食料費' })).toBeInTheDocument()
   })
 
+  it('同じ区分の別の科目と同じ名前に変えて保存しようとすると、エラーを表示し、名称は変わらない', async () => {
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const other = accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
+    renderTab()
+    await open('交通費')
+
+    fireEvent.change(panel('科目の編集').getByLabelText('名称'), { target: { value: '食費' } })
+    fireEvent.click(panel('科目の編集').getByRole('button', { name: '保存' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('保存に失敗しました')
+    expect(accounts.findById(other.id)!.name).toBe('交通費')
+  })
+
   it('名義を選んで保存すると、DBに反映される', async () => {
     const account = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
     renderTab()
