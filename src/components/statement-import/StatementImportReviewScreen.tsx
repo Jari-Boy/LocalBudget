@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { Counterparty, CounterpartyPattern, CreateCounterpartyInput } from '../../domain/counterparty/Counterparty'
 import type { Project } from '../../domain/project/Project'
+import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
+import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { CreateJournalEntryInput, JournalEntry, JournalLineSide } from '../../domain/journal/JournalEntry'
 import type { StatementImportReviewResult } from '../../domain/statement-import/buildStatementImportReview'
@@ -50,6 +52,9 @@ interface ProjectFinder {
 interface HouseholdMemberFinder {
   findAll(): HouseholdMember[] | Promise<HouseholdMember[]>
 }
+interface SettlementBatchFinder {
+  findAll(): SettlementBatch[] | Promise<SettlementBatch[]>
+}
 
 export interface StatementImportReviewScreenProps {
   targetAccount: Account
@@ -59,6 +64,7 @@ export interface StatementImportReviewScreenProps {
   counterpartyRepository: CounterpartyEstimationRepository
   projectRepository: ProjectFinder
   householdMemberRepository: HouseholdMemberFinder
+  settlementBatchRepository: SettlementBatchFinder
   onBack: () => void
 }
 
@@ -83,6 +89,14 @@ interface RecordReviewState {
   projectId: number | null
   /** 世帯メンバー(任意)。counterparty_idと異なりPL科目限定の制約は無い(docs/schema/journal.sql) */
   householdMemberId: number | null
+  /**
+   * 精算バッチ(計画Issue #144)。相手科目の行にのみ付与し、相手科目が一時勘定
+   * (isSettlementBatchTaggableAccount)のときだけ選択できる。一時勘定でなくなった場合は
+   * 選択欄を消し、確定時にも付与しない
+   */
+  settlementBatchId: number | null
+  /** 仕訳のコメント(計画Issue #144)。摘要(CSVの摘要)とは別の自由な補足 */
+  comment: string
   includeDuplicate: boolean
   approximateDecision: ApproximateDecision
 }
@@ -93,6 +107,8 @@ function createInitialRecordState(counterpartyId: number | null, counterAccountI
     counterAccountId,
     projectId: null,
     householdMemberId: null,
+    settlementBatchId: null,
+    comment: '',
     counterAccountTouched: false,
     initialCounterpartyId: counterpartyId,
     includeDuplicate: false,
@@ -120,6 +136,12 @@ function resolveEligibleCounterpartyId(
     return null
   }
   return counterpartyId
+}
+
+/** accountIdの科目が精算バッチのタグを付けられる一時勘定かどうか。未選択・候補外はfalse(計画Issue #144) */
+function isTaggableAccountId(accountId: number | null, accounts: readonly Account[]): boolean {
+  const account = accounts.find((candidate) => candidate.id === accountId)
+  return account !== undefined && isSettlementBatchTaggableAccount(account)
 }
 
 /**
@@ -191,6 +213,7 @@ export function StatementImportReviewScreen({
   counterpartyRepository,
   projectRepository,
   householdMemberRepository,
+  settlementBatchRepository,
   onBack,
 }: StatementImportReviewScreenProps) {
   const { t } = useTranslation('statementImport')
@@ -200,6 +223,7 @@ export function StatementImportReviewScreen({
   const [counterparties, setCounterparties] = useState<Counterparty[] | null>(null)
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[] | null>(null)
+  const [settlementBatches, setSettlementBatches] = useState<SettlementBatch[]>([])
   /** 対象科目の永続化済み(過去分)のjournal_lines。今回アップロードしたバッチの効果は含まない */
   const [pastAccountLines, setPastAccountLines] = useState<PastAccountLine[] | null>(null)
   /** 取引先推定・相手科目サジェストの計算(computeInitialRecordStates)が完了するまではnull */
@@ -226,6 +250,10 @@ export function StatementImportReviewScreen({
   useEffect(() => {
     void Promise.resolve(householdMemberRepository.findAll()).then(setHouseholdMembers)
   }, [householdMemberRepository])
+
+  useEffect(() => {
+    void Promise.resolve(settlementBatchRepository.findAll()).then(setSettlementBatches)
+  }, [settlementBatchRepository])
 
   /**
    * 取引先推定・相手科目サジェストの初期計算は、accounts・counterpartiesが初めて揃った
@@ -278,6 +306,9 @@ export function StatementImportReviewScreen({
   const counterAccountCandidates = accounts.filter(
     (account) => account.id !== targetAccount.id && isStatementImportCounterAccountEligible(account),
   )
+  /** 相手科目が一時勘定(精算バッチのタグを付けられる科目)かどうか(計画Issue #144) */
+  const isTaggableCounterAccount = (accountId: number | null): boolean =>
+    isTaggableAccountId(accountId, counterAccountCandidates)
   const counterpartyLookup: CounterpartyLookup = {
     findById: (id) => counterparties.find((counterparty) => counterparty.id === id) ?? null,
   }
@@ -401,6 +432,9 @@ export function StatementImportReviewScreen({
               counterpartyId: state.counterpartyId,
               projectId: state.projectId,
               householdMemberId: state.householdMemberId,
+              // 一時勘定以外の相手科目にはタグを付けない(選択欄を消した後に別経路で残った値の防御)
+              settlementBatchId: isTaggableCounterAccount(state.counterAccountId) ? state.settlementBatchId : null,
+              comment: state.comment,
               // 起票者(計画Issue #88)。相手科目行の世帯メンバー(選択済みなら)を使い、
               // 未選択なら対象科目(取込先口座)自体の既定名義、それも無ければ世帯メンバーの
               // 先頭にフォールバックする(seedDefaultHouseholdMemberにより最低1件は存在する想定)。
@@ -596,6 +630,10 @@ export function StatementImportReviewScreen({
                       counterAccountCandidates,
                     ),
                     counterAccountTouched: true,
+                    // 一時勘定でない科目へ変更したら精算バッチの選択をクリアする(計画Issue #144)
+                    settlementBatchId: isTaggableAccountId(counterAccountId, counterAccountCandidates)
+                      ? prevState.settlementBatchId
+                      : null,
                     // 既定値のある科目に切り替えた場合、明細側の上書き値が残っているとDDLトリガー違反
                     // (household-members.md 1.2節、計画Issue #88)になりうるため、選択欄のdisabled化と
                     // 合わせてここでクリアする(journal-entry/JournalEntryForm.tsxと同じガード)
@@ -673,6 +711,39 @@ export function StatementImportReviewScreen({
                   </>
                 )
               })()}
+
+              {isTaggableCounterAccount(state.counterAccountId) && (
+                <>
+                  <label htmlFor={`${idPrefix}-settlement-batch`}>{t('settlementBatchLabel')}</label>
+                  <select
+                    id={`${idPrefix}-settlement-batch`}
+                    value={state.settlementBatchId ?? ''}
+                    onChange={(event) =>
+                      updateRecordState(index, (prevState) => ({
+                        ...prevState,
+                        settlementBatchId: event.target.value === '' ? null : Number(event.target.value),
+                      }))
+                    }
+                  >
+                    <option value="">{t('unselected')}</option>
+                    {settlementBatches.map((batch) => (
+                      <option key={batch.id} value={batch.id}>
+                        {batch.name}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+
+              <label htmlFor={`${idPrefix}-comment`}>{t('commentLabel')}</label>
+              <input
+                id={`${idPrefix}-comment`}
+                type="text"
+                value={state.comment}
+                onChange={(event) =>
+                  updateRecordState(index, (prevState) => ({ ...prevState, comment: event.target.value }))
+                }
+              />
 
               {reviewRecord.isExactDuplicate && (
                 <div role="alert">

@@ -37,6 +37,7 @@ function buildEntry(overrides: {
     id: overrides.id,
     entryDate: overrides.entryDate,
     memo: null,
+    comment: null,
     currency: 'JPY',
     sourceType: 'manual',
     householdMemberId: overrides.householdMemberId ?? 1,

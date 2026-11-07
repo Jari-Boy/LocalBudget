@@ -6,7 +6,8 @@
  * 明示的な取込許可、確定版候補の「これは確定版です」/「別の取引です」選択)、
  * 残高照合(docs/domain/reconciliation.md 1.5、is_reconcilable=true科目のみ)の
  * 警告表示を、sql.jsのNode実装(createTestDatabase)を使った統合的なレンダリング
- * テストとして検証する。外部依存: sql.js(ネットワークアクセスなし)。
+ * テストとして検証する。明細取込の確定時に精算バッチ(相手科目が一時勘定の場合のみ選択可)と
+ * コメント(摘要とは別)を設定できること(計画Issue #144)も含む。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
@@ -21,9 +22,11 @@ import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJourna
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
+import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import type { StatementImportReviewResult } from '../../domain/statement-import/buildStatementImportReview'
 import type { ImportedRecord } from '../../domain/statement-import/ImportedRecord'
 import { normalizeDescriptionForMatching } from '../../domain/statement-import/estimateCounterparty'
+import { findUnsettledSettlementBatchBalances } from '../../domain/settlement-batch/findUnsettledSettlementBatchBalances'
 import { StatementImportReviewScreen } from './StatementImportReviewScreen'
 
 let db: Database
@@ -32,6 +35,7 @@ let journalEntryRepository: SqlJsJournalEntryRepository
 let counterpartyRepository: SqlJsCounterpartyRepository
 let projectRepository: SqlJsProjectRepository
 let householdMemberRepository: SqlJsHouseholdMemberRepository
+let settlementBatchRepository: SqlJsSettlementBatchRepository
 let memberId: number
 
 beforeEach(async () => {
@@ -42,6 +46,7 @@ beforeEach(async () => {
   counterpartyRepository = new SqlJsCounterpartyRepository(db)
   projectRepository = new SqlJsProjectRepository(db)
   householdMemberRepository = new SqlJsHouseholdMemberRepository(db)
+  settlementBatchRepository = new SqlJsSettlementBatchRepository(db)
   memberId = householdMemberRepository.create({ name: '自分' }).id
 })
 
@@ -73,6 +78,7 @@ function renderScreen(
         counterpartyRepository={counterpartyRepository}
         projectRepository={projectRepository}
         householdMemberRepository={householdMemberRepository}
+        settlementBatchRepository={settlementBatchRepository}
         onBack={vi.fn()}
       />
     </I18nextProvider>,
@@ -1370,5 +1376,122 @@ describe('StatementImportReviewScreen', () => {
     const group2 = screen.getByRole('group', { name: '2件目' })
     expect((within(group1).getByLabelText('取引先') as HTMLSelectElement).value).toBe(String(created!.id))
     expect((within(group2).getByLabelText('取引先') as HTMLSelectElement).value).toBe(String(created!.id))
+  })
+})
+
+
+describe('精算バッチとコメントの設定(計画Issue #144)', () => {
+  function reviewOf(description = 'スーパー', amount = -3000): StatementImportReviewResult {
+    return {
+      records: [
+        {
+          record: importedRecord({ description, amount }),
+          externalId: 'TX-001',
+          isExactDuplicate: false,
+          approximateCandidates: [],
+        },
+      ],
+      latestExternalBalance: null,
+    }
+  }
+
+  it('相手科目が一時勘定(未払金)の場合のみ精算バッチ選択欄が表示される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const payable = accountRepository.create({ category: 'liability', name: '未払金', isReconcilable: false })
+    const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    settlementBatchRepository.create({ name: '26/8割勘', type: 'expense_splitting' })
+
+    renderScreen(account, reviewOf())
+    const group = await screen.findByRole('group', { name: '1件目' })
+
+    expect(within(group).queryByLabelText('精算バッチ')).not.toBeInTheDocument()
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(food.id) } })
+    expect(within(group).queryByLabelText('精算バッチ')).not.toBeInTheDocument()
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(payable.id) } })
+    expect(within(group).getByLabelText('精算バッチ')).toBeInTheDocument()
+  })
+
+  it('精算バッチを選んで確定すると、相手科目の一時勘定行にだけタグが付いて保存される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const payable = accountRepository.create({ category: 'liability', name: '未払金', isReconcilable: false })
+    const batch = settlementBatchRepository.create({ name: '26/8割勘', type: 'expense_splitting' })
+
+    renderScreen(account, reviewOf())
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(payable.id) } })
+    fireEvent.change(within(group).getByLabelText('精算バッチ'), { target: { value: String(batch.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+    const [entry] = journalEntryRepository.findAll()
+    const tagged = entry.lines.filter((line) => line.settlementBatchId !== null)
+    expect(tagged).toHaveLength(1)
+    expect(tagged[0].accountId).toBe(payable.id)
+    expect(tagged[0].settlementBatchId).toBe(batch.id)
+  })
+
+  it('精算バッチを選んだ後に相手科目を一時勘定以外へ変更すると選択がクリアされ、タグなしで確定される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const payable = accountRepository.create({ category: 'liability', name: '未払金', isReconcilable: false })
+    const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const batch = settlementBatchRepository.create({ name: '26/8割勘', type: 'expense_splitting' })
+
+    renderScreen(account, reviewOf())
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(payable.id) } })
+    fireEvent.change(within(group).getByLabelText('精算バッチ'), { target: { value: String(batch.id) } })
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(food.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+    const [entry] = journalEntryRepository.findAll()
+    expect(entry.lines.every((line) => line.settlementBatchId === null)).toBe(true)
+  })
+
+  it('精算バッチを設定して確定した一時勘定行は、未精算残高に反映される', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const advance = accountRepository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+    const batch = settlementBatchRepository.create({ name: '26/8割勘', type: 'expense_splitting' })
+
+    renderScreen(account, reviewOf('友人との食事', -3000))
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(advance.id) } })
+    fireEvent.change(within(group).getByLabelText('精算バッチ'), { target: { value: String(batch.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+    const lines = journalEntryRepository.findAll().flatMap((entry) => entry.lines)
+    const balances = findUnsettledSettlementBatchBalances(lines, batch.id, advance.id, 'asset')
+    expect(balances).toHaveLength(1)
+    expect(balances[0].balance).toBe(3000)
+  })
+
+  it('コメントを入力して確定すると仕訳のコメントに保存され、摘要はCSVの摘要のままになる', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+
+    renderScreen(account, reviewOf('スーパー'))
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(food.id) } })
+    fireEvent.change(within(group).getByLabelText('コメント'), { target: { value: '友人の分も含む' } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+    const [entry] = journalEntryRepository.findAll()
+    expect(entry.comment).toBe('友人の分も含む')
+    expect(entry.memo).toBe('スーパー')
+  })
+
+  it('コメントを入力しなかった場合、仕訳のコメントはnullになる', async () => {
+    const account = accountRepository.create({ category: 'asset', name: '普通預金', isReconcilable: true })
+    const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+
+    renderScreen(account, reviewOf())
+    const group = await screen.findByRole('group', { name: '1件目' })
+    fireEvent.change(within(group).getByLabelText('相手科目'), { target: { value: String(food.id) } })
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await screen.findByText('1件を確定しました(0件失敗)')
+    expect(journalEntryRepository.findAll()[0].comment).toBeNull()
   })
 })

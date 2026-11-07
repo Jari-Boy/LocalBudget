@@ -16,6 +16,13 @@ export interface JournalEntryFormLine {
    * (行に紐づくリンクの維持)を可能にする。新規行・下書きから復元した行は未設定のまま。
    */
   lineId?: number
+  /**
+   * 確定済み明細の精算バッチタグ(計画Issue #144)。画面上で編集する項目ではなく、読み込んだ値を
+   * 更新時にそのままJournalLineInput.settlementBatchIdへ引き継ぐための保持用。引き継がないと
+   * JournalEntryRepository.updateがタグをNULLで上書きし、未精算残高の集計が狂う。
+   * 新規行・下書きから復元した行は未設定のまま。
+   */
+  settlementBatchId?: number | null
   accountId: number | null
   side: JournalLineSide | null
   amountInput: string
@@ -106,6 +113,7 @@ export function toJournalLineInput(line: JournalEntryFormLine): JournalLineInput
     projectId: line.projectId,
     householdMemberId: line.householdMemberId,
     counterpartyId: line.counterpartyId,
+    ...(line.settlementBatchId === undefined ? {} : { settlementBatchId: line.settlementBatchId }),
   }
 }
 
@@ -160,7 +168,7 @@ export function isLineEmpty(line: JournalEntryFormLine): boolean {
  * JournalEntryDetailScreenでのLines編集で、既存の明細をJournalEntryLinesTableの
  * 入力状態として読み込む際に使う。確定済み明細は科目・貸借・金額がすべて必須のため
  * (fromJournalEntryDraftLineと異なり)null合流の分岐は不要。明細のidはlineIdとして保持し、
- * 更新時にJournalLineInput.idへ引き継ぐ(計画Issue #132)。
+ * 更新時にJournalLineInput.idへ引き継ぐ(計画Issue #132)。精算バッチタグも同様に保持する(計画Issue #144)。
  */
 export function fromJournalLine(line: JournalLine): JournalEntryFormLine {
   return {
@@ -171,5 +179,6 @@ export function fromJournalLine(line: JournalLine): JournalEntryFormLine {
     projectId: line.projectId,
     householdMemberId: line.householdMemberId,
     counterpartyId: line.counterpartyId,
+    settlementBatchId: line.settlementBatchId,
   }
 }

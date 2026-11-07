@@ -439,6 +439,64 @@ describe('JournalEntryForm', () => {
     expect(journalEntryDraftRepositoryImpl.findAll()).toHaveLength(0)
   })
 
+  it('コメントを入力して確定すると、摘要(memo)とは別にコメントが仕訳に保存される(計画Issue #144)', async () => {
+    const expense = createAccount({ name: '食費', category: 'expense' })
+    const cash = createAccount({ name: '現金', category: 'asset' })
+    householdMemberRepository.create({ name: '自分' })
+
+    const { onComplete } = renderForm()
+    const debitCard = getCards(await findBlock('借方'))[0]
+    const creditCard = getCards(await findBlock('貸方'))[0]
+    selectLineAccount(debitCard, expense.id)
+    fireEvent.change(within(debitCard).getByLabelText('金額'), { target: { value: '3000' } })
+    selectLineAccount(creditCard, cash.id)
+    fireEvent.change(within(creditCard).getByLabelText('金額'), { target: { value: '3000' } })
+    fireEvent.change(screen.getByLabelText('摘要(任意)'), { target: { value: 'スーパー' } })
+    fireEvent.change(screen.getByLabelText('コメント(任意)'), { target: { value: '来月の家計会議で確認' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }))
+
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
+    const [entry] = journalEntryRepository.findAll()
+    expect(entry.memo).toBe('スーパー')
+    expect(entry.comment).toBe('来月の家計会議で確認')
+  })
+
+  it('コメントを入力すると下書きにも自動保存され、既存下書きから復元できる(計画Issue #144)', async () => {
+    renderForm()
+    await screen.findByRole('table')
+    fireEvent.change(screen.getByLabelText('コメント(任意)'), { target: { value: '下書きのコメント' } })
+
+    await vi.advanceTimersByTimeAsync(2500)
+    await waitFor(() => {
+      expect(journalEntryDraftRepositoryImpl.findAll()[0]?.comment).toBe('下書きのコメント')
+    })
+  })
+
+  it('既存下書きを渡すと、下書きのコメントが復元された状態で表示される(計画Issue #144)', async () => {
+    const draft = journalEntryDraftRepositoryImpl.create({ entryDate: '2026-08-01', comment: '復元されるコメント' })
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <JournalEntryForm
+          accountRepository={accountRepository}
+          projectRepository={projectRepository}
+          householdMemberRepository={householdMemberRepository}
+          counterpartyRepository={counterpartyRepository}
+          journalEntryRepository={journalEntryRepository}
+          journalEntryDraftRepository={journalEntryDraftRepository}
+          initialDraft={draft}
+          onComplete={vi.fn()}
+          onBack={vi.fn()}
+          today="2026-08-11"
+          draftSaveDebounceMs={2000}
+        />
+      </I18nextProvider>,
+    )
+
+    expect(await screen.findByLabelText('コメント(任意)')).toHaveValue('復元されるコメント')
+  })
+
   it('既存下書きを渡すと、日付・摘要・明細が復元された状態で表示される', async () => {
     const expense = createAccount({ name: '食費', category: 'expense' })
     const cash = createAccount({ name: '現金', category: 'asset' })

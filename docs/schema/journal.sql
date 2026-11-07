@@ -5,6 +5,9 @@ CREATE TABLE journal_entries (
   id           INTEGER PRIMARY KEY,
   entry_date   TEXT NOT NULL,
   memo         TEXT,
+  -- 自由な補足(計画Issue #144)。memo(摘要、何の取引か)とは役割を分ける任意項目で、
+  -- 仕訳ごとに1つ(やり取りの履歴は持たない)。
+  comment      TEXT,
   currency     TEXT NOT NULL DEFAULT 'JPY',
   source_type  TEXT NOT NULL DEFAULT 'manual'
     CHECK (source_type IN (
@@ -154,6 +157,8 @@ CREATE TABLE journal_entry_drafts (
     CHECK (purpose IN ('manual_entry')),
   entry_date   TEXT,
   memo         TEXT,
+  -- journal_entries.commentに対応する下書き側の列(計画Issue #144)
+  comment      TEXT,
   currency     TEXT,
   -- 起票者(journal_entries.household_member_id相当)。下書き段階では未入力状態を許容する
   -- ためNULL可(journal_entriesと異なりNOT NULLにしない、docs/domain/journal.md 3章の

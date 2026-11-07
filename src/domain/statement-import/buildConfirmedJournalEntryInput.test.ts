@@ -141,3 +141,51 @@ describe('共通のヘッダー情報', () => {
     })
   })
 })
+
+describe('精算バッチとコメントの設定(計画Issue #144)', () => {
+  const base = {
+    record: record({ amount: -150 }),
+    externalId: 'HASH-001',
+    targetAccountId: 1,
+    targetAccountCategory: 'asset' as const,
+    counterAccountId: 2,
+    entryHouseholdMemberId: 99,
+  }
+
+  it('settlementBatchIdを指定すると相手科目の行にのみタグが付く(対象科目の行には付かない)', () => {
+    const input = buildConfirmedJournalEntryInput({ ...base, settlementBatchId: 7 })
+
+    expect(input.lines).toEqual([
+      {
+        accountId: 2,
+        side: 'debit',
+        amount: 150,
+        counterpartyId: null,
+        projectId: null,
+        householdMemberId: null,
+        settlementBatchId: 7,
+      },
+      { accountId: 1, side: 'credit', amount: 150 },
+    ])
+  })
+
+  it('settlementBatchIdが未指定またはnullの場合、どの行にもタグを付けない', () => {
+    for (const settlementBatchId of [undefined, null]) {
+      const input = buildConfirmedJournalEntryInput({ ...base, settlementBatchId })
+      expect(input.lines.some((line) => 'settlementBatchId' in line)).toBe(false)
+    }
+  })
+
+  it('commentを指定すると仕訳のcommentに設定され、摘要(memo)はCSVの摘要のまま変わらない', () => {
+    const input = buildConfirmedJournalEntryInput({ ...base, comment: '来月精算する' })
+
+    expect(input.comment).toBe('来月精算する')
+    expect(input.memo).toBe('セブンイレブン 日本橋店')
+  })
+
+  it('commentが未指定・空文字・空白のみの場合はcommentを設定しない', () => {
+    for (const comment of [undefined, null, '', '   ']) {
+      expect(buildConfirmedJournalEntryInput({ ...base, comment }).comment ?? null).toBeNull()
+    }
+  })
+})

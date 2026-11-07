@@ -36,6 +36,9 @@ export interface JournalEntryLinesTableProps {
   onEntryDateChange?: (value: string) => void
   memo: string
   onMemoChange?: (value: string) => void
+  /** 仕訳のコメント(計画Issue #144)。摘要(memo)とは別の自由な補足。未指定の場合は入力欄自体を表示しない */
+  comment?: string
+  onCommentChange?: (value: string) => void
   headerHouseholdMemberId: number | null
   onHeaderHouseholdMemberChange?: (id: number | null) => void
   lineRows: JournalEntryLineRow[]
@@ -84,6 +87,8 @@ export function JournalEntryLinesTable({
   onEntryDateChange,
   memo,
   onMemoChange,
+  comment,
+  onCommentChange,
   headerHouseholdMemberId,
   onHeaderHouseholdMemberChange,
   lineRows,
@@ -286,6 +291,20 @@ export function JournalEntryLinesTable({
             onChange={(event) => onMemoChange?.(event.target.value)}
           />
         </div>
+
+        {comment !== undefined && (
+          <div>
+            <label htmlFor="journal-entry-lines-table-comment">{t('commentLabel')}</label>
+            <input
+              id="journal-entry-lines-table-comment"
+              type="text"
+              placeholder={t('commentPlaceholder')}
+              value={comment}
+              disabled={onCommentChange === undefined}
+              onChange={(event) => onCommentChange?.(event.target.value)}
+            />
+          </div>
+        )}
 
         <div>
           <label htmlFor="journal-entry-lines-table-household-member">{t('creatorHouseholdMemberLabel')}</label>

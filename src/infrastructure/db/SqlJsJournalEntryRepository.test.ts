@@ -15,6 +15,7 @@ import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { RestrictedAccountPostingError } from '../../domain/journal/RestrictedAccountPostingError'
+import { SettlementBatchOnNonTemporaryAccountError } from '../../domain/journal/SettlementBatchOnNonTemporaryAccountError'
 
 let db: Database
 let repository: SqlJsJournalEntryRepository
@@ -860,3 +861,132 @@ function insertSettlementBatch(database: Database, name: string): number {
 function lastInsertRowId(database: Database): number {
   return database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
 }
+
+describe('仕訳コメント(comment、計画Issue #144)', () => {
+  function createWithComment(comment?: string | null) {
+    return repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-01',
+      memo: '摘要',
+      ...(comment === undefined ? {} : { comment }),
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+  }
+
+  function toKeptLines(entry: ReturnType<typeof createWithComment>) {
+    return entry.lines.map((line) => ({ id: line.id, accountId: line.accountId, side: line.side, amount: line.amount }))
+  }
+
+  it('commentを指定して作成すると保存され、摘要(memo)とは別に取得できる', () => {
+    const created = createWithComment('割勘の相手に後で確認する')
+    expect(repository.findById(created.id)?.comment).toBe('割勘の相手に後で確認する')
+    expect(repository.findById(created.id)?.memo).toBe('摘要')
+  })
+
+  it('commentを省略して作成するとnullになる', () => {
+    expect(createWithComment().comment).toBeNull()
+  })
+
+  it('updateでcommentを変更できる', () => {
+    const created = createWithComment('変更前')
+    const updated = repository.update(created.id, {
+      entryDate: '2026-07-01',
+      memo: '摘要',
+      comment: '変更後',
+      lines: toKeptLines(created),
+    })
+    expect(updated.comment).toBe('変更後')
+  })
+
+  it('updateでcommentを指定しない場合は既存のコメントを維持する', () => {
+    const created = createWithComment('維持される')
+    const updated = repository.update(created.id, {
+      entryDate: '2026-07-01',
+      memo: '摘要変更',
+      lines: toKeptLines(created),
+    })
+    expect(updated.comment).toBe('維持される')
+  })
+
+  it('updateでcommentにnullを指定するとコメントを消去できる', () => {
+    const created = createWithComment('消す')
+    const updated = repository.update(created.id, {
+      entryDate: '2026-07-01',
+      comment: null,
+      lines: toKeptLines(created),
+    })
+    expect(updated.comment).toBeNull()
+  })
+})
+
+describe('精算バッチタグは一時勘定の行にのみ設定できる(計画Issue #144)', () => {
+  it('一時勘定(未払金)の行にはタグを設定して作成できる', () => {
+    const batchId = insertSettlementBatch(db, 'バッチ')
+    const created = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-01',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: payableAccountId, side: 'credit', amount: 1000, settlementBatchId: batchId },
+      ],
+    })
+    expect(created.lines.map((line) => line.settlementBatchId)).toEqual([null, batchId])
+  })
+
+  it('費用科目の行にタグを設定して作成しようとすると、書き込まずSettlementBatchOnNonTemporaryAccountErrorを投げる', () => {
+    const batchId = insertSettlementBatch(db, 'バッチ')
+    expect(() =>
+      repository.create({
+        householdMemberId: memberId,
+        entryDate: '2026-07-01',
+        lines: [
+          { accountId: foodExpenseAccountId, side: 'debit', amount: 1000, settlementBatchId: batchId },
+          { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        ],
+      }),
+    ).toThrow(SettlementBatchOnNonTemporaryAccountError)
+    expect(repository.findAll()).toHaveLength(0)
+  })
+
+  it('is_reconcilable = trueの口座科目の行にタグを設定した作成も拒否する(external_importでも同様)', () => {
+    const batchId = insertSettlementBatch(db, 'バッチ')
+    expect(() =>
+      repository.create({
+        householdMemberId: memberId,
+        entryDate: '2026-07-01',
+        sourceType: 'external_import',
+        lines: [
+          { accountId: bankAccountId, side: 'debit', amount: 1000, settlementBatchId: batchId },
+          { accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
+        ],
+      }),
+    ).toThrow(SettlementBatchOnNonTemporaryAccountError)
+  })
+
+  it('updateで一時勘定以外の行にタグを設定しようとすると拒否し、既存の内容を変更しない', () => {
+    const batchId = insertSettlementBatch(db, 'バッチ')
+    const created = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-01',
+      memo: '更新前',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+    expect(() =>
+      repository.update(created.id, {
+        entryDate: '2026-07-01',
+        memo: '更新後',
+        lines: [
+          { id: created.lines[0].id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000, settlementBatchId: batchId },
+          { id: created.lines[1].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
+        ],
+      }),
+    ).toThrow(SettlementBatchOnNonTemporaryAccountError)
+    expect(repository.findById(created.id)?.memo).toBe('更新前')
+  })
+})

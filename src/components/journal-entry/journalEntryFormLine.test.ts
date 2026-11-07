@@ -3,7 +3,8 @@
  * (計画Issue #32)のユニットテスト。フォーム行↔下書き行(JournalEntryDraftLineInput)・
  * 確定送信用の行(JournalLineInput)相互の変換と、取引先入力欄をPL科目行にのみ
  * 表示するための科目区分判定、確定済み明細のid(lineId)を保持して差分更新に引き渡す変換
- * (計画Issue #132)を検証する。外部依存なし。
+ * (計画Issue #132)、およびタグ(settlementBatchId)の読み込み・送信での保持(計画Issue #144)を
+ * 検証する。外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import type { JournalEntryDraftLine } from '../../domain/journal/JournalEntryDraft'
@@ -252,6 +253,7 @@ describe('fromJournalLine', () => {
       projectId: 2,
       householdMemberId: 3,
       counterpartyId: 4,
+      settlementBatchId: null,
     })
   })
 
@@ -339,5 +341,53 @@ describe('isLineEmpty', () => {
     expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), projectId: 1 })).toBe(false)
     expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), householdMemberId: 1 })).toBe(false)
     expect(isLineEmpty({ ...createEmptyJournalEntryFormLine(), counterpartyId: 1 })).toBe(false)
+  })
+})
+
+describe('精算バッチタグ(settlementBatchId)の保持(計画Issue #144)', () => {
+  const taggedJournalLine: JournalLine = {
+    id: 10,
+    journalEntryId: 1,
+    accountId: 1,
+    projectId: null,
+    householdMemberId: null,
+    counterpartyId: null,
+    settlementBatchId: 5,
+    side: 'debit',
+    amount: 7000,
+    createdAt: '2026-08-11T00:00:00.000Z',
+  }
+
+  it('fromJournalLineは明細の精算バッチタグをフォーム行に引き継ぐ', () => {
+    expect(fromJournalLine(taggedJournalLine).settlementBatchId).toBe(5)
+  })
+
+  it('タグ付き明細を読み込んでそのまま送信用に変換しても、タグが維持される', () => {
+    expect(toJournalLineInput(fromJournalLine(taggedJournalLine))).toEqual({
+      id: 10,
+      accountId: 1,
+      side: 'debit',
+      amount: 7000,
+      projectId: null,
+      householdMemberId: null,
+      counterpartyId: null,
+      settlementBatchId: 5,
+    })
+  })
+
+  it('科目や金額を変更しても同じ行のタグは維持される', () => {
+    const edited = { ...fromJournalLine(taggedJournalLine), accountId: 2, amountInput: '9000' }
+    expect(toJournalLineInput(edited)?.settlementBatchId).toBe(5)
+  })
+
+  it('新規に追加した行(タグ未設定)は送信用に変換してもタグなしのまま扱われる', () => {
+    const newLine = { ...createEmptyJournalEntryFormLine(), accountId: 1, side: 'debit' as const, amountInput: '100' }
+    const input = toJournalLineInput(newLine)
+    expect(input?.settlementBatchId ?? null).toBeNull()
+  })
+
+  it('下書き保存用の変換にはタグを持ち込まない(下書きは精算バッチを参照しない)', () => {
+    const tagged = { ...fromJournalLine(taggedJournalLine) }
+    expect(toJournalEntryDraftLineInput(tagged)).not.toHaveProperty('settlementBatchId')
   })
 })

@@ -212,3 +212,31 @@ describe('confirm', () => {
     expect(journalEntryRepository.findAll()).toHaveLength(0)
   })
 })
+
+describe('下書きのコメント(comment、計画Issue #144)', () => {
+  it('commentを指定して作成すると保存され、省略するとnullになる', () => {
+    expect(repository.create({ comment: '後で確認' }).comment).toBe('後で確認')
+    expect(repository.create({}).comment).toBeNull()
+  })
+
+  it('updateでcommentを変更でき、指定しない場合は既存の値を維持する', () => {
+    const created = repository.create({ comment: '変更前' })
+    expect(repository.update(created.id, { memo: '摘要だけ変更' }).comment).toBe('変更前')
+    expect(repository.update(created.id, { comment: '変更後' }).comment).toBe('変更後')
+    expect(repository.update(created.id, { comment: null }).comment).toBeNull()
+  })
+
+  it('確定すると下書きのコメントが仕訳に引き継がれる', () => {
+    const created = repository.create({
+      entryDate: '2026-07-22',
+      comment: '引き継ぐコメント',
+      householdMemberId,
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
+        { accountId: cashAccountId, side: 'credit', amount: 3000 },
+      ],
+    })
+    const confirmed = repository.confirm(created.id, journalEntryRepository)
+    expect(confirmed.comment).toBe('引き継ぐコメント')
+  })
+})

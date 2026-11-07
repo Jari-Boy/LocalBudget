@@ -44,12 +44,13 @@ export class SqlJsJournalEntryDraftRepository implements JournalEntryDraftReposi
     this.db.run('BEGIN')
     try {
       this.db.run(
-        `INSERT INTO journal_entry_drafts (purpose, entry_date, memo, currency, household_member_id)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO journal_entry_drafts (purpose, entry_date, memo, comment, currency, household_member_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [
           input.purpose ?? 'manual_entry',
           input.entryDate ?? null,
           input.memo ?? null,
+          input.comment ?? null,
           input.currency ?? null,
           input.householdMemberId ?? null,
         ],
@@ -94,11 +95,12 @@ export class SqlJsJournalEntryDraftRepository implements JournalEntryDraftReposi
     try {
       this.db.run(
         `UPDATE journal_entry_drafts
-         SET entry_date = ?, memo = ?, currency = ?, household_member_id = ?
+         SET entry_date = ?, memo = ?, comment = ?, currency = ?, household_member_id = ?
          WHERE id = ?`,
         [
           input.entryDate === undefined ? current.entryDate : input.entryDate,
           input.memo === undefined ? current.memo : input.memo,
+          input.comment === undefined ? current.comment : input.comment,
           input.currency === undefined ? current.currency : input.currency,
           input.householdMemberId === undefined ? current.householdMemberId : input.householdMemberId,
           id,
@@ -131,6 +133,7 @@ export class SqlJsJournalEntryDraftRepository implements JournalEntryDraftReposi
     const created = journalEntryRepository.create({
       entryDate: draft.entryDate as string,
       memo: draft.memo,
+      comment: draft.comment,
       currency: draft.currency ?? undefined,
       householdMemberId: draft.householdMemberId as number,
       lines: draft.lines.filter(isCompleteDraftLine).map((line) => ({
@@ -191,6 +194,7 @@ function mapRowToJournalEntryDraft(columns: string[], values: unknown[]): Journa
     purpose: get<JournalEntryDraftPurpose>('purpose'),
     entryDate: get<string | null>('entry_date'),
     memo: get<string | null>('memo'),
+    comment: get<string | null>('comment'),
     currency: get<string | null>('currency'),
     householdMemberId: get<number | null>('household_member_id'),
     createdAt: get<string>('created_at'),
