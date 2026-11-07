@@ -37,7 +37,10 @@ async function waitForPendingProposalCount(page: Page, expectedCount: number) {
 }
 
 async function openProposalReviewScreen(page: Page) {
-  await page.getByRole('link', { name: '仕訳', exact: true }).click()
+  // 確認待ちの提案があるとき、サイドナビの「仕訳」には件数のバッジが付く(計画Issue #150)
+  const journalLink = page.getByRole('link', { name: /^仕訳 \d+$/ })
+  await expect(journalLink).toBeVisible({ timeout: 10000 })
+  await journalLink.click()
   await page.getByRole('link', { name: '定期取引の確認', exact: true }).click()
 }
 
