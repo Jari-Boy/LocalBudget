@@ -133,6 +133,8 @@ interface StorageAdapter {
 
 **実装状況（Issue #118）**: 画面数が19に達し本節冒頭の再評価トリガーに該当したため、`react-router`（v8系、`HashRouter`採用。判断根拠は`docs/decisions.md`参照）を導入し、`Screen`型union + `useState`による分岐を`src/routes/AppRoutes.tsx`の宣言的なルート定義に置き換えた。ホーム画面のボタンを「マスタ管理」「仕訳」「財務諸表」の3カテゴリに整理し、`AccountManagementScreen`と同じ「見出し+ボタン列+戻るボタン」構成のハブ画面（`MasterHubScreen`・`JournalHubScreen`・割勘サブハブの`ExpenseSplittingHubScreen`）を新設した。ウィザードが引き継ぐ複雑な中間データ（下書き・割勘対象仕訳・明細取込レビュー結果）は`navigate()`の`state`経由で引き継ぎ、`location.state`が失われた場合は各ウィザード入口へフォールバックする。仕訳詳細画面（`/journal/entries/:id`）の戻り先管理は、手動の`entryDetailReturnScreen`状態からブラウザ履歴（`navigate(-1)`、`location.key !== 'default'`で履歴の有無を判定）に置き換えた。
 
+**実装状況の更新（Issue #150、UI刷新の土台）**: 上記Issue #118のホーム画面とハブ画面（`MasterHubScreen`・`JournalHubScreen`・`ExpenseSplittingHubScreen`・`RecurringTransactionHubScreen`・`AccountManagementScreen`）は廃止した。代わりに、常設の左サイドナビ（明細取込・仕訳・割勘・精算・マスタ・分析）と領域上部のタブ帯を持つ`AppShell`（`src/components/layout/`、領域とタブの定義は`areas.ts`）を全ルートの外枠とし、現在の領域はパスの接頭辞で判定する。旧URL（`/`・`/master`・`/journal`・`/journal/recurring`・`/journal/splitting`）は各領域の入口へリダイレクトする。確認待ちの定期取引提案の件数は、画面遷移のたびに取り直してサイドナビの「仕訳」にバッジ表示する。デザイントークンは`src/design/tokens.css`に集約し、フォントはIBM Plex Sans JPを`@fontsource`で同梱してwoff2をPWAのprecache対象に加えた（外部フォント配信は使わない）。共通部品として`src/components/common/`に選択ツリー（`tree-select`）・仕訳の絞り込み（`journal-filter`）・仕訳の結果一覧（`journal-result`）・ツリー表（`tree-table`）・グラフ（`chart`、自作SVG）を追加した（この時点では既存画面から未使用。個別の設計判断は`docs/decisions.md`の計画Issue #150の項を参照）。
+
 ## 7. PWA構成
 
 - ビルドはVite、PWA化は`vite-plugin-pwa`（Workbox）を用いる。
