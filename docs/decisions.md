@@ -953,4 +953,4 @@
 
 **不採用案**: タブを画面内の状態として持つ案(URL・戻る・リロードと整合しない)。ツリー表のノードを科目・取引先・プロジェクトごとに別の部品にする案(移動の判定と書き戻しが3重になる)。定期取引ルールの再有効化のためにRepositoryを拡張する案(Issueの「既存の業務ルールとデータ保存の動作は変えない」に反する)。
 
-**影響**: 旧6画面とそのテスト、旧E2E 6本を削除し、新しい画面のコンポーネントテストとE2E(`e2e/master-screen.spec.ts`)に置き換えた。`CounterpartyQuickAddSelect`(仕訳・割勘・明細取込で使用)と`describeRecurringSchedule`は残した。`account.json`・`account-group.json`・`household-member.json`・`project.json`・`counterparty.json`・`recurringTransaction.json`の文言のうち、旧画面専用のものは未使用のまま残っている(整理は別の機会)。モックアップの取引先パターンの編集は引き継ぎとして含めたが、#161の項目8にある新規機能(手動でのパターン追加の仕様変更など)は#161に委ねる。
+**影響**: 旧6画面とそのテスト、旧E2E 6本を削除し、新しい画面のコンポーネントテストとE2E(`e2e/master-screen.spec.ts`)に置き換えた。`CounterpartyQuickAddSelect`(仕訳・割勘・明細取込で使用)と`describeRecurringSchedule`は残した。旧マスタ画面専用だった翻訳の名前空間(`account`・`accountGroup`・`counterparty`・`householdMember`・`project`)は未使用になったため削除し、`recurringTransaction.json`も未使用のキーを削除した(`CounterpartyQuickAddSelect`は呼び出し元が渡す名前空間を使うため影響しない)。モックアップの取引先パターンの編集は引き継ぎとして含めたが、#161の項目8にある新規機能(手動でのパターン追加の仕様変更など)は#161に委ねる。
