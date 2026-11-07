@@ -76,6 +76,33 @@ describe('seedStandardAccountGroups', () => {
     expect(groups.findAll()).toHaveLength(0)
   })
 
+  it('投入後に標準グループをすべて削除して再起動(再実行)しても、復活させない(計画Issue #154 評価の指摘)', () => {
+    seedStandardAccountGroups(db)
+    for (const group of groups.findAll()) groups.delete(group.id)
+
+    seedStandardAccountGroups(db)
+
+    expect(groups.findAll()).toHaveLength(0)
+  })
+
+  it('投入しなかったDB(利用者の資産科目あり)も、その後に科目とグループがすべて無くなっても、後から投入しない', () => {
+    const account = accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
+    seedStandardAccountGroups(db)
+    accounts.delete(account.id)
+
+    seedStandardAccountGroups(db)
+
+    expect(groups.findAll()).toHaveLength(0)
+  })
+
+  it('印は「seed_markers」テーブルに1件だけ残り、再実行しても増えない', () => {
+    seedStandardAccountGroups(db)
+    seedStandardAccountGroups(db)
+
+    const [result] = db.exec("SELECT name FROM seed_markers WHERE name = 'standard_account_groups'")
+    expect(result.values).toHaveLength(1)
+  })
+
   it('収益・費用の科目しか無いDBには投入する', () => {
     accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
 
