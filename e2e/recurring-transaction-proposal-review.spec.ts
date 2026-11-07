@@ -37,9 +37,8 @@ async function waitForPendingProposalCount(page: Page, expectedCount: number) {
 }
 
 async function openProposalReviewScreen(page: Page) {
-  await page.getByRole('button', { name: '仕訳' }).click()
-  await page.getByRole('button', { name: '定期取引' }).click()
-  await page.getByRole('button', { name: '定期取引の確認' }).click()
+  await page.getByRole('link', { name: '仕訳', exact: true }).click()
+  await page.getByRole('link', { name: '定期取引の確認', exact: true }).click()
 }
 
 test.describe('定期取引の確認画面', () => {

@@ -47,10 +47,10 @@ test.describe('世帯メンバー管理画面', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: '世帯メンバーを管理する' }).click()
+    await page.getByRole('link', { name: 'マスタ', exact: true }).click()
+    await page.getByRole('link', { name: '世帯メンバー', exact: true }).click()
     // 計画Issue #88のseedDefaultHouseholdMemberにより、Worker起動時に
     // デフォルトメンバー「自分」が自動投入されているため、初回表示は空状態にならない。
     await expect(memberItem(page, '自分')).toBeVisible()
@@ -103,18 +103,16 @@ test.describe('世帯メンバー管理画面', () => {
     await wifeItem.getByRole('button', { name: '削除' }).click()
     await expect(wifeItem).toHaveCount(0)
 
-    // トップ画面へ戻る(マスタ管理ハブ画面を経由する)
+    // 「戻る」で領域の入口(科目一覧)へ戻る
     await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()
-    await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '科目一覧', exact: true })).toHaveAttribute('aria-current', 'page')
   })
 
   test('口座の名義になっている世帯メンバーには削除ボタンが表示されず、非アクティブ化のみ可能', async ({
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
@@ -130,8 +128,8 @@ test.describe('世帯メンバー管理画面', () => {
     await waitForHouseholdMemberCreated(page, '佐藤一郎')
     await page.reload()
 
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: '世帯メンバーを管理する' }).click()
+    await page.getByRole('link', { name: 'マスタ', exact: true }).click()
+    await page.getByRole('link', { name: '世帯メンバー', exact: true }).click()
     const item = memberItem(page, '佐藤一郎')
     await expect(item.getByRole('button', { name: '削除' })).toHaveCount(0)
     await expect(item.getByRole('button', { name: '非アクティブ化' })).toBeVisible()
@@ -141,10 +139,10 @@ test.describe('世帯メンバー管理画面', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: '世帯メンバーを管理する' }).click()
+    await page.getByRole('link', { name: 'マスタ', exact: true }).click()
+    await page.getByRole('link', { name: '世帯メンバー', exact: true }).click()
 
     // グループを2件作成
     await page.getByRole('button', { name: '世帯メンバーを追加' }).click()

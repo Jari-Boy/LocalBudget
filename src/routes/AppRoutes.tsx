@@ -256,7 +256,7 @@ export function AppRoutes() {
             projectRepository={projectRepository}
             householdMemberRepository={householdMemberRepository}
             counterpartyRepository={counterpartyRepository}
-            onBack={() => navigate('/journal/recurring/proposals')}
+            onBack={() => navigate('/master/accounts/list')}
           />
         }
       />

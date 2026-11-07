@@ -4,80 +4,95 @@
  * アプリ内の「戻る」ボタンではなくPlaywrightの`page.goBack()`/`page.goForward()`
  * (ブラウザ本体の戻る/進む操作に相当)で検証する。あわせて、HashRouter採用により
  * ネストしたルートのURLでリロードしても同じ画面に留まる(旧`Screen`型union +
- * `useState`方式では常にトップ画面へ戻っていた)ことも検証する。個々の画面の表示内容・
+ * `useState`方式では常にトップ画面へ戻っていた)ことも検証する。ホーム画面と中継(ハブ)画面は
+ * 計画Issue #150で廃止し、サイドナビと領域タブで移動する。個々の画面の表示内容・
  * 機能自体は他のE2Eテスト(account-list.spec.ts等)で検証済みのため、ここではURL・
  * 履歴ナビゲーションの挙動に絞る。
  */
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+
+const mainNav = (page: Page) => page.getByRole('navigation', { name: 'メインメニュー' })
+const currentLink = (page: Page, name: string) =>
+  page.getByRole('link', { name, exact: true })
 
 test.describe('ルーティング基盤(ブラウザの戻る/進む・リロード)', () => {
-  test('ホーム→マスタ管理ハブ→科目管理ハブと進んだ後、ブラウザの戻る/進むボタンで正しく画面遷移できる', async ({
+  test('ルートURLは仕訳領域へ、サイドナビで領域を移動した後にブラウザの戻る/進むで正しく遷移できる', async ({
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(mainNav(page)).toBeVisible()
+    await expect(page).toHaveURL(/#\/journal\/entries$/)
 
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()
+    await currentLink(page, 'マスタ').click()
+    await expect(page).toHaveURL(/#\/master\/accounts\/list$/)
+    await expect(currentLink(page, 'マスタ')).toHaveAttribute('aria-current', 'page')
 
-    await page.getByRole('button', { name: '科目を管理する' }).click()
-    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
+    await currentLink(page, '割勘・精算').click()
+    await expect(page).toHaveURL(/#\/journal\/splitting\/new$/)
 
     // ブラウザの戻るボタン(page.goBack())で1階層ずつ正しく戻れる
     await page.goBack()
-    await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()
+    await expect(page).toHaveURL(/#\/master\/accounts\/list$/)
+    await expect(currentLink(page, 'マスタ')).toHaveAttribute('aria-current', 'page')
 
     await page.goBack()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page).toHaveURL(/#\/journal\/entries$/)
 
     // ブラウザの進むボタン(page.goForward())で正しく進める
     await page.goForward()
-    await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()
+    await expect(page).toHaveURL(/#\/master\/accounts\/list$/)
 
     await page.goForward()
-    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
+    await expect(currentLink(page, '割勘・精算')).toHaveAttribute('aria-current', 'page')
   })
 
-  test('仕訳ハブ→割勘サブハブと進んだ後、ブラウザの戻るボタンで正しく画面遷移できる', async ({ page }) => {
-    await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+  test('領域内のタブで移動した後、ブラウザの戻るボタンで直前のタブへ戻れる', async ({ page }) => {
+    await page.goto('/#/journal/splitting/new')
+    await expect(currentLink(page, '割勘する')).toHaveAttribute('aria-current', 'page')
 
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await expect(page.getByRole('heading', { name: '仕訳' })).toBeVisible()
-
-    await page.getByRole('button', { name: '割勘', exact: true }).click()
-    await expect(page.getByRole('heading', { name: '割勘', exact: true })).toBeVisible()
+    await currentLink(page, '精算').click()
+    await expect(currentLink(page, '精算')).toHaveAttribute('aria-current', 'page')
 
     await page.goBack()
-    await expect(page.getByRole('heading', { name: '仕訳' })).toBeVisible()
-
-    await page.goBack()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(currentLink(page, '割勘する')).toHaveAttribute('aria-current', 'page')
   })
 
-  test('ネストしたルート(/master/accounts)でリロードしても同じ画面に留まる(HashRouterによりURLが維持される)', async ({
+  test('ネストしたルート(/master/accounts/list)でリロードしても同じ画面に留まる(HashRouterによりURLが維持される)', async ({
     page,
   }) => {
     await page.goto('/')
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: '科目を管理する' }).click()
-    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
+    await currentLink(page, 'マスタ').click()
+    await expect(currentLink(page, '科目一覧')).toHaveAttribute('aria-current', 'page')
 
     await page.reload()
 
-    // 旧実装(Screen型union + useStateのみ、URLに状態を持たない)では
-    // リロードすると常にトップ画面(LocalBudget)へ戻っていたが、HashRouter導入後は
-    // リロードしてもURL(#/master/accounts)がそのまま維持され、同じ画面が再表示される。
     // reload直後はWorker再起動(WASM読み込み・DB再初期化)が完了するまでレンダリングされず、
-    // この後に続く操作がボタンclick(既定タイムアウト30000ms)ではなくexpect(既定5000ms)の
-    // ため、CI環境の低速なランナーでは既定のままだと不足することがある(計画Issue #136で
-    // counterparty-management.spec.tsの同種の箇所がCIでのみ失敗したのを踏まえた対策)。
-    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible({ timeout: 10000 })
+    // 続く操作がexpect(既定5000ms)のため、CI環境の低速なランナーでは既定のままだと不足
+    // することがある(計画Issue #136でcounterparty-management.spec.tsの同種の箇所がCIでのみ
+    // 失敗したのを踏まえた対策)。
+    await expect(currentLink(page, '科目一覧')).toHaveAttribute('aria-current', 'page', {
+      timeout: 10000,
+    })
+    await expect(page).toHaveURL(/#\/master\/accounts\/list$/)
   })
 
-  test('存在しないパスへ直接アクセスするとホーム画面へリダイレクトされる', async ({ page }) => {
+  test('廃止した中継画面のURL(/master・/journal等)は各領域の入口画面へリダイレクトされる', async ({
+    page,
+  }) => {
+    await page.goto('/#/master')
+    await expect(page).toHaveURL(/#\/master\/accounts\/list$/)
+
+    await page.goto('/#/journal/splitting')
+    await expect(page).toHaveURL(/#\/journal\/splitting\/new$/)
+
+    await page.goto('/#/journal/recurring')
+    await expect(page).toHaveURL(/#\/journal\/recurring\/proposals$/)
+  })
+
+  test('存在しないパスへ直接アクセスすると仕訳領域へリダイレクトされる', async ({ page }) => {
     await page.goto('/#/no-such-route')
 
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(mainNav(page)).toBeVisible()
+    await expect(page).toHaveURL(/#\/journal\/entries$/)
   })
 })

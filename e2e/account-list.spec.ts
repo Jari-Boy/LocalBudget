@@ -36,11 +36,11 @@ async function waitForAccountCreated(page: Page, accountName: string) {
 }
 
 test.describe('登録済み科目一覧画面', () => {
-  test('トップ画面から科目管理ハブ画面経由で一覧画面に遷移でき、登録済み科目が表示される。一覧画面からハブ画面に戻れる', async ({
+  test('サイドナビの「マスタ」から科目一覧画面に遷移でき、登録済み科目が表示される', async ({
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
@@ -50,13 +50,11 @@ test.describe('登録済み科目一覧画面', () => {
     await waitForAccountCreated(page, '普通預金')
     await page.reload()
 
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: '科目を管理する' }).click()
-    await page.getByRole('button', { name: '科目一覧を見る' }).click()
+    await page.getByRole('link', { name: 'マスタ', exact: true }).click()
+    await page.getByRole('link', { name: '科目一覧', exact: true }).click()
+    await page.getByRole('link', { name: '科目一覧', exact: true }).click()
     await expect(page.getByText('普通預金')).toBeVisible()
 
-    await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
   })
 
   test('初回起動時点で標準の収益・費用科目(計画Issue #96)が投入されており、一覧画面に表示される', async ({
@@ -64,9 +62,9 @@ test.describe('登録済み科目一覧画面', () => {
   }) => {
     await page.goto('/')
 
-    await page.getByRole('button', { name: 'マスタ管理' }).click()
-    await page.getByRole('button', { name: '科目を管理する' }).click()
-    await page.getByRole('button', { name: '科目一覧を見る' }).click()
+    await page.getByRole('link', { name: 'マスタ', exact: true }).click()
+    await page.getByRole('link', { name: '科目一覧', exact: true }).click()
+    await page.getByRole('link', { name: '科目一覧', exact: true }).click()
     await expect(page.getByText('食費')).toBeVisible()
     await expect(page.getByText('給与収入')).toBeVisible()
   })

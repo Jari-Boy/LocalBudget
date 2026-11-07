@@ -46,8 +46,8 @@ async function waitForJournalEntryMemo(page: Page, memo: string) {
 
 async function openFinancialStatementScreen(page: Page) {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
-  await page.getByRole('button', { name: '財務諸表を見る' }).click()
+  await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
+  await page.getByRole('link', { name: '分析', exact: true }).click()
   await expect(page.getByRole('heading', { name: '財務諸表' })).toBeVisible()
 }
 

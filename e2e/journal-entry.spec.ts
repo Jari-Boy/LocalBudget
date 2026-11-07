@@ -63,7 +63,7 @@ async function setupAccountsAndReload(
     await client.autoSave.flush()
   }, inputs)
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 }
 
 async function waitForJournalEntryCount(page: Page, expectedCount: number) {
@@ -112,7 +112,7 @@ async function waitForDraftCount(page: Page, expectedCount: number) {
 test.describe('マニュアル仕訳入力', () => {
   test('複合仕訳(3行)を入力して確定でき、作成された仕訳がRepositoryに反映される', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await setupAccountsAndReload(page, [
       { category: 'expense', name: 'ランチ代', isReconcilable: null },
@@ -120,8 +120,8 @@ test.describe('マニュアル仕訳入力', () => {
       { category: 'asset', name: '現金', isReconcilable: false },
     ])
 
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '手入力で起票' }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '手入力で起票', exact: true }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
     const debitCard1 = journalEntryBlockCard(page, '借方', 0)
@@ -139,7 +139,7 @@ test.describe('マニュアル仕訳入力', () => {
 
     await page.getByRole('button', { name: '確定する' }).click()
 
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     await waitForJournalEntryCount(page, 1)
 
     const entry = await page.evaluate(async () => {
@@ -155,12 +155,12 @@ test.describe('マニュアル仕訳入力', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await setupAccountsAndReload(page, [{ category: 'expense', name: 'ランチ代', isReconcilable: null }])
 
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '手入力で起票' }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '手入力で起票', exact: true }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
     const debitCard1 = journalEntryBlockCard(page, '借方', 0)
@@ -194,15 +194,15 @@ test.describe('マニュアル仕訳入力', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await setupAccountsAndReload(page, [
       { category: 'expense', name: 'ランチ代', isReconcilable: null },
       { category: 'asset', name: '現金', isReconcilable: false },
     ])
 
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '手入力で起票' }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '手入力で起票', exact: true }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
     const debitCard1 = journalEntryBlockCard(page, '借方', 0)
@@ -224,15 +224,15 @@ test.describe('マニュアル仕訳入力', () => {
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await setupAccountsAndReload(page, [
       { category: 'expense', name: 'ランチ代', isReconcilable: null },
       { category: 'asset', name: '現金', isReconcilable: false },
     ])
 
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '手入力で起票' }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '手入力で起票', exact: true }).click()
     await page.getByRole('button', { name: '新しく入力する' }).click()
 
     const debitCard1 = journalEntryBlockCard(page, '借方', 0)

@@ -57,9 +57,9 @@ async function waitForHouseholdMemberCreated(page: Page, memberName: string) {
  * の入口ステップまで遷移する。
  */
 async function openAccountRegistrationFlow(page: Page) {
-  await page.getByRole('button', { name: 'マスタ管理' }).click()
-  await page.getByRole('button', { name: '科目を管理する' }).click()
-  await page.getByRole('button', { name: '科目を追加する' }).click()
+  await page.getByRole('link', { name: 'マスタ', exact: true }).click()
+  await page.getByRole('link', { name: '科目一覧', exact: true }).click()
+  await page.getByRole('link', { name: '科目を追加', exact: true }).click()
 }
 
 /**
@@ -71,8 +71,8 @@ async function openAccountRegistrationFlow(page: Page) {
  * 挟まずアプリ本体が使う既存Worker上でUI操作により削除する。
  */
 async function deleteDefaultHouseholdMemberViaUi(page: Page) {
-  await page.getByRole('button', { name: 'マスタ管理' }).click()
-  await page.getByRole('button', { name: '世帯メンバーを管理する' }).click()
+  await page.getByRole('link', { name: 'マスタ', exact: true }).click()
+  await page.getByRole('link', { name: '世帯メンバー', exact: true }).click()
   const item = page
     .getByRole('row')
     .filter({ has: page.locator('.household-member-list-name', { hasText: '自分' }) })
@@ -80,9 +80,7 @@ async function deleteDefaultHouseholdMemberViaUi(page: Page) {
   await item.getByRole('button', { name: '削除' }).click()
   await expect(item).toHaveCount(0)
   await page.getByRole('button', { name: '戻る' }).click()
-  await expect(page.getByRole('heading', { name: 'マスタ管理' })).toBeVisible()
-  await page.getByRole('button', { name: '戻る' }).click()
-  await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+  await expect(page.getByRole('link', { name: '科目一覧', exact: true })).toHaveAttribute('aria-current', 'page')
 }
 
 test.describe('勘定科目の統合登録フロー(計画Issue #102): 資産・負債', () => {
@@ -90,7 +88,7 @@ test.describe('勘定科目の統合登録フロー(計画Issue #102): 資産・
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await openAccountRegistrationFlow(page)
     await page.getByRole('button', { name: '資産・負債' }).click()
@@ -110,7 +108,7 @@ test.describe('勘定科目の統合登録フロー(計画Issue #102): 資産・
     await page.getByLabel('初期残高を入力(任意)').fill('100000')
     await page.getByRole('button', { name: '登録する' }).click()
 
-    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '科目一覧', exact: true })).toHaveAttribute('aria-current', 'page')
     await waitForAccountCreated(page, '三菱UFJ銀行')
 
     const result = await page.evaluate(async () => {
@@ -135,7 +133,7 @@ test.describe('勘定科目の統合登録フロー(計画Issue #102): 資産・
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await openAccountRegistrationFlow(page)
     await page.getByRole('button', { name: '資産・負債' }).click()
@@ -152,7 +150,7 @@ test.describe('勘定科目の統合登録フロー(計画Issue #102): 資産・
     await page.getByRole('button', { name: '次へ' }).click()
     await page.getByRole('button', { name: '登録する' }).click()
 
-    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '科目一覧', exact: true })).toHaveAttribute('aria-current', 'page')
     await waitForAccountCreated(page, '現金')
 
     const account = await page.evaluate(async () => {
@@ -170,7 +168,7 @@ test.describe('勘定科目の統合登録フロー(計画Issue #102): 資産・
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     const memberId = await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
       const client = await createDbClient()
@@ -197,7 +195,7 @@ test.describe('勘定科目の統合登録フロー(計画Issue #102): 資産・
     await page.getByRole('button', { name: '次へ' }).click()
     await page.getByRole('button', { name: '登録する' }).click()
 
-    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '科目一覧', exact: true })).toHaveAttribute('aria-current', 'page')
     await waitForAccountCreated(page, '楽天カード')
 
     const account = await page.evaluate(async () => {
@@ -221,7 +219,7 @@ test.describe('勘定科目の統合登録フロー(計画Issue #102): 収益・
     page,
   }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     await deleteDefaultHouseholdMemberViaUi(page)
 
     await openAccountRegistrationFlow(page)
@@ -232,7 +230,7 @@ test.describe('勘定科目の統合登録フロー(計画Issue #102): 収益・
     await page.getByLabel('名前を付ける').fill('臨時収入')
     await page.getByRole('button', { name: '登録する' }).click()
 
-    await expect(page.getByRole('heading', { name: '科目を管理する' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '科目一覧', exact: true })).toHaveAttribute('aria-current', 'page')
     await waitForAccountCreated(page, '臨時収入')
 
     const result = await page.evaluate(async () => {

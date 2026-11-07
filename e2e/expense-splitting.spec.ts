@@ -87,7 +87,7 @@ async function setupBaseData(page: Page, settlementBatchName: string): Promise<B
     }
   }, settlementBatchName)
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
   return result
 }
 
@@ -118,7 +118,7 @@ async function createOriginalExpenseEntry(
     { ...data, memo, amount },
   )
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
   return entryId
 }
 
@@ -161,9 +161,9 @@ function findJournalEntryListRow(page: Page, exactMemo: string) {
  * 割勘起票フォームへ遷移する(計画Issue #40 Attempt 4、複数選択対応)。
  */
 async function selectEntriesForSplitting(page: Page, memos: string[]) {
-  await page.getByRole('button', { name: '仕訳' }).click()
-  await page.getByRole('button', { name: '割勘', exact: true }).click()
-  await page.getByRole('button', { name: '割勘する' }).click()
+  await page.getByRole('link', { name: '仕訳', exact: true }).click()
+  await page.getByRole('link', { name: '割勘・精算', exact: true }).click()
+  await page.getByRole('link', { name: '割勘する', exact: true }).click()
   for (const memo of memos) {
     await findEntryItem(page, memo)
       .getByRole('checkbox', { name: `${memo}を選択する` })
@@ -218,9 +218,9 @@ test.describe('割勘対象選択画面', () => {
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
 
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '割勘', exact: true }).click()
-    await page.getByRole('button', { name: '割勘する' }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '割勘・精算', exact: true }).click()
+    await page.getByRole('link', { name: '割勘する', exact: true }).click()
     await expect(page.getByText('絞り込み確認用の食事代', { exact: true })).not.toBeVisible()
   })
 
@@ -251,11 +251,11 @@ test.describe('割勘対象選択画面', () => {
       await client.autoSave.flush()
     }, data.cashAccountId)
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '割勘', exact: true }).click()
-    await page.getByRole('button', { name: '割勘する' }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '割勘・精算', exact: true }).click()
+    await page.getByRole('link', { name: '割勘する', exact: true }).click()
 
     await expect(page.getByText('費用科目あり除外確認用の食事代')).toBeVisible()
     await expect(page.getByText('給与振込(除外確認用)')).not.toBeVisible()
@@ -286,11 +286,11 @@ test.describe('割勘対象選択画面', () => {
       await client.autoSave.flush()
     }, data.cashAccountId)
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '割勘', exact: true }).click()
-    await page.getByRole('button', { name: '割勘する' }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '割勘・精算', exact: true }).click()
+    await page.getByRole('link', { name: '割勘する', exact: true }).click()
     await expect(page.getByText('割勘用食費の絞り込みテスト')).toBeVisible()
     await expect(page.getByText('交通費の絞り込みテスト')).toBeVisible()
 
@@ -315,11 +315,11 @@ test.describe('割勘起票', () => {
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
     // 確定後はホーム画面に自動的に戻る
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     // 仕訳一覧(確認専用画面)から元仕訳の詳細画面に遷移し、割勘の履歴が表示されることを確認
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '仕訳一覧' }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '仕訳一覧', exact: true }).click()
     const originalItem = findJournalEntryListRow(page, '世帯メンバー間割勘テスト用の食事代')
     await originalItem.getByRole('button', { name: '詳細を見る' }).click()
     await expect(page.getByText('この支出から生まれた割勘')).toBeVisible()
@@ -338,10 +338,10 @@ test.describe('割勘起票', () => {
     await page.getByRole('button', { name: '計算する' }).click()
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '仕訳一覧' }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '仕訳一覧', exact: true }).click()
     const originalItem = findJournalEntryListRow(page, '関連仕訳ダイアログ遷移確認用の食事代')
     await originalItem.getByRole('button', { name: '詳細を見る' }).click()
 
@@ -420,9 +420,9 @@ test.describe('割勘起票', () => {
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
 
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '割勘', exact: true }).click()
-    await page.getByRole('button', { name: '精算する', exact: true }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '割勘・精算', exact: true }).click()
+    await page.getByRole('link', { name: '精算', exact: true }).click()
     await page.getByLabel('対象者').selectOption({ label: '割勘相手Bさん(世帯メンバー)' })
     await page.getByLabel('科目').selectOption('liability')
     // 確定時点の摘要(「元の摘要+の割勘」が既定値)がそのまま新しい精算バッチの名前になり、
@@ -491,11 +491,11 @@ test.describe('割勘起票', () => {
     // 元仕訳2件+選択した元仕訳をまとめた1件の複合仕訳=合計3件(計画Issue #40、人間レビュー
     // での指摘「割勘の仕訳を作るときは複数明細をまとめて一本で仕訳を切るように」への対応)
     await waitForJournalEntryCount(page, 3)
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     // 両方の元仕訳の詳細画面から、同じ1件の割勘仕訳への履歴を辿れることを確認
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '仕訳一覧' }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '仕訳一覧', exact: true }).click()
     const splitItem = findJournalEntryListRow(page, '2件の支出の割勘')
     await expect(splitItem).toBeVisible()
 
@@ -525,14 +525,14 @@ test.describe('割勘起票', () => {
     await page.getByRole('button', { name: '計算する' }).click()
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     // 割勘によって作られた仕訳(世帯外の相手との割勘は費用科目1行のみのため、費用科目
     // 1件限定の絞り込みだけではすり抜けてしまう)自身が、割勘対象選択画面の候補に
     // 再び現れないことを確認する
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '割勘', exact: true }).click()
-    await page.getByRole('button', { name: '割勘する' }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '割勘・精算', exact: true }).click()
+    await page.getByRole('link', { name: '割勘する', exact: true }).click()
     await expect(page.getByText('割勘の割勘防止確認用の食事代', { exact: true })).not.toBeVisible()
     await expect(page.getByText('割勘の割勘防止確認用の食事代の割勘', { exact: true })).not.toBeVisible()
   })
@@ -550,7 +550,7 @@ test.describe('精算・履歴・取り消し', () => {
     await page.getByRole('button', { name: '計算する' }).click()
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     return data
   }
@@ -562,9 +562,9 @@ test.describe('精算・履歴・取り消し', () => {
    * 作成する」ダイアログ(初期金額はバッチ残高)を使って精算を完了する。
    */
   async function settleViaManualEntry(page: Page, data: BaseData) {
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '割勘', exact: true }).click()
-    await page.getByRole('button', { name: '精算する', exact: true }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '割勘・精算', exact: true }).click()
+    await page.getByRole('link', { name: '精算', exact: true }).click()
     await page.getByLabel('対象者').selectOption({ label: '割勘相手Bさん(世帯メンバー)' })
     await page.getByLabel('科目').selectOption('liability')
 
@@ -595,9 +595,9 @@ test.describe('精算・履歴・取り消し', () => {
     const data = await setUpSplitEntryForSettlement(page)
 
     // 精算前の取り消し(割勘履歴画面から)
-    await page.getByRole('button', { name: '仕訳' }).click()
-    await page.getByRole('button', { name: '割勘', exact: true }).click()
-    await page.getByRole('button', { name: '割勘の履歴', exact: true }).click()
+    await page.getByRole('link', { name: '仕訳', exact: true }).click()
+    await page.getByRole('link', { name: '割勘・精算', exact: true }).click()
+    await page.getByRole('link', { name: '割勘の履歴', exact: true }).click()
     const historyRow = page.getByRole('listitem').filter({ hasText: '精算テスト用の食事代' })
     await expect(historyRow).toBeVisible()
     await historyRow.getByRole('button', { name: 'この割勘を取り消す' }).click()
@@ -606,14 +606,9 @@ test.describe('精算・履歴・取り消し', () => {
     await expect(page.getByText('割勘の履歴はありません')).toBeVisible()
     await waitForJournalEntryCount(page, 1)
 
-    // 割勘履歴画面の「戻る」は割勘サブハブへ、そこからさらに「戻る」で仕訳ハブ、
-    // もう一度「戻る」でホームへ戻る
+    // 割勘履歴画面の「戻る」は割勘領域の入口(割勘する)へ戻る
     await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: '割勘', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: '仕訳' })).toBeVisible()
-    await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '割勘する', exact: true })).toHaveAttribute('aria-current', 'page')
 
     // 再度割勘してから精算し、精算後は返金案内が表示されることを確認
     await openSplittingForm(page, data, '精算テスト用の食事代')
@@ -621,15 +616,15 @@ test.describe('精算・履歴・取り消し', () => {
     await page.getByRole('button', { name: '計算する' }).click()
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
-    await expect(page.getByRole('heading', { name: 'LocalBudget' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     await settleViaManualEntry(page, data)
     await waitForJournalEntryCount(page, 3)
 
-    // 精算画面の「戻る」は割勘サブハブへ
+    // 精算画面の「戻る」は割勘領域の入口(割勘する)へ戻る
     await page.getByRole('button', { name: '戻る' }).click()
-    await expect(page.getByRole('heading', { name: '割勘', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: '割勘の履歴', exact: true }).click()
+    await expect(page.getByRole('link', { name: '割勘する', exact: true })).toHaveAttribute('aria-current', 'page')
+    await page.getByRole('link', { name: '割勘の履歴', exact: true }).click()
     const settledHistoryRow = page.getByRole('listitem').filter({ hasText: '精算テスト用の食事代' })
     await expect(settledHistoryRow.getByText('精算後は新しい取引として現実の返金を記録してください')).toBeVisible()
     await expect(settledHistoryRow.getByRole('button', { name: 'この割勘を取り消す' })).toHaveCount(0)
