@@ -58,7 +58,7 @@
 
 **手入力とCSVの関係**: 手入力した取引をCSVでも取り込むと二重計上になりうるが、自動では防げない。次の2つで気づけるようにする。
 
-- [statement-import.md 1.6](./statement-import.md#16-重複防止フロー)の「確定版の可能性」の候補に、突合マスタを持たない仕訳(手入力・定期取引生成)も含める。CSV取込のアップロード時に、対象科目に明細がある仕訳のうち突合マスタを持たないものを、日付・金額が近ければ候補として提示する(`collectUnreferencedTransactions`)。
+- [statement-import.md 1.6](./statement-import.md#16-重複防止フロー)の「確定版の可能性」の候補に、突合マスタを持たない仕訳(手入力・定期取引生成)も含める。CSV取込のアップロード時に、対象科目に明細がある手入力・定期取引生成の仕訳のうち突合マスタを持たないものを、日付・金額が近ければ候補として提示する(`collectUnreferencedTransactions`)。初期残高・残高調整・割勘・外部明細取込の仕訳は候補にしない。
 - [1.5 残高照合](#15-残高照合)で、手入力行を含む全明細の帳簿残高とCSVの取引後残高を比較し、ズレを警告する。ただし警告で気づけるのは、取引後残高を持つCSVの科目に限られる。
 
 `is_reconcilable`が`NULL`の区分(`equity`・`revenue`・`expense`)、および`is_reconcilable = false`の科目(現金、[settlement.md](./settlement.md)の暫定計上用の汎用未払金・未収金、CSVが取得できない口座)も従来どおり自由に手入力できる。これらは[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)の実残調整、または[settlement.md](./settlement.md)の暫定計上で運用する。クレジットカード未払金も、通常は外部明細取込(利用明細CSV)を主な記帳経路としつつ、コンビニ払い等CSVで捕捉できない支払いの手入力も許容する([accounts.md 4.5](./accounts.md#45-なぜis_reconcilable--falseにするか)参照)。

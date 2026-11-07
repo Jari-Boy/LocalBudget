@@ -77,6 +77,63 @@ async function selectAccountAndUploadFile(accountId: number, content: string): P
 }
 
 describe('StatementImportUploadScreen', () => {
+  it('初期残高・残高調整の仕訳は、日付・金額が近くても確定版の可能性の候補に含まれない(計画Issue #145 Review Attempt 1)', async () => {
+    const account = accountRepository.create({
+      category: 'asset',
+      name: '普通預金',
+      isReconcilable: true,
+    })
+    const equity = accountRepository.create({
+      category: 'equity',
+      name: '初期残高',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+    const adjustmentExpense = accountRepository.create({
+      category: 'expense',
+      name: '残高調整',
+      isReconcilable: null,
+      isSystemManaged: true,
+    })
+    importMappingDefinitionRepository.create({
+      accountId: account.id,
+      formatGroupId: 'my-bank',
+      label: 'マイ銀行 普通預金',
+      dateColumn: '日付',
+      dateFormat: 'YYYY/MM/DD',
+      descriptionColumn: '摘要',
+      amountMode: 'single_signed',
+      amountColumn: '金額',
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-20',
+      sourceType: 'initial_balance',
+      lines: [
+        { accountId: account.id, side: 'debit', amount: 3000 },
+        { accountId: equity.id, side: 'credit', amount: 3000 },
+      ],
+    })
+    journalEntryRepository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-20',
+      sourceType: 'balance_adjustment',
+      lines: [
+        { accountId: adjustmentExpense.id, side: 'debit', amount: 3000 },
+        { accountId: account.id, side: 'credit', amount: 3000 },
+      ],
+    })
+
+    const onUploaded = vi.fn()
+    renderScreen(onUploaded)
+
+    await selectAccountAndUploadFile(account.id, '日付,摘要,金額\n2026/07/20,スーパー,-3000\n')
+
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledTimes(1))
+    const result = onUploaded.mock.calls[0][0] as StatementImportUploadResult
+    expect(result.review.records[0].approximateCandidates).toEqual([])
+  })
+
   it('手入力した仕訳と日付・金額が近いCSV行は、確定版の可能性の候補(approximateCandidates)に含まれる(計画Issue #145)', async () => {
     const account = accountRepository.create({
       category: 'asset',
