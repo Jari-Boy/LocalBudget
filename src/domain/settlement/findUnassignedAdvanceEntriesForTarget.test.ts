@@ -6,7 +6,8 @@
  * counterparties.md 1.2)ため、household_member_idがnullの行(特定の世帯メンバーに紐付いていない、
  * 外部との入出金とみなせる行)を候補とする(docs/domain/settlement.md、計画Issue #139の懸念点
  * 「候補仕訳の検索条件の具体的なクエリ実装は実装時に設計する」への対応)。DBアクセスなしの
- * 純粋関数。
+ * 純粋関数。計画Issue #145で、候補に検索条件(JournalEntryFilter)を重ねられるようにした。「立替金かつ
+ * 対象者」を同じ行で満たす固定条件は検索条件では置き換えられないことも検証する。
  */
 import { describe, expect, it } from 'vitest'
 import type { JournalEntry, JournalLine } from '../journal/JournalEntry'
@@ -93,5 +94,67 @@ describe('findUnassignedAdvanceEntriesForTarget', () => {
     })
 
     expect(result.map((candidate) => candidate.entry.id)).toEqual([2, 1])
+  })
+})
+
+describe('findUnassignedAdvanceEntriesForTarget: 検索条件を重ねる(計画Issue #145)', () => {
+  const target = { kind: 'householdMember', householdMemberId: 200 } as const
+  const advance = 10
+
+  it('立替金かつ対象者を同じ行で満たす固定条件は、別々の行で満たす仕訳を候補にしない', () => {
+    // 立替金(10)の行は別のメンバー(300)、対象者(200)の行は別の科目(99)。別々の行では候補にならない
+    const separateLines = entry(1, '2026-10-05', [
+      line({ id: 1, journalEntryId: 1, accountId: advance, householdMemberId: 300 }),
+      line({ id: 2, journalEntryId: 1, accountId: 99, householdMemberId: 200, side: 'credit' }),
+    ])
+    const sameLine = entry(2, '2026-10-06', [
+      line({ id: 3, journalEntryId: 2, accountId: advance, householdMemberId: 200 }),
+    ])
+
+    const result = findUnassignedAdvanceEntriesForTarget([separateLines, sameLine], advance, target)
+
+    expect(result.map((c) => c.entry.id)).toEqual([2])
+  })
+
+  it('検索条件を指定すると、固定条件を満たす行のうち検索条件にも合う仕訳だけを候補にする(AND)', () => {
+    const lunch = {
+      ...entry(1, '2026-10-05', [line({ id: 1, journalEntryId: 1, accountId: advance, householdMemberId: 200 })]),
+      memo: '昼食',
+    }
+    const dinner = {
+      ...entry(2, '2026-10-06', [line({ id: 2, journalEntryId: 2, accountId: advance, householdMemberId: 200 })]),
+      memo: '夕食',
+    }
+
+    const result = findUnassignedAdvanceEntriesForTarget([lunch, dinner], advance, target, {
+      filter: { memo: '昼' },
+      accounts: [],
+    })
+
+    expect(result.map((c) => c.entry.id)).toEqual([1])
+  })
+
+  it('検索条件に合っても、固定条件(立替金かつ対象者の同じ行・未割当)を満たさない仕訳は候補にならない', () => {
+    const tagged = {
+      ...entry(1, '2026-10-05', [
+        line({ id: 1, journalEntryId: 1, accountId: advance, householdMemberId: 200, settlementBatchId: 5 }),
+      ]),
+      memo: '昼食',
+    }
+
+    const result = findUnassignedAdvanceEntriesForTarget([tagged], advance, target, {
+      filter: { memo: '昼' },
+      accounts: [],
+    })
+
+    expect(result).toEqual([])
+  })
+
+  it('検索条件を指定しなければ従来どおりの候補を返す(既存の動作が変わらない)', () => {
+    const candidate = entry(1, '2026-10-05', [line({ id: 1, journalEntryId: 1, accountId: advance, householdMemberId: 200 })])
+
+    expect(findUnassignedAdvanceEntriesForTarget([candidate], advance, target)).toEqual([
+      { entry: candidate, lineId: 1, amount: 1000 },
+    ])
   })
 })
