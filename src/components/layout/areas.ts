@@ -51,6 +51,7 @@ export const AREAS: Area[] = [
       { labelKey: 'householdMembers', to: '/master/household-members' },
       { labelKey: 'projects', to: '/master/projects' },
       { labelKey: 'recurringRules', to: '/master/recurring' },
+      { labelKey: 'mappings', to: '/master/mappings' },
     ],
   },
   { key: 'analysis', to: '/reports/financial-statements', prefixes: ['/reports'], tabs: [] },

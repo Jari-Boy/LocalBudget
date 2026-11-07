@@ -22,7 +22,8 @@
       "counterparties": "取引先",
       "householdMembers": "世帯メンバー",
       "projects": "プロジェクト",
-      "recurringRules": "定期取引"
+      "recurringRules": "定期取引",
+      "mappings": "明細マッピング"
     }
   }
 }

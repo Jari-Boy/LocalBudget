@@ -40,6 +40,7 @@ import { AccountMasterTab } from '../components/master/AccountMasterTab'
 import { CounterpartyMasterTab } from '../components/master/CounterpartyMasterTab'
 import { MemberMasterTab } from '../components/master/MemberMasterTab'
 import { ProjectMasterTab } from '../components/master/ProjectMasterTab'
+import { MappingMasterTab } from '../components/master/MappingMasterTab'
 import { RuleMasterTab } from '../components/master/RuleMasterTab'
 
 /** 仕訳詳細画面(/journal/entries/:id)への遷移元は複数(仕訳一覧・割勘履歴)あるため、
@@ -248,6 +249,16 @@ export function AppRoutes() {
             projectRepository={projectRepository}
             projectGroupRepository={projectGroupRepository}
             householdMemberRepository={householdMemberRepository}
+          />
+        }
+      />
+      <Route
+        path="/master/mappings"
+        element={
+          <MappingMasterTab
+            importMappingDefinitionRepository={importMappingDefinitionRepository}
+            accountRepository={accountRepository}
+            accountGroupRepository={accountGroupRepository}
           />
         }
       />
