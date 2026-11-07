@@ -15,6 +15,7 @@
     "generate:pwa-icons": "pwa-assets-generator"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-sans-jp": "^5.3.1",
     "comlink": "^4.4.2",
     "i18next": "^26.3.6",
     "papaparse": "^5.5.4",

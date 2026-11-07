@@ -1,0 +1,57 @@
+/*
+ * デザイントークン(計画Issue #150)。承認済みモックアップの値を1か所で定義する。
+ * 色・文字サイズ・角丸・余白・影・フォントはここ以外で再定義しない。
+ */
+:root {
+  /* 面・文字 */
+  --color-bg: #f4f6f4;
+  --color-surface: #ffffff;
+  --color-text: #1c2622;
+  --color-text-muted: #55635d;
+
+  /* 罫線・ホバー・入力欄 */
+  --color-border: #d5dbd7;
+  --color-border-soft: #e8ece9;
+  --color-border-strong: #bfc8c3;
+  --color-hover: #eef2ef;
+  --color-field-subtle: #f1f4f2;
+
+  /* アクセント・状態 */
+  --color-accent: #0b6b5b;
+  --color-accent-hover: #084e43;
+  --color-accent-soft: #e6f0ed;
+  --color-danger: #b3261e;
+  --color-warning-text: #8a4b00;
+
+  /* サイドナビ */
+  --color-nav-bg: #17231f;
+  --color-nav-active: #2f443d;
+  --color-nav-text: #e8eeeb;
+  --color-nav-muted: #bfd0c9;
+
+  /* 文字サイズ */
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-nav: 15px;
+  --font-size-brand: 17px;
+  --font-size-title: 22px;
+
+  /* 角丸 */
+  --radius-xs: 4px;
+  --radius-sm: 5px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* 余白・寸法 */
+  --space-main-y: 24px;
+  --space-main-x: 28px;
+  --control-height: 36px;
+  --control-height-sm: 30px;
+  --nav-item-height: 44px;
+  --nav-width: 200px;
+
+  /* 影・フォント */
+  --shadow-popup: 0 6px 18px rgba(23, 35, 31, 0.18);
+  --font-sans: 'IBM Plex Sans JP', system-ui, sans-serif;
+}
