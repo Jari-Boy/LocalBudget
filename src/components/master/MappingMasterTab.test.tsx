@@ -143,6 +143,9 @@ describe('MappingMasterTab', () => {
     loadCsv('利用日,利用店名,利用金額\n2026/10/05,A,-300\n不正,B,100\n2026/10/07,C,abc\n')
 
     expect(await panel().findByText('2行を読み取れません(全3行)')).toBeInTheDocument()
+    expect(panel().getByText('読み取れない行は、取り込まれません(保存はできます)。')).toBeInTheDocument()
+    // 読み取れない行があっても、必須の列が足りているので保存できる(計画Issue #151)
+    expect(panel().getByRole('button', { name: '保存' })).toBeEnabled()
     expect(panel().getByText('日付を読み取れません')).toBeInTheDocument()
     expect(panel().getByText('金額を読み取れません')).toBeInTheDocument()
   })

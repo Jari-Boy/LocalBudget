@@ -20,6 +20,8 @@ export interface MappingCreateDialogProps {
 }
 
 const DATE_FORMATS = ['YYYY/MM/DD', 'YYYY-MM-DD', 'YYYYMMDD', 'YYYY年MM月DD日']
+/** 元のCSVとして見せる行数(大きなCSVでもダイアログを重くしない) */
+const RAW_ROW_LIMIT = 200
 
 function readRows(bytes: Uint8Array, encoding: string, delimiter: MappingForm['delimiter']): string[][] | null {
   try {
@@ -53,7 +55,7 @@ export function MappingCreateDialog({ bytes, onSave, onCancel }: MappingCreateDi
     () => (rows === null ? null : previewMappingRows(rows, mappingFormToDefinition(form))),
     [rows, form],
   )
-  const reasons = validateMappingForm(form)
+  const formReasons = validateMappingForm(form)
   const split = form.amountMode === 'debit_credit_split'
   const headerCount = /^\d+$/.test(form.headerRows.trim()) ? Number(form.headerRows) : 0
   const columnCount = rows === null ? 0 : Math.max(0, ...rows.map((r) => r.length))
@@ -63,18 +65,38 @@ export function MappingCreateDialog({ bytes, onSave, onCancel }: MappingCreateDi
       : Array.from({ length: columnCount }, (_, i) => tMaster('mappingTab.columnNumber', { n: i + 1 }))
   const options = headerNames.map((name, i) => ({ value: headerCount > 0 ? name : String(i), label: name }))
 
+  // 見出しに出す、割り当て済みの列の役割(数字なら列番号、それ以外は見出し名、という既存の解釈と同じ)
+  const columnRoles: Array<{ key: 'dateColumn' | 'descriptionColumn' | 'amountColumn' | 'debitColumn' | 'creditColumn'; role: string }> = [
+    { key: 'dateColumn', role: tMaster('mappingTab.colDate') },
+    { key: 'descriptionColumn', role: tMaster('mappingTab.colDescription') },
+    ...(form.amountMode === 'debit_credit_split'
+      ? [
+          { key: 'debitColumn' as const, role: tMaster('mappingTab.debitColumn').replace('の列', '') },
+          { key: 'creditColumn' as const, role: tMaster('mappingTab.creditColumn').replace('の列', '') },
+        ]
+      : [{ key: 'amountColumn' as const, role: tMaster('mappingTab.colAmount') }]),
+  ]
+  const columnIndexOf = (spec: string): number => {
+    const value = spec.trim()
+    if (value === '') return -1
+    if (/^\d+$/.test(value)) return Number(value)
+    return headerCount > 0 ? headerNames.indexOf(value) : -1
+  }
+
   const errorCount = preview ? preview.rows.filter((r) => r.error !== null).length : 0
-  const status = (() => {
-    if (preview === null) return tMaster('mappingTab.previewEmpty')
-    if (preview.columnError) {
-      return tMaster('mappingTab.columnNotFound', { field: preview.columnError.fieldName, spec: preview.columnError.columnSpec })
-    }
-    return errorCount > 0
-      ? tMaster('mappingTab.statusErrors', { errors: errorCount, total: preview.rows.length })
-      : tMaster('mappingTab.statusOk', { total: preview.rows.length })
-  })()
-  const statusIsError = preview !== null && (preview.columnError !== null || errorCount > 0)
-  const yen = (n: number) => `${n < 0 ? '-' : '+'}¥${Math.abs(n).toLocaleString('ja-JP')}`
+  // 一部の行(為替レートの補足行など)が読み取れなくても保存できる。ただし、列が見つからない、または
+  // 1行も読み取れない定義は、取り込めないので保存できない(計画Issue #151)
+  const readableCount = preview ? preview.rows.length - errorCount : 0
+  const unusable =
+    preview === null || preview.columnError !== null || (preview.rows.length > 0 && readableCount === 0)
+  const reasons = formReasons
+  // 取り込めない定義(列が見つからない、1行も読み取れない)のときだけ、その理由を示す
+  const unusableMessage =
+    preview === null
+      ? tMaster('mappingTab.previewEmpty')
+      : preview.columnError
+        ? tMaster('mappingTab.columnNotFound', { field: preview.columnError.fieldName, spec: preview.columnError.columnSpec })
+        : tMaster('mappingTab.statusErrors', { errors: errorCount, total: preview.rows.length })
 
   const submit = async () => {
     setSaving(true)
@@ -175,42 +197,45 @@ export function MappingCreateDialog({ bytes, onSave, onCancel }: MappingCreateDi
           )}
         </div>
 
-        <h3 className="import-dialog__subtitle">{tMaster('mappingTab.previewSection')}</h3>
-        <p role="status" className={statusIsError ? 'import-error' : 'import-summary'}>
-          {status}
-        </p>
-        {preview !== null && !preview.columnError && (
-          <div className="import-table-wrap">
-            <table className="import-table" aria-label={tMaster('mappingTab.previewSection')}>
+        {/* 取り込み前の生の状態。割り当てた列の見出しに役割を出し、列の割り当ての結果をここで確かめる */}
+        <h3 className="import-dialog__subtitle">{tMaster('mappingTab.rawSection')}</h3>
+        {rows !== null && (
+          <div className="import-table-wrap import-dialog__raw">
+            <table className="import-table" aria-label={tMaster('mappingTab.rawSection')}>
               <thead>
                 <tr>
-                  <th>{tMaster('mappingTab.colDate')}</th>
-                  <th>{tMaster('mappingTab.colDescription')}</th>
-                  <th className="import-num">{tMaster('mappingTab.colAmount')}</th>
-                  <th>{tMaster('mappingTab.colState')}</th>
+                  {headerNames.map((name, i) => {
+                    const roles = columnRoles.filter((c) => columnIndexOf(form[c.key]) === i).map((c) => c.role)
+                    return (
+                      <th key={i} className={roles.length > 0 ? 'import-dialog__assigned' : undefined}>
+                        {name}
+                        <div className="import-dialog__role">{roles.join('・')}</div>
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {preview.rows.slice(0, 10).map((row) => (
-                  <tr key={row.rowNumber}>
-                    <td>{row.record?.entryDate ?? '-'}</td>
-                    <td>{row.record?.description || '-'}</td>
-                    <td className="import-num">{row.record ? yen(row.record.amount) : '-'}</td>
-                    <td className={row.error ? 'import-error' : undefined}>
-                      {row.error === 'invalidDate'
-                        ? tMaster('mappingTab.errorInvalidDate')
-                        : row.error === 'invalidAmount'
-                          ? tMaster('mappingTab.errorInvalidAmount')
-                          : row.error
-                            ? tMaster('mappingTab.errorUnknown')
-                            : tMaster('mappingTab.rowOk')}
-                    </td>
+                {rows.slice(headerCount, headerCount + RAW_ROW_LIMIT).map((row, r) => (
+                  <tr key={r}>
+                    {headerNames.map((_, i) => (
+                      <td key={i} className="import-nowrap">
+                        {row[i] ?? ''}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
+
+        {unusable && (
+          <p role="status" className="import-error">
+            {unusableMessage}
+          </p>
+        )}
+        {errorCount > 0 && !unusable && <p className="import-note">{t('mappingDialogSkipNote')}</p>}
         <p className="import-note">{t('mappingDialogNote')}</p>
 
         {reasons.length > 0 && (
@@ -229,7 +254,7 @@ export function MappingCreateDialog({ bytes, onSave, onCancel }: MappingCreateDi
           <button
             type="button"
             className="import-btn import-btn--primary"
-            disabled={saving || reasons.length > 0}
+            disabled={saving || reasons.length > 0 || unusable}
             onClick={() => void submit()}
           >
             {t('mappingDialogSave')}

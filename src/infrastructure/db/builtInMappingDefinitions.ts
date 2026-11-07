@@ -8,9 +8,9 @@ import type { CreateImportMappingDefinitionInput } from '../../domain/statement-
  * PayPayカード確定)から確認した値を使用している。
  *
  * 楽天カードのCSVは末尾に日付列が空の特殊行(未確定明細の「■ご利用キャンセルなど」セクション、
- * 確定明細のETC利用区間情報の補足行)を含むことがあり、そのままでは
- * mapRowsToImportedRecordsが日付パースエラーを投げる。この定義自体には影響しないが、
- * 実際に取り込む際はユーザー側でその範囲を除いてアップロードする必要がある(既知の制約)。
+ * 確定明細のETC利用区間情報の補足行)を含むことがあり、その行は日付を読み取れない。取込時は
+ * その行を取り込み対象から外して「取り込まない行」に示すだけなので(計画Issue #151、
+ * buildStatementImportReviewのunreadableRows)、CSVを加工せずに取り込める。
  */
 export const BUILT_IN_MAPPING_DEFINITIONS: readonly CreateImportMappingDefinitionInput[] = [
   {

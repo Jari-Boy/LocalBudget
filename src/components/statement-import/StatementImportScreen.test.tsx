@@ -369,7 +369,7 @@ describe('StatementImportScreen', () => {
     expect(dialog.getByRole('button', { name: '保存して取り込む' })).toBeDisabled()
     fireEvent.change(dialog.getByLabelText('表示名'), { target: { value: '新しい銀行' } })
     fireEvent.change(dialog.getByLabelText('金融機関の識別子'), { target: { value: 'new-bank' } })
-    expect(dialog.getByText('✓ 全1行を読み取れます')).toBeInTheDocument()
+    expect(dialog.queryByText(/取り込み結果のプレビュー/)).not.toBeInTheDocument()
     fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
 
     // 作った定義はどの科目にも紐づいていないので、取込先を選ぶ
@@ -378,6 +378,64 @@ describe('StatementImportScreen', () => {
     expect(mappings.findAll()[0]).toMatchObject({ label: '新しい銀行', formatGroupId: 'new-bank', dateColumn: '日付' })
     fireEvent.change(target, { target: { value: String(bank.id) } })
     expect(await screen.findByText(/statement\.csv を読み込み済み/)).toBeInTheDocument()
+  })
+
+  it('定義の作成ダイアログには、取り込み前の元のCSVが表示され、割り当てた列の見出しに役割が出る', async () => {
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'このCSVでマッピングを新規作成' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'マッピングを新規作成' }))
+
+    // 元のCSVは、取り込み結果には出ない列(残高)も含めて、そのままの値で見える
+    const raw = within(dialog.getByRole('table', { name: '元のCSV' }))
+    expect(raw.getByText('2026/10/05')).toBeInTheDocument()
+    expect(raw.getByText('-3000')).toBeInTheDocument()
+    expect(raw.getByText('97000')).toBeInTheDocument()
+    // 推測した列の見出しに、割り当てた役割が表示される
+    expect(raw.getByRole('columnheader', { name: /日付.*取引日/ })).toBeInTheDocument()
+    expect(raw.getByRole('columnheader', { name: /金額.*金額/ })).toBeInTheDocument()
+    expect(raw.getByRole('columnheader', { name: /残高/ })).not.toHaveTextContent('取引日')
+
+    // 列の割り当てを変えると、見出しの役割も付け替わる
+    fireEvent.change(dialog.getByLabelText('摘要の列'), { target: { value: '残高' } })
+    expect(raw.getByRole('columnheader', { name: /残高.*摘要/ })).toBeInTheDocument()
+  })
+
+  it('日付が空の補足行など読み取れない行があっても取り込め、その行は「取り込まない行」に理由つきで出る(計画Issue #151)', async () => {
+    makeMapping()
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n,為替レート 1ドル=150円,,\n`)
+
+    expect(rowOf(/スーパー/).getByText('2026/10/05')).toBeInTheDocument()
+    const skipped = within(await screen.findByRole('region', { name: '取り込まない行(1件)' }))
+    expect(skipped.getByText(/3行目/)).toBeInTheDocument()
+    expect(skipped.getByText(/為替レート 1ドル=150円/)).toBeInTheDocument()
+    expect(skipped.getByText(/日付を読み取れません/)).toBeInTheDocument()
+
+    pick(rowOf(/スーパー/), '相手科目', '食費')
+    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+    await screen.findByText(/確定しました/)
+    expect(entries.findAll()).toHaveLength(1)
+  })
+
+  it('定義の作成ダイアログは、読み取れない行があっても保存でき、その行は取り込まれない旨を示す(計画Issue #151)', async () => {
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,ランチ,-800,96200\n,為替レート 1ドル=150円,,\n`, false)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'このCSVでマッピングを新規作成' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'マッピングを新規作成' }))
+    fireEvent.change(dialog.getByLabelText('表示名'), { target: { value: '補足行つき' } })
+    fireEvent.change(dialog.getByLabelText('金融機関の識別子'), { target: { value: 'with-notes' } })
+
+    // 取り込み結果のプレビューは出さない。読み取れない行があっても、その旨の注記だけで保存できる
+    expect(dialog.getByText(/読み取れない行は取り込まれません/)).toBeInTheDocument()
+    expect(dialog.getByRole('button', { name: '保存して取り込む' })).toBeEnabled()
+    fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
+
+    await screen.findByLabelText(/^取込先/)
+    await waitFor(() => expect(mappings.findAll()).toHaveLength(1))
   })
 
   it('一致する定義が無いとき、ダイアログをキャンセルすると元の案内に戻る', async () => {

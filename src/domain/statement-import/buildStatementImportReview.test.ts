@@ -162,4 +162,38 @@ describe('buildStatementImportReview', () => {
       }),
     ).toThrow('import mapping column not found')
   })
+
+  it('読み取れない行(日付が空の補足行など)は取り込み対象から外し、行番号・元のセル・理由を返す(計画Issue #151)', () => {
+    const rows = [
+      ['日付', '摘要', '金額', '残高'],
+      ['2026/07/20', 'スーパー', '-3000', '97000'],
+      ['', '為替レート 1ドル=150円', '', ''],
+      ['2026/07/22', 'カフェ', '-500', '96500'],
+    ]
+
+    const result = buildStatementImportReview({
+      rows,
+      definition: definition(),
+      existingExternalIds: new Set(),
+      existingTransactions: [],
+      approximateDuplicateOptions: APPROXIMATE_OPTIONS,
+    })
+
+    expect(result.records.map((r) => r.record.description)).toEqual(['スーパー', 'カフェ'])
+    expect(result.unreadableRows).toEqual([
+      { rowNumber: 3, cells: ['', '為替レート 1ドル=150円', '', ''], error: 'invalidDate' },
+    ])
+  })
+
+  it('すべて読み取れるCSVでは、読み取れない行は空', () => {
+    const result = buildStatementImportReview({
+      rows: [['日付', '摘要', '金額', '残高'], ['2026/07/20', 'スーパー', '-3000', '97000']],
+      definition: definition(),
+      existingExternalIds: new Set(),
+      existingTransactions: [],
+      approximateDuplicateOptions: APPROXIMATE_OPTIONS,
+    })
+
+    expect(result.unreadableRows).toEqual([])
+  })
 })

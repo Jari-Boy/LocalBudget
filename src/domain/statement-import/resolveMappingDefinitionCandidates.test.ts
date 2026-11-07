@@ -4,6 +4,7 @@
  * CSVバイト列と候補定義配列を受け取り、候補ごとにreadCsv→mapRowsToImportedRecordsを試みて
  * エラーなく成功したものだけを返すことを検証する。候補ごとにencoding/delimiterが異なりうる点、
  * MappingColumnNotFoundError以外の汎用Errorも同様に失敗として扱われる点を含む。
+ * 為替レートの補足行など一部の行だけ読み取れない場合は、読み取れる行が読み取れない行以上なら一致とする(計画Issue #151)。
  * DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
@@ -118,5 +119,29 @@ describe('resolveMappingDefinitionCandidates', () => {
     const result = resolveMappingDefinitionCandidates(bytes, [onlyBadCandidate])
 
     expect(result).toEqual([])
+  })
+
+  it('一部の行だけ読み取れない(日付が空の補足行など)候補も、読み取れる行が読み取れない行以上なら一致する(計画Issue #151)', () => {
+    const header = definition({ id: 5, headerRowCount: 1, dateColumn: '日付', descriptionColumn: '摘要', amountColumn: '金額' })
+    const bytes = bytesOf(
+      '日付,摘要,金額\n2026/07/20,A,-100\n2026/07/21,B,-200\n,為替レート 1ドル=150円,\n',
+    )
+
+    const result = resolveMappingDefinitionCandidates(bytes, [header])
+
+    expect(result.map((match) => match.definition.id)).toEqual([5])
+  })
+
+  it('読み取れない行の方が多ければ、別の形式のCSVとみなして一致しない', () => {
+    const header = definition({ id: 6, headerRowCount: 1, dateColumn: '日付', descriptionColumn: '摘要', amountColumn: '金額' })
+    const bytes = bytesOf('日付,摘要,金額\n2026-07-20,A,-100\n2026-07-21,B,-200\n2026/07/22,C,-300\n')
+
+    expect(resolveMappingDefinitionCandidates(bytes, [header])).toEqual([])
+  })
+
+  it('見出しだけでデータ行が無いCSVは、列が見つかれば一致する', () => {
+    const header = definition({ id: 7, headerRowCount: 1, dateColumn: '日付', descriptionColumn: '摘要', amountColumn: '金額' })
+
+    expect(resolveMappingDefinitionCandidates(bytesOf('日付,摘要,金額\n'), [header]).map((m) => m.definition.id)).toEqual([7])
   })
 })

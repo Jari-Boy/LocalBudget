@@ -364,3 +364,41 @@
   font-size: var(--font-size-base);
   font-weight: 600;
 }
+
+/* 作成ダイアログの「元のCSV」。割り当て済みの列の見出しを強調し、役割を見出しの下に出す */
+.import-dialog__raw {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.import-dialog__assigned {
+  background: var(--color-accent-soft);
+}
+
+.import-dialog__role {
+  min-height: 1.2em;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* 取り込まない行(読み取れない行)の一覧 */
+.import-unreadable {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.import-unreadable li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.import-unreadable__cells {
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}

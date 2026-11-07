@@ -241,7 +241,7 @@ test.describe('明細取込画面', () => {
     await expect(dialog.getByText('列を推測しました。内容を確認してください')).toBeVisible()
     await dialog.getByLabel('表示名').fill('新しい銀行')
     await dialog.getByLabel('金融機関の識別子').fill('new-bank')
-    await expect(dialog.getByText('✓ 全1行を読み取れます')).toBeVisible()
+    await expect(dialog.getByRole('table', { name: '元のCSV' })).toBeVisible()
     await dialog.getByRole('button', { name: '保存して取り込む' }).click()
 
     // 作った定義はどの科目にも紐づいていないので、取込先を選ぶと一覧が出る

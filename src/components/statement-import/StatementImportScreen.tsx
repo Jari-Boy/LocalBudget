@@ -151,6 +151,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   } = props
   const { t } = useTranslation('statementImport')
   const { t: tCommon } = useTranslation('common')
+  const { t: tMaster } = useTranslation('master')
 
   const [data, setData] = useState<LoadedData | null>(null)
   const [csv, setCsv] = useState<LoadedCsv | null>(null)
@@ -1060,6 +1061,27 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             </table>
           </div>
         </>
+      )}
+
+      {session && session.review.unreadableRows.length > 0 && (
+        <section
+          aria-label={t('unreadableTitle', { count: session.review.unreadableRows.length })}
+          className="import-panel"
+        >
+          <p className="import-panel__title">{t('unreadableTitle', { count: session.review.unreadableRows.length })}</p>
+          <p className="import-note">{t('unreadableNote')}</p>
+          <ul className="import-unreadable">
+            {session.review.unreadableRows.map((row) => (
+              <li key={row.rowNumber}>
+                <span className="import-nowrap">{t('unreadableRow', { row: row.rowNumber })}</span>
+                <span className="import-unreadable__cells">{row.cells.filter((c) => c !== '').join(' / ')}</span>
+                <span className="import-error">
+                  {row.error === 'invalidAmount' ? tMaster('mappingTab.errorInvalidAmount') : tMaster('mappingTab.errorInvalidDate')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {failures.length > 0 && (

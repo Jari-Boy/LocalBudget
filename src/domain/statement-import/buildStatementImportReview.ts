@@ -1,6 +1,7 @@
 import type { ImportMappingDefinition } from './ImportMappingDefinition'
 import type { ImportedRecord } from './ImportedRecord'
-import { mapRowsToImportedRecords } from './mapRowsToImportedRecords'
+import { MappingColumnNotFoundError } from './MappingColumnNotFoundError'
+import { previewMappingRows, type MappingPreviewRow } from './previewMappingRows'
 import { resolveExternalIds } from './resolveExternalIds'
 import {
   findApproximateDuplicateCandidates,
@@ -33,6 +34,11 @@ export interface StatementImportReviewRecord {
 export interface StatementImportReviewResult {
   records: StatementImportReviewRecord[]
   /**
+   * 読み取れなかった行(日付が空の補足行など)。取り込み対象には含めず、画面で行番号・元のセル・
+   * 理由を見せる(計画Issue #151)。すべて読み取れれば空
+   */
+  unreadableRows: Array<Pick<MappingPreviewRow, 'rowNumber' | 'cells' | 'error'>>
+  /**
    * CSVレコード群のうちbalance_afterが取得できた最後の値。残高照合(reconciliation.md 1.5)の
    * 外部残高として使う。CSVに残高列が無い、またはいずれの行にも値が無ければnull
    */
@@ -52,7 +58,14 @@ export function buildStatementImportReview(
   const { rows, definition, existingExternalIds, existingTransactions, approximateDuplicateOptions } =
     params
 
-  const records = mapRowsToImportedRecords(rows, definition)
+  const preview = previewMappingRows(rows, definition)
+  if (preview.columnError !== null) {
+    throw new MappingColumnNotFoundError(preview.columnError.fieldName, preview.columnError.columnSpec)
+  }
+  const records = preview.rows.flatMap((row) => (row.record === null ? [] : [row.record]))
+  const unreadableRows = preview.rows
+    .filter((row) => row.record === null)
+    .map(({ rowNumber, cells, error }) => ({ rowNumber, cells, error }))
   const externalIds = resolveExternalIds(records)
   const { duplicateIndices } = partitionByExternalIdDuplicate(externalIds, existingExternalIds)
   const duplicateIndexSet = new Set(duplicateIndices)
@@ -70,6 +83,7 @@ export function buildStatementImportReview(
 
   return {
     records: reviewRecords,
+    unreadableRows,
     latestExternalBalance: resolveLatestExternalBalance(records),
   }
 }

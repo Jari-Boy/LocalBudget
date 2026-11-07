@@ -1,6 +1,6 @@
 import type { ImportMappingDefinition } from './ImportMappingDefinition'
 import { readCsv } from './readCsv'
-import { mapRowsToImportedRecords } from './mapRowsToImportedRecords'
+import { previewMappingRows } from './previewMappingRows'
 
 export interface MappingDefinitionCandidateMatch {
   definition: ImportMappingDefinition
@@ -9,13 +9,14 @@ export interface MappingDefinitionCandidateMatch {
 }
 
 /**
- * 対象科目で使える全マッピング定義候補それぞれに対し、実際にパース(readCsv→
- * mapRowsToImportedRecords)を試み、エラーなく成功した候補のみを返す(計画Issue #78、
- * docs/domain/statement-import.md 1.4・1.5手順1)。単純な列名パターンマッチ等のヒューリスティックな
- * 「ファイルの中身からの推測」ではなく、実際の変換処理の試行によるエラーなしでの絞り込みである。
- * 候補ごとにencoding/delimiterが異なりうるため、readCsv自体も候補ごとに個別実行する。
- * MappingColumnNotFoundErrorに限らず、日付書式不一致・金額パース失敗等の汎用Errorも含め、
- * 例外の種類を問わず投げられた候補は失敗として除外する。
+ * 全マッピング定義候補それぞれに対し、実際にパース(readCsv→previewMappingRows)を試み、
+ * CSVに合うと判断した候補のみを返す(計画Issue #78、docs/domain/statement-import.md 1.4・1.5手順1)。
+ * 単純な列名パターンマッチ等のヒューリスティックな「ファイルの中身からの推測」ではなく、実際の変換処理の
+ * 試行による絞り込みである。候補ごとにencoding/delimiterが異なりうるため、readCsv自体も候補ごとに個別実行する。
+ * 指定した列がCSVに見つからない候補は除外する。為替レートの補足行のように一部の行だけ読み取れない場合は
+ * それだけで除外せず(計画Issue #151)、読み取れる行が1行以上あり、読み取れない行以上のときに一致とする。日付の書式が
+ * 違うなど、ほとんどの行が読み取れない候補は別の形式とみなして除外する。データ行が無い(見出しだけの)CSVは、
+ * 列が見つかれば一致とする。
  */
 export function resolveMappingDefinitionCandidates(
   bytes: Uint8Array,
@@ -26,7 +27,11 @@ export function resolveMappingDefinitionCandidates(
   for (const candidate of candidates) {
     try {
       const rows = readCsv(bytes, { encoding: candidate.encoding, delimiter: candidate.delimiter })
-      mapRowsToImportedRecords(rows, candidate)
+      const preview = previewMappingRows(rows, candidate)
+      if (preview.columnError !== null) continue
+      const readable = preview.rows.filter((row) => row.record !== null).length
+      const unreadable = preview.rows.length - readable
+      if (preview.rows.length > 0 && (readable === 0 || readable < unreadable)) continue
       matches.push({ definition: candidate, rows })
     } catch {
       continue

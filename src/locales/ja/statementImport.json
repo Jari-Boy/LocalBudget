@@ -104,5 +104,9 @@
   "mappingDialogGuessed": "列を推測しました。内容を確認してください",
   "mappingDialogNote": "細かい設定(区切り文字、見出しまでの行数、残高・外部IDの列)は、マスタの「明細マッピング」タブで変えられます。",
   "mappingDialogSave": "保存して取り込む",
-  "mappingDialogSaveError": "保存できませんでした。もう一度お試しください。"
+  "mappingDialogSaveError": "保存できませんでした。もう一度お試しください。",
+  "unreadableTitle": "取り込まない行({{count}}件)",
+  "unreadableNote": "為替レートの補足など、日付や金額を読み取れない行は取り込みません。必要なら、仕訳を手入力で起票してください。",
+  "unreadableRow": "{{row}}行目",
+  "mappingDialogSkipNote": "読み取れない行は取り込まれません(保存はできます)。"
 }
