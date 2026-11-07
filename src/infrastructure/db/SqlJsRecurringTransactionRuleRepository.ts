@@ -123,6 +123,18 @@ export class SqlJsRecurringTransactionRuleRepository implements RecurringTransac
     )
     return (result!.values[0][0] as string | null) ?? null
   }
+
+  recordSkip(id: number, dueDate: string): void {
+    this.db.run('INSERT INTO recurring_transaction_skips (rule_id, due_date) VALUES (?, ?)', [id, dueDate])
+  }
+
+  findLatestSkippedDueDate(id: number): string | null {
+    const [result] = this.db.exec(
+      'SELECT MAX(due_date) AS latest FROM recurring_transaction_skips WHERE rule_id = ?',
+      [id],
+    )
+    return (result!.values[0][0] as string | null) ?? null
+  }
 }
 
 function sqlToBool(value: number): boolean {

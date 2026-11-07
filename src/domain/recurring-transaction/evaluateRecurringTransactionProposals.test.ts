@@ -3,7 +3,9 @@
  * ユニットテスト。docs/domain/recurring-transactions.md 1.2節「前回チェック日から現在までの
  * 間で発生すべき対象日をまとめて遅延評価し、提案を生成する」を、専用のチェックポイントを
  * 永続化せず「このルールから生成済みの最新entry_date」を起点として使う設計(1.6節の
- * 非アクティブ化・2.1節のmax_occurrences)で検証する。DB非依存、外部依存なし。
+ * 非アクティブ化・2.1節のmax_occurrences)で検証する。計画Issue #145で追加した提案の見送り
+ * (見送った最新の対象日も起点に含める。確定と見送りが混ざっても導出できる、見送りは
+ * max_occurrencesの回数に数えない)も検証する。DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import type { RecurringTransactionRule } from './RecurringTransactionRule'
@@ -42,6 +44,7 @@ function makeState(
   return {
     generatedCount: 0,
     latestGeneratedEntryDate: null,
+    latestSkippedDueDate: null,
     ...overrides,
   }
 }
@@ -115,5 +118,80 @@ describe('evaluateRecurringTransactionProposals', () => {
       { ruleId: 1, dueDate: '2026-09-01' },
       { ruleId: 2, dueDate: '2026-09-25' },
     ])
+  })
+
+  describe('提案の見送り(計画Issue #145)', () => {
+    it('見送った最新の対象日より後の対象日だけを提案として返す', () => {
+      const rule = makeRule({ id: 1, createdAt: '2026-06-01 00:00:00' })
+
+      const proposals = evaluateRecurringTransactionProposals(
+        [makeState({ rule, latestSkippedDueDate: '2026-07-01' })],
+        '2026-09-01',
+      )
+
+      expect(proposals).toEqual([
+        { ruleId: 1, dueDate: '2026-08-01' },
+        { ruleId: 1, dueDate: '2026-09-01' },
+      ])
+    })
+
+    it('確定と見送りが混ざる場合、新しいほうを起点にする(確定のあとに見送った場合)', () => {
+      const rule = makeRule({ id: 1, createdAt: '2026-06-01 00:00:00' })
+
+      const proposals = evaluateRecurringTransactionProposals(
+        [
+          makeState({
+            rule,
+            generatedCount: 1,
+            latestGeneratedEntryDate: '2026-07-01',
+            latestSkippedDueDate: '2026-08-01',
+          }),
+        ],
+        '2026-09-01',
+      )
+
+      expect(proposals).toEqual([{ ruleId: 1, dueDate: '2026-09-01' }])
+    })
+
+    it('確定と見送りが混ざる場合、新しいほうを起点にする(見送りのあとに確定した場合)', () => {
+      const rule = makeRule({ id: 1, createdAt: '2026-06-01 00:00:00' })
+
+      const proposals = evaluateRecurringTransactionProposals(
+        [
+          makeState({
+            rule,
+            generatedCount: 1,
+            latestGeneratedEntryDate: '2026-08-01',
+            latestSkippedDueDate: '2026-07-01',
+          }),
+        ],
+        '2026-09-01',
+      )
+
+      expect(proposals).toEqual([{ ruleId: 1, dueDate: '2026-09-01' }])
+    })
+
+    it('最後の提案を見送ると、未処理の提案は残らない', () => {
+      const rule = makeRule({ id: 1, createdAt: '2026-06-01 00:00:00' })
+
+      const proposals = evaluateRecurringTransactionProposals(
+        [makeState({ rule, latestSkippedDueDate: '2026-09-01' })],
+        '2026-09-01',
+      )
+
+      expect(proposals).toEqual([])
+    })
+
+    it('見送りはmax_occurrencesの回数に数えない(見送った分だけ終わりが後ろへずれる)', () => {
+      const rule = makeRule({ id: 1, createdAt: '2026-06-01 00:00:00', maxOccurrences: 2 })
+
+      const proposals = evaluateRecurringTransactionProposals(
+        [makeState({ rule, generatedCount: 1, latestGeneratedEntryDate: '2026-07-01', latestSkippedDueDate: '2026-08-01' })],
+        '2026-12-01',
+      )
+
+      // 生成済みは1件なので、あと1回だけ提案される(見送りで消費した回は数えない)
+      expect(proposals).toEqual([{ ruleId: 1, dueDate: '2026-09-01' }])
+    })
   })
 })

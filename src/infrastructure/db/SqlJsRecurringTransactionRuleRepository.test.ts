@@ -5,7 +5,8 @@
  * 削除・非アクティブ化と、DDL側のトリガー(生成済み仕訳がある場合の物理削除禁止。is_reconcilable科目の
  * 直接指定禁止トリガーは計画Issue #145で廃止し、指定できることも検証する)・frequencyごとのカラム組み合わせCHECK制約が
  * 期待通り機能することを検証する。generated_from_rule_idのCOUNTで生成済み件数を
- * 算出するcountGeneratedJournalEntriesも検証する。
+ * 算出するcountGeneratedJournalEntriesも検証する。提案の見送りの永続化・削除時の扱い(計画Issue #145)も
+ * 検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -354,6 +355,82 @@ describe('findLatestGeneratedEntryDate', () => {
     insertGeneratedJournalEntry(db, otherRule.id, '2026-09-25')
 
     expect(repository.findLatestGeneratedEntryDate(created.id)).toBeNull()
+  })
+})
+
+describe('提案の見送り(recordSkip / findLatestSkippedDueDate、計画Issue #145)', () => {
+  function createRule() {
+    return repository.create({
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+    })
+  }
+
+  it('見送りが1件も無いルールは null を返す', () => {
+    const rule = createRule()
+
+    expect(repository.findLatestSkippedDueDate(rule.id)).toBeNull()
+  })
+
+  it('見送った対象日を記録でき、最新の対象日を返す', () => {
+    const rule = createRule()
+
+    repository.recordSkip(rule.id, '2026-07-01')
+    repository.recordSkip(rule.id, '2026-08-01')
+
+    expect(repository.findLatestSkippedDueDate(rule.id)).toBe('2026-08-01')
+  })
+
+  it('見送りはルールごとに独立している', () => {
+    const rule = createRule()
+    const other = createRule()
+
+    repository.recordSkip(rule.id, '2026-07-01')
+
+    expect(repository.findLatestSkippedDueDate(other.id)).toBeNull()
+  })
+
+  it('同じルール・同じ対象日を二重に見送ることはできない', () => {
+    const rule = createRule()
+    repository.recordSkip(rule.id, '2026-07-01')
+
+    expect(() => repository.recordSkip(rule.id, '2026-07-01')).toThrow()
+  })
+
+  it('存在しないルールの見送りは記録できない(外部キー制約)', () => {
+    expect(() => repository.recordSkip(9999, '2026-07-01')).toThrow()
+  })
+
+  it('見送りの記録は仕訳を作らず、生成済み件数にも数えない', () => {
+    const rule = createRule()
+
+    repository.recordSkip(rule.id, '2026-07-01')
+
+    expect(repository.countGeneratedJournalEntries(rule.id)).toBe(0)
+    expect(repository.findLatestGeneratedEntryDate(rule.id)).toBeNull()
+  })
+
+  it('見送りだけがあるルールは物理削除でき、見送りの記録も一緒に削除される', () => {
+    const rule = createRule()
+    repository.recordSkip(rule.id, '2026-07-01')
+
+    repository.delete(rule.id)
+
+    expect(repository.findById(rule.id)).toBeNull()
+    expect(db.exec('SELECT COUNT(*) FROM recurring_transaction_skips')[0].values[0][0]).toBe(0)
+  })
+
+  it('生成済みの仕訳があるルールは、見送りがあっても物理削除できない', () => {
+    const rule = createRule()
+    insertGeneratedJournalEntry(db, rule.id)
+    repository.recordSkip(rule.id, '2026-09-01')
+
+    expect(() => repository.delete(rule.id)).toThrow()
+    expect(repository.findLatestSkippedDueDate(rule.id)).toBe('2026-09-01')
   })
 })
 

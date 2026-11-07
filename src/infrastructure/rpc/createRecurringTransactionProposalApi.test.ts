@@ -2,7 +2,8 @@
  * createRecurringTransactionProposalApi(RPC層: 定期取引の提案評価・仕訳生成)の統合テスト。
  * listPendingがDBから都度読み直して再評価すること、confirmが科目区分の解決(counterparty_idの
  * PL側限定配置)・起票者の解決・仕訳生成(source_type=recurring_generated・
- * generated_from_rule_id設定)まで一貫して行うことを検証する。docs/domain/recurring-transactions.md
+ * generated_from_rule_id設定)まで一貫して行うことを検証する。提案の見送り(skip)が仕訳を作らず、
+ * 古い順にしか行えず、再起動後も残ることも検証する(計画Issue #145)。docs/domain/recurring-transactions.md
  * 1.2・1.4・2.1節。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -272,5 +273,98 @@ describe('confirm', () => {
     api.confirm({ ruleId: rule.id, dueDate: '2026-04-01' })
 
     expect(api.listPending()).toEqual([])
+  })
+})
+
+describe('skip(提案の見送り、計画Issue #145)', () => {
+  function createMonthlyRule(overrides: { maxOccurrences?: number } = {}) {
+    return ruleRepository.create({
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+      householdMemberId: memberId,
+      ...overrides,
+    })
+  }
+
+  function setNow(iso: string) {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(iso))
+  }
+
+  it('見送ると仕訳は作られず、その対象日は未処理の提案から消え、次の提案を確定できる', () => {
+    const rule = createMonthlyRule()
+    insertGeneratedEntry(rule.id, '2026-06-01')
+    setNow('2026-09-25T00:00:00Z')
+
+    api.skip({ ruleId: rule.id, dueDate: '2026-07-01' })
+
+    expect(api.listPending()).toEqual([
+      { ruleId: rule.id, dueDate: '2026-08-01' },
+      { ruleId: rule.id, dueDate: '2026-09-01' },
+    ])
+    expect(ruleRepository.countGeneratedJournalEntries(rule.id)).toBe(1)
+    const confirmed = api.confirm({ ruleId: rule.id, dueDate: '2026-08-01' })
+    expect(confirmed.entryDate).toBe('2026-08-01')
+  })
+
+  it('見送った提案は、APIを作り直した(再起動した)あとも再び出ない', () => {
+    const rule = createMonthlyRule()
+    insertGeneratedEntry(rule.id, '2026-06-01')
+    setNow('2026-08-25T00:00:00Z')
+    api.skip({ ruleId: rule.id, dueDate: '2026-07-01' })
+
+    const restartedApi = createRecurringTransactionProposalApi(db, new SqlJsJournalEntryRepository(db))
+
+    expect(restartedApi.listPending()).toEqual([{ ruleId: rule.id, dueDate: '2026-08-01' }])
+  })
+
+  it('古い提案を飛ばして見送ることはできず、何も記録されない', () => {
+    const rule = createMonthlyRule()
+    insertGeneratedEntry(rule.id, '2026-06-01')
+    setNow('2026-09-25T00:00:00Z')
+
+    expect(() => api.skip({ ruleId: rule.id, dueDate: '2026-08-01' })).toThrow()
+
+    expect(ruleRepository.findLatestSkippedDueDate(rule.id)).toBeNull()
+    expect(api.listPending()[0]).toEqual({ ruleId: rule.id, dueDate: '2026-07-01' })
+  })
+
+  it('確定と見送りが混ざっても、未処理の提案が正しく導出される', () => {
+    const rule = createMonthlyRule()
+    insertGeneratedEntry(rule.id, '2026-05-01')
+    setNow('2026-09-25T00:00:00Z')
+
+    api.skip({ ruleId: rule.id, dueDate: '2026-06-01' })
+    api.confirm({ ruleId: rule.id, dueDate: '2026-07-01' })
+    api.skip({ ruleId: rule.id, dueDate: '2026-08-01' })
+
+    expect(api.listPending()).toEqual([{ ruleId: rule.id, dueDate: '2026-09-01' }])
+  })
+
+  it('スケジュールに合致しない日付・存在しないルール・未処理の提案が無い場合はエラーになる', () => {
+    const rule = createMonthlyRule()
+    insertGeneratedEntry(rule.id, '2026-06-01')
+    setNow('2026-07-25T00:00:00Z')
+
+    expect(() => api.skip({ ruleId: rule.id, dueDate: '2026-07-15' })).toThrow()
+    expect(() => api.skip({ ruleId: 9999, dueDate: '2026-07-01' })).toThrow()
+    api.skip({ ruleId: rule.id, dueDate: '2026-07-01' })
+    expect(() => api.skip({ ruleId: rule.id, dueDate: '2026-07-01' })).toThrow()
+  })
+
+  it('見送りは回数に数えず、見送ってもルール自体は無効にならない(max_occurrencesの終わりが後ろへずれる)', () => {
+    const rule = createMonthlyRule({ maxOccurrences: 2 })
+    insertGeneratedEntry(rule.id, '2026-06-01')
+    setNow('2026-12-25T00:00:00Z')
+
+    api.skip({ ruleId: rule.id, dueDate: '2026-07-01' })
+
+    expect(ruleRepository.findById(rule.id)?.isActive).toBe(true)
+    // 生成済み1件・上限2件なので、見送った回を数えずに、あと1回だけ提案される
+    expect(api.listPending()).toEqual([{ ruleId: rule.id, dueDate: '2026-08-01' }])
   })
 })
