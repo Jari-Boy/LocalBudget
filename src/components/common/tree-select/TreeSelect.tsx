@@ -20,6 +20,10 @@ export interface TreeSelectProps {
   emptyLabel?: string
   /** 未選択のときにボタンへ出す文言 */
   placeholder?: string
+  /** 渡すと、一覧の末尾に「+ 新規追加」を出す。押すと閉じてから呼ぶ(追加の画面は呼び出し側が開く) */
+  onCreate?: () => void
+  /** 新規追加ボタンの文言(「+ 」は自動で付く)。省略時は「新規追加」 */
+  createLabel?: string
 }
 
 function findGroupName(nodes: readonly TreeSelectNode[], id: string): string | undefined {
@@ -58,6 +62,8 @@ export function TreeSelect({
   allowGroupSelect = false,
   emptyLabel,
   placeholder = '指定なし',
+  onCreate,
+  createLabel = '新規追加',
 }: TreeSelectProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -233,6 +239,19 @@ export function TreeSelect({
               )
             })}
             {rows.length === 0 && <p className="tree-select__empty">該当する項目がありません</p>}
+            {onCreate !== undefined && (
+              <button
+                type="button"
+                className="tree-select__item tree-select__create"
+                style={{ paddingLeft: 8 }}
+                onClick={() => {
+                  close()
+                  onCreate()
+                }}
+              >
+                {`+ ${createLabel}`}
+              </button>
+            )}
           </div>
         </div>
       )}
