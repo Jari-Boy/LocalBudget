@@ -33,7 +33,8 @@ const FOOD = account(1, { category: 'expense', name: '食費' })
 const SALARY = account(2, { category: 'revenue', name: '給与' })
 const ADVANCE = account(3, { category: 'asset', name: '立替金', isReconcilable: false })
 const CASH = account(4, { category: 'asset', name: '財布', isReconcilable: false, householdMemberId: 9 })
-const ACCOUNTS = [FOOD, SALARY, ADVANCE, CASH]
+const BANK = account(5, { category: 'asset', name: '普通預金', isReconcilable: true })
+const ACCOUNTS = [FOOD, SALARY, ADVANCE, CASH, BANK]
 
 const record = (overrides: Partial<{ isExactDuplicate: boolean; approximateCandidates: unknown[] }> = {}) =>
   ({ isExactDuplicate: false, approximateCandidates: [], ...overrides }) as never
@@ -65,9 +66,9 @@ describe('applyBulkSetting', () => {
   it('選択した行の相手科目を変えると、非費用収益の科目では取引先を外し、一時勘定以外では精算バッチを外す', () => {
     const states = [state({ counterpartyId: 5, settlementBatchId: 7 }), state(), state()]
 
-    const result = applyBulkSetting({ states, records: rows, selected: new Set([0]), accounts: ACCOUNTS, change: { field: 'counterAccount', value: CASH.id } })
+    const result = applyBulkSetting({ states, records: rows, selected: new Set([0]), accounts: ACCOUNTS, change: { field: 'counterAccount', value: BANK.id } })
 
-    expect(result.states[0]).toMatchObject({ counterAccountId: CASH.id, counterpartyId: null, settlementBatchId: null, counterAccountTouched: true })
+    expect(result.states[0]).toMatchObject({ counterAccountId: BANK.id, counterpartyId: null, settlementBatchId: null, counterAccountTouched: true })
     expect(result.applied).toBe(1)
     expect(result.skipped).toBe(0)
   })
