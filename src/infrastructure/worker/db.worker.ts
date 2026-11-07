@@ -9,6 +9,7 @@ import { seedInitialBalanceAccount } from '../db/seedInitialBalanceAccount'
 import { seedDefaultHouseholdMember } from '../db/seedDefaultHouseholdMember'
 import { seedDevSampleDataIfDev } from '../db/seedDevSampleDataIfDev'
 import { seedSettlementAdjustmentAccounts } from '../db/seedSettlementAdjustmentAccounts'
+import { seedStandardAccountGroups } from '../db/seedStandardAccountGroups'
 import { createRepositoryRegistry } from '../rpc/createRepositoryRegistry'
 import { registerDomainErrorTransferHandler } from '../rpc/registerDomainErrorTransferHandler'
 import { WORKER_READY_MESSAGE, createWorkerInitErrorMessage } from '../rpc/workerLifecycleMessages'
@@ -75,6 +76,7 @@ async function main(): Promise<void> {
   seedAdvanceAccounts(db)
   seedInitialBalanceAccount(db)
   seedSettlementAdjustmentAccounts(db)
+  seedStandardAccountGroups(db)
   seedDevSampleDataIfDev(db)
   const autoSaveController = withAutoSave(db, storageAdapter)
 
