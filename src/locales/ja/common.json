@@ -18,13 +18,11 @@
       "newSplit": "割勘する",
       "settlement": "精算",
       "splitHistory": "割勘の履歴",
-      "accountList": "科目一覧",
-      "accountNew": "科目を追加",
-      "accountGroups": "科目グループ",
+      "accounts": "勘定科目",
       "counterparties": "取引先",
       "householdMembers": "世帯メンバー",
       "projects": "プロジェクト",
-      "recurringRules": "定期取引ルール"
+      "recurringRules": "定期取引"
     }
   }
 }

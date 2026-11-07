@@ -50,7 +50,7 @@ describe('AppShell', () => {
     fireEvent.click(within(nav()).getByRole('link', { name: '分析' }))
     expect(screen.getByTestId('where')).toHaveTextContent('/reports/financial-statements')
     fireEvent.click(within(nav()).getByRole('link', { name: 'マスタ' }))
-    expect(screen.getByTestId('where')).toHaveTextContent('/master/accounts/list')
+    expect(screen.getByTestId('where')).toHaveTextContent('/master/accounts')
     fireEvent.click(within(nav()).getByRole('link', { name: '割勘・精算' }))
     expect(screen.getByTestId('where')).toHaveTextContent('/journal/splitting/new')
     fireEvent.click(within(nav()).getByRole('link', { name: '明細取込' }))
@@ -82,14 +82,27 @@ describe('AppShell', () => {
     expect(within(tabs).getByRole('link', { name: '精算' })).toHaveAttribute('aria-current', 'page')
   })
 
-  it('仕訳・マスタ領域のタブ帯から定期取引の提案とルールへ到達できる', () => {
+  it('マスタ領域のタブ帯に、勘定科目・取引先・世帯メンバー・プロジェクト・定期取引の5つが並ぶ(計画Issue #154)', () => {
+    renderShell('/master/accounts')
+    const tabs = screen.getByRole('navigation', { name: '領域内のタブ' })
+    expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual([
+      '勘定科目',
+      '取引先',
+      '世帯メンバー',
+      'プロジェクト',
+      '定期取引',
+    ])
+    expect(within(tabs).getByRole('link', { name: '勘定科目' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('仕訳領域のタブ帯から定期取引の提案へ、マスタ領域のタブ帯から定期取引のルールへ到達できる', () => {
     renderShell('/journal/recurring/proposals')
     const journalTabs = screen.getByRole('navigation', { name: '領域内のタブ' })
     expect(within(journalTabs).getByRole('link', { name: '定期取引の確認' })).toHaveAttribute('href', '/journal/recurring/proposals')
     cleanup()
-    renderShell('/journal/recurring/rules')
+    renderShell('/master/recurring')
     const masterTabs = screen.getByRole('navigation', { name: '領域内のタブ' })
-    expect(within(masterTabs).getByRole('link', { name: '定期取引ルール' })).toHaveAttribute('aria-current', 'page')
+    expect(within(masterTabs).getByRole('link', { name: '定期取引' })).toHaveAttribute('aria-current', 'page')
     expect(within(nav()).getByRole('link', { name: 'マスタ' })).toHaveAttribute('aria-current', 'page')
   })
 
