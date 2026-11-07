@@ -104,5 +104,21 @@
     "mergeConfirm": "「{{sources}}」を「{{target}}」に統合します。元に戻せません。よろしいですか?",
     "mergeDone": "「{{sources}}」を「{{target}}」に統合しました。",
     "mergeError": "統合に失敗しました。もう一度お試しください。"
+  },
+  "memberTab": {
+    "edit": "世帯メンバーの編集",
+    "addMember": "世帯メンバーを追加",
+    "addGroup": "グループを追加",
+    "newMemberName": "新しいメンバー",
+    "newGroupName": "新しいグループ",
+    "type": "種類",
+    "state": "状態",
+    "typeIndividual": "個人",
+    "typeGroup": "グループ",
+    "typeGroupWith": "グループ({{names}})",
+    "typeFixed": "種類(作成後は変更できません)",
+    "groupMembers": "構成メンバー",
+    "active": "有効",
+    "inactive": "無効"
   }
 }
