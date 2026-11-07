@@ -102,3 +102,38 @@
 .master-btn--danger {
   color: var(--color-danger);
 }
+
+.master-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.master-split__main {
+  flex: 3 1 520px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.master-split > .master-panel {
+  flex: 2 1 300px;
+}
+
+.master-split__alert {
+  flex: 1 1 100%;
+  order: -1;
+}
+
+.master-btn--small {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: var(--font-size-xs);
+}
+
+.master-flash {
+  font-size: var(--font-size-base);
+  color: var(--color-accent);
+}
