@@ -60,6 +60,8 @@ export function GroupedMasterTab({
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // 統合・削除などで消えた行のチェックは捨てる
+  const liveCheckedIds = checkedIds.filter((id) => tree.nodes.some((n) => n.id === id))
   const categoryKey = tree.categories[0].key
   const topId = `${CATEGORY_ID_PREFIX}${categoryKey}`
   const selected = selectedId ? tree.nodes.find((n) => n.id === selectedId) : undefined
@@ -130,7 +132,7 @@ export function GroupedMasterTab({
           categories={tree.categories}
           nodes={tree.nodes}
           columns={columns}
-          checkedIds={checkedIds}
+          checkedIds={liveCheckedIds}
           selectedId={selectedId}
           onSelect={select}
           onCheckedChange={setCheckedIds}
@@ -142,7 +144,7 @@ export function GroupedMasterTab({
         />
         <p className="master-note">{t('accountTab.dragHint')}</p>
         {renderSelection?.(
-          checkedIds.filter((id) => parseNodeId(id).kind === 'leaf').map((id) => parseNodeId(id).id),
+          liveCheckedIds.filter((id) => parseNodeId(id).kind === 'leaf').map((id) => parseNodeId(id).id),
           { reload: onChanged },
         )}
       </div>

@@ -77,5 +77,32 @@
     "addGroup": "グループを追加",
     "newLeafName": "新しい{{leaf}}",
     "allLabel": "すべての{{leaf}}"
+  },
+  "counterpartyTab": {
+    "defaultAccount": "既定の科目",
+    "defaultAccountNone": "指定なし",
+    "patternsTitle": "登録済みパターン({{count}}件)",
+    "patternsNote": "CSV取込で取引先を手動で選んだときに学習した摘要と、ここで追加した文字列です。摘要に部分一致すると、この取引先を自動で設定します。",
+    "patternsEmpty": "登録済みのパターンはありません。",
+    "patternInput": "パターン",
+    "patternSave": "パターンを保存",
+    "patternCancel": "キャンセル",
+    "patternEdit": "編集",
+    "patternEditLabel": "{{pattern}}を編集",
+    "patternDelete": "削除",
+    "patternDeleteLabel": "{{pattern}}を削除",
+    "patternNewInput": "追加するパターン",
+    "patternPlaceholder": "摘要に含まれる文字列",
+    "patternAdd": "+ パターンを追加",
+    "patternError": "パターンの更新に失敗しました。もう一度お試しください。",
+    "mergeRegion": "取引先の統合",
+    "mergeTitle": "{{count}}件を統合",
+    "mergeTarget": "統合先",
+    "mergeChoose": "選択してください",
+    "mergeStart": "統合する",
+    "mergeRun": "統合を実行",
+    "mergeConfirm": "「{{sources}}」を「{{target}}」に統合します。元に戻せません。よろしいですか?",
+    "mergeDone": "「{{sources}}」を「{{target}}」に統合しました。",
+    "mergeError": "統合に失敗しました。もう一度お試しください。"
   }
 }
