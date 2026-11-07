@@ -6,6 +6,7 @@ export type JournalEntrySourceType =
   | 'recurring_generated'
   | 'initial_balance'
   | 'balance_adjustment'
+  | 'expense_splitting'
 
 export interface JournalLine {
   id: number

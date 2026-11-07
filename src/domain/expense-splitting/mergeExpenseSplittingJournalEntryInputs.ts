@@ -30,6 +30,7 @@ export function mergeExpenseSplittingJournalEntryInputs(
     entryDate: params.entryDate,
     memo: params.memo,
     householdMemberId: params.householdMemberId,
+    sourceType: 'expense_splitting',
     lines: params.inputs.flatMap((input) => input.lines),
   }
 }

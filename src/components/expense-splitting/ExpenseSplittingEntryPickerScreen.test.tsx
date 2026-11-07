@@ -2,8 +2,8 @@
 /**
  * 割勘対象選択画面(計画Issue #40、ユーザーレビューで割勘対象の仕訳選択を仕訳一覧
  * (確認用途の汎用画面)から分離した専用の入口画面)のコンポーネントテスト。
- * findUnallocatedEntries(docs/domain/expense-splitting.md 1.5節)による「既に割勘済み
- * の仕訳の除外」と、JournalEntryFilterForm(期間・科目・世帯メンバー・プロジェクト)
+ * checkExpenseSplittability(docs/domain/expense-splitting.md 1.5節、計画Issue #149)による
+ * 「割勘できない仕訳(割勘で作られた仕訳・割勘済み・借方に費用の行がない)の除外」と、JournalEntryFilterForm(期間・科目・世帯メンバー・プロジェクト)
  * による追加の絞り込みを組み合わせて対象候補を一覧表示し、チェックボックスで選択した
  * 仕訳をまとめて割勘起票フォームへ渡す動線(計画Issue #40 Attempt 4、人間レビューでの
  * 「複数の元仕訳をまとめて選択して一括で割勘起票したい」との指摘への対応)を、
@@ -18,6 +18,7 @@ import { I18nextProvider } from 'react-i18next'
 import i18n from '../../infrastructure/i18n/i18n'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
+import { seedAdvanceAccounts } from '../../infrastructure/db/seedAdvanceAccounts'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
@@ -279,7 +280,7 @@ describe('ExpenseSplittingEntryPickerScreen', () => {
     expect(screen.queryByText('給与振込')).not.toBeInTheDocument()
   })
 
-  it('費用科目の行が2件以上ある仕訳は、どの行を付け替え対象にすべきか一意に定まらないため候補から除外される', async () => {
+  it('借方に費用科目の行が2件以上ある仕訳も候補に表示される(各行を同じ割合で割る、計画Issue #149)', async () => {
     const member = householdMemberRepository.create({ name: 'Aさん' })
     const foodExpense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
     const suppliesExpense = accountRepository.create({ category: 'expense', name: '日用品費', isReconcilable: null })
@@ -297,7 +298,46 @@ describe('ExpenseSplittingEntryPickerScreen', () => {
 
     renderScreen()
 
+    expect(await screen.findByText('食費と日用品費の複合仕訳')).toBeInTheDocument()
+  })
+
+  it('費用の行が貸方だけの仕訳(借方に費用の行がない)は候補から除外される(計画Issue #149)', async () => {
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const foodExpense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '食費の返金',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: cash.id, side: 'debit', amount: 500 },
+        { accountId: foodExpense.id, side: 'credit', amount: 500 },
+      ],
+    })
+
+    renderScreen()
+
     expect(await screen.findByText('割勘の対象となる仕訳がありません')).toBeInTheDocument()
+  })
+
+  it('手入力で立替金を使った仕訳は割勘と誤判定されず、借方に費用の行があれば候補に表示される(計画Issue #149)', async () => {
+    seedAdvanceAccounts(db)
+    const advanceAsset = accountRepository.findAll().find((a) => a.category === 'asset' && a.isSystemManaged)!
+    const member = householdMemberRepository.create({ name: 'Aさん' })
+    const foodExpense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: '手入力の立替',
+      householdMemberId: member.id,
+      lines: [
+        { accountId: foodExpense.id, side: 'debit', amount: 500 },
+        { accountId: advanceAsset.id, side: 'credit', amount: 500 },
+      ],
+    })
+
+    renderScreen()
+
+    expect(await screen.findByText('手入力の立替')).toBeInTheDocument()
   })
 
   it('候補が0件の場合、空状態メッセージが表示される', async () => {

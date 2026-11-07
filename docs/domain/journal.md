@@ -125,6 +125,7 @@
 | `recurring_generated` | 定期取引([recurring-transactions.md](./recurring-transactions.md))の提案をレビュー確認して作成された |
 | `initial_balance` | 口座/カード開設時の初期残高仕訳([accounts.md 4.3 初期残高の自動仕訳](./accounts.md#43-初期残高の自動仕訳)) |
 | `balance_adjustment` | 残高調整([reconciliation.md 1.6](./reconciliation.md#16-原因不明差異への残高調整)、[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)) |
+| `expense_splitting` | 割勘機能で作った仕訳([expense-splitting.md](./expense-splitting.md)、計画Issue #149)。割勘かどうかは科目構成ではなくこの値で判定する。精算の仕訳は分類を増やさず、口座明細からなら`external_import`、手で起票したものなら`manual`とする |
 
 `source_type`は仕訳の作成経路を表す。以前は[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)が「この仕訳はis_reconcilable = trueの科目に記帳してよいか」を判定する根拠にしていたが、計画Issue #145でその制限を廃止したため、現在は一覧の出どころ表示など、経路を区別する用途に使う。
 

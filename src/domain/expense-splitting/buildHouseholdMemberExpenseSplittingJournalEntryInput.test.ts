@@ -19,6 +19,17 @@ const MEMBER_A = 100
 const MEMBER_B = 200
 const SETTLEMENT_BATCH_ID = 26 // 6月生活費
 
+const DEFAULT_PARAMS = {
+  expenseAccountId: EXPENSE_ACCOUNT_ID,
+  advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
+  advanceLiabilityAccountId: ADVANCE_LIABILITY_ACCOUNT_ID,
+  fromMemberId: MEMBER_A,
+  toMemberId: MEMBER_B,
+  settlementBatchId: SETTLEMENT_BATCH_ID,
+  amount: 500,
+  entryDate: '2026-07-15',
+}
+
 describe('buildHouseholdMemberExpenseSplittingJournalEntryInput', () => {
   it('1.3節の例(A・Bの折半)通りに、費用付け替え2行+立替金資産/負債2行の4行仕訳を組み立てる', () => {
     const input = buildHouseholdMemberExpenseSplittingJournalEntryInput({
@@ -86,6 +97,12 @@ describe('buildHouseholdMemberExpenseSplittingJournalEntryInput', () => {
     expect(input.lines[3]).not.toHaveProperty('projectId')
     expect(input.lines[1]).toMatchObject({ settlementBatchId: SETTLEMENT_BATCH_ID })
     expect(input.lines[3]).toMatchObject({ settlementBatchId: SETTLEMENT_BATCH_ID })
+  })
+
+  it('source_typeはexpense_splitting(割勘機能で作る仕訳、計画Issue #149)になる', () => {
+    const input = buildHouseholdMemberExpenseSplittingJournalEntryInput(DEFAULT_PARAMS)
+
+    expect(input.sourceType).toBe('expense_splitting')
   })
 
   it('memoを渡した場合はそのままentryのmemoに使われる', () => {

@@ -310,6 +310,22 @@ describe('is_reconcilable資産・負債への記帳(計画Issue #145で直接�
   })
 })
 
+describe('source_type = expense_splitting(計画Issue #149)', () => {
+  it('割勘仕訳としてexpense_splittingで保存でき、読み出しても値が保たれる', () => {
+    const created = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-24',
+      sourceType: 'expense_splitting',
+      lines: [
+        { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
+        { accountId: foodExpenseAccountId, side: 'credit', amount: 500 },
+      ],
+    })
+
+    expect(repository.findById(created.id)?.sourceType).toBe('expense_splitting')
+  })
+})
+
 describe('findAll', () => {
   it('作成した全ての仕訳を返す', () => {
     repository.create({

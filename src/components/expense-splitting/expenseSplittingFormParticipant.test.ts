@@ -4,11 +4,14 @@
  * 按分計算)・toExpenseSplitRecipients(フォーム行からrecipients配列への変換、
  * 不完全な行の除外)・toExpenseSplitRecipientsForEntryAmount(複数の元仕訳をまとめて
  * 割勘する場合に、共通の分担者設定を元仕訳ごとの金額へ個別に適用する変換、計画Issue #40
- * 再実装分)を検証する。DB非依存、外部依存なし。
+ * 再実装分)、splitRecipientsAcrossLines(費用の行が複数ある仕訳で、分担者ごとの金額を行の金額比で
+ * 配分する変換、計画Issue #149)を検証する。DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
+import type { ExpenseSplitRecipient } from '../../domain/expense-splitting/buildExpenseSplittingJournalEntryInputs'
 import {
   calculateParticipantAmounts,
+  splitRecipientsAcrossLines,
   toExpenseSplitRecipients,
   toExpenseSplitRecipientsForEntryAmount,
   type ExpenseSplittingParticipantRow,
@@ -139,5 +142,38 @@ describe('toExpenseSplitRecipientsForEntryAmount', () => {
 
     // 立替者+分担者2人の均等割: 333円ずつ(端数1円は立替者に寄る)
     expect(result).toEqual([{ kind: 'counterparty', counterpartyId: 7, amount: 333 }])
+  })
+})
+
+describe('splitRecipientsAcrossLines(費用の行が複数ある仕訳、計画Issue #149)', () => {
+  it('分担者ごとの金額を費用の行の金額比で行ごとに配分し、行ごとの合計が分担額と一致する', () => {
+    const recipients: ExpenseSplitRecipient[] = [
+      { kind: 'householdMember', toMemberId: 2, advanceLiabilityAccountId: 9, amount: 500 },
+      { kind: 'counterparty', counterpartyId: 5, amount: 101 },
+    ]
+
+    const perLine = splitRecipientsAcrossLines(recipients, [700, 300])
+
+    expect(perLine).toHaveLength(2)
+    expect(perLine[0].map((r) => r.amount)).toEqual([350, 71])
+    expect(perLine[1].map((r) => r.amount)).toEqual([150, 30])
+    const sumFor = (index: number) => perLine.reduce((sum, line) => sum + (line[index]?.amount ?? 0), 0)
+    expect(sumFor(0)).toBe(500)
+    expect(sumFor(1)).toBe(101)
+  })
+
+  it('配分額が0になる行からは、その分担者を除く', () => {
+    const recipients: ExpenseSplitRecipient[] = [{ kind: 'counterparty', counterpartyId: 5, amount: 1 }]
+
+    const perLine = splitRecipientsAcrossLines(recipients, [1000, 1])
+
+    expect(perLine[0]).toHaveLength(1)
+    expect(perLine[1]).toHaveLength(0)
+  })
+
+  it('行が1つなら分担者の金額をそのまま返す', () => {
+    const recipients: ExpenseSplitRecipient[] = [{ kind: 'counterparty', counterpartyId: 5, amount: 333 }]
+
+    expect(splitRecipientsAcrossLines(recipients, [1000])).toEqual([recipients])
   })
 })

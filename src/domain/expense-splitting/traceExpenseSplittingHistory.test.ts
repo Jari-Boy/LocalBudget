@@ -59,8 +59,12 @@ function buildOriginalEntry(id: number): JournalEntry {
   return buildEntry(id, [buildLine(id, EXPENSE_ACCOUNT_ID, 'debit'), buildLine(id, PAYABLE_ACCOUNT_ID, 'credit')])
 }
 
+/** 割勘仕訳は source_type = 'expense_splitting' で保存される(計画Issue #149) */
 function buildSplitEntry(id: number): JournalEntry {
-  return buildEntry(id, [buildLine(id, EXPENSE_ACCOUNT_ID, 'debit'), buildLine(id, ADVANCE_ACCOUNT_ID, 'credit')])
+  return {
+    ...buildEntry(id, [buildLine(id, EXPENSE_ACCOUNT_ID, 'debit'), buildLine(id, ADVANCE_ACCOUNT_ID, 'credit')]),
+    sourceType: 'expense_splitting',
+  }
 }
 
 function buildSettlementEntry(id: number): JournalEntry {
@@ -84,6 +88,27 @@ function buildEntry(id: number, lines: JournalLine[]): JournalEntry {
 }
 
 describe('traceExpenseSplittingHistory', () => {
+  it('手入力で割勘と同じ科目構成にした関連仕訳は、割勘仕訳として辿らない(計画Issue #149)', () => {
+    const originalEntry = buildOriginalEntry(1)
+    const manualLookalike = buildEntry(2, [
+      buildLine(2, EXPENSE_ACCOUNT_ID, 'debit'),
+      buildLine(2, ADVANCE_ACCOUNT_ID, 'credit'),
+    ])
+    const relatedEntryIdsByEntryId = new Map([
+      [1, new Set([2])],
+      [2, new Set([1])],
+    ])
+
+    const result = traceExpenseSplittingHistory(
+      originalEntry,
+      [originalEntry, manualLookalike],
+      ACCOUNTS,
+      relatedEntryIdsByEntryId,
+    )
+
+    expect(result).toEqual([])
+  })
+
   it('精算前(割勘仕訳のみ)の場合、割勘仕訳を1件・精算仕訳を0件で辿る', () => {
     const originalEntry = buildOriginalEntry(1)
     const splitEntry = buildSplitEntry(2)

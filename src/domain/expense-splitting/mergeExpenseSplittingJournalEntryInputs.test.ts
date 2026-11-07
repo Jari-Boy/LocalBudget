@@ -59,6 +59,7 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
     expect(merged.entryDate).toBe('2026-09-06')
     expect(merged.memo).toBe('カスタム摘要')
     expect(merged.householdMemberId).toBe(MEMBER_A)
+    expect(merged.sourceType).toBe('expense_splitting')
     expect(merged.lines).toEqual([...memberInput.lines, ...counterpartyInput.lines])
   })
 

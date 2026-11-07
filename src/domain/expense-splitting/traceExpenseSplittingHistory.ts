@@ -30,7 +30,7 @@ export function traceExpenseSplittingHistory(
   accounts: readonly Account[],
   relatedEntryIdsByEntryId: ReadonlyMap<number, ReadonlySet<number>>,
 ): ExpenseSplittingTrail[] {
-  if (isExpenseSplitEntry(originalEntry, accounts) || isExpenseSplitSettlementEntry(originalEntry, accounts)) {
+  if (isExpenseSplitEntry(originalEntry) || isExpenseSplitSettlementEntry(originalEntry, accounts)) {
     return []
   }
 
@@ -41,7 +41,7 @@ export function traceExpenseSplittingHistory(
       .map((id) => entriesById.get(id))
       .filter((entry): entry is JournalEntry => entry !== undefined)
 
-  const splitEntries = resolveRelated(originalEntry.id).filter((entry) => isExpenseSplitEntry(entry, accounts))
+  const splitEntries = resolveRelated(originalEntry.id).filter((entry) => isExpenseSplitEntry(entry))
 
   return splitEntries.map((splitEntry) => ({
     splitEntry,

@@ -498,6 +498,7 @@ describe('JournalEntryDetailScreen', () => {
       entryDate: '2026-08-02',
       memo: '割勘',
       householdMemberId: member.id,
+      sourceType: 'expense_splitting',
       lines: [
         { accountId: expense.id, side: 'debit', amount: 500, householdMemberId: other.id },
         { accountId: advanceAsset.id, side: 'debit', amount: 500, settlementBatchId: batch.id, householdMemberId: member.id },
