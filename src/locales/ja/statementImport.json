@@ -108,5 +108,6 @@
   "unreadableTitle": "取り込まない行({{count}}件)",
   "unreadableNote": "為替レートの補足など、日付や金額を読み取れない行は取り込みません。必要なら、仕訳を手入力で起票してください。",
   "unreadableRow": "{{row}}行目",
-  "mappingDialogSkipNote": "読み取れない行は取り込まれません(保存はできます)。"
+  "mappingDialogSkipNote": "読み取れない行は取り込まれません(保存はできます)。",
+  "unreadableMajorityWarning": "読み取れない行の方が多いです。マッピング(列の割り当てや日付の書式)が合っているか確認してください。"
 }

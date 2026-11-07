@@ -13,16 +13,17 @@ export interface MappingDefinitionCandidateMatch {
  * CSVに合うと判断した候補のみを返す(計画Issue #78、docs/domain/statement-import.md 1.4・1.5手順1)。
  * 単純な列名パターンマッチ等のヒューリスティックな「ファイルの中身からの推測」ではなく、実際の変換処理の
  * 試行による絞り込みである。候補ごとにencoding/delimiterが異なりうるため、readCsv自体も候補ごとに個別実行する。
- * 指定した列がCSVに見つからない候補は除外する。為替レートの補足行のように一部の行だけ読み取れない場合は
- * それだけで除外せず(計画Issue #151)、読み取れる行が1行以上あり、読み取れない行以上のときに一致とする。日付の書式が
- * 違うなど、ほとんどの行が読み取れない候補は別の形式とみなして除外する。データ行が無い(見出しだけの)CSVは、
- * 列が見つかれば一致とする。
+ * 指定した列がCSVに見つからない候補、読み取れる行が1行も無い候補は除外する。為替レートの補足行のように
+ * 一部の行が読み取れなくても、それだけでは除外しない(計画Issue #151)。読み取れない行の方が多い場合の警告は
+ * 画面側が出す。複数の候補が通るときは、読み取れない行が最も少ない候補だけを残す(日付の書式違いなどで
+ * 読めない行が多い別の定義を除く。確定明細と速報明細のように列が同じ定義は、数が同じなので残る)。
+ * データ行が無い(見出しだけの)CSVは、列が見つかれば一致とする。
  */
 export function resolveMappingDefinitionCandidates(
   bytes: Uint8Array,
   candidates: readonly ImportMappingDefinition[],
 ): MappingDefinitionCandidateMatch[] {
-  const matches: MappingDefinitionCandidateMatch[] = []
+  const matches: Array<MappingDefinitionCandidateMatch & { unreadable: number }> = []
 
   for (const candidate of candidates) {
     try {
@@ -30,13 +31,15 @@ export function resolveMappingDefinitionCandidates(
       const preview = previewMappingRows(rows, candidate)
       if (preview.columnError !== null) continue
       const readable = preview.rows.filter((row) => row.record !== null).length
-      const unreadable = preview.rows.length - readable
-      if (preview.rows.length > 0 && (readable === 0 || readable < unreadable)) continue
-      matches.push({ definition: candidate, rows })
+      if (preview.rows.length > 0 && readable === 0) continue
+      matches.push({ definition: candidate, rows, unreadable: preview.rows.length - readable })
     } catch {
       continue
     }
   }
 
+  const fewest = Math.min(...matches.map((match) => match.unreadable))
   return matches
+    .filter((match) => match.unreadable === fewest)
+    .map(({ definition, rows }) => ({ definition, rows }))
 }

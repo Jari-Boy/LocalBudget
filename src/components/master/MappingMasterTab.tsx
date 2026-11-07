@@ -557,6 +557,9 @@ function MappingPanel(props: MappingPanelProps) {
       <p role="status" className={statusIsError ? 'master-error' : 'master-note'}>
         {statusText}
       </p>
+      {preview !== null && !preview.columnError && errorCount > preview.rows.length - errorCount && (
+        <p className="master-error">{t('mappingTab.majorityWarning')}</p>
+      )}
       {errorCount > 0 && preview !== null && !preview.columnError && (
         <p className="master-note">{t('mappingTab.skipNote')}</p>
       )}

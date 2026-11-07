@@ -1069,6 +1069,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           className="import-panel"
         >
           <p className="import-panel__title">{t('unreadableTitle', { count: session.review.unreadableRows.length })}</p>
+          {session.review.unreadableRows.length > session.review.records.length && (
+            <p className="import-error">{t('unreadableMajorityWarning')}</p>
+          )}
           <p className="import-note">{t('unreadableNote')}</p>
           <ul className="import-unreadable">
             {session.review.unreadableRows.map((row) => (

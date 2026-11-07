@@ -150,6 +150,28 @@ describe('MappingMasterTab', () => {
     expect(panel().getByText('金額を読み取れません')).toBeInTheDocument()
   })
 
+  it('読み取れない行の方が多いときは警告を出すが、保存はできる(計画Issue #151)', async () => {
+    makeMapping()
+    renderTab()
+    await openMapping('楽天カード')
+
+    loadCsv('利用日,利用店名,利用金額\n2026/10/05,A,-300\n不正,B,100\n不正,C,200\n')
+
+    expect(await panel().findByText(/読み取れない行の方が多いです/)).toBeInTheDocument()
+    expect(panel().getByRole('button', { name: '保存' })).toBeEnabled()
+  })
+
+  it('読み取れない行が少ないときは、多い旨の警告は出さない', async () => {
+    makeMapping()
+    renderTab()
+    await openMapping('楽天カード')
+
+    loadCsv('利用日,利用店名,利用金額\n2026/10/05,A,-300\n2026/10/06,B,100\n不正,C,200\n')
+
+    expect(await panel().findByText('1行を読み取れません(全3行)')).toBeInTheDocument()
+    expect(panel().queryByText(/読み取れない行の方が多いです/)).not.toBeInTheDocument()
+  })
+
   it('指定した列がCSVに見つからないときは、その旨を表示する', async () => {
     makeMapping({ amountColumn: '存在しない列' })
     renderTab()

@@ -235,6 +235,7 @@ export function MappingCreateDialog({ bytes, onSave, onCancel }: MappingCreateDi
             {unusableMessage}
           </p>
         )}
+        {errorCount > readableCount && !unusable && <p className="import-error">{tMaster('mappingTab.majorityWarning')}</p>}
         {errorCount > 0 && !unusable && <p className="import-note">{t('mappingDialogSkipNote')}</p>}
         <p className="import-note">{t('mappingDialogNote')}</p>
 

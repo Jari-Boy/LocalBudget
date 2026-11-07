@@ -243,6 +243,7 @@
     "reasonDebitCreditColumnsRequired": "出金額の列と入金額の列を指定してください",
     "reasonHeaderRowsInvalid": "見出しまでの行数は0以上の整数にしてください",
     "reasonColumnNeedsHeader": "見出しの行がないときは、列を番号で指定してください",
-    "skipNote": "読み取れない行は、取り込まれません(保存はできます)。"
+    "skipNote": "読み取れない行は、取り込まれません(保存はできます)。",
+    "majorityWarning": "読み取れない行の方が多いです。マッピング(列の割り当てや日付の書式)が合っているか確認してください。"
   }
 }

@@ -420,6 +420,60 @@ describe('StatementImportScreen', () => {
     expect(entries.findAll()).toHaveLength(1)
   })
 
+  it('読み取れない行の方が多いときは、取り込めるが、マッピングが合っているか確認する警告を出す(計画Issue #151)', async () => {
+    makeMapping()
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n,補足1,,\n,補足2,,\n`)
+
+    const skipped = within(await screen.findByRole('region', { name: '取り込まない行(2件)' }))
+    expect(skipped.getByText(/読み取れない行の方が多いです/)).toBeInTheDocument()
+    expect(rowOf(/スーパー/).getByText('2026/10/05')).toBeInTheDocument()
+  })
+
+  it('読み取れない行が少ないときは、警告は出さない', async () => {
+    makeMapping()
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,ランチ,-800,96200\n,補足,,\n`)
+
+    const skipped = within(await screen.findByRole('region', { name: '取り込まない行(1件)' }))
+    expect(skipped.queryByText(/読み取れない行の方が多いです/)).not.toBeInTheDocument()
+  })
+
+  it('定義の作成ダイアログは、読み取れない行の方が多くても読める行が1行あれば保存でき、警告を出す(計画Issue #151)', async () => {
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n,補足1,,\n,補足2,,\n`, false)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'このCSVでマッピングを新規作成' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'マッピングを新規作成' }))
+    fireEvent.change(dialog.getByLabelText('表示名'), { target: { value: '補足行が多い' } })
+    fireEvent.change(dialog.getByLabelText('金融機関の識別子'), { target: { value: 'many-notes' } })
+
+    expect(dialog.getByText(/読み取れない行の方が多いです/)).toBeInTheDocument()
+    expect(dialog.getByRole('button', { name: '保存して取り込む' })).toBeEnabled()
+    fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
+
+    // 保存した定義が、そのまま取り込みに進める(一致しないと「保存できませんでした」になる)
+    await screen.findByLabelText(/^取込先/)
+    expect(screen.queryByText('保存できませんでした。もう一度お試しください。')).not.toBeInTheDocument()
+    await waitFor(() => expect(mappings.findAll()).toHaveLength(1))
+  })
+
+  it('定義の作成ダイアログは、読み取れる行が1行も無いと保存できず、理由を出す(計画Issue #151)', async () => {
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'このCSVでマッピングを新規作成' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'マッピングを新規作成' }))
+    fireEvent.change(dialog.getByLabelText('表示名'), { target: { value: '書式違い' } })
+    fireEvent.change(dialog.getByLabelText('金融機関の識別子'), { target: { value: 'bad-format' } })
+    fireEvent.change(dialog.getByLabelText('日付の書式'), { target: { value: 'YYYY-MM-DD' } })
+
+    expect(dialog.getByRole('button', { name: '保存して取り込む' })).toBeDisabled()
+    expect(dialog.getByText('1行を読み取れません(全1行)')).toBeInTheDocument()
+  })
+
   it('定義の作成ダイアログは、読み取れない行があっても保存でき、その行は取り込まれない旨を示す(計画Issue #151)', async () => {
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,ランチ,-800,96200\n,為替レート 1ドル=150円,,\n`, false)
