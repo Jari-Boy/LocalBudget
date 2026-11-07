@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
 import type { ExternalTransactionRef } from '../../domain/reconciliation/ExternalTransactionRef'
+import type { JournalEntry } from '../../domain/journal/JournalEntry'
+import { collectUnreferencedTransactions } from '../../domain/statement-import/collectUnreferencedTransactions'
 import {
   resolveMappingDefinitionCandidates,
   type MappingDefinitionCandidateMatch,
@@ -35,6 +37,9 @@ interface MappingDefinitionFinder {
 interface ExternalTransactionRefFinder {
   findByAccount(accountId: number): ExternalTransactionRef[] | Promise<ExternalTransactionRef[]>
 }
+interface JournalEntryFinder {
+  findAll(): JournalEntry[] | Promise<JournalEntry[]>
+}
 
 export interface StatementImportUploadResult {
   targetAccount: Account
@@ -46,6 +51,8 @@ export interface StatementImportUploadScreenProps {
   accountRepository: AccountFinder
   importMappingDefinitionRepository: MappingDefinitionFinder
   externalTransactionRefRepository: ExternalTransactionRefFinder
+  /** 手入力した仕訳(突合マスタなし)を確定版候補に含めるために使う(計画Issue #145) */
+  journalEntryRepository: JournalEntryFinder
   onUploaded: (result: StatementImportUploadResult) => void
   onBack: () => void
   /** テスト用に近似重複判定の閾値を注入できるようにする。省略時はDEFAULT_APPROXIMATE_DUPLICATE_OPTIONS */
@@ -68,6 +75,7 @@ export function StatementImportUploadScreen({
   accountRepository,
   importMappingDefinitionRepository,
   externalTransactionRefRepository,
+  journalEntryRepository,
   onUploaded,
   onBack,
   approximateDuplicateOptions,
@@ -164,12 +172,22 @@ export function StatementImportUploadScreen({
     try {
       const existingRefs = await Promise.resolve(externalTransactionRefRepository.findByAccount(account.id))
       const existingExternalIds = new Set(existingRefs.map((ref) => ref.externalId))
-      const existingTransactions = existingRefs.map((ref) => ({
-        journalEntryId: ref.journalEntryId,
-        entryDate: ref.entryDate,
-        amount: ref.amount,
-        isSettled: ref.isSettled,
-      }))
+      // 手入力・定期取引生成など突合マスタを持たない仕訳も確定版候補に含める(計画Issue #145)。
+      // 完全一致判定(existingExternalIds)の対象にはしない(external_idを持たないため)。
+      const entries = await Promise.resolve(journalEntryRepository.findAll())
+      const existingTransactions = [
+        ...existingRefs.map((ref) => ({
+          journalEntryId: ref.journalEntryId,
+          entryDate: ref.entryDate,
+          amount: ref.amount,
+          isSettled: ref.isSettled,
+        })),
+        ...collectUnreferencedTransactions(
+          entries,
+          account,
+          new Set(existingRefs.map((ref) => ref.journalEntryId)),
+        ),
+      ]
 
       const review = buildStatementImportReview({
         rows: match.rows,

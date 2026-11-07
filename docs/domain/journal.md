@@ -55,7 +55,25 @@
 仕訳明細の借方/貸方は、金額を表す`amount`(常に正の整数)と、借方/貸方を表す`side`(`debit`/`credit`)の2列で表現する。1行=1エントリとして扱えるため、口座残高やFSの集計クエリを「`side`に応じて符号を反転して合算する」という単一のロジックで一貫して書ける(詳細は[financial-statements.md 2.1 生成方式](./financial-statements.md#21-生成方式))。
 
 > **仕訳の複数軸絞り込み(JournalEntryFilter、計画Issue #40)**
-> 期間(`entry_date`の範囲)・科目・世帯メンバー(実効メンバー、[household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照)・プロジェクトをANDで組み合わせて仕訳を絞り込む共通の型`JournalEntryFilter`と、これを適用する純粋関数`filterJournalEntries`(`src/domain/journal/`)を持つ。各軸は単一値でOR結合は行わず、いずれかの明細行が条件に一致すればその仕訳(entry単位)を候補に含める(複数選択・OR結合を持つ[financial-statements.md](./financial-statements.md)の`FinancialStatementFilter`とは型・粒度が異なる別物)。割勘対象選択画面([expense-splitting.md 1.5](./expense-splitting.md#15-割勘の履歴と取り消し)参照)を含む複数画面の絞り込みUIから再利用される共通のドメイン関数として設計されている。詳細は`docs/decisions.md`(2026-08-15)参照。
+> 期間(`entry_date`の範囲)・科目・世帯メンバー(実効メンバー、[household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照)・プロジェクトをANDで組み合わせて仕訳を絞り込む共通の型`JournalEntryFilter`と、これを適用する純粋関数`filterJournalEntries`(`src/domain/journal/`)を持つ。いずれかの明細行が条件に一致すればその仕訳(entry単位)を候補に含める(財務諸表の[financial-statements.md](./financial-statements.md)の`FinancialStatementFilter`とは型・粒度が異なる別物)。計画Issue #145で条件を拡張した(下記)。割勘対象選択画面([expense-splitting.md 1.5](./expense-splitting.md#15-割勘の履歴と取り消し)参照)を含む複数画面の絞り込みUIから再利用される共通のドメイン関数として設計されている。詳細は`docs/decisions.md`(2026-08-15)参照。
+
+> **検索条件の拡張(計画Issue #145)**
+> `JournalEntryFilter`に次の条件を追加した。検索の画面と共通部品はUI刷新のIssueで扱い、ここはドメイン側だけである。保存した検索条件は作らない。
+>
+> | 条件 | 内容 |
+> |---|---|
+> | `memo` | 摘要の部分一致(英字は大文字小文字を区別しない。空白だけは絞り込みなし) |
+> | `amountMin`・`amountMax` | 仕訳の金額の範囲(両端を含む)。仕訳の金額は**借方の合計**(貸借が一致するので貸方の合計と同じ) |
+> | `accountIds`・`householdMemberIds`・`projectIds`・`counterpartyIds` | 複数選択。いずれかに一致すればよい(OR)。従来の単一指定(`accountId`等)は互換のため残し、同じ軸で両方を指定すると両方を満たす仕訳だけを返す |
+> | `settlementBatchIds` | 精算バッチ。数値はそのバッチのタグが付いた明細行を持つ仕訳、`null`は**未割当**(精算バッチのタグが付いた明細行が仕訳内に1行も無い)。複数指定はOR |
+> | `sourceTypes` | 作成経路([1.7](#17-作成経路source_type))。割勘(`expense_splitting`)を含む |
+> | `accountGroupIds`・`counterpartyGroupIds`・`projectGroupIds` | グループ指定。指定したグループと配下(入れ子を含む)のグループに属する科目・取引先・プロジェクトを含む仕訳を対象にする。展開は`expandGroupIds`で、グループ・取引先・プロジェクトのマスタは`filterJournalEntries`の第4引数(`JournalEntryFilterContext`)で渡す(科目は第2引数のaccountsの`account_group_id`を使う) |
+>
+> **判定は仕訳全体で行う**: 軸の間はAND、軸の内側(複数選択)はOR。各軸は仕訳内のどの明細行で満たしてもよく、複数の軸を別々の明細行で満たしてもヒットする(例: クレジットカードの行と食費の行を持つ仕訳が「楽天カードで払った食費」にヒットする)。空配列は絞り込みなしとして扱う。
+>
+> **精算の候補だけは固定条件を別に持つ**: 精算画面の「消込む仕訳を選ぶ」候補(`findUnassignedAdvanceEntriesForTarget`)は、「対象の立替金科目かつ対象者」を**同じ明細行**で満たし、精算バッチが未設定の行を持つ仕訳に限る。この固定条件は仕訳全体の検索条件では置き換えられないため、`filterJournalEntries`で先に仕訳を絞り込んだうえで(省略可の`search`引数)、行単位の固定条件を重ねる。精算の候補と関連仕訳の追加は従来から`filterJournalEntries`を使っておらず、今回も関連仕訳の追加には手を入れていない(既存の挙動を崩さないため)。
+>
+> 既存の仕訳一覧と割勘の対象選択は、従来の単一指定のまま動作が変わらない。
 
 ### 1.2 記帳の型(具体例)
 
@@ -69,8 +87,8 @@
   後日振込(消込)      : (借) 資産・普通預金  / (貸) 資産・未収金
 ```
 
-> **is_reconcilable資産への記帳経路の制約**
-> 「普通預金」のような`is_reconcilable = true`の資産科目を直接使う仕訳は、`source_type`が`external_import`・`initial_balance`・`balance_adjustment`のいずれかに限られる。この制約は[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)による([1.7 作成経路(source_type)](#17-作成経路source_type)参照)。「給与が振り込まれる」の例はCSV到着時にその場で記帳するケースを表す。CSV到着前に先に記帳したい場合は「給与を先に見込み計上」のように未収金・未払金を経由した暫定計上を行い、CSV到着後にそれを消し込む([settlement.md](./settlement.md)参照)。
+> **is_reconcilable資産への記帳**
+> 「普通預金」のような`is_reconcilable = true`の資産科目も、`source_type`によらず手入力で記帳できる(計画Issue #145で直接記帳制限を廃止、[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限))。手入力とCSVのズレは[reconciliation.md 1.5 残高照合](./reconciliation.md#15-残高照合)の警告で検知する。「給与が振り込まれる」の例はCSV到着時にその場で記帳するケースを表す。CSV到着前に先に記帳したい場合は「給与を先に見込み計上」のように未収金・未払金を経由した暫定計上を行い、CSV到着後にそれを消し込む([settlement.md](./settlement.md)参照)。
 
 ### 1.3 貸借バランスの検証
 
@@ -125,10 +143,11 @@
 | `recurring_generated` | 定期取引([recurring-transactions.md](./recurring-transactions.md))の提案をレビュー確認して作成された |
 | `initial_balance` | 口座/カード開設時の初期残高仕訳([accounts.md 4.3 初期残高の自動仕訳](./accounts.md#43-初期残高の自動仕訳)) |
 | `balance_adjustment` | 残高調整([reconciliation.md 1.6](./reconciliation.md#16-原因不明差異への残高調整)、[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)) |
+| `expense_splitting` | 割勘機能で作った仕訳([expense-splitting.md](./expense-splitting.md)、計画Issue #149)。割勘かどうかは科目構成ではなくこの値で判定する。精算の仕訳は分類を増やさず、口座明細からなら`external_import`、手で起票したものなら`manual`とする |
 
-`source_type`は、[reconciliation.md 1.2 is_reconcilable資産・負債への直接記帳の制限](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)が「この仕訳はis_reconcilable = trueの科目に記帳してよいか」を判定する唯一の根拠になる。
+`source_type`は仕訳の作成経路を表す。以前は[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)が「この仕訳はis_reconcilable = trueの科目に記帳してよいか」を判定する根拠にしていたが、計画Issue #145でその制限を廃止したため、現在は一覧の出どころ表示など、経路を区別する用途に使う。
 
-> **なぜ`external_transaction_refs`の存在ではなく`source_type`で判定するか**
+> **なぜ`external_transaction_refs`の存在ではなく`source_type`で判定したか(旧ルールの経緯)**
 > 以前は「is_reconcilable = trueの科目を使う行に対応する`external_transaction_refs`があるか」を根拠にしていたが、これは「作成経路(この仕訳はどうやって生まれたか)」と「外部データとの突合材料(この科目の残高は外部の何と一致するはずか)」という別々の関心事を1つのテーブルに同居させていた。両者が食い違うケース(初期残高・残高調整の仕訳のように、is_reconcilable = true科目を使う仕訳でも対応する外部CSV行が存在しない場合等)で無理が生じていた。`source_type`は前者(作成経路)だけを担い、`external_transaction_refs`([reconciliation.md 2章](./reconciliation.md#2-突合マスタexternal_transaction_refs)参照)は後者(突合材料)だけを担うことで関心事を分離する。仕訳が複数のis_reconcilable = true科目にまたがる場合(口座間振替等)も、仕訳単位の`source_type`が1回チェックされるだけで済み、行ごとに参照の有無を確認する必要がない。
 
 ### 1.8 関連仕訳グループ(journal_entry_link_groups)

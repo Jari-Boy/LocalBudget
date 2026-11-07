@@ -1,10 +1,20 @@
+import type { Account } from '../account/Account'
 import type { JournalEntry } from '../journal/JournalEntry'
+import type { JournalEntryFilter, JournalEntryFilterContext } from '../journal/JournalEntryFilter'
+import { filterJournalEntries } from '../journal/filterJournalEntries'
 import type { SettlementTarget } from '../settlement-batch/SettlementTarget'
 
 export interface UnassignedAdvanceEntryCandidate {
   entry: JournalEntry
   lineId: number
   amount: number
+}
+
+/** 候補に重ねる検索条件(計画Issue #145)。filterJournalEntriesと同じ条件・マスタを受け取る */
+export interface UnassignedAdvanceEntrySearch {
+  filter: JournalEntryFilter
+  accounts: readonly Account[]
+  context?: JournalEntryFilterContext
 }
 
 /**
@@ -21,16 +31,23 @@ export interface UnassignedAdvanceEntryCandidate {
  * 実装時に設計する」への対応、詳細はdocs/decisions.md参照)。この設計では、取引日・相手科目・
  * 金額といった他の情報を手掛かりに、ユーザーが候補一覧から正しい仕訳を選ぶことを前提とする。
  *
+ * 「対象の科目かつ対象者」は同じ明細行で満たす固定条件であり、検索条件(searchのfilter)では
+ * 置き換えられない(計画Issue #145)。検索条件は仕訳全体で判定する(複数の条件を別々の明細行で
+ * 満たしてもヒットする)ため、行単位のこの固定条件とは別に、先に仕訳を絞り込む形で重ねる。
+ * 精算の候補は`filterJournalEntries`を直接は使わず、この関数が固定条件と検索条件を組み合わせる。
+ *
  * 結果は取引日の昇順に並べ替える。DBアクセスなしの純粋関数。
  */
 export function findUnassignedAdvanceEntriesForTarget(
   entries: readonly JournalEntry[],
   accountId: number,
   target: SettlementTarget,
+  search?: UnassignedAdvanceEntrySearch,
 ): UnassignedAdvanceEntryCandidate[] {
   const result: UnassignedAdvanceEntryCandidate[] = []
+  const searched = search ? filterJournalEntries(entries, search.accounts, search.filter, search.context) : entries
 
-  for (const entry of entries) {
+  for (const entry of searched) {
     for (const line of entry.lines) {
       if (line.accountId !== accountId || line.settlementBatchId !== null) continue
       const matches =

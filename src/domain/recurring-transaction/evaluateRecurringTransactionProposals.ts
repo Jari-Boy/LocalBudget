@@ -11,6 +11,13 @@ export interface RecurringTransactionRuleGenerationState {
    * (RecurringTransactionRuleRepository.findLatestGeneratedEntryDate参照)
    */
   latestGeneratedEntryDate: string | null
+  /**
+   * このルールで見送った対象日のうち最新のもの。1件も見送っていなければnull
+   * (計画Issue #145、RecurringTransactionRuleRepository.findLatestSkippedDueDate参照)。
+   * 見送りは仕訳を作らないため、生成済みの実績だけでは進捗を表現できない。確定と同じく
+   * 古い順にしか見送れないので、最新の見送り日より前の対象日はすべて処理済みとみなせる。
+   */
+  latestSkippedDueDate: string | null
 }
 
 /**
@@ -24,6 +31,11 @@ export interface RecurringTransactionRuleGenerationState {
  * 消失しない。max_occurrencesの専用カウンタを持たない既存方針(2.1節)と同じ「二重管理を
  * 避ける」考え方(docs/decisions.md参照)。
  *
+ * 見送り(計画Issue #145)は仕訳を作らないので、見送った最新の対象日も起点の候補に加え、
+ * 生成済みの最新entry_dateと見送った最新の対象日のうち新しいほうを起点にする。
+ * max_occurrencesの判定は生成済みの仕訳の件数のままで、見送りは回数に数えない
+ * (見送った分だけ「N回で終わる」ルールの終わりが後ろへずれる)。
+ *
  * 非アクティブなルールは新規の提案生成を停止する(1.6節)ため対象外にする。
  */
 export function evaluateRecurringTransactionProposals(
@@ -32,10 +44,14 @@ export function evaluateRecurringTransactionProposals(
 ): RecurringTransactionProposal[] {
   const proposals: RecurringTransactionProposal[] = []
 
-  for (const { rule, generatedCount, latestGeneratedEntryDate } of ruleStates) {
+  for (const { rule, generatedCount, latestGeneratedEntryDate, latestSkippedDueDate } of ruleStates) {
     if (!rule.isActive) continue
 
-    const since = latestGeneratedEntryDate ?? rule.createdAt.slice(0, 10)
+    const processedUntil = [latestGeneratedEntryDate, latestSkippedDueDate]
+      .filter((date): date is string => date !== null)
+      .sort()
+      .at(-1)
+    const since = processedUntil ?? rule.createdAt.slice(0, 10)
     const dueDates = enumerateDueDates(rule, { since, until: today }, generatedCount)
     for (const dueDate of dueDates) {
       proposals.push({ ruleId: rule.id, dueDate })

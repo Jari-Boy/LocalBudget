@@ -1,4 +1,5 @@
 import type { ExpenseSplitRecipient } from '../../domain/expense-splitting/buildExpenseSplittingJournalEntryInputs'
+import { allocateAcrossLines } from '../../domain/expense-splitting/allocateAcrossLines'
 import { allocateExpenseSplitAmounts } from '../../domain/expense-splitting/allocateExpenseSplitAmounts'
 
 export type ExpenseSplittingAllocationMode = 'equal' | 'ratio' | 'amount'
@@ -116,4 +117,24 @@ export function toExpenseSplitRecipientsForEntryAmount(
     }
   }
   return recipients
+}
+
+/**
+ * 費用の行が複数ある元仕訳を割勘する場合に、分担者ごとの金額(recipients)を、費用の行の
+ * 金額比で行ごとに配分する(計画Issue #149)。戻り値は行ごとのrecipients配列で、配分額が
+ * 0になった分担者はその行から除く。分担者ごとの配分額の合計は元の金額と1円もずれない
+ * (allocateAcrossLines)。行が1つなら分担者の金額をそのまま返す。
+ */
+export function splitRecipientsAcrossLines(
+  recipients: readonly ExpenseSplitRecipient[],
+  lineAmounts: readonly number[],
+): ExpenseSplitRecipient[][] {
+  const perLine: ExpenseSplitRecipient[][] = lineAmounts.map(() => [])
+  for (const recipient of recipients) {
+    const shares = allocateAcrossLines(recipient.amount, lineAmounts)
+    shares.forEach((amount, lineIndex) => {
+      if (amount > 0) perLine[lineIndex].push({ ...recipient, amount })
+    })
+  }
+  return perLine
 }

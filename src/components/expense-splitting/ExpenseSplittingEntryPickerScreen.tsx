@@ -8,8 +8,7 @@ import type { JournalEntryLinkGroupMembership } from '../../domain/journal-link-
 import type { Project } from '../../domain/project/Project'
 import { filterJournalEntries } from '../../domain/journal/filterJournalEntries'
 import { buildRelatedEntryIdsByEntryId } from '../../domain/journal-link-group/buildRelatedEntryIdsByEntryId'
-import { findUnallocatedEntries } from '../../domain/expense-splitting/findUnallocatedEntries'
-import { findExpenseLine } from '../../domain/expense-splitting/findExpenseLine'
+import { checkExpenseSplittability } from '../../domain/expense-splitting/checkExpenseSplittability'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { JournalEntryFilterForm } from '../journal-entry/JournalEntryFilterForm'
 import './ExpenseSplittingEntryPickerScreen.css'
@@ -43,7 +42,7 @@ export interface ExpenseSplittingEntryPickerScreenProps {
 
 interface LoadedData {
   entries: JournalEntry[]
-  unallocatedEntryIds: Set<number>
+  splittableEntryIds: Set<number>
   accounts: Account[]
   householdMembers: HouseholdMember[]
   projects: Project[]
@@ -57,11 +56,10 @@ function calculateEntryTotal(entry: JournalEntry): number {
 /**
  * 割勘対象選択画面(計画Issue #40)。仕訳一覧(JournalEntryListScreen、確認用途の
  * 汎用画面)から割勘起票への導線を分離するため、ホーム画面に専用の入口を設ける
- * (ユーザーレビューでのUX見直し)。findUnallocatedEntries(docs/domain/
- * expense-splitting.md 1.5節)で未割勘の仕訳のみを候補にし、さらにfindExpenseLineで
- * 費用科目の行がちょうど1件存在する仕訳のみに絞り込む(給与/普通預金のような費用科目を
- * 含まない仕訳や、費用科目の行が複数あり付け替え対象が一意に定まらない仕訳は、そもそも
- * 割勘の対象になり得ないため候補から除外する。人間レビューでの指摘対応)。共通コンポーネントの
+ * (ユーザーレビューでのUX見直し)。checkExpenseSplittability(docs/domain/
+ * expense-splitting.md 1.5節、計画Issue #149)で割勘できる仕訳のみを候補にする(割勘で作られた
+ * 仕訳・割勘済みの仕訳・借方に費用の行がない仕訳は候補から除外する。費用の行が複数ある仕訳は
+ * 割勘できる)。共通コンポーネントの
  * JournalEntryFilterForm(期間・科目・世帯メンバー・プロジェクト)による追加の絞り込みを
  * filterJournalEntriesで適用する。候補はチェックボックスで複数選択でき、「選択した
  * 仕訳で割勘する」ボタンで選択済みの仕訳をまとめて割勘起票フォームへ渡す(計画Issue #40
@@ -104,10 +102,18 @@ export function ExpenseSplittingEntryPickerScreen({
       Promise.resolve(projectRepository.findAll()),
     ]).then(([entries, memberships, accounts, householdMembers, projects]) => {
       const relatedEntryIdsByEntryId = buildRelatedEntryIdsByEntryId(memberships)
-      const unallocatedEntryIds = new Set(
-        findUnallocatedEntries(entries, accounts, relatedEntryIdsByEntryId).map((entry) => entry.id),
+      const entriesById = new Map(entries.map((entry) => [entry.id, entry]))
+      const splittableEntryIds = new Set(
+        entries
+          .filter((entry) => {
+            const relatedEntries = [...(relatedEntryIdsByEntryId.get(entry.id) ?? [])]
+              .map((id) => entriesById.get(id))
+              .filter((related): related is JournalEntry => related !== undefined)
+            return checkExpenseSplittability(entry, accounts, relatedEntries).splittable
+          })
+          .map((entry) => entry.id),
       )
-      setData({ entries, unallocatedEntryIds, accounts, householdMembers, projects })
+      setData({ entries, splittableEntryIds, accounts, householdMembers, projects })
     })
   }, [journalEntryRepository, journalEntryLinkGroupRepository, accountRepository, householdMemberRepository, projectRepository])
 
@@ -115,10 +121,8 @@ export function ExpenseSplittingEntryPickerScreen({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const unallocatedEntries = data.entries.filter(
-    (entry) => data.unallocatedEntryIds.has(entry.id) && findExpenseLine(entry, data.accounts) !== undefined,
-  )
-  const candidates = filterJournalEntries(unallocatedEntries, data.accounts, filter)
+  const splittableEntries = data.entries.filter((entry) => data.splittableEntryIds.has(entry.id))
+  const candidates = filterJournalEntries(splittableEntries, data.accounts, filter)
 
   return (
     <div className="expense-splitting-entry-picker-screen">

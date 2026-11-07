@@ -408,6 +408,8 @@
 
 ## 2026-08-11: マニュアル仕訳入力の科目選択肢はis_reconcilable=true・isSystemManaged=true科目を除外する(isManualEntryEligibleAccount)
 
+> **置き換え済み(2026-11-07)**: 計画Issue #145で、手入力は無効化した科目以外すべて選べるようにし、この判断を置き換えた。下記は当時の経緯として残す。「2026-11-07: 手入力で全科目を選べるようにし、直接記帳制限を廃止する(計画Issue #145)」を参照。
+
 **背景**: `docs/domain/reconciliation.md` 1.2により、`is_reconcilable = true`の資産・負債科目(普通預金等)への直接記帳は`source_type`が`external_import`/`initial_balance`/`balance_adjustment`のいずれかに限られ、マニュアル仕訳(`source_type = 'manual'`)から記帳すると`JournalEntryRepository`が`RestrictedAccountPostingError`を投げる(この検証はRepository層に実装済み)。一方`is_system_managed = true`の科目(初期残高科目・残高調整科目等)は、`docs/domain/accounts.md`のライフサイクル制約(削除・区分変更・非アクティブ化の禁止)はDDLトリガーで強制されているものの、「この科目に対する仕訳記帳自体を制限する」制約は`JournalEntryRepository`・DDLトリガーいずれにも存在しないことをIssue #32実装時に確認した。ユーザーがマニュアル仕訳でこれらの科目に誤って記帳すると、前者はRepository層のエラーで防がれるが選択自体はできてしまいエラー体験になる、後者はエラーにすらならずそのまま記帳が成立し初期残高等の整合性が静かに壊れる、という異なる重大度の問題が生じる。
 **決定**: 科目選択の`<select>`要素の選択肢自体から、両条件のいずれかに該当する科目を除外する判定関数`isManualEntryEligibleAccount(account: { isReconcilable, isSystemManaged })`(`account.isReconcilable !== true && !account.isSystemManaged`)を新設し、両方の条件を1つの関数に統合した。`is_reconcilable`側はRepository層のエラーを事前に防ぐ入力支援目的、`isSystemManaged`側はDB/Repositoryいずれにも制約が存在しないためUI側の選択肢除外が事実上唯一の防御手段になる、という前提の違いをコード上のdocstringに明記した。
 **影響**: `is_system_managed`科目への記帳制限がRepository層・DDL側に実装されていないという事実は、今後仕訳を作成する他の経路(将来の外部明細取込レビュー画面・定期取引生成等)を実装する際にも共通して当てはまる潜在的なリスクである。これらの経路を実装する場合も、対象科目の選択元にisSystemManaged科目が含まれないか個別に確認する必要がある(根本的な解決として、将来Repository層に恒久的な制約を追加することも検討の余地があるが、本Issueのスコープでは見送った)。`docs/domain/accounts.md`・`docs/domain/journal.md`のいずれにもこの制約(記帳経路の制限)は明記されていない現状を踏まえ、恒久対応を検討する際は本エントリを起点に参照すること。
@@ -886,3 +888,33 @@
 **決定3(乖離の解消)**: 明細取込のレビュー画面でレコードごとに精算バッチ(相手科目が一時勘定のときだけ選択可、一時勘定でなくなるとクリア)とコメントを設定でき、確定時に`buildConfirmedJournalEntryInput`が相手科目の行にだけタグを付け、`comment`を仕訳に設定する(空白のみは未設定)。手順5-aの未消込候補のサジェスト自体は未実装のまま。
 **決定4(タグ付き明細の科目変更、Attempt 2)**: 仕訳詳細で行の科目や金額を変えても同じ行のタグは維持する。科目を別の一時勘定に変える場合は維持される。一時勘定以外へ変える場合は、タグを黙って消さずに更新を拒否し、`settlementBatchOnNonTemporaryAccountError`のメッセージを表示する(詳細画面にタグを消すUIは無いため、黙って消すとタグ消失の不具合と同じデータ破壊になる)。タグの付け替え・解除のUIは画面刷新のIssueで扱う。
 **影響**: `docs/domain/journal.md`(コメント、タグ検証)、`docs/domain/settlement.md` 1.5(Repositoryは特別な検証を行わない旨を修正)、`docs/domain/statement-import.md` 1.5手順7に反映済み。
+
+## 2026-11-07: 手入力で全科目を選べるようにし、直接記帳制限を廃止する(計画Issue #145)
+
+**背景**: `is_reconcilable = true`の科目は、`source_type`が`external_import`・`initial_balance`・`balance_adjustment`の仕訳からしか記帳できず、`SqlJsJournalEntryRepository`は`manual`・`recurring_generated`を`RestrictedAccountPostingError`で拒否していた。手入力の科目選択肢(`isManualEntryEligibleAccount`)と定期取引ルールも、この判定に合わせて`is_reconcilable = true`の科目とシステム管理科目を除外していた。ユーザーは自由に起票できることを望み、この制限の廃止に合意した。確定後の仕訳編集を自由にしている`docs/domain/settlement.md`の考え方とも食い違っていた。
+**決定**: (1)リポジトリの拒否(`assertNoRestrictedAccountPosting`)と`RestrictedAccountPostingError`、そのRPCレジストリ登録、画面のエラーメッセージ(`restrictedAccountError`)を削除した。(2)`isManualEntryEligibleAccount`は無効化した科目(`isActive = false`)だけを除外する。引数は`{ isActive?: boolean }`に絞った。**2026-08-11の「マニュアル仕訳入力の科目選択肢はis_reconcilable=true・isSystemManaged=true科目を除外する」の判断は、この決定で置き換える。** 誤りを構造的に防ぐ方式から、警告で気づく方式へ変えた。(3)手入力した取引のCSVを後から取り込んだときの二重計上に気づけるよう、確定版の可能性の候補(`docs/domain/statement-import.md` 1.6)に、突合マスタを持たない仕訳も含めた(純粋関数`collectUnreferencedTransactions`、`StatementImportUploadScreen`が`journalEntryRepository`を受け取る。候補にするのは手入力`manual`と定期取引生成`recurring_generated`に限る。evaluatorレビュー(Attempt 1)で、最初の実装が突合マスタを持たない仕訳をすべて候補にしており、初期残高・残高調整の仕訳が「これは確定版です」で削除されうると指摘され、作成経路で絞り込むよう直した)。(4)`docs/domain/reconciliation.md` 1.2・1.5、`accounts.md`、`journal.md`、`recurring-transactions.md`、`statement-import.md`、`settlement.md`を更新した。
+**推定の確認結果**: 計画Issueは、`reconciliation.md` 1.5の記述から「手入力行があると残高照合が集計せず、警告が出ないはず」と推定していた(未実行)。実装前にテスト(手入力の仕訳を含む口座で、CSVの取引後残高とズレると警告が出る)を書いて確認したところ、リポジトリの拒否を外せば最初から緑になった。`StatementImportReviewScreen`はもともと対象科目の全`journal_lines`を集計しており、ドキュメントの記述のほうが実装より古かっただけだった。そのため残高照合の計算には手を入れず、ドキュメントを実装に合わせて「全明細」と書き直した。一方、完了条件の「手入力した取引のCSVが確定版の可能性の候補に出る」は、確認すると**出なかった**(候補の探索対象は`external_transaction_refs`だけだった)。こちらは実装して満たした。
+**影響**: 手入力と外部明細の二重計上は自動では防げず、候補の提示と残高照合の警告に任せる。警告で気づけるのは、取引後残高を持つCSVの科目に限られる。#143(初期残高科目の統合)で作る単一の初期残高科目も、手入力で選べる。「確定版です」を選ぶと候補の手入力・定期取引生成の仕訳が削除される。
+
+## 2026-11-07: 割勘の出どころを`source_type = 'expense_splitting'`で記録し、費用の行が複数ある仕訳も割勘できるようにする(計画Issue #149)
+
+**背景**: 割勘仕訳は`source_type = 'manual'`で保存され、`isExpenseSplitEntry`は「システム管理の立替金の行と費用の行がある」という科目構成で割勘かどうかを判定していた。計画Issue #145で立替金も手入力できるようになるため、手入力の仕訳を割勘と誤判定する恐れがあった。また、割勘できる仕訳は費用の行がちょうど1件のものに限られていた(`findExpenseLine`)。
+**決定**: (1)`journal_entries.source_type`に`expense_splitting`を追加した(DDLを直接修正、差分マイグレーションなし)。割勘の組立関数(`buildHouseholdMember…`・`buildCounterparty…`)と統合関数(`mergeExpenseSplittingJournalEntryInputs`)がこの値を設定する。(2)`isExpenseSplitEntry`は`source_type`だけで判定する(引数から`accounts`を外した)。精算仕訳の判定(`isExpenseSplitSettlementEntry`)は科目構成のまま。(3)「割勘できるか」と「できない理由」を返す純粋関数`checkExpenseSplittability`を新設した(割勘で作られた仕訳・割勘済み・借方に費用の行がない、の3条件、理由は区別して返す)。`findUnallocatedEntries`と`findExpenseLine`は廃止し、対象選択画面と割勘フォームは`checkExpenseSplittability`・`findDebitExpenseLines`を使う。(4)費用の行が複数ある仕訳は各行を同じ割合で割る。均等割・割合指定は行ごとに按分し、金額指定と手動編集は分担者ごとの金額を行の金額比で配分する(`allocateAcrossLines`、端数は最大剰余法)。
+**端数の扱い(金額指定の複数行への配分)**: 実装時に決めた。行の金額比で按分し、各行の按分額を切り捨てたうえで、足りない円を小数部の大きい行から1円ずつ配る。同じ大きさなら先の行を優先する。分担者ごとの配分額の合計は入力額と1円もずれない(テストで、さまざまな金額・行数について合計を確認している)。立替者の取り分は仕訳に含まれないため、行ごとに貸借が崩れる心配はない(割勘仕訳は分担者ごとに自己完結している)。
+**洗い出した、科目構成の判定に頼る処理**: `isExpenseSplitEntry`を使う`findUnallocatedEntries`(廃止)と`traceExpenseSplittingHistory`は`source_type`判定へ移行した。`listExpenseSplittingHistory`は`traceExpenseSplittingHistory`経由のため追従する。`isExpenseSplitSettlementEntry`は科目構成のまま残る(精算仕訳に専用の出どころを作らない、という計画の制約による)。そのため、手入力で立替金だけの仕訳を作ると精算仕訳と同じ構成になり、履歴の辿り方では精算仕訳として扱われうる。開発用サンプルデータは組立関数を使うため、自動的に`expense_splitting`になる。`source_type`を見る既存の処理(残高照合、#145)は`expense_splitting`の追加で影響を受けない。
+**影響**: 旧スキーマのDB・バックアップには`expense_splitting`の値を持つ仕訳がなく、旧割勘仕訳(`manual`)は割勘と判定されなくなる(開発用DBは作り直す前提)。出どころタグと割勘ボタンの画面表示は、UI刷新のIssueで扱う。
+
+## 2026-11-07: 定期取引の提案の見送りを`recurring_transaction_skips`に記録し、導出の起点に含める(計画Issue #145)
+
+**背景**: 提案は「確定」しかできず、同じルールの中で古い順にしか確定できないため、解約し忘れたサブスクなどで不要な提案が1件あると、新しい提案も確定できなくなっていた。提案は生成済みの仕訳の最新`entry_date`から都度導出する設計(計画Issue #121)で、見送りは仕訳を作らないため、この導出だけでは進捗を表現できなかった。
+**決定**: (1)見送った対象日を`recurring_transaction_skips`(`rule_id`・`due_date`、主キーは両者の組、ルール削除時は`ON DELETE CASCADE`)に記録する。DDLは直接修正し、差分マイグレーションは作っていない。(2)導出の起点は、生成済みの最新`entry_date`と見送った最新の対象日のうち新しいほう(`evaluateRecurringTransactionProposals`に`latestSkippedDueDate`を追加)。(3)`RecurringTransactionProposalRpcApi.skip`を追加し、確定と同じ「最も古い保留中の対象日」の検証(`assertNextPendingDueDate`に共通化)を通す。(4)**見送りは`max_occurrences`の回数に数えない**。実装前にユーザーへ確認し、「数えない」を選んだ。判定は生成済みの仕訳の件数のままで、専用のカウンタは要らず、見送った分だけ終わりが後ろへずれる。(5)見送りの取り消しは作らない。
+**ルール削除時の扱い**: 見送りは進捗の印にすぎないので、見送りだけがあるルールは削除でき、記録は連動して消える。生成済みの仕訳があるルールは従来どおり削除できない。
+**不採用案**: 見送った提案の行を回数に数える案(「N回の提案機会で終わる」。見送った回が帳簿に載らないまま終わるため不採用)、`journal_entries`に見送りを表す行を作る案(仕訳ではないものを帳簿に混ぜることになるため不採用)。
+**影響**: バックアップ復元時のスキーマ検証の必須テーブルには加えていない(旧バックアップを拒否しないため)。見送りボタンの画面は計画Issue #152で扱う。また、同日の#145の決定により定期取引ルールの科目選択も解放しており、ルールのDDLにあった`is_reconcilable`科目の指定を拒否するトリガーを削除した(解放したのに保存時にDBが拒否する取りこぼしだった)。
+
+## 2026-11-07: 仕訳の検索条件を拡張し、グループ指定は配下を展開して判定する(計画Issue #145)
+
+**背景**: `JournalEntryFilter`の条件は期間・科目・世帯メンバー・プロジェクトの4つで、それぞれ1つしか選べなかった。UI刷新で共通の検索部品を作る土台として、ドメイン側の条件を先に拡張する。
+**決定**: (1)`memo`(摘要の部分一致)・`amountMin`/`amountMax`(金額の範囲)・`counterpartyIds`・`settlementBatchIds`(未割当を含む)・`sourceTypes`・複数選択(`accountIds`・`householdMemberIds`・`projectIds`)・グループ指定(`accountGroupIds`・`counterpartyGroupIds`・`projectGroupIds`)を追加した。(2)従来の単一指定は残した(既存の仕訳一覧・割勘の対象選択を変えないため)。複数指定とは別の条件として、両方を満たす仕訳を返す。(3)判定は今と同じ仕訳全体で行う。軸の間はAND、軸の内側はOR、各軸は仕訳内のどの明細行で満たしてもよい。(4)**金額は借方の合計**とした(貸借が一致するため貸方と同じ。明細1行の金額ではなく、仕訳の取引額を表す)。(5)**精算バッチの未割当は、精算バッチのタグが付いた明細行が仕訳内に1行も無いこと**とした(明細ごとに判定すると、タグ付きの行と無い行が混ざる仕訳が常に未割当になってしまうため)。(6)グループ指定は`expandGroupIds`で配下(入れ子を含む)を展開する。取引先・プロジェクトのグループは計画Issue #143で実装済みなので、3種類とも作った。展開に必要なマスタは第4引数`JournalEntryFilterContext`で渡す。(7)精算の候補は「立替金かつ対象者」を同じ行で満たす固定条件を維持し、`findUnassignedAdvanceEntriesForTarget`の省略可の`search`引数で検索条件を重ねる。
+**不採用案**: 単一指定を配列に置き換える案(既存の呼び出し元とテストをすべて書き換える必要があり、「既存の動作が変わらない」という条件に反する)、金額を明細行単位で判定する案(複数明細の仕訳で意図した取引額にならない)。
+**影響**: 検索の画面と共通部品はUI刷新のIssueで扱う。`filterJournalEntries`を使うのは仕訳一覧と割勘の対象選択で、関連仕訳の追加は従来どおり別の作りのまま。

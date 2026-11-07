@@ -5,13 +5,17 @@ import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { CreateJournalEntryInput, JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
-import { buildExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/buildExpenseSplittingJournalEntryInputs'
-import { findExpenseLine } from '../../domain/expense-splitting/findExpenseLine'
+import {
+  buildExpenseSplittingJournalEntryInputs,
+  type ExpenseSplitRecipient,
+} from '../../domain/expense-splitting/buildExpenseSplittingJournalEntryInputs'
+import { findDebitExpenseLines } from '../../domain/expense-splitting/checkExpenseSplittability'
 import { mergeExpenseSplittingJournalEntryInputs } from '../../domain/expense-splitting/mergeExpenseSplittingJournalEntryInputs'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { CounterpartyQuickAddSelect } from '../counterparty-management/CounterpartyQuickAddSelect'
 import {
   calculateParticipantAmounts,
+  splitRecipientsAcrossLines,
   toExpenseSplitRecipients,
   toExpenseSplitRecipientsForEntryAmount,
   type ExpenseSplittingAllocationMode,
@@ -81,6 +85,11 @@ interface MasterData {
   settlementBatches: SettlementBatch[]
   householdMembers: HouseholdMember[]
   counterparties: Counterparty[]
+}
+
+/** 明細行の金額の合計(費用の行が複数ある仕訳の按分対象額に使う) */
+function sumAmounts(lines: readonly JournalLine[]): number {
+  return lines.reduce((total, line) => total + line.amount, 0)
 }
 
 /**
@@ -189,8 +198,9 @@ export function ExpenseSplittingForm({
       Promise.resolve(counterpartyRepository.findAll()),
     ]).then(([accounts, settlementBatches, householdMembers, counterparties]) => {
       if (originalEntries.length === 1) {
-        const expenseLine = findExpenseLine(originalEntries[0], accounts)
-        setTotalAmountInput(expenseLine ? String(expenseLine.amount) : '')
+        // 費用の行が複数ある仕訳は、借方の費用の行の合計を既定値にする(計画Issue #149)
+        const expenseLines = findDebitExpenseLines(originalEntries[0], accounts)
+        setTotalAmountInput(expenseLines.length > 0 ? String(sumAmounts(expenseLines)) : '')
       }
       setMasterData({ accounts, settlementBatches, householdMembers, counterparties })
     })
@@ -263,11 +273,12 @@ export function ExpenseSplittingForm({
     // 元仕訳ごとに金額が異なるため、元仕訳ごとに個別計算した按分額を合計してプレビューに表示する
     const totals = new Map<string, number>()
     for (const entry of originalEntries) {
-      const expenseLine = findExpenseLine(entry, accounts)
-      if (expenseLine === undefined) continue
-      const amounts = calculateParticipantAmounts(expenseLine.amount, participants, allocationMode)
-      for (const [key, amount] of amounts) {
-        totals.set(key, (totals.get(key) ?? 0) + amount)
+      // 費用の行が複数ある仕訳は、各行を同じ割合で割る(計画Issue #149)
+      for (const expenseLine of findDebitExpenseLines(entry, accounts)) {
+        const amounts = calculateParticipantAmounts(expenseLine.amount, participants, allocationMode)
+        for (const [key, amount] of amounts) {
+          totals.set(key, (totals.get(key) ?? 0) + amount)
+        }
       }
     }
     setParticipants((prev) => prev.map((row) => ({ ...row, amountInput: String(totals.get(String(row.key)) ?? 0) })))
@@ -286,14 +297,14 @@ export function ExpenseSplittingForm({
     setError(null)
 
     try {
-      const entryLines: { entry: JournalEntry; expenseLine: JournalLine }[] = []
+      const entryLines: { entry: JournalEntry; expenseLines: JournalLine[] }[] = []
       for (const entry of originalEntries) {
-        const expenseLine = findExpenseLine(entry, accounts)
-        if (expenseLine === undefined) {
+        const expenseLines = findDebitExpenseLines(entry, accounts)
+        if (expenseLines.length === 0) {
           setError(t('expenseAccountNotFoundError'))
           return
         }
-        entryLines.push({ entry, expenseLine })
+        entryLines.push({ entry, expenseLines })
       }
 
       if (advanceAssetAccountId === null) {
@@ -370,28 +381,47 @@ export function ExpenseSplittingForm({
        * JSDoc・docs/decisions.md(2026-09-06)参照)のためのグルーピング。
        */
       const inputsByRecipientKey = new Map<string, CreateJournalEntryInput[]>()
-      for (const { entry, expenseLine } of entryLines) {
-        const recipients = isBatch
-          ? toExpenseSplitRecipientsForEntryAmount(participants, advanceLiabilityAccountId, expenseLine.amount, allocationMode)
-          : toExpenseSplitRecipients(participants, advanceLiabilityAccountId)
-        if (recipients.length === 0) {
+      for (const { entry, expenseLines } of entryLines) {
+        /**
+         * 費用の行が複数ある仕訳は、各行を同じ割合で割る(計画Issue #149)。複数の元仕訳を
+         * まとめて割勘する場合は行ごとに按分額を計算し、単一の元仕訳の場合はプレビュー欄の
+         * 分担額(手動編集を含む)を行の金額比で配分する(合計は1円もずれない)。
+         */
+        const recipientsPerLine: ExpenseSplitRecipient[][] = isBatch
+          ? expenseLines.map((expenseLine) =>
+              toExpenseSplitRecipientsForEntryAmount(
+                participants,
+                advanceLiabilityAccountId,
+                expenseLine.amount,
+                allocationMode,
+              ),
+            )
+          : splitRecipientsAcrossLines(
+              toExpenseSplitRecipients(participants, advanceLiabilityAccountId),
+              expenseLines.map((expenseLine) => expenseLine.amount),
+            )
+        if (recipientsPerLine.every((recipients) => recipients.length === 0)) {
           setError(t('noRecipientError'))
           return
         }
-        const inputs = buildExpenseSplittingJournalEntryInputs({
-          expenseAccountId: expenseLine.accountId,
-          advanceAssetAccountId,
-          fromMemberId: entry.householdMemberId,
-          settlementBatchId: resolvedSettlementBatchId,
-          eventProjectId: expenseLine.projectId,
-          entryDate,
-          recipients,
-        })
-        recipients.forEach((recipient, index) => {
-          const key = recipient.kind === 'householdMember' ? `householdMember:${recipient.toMemberId}` : `counterparty:${recipient.counterpartyId}`
-          const existing = inputsByRecipientKey.get(key) ?? []
-          existing.push(inputs[index])
-          inputsByRecipientKey.set(key, existing)
+        expenseLines.forEach((expenseLine, lineIndex) => {
+          const recipients = recipientsPerLine[lineIndex]
+          if (recipients.length === 0) return
+          const inputs = buildExpenseSplittingJournalEntryInputs({
+            expenseAccountId: expenseLine.accountId,
+            advanceAssetAccountId,
+            fromMemberId: entry.householdMemberId,
+            settlementBatchId: resolvedSettlementBatchId,
+            eventProjectId: expenseLine.projectId,
+            entryDate,
+            recipients,
+          })
+          recipients.forEach((recipient, index) => {
+            const key = recipient.kind === 'householdMember' ? `householdMember:${recipient.toMemberId}` : `counterparty:${recipient.counterpartyId}`
+            const existing = inputsByRecipientKey.get(key) ?? []
+            existing.push(inputs[index])
+            inputsByRecipientKey.set(key, existing)
+          })
         })
       }
 
@@ -452,12 +482,12 @@ export function ExpenseSplittingForm({
 
       <ul className="expense-splitting-original-entries">
         {originalEntries.map((entry) => {
-          const expenseLine = findExpenseLine(entry, accounts)
+          const expenseLines = findDebitExpenseLines(entry, accounts)
           return (
             <li key={entry.id}>
               <span>{entry.entryDate}</span>
               <span>{entry.memo ?? t('entryNoMemo')}</span>
-              {expenseLine !== undefined && <span>{formatCurrency(expenseLine.amount, 'JPY')}</span>}
+              {expenseLines.length > 0 && <span>{formatCurrency(sumAmounts(expenseLines), 'JPY')}</span>}
             </li>
           )
         })}

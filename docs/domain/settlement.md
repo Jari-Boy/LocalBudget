@@ -35,7 +35,7 @@
 
 家賃や給与のように、実際に現金が動くタイミングではなく発生した時点で記帳したい取引は、`liability`(未払金等)、または`asset`(未収金等、ただし`is_reconcilable = false`)の一時勘定を経由して暫定計上する。CSV到着後、その一時勘定を口座科目で消し込む。
 
-一時勘定を経由する必要がある理由(口座科目への直接記帳が制限されていること)自体は本ドメインの関心事ではなく、[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)・[recurring-transactions.md 1.1](./recurring-transactions.md#11-位置づけ)側の制約に委ねる。本ドメインが定義するのは、一時勘定が既に存在する前提で、それをどう解消するか(消込仕訳の組み方・対応関係の記録方法)である。
+暫定計上に一時勘定を使う理由(CSV到着前に口座科目へ記帳すると二重計上になりうること。口座科目への直接記帳自体は[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)の通り許可されている)は本ドメインの関心事ではない。本ドメインが定義するのは、一時勘定が既に存在する前提で、それをどう解消するか(消込仕訳の組み方・対応関係の記録方法)である。
 
 この形は新しい概念ではなく、[journal.md 1.2 記帳の型](./journal.md#12-記帳の型)にある「カードで買い物→後日引き落とし」の未払金パターンと同じ構造である。
 
@@ -102,7 +102,7 @@ CSV到着後の消込(CSV由来): (借) 資産・普通預金        250,000
 
 ### 1.4 一時勘定のis_reconcilable設定
 
-`未収金`・`未払金`はCSVと直接照合されるべき本物の口座ではなく、あくまで内部の一時勘定である。そのため`is_reconcilable = false`として登録する([accounts.md](./accounts.md)参照)。`is_reconcilable = true`にしてしまうと、[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)のルールにより一時勘定自体への暫定計上(手入力)ができなくなり本末転倒になる。
+`未収金`・`未払金`はCSVと直接照合されるべき本物の口座ではなく、あくまで内部の一時勘定である。そのため`is_reconcilable = false`として登録する([accounts.md](./accounts.md)参照)。`is_reconcilable = true`にしてしまうと、一時勘定が本物の口座として残高照合([reconciliation.md 1.5](./reconciliation.md#15-残高照合))の対象になり、CSVと一致しない暫定計上が常に不一致警告を出してしまう。
 
 ### 1.5 他ドメインへの影響
 

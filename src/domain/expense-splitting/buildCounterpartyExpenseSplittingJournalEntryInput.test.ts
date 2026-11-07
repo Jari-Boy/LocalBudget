@@ -18,6 +18,16 @@ const MEMBER_A = 100
 const FRIEND_COUNTERPARTY_ID = 300 // 友人Bさん
 const SETTLEMENT_BATCH_ID = 26 // 田中さんとの飲み代
 
+const DEFAULT_PARAMS = {
+  expenseAccountId: EXPENSE_ACCOUNT_ID,
+  advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
+  payerMemberId: MEMBER_A,
+  counterpartyId: FRIEND_COUNTERPARTY_ID,
+  settlementBatchId: SETTLEMENT_BATCH_ID,
+  amount: 500,
+  entryDate: '2026-07-15',
+}
+
 describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
   it('1.4節の例(世帯外の友人との割勘)通りに、立替金資産1行+費用(counterparty_id付き)1行の2行仕訳を組み立てる', () => {
     const input = buildCounterpartyExpenseSplittingJournalEntryInput({
@@ -81,6 +91,12 @@ describe('buildCounterpartyExpenseSplittingJournalEntryInput', () => {
     })
 
     expect(input.lines).toHaveLength(2)
+  })
+
+  it('source_typeはexpense_splitting(割勘機能で作る仕訳、計画Issue #149)になる', () => {
+    const input = buildCounterpartyExpenseSplittingJournalEntryInput(DEFAULT_PARAMS)
+
+    expect(input.sourceType).toBe('expense_splitting')
   })
 
   it('memoを渡した場合はそのままentryのmemoに使われる', () => {

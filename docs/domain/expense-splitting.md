@@ -111,14 +111,26 @@
 
 ### 1.5 割勘の履歴と取り消し
 
-**割勘対象候補の判定**: `findUnallocatedEntries`(計画Issue #138で関連仕訳グループ+科目構成による分類に書き換え済み)は、以下いずれにも当たらない仕訳だけを「割勘対象になり得る」とみなす。
+**割勘できるかの判定**: `checkExpenseSplittability`(計画Issue #149)が、仕訳ごとに「割勘できるか」と「できない理由」を1つの純粋関数で返す。割勘の対象選択画面(`ExpenseSplittingEntryPickerScreen`)はこの結果で候補を絞る。割勘できない仕訳は次の3つで、複数に当たる場合は上から順の理由を返す。
 
-- 仕訳自身が割勘仕訳である(`isExpenseSplitEntry`、立替金行+費用行の両方を持つことで判定、[journal.md 1.8](./journal.md#18-関連仕訳グループjournal_entry_link_groups)参照)仕訳: これを再び割勘対象として選べてしまうと「割勘の割勘」という意味のない状態が作れてしまうため除外する(人間レビューでの指摘、計画Issue #40。詳細は`docs/decisions.md`(2026-09-06)参照)
-- 関連仕訳グループで繋がる仕訳の中に割勘仕訳(`isExpenseSplitEntry`がtrueの仕訳)が存在する仕訳: 「既に割勘済み」であり、割勘対象の仕訳選択UIではこの判定を使って既に割勘済みの仕訳(例: 前月分)を候補一覧から除外する。[settlement.md 1.6 分割消込](./settlement.md#16-分割消込消込残高による完了判定)の「未消込」判定と対称的な考え方である
+| 理由(`reason`) | 内容 |
+|---|---|
+| `is_expense_split_entry` | 割勘で作られた仕訳(`source_type = 'expense_splitting'`)。「割勘の割勘」という意味のない状態を防ぐ(人間レビューでの指摘、計画Issue #40。詳細は`docs/decisions.md`(2026-09-06)参照) |
+| `already_split` | 関連仕訳グループで繋がる仕訳の中に、割勘で作られた仕訳がある(割勘済み)。[settlement.md 1.6 分割消込](./settlement.md#16-分割消込消込残高による完了判定)の「未消込」判定と対称的な考え方である |
+| `no_debit_expense_line` | 借方に費用の行がない(収益だけの仕訳、費用が貸方だけの仕訳を含む)。給与/普通預金のような費用科目を含まない仕訳は、そもそも割勘の対象になり得ない |
 
-あわせて、費用科目の行がちょうど1件存在する仕訳のみを割勘対象候補とする(`findExpenseLine`、計画Issue #40)。給与/普通預金のような費用科目を一切含まない仕訳や、費用科目の行が2件以上あり付け替え対象を一意に決められない仕訳は、そもそも割勘の対象になり得ないため候補一覧から除外する。1つの仕訳に費用科目と収益科目が同時に存在すること自体は、費用科目の行がちょうど1件であれば問題なく扱える。詳細は`docs/decisions.md`(2026-09-06)参照。
+割勘かどうかは科目構成ではなく**`source_type`で判定する**(`isExpenseSplitEntry`)。以前は「立替金行+費用行の両方を持つ」という科目構成で判定していたが、計画Issue #145で手入力でも立替金を選べるようになったため、手入力の仕訳を割勘と誤判定する恐れがあった。精算仕訳(`isExpenseSplitSettlementEntry`)は分類を増やさず、従来どおり科目構成(立替金行を持ち費用行を持たない)で判定する。精算の仕訳は、口座明細からなら外部明細(`external_import`)、手で起票したものなら手入力(`manual`)として保存される。手入力で立替金だけの仕訳を作ると、精算仕訳と同じ構成になるため履歴の辿り方では精算仕訳として扱われうる(自動では区別しない)。
 
-**履歴の閲覧**: 割勘仕訳作成時、元仕訳と割勘仕訳は自動的に同一の関連仕訳グループへ所属する([journal.md 1.8 関連仕訳グループ](./journal.md#18-関連仕訳グループjournal_entry_link_groups)参照、計画Issue #138)。複数の元仕訳をまとめて割勘した場合、全元仕訳+割勘仕訳が1つのグループにまとまる(多対多)。精算仕訳も、精算対象のタグ(`settlement_batch_id`・科目・世帯メンバー/取引先)が一致する割勘仕訳の所属グループへ自動的に参加する(`findEntryIdsWithSettlementTag`で対象を特定、`SettlementScreen`の配線)。元仕訳の詳細画面(`JournalEntryDetailScreen`)から、所属グループ内で科目構成が割勘仕訳(`isExpenseSplitEntry`)と判定できる仕訳を辿り、さらにその割勘仕訳の所属グループ内で精算仕訳(`isExpenseSplitSettlementEntry`)と判定できる仕訳を辿れば、「元の支出 → 割勘 → 精算」の一連の流れを追跡できる(`traceExpenseSplittingHistory`)。また、`settlement_batch_id`でバッチ全体の仕訳を横断的に一覧することもできる(計画Issue #133)。
+**費用の行が複数ある仕訳(計画Issue #149)**: 付け替え対象は、借方の費用の行(`findDebitExpenseLines`)すべてである。以前は費用の行がちょうど1件の仕訳だけを対象にしていたが、割勘仕訳は分担者ごとに自己完結した仕訳(1.3・1.4節)で、費用の行ごとに付け替えの組を作れるため、複数行も各行を同じ割合で割れば扱える。端数の扱いは次のとおり。
+
+- **均等割・割合指定(複数の元仕訳をまとめて割勘する場合を含む)**: 費用の行ごとに按分額を計算する(`allocateExpenseSplitAmounts`、端数は立替者に寄せる)。
+- **金額指定・プレビュー欄の手動編集(単一の元仕訳)**: 分担者ごとの金額を、費用の行の金額比で各行へ配分する(`allocateAcrossLines`)。端数は最大剰余法で配る(各行の按分額の小数部が大きい行から1円ずつ、同じなら先の行)ため、分担者ごとの配分額の合計は入力額と1円もずれない。
+- 各行のプロジェクト(イベント)は、費用の付け替え行へそのまま引き継ぐ。
+- 「按分する金額」の既定値は、借方の費用の行の合計である。
+
+明細1行だけを割勘から外す指定は作らない。
+
+**履歴の閲覧**: 割勘仕訳作成時、元仕訳と割勘仕訳は自動的に同一の関連仕訳グループへ所属する([journal.md 1.8 関連仕訳グループ](./journal.md#18-関連仕訳グループjournal_entry_link_groups)参照、計画Issue #138)。複数の元仕訳をまとめて割勘した場合、全元仕訳+割勘仕訳が1つのグループにまとまる(多対多)。精算仕訳も、精算対象のタグ(`settlement_batch_id`・科目・世帯メンバー/取引先)が一致する割勘仕訳の所属グループへ自動的に参加する(`findEntryIdsWithSettlementTag`で対象を特定、`SettlementScreen`の配線)。元仕訳の詳細画面(`JournalEntryDetailScreen`)から、所属グループ内で`source_type`が割勘仕訳(`isExpenseSplitEntry`)の仕訳を辿り、さらにその割勘仕訳の所属グループ内で精算仕訳(`isExpenseSplitSettlementEntry`)と判定できる仕訳を辿れば、「元の支出 → 割勘 → 精算」の一連の流れを追跡できる(`traceExpenseSplittingHistory`)。また、`settlement_batch_id`でバッチ全体の仕訳を横断的に一覧することもできる(計画Issue #133)。
 
 **割勘履歴一覧画面(計画Issue #110)**: 上記のトラバーサル(元仕訳→割勘仕訳→精算仕訳)は`traceExpenseSplittingHistory`として実装されており、特定の元仕訳を起点にした個別の追跡に使う。これとは別に`listExpenseSplittingHistory`は、全仕訳を起点候補として`traceExpenseSplittingHistory`を実行し、結果を割勘仕訳(`splitEntry`)のidでグルーピングし直す合成関数であり、個々の元仕訳を事前に把握していなくても「これまでに行われた割勘」を横断的に一覧できる。1件の割勘仕訳が複数の元仕訳を対象にする場合(上記「複数の元仕訳をまとめた一括割勘」)、同じ割勘仕訳が起点候補の数だけ重複して見つかるが、グルーピングによって1件の履歴エントリに統合する。一覧の各行の分担者は`resolveExpenseSplittingParticipant`(立替金(負債)行の`household_member_id`、無ければ`counterparty_id`を持つ行から解決、1.3・1.4節の行構成に対応)で、精算状況は`isExpenseSplittingEntrySettled`(下記callout参照)で判定する。UI(`ExpenseSplittingHistoryScreen`)はこれら3関数を組み合わせるだけの薄い層であり、各行から既存の仕訳詳細画面(`JournalEntryDetailScreen`)へ遷移すればそこで上記のトラバーサルによる詳細な追跡ができるため、履歴一覧画面自体は追跡ロジックを再実装しない。
 
@@ -130,7 +142,7 @@
 >
 > 明示的なリンクを使わないタグ集計方式のため、`isExpenseSplittingEntrySettled`は関連仕訳グループではなくDB全体の明細行(`allLines`)を引数に取る。呼び出し側(`listExpenseSplittingHistory`経由の`ExpenseSplittingHistoryScreen`)は全仕訳の明細行をそのまま渡せばよく、事前絞り込みは不要である(`src/domain/expense-splitting/isExpenseSplittingEntrySettled.ts`参照)。
 
-**取り消し**: 割勘仕訳・精算仕訳はいずれも通常の手入力仕訳(`source_type = 'manual'`)であり、[journal.md 1.5 仕訳の編集・削除](./journal.md#15-仕訳の編集削除)の既存ルール(物理削除は常に許可)がそのまま適用される。
+**取り消し**: 割勘仕訳は`source_type = 'expense_splitting'`、精算仕訳は手入力(`manual`)または外部明細取込(`external_import`)の仕訳であり、[journal.md 1.5 仕訳の編集・削除](./journal.md#15-仕訳の編集削除)の既存ルール(物理削除は常に許可)がそのまま適用される。
 
 - **精算前の取り消し**: 割勘仕訳を物理削除すれば元に戻る。`ON DELETE CASCADE`で`allocates`リンクも消え、元仕訳は最初から変更していないため実質的に「なかったこと」になる
 - **精算後の取り消し**: 割勘仕訳・精算仕訳を削除すれば帳簿上は取り消せる。しかし、精算で実際に現金がAさん・Bさん間(または友人との間)で移動していた場合、削除だけでは口座残高と実態がズレる。この場合は現実の返金を行い、それを新しい取引として記録する必要がある。これはどんな会計処理でも避けられない制約であり、割勘固有の問題ではない

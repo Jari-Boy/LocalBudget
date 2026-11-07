@@ -25,7 +25,7 @@ export interface BuildHouseholdMemberExpenseSplittingJournalEntryInputParams {
  * 「費用をfromMemberからtoMemberへ付け替える」行と「立替金の資産側(fromMember)・負債側
  * (toMember)を発生させる」行の2組4行から成る単一の仕訳を組み立て、
  * JournalEntryRepository.create()にそのまま渡せるCreateJournalEntryInput
- * (source_typeは既定の'manual'のまま)を返す。科目id・household_member_id・settlementBatchIdの
+ * (source_typeは'expense_splitting'、計画Issue #149)を返す。科目id・household_member_id・settlementBatchIdの
  * 解決は呼び出し側の責務(buildBalanceAdjustmentJournalEntryInputと同じパターン)。
  *
  * 立替金(資産/負債)行は`settlementBatchId`(計画Issue #133、精算バッチのタグ)を持ち、
@@ -47,6 +47,7 @@ export function buildHouseholdMemberExpenseSplittingJournalEntryInput(
     entryDate: params.entryDate,
     memo: params.memo ?? null,
     householdMemberId: params.fromMemberId,
+    sourceType: 'expense_splitting',
     lines: [
       {
         accountId: params.expenseAccountId,

@@ -77,8 +77,12 @@ function buildOriginalEntry(id: number, entryDate = '2026-07-01'): JournalEntry 
   return buildEntry(id, [buildLine(id, EXPENSE_ACCOUNT_ID, 'debit'), buildLine(id, PAYABLE_ACCOUNT_ID, 'credit')], entryDate)
 }
 
+/** 割勘仕訳は source_type = 'expense_splitting' で保存される(計画Issue #149) */
 function buildSplitEntry(id: number): JournalEntry {
-  return buildEntry(id, [buildLine(id, EXPENSE_ACCOUNT_ID, 'debit'), buildLine(id, ADVANCE_ACCOUNT_ID, 'credit')])
+  return {
+    ...buildEntry(id, [buildLine(id, EXPENSE_ACCOUNT_ID, 'debit'), buildLine(id, ADVANCE_ACCOUNT_ID, 'credit')]),
+    sourceType: 'expense_splitting',
+  }
 }
 
 function buildSettlementEntry(id: number): JournalEntry {

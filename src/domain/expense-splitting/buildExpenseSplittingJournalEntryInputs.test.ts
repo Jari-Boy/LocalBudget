@@ -32,6 +32,7 @@ describe('buildExpenseSplittingJournalEntryInputs', () => {
       entryDate: '2026-08-15',
       memo: '生活費割勘',
       householdMemberId: 100,
+      sourceType: 'expense_splitting',
       lines: [
         { accountId: 10, householdMemberId: 101, projectId: null, side: 'debit', amount: 300 },
         { accountId: 20, householdMemberId: 100, settlementBatchId: 5, side: 'debit', amount: 300 },
@@ -73,6 +74,7 @@ describe('buildExpenseSplittingJournalEntryInputs', () => {
       entryDate: '2026-08-15',
       memo: null,
       householdMemberId: 100,
+      sourceType: 'expense_splitting',
       lines: [
         { accountId: 20, householdMemberId: 100, settlementBatchId: 5, side: 'debit', amount: 500 },
         { accountId: 10, householdMemberId: 100, counterpartyId: 7, projectId: null, side: 'credit', amount: 500 },

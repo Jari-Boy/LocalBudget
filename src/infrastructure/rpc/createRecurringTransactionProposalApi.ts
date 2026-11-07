@@ -23,9 +23,20 @@ export interface ConfirmRecurringTransactionProposalInput {
   amount?: number
 }
 
+export interface SkipRecurringTransactionProposalInput {
+  ruleId: number
+  /** 確定と同じく、このルールについて現時点で最も古い保留中の対象日と一致する必要がある(昇順のみ許可) */
+  dueDate: string
+}
+
 export interface RecurringTransactionProposalRpcApi {
   listPending(): RecurringTransactionProposal[]
   confirm(input: ConfirmRecurringTransactionProposalInput): JournalEntry
+  /**
+   * 提案を見送る(計画Issue #145、docs/domain/recurring-transactions.md 1.7)。仕訳は作らず、
+   * 見送った対象日だけを永続化する。見送りの取り消しは作らない(間違えて見送ったら手入力で起票する)。
+   */
+  skip(input: SkipRecurringTransactionProposalInput): void
 }
 
 /**
@@ -58,10 +69,32 @@ export function createRecurringTransactionProposalApi(
           rule,
           generatedCount: ruleRepository.countGeneratedJournalEntries(rule.id),
           latestGeneratedEntryDate: ruleRepository.findLatestGeneratedEntryDate(rule.id),
+          latestSkippedDueDate: ruleRepository.findLatestSkippedDueDate(rule.id),
         },
       ],
       today(),
     )
+  }
+
+  /**
+   * 確定・見送りで共通の検証。そのルールの「最も古い保留中の対象日」と一致する場合にのみ許可する
+   * (昇順のみ許可)。ルールを返す。
+   */
+  function assertNextPendingDueDate(ruleId: number, dueDate: string): RecurringTransactionRule {
+    const rule = ruleRepository.findById(ruleId)
+    if (!rule) {
+      throw new Error(`recurring transaction rule not found: ${ruleId}`)
+    }
+
+    const [nextPending] = evaluatePendingForRule(rule)
+    if (!nextPending || nextPending.dueDate !== dueDate) {
+      throw new Error(
+        nextPending
+          ? `due date ${dueDate} is not the next pending occurrence for recurring transaction rule ${rule.id} (expected ${nextPending.dueDate}); earlier pending occurrences must be handled first`
+          : `recurring transaction rule ${rule.id} has no pending occurrence for due date ${dueDate}`,
+      )
+    }
+    return rule
   }
 
   return {
@@ -70,19 +103,7 @@ export function createRecurringTransactionProposalApi(
     },
 
     confirm(input: ConfirmRecurringTransactionProposalInput): JournalEntry {
-      const rule = ruleRepository.findById(input.ruleId)
-      if (!rule) {
-        throw new Error(`recurring transaction rule not found: ${input.ruleId}`)
-      }
-
-      const [nextPending] = evaluatePendingForRule(rule)
-      if (!nextPending || nextPending.dueDate !== input.dueDate) {
-        throw new Error(
-          nextPending
-            ? `due date ${input.dueDate} is not the next pending occurrence for recurring transaction rule ${rule.id} (expected ${nextPending.dueDate}); earlier pending occurrences must be confirmed first`
-            : `recurring transaction rule ${rule.id} has no pending occurrence for due date ${input.dueDate}`,
-        )
-      }
+      const rule = assertNextPendingDueDate(input.ruleId, input.dueDate)
 
       const bookkeeperHouseholdMemberId = rule.householdMemberId ?? input.householdMemberId
       if (bookkeeperHouseholdMemberId == null) {
@@ -105,6 +126,11 @@ export function createRecurringTransactionProposalApi(
           amount: input.amount,
         }),
       )
+    },
+
+    skip(input: SkipRecurringTransactionProposalInput): void {
+      const rule = assertNextPendingDueDate(input.ruleId, input.dueDate)
+      ruleRepository.recordSkip(rule.id, input.dueDate)
     },
   }
 }

@@ -24,7 +24,7 @@ export interface BuildCounterpartyExpenseSplittingJournalEntryInputParams {
  * counterparty_idを付与する2行仕訳を組み立てる。household_member_id間の負債側立替金
  * (buildHouseholdMemberExpenseSplittingJournalEntryInputのadvanceLiabilityAccountId相当)は
  * 発生しない。JournalEntryRepository.create()にそのまま渡せるCreateJournalEntryInput
- * (source_typeは既定の'manual'のまま)を返す。科目id・counterparty_id・settlementBatchIdの
+ * (source_typeは'expense_splitting'、計画Issue #149)を返す。科目id・counterparty_id・settlementBatchIdの
  * 解決は呼び出し側の責務。
  *
  * 立替金(資産)行は`settlementBatchId`(計画Issue #133、精算バッチのタグ)を持ち、費用行は
@@ -45,6 +45,7 @@ export function buildCounterpartyExpenseSplittingJournalEntryInput(
     entryDate: params.entryDate,
     memo: params.memo ?? null,
     householdMemberId: params.payerMemberId,
+    sourceType: 'expense_splitting',
     lines: [
       {
         accountId: params.advanceAssetAccountId,

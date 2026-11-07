@@ -12,7 +12,9 @@ CREATE TABLE journal_entries (
   source_type  TEXT NOT NULL DEFAULT 'manual'
     CHECK (source_type IN (
       'manual', 'external_import', 'recurring_generated',
-      'initial_balance', 'balance_adjustment'
+      'initial_balance', 'balance_adjustment',
+      -- 割勘機能で作る仕訳(計画Issue #149)。割勘かどうかの判定は科目構成ではなくこの値で行う
+      'expense_splitting'
     )),
   -- 起票者(この仕訳を切った主体)。NOT NULL(docs/domain/journal.md 1.1「起票者」)。
   -- journal_lines.household_member_id(明細の上書き)とは別の列で、科目に既定値が無く

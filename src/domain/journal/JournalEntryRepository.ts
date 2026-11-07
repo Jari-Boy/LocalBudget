@@ -8,8 +8,8 @@ import type {
  * 仕訳(journal_entries/journal_lines)の永続化を担うRepositoryのポート(インターフェース)。
  * 貸借バランス検証(assertJournalBalance)は実装(インフラ層)が書き込み前に必ず呼び出し、
  * 不一致ならUnbalancedJournalEntryErrorを投げてDBに一切書き込まない(docs/domain/journal.md 1.3)。
- * is_reconcilable資産・負債への直接記帳制限(docs/domain/reconciliation.md 1.2)違反時は
- * RestrictedAccountPostingErrorを投げる。
+ * is_reconcilable資産・負債への記帳はsource_typeによらず許可する(計画Issue #145で直接記帳制限を
+ * 廃止、docs/domain/reconciliation.md 1.2)。
  * counterparty_idのPL科目限定制約等はDDL側のトリガー(docs/schema/journal.sql)で強制されるため、
  * 実装はそちらの制約違反例外をそのまま呼び出し元に伝播させる。
  *

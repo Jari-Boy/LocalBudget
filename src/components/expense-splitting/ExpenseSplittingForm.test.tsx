@@ -1035,4 +1035,112 @@ describe('ExpenseSplittingForm(複数の元仕訳をまとめて割勘する場�
     expect(screen.queryByRole('checkbox', { name: 'Bさん' })).not.toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: 'Cさん' })).toBeInTheDocument()
   })
+
+  it('割勘で作った仕訳は source_type = expense_splitting で保存される(計画Issue #149)', async () => {
+    seedAdvanceAccounts(db)
+    const memberA = householdMemberRepository.create({ name: 'Aさん' })
+    householdMemberRepository.create({ name: 'Bさん' })
+    const expense = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const originalEntry = journalEntryRepository.create({
+      entryDate: '2026-08-01',
+      memo: 'スーパーで食材購入',
+      householdMemberId: memberA.id,
+      lines: [
+        { accountId: expense.id, side: 'debit', amount: 1000 },
+        { accountId: cash.id, side: 'credit', amount: 1000 },
+      ],
+    })
+
+    const { onComplete } = renderForm([originalEntry])
+    await screen.findByText('スーパーで食材購入')
+    checkHouseholdMember('Bさん')
+    fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+    await waitFor(() => expect(householdMemberRow('Bさん').getByLabelText('金額')).toHaveValue(500))
+    fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
+    const created = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+    expect(created).toHaveLength(1)
+    expect(created[0].sourceType).toBe('expense_splitting')
+    expect(journalEntryRepository.findById(originalEntry.id)?.sourceType).toBe('manual')
+  })
+
+  describe('費用の行が複数ある仕訳(計画Issue #149)', () => {
+    function createMultiExpenseEntry() {
+      seedAdvanceAccounts(db)
+      const memberA = householdMemberRepository.create({ name: 'Aさん' })
+      householdMemberRepository.create({ name: 'Bさん' })
+      const food = accountRepository.create({ category: 'expense', name: '食費', isReconcilable: null })
+      const daily = accountRepository.create({ category: 'expense', name: '日用品費', isReconcilable: null })
+      const cash = accountRepository.create({ category: 'asset', name: '現金', isReconcilable: false })
+      const originalEntry = journalEntryRepository.create({
+        entryDate: '2026-08-01',
+        memo: 'ドラッグストア',
+        householdMemberId: memberA.id,
+        lines: [
+          { accountId: food.id, side: 'debit', amount: 700 },
+          { accountId: daily.id, side: 'debit', amount: 300 },
+          { accountId: cash.id, side: 'credit', amount: 1000 },
+        ],
+      })
+      return { originalEntry, food, daily }
+    }
+
+    it('按分する金額の既定値は費用の行の合計になる', async () => {
+      const { originalEntry } = createMultiExpenseEntry()
+
+      renderForm([originalEntry])
+      await screen.findByText('ドラッグストア')
+
+      await waitFor(() => expect(screen.getByLabelText('按分する金額')).toHaveValue(1000))
+    })
+
+    it('均等割勘すると、分担額が費用の行の金額比で各費用科目に配分され、貸借が一致する', async () => {
+      const { originalEntry, food, daily } = createMultiExpenseEntry()
+
+      const { onComplete } = renderForm([originalEntry])
+      await screen.findByText('ドラッグストア')
+      await waitFor(() => expect(screen.getByLabelText('按分する金額')).toHaveValue(1000))
+      checkHouseholdMember('Bさん')
+      fireEvent.click(screen.getByRole('button', { name: '計算する' }))
+      await waitFor(() => expect(householdMemberRow('Bさん').getByLabelText('金額')).toHaveValue(500))
+      fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+      await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
+      const created = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      expect(created).toHaveLength(1)
+      const sumOf = (accountId: number, side: 'debit' | 'credit') =>
+        created[0].lines
+          .filter((line) => line.accountId === accountId && line.side === side)
+          .reduce((total, line) => total + line.amount, 0)
+      // Bさんの分担額500円を 700:300 で配分 → 食費350円、日用品費150円(付け替え先の借方と元の貸方)
+      expect(sumOf(food.id, 'debit')).toBe(350)
+      expect(sumOf(food.id, 'credit')).toBe(350)
+      expect(sumOf(daily.id, 'debit')).toBe(150)
+      expect(sumOf(daily.id, 'credit')).toBe(150)
+    })
+
+    it('金額直接指定で割り切れない金額を入力しても、各費用科目への配分の合計は入力額と1円もずれない', async () => {
+      const { originalEntry, food, daily } = createMultiExpenseEntry()
+
+      const { onComplete } = renderForm([originalEntry])
+      await screen.findByText('ドラッグストア')
+      fireEvent.change(screen.getByLabelText('配分方法'), { target: { value: 'amount' } })
+      checkHouseholdMember('Bさん')
+      fireEvent.change(householdMemberRow('Bさん').getByLabelText('金額'), { target: { value: '101' } })
+      fireEvent.click(screen.getByRole('button', { name: '割勘を確定する' }))
+
+      await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
+      const created = journalEntryRepository.findAll().filter((entry) => entry.id !== originalEntry.id)
+      const debitOf = (accountId: number) =>
+        created[0].lines
+          .filter((line) => line.accountId === accountId && line.side === 'debit')
+          .reduce((total, line) => total + line.amount, 0)
+      // 101円を 700:300 で配分 → 食費71円、日用品費30円(最大剰余法)
+      expect(debitOf(food.id)).toBe(71)
+      expect(debitOf(daily.id)).toBe(30)
+      expect(debitOf(food.id) + debitOf(daily.id)).toBe(101)
+    })
+  })
 })

@@ -10,8 +10,7 @@ import type {
  * create/update時に書き込み前に必ず呼び出し、違反時はInvalidRecurringScheduleErrorを投げて
  * DBに一切書き込まない(docs/domain/recurring-transactions.md 1.3、
  * SqlJsJournalEntryRepositoryのassertJournalBalanceと同じ使い分け)。
- * is_reconcilable科目を借方/貸方に指定できない制約・生成済み仕訳がある場合の物理削除禁止等、
- * DBルックアップを要する制約はDDL側(docs/schema/recurring_transactions.sql)で強制されるため、
+ * 生成済み仕訳がある場合の物理削除禁止等、DBルックアップを要する制約はDDL側(docs/schema/recurring_transactions.sql)で強制されるため、
  * 実装はそちらの制約違反例外をそのまま呼び出し元に伝播させる。
  * 生成済み件数(max_occurrences判定用)はjournal_entries.generated_from_rule_idのCOUNTから
  * 算出し、専用のカウンタは持たない(2.1節参照)。
@@ -36,4 +35,13 @@ export interface RecurringTransactionRuleRepository {
    * 持たない既存方針と同じ「二重管理を避ける」考え方)
    */
   findLatestGeneratedEntryDate(id: number): string | null
+
+  /**
+   * 提案を見送った対象日を記録する(計画Issue #145)。仕訳は作らない。同じルール・同じ対象日の
+   * 二重記録はエラー。古い順にしか見送れない検証は呼び出し側(提案API)の責務
+   */
+  recordSkip(id: number, dueDate: string): void
+
+  /** このルールで見送った対象日のうち最新のもの。1件も見送っていなければnull(提案評価の起点に使う) */
+  findLatestSkippedDueDate(id: number): string | null
 }
