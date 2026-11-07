@@ -1,5 +1,30 @@
 {
   "appName": "LocalBudget",
   "close": "閉じる",
-  "loading": "読み込み中..."
+  "loading": "読み込み中...",
+  "nav": {
+    "mainMenu": "メインメニュー",
+    "areaTabs": "領域内のタブ",
+    "import": "明細取込",
+    "journal": "仕訳",
+    "split": "割勘・精算",
+    "master": "マスタ",
+    "analysis": "分析",
+    "pendingProposals": "確認待ち{{count}}件",
+    "tab": {
+      "entries": "仕訳一覧",
+      "manualEntry": "手入力で起票",
+      "proposals": "定期取引の確認",
+      "newSplit": "割勘する",
+      "settlement": "精算",
+      "splitHistory": "割勘の履歴",
+      "accountList": "科目一覧",
+      "accountNew": "科目を追加",
+      "accountGroups": "科目グループ",
+      "counterparties": "取引先",
+      "householdMembers": "世帯メンバー",
+      "projects": "プロジェクト",
+      "recurringRules": "定期取引ルール"
+    }
+  }
 }
