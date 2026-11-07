@@ -1,4 +1,28 @@
 {
   "masterManagementTitle": "マスタ管理",
-  "back": "戻る"
+  "back": "戻る",
+  "createForm": {
+    "title": "科目を登録",
+    "category": "区分",
+    "categoryAsset": "資産",
+    "categoryLiability": "負債",
+    "categoryRevenue": "収益",
+    "categoryExpense": "費用",
+    "name": "名称",
+    "group": "所属グループ",
+    "groupNone": "グループなし",
+    "hasExternalStatement": "外部明細(CSV)はありますか?",
+    "hasBalance": "残高情報は明細にありますか?",
+    "yes": "ある",
+    "no": "ない",
+    "member": "名義",
+    "memberAll": "全員",
+    "initialBalance": "初期残高(任意)",
+    "reconcileOn": "明細の残高と帳簿残高を照合します。",
+    "reconcileOff": "明細の残高とは照合しません。",
+    "initialBalanceNote": "初期残高の仕訳を自動で作ります。",
+    "submit": "登録",
+    "cancel": "キャンセル",
+    "error": "登録に失敗しました。もう一度お試しください。"
+  }
 }
