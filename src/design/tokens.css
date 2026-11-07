@@ -29,6 +29,18 @@
   --color-nav-text: #e8eeeb;
   --color-nav-muted: #bfd0c9;
 
+  /* 出どころタグ(仕訳の作成経路・下書き) */
+  --color-tag-blue-bg: #e1ecf7;
+  --color-tag-blue-text: #14497a;
+  --color-tag-neutral-bg: #eef2ef;
+  --color-tag-neutral-text: #3d4a44;
+  --color-tag-orange-bg: #f7e7d6;
+  --color-tag-orange-text: #7a4300;
+  --color-tag-purple-bg: #ede5f5;
+  --color-tag-purple-text: #54307a;
+  --color-tag-yellow-bg: #fff3d6;
+  --color-tag-yellow-text: #6b4a00;
+
   /* 文字サイズ */
   --font-size-xs: 12px;
   --font-size-sm: 13px;

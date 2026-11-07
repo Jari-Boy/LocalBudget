@@ -58,6 +58,21 @@ describe('デザイントークン', () => {
   })
 
   it.each([
+    ['--color-tag-blue-bg', '#E1ECF7'],
+    ['--color-tag-blue-text', '#14497A'],
+    ['--color-tag-neutral-bg', '#EEF2EF'],
+    ['--color-tag-neutral-text', '#3D4A44'],
+    ['--color-tag-orange-bg', '#F7E7D6'],
+    ['--color-tag-orange-text', '#7A4300'],
+    ['--color-tag-purple-bg', '#EDE5F5'],
+    ['--color-tag-purple-text', '#54307A'],
+    ['--color-tag-yellow-bg', '#FFF3D6'],
+    ['--color-tag-yellow-text', '#6B4A00'],
+  ])('出どころタグの色トークン%sがモックアップの値%sと一致する', (name, value) => {
+    expect(tokens[name]?.toUpperCase()).toBe(value)
+  })
+
+  it.each([
     ['--font-size-xs', '12px'],
     ['--font-size-sm', '13px'],
     ['--font-size-base', '14px'],
