@@ -2,8 +2,8 @@
  * SqlJsRecurringTransactionRuleRepository の統合テスト。
  * sql.js(SQLite WASM)をNode上で実際に動かし、docs/domain/recurring-transactions.md・
  * docs/schema/recurring_transactions.sql に定義された定期取引ルールの作成・参照・更新・
- * 削除・非アクティブ化と、DDL側のトリガー(is_reconcilable科目の直接指定禁止・
- * 生成済み仕訳がある場合の物理削除禁止)・frequencyごとのカラム組み合わせCHECK制約が
+ * 削除・非アクティブ化と、DDL側のトリガー(生成済み仕訳がある場合の物理削除禁止。is_reconcilable科目の
+ * 直接指定禁止トリガーは計画Issue #145で廃止し、指定できることも検証する)・frequencyごとのカラム組み合わせCHECK制約が
  * 期待通り機能することを検証する。generated_from_rule_idのCOUNTで生成済み件数を
  * 算出するcountGeneratedJournalEntriesも検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
@@ -90,30 +90,52 @@ describe('create / findById', () => {
     ).toThrow(InvalidRecurringScheduleError)
   })
 
-  it('is_reconcilable=trueの科目を借方に指定した作成はトリガーにより拒否される', () => {
-    expect(() =>
-      repository.create({
-        name: '不正なルール',
-        debitAccountId: reconcilableAssetAccountId,
-        creditAccountId: liabilityAccountId,
-        amount: 1000,
-        frequency: 'monthly',
-        dayOfMonth: 1,
-      }),
-    ).toThrow()
+  it('is_reconcilable=trueの科目を借方に指定してもルールを作成できる(計画Issue #145でトリガーを廃止)', () => {
+    const created = repository.create({
+      name: '口座への入金',
+      debitAccountId: reconcilableAssetAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 1000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+    })
+
+    expect(repository.findById(created.id)?.debitAccountId).toBe(reconcilableAssetAccountId)
   })
 
-  it('is_reconcilable=trueの科目を貸方に指定した作成はトリガーにより拒否される', () => {
-    expect(() =>
-      repository.create({
-        name: '不正なルール',
-        debitAccountId: expenseAccountId,
-        creditAccountId: reconcilableAssetAccountId,
-        amount: 1000,
-        frequency: 'monthly',
-        dayOfMonth: 1,
-      }),
-    ).toThrow()
+  it('is_reconcilable=trueの科目を貸方に指定してもルールを作成できる(計画Issue #145でトリガーを廃止)', () => {
+    const created = repository.create({
+      name: '口座からの引き落とし',
+      debitAccountId: expenseAccountId,
+      creditAccountId: reconcilableAssetAccountId,
+      amount: 1000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+    })
+
+    expect(repository.findById(created.id)?.creditAccountId).toBe(reconcilableAssetAccountId)
+  })
+
+  it('既存のルールの科目をis_reconcilable=trueの科目へ更新できる(計画Issue #145でトリガーを廃止)', () => {
+    const created = repository.create({
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+    })
+
+    const updated = repository.update(created.id, {
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: reconcilableAssetAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 1,
+    })
+
+    expect(updated.creditAccountId).toBe(reconcilableAssetAccountId)
   })
 })
 
