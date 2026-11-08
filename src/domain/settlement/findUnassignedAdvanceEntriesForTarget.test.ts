@@ -158,3 +158,41 @@ describe('findUnassignedAdvanceEntriesForTarget: 検索条件を重ねる(計画
     ])
   })
 })
+
+describe('findUnassignedAdvanceEntriesForTarget: 方向(貸借)を固定条件にする(計画Issue #153)', () => {
+  const target = { kind: 'householdMember', householdMemberId: 200 } as const
+  const advance = 10
+
+  it('side を指定すると、科目・方向・対象者を同じ行で満たす明細だけを候補にする', () => {
+    // 立替金を減らす精算は立替金の貸方の行。借方(増える側)の行は候補にしない
+    const decreasing = entry(1, '2026-10-05', [
+      line({ id: 1, journalEntryId: 1, accountId: advance, householdMemberId: 200, side: 'credit' }),
+    ])
+    const increasing = entry(2, '2026-10-06', [
+      line({ id: 2, journalEntryId: 2, accountId: advance, householdMemberId: 200, side: 'debit' }),
+    ])
+
+    const result = findUnassignedAdvanceEntriesForTarget([decreasing, increasing], advance, target, undefined, 'credit')
+
+    expect(result.map((c) => c.entry.id)).toEqual([1])
+  })
+
+  it('別々の行で科目と方向を満たす仕訳は、side を指定しても候補にしない', () => {
+    // 立替金の行は借方、貸方の行は別の科目。立替金の貸方の行を持たない
+    const separate = entry(1, '2026-10-05', [
+      line({ id: 1, journalEntryId: 1, accountId: advance, householdMemberId: 200, side: 'debit' }),
+      line({ id: 2, journalEntryId: 1, accountId: 99, householdMemberId: 200, side: 'credit' }),
+    ])
+
+    expect(findUnassignedAdvanceEntriesForTarget([separate], advance, target, undefined, 'credit')).toEqual([])
+  })
+
+  it('side を省略すると方向では絞り込まない', () => {
+    const both = entry(1, '2026-10-05', [
+      line({ id: 1, journalEntryId: 1, accountId: advance, householdMemberId: 200, side: 'debit' }),
+      line({ id: 2, journalEntryId: 1, accountId: advance, householdMemberId: 200, side: 'credit' }),
+    ])
+
+    expect(findUnassignedAdvanceEntriesForTarget([both], advance, target).map((c) => c.lineId)).toEqual([1, 2])
+  })
+})
