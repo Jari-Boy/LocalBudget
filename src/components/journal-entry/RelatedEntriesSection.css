@@ -1,0 +1,157 @@
+/* 仕訳の詳細の最下部の関連仕訳(計画Issue #152)。値はdesign/tokens.cssのトークンを使う。 */
+.related-entries {
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.related-entries__title {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+.related-entries__group {
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.related-entries__group-head {
+  padding: 6px 8px;
+  background: var(--color-field-subtle);
+}
+
+.related-entries__name {
+  font: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: var(--control-height-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 0 10px;
+  color: var(--color-text);
+}
+
+.related-entries__name:hover,
+.related-entries__name:focus {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface);
+}
+
+.related-entries__member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  border-top: 1px solid var(--color-border-soft);
+  font-size: var(--font-size-sm);
+}
+
+.related-entries__open {
+  font: inherit;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.related-entries__open:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+.related-entries__amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.related-entries__move,
+.related-entries__remove,
+.related-entries__add-button {
+  font: inherit;
+  font-size: var(--font-size-xs);
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.related-entries__add-button {
+  min-height: var(--control-height);
+  font-size: var(--font-size-base);
+  padding: 0 14px;
+}
+
+.related-entries__add {
+  position: relative;
+}
+
+.related-entries__popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 9;
+  width: min(640px, 80vw);
+  box-sizing: border-box;
+  padding: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popup);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.related-entries__candidates {
+  max-height: 240px;
+  overflow-y: auto;
+  border-top: 1px solid var(--color-border-soft);
+  display: flex;
+  flex-direction: column;
+}
+
+.related-entries__candidate {
+  font: inherit;
+  font-size: var(--font-size-base);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--control-height);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.related-entries__candidate:hover {
+  background: var(--color-accent-soft);
+}
+
+.related-entries__empty {
+  margin: 0;
+  padding: 8px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.related-entries__popup-actions {
+  display: flex;
+  justify-content: flex-end;
+}

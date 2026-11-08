@@ -1,0 +1,213 @@
+/* 仕訳画面(計画Issue #152)。値はdesign/tokens.cssのトークンを使う。 */
+.journal-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  text-align: left;
+  color: var(--color-text);
+}
+
+.journal-screen__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.journal-screen__title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  font-weight: 700;
+}
+
+.journal-screen__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.journal-screen__tab {
+  font: inherit;
+  font-size: var(--font-size-base);
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.journal-screen__tab--current {
+  font-weight: 600;
+  border-bottom-color: var(--color-accent);
+}
+
+.journal-screen__filter {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 10px 12px;
+}
+
+.journal-screen__note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.journal-screen__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.journal-screen__list {
+  flex: 2 1 340px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.journal-screen__detail {
+  flex: 3 1 620px;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.journal-screen__detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.journal-screen__detail-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.journal-screen__detail-title h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.journal-screen__tag {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.journal-screen__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.journal-screen__spacer {
+  flex: 1 1 auto;
+}
+
+.journal-screen__button {
+  font: inherit;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  min-height: var(--control-height);
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.journal-screen__button:hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+.journal-screen__button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.journal-screen__button--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.journal-screen__button--primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.journal-screen__button--danger {
+  color: var(--color-danger);
+}
+
+.journal-screen__flash {
+  font-size: var(--font-size-base);
+  color: var(--color-accent);
+}
+
+.journal-screen__error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.journal-screen__delete-box {
+  padding: 8px 12px;
+  background: #fbeaea;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.journal-screen__delete-title {
+  font-weight: 600;
+}
+
+.journal-screen__delete-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.journal-screen__inline-field {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: var(--font-size-sm);
+}
+
+.journal-screen__select {
+  font: inherit;
+  min-height: var(--control-height-sm);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding: 0 8px;
+}
