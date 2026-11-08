@@ -159,6 +159,6 @@
 - [accounts.md 1.2 区分(5要素)](./accounts.md#12-区分5要素): 「立替金」を割勘専用の恒久的な一時勘定として位置づける
 - [settlement.md 2章 精算バッチマスタ](./settlement.md#2-精算バッチマスタsettlement_batches)(計画Issue #133): 割勘バッチの識別に`settlement_batches`を使う主要な動機。立替金の精算残高が0になった時点で非アクティブ化が提案される
 - [projects.md 1.2 紐づけ対象](./projects.md#12-紐づけ対象): 割勘仕訳の費用側の行に元仕訳のイベント(`project_id`)を引き継がせたい、という要求が`project_id`を全区分へ拡張した主要な動機
-- [journal.md 1.8 関連仕訳グループ](./journal.md#18-関連仕訳グループjournal_entry_link_groups): 割勘・分割払いの仕訳作成時の自動グルーピングが、関連仕訳グループの主要な作成契機の1つ(計画Issue #138)
+- [journal.md 1.8 関連仕訳グループ](./journal.md#18-関連仕訳グループjournal_entry_link_groups): 割勘・精算の仕訳作成時の自動グルーピングが、関連仕訳グループの主要な作成契機の1つ(計画Issue #138)
 - [counterparties.md](./counterparties.md): 世帯外の相手を取引先として扱う([1.4](#14-世帯外の相手との割勘)参照)
 - [statement-import.md 1.5 レコード処理フロー](./statement-import.md#15-レコード処理フロー)手順5-a: 立替金は`is_reconcilable = false`の通常科目のため、既存の未消込サジェスト機能がそのまま働く。割勘専用のインポートロジックは持たない

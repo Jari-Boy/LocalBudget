@@ -16,7 +16,7 @@ export interface BuildConfirmedJournalEntryInputParams {
   householdMemberId?: number | null
   /**
    * 精算バッチ(計画Issue #144)。相手科目の行にのみ付与する。相手科目が一時勘定でない場合の
-   * 拒否はJournalEntryRepositoryが行う(SettlementBatchOnNonTemporaryAccountError)
+   * 拒否はJournalEntryRepositoryが行う(SettlementBatchOnNonAdvanceAccountError)
    */
   settlementBatchId?: number | null
   /** 仕訳のコメント(計画Issue #144)。摘要(CSVの摘要が入るmemo)とは別。空白のみは未設定扱い */

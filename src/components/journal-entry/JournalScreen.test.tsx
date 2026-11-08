@@ -36,7 +36,7 @@ function account(id: number, name: string, category: Account['category'], isReco
 const accounts = [
   account(1, '食費', 'expense'),
   account(2, '普通預金', 'asset', true),
-  account(3, '立替金', 'asset', false),
+  { ...account(3, '立替金', 'asset', false), isSystemManaged: true },
   account(4, '家賃', 'expense'),
 ]
 
@@ -315,7 +315,9 @@ describe('JournalScreen', () => {
   })
 
   it('元の支出の詳細に、そこから生まれた割勘の履歴を出す(従来の仕訳詳細の表示を引き継ぐ)', async () => {
-    setup()
+    // 立替金だけの仕訳は精算仕訳とみなされ履歴の起点にならないため、元の支出を費用の仕訳にする
+    const originalExpense = [line(31, 3, 'debit', 1, 5000), line(32, 3, 'credit', 2, 5000)]
+    setup({ entries: makeEntries().map((e) => (e.id === 3 ? { ...e, lines: originalExpense } : e)) })
     await ready()
     fireEvent.click(screen.getByRole('button', { name: /旅行の立替/ }))
     const history = within(detail()).getByRole('region', { name: 'この支出から生まれた割勘' })

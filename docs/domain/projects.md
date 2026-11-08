@@ -42,7 +42,7 @@
 > **なぜBSにも許可するか**
 > 当初はPL科目(収益・費用)限定としていた。理由は「口座残高の管理軸(BS)と支出目的の分析軸(プロジェクト)を独立させる」ことにあったが、[expense-splitting.md](./expense-splitting.md)の割勘機能の検討で見直した。割勘の立替金(資産/負債)にも元の支出が属するイベントのタグを引き継がせたい(例: 旅行中の立替をイベント別PLに正しく反映する)という要求があり、区分による制限を撤廃した([1.4](#14-集計への影響)参照)。
 >
-> なお、割勘・分割払い等の「精算バッチ」を識別するタグは`project_id`ではなく`settlement_batch_id`(計画Issue #133、[settlement.md](./settlement.md)参照)が担う。両者は`journal_lines`上の独立したカラムであり、1行が両方を同時に持てる(例: 割勘仕訳の立替金行は`settlement_batch_id`、費用の付け替え行は`project_id`を持つ)。
+> なお、割勘の「精算バッチ」を識別するタグは`project_id`ではなく`settlement_batch_id`(計画Issue #133、[settlement.md](./settlement.md)参照)が担う。両者は`journal_lines`上の独立したカラムであり、1行が両方を同時に持てる(例: 割勘仕訳の立替金行は`settlement_batch_id`、費用の付け替え行は`project_id`を持つ)。
 >
 > `counterparty_id`([counterparties.md 1.2](./counterparties.md#12-紐づけ対象))は引き続きPL限定のままとする。「誰と取引したか」は口座残高そのもの(BS)には意味をなさない一方、「誰の/何の目的の資産・負債か」はBSにも意味があるため、`project_id`・`household_member_id`とは扱いが異なる。
 >
@@ -72,7 +72,7 @@
   (project_id = 対象プロジェクト、期間で絞らず全期間が既定)
 ```
 
-費用・収益科目については従来通り「プロジェクト別の支出合計」として使える。資産・負債科目については「このプロジェクトに紐づく残高」を表示できるが、精算バッチ(割勘・分割払い等、残高をゼロへ近づけていく一時勘定の管理)は`settlement_batches`が専用に担う(計画Issue #133、[settlement.md](./settlement.md)参照)。
+費用・収益科目については従来通り「プロジェクト別の支出合計」として使える。資産・負債科目については「このプロジェクトに紐づく残高」を表示できるが、精算バッチ(割勘の立替金・未払金の残高をゼロへ近づけていく管理)は`settlement_batches`が専用に担う(計画Issue #133、[settlement.md](./settlement.md)参照)。
 
 期間PL([financial-statements.md 2章](./financial-statements.md#2-財務諸表fs))は「特定の期間の全支出」を、プロジェクト別集計は「特定の目的の全体(期間不問が既定)」を表す。両者は互いに独立した2つの切り口として併存する。両方を同時に絞り込む(例:「今月のアメリカ旅行費用」)ことも、期間条件とproject_id条件を組み合わせるだけで自然に実現できる。
 

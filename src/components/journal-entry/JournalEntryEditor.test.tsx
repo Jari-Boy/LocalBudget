@@ -36,8 +36,9 @@ const master: JournalEditorMaster = {
   accounts: [
     account(1, '食費', 'expense'),
     account(2, '楽天カード', 'liability'),
-    account(3, '立替金', 'asset', { isReconcilable: false }),
+    account(3, '立替金', 'asset', { isReconcilable: false, isSystemManaged: true }),
     account(4, '夫の口座', 'asset', { householdMemberId: 1 }),
+    account(5, '未収金', 'asset', { isReconcilable: false }),
   ],
   accountCategories: [],
   counterpartyCategories: [],
@@ -114,9 +115,14 @@ describe('JournalEntryEditor', () => {
     expect(screen.getAllByLabelText('取引先', { exact: false })).toHaveLength(1)
   })
 
-  it('立替金など一時勘定の行にだけ精算バッチ欄を出す', () => {
+  it('割勘の一時勘定(システム管理の立替金・未払金)の行にだけ精算バッチ欄を出す', () => {
     render(<Harness initial={value([debit(1, 3, '1000'), credit(2, 2, '1000')])} />)
     expect(screen.getByLabelText('精算バッチ')).toBeInTheDocument()
+  })
+
+  it('利用者が作った一時勘定(未収金など)の行には精算バッチ欄を出さない', () => {
+    render(<Harness initial={value([debit(1, 5, '1000'), credit(2, 2, '1000')])} />)
+    expect(screen.queryByLabelText('精算バッチ')).not.toBeInTheDocument()
   })
 
   it('精算バッチのタグを保持したまま表示する', () => {

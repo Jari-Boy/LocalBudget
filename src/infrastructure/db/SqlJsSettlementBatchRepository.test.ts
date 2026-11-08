@@ -42,10 +42,10 @@ describe('create / findById', () => {
     expect(created.counterpartyId).toBe(counterpartyId)
   })
 
-  it('type=installmentで精算バッチを作成する', () => {
-    const created = repository.create({ name: 'スマホ24回払い', type: 'installment' })
-
-    expect(created.type).toBe('installment')
+  it('廃止した種別installment(分割払い)はDDLのCHECK制約で拒否する(計画Issue #167)', () => {
+    expect(() =>
+      db.run(`INSERT INTO settlement_batches (name, type) VALUES ('スマホ24回払い', 'installment')`),
+    ).toThrow(/CHECK constraint failed/)
   })
 
   it('存在しないidに対してはnullを返す', () => {
@@ -67,11 +67,11 @@ describe('update', () => {
 describe('findAll', () => {
   it('作成した全ての精算バッチを返す', () => {
     repository.create({ name: '6月生活費', type: 'expense_splitting' })
-    repository.create({ name: 'スマホ24回払い', type: 'installment' })
+    repository.create({ name: '旅行の割勘', type: 'expense_splitting' })
 
     const all = repository.findAll()
 
-    expect(all.map((b) => b.name)).toEqual(expect.arrayContaining(['6月生活費', 'スマホ24回払い']))
+    expect(all.map((b) => b.name)).toEqual(expect.arrayContaining(['6月生活費', '旅行の割勘']))
   })
 })
 

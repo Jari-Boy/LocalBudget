@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
+import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
@@ -19,8 +20,9 @@ import {
 } from './domainErrorRegistry'
 
 describe('isDomainError', () => {
-  it('登録済みの6種のドメインエラーをtrueと判定する', () => {
+  it('登録済みのドメインエラーをtrueと判定する', () => {
     expect(isDomainError(new UnbalancedJournalEntryError(100, 90))).toBe(true)
+    expect(isDomainError(new SettlementBatchOnNonAdvanceAccountError(1))).toBe(true)
     expect(isDomainError(new NoBalanceDiscrepancyError())).toBe(true)
     expect(isDomainError(new InvalidRecurringScheduleError('invalid'))).toBe(true)
     expect(isDomainError(new RecurringTransactionHouseholdMemberRequiredError(1))).toBe(true)
@@ -57,6 +59,15 @@ describe('serializeDomainError / deserializeDomainError', () => {
     const revived = deserializeDomainError(serializeDomainError(original))
 
     expect(revived.message).toBe('at least 2 lines are required')
+  })
+
+  it('SettlementBatchOnNonAdvanceAccountErrorのaccountIdを保持して往復する(画面がinstanceofで専用メッセージを出せる)', () => {
+    const original = new SettlementBatchOnNonAdvanceAccountError(12)
+
+    const revived = deserializeDomainError(serializeDomainError(original))
+
+    expect(revived).toBeInstanceOf(SettlementBatchOnNonAdvanceAccountError)
+    expect((revived as SettlementBatchOnNonAdvanceAccountError).accountId).toBe(12)
   })
 
   it('NoBalanceDiscrepancyErrorを往復する', () => {

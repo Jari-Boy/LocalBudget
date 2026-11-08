@@ -256,7 +256,7 @@ describe('SettlementScreen', () => {
     const expense = accountRepository.create({ category: 'expense', name: '日用品費', isReconcilable: null })
     const batch = settlementBatchRepository.create({
       name: 'イオンの後払い分',
-      type: 'installment',
+      type: 'expense_splitting',
       counterpartyId: counterparty.id,
     })
     journalEntryRepository.create({
