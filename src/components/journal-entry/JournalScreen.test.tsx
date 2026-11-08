@@ -296,6 +296,14 @@ describe('JournalScreen', () => {
     expect(within(related).getByText(/割勘の夕食/)).toBeInTheDocument()
   })
 
+  it('元の支出の詳細に、そこから生まれた割勘の履歴を出す(従来の仕訳詳細の表示を引き継ぐ)', async () => {
+    setup()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: /旅行の立替/ }))
+    const history = within(detail()).getByRole('region', { name: 'この支出から生まれた割勘' })
+    expect(within(history).getByText('割勘の夕食')).toBeInTheDocument()
+  })
+
   it('関連仕訳のグループ名を変更できる', async () => {
     const props = setup()
     await ready()

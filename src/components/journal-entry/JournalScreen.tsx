@@ -8,6 +8,7 @@ import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { CounterpartyRepository } from '../../domain/counterparty/CounterpartyRepository'
 import type { CounterpartyGroup } from '../../domain/counterparty-group/CounterpartyGroup'
 import type { CounterpartyGroupRepository } from '../../domain/counterparty-group/CounterpartyGroupRepository'
+import { traceExpenseSplittingHistory } from '../../domain/expense-splitting/traceExpenseSplittingHistory'
 import { checkExpenseSplittability } from '../../domain/expense-splitting/checkExpenseSplittability'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { HouseholdMemberRepository } from '../../domain/household-member/HouseholdMemberRepository'
@@ -598,6 +599,10 @@ export function JournalScreen(props: JournalScreenProps) {
       )
     : null
 
+  const trails = selectedEntry
+    ? traceExpenseSplittingHistory(selectedEntry, data.entries, data.accounts, relatedIdsByEntryId)
+    : []
+
   // ---- 一覧の行 ----
   const listItems: JournalResultItem[] = visibleEntries.map((e) => toMatchedResultItem(e, accountNameOf, matchedIds))
   const draftItems: JournalResultItem[] = sortedDrafts.map((d) => ({
@@ -912,6 +917,28 @@ export function JournalScreen(props: JournalScreenProps) {
                     </button>
                   </div>
                 </div>
+              )}
+
+              {selection.kind === 'entry' && trails.length > 0 && (
+                <section aria-label="この支出から生まれた割勘" className="journal-screen__history">
+                  <h3 className="journal-screen__history-title">この支出から生まれた割勘</h3>
+                  <ul>
+                    {trails.map(({ splitEntry, settlementEntries }) => (
+                      <li key={splitEntry.id}>
+                        <span>{splitEntry.entryDate}</span> <span>{splitEntry.memo ?? '(摘要なし)'}</span>
+                        {settlementEntries.length > 0 && (
+                          <ul>
+                            {settlementEntries.map((settlement) => (
+                              <li key={settlement.id}>
+                                <span>{settlement.entryDate}</span> <span>{settlement.memo ?? '(摘要なし)'}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               )}
 
               {selection.kind === 'entry' && selectedEntry && (

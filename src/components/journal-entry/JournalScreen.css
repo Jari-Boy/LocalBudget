@@ -211,3 +211,15 @@
   border-radius: var(--radius-md);
   padding: 0 8px;
 }
+
+.journal-screen__history {
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+  font-size: var(--font-size-sm);
+}
+
+.journal-screen__history-title {
+  margin: 0 0 6px;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}

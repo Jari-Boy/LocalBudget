@@ -1,6 +1,6 @@
 import type * as Comlink from 'comlink'
 import { useEffect, useMemo, useState } from 'react'
-import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router'
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import type { AccountRepository } from '../domain/account/AccountRepository'
 import type { AccountGroupRepository } from '../domain/account-group/AccountGroupRepository'
 import type { BudgetRepository } from '../domain/budget/BudgetRepository'
@@ -9,7 +9,6 @@ import type { CounterpartyRepository } from '../domain/counterparty/Counterparty
 import type { CounterpartyGroupRepository } from '../domain/counterparty-group/CounterpartyGroupRepository'
 import type { JournalEntryRepository } from '../domain/journal/JournalEntryRepository'
 import type { JournalEntryLinkGroupRepository } from '../domain/journal-link-group/JournalEntryLinkGroupRepository'
-import type { JournalEntryDraft } from '../domain/journal/JournalEntryDraft'
 import type { JournalEntry } from '../domain/journal/JournalEntry'
 import type { HouseholdMemberRepository } from '../domain/household-member/HouseholdMemberRepository'
 import type { ProjectRepository } from '../domain/project/ProjectRepository'
@@ -21,11 +20,7 @@ import type { JournalEntryDraftRpcApi } from '../infrastructure/rpc/createReposi
 import type { RecurringTransactionProposalRpcApi } from '../infrastructure/rpc/createRecurringTransactionProposalApi'
 import { useDbClient } from '../infrastructure/rpc/DbClientProvider'
 import { FinancialStatementScreen } from '../components/financial-statement/FinancialStatementScreen'
-import { RecurringTransactionProposalReviewScreen } from '../components/recurring-transaction-proposal/RecurringTransactionProposalReviewScreen'
-import { JournalEntryDraftListScreen } from '../components/journal-entry/JournalEntryDraftListScreen'
-import { JournalEntryForm } from '../components/journal-entry/JournalEntryForm'
-import { JournalEntryListScreen } from '../components/journal-entry/JournalEntryListScreen'
-import { JournalEntryDetailScreen } from '../components/journal-entry/JournalEntryDetailScreen'
+import { JournalScreen, type JournalScreenProps, type JournalScreenTab } from '../components/journal-entry/JournalScreen'
 import { ExpenseSplittingEntryPickerScreen } from '../components/expense-splitting/ExpenseSplittingEntryPickerScreen'
 import { ExpenseSplittingForm } from '../components/expense-splitting/ExpenseSplittingForm'
 import { ExpenseSplittingHistoryScreen } from '../components/expense-splitting/ExpenseSplittingHistoryScreen'
@@ -39,22 +34,6 @@ import { ProjectMasterTab } from '../components/master/ProjectMasterTab'
 import { MappingMasterTab } from '../components/master/MappingMasterTab'
 import { RuleMasterTab } from '../components/master/RuleMasterTab'
 
-/** 仕訳詳細画面(/journal/entries/:id)への遷移元は複数(仕訳一覧・割勘履歴)あるため、
- * 個別の状態で戻り先を管理せずブラウザの履歴機構(navigate(-1))に委ねる。
- * 直接URL入力等で履歴が無い場合のみ、仕訳一覧をフォールバック先とする。
- */
-function useHistoryBackOrFallback(fallbackPath: string) {
-  const navigate = useNavigate()
-  const location = useLocation()
-  return () => {
-    if (location.key !== 'default') {
-      navigate(-1)
-    } else {
-      navigate(fallbackPath)
-    }
-  }
-}
-
 /**
  * 確認待ちの定期取引提案の件数(サイドナビの「仕訳」のバッジ用、計画Issue #150)。
  * 提案は永続化せず都度評価される(listPendingが毎回DBから再評価)ため、画面遷移のたびに
@@ -64,6 +43,7 @@ function useHistoryBackOrFallback(fallbackPath: string) {
 function usePendingProposalCount(
   api: { listPending(): Promise<readonly unknown[]> },
   pathname: string,
+  refreshKey: number,
 ): number {
   const [count, setCount] = useState(0)
   useEffect(() => {
@@ -79,7 +59,7 @@ function usePendingProposalCount(
     return () => {
       cancelled = true
     }
-  }, [api, pathname])
+  }, [api, pathname, refreshKey])
   return count
 }
 
@@ -164,10 +144,14 @@ export function AppRoutes() {
     [client],
   )
 
-  const goBackFromEntryDetail = useHistoryBackOrFallback('/journal/entries')
-
   const location = useLocation()
-  const pendingProposalCount = usePendingProposalCount(recurringTransactionProposalApi, location.pathname)
+  // 仕訳画面で提案を確定・見送りしたときに、サイドナビのバッジの件数を取り直す
+  const [proposalRefreshKey, setProposalRefreshKey] = useState(0)
+  const pendingProposalCount = usePendingProposalCount(
+    recurringTransactionProposalApi,
+    location.pathname,
+    proposalRefreshKey,
+  )
 
   return (
     <Routes>
@@ -180,7 +164,11 @@ export function AppRoutes() {
       <Route path="/master/accounts/groups" element={<Navigate to="/master/accounts" replace />} />
       <Route path="/journal/recurring/rules" element={<Navigate to="/master/recurring" replace />} />
       <Route path="/journal" element={<Navigate to="/journal/entries" replace />} />
-      <Route path="/journal/recurring" element={<Navigate to="/journal/recurring/proposals" replace />} />
+      {/* 手入力・下書き・定期取引の確認は、仕訳画面のタブに統合した(計画Issue #152) */}
+      <Route path="/journal/recurring" element={<Navigate to="/journal/entries?tab=proposals" replace />} />
+      <Route path="/journal/recurring/proposals" element={<Navigate to="/journal/entries?tab=proposals" replace />} />
+      <Route path="/journal/create/manual" element={<Navigate to="/journal/entries?tab=drafts" replace />} />
+      <Route path="/journal/create/manual/*" element={<Navigate to="/journal/entries?tab=drafts" replace />} />
       <Route path="/journal/splitting" element={<Navigate to="/journal/splitting/new" replace />} />
 
       <Route element={<AppShell pendingProposalCount={pendingProposalCount} />}>
@@ -258,57 +246,6 @@ export function AppRoutes() {
           />
         }
       />
-      <Route
-        path="/journal/recurring/proposals"
-        element={
-          <RecurringTransactionProposalReviewScreen
-            recurringTransactionProposalApi={recurringTransactionProposalApi}
-            recurringTransactionRuleRepository={recurringTransactionRuleRepository}
-            householdMemberRepository={householdMemberRepository}
-            onBack={() => navigate('/journal/recurring/proposals')}
-          />
-        }
-      />
-      <Route
-        path="/journal/create/manual"
-        element={
-          <JournalEntryDraftListScreen
-            journalEntryDraftRepository={journalEntryDraftRepository}
-            onResume={(draft) => navigate(`/journal/create/manual/${draft.id}`, { state: { draft } })}
-            onNew={() => navigate('/journal/create/manual/new')}
-            onBack={() => navigate('/journal/entries')}
-          />
-        }
-      />
-      <Route
-        path="/journal/create/manual/new"
-        element={
-          <JournalEntryForm
-            accountRepository={accountRepository}
-            projectRepository={projectRepository}
-            householdMemberRepository={householdMemberRepository}
-            counterpartyRepository={counterpartyRepository}
-            journalEntryRepository={journalEntryRepository}
-            journalEntryDraftRepository={journalEntryDraftRepository}
-            initialDraft={null}
-            onComplete={() => navigate('/journal/entries')}
-            onBack={() => navigate('/journal/create/manual')}
-          />
-        }
-      />
-      <Route
-        path="/journal/create/manual/:draftId"
-        element={
-          <ResumeJournalEntryFormRoute
-            accountRepository={accountRepository}
-            projectRepository={projectRepository}
-            householdMemberRepository={householdMemberRepository}
-            counterpartyRepository={counterpartyRepository}
-            journalEntryRepository={journalEntryRepository}
-            journalEntryDraftRepository={journalEntryDraftRepository}
-          />
-        }
-      />
       <Route path="/journal/create/import/review" element={<Navigate to="/journal/create/import" replace />} />
       <Route
         path="/journal/create/import"
@@ -332,27 +269,42 @@ export function AppRoutes() {
       <Route
         path="/journal/entries"
         element={
-          <JournalEntryListScreen
+          <JournalScreenRoute
             journalEntryRepository={journalEntryRepository}
+            journalEntryDraftRepository={journalEntryDraftRepository}
+            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             accountRepository={accountRepository}
-            householdMemberRepository={householdMemberRepository}
+            accountGroupRepository={accountGroupRepository}
+            counterpartyRepository={counterpartyRepository}
+            counterpartyGroupRepository={counterpartyGroupRepository}
             projectRepository={projectRepository}
-            onSelectEntry={(entry) => navigate(`/journal/entries/${entry.id}`)}
-            onBack={() => navigate('/journal/entries')}
+            projectGroupRepository={projectGroupRepository}
+            householdMemberRepository={householdMemberRepository}
+            settlementBatchRepository={settlementBatchRepository}
+            recurringTransactionProposalApi={recurringTransactionProposalApi}
+            recurringTransactionRuleRepository={recurringTransactionRuleRepository}
+            onProposalsChanged={() => setProposalRefreshKey((key) => key + 1)}
           />
         }
       />
       <Route
         path="/journal/entries/:id"
         element={
-          <JournalEntryDetailRoute
+          <JournalScreenRoute
             journalEntryRepository={journalEntryRepository}
+            journalEntryDraftRepository={journalEntryDraftRepository}
             journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             accountRepository={accountRepository}
-            projectRepository={projectRepository}
-            householdMemberRepository={householdMemberRepository}
+            accountGroupRepository={accountGroupRepository}
             counterpartyRepository={counterpartyRepository}
-            onBack={goBackFromEntryDetail}
+            counterpartyGroupRepository={counterpartyGroupRepository}
+            projectRepository={projectRepository}
+            projectGroupRepository={projectGroupRepository}
+            householdMemberRepository={householdMemberRepository}
+            settlementBatchRepository={settlementBatchRepository}
+            recurringTransactionProposalApi={recurringTransactionProposalApi}
+            recurringTransactionRuleRepository={recurringTransactionRuleRepository}
+            onProposalsChanged={() => setProposalRefreshKey((key) => key + 1)}
           />
         }
       />
@@ -434,93 +386,33 @@ export function AppRoutes() {
   )
 }
 
-interface ResumeJournalEntryFormRouteProps {
-  accountRepository: Comlink.Remote<AccountRepository>
-  projectRepository: Comlink.Remote<ProjectRepository>
-  householdMemberRepository: Comlink.Remote<HouseholdMemberRepository>
-  counterpartyRepository: Comlink.Remote<CounterpartyRepository>
-  journalEntryRepository: Comlink.Remote<JournalEntryRepository>
-  journalEntryDraftRepository: Comlink.Remote<JournalEntryDraftRpcApi>
-}
+type JournalScreenRouteProps = Omit<JournalScreenProps, 'onSplit' | 'initialTab' | 'initialEntryId'>
 
 /**
- * 下書き再開ルート(/journal/create/manual/:draftId)。下書き一覧画面の
- * 「再開する」ボタンから`navigate()`の`state`経由で渡された下書きを使う。
- * リロード・直接URL入力等でstateが失われた場合は、下書き一覧(ウィザード入口相当)
- * へフォールバックする(旧実装のsplittingEntries等と同様のガード条件を踏襲、
- * 計画Issue #118の制約)。
+ * 仕訳画面のルート(/journal/entries、/journal/entries/:id)。URLの`tab`(drafts・proposals)と
+ * :idは最初に開くタブと仕訳の指定にだけ使い、画面内でのタブ・選択の切り替えではURLを変えない
+ * (割勘の履歴など他の画面から特定の仕訳を開くため、計画Issue #152)。URLが変わったら作り直す。
+ * 「この仕訳を割勘」は、対象の仕訳を`state`で渡して割勘の入力フォームへ移る。
  */
-function ResumeJournalEntryFormRoute({
-  accountRepository,
-  projectRepository,
-  householdMemberRepository,
-  counterpartyRepository,
-  journalEntryRepository,
-  journalEntryDraftRepository,
-}: ResumeJournalEntryFormRouteProps) {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const state = location.state as { draft?: JournalEntryDraft } | null
-
-  if (!state?.draft) {
-    return <Navigate to="/journal/create/manual" replace />
-  }
-
-  return (
-    <JournalEntryForm
-      accountRepository={accountRepository}
-      projectRepository={projectRepository}
-      householdMemberRepository={householdMemberRepository}
-      counterpartyRepository={counterpartyRepository}
-      journalEntryRepository={journalEntryRepository}
-      journalEntryDraftRepository={journalEntryDraftRepository}
-      initialDraft={state.draft}
-      onComplete={() => navigate('/journal/entries')}
-      onBack={() => navigate('/journal/create/manual')}
-    />
-  )
-}
-
-interface JournalEntryDetailRouteProps {
-  journalEntryRepository: Comlink.Remote<JournalEntryRepository>
-  journalEntryLinkGroupRepository: Comlink.Remote<JournalEntryLinkGroupRepository>
-  accountRepository: Comlink.Remote<AccountRepository>
-  projectRepository: Comlink.Remote<ProjectRepository>
-  householdMemberRepository: Comlink.Remote<HouseholdMemberRepository>
-  counterpartyRepository: Comlink.Remote<CounterpartyRepository>
-  onBack: () => void
-}
-
-/** URLの:idパラメータをentryIdとして仕訳詳細画面へ渡すルート。関連する仕訳の選択は同じ
- * 仕訳詳細画面(別のentryId)への遷移として扱う。 */
-function JournalEntryDetailRoute({
-  journalEntryRepository,
-  journalEntryLinkGroupRepository,
-  accountRepository,
-  projectRepository,
-  householdMemberRepository,
-  counterpartyRepository,
-  onBack,
-}: JournalEntryDetailRouteProps) {
+function JournalScreenRoute(props: JournalScreenRouteProps) {
   const { id } = useParams()
   const navigate = useNavigate()
-  const entryId = Number(id)
+  const [searchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const initialTab: JournalScreenTab = tabParam === 'drafts' || tabParam === 'proposals' ? tabParam : 'list'
+  const entryId = id === undefined ? undefined : Number(id)
 
-  if (!Number.isFinite(entryId)) {
+  if (entryId !== undefined && !Number.isFinite(entryId)) {
     return <Navigate to="/journal/entries" replace />
   }
 
   return (
-    <JournalEntryDetailScreen
-      entryId={entryId}
-      journalEntryRepository={journalEntryRepository}
-      journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
-      accountRepository={accountRepository}
-      projectRepository={projectRepository}
-      householdMemberRepository={householdMemberRepository}
-      counterpartyRepository={counterpartyRepository}
-      onSelectRelatedEntry={(entry) => navigate(`/journal/entries/${entry.id}`)}
-      onBack={onBack}
+    <JournalScreen
+      key={`${initialTab}:${entryId ?? ''}`}
+      {...props}
+      initialTab={initialTab}
+      initialEntryId={entryId}
+      onSplit={(entry) => navigate('/journal/splitting/new/form', { state: { entries: [entry] } })}
     />
   )
 }

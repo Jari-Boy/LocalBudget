@@ -1,13 +1,12 @@
 /**
- * 定期取引の提案レビュー画面(計画Issue #39)のE2Eテスト。実ブラウザ(Chromium)で
- * トップ画面→仕訳ハブ→定期取引サブハブ経由の遷移(Human Override - REJECTにより
- * 仕訳ハブから直接ではなく定期取引サブハブ経由に変更、docs/decisions.md参照)、
- * #121が提供するlistPending/confirm RPCを経由した
+ * 定期取引の提案の確認(計画Issue #39、計画Issue #152で仕訳画面の「定期の確認」タブに統合)のE2Eテスト。
+ * 実ブラウザ(Chromium)でサイドナビの「仕訳」から「定期の確認」タブへ移り、
+ * #121が提供するlistPending/confirm/skip RPCを経由した
  * 保留中の提案一覧表示、「そのルールについて最も古い対象日のみ確認操作ができる」制約
  * (docs/domain/recurring-transactions.md 1.2節、confirmは昇順のみ許可)、レビュー時の
  * 金額編集(2.1節)、ルールにhouseholdMemberIdが未設定の場合に起票者を選択するまで
- * 確認できない挙動を検証する。個々の表示ロジックの詳細はコンポーネントテスト
- * (RecurringTransactionProposalReviewScreen.test.tsx)側で検証済みのため、ここでは
+ * 確認できない挙動、見送りを検証する。個々の表示ロジックの詳細はコンポーネントテスト
+ * (JournalScreen.test.tsx)側で検証済みのため、ここでは
  * 画面遷移・確認順序制約・金額編集・起票者未設定という操作フローに絞る。
  *
  * 対象日はテスト実行時の実際の日付を起点に算出する(recurringTransactionProposalの
@@ -41,10 +40,13 @@ async function openProposalReviewScreen(page: Page) {
   const journalLink = page.getByRole('link', { name: /^仕訳 \d+$/ })
   await expect(journalLink).toBeVisible({ timeout: 10000 })
   await journalLink.click()
-  await page.getByRole('link', { name: '定期取引の確認', exact: true }).click()
+  await page.getByRole('tab', { name: /^定期の確認/ }).click()
 }
 
-test.describe('定期取引の確認画面', () => {
+const detailPanel = (page: Page) => page.getByRole('region', { name: '仕訳の詳細' })
+const proposalRows = (page: Page) => page.locator('.journal-result-list__row')
+
+test.describe('定期取引の確認(仕訳画面のタブ)', () => {
   test('保留中の提案が表示され、確認すると仕訳が生成されて一覧から消える', async ({ page }) => {
     await page.goto('/')
     const dayOfWeek = new Date().getUTCDay()
@@ -90,11 +92,11 @@ test.describe('定期取引の確認画面', () => {
     await page.reload()
 
     await openProposalReviewScreen(page)
-    await expect(page.getByText('サブスクA')).toBeVisible()
+    await expect(proposalRows(page).filter({ hasText: 'サブスクA' })).toBeVisible()
 
-    await page.getByRole('button', { name: '確認して仕訳を作成する' }).click()
+    await detailPanel(page).getByRole('button', { name: '確定', exact: true }).click()
 
-    await expect(page.getByText('確認待ちの定期取引がありません')).toBeVisible()
+    await expect(page.getByRole('tab', { name: '定期の確認 0' })).toBeVisible()
   })
 
   test('同一ルールに複数の保留中対象日がある場合、最も古い対象日から順にしか確認できない', async ({ page }) => {
@@ -144,15 +146,17 @@ test.describe('定期取引の確認画面', () => {
 
     await openProposalReviewScreen(page)
 
-    await expect(page.getByText(isoDate(-14))).toBeVisible()
-    await expect(page.getByText(isoDate(-7))).not.toBeVisible()
-    await expect(page.getByRole('button', { name: '確認して仕訳を作成する' })).toHaveCount(1)
-    await expect(page.getByText('ほか2件が保留中です(古い順に確認してください)')).toBeVisible()
+    await expect(proposalRows(page)).toHaveCount(3)
+    // 2件目以降(新しい提案)は、古い提案が残っている間は確定も見送りもできない
+    await proposalRows(page).nth(1).click()
+    await expect(detailPanel(page).getByRole('button', { name: '確定', exact: true })).toBeDisabled()
+    await expect(detailPanel(page).getByRole('button', { name: '今回は見送る' })).toBeDisabled()
+    await expect(detailPanel(page).getByText('先に同じルールの古い提案を確定するか見送ってください')).toBeVisible()
 
-    await page.getByRole('button', { name: '確認して仕訳を作成する' }).click()
+    await proposalRows(page).nth(0).click()
+    await detailPanel(page).getByRole('button', { name: '確定', exact: true }).click()
 
-    await expect(page.getByText(isoDate(-7))).toBeVisible()
-    await expect(page.getByText('ほか1件が保留中です(古い順に確認してください)')).toBeVisible()
+    await expect(page.getByRole('tab', { name: '定期の確認 2' })).toBeVisible()
   })
 
   test('ルールにhouseholdMemberIdが未設定の場合、世帯メンバーを選択するまで確認できず、金額も編集して確認できる', async ({
@@ -201,19 +205,21 @@ test.describe('定期取引の確認画面', () => {
     await page.reload()
 
     await openProposalReviewScreen(page)
-    await expect(page.getByText('サブスクC')).toBeVisible()
+    await expect(proposalRows(page).filter({ hasText: 'サブスクC' })).toBeVisible()
 
-    await expect(page.getByRole('button', { name: '確認して仕訳を作成する' })).toBeDisabled()
+    const confirm = detailPanel(page).getByRole('button', { name: '確定', exact: true })
+    await expect(confirm).toBeDisabled()
 
-    await page.getByLabel('金額').fill('3500')
-    const memberOptions = await page.getByLabel('起票者(世帯メンバー)を選択してください').locator('option').all()
+    await detailPanel(page).getByLabel('通信費(提案テスト3)の金額').fill('3500')
+    const memberSelect = detailPanel(page).getByLabel('起票者')
+    const memberOptions = await memberSelect.locator('option').all()
     const memberValue = await memberOptions[1].getAttribute('value')
-    await page.getByLabel('起票者(世帯メンバー)を選択してください').selectOption(memberValue!)
+    await memberSelect.selectOption(memberValue!)
 
-    await expect(page.getByRole('button', { name: '確認して仕訳を作成する' })).toBeEnabled()
-    await page.getByRole('button', { name: '確認して仕訳を作成する' }).click()
+    await expect(confirm).toBeEnabled()
+    await confirm.click()
 
-    await expect(page.getByText('確認待ちの定期取引がありません')).toBeVisible()
+    await expect(page.getByRole('tab', { name: '定期の確認 0' })).toBeVisible()
 
     // 生成済み仕訳の永続化はwithAutoSaveのtrailing debounce(2秒)を挟むため、新規clientから
     // 読み取って確認できるまでpollで待つ(project-management.spec.ts等と同様のパターン)。
