@@ -10,7 +10,7 @@ import type {
 } from '../../domain/journal/JournalEntry'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import { assertJournalBalance } from '../../domain/journal/assertJournalBalance'
-import { SettlementBatchOnNonTemporaryAccountError } from '../../domain/journal/SettlementBatchOnNonTemporaryAccountError'
+import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import type { AccountCategory } from '../../domain/account/Account'
 import { SqlJsExternalTransactionRefRepository } from './SqlJsExternalTransactionRefRepository'
@@ -35,7 +35,7 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
   create(input: CreateJournalEntryInput): JournalEntry {
     assertJournalBalance(input.lines)
     const sourceType = input.sourceType ?? 'manual'
-    this.assertSettlementBatchOnlyOnTemporaryAccounts(input.lines)
+    this.assertSettlementBatchOnlyOnAdvanceAccounts(input.lines)
 
     this.db.run('BEGIN')
     try {
@@ -100,7 +100,7 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     if (!current) {
       throw new Error(`journal entry not found: ${id}`)
     }
-    this.assertSettlementBatchOnlyOnTemporaryAccounts(input.lines)
+    this.assertSettlementBatchOnlyOnAdvanceAccounts(input.lines)
     assertLineIdsBelongToEntry(input.lines, current)
 
     this.db.run('BEGIN')
@@ -141,21 +141,20 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
   }
 
   /**
-   * 精算バッチのタグは一時勘定(is_reconcilable = falseの資産・負債科目)の行にのみ設定できる
-   * (計画Issue #144、docs/domain/settlement.md)。科目区分に依存するためDDLでは表現しづらく、
+   * 精算バッチのタグは割勘の一時勘定(システム管理の立替金・未払金)の行にのみ設定できる
+   * (計画Issue #144・#167、docs/domain/settlement.md)。科目区分に依存するためDDLでは表現しづらく、
    * Repository層で書き込み前に検証する。
    */
-  private assertSettlementBatchOnlyOnTemporaryAccounts(lines: readonly JournalLineInput[]): void {
+  private assertSettlementBatchOnlyOnAdvanceAccounts(lines: readonly JournalLineInput[]): void {
     for (const line of lines) {
       if (line.settlementBatchId === undefined || line.settlementBatchId === null) continue
-      const [result] = this.db.exec('SELECT category, is_reconcilable FROM accounts WHERE id = ?', [
+      const [result] = this.db.exec('SELECT category, is_system_managed FROM accounts WHERE id = ?', [
         line.accountId,
       ])
       const row = result?.values[0]
       if (!row) continue
-      const isReconcilable = row[1] === null ? null : row[1] === 1
-      if (!isSettlementBatchTaggableAccount({ category: row[0] as AccountCategory, isReconcilable })) {
-        throw new SettlementBatchOnNonTemporaryAccountError(line.accountId)
+      if (!isSettlementBatchTaggableAccount({ category: row[0] as AccountCategory, isSystemManaged: row[1] === 1 })) {
+        throw new SettlementBatchOnNonAdvanceAccountError(line.accountId)
       }
     }
   }

@@ -1,12 +1,12 @@
 import type { Account } from '../../domain/account/Account'
 import { normalizeDescriptionForMatching } from '../../domain/statement-import/estimateCounterparty'
 import type { StatementImportReviewRecord } from '../../domain/statement-import/buildStatementImportReview'
+import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFormLine'
-import { isStatementImportSettlementBatchAccount } from './statementImportEligibility'
 
 /**
  * 明細取込画面の1行ごとの入力状態と、その操作(計画Issue #151、docs/domain/statement-import.md 1.5)。
- * 取引先は費用・収益の科目の行だけ、精算バッチは一時勘定の行だけ、既定の世帯メンバーを持つ科目の行は
+ * 取引先は費用・収益の科目の行だけ、精算バッチは立替金・未払金の行だけ、既定の世帯メンバーを持つ科目の行は
  * 世帯メンバーを変えられない、という制約をここに集め、行ごとの変更と一括設定が同じ規則を通るようにする。
  * DB・DOM非依存の純粋関数。
  */
@@ -87,7 +87,7 @@ export function resolveEligibleCounterpartyId(
 
 export function isTaggableAccountId(accountId: number | null, accounts: readonly Account[]): boolean {
   const account = findAccount(accounts, accountId)
-  return account !== undefined && isStatementImportSettlementBatchAccount(account)
+  return account !== undefined && isSettlementBatchTaggableAccount(account)
 }
 
 /** 科目に既定の世帯メンバーがあれば、明細側では変えられない(docs/domain/household-members.md 1.2)。 */

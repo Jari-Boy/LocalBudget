@@ -17,7 +17,7 @@ import type { JournalEntryDraft } from '../../domain/journal/JournalEntryDraft'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import { filterJournalEntries } from '../../domain/journal/filterJournalEntries'
-import { SettlementBatchOnNonTemporaryAccountError } from '../../domain/journal/SettlementBatchOnNonTemporaryAccountError'
+import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import type { JournalEntryLinkGroup, JournalEntryLinkGroupMembership } from '../../domain/journal-link-group/JournalEntryLinkGroup'
 import type { JournalEntryLinkGroupRepository } from '../../domain/journal-link-group/JournalEntryLinkGroupRepository'
@@ -388,7 +388,7 @@ export function JournalScreen(props: JournalScreenProps) {
     if (err instanceof UnbalancedJournalEntryError) {
       return err.message.includes('at least 2 lines') ? t('insufficientLinesError') : t('unbalancedError')
     }
-    if (err instanceof SettlementBatchOnNonTemporaryAccountError) return t('settlementBatchOnNonTemporaryAccountError')
+    if (err instanceof SettlementBatchOnNonAdvanceAccountError) return t('settlementBatchOnNonAdvanceAccountError')
     if (err instanceof RecurringTransactionHouseholdMemberRequiredError) return '起票者を選んでください'
     return fallback
   }

@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest'
 import {
   isStatementImportCounterAccountEligible,
   isStatementImportEligibleAccount,
-  isStatementImportSettlementBatchAccount,
 } from './statementImportEligibility'
 
 function account(overrides: Partial<Parameters<typeof isStatementImportEligibleAccount>[0]> = {}) {
@@ -63,18 +62,5 @@ describe('isStatementImportCounterAccountEligible', () => {
   it('それ以外のシステム管理科目(初期残高・残高調整等)は相手科目の候補にならない', () => {
     expect(isStatementImportCounterAccountEligible(counter({ category: 'equity', isSystemManaged: true }))).toBe(false)
     expect(isStatementImportCounterAccountEligible(counter({ category: 'expense', isSystemManaged: true }))).toBe(false)
-  })
-})
-
-describe('isStatementImportSettlementBatchAccount', () => {
-  it('精算バッチを付けられるのは、システム管理の立替金(資産)・未払金(負債)だけ', () => {
-    expect(isStatementImportSettlementBatchAccount(counter({ category: 'asset', isReconcilable: false, isSystemManaged: true }))).toBe(true)
-    expect(isStatementImportSettlementBatchAccount(counter({ category: 'liability', isReconcilable: false, isSystemManaged: true }))).toBe(true)
-  })
-
-  it('利用者が作った資産・負債科目(有価証券など、照合しない科目を含む)には付けられない', () => {
-    expect(isStatementImportSettlementBatchAccount(counter({ category: 'asset', isReconcilable: false }))).toBe(false)
-    expect(isStatementImportSettlementBatchAccount(counter({ category: 'liability', isReconcilable: false }))).toBe(false)
-    expect(isStatementImportSettlementBatchAccount(counter({ category: 'asset', isReconcilable: true }))).toBe(false)
   })
 })

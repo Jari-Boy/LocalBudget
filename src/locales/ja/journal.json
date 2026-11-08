@@ -31,7 +31,7 @@
   "negativeAmountError": "金額には1以上の整数を入力してください。",
   "unbalancedError": "貸借が一致していません。金額を確認してください。",
   "insufficientLinesError": "仕訳には2行以上の明細が必要です。",
-  "settlementBatchOnNonTemporaryAccountError": "精算バッチのタグが付いた明細の科目は、立替金・未払金などの一時勘定のままにしてください。",
+  "settlementBatchOnNonAdvanceAccountError": "精算バッチのタグが付いた明細の科目は、立替金・未払金のままにしてください。",
   "confirmError": "確定に失敗しました。もう一度お試しください。",
   "draftListTitle": "下書き一覧",
   "draftListEmpty": "保存されている下書きはありません",

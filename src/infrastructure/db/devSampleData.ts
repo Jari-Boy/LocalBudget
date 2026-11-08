@@ -57,12 +57,12 @@ export const DEV_SAMPLE_HOUSEHOLD_MEMBERS: readonly { name: string }[] = [{ name
  */
 export const DEV_SAMPLE_SETTLEMENT_BATCHES: readonly {
   name: string
-  type: 'expense_splitting' | 'installment'
+  type: 'expense_splitting'
   counterpartyName?: string
 }[] = [
   { name: '6月飲み会の割勘', type: 'expense_splitting' },
   { name: '7月生活費の割勘', type: 'expense_splitting' },
-  { name: 'イオンの後払い分', type: 'installment', counterpartyName: 'イオン' },
+  { name: 'イオンの後払い分', type: 'expense_splitting', counterpartyName: 'イオン' },
 ] as const
 
 /**

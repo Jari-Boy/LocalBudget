@@ -5,7 +5,7 @@ CREATE TABLE settlement_batches (
   id               INTEGER PRIMARY KEY,
   name             TEXT NOT NULL,
   type             TEXT NOT NULL
-    CHECK (type IN ('expense_splitting', 'installment')),
+    CHECK (type IN ('expense_splitting')),
   -- 世帯外の相手との割勘バッチにのみ設定する(docs/domain/settlement.md参照)。
   -- 世帯メンバー間のバッチはhousehold_member_idが明細行側に既にあるためnullのまま。
   counterparty_id  INTEGER REFERENCES counterparties(id),

@@ -32,19 +32,5 @@ export function isStatementImportCounterAccountEligible(account: {
   isReconcilable: boolean | null
   isSystemManaged: boolean
 }): boolean {
-  return !account.isSystemManaged || isStatementImportSettlementBatchAccount(account)
-}
-
-/**
- * 明細取込画面で精算バッチを付けられる相手科目か(計画Issue #151)。モックアップと計画Issueの通り
- * 「立替金・未払金の行だけ」とするため、割勘の一時勘定(システム管理で、照合しない資産・負債)に限る。
- * リポジトリの検証(照合しない資産・負債ならタグを付けられる、docs/domain/settlement.md)より狭い、
- * 取込画面の入力上の制限である。利用者が作った有価証券などの科目には付けられない。
- */
-export function isStatementImportSettlementBatchAccount(account: {
-  category: AccountCategory
-  isReconcilable: boolean | null
-  isSystemManaged: boolean
-}): boolean {
-  return account.isSystemManaged && isSettlementBatchTaggableAccount(account)
+  return !account.isSystemManaged || isSettlementBatchTaggableAccount(account)
 }

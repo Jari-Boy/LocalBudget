@@ -14,7 +14,7 @@ import { runMigrations } from './migrations'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
-import { SettlementBatchOnNonTemporaryAccountError } from '../../domain/journal/SettlementBatchOnNonTemporaryAccountError'
+import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 
 let db: Database
 let repository: SqlJsJournalEntryRepository
@@ -60,6 +60,7 @@ beforeEach(async () => {
     category: 'liability',
     name: '未払金',
     isReconcilable: false,
+    isSystemManaged: true,
   }).id
 })
 
@@ -893,8 +894,8 @@ describe('仕訳コメント(comment、計画Issue #144)', () => {
   })
 })
 
-describe('精算バッチタグは一時勘定の行にのみ設定できる(計画Issue #144)', () => {
-  it('一時勘定(未払金)の行にはタグを設定して作成できる', () => {
+describe('精算バッチタグは割勘の一時勘定(システム管理の立替金・未払金)の行にのみ設定できる(計画Issue #144・#167)', () => {
+  it('システム管理の未払金の行にはタグを設定して作成できる', () => {
     const batchId = insertSettlementBatch(db, 'バッチ')
     const created = repository.create({
       householdMemberId: memberId,
@@ -907,7 +908,27 @@ describe('精算バッチタグは一時勘定の行にのみ設定できる(計
     expect(created.lines.map((line) => line.settlementBatchId)).toEqual([null, batchId])
   })
 
-  it('費用科目の行にタグを設定して作成しようとすると、書き込まずSettlementBatchOnNonTemporaryAccountErrorを投げる', () => {
+  it('利用者が作った一時勘定(照合しない負債)の行にタグを設定した作成は、書き込まずSettlementBatchOnNonAdvanceAccountErrorを投げる', () => {
+    const batchId = insertSettlementBatch(db, 'バッチ')
+    const cardPayableAccountId = new SqlJsAccountRepository(db).create({
+      category: 'liability',
+      name: '未払金(カード)',
+      isReconcilable: false,
+    }).id
+    expect(() =>
+      repository.create({
+        householdMemberId: memberId,
+        entryDate: '2026-07-01',
+        lines: [
+          { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+          { accountId: cardPayableAccountId, side: 'credit', amount: 1000, settlementBatchId: batchId },
+        ],
+      }),
+    ).toThrow(SettlementBatchOnNonAdvanceAccountError)
+    expect(repository.findAll()).toHaveLength(0)
+  })
+
+  it('費用科目の行にタグを設定して作成しようとすると、書き込まずSettlementBatchOnNonAdvanceAccountErrorを投げる', () => {
     const batchId = insertSettlementBatch(db, 'バッチ')
     expect(() =>
       repository.create({
@@ -918,7 +939,7 @@ describe('精算バッチタグは一時勘定の行にのみ設定できる(計
           { accountId: cashAccountId, side: 'credit', amount: 1000 },
         ],
       }),
-    ).toThrow(SettlementBatchOnNonTemporaryAccountError)
+    ).toThrow(SettlementBatchOnNonAdvanceAccountError)
     expect(repository.findAll()).toHaveLength(0)
   })
 
@@ -934,7 +955,7 @@ describe('精算バッチタグは一時勘定の行にのみ設定できる(計
           { accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
         ],
       }),
-    ).toThrow(SettlementBatchOnNonTemporaryAccountError)
+    ).toThrow(SettlementBatchOnNonAdvanceAccountError)
   })
 
   it('updateで一時勘定以外の行にタグを設定しようとすると拒否し、既存の内容を変更しない', () => {
@@ -957,7 +978,7 @@ describe('精算バッチタグは一時勘定の行にのみ設定できる(計
           { id: created.lines[1].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
         ],
       }),
-    ).toThrow(SettlementBatchOnNonTemporaryAccountError)
+    ).toThrow(SettlementBatchOnNonAdvanceAccountError)
     expect(repository.findById(created.id)?.memo).toBe('更新前')
   })
 })

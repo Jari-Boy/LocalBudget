@@ -1,9 +1,8 @@
 /**
- * 精算バッチの種別(計画Issue #133)。'expense_splitting'は割勘、'installment'は分割払い。
- * 列挙値は現時点で判明しているユースケースのみ。将来増える可能性があるため実装時に調整してよい
- * (docs/domain/settlement.md参照)。
+ * 精算バッチの種別(計画Issue #133)。'expense_splitting'(割勘)のみ。分割払い('installment')は
+ * 精算バッチの対象を立替金・未払金に絞った際に廃止した(計画Issue #167、docs/domain/settlement.md参照)。
  */
-export type SettlementBatchType = 'expense_splitting' | 'installment'
+export type SettlementBatchType = 'expense_splitting'
 
 export interface SettlementBatch {
   id: number

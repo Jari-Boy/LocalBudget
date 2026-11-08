@@ -2,15 +2,15 @@ import type { AccountCategory } from '../account/Account'
 
 /**
  * 精算バッチのタグ(journal_lines.settlement_batch_id)を設定できる明細行の科目かどうかを判定する
- * (計画Issue #144)。タグの対象は一時勘定、すなわちis_reconcilable = falseの資産・負債科目
- * (立替金・未払金・未収金等、docs/domain/settlement.md 1.4)に限る。口座科目(is_reconcilable
- * = true)や損益科目に付けても未精算残高の集計(calculateSettlementBatchBalance)に載らず、
- * 意味のないタグが残るだけになるため、UI(選択肢の出し分け)とRepository(書き込み時検証)の
- * 両方でこの判定を共有する。
+ * (計画Issue #144、#167で対象を絞り込み)。タグの対象は割勘の一時勘定、すなわちseedAdvanceAccountsが
+ * 投入するシステム管理の立替金(資産)・未払金(負債)に限る(docs/domain/settlement.md 1.7)。
+ * システム管理の資産・負債科目はこの2つだけである(初期残高は純資産)。精算画面が残高を見るのも
+ * この2科目だけのため、他の科目に付けたタグはどこにも表示されない。UI(選択肢の出し分け)と
+ * Repository(書き込み時検証)の両方でこの判定を共有する。
  */
 export function isSettlementBatchTaggableAccount(account: {
   category: AccountCategory
-  isReconcilable: boolean | null
+  isSystemManaged: boolean
 }): boolean {
-  return (account.category === 'asset' || account.category === 'liability') && account.isReconcilable === false
+  return (account.category === 'asset' || account.category === 'liability') && account.isSystemManaged
 }
