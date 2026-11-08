@@ -16,7 +16,10 @@ export interface RelatedEntriesSectionProps {
   onRemove: (groupId: number, entryId: number) => void
   /** 別のグループへ移す。targetGroupId が null のときは新しいグループを作る */
   onMove: (sourceGroupId: number, targetGroupId: number | null, entryId: number) => void
+  /** 既存のグループへ(なければ新規に)合流させて追加する */
   onAdd: (entryId: number) => void
+  /** 既存のグループには合流せず、この仕訳と選んだ仕訳で新しいグループを作る */
+  onAddToNewGroup: (entryId: number) => void
 }
 
 const NEW_GROUP = 'new'
@@ -27,7 +30,7 @@ const debitTotal = (entry: JournalEntry) =>
 /**
  * 仕訳の詳細の最下部に常に出す「関連仕訳」(計画Issue #152)。グループ単位で表示し、
  * グループ名の変更・解除・別グループへの移動・追加ができる。追加は、絞り込みパネルを開いた
- * ポップアップで条件を絞って選ぶ。ボタン起点のダイアログ(計画Issue #138)を置き換えた。
+ * ポップアップで条件を絞って選ぶ。「+ 新しいグループ」は既存グループに合流せず、新しいグループを作って追加する。ボタン起点のダイアログ(計画Issue #138)を置き換えた。
  */
 export function RelatedEntriesSection({
   groups,
@@ -38,10 +41,12 @@ export function RelatedEntriesSection({
   onRemove,
   onMove,
   onAdd,
+  onAddToNewGroup,
 }: RelatedEntriesSectionProps) {
-  const [isPopupOpen, setIsPopupOpen] = useState(false)
+  const [popupMode, setPopupMode] = useState<'join' | 'new' | null>(null)
   const [filter, setFilter] = useState<JournalEntryFilter>({})
-  const candidates = isPopupOpen ? findCandidates(filter) : []
+  const candidates = popupMode !== null ? findCandidates(filter) : []
+  const togglePopup = (mode: 'join' | 'new') => setPopupMode((current) => (current === mode ? null : mode))
 
   return (
     <section id="related-entries" aria-label="関連仕訳" className="related-entries">
@@ -110,13 +115,25 @@ export function RelatedEntriesSection({
         <button
           type="button"
           className="related-entries__add-button"
-          aria-expanded={isPopupOpen}
-          onClick={() => setIsPopupOpen((open) => !open)}
+          aria-expanded={popupMode === 'join'}
+          onClick={() => togglePopup('join')}
         >
           + 関連付ける仕訳を追加
         </button>
-        {isPopupOpen && (
-          <div role="dialog" aria-label="関連付ける仕訳を選ぶ" className="related-entries__popup">
+        <button
+          type="button"
+          className="related-entries__add-button"
+          aria-expanded={popupMode === 'new'}
+          onClick={() => togglePopup('new')}
+        >
+          + 新しいグループ
+        </button>
+        {popupMode !== null && (
+          <div
+            role="dialog"
+            aria-label={popupMode === 'new' ? '新しいグループに関連付ける仕訳を選ぶ' : '関連付ける仕訳を選ぶ'}
+            className="related-entries__popup"
+          >
             <JournalFilterPanel filter={filter} onChange={setFilter} options={filterOptions} resultCount={candidates.length} />
             <div className="related-entries__candidates">
               {candidates.map((entry) => (
@@ -125,8 +142,9 @@ export function RelatedEntriesSection({
                   type="button"
                   className="related-entries__candidate"
                   onClick={() => {
-                    onAdd(entry.id)
-                    setIsPopupOpen(false)
+                    if (popupMode === 'new') onAddToNewGroup(entry.id)
+                    else onAdd(entry.id)
+                    setPopupMode(null)
                   }}
                 >
                   <span>
@@ -138,7 +156,7 @@ export function RelatedEntriesSection({
               {candidates.length === 0 && <p className="related-entries__empty">条件に合う仕訳はありません</p>}
             </div>
             <div className="related-entries__popup-actions">
-              <button type="button" className="related-entries__add-button" onClick={() => setIsPopupOpen(false)}>
+              <button type="button" className="related-entries__add-button" onClick={() => setPopupMode(null)}>
                 閉じる
               </button>
             </div>

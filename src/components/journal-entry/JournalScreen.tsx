@@ -76,7 +76,13 @@ export interface JournalScreenProps {
   journalEntryLinkGroupRepository: MaybeAsync<
     Pick<
       JournalEntryLinkGroupRepository,
-      'findAllMemberships' | 'findAllGroups' | 'joinOrCreateGroups' | 'renameGroup' | 'removeMember' | 'moveMember'
+      | 'findAllMemberships'
+      | 'findAllGroups'
+      | 'createGroup'
+      | 'joinOrCreateGroups'
+      | 'renameGroup'
+      | 'removeMember'
+      | 'moveMember'
     >
   >
   accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll'>>
@@ -961,6 +967,11 @@ export function JournalScreen(props: JournalScreenProps) {
                   }
                   onAdd={(entryId) =>
                     void relationAction(() => journalEntryLinkGroupRepository.joinOrCreateGroups([selectedEntry.id], [entryId]))
+                  }
+                  onAddToNewGroup={(entryId) =>
+                    void relationAction(async () => {
+                      await journalEntryLinkGroupRepository.createGroup([selectedEntry.id, entryId])
+                    })
                   }
                 />
               )}

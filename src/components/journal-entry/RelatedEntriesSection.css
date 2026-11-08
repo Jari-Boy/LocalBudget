@@ -97,6 +97,8 @@
 
 .related-entries__add {
   position: relative;
+  display: flex;
+  gap: 8px;
 }
 
 .related-entries__popup {

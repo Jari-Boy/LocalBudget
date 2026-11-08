@@ -143,6 +143,7 @@ function setup(overrides: Partial<{ entries: JournalEntry[]; drafts: JournalEntr
       ]),
       findAllGroups: vi.fn(async () => [{ id: 5, name: '旅行の件', createdAt: '' }]),
       joinOrCreateGroups: vi.fn(async () => undefined),
+      createGroup: vi.fn(async () => ({ id: 6, name: null, createdAt: '' })),
       renameGroup: vi.fn(async () => undefined),
       removeMember: vi.fn(async () => undefined),
       moveMember: vi.fn(async () => undefined),
@@ -320,6 +321,19 @@ describe('JournalScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /旅行の立替/ }))
     fireEvent.click(within(detail()).getByRole('button', { name: /割勘の夕食.*を解除/ }))
     await waitFor(() => expect(props.journalEntryLinkGroupRepository.removeMember).toHaveBeenCalledWith(5, 4))
+  })
+
+  it('関連仕訳の「+ 新しいグループ」で仕訳を選ぶと、既存グループに合流せず新しいグループを作る', async () => {
+    const props = setup()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: /旅行の立替/ }))
+    fireEvent.click(within(detail()).getByRole('button', { name: '+ 新しいグループ' }))
+    const popup = within(detail()).getByRole('dialog', { name: '新しいグループに関連付ける仕訳を選ぶ' })
+    fireEvent.click(within(popup).getAllByRole('button', { name: /ランチ/ })[0])
+    await waitFor(() =>
+      expect(props.journalEntryLinkGroupRepository.createGroup).toHaveBeenCalledWith([expect.any(Number), expect.any(Number)]),
+    )
+    expect(props.journalEntryLinkGroupRepository.joinOrCreateGroups).not.toHaveBeenCalled()
   })
 
   it('新規仕訳で保存して続けて入力すると、作成して空の新しい仕訳が開く', async () => {
