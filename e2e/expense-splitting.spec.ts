@@ -152,7 +152,14 @@ function findEntryItem(page: Page, exactMemo: string) {
  * 同じだが、対象画面のマークアップがul/liではなくtableのため別関数として分ける。
  */
 function findJournalEntryListRow(page: Page, exactMemo: string) {
-  return page.getByRole('row').filter({ has: page.getByText(exactMemo, { exact: true }) })
+  return page.locator('.journal-result-list__row').filter({ has: page.getByText(exactMemo, { exact: true }) })
+}
+
+/** 仕訳画面(計画Issue #152)の一覧から、摘要が完全一致する仕訳を選んで詳細に切り替える */
+async function openEntryInJournalScreen(page: Page, exactMemo: string) {
+  await page.getByRole('link', { name: '仕訳', exact: true }).click()
+  await findJournalEntryListRow(page, exactMemo).click()
+  await expect(page.getByRole('region', { name: '仕訳の詳細' }).getByLabel('摘要(任意)')).toHaveValue(exactMemo)
 }
 
 /**
@@ -318,40 +325,33 @@ test.describe('割勘起票', () => {
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
     // 仕訳一覧(確認専用画面)から元仕訳の詳細画面に遷移し、割勘の履歴が表示されることを確認
-    await page.getByRole('link', { name: '仕訳', exact: true }).click()
-    await page.getByRole('link', { name: '仕訳一覧', exact: true }).click()
-    const originalItem = findJournalEntryListRow(page, '世帯メンバー間割勘テスト用の食事代')
-    await originalItem.getByRole('button', { name: '詳細を見る' }).click()
-    await expect(page.getByText('この支出から生まれた割勘')).toBeVisible()
+    await openEntryInJournalScreen(page, '世帯メンバー間割勘テスト用の食事代')
+    await expect(page.getByText('この支出から生まれた割勘').first()).toBeVisible()
     // 割勘仕訳は「この支出から生まれた割勘」(履歴trail)と「関連する仕訳」(関連仕訳グループの
     // 合算一覧、計画Issue #138)の両方に表示されうるため、.first()で曖昧性を解消する
     await expect(page.getByText('世帯メンバー間割勘テスト用の食事代の割勘').first()).toBeVisible()
   })
 
-  test('元仕訳の詳細画面で関連仕訳ダイアログを開き、一覧の行をクリックすると割勘仕訳の詳細画面に遷移する(計画Issue #138、UIレビューで指摘された実機不具合の回帰確認)', async ({ page }) => {
+  test('元仕訳の詳細の関連仕訳から割勘仕訳を選ぶと、その仕訳の詳細に切り替わる(計画Issue #138・#152、UIレビューで指摘された実機不具合の回帰確認)', async ({ page }) => {
     await page.goto('/')
-    const data = await setupBaseData(page, '26/8生活費割勘(関連仕訳ダイアログ遷移確認)')
-    await createOriginalExpenseEntry(page, data, '関連仕訳ダイアログ遷移確認用の食事代', 1000)
+    const data = await setupBaseData(page, '26/8生活費割勘(関連仕訳遷移確認)')
+    await createOriginalExpenseEntry(page, data, '関連仕訳遷移確認用の食事代', 1000)
 
-    await openSplittingForm(page, data, '関連仕訳ダイアログ遷移確認用の食事代')
+    await openSplittingForm(page, data, '関連仕訳遷移確認用の食事代')
     await checkHouseholdMember(page, '割勘相手Bさん')
     await page.getByRole('button', { name: '計算する' }).click()
     await page.getByRole('button', { name: '割勘を確定する' }).click()
     await waitForJournalEntryCount(page, 2)
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
 
-    await page.getByRole('link', { name: '仕訳', exact: true }).click()
-    await page.getByRole('link', { name: '仕訳一覧', exact: true }).click()
-    const originalItem = findJournalEntryListRow(page, '関連仕訳ダイアログ遷移確認用の食事代')
-    await originalItem.getByRole('button', { name: '詳細を見る' }).click()
+    await openEntryInJournalScreen(page, '関連仕訳遷移確認用の食事代')
 
-    await page.getByRole('button', { name: /^関連仕訳/ }).click()
-    const dialog = page.getByRole('dialog')
-    await expect(dialog).toBeVisible()
-    await dialog.getByText('関連仕訳ダイアログ遷移確認用の食事代の割勘', { exact: true }).click()
+    const related = page.getByRole('region', { name: '関連仕訳' })
+    await related.getByRole('button', { name: /関連仕訳遷移確認用の食事代の割勘/ }).first().click()
 
-    await expect(dialog).not.toBeVisible()
-    await expect(page.getByLabel('摘要(任意)')).toHaveValue('関連仕訳ダイアログ遷移確認用の食事代の割勘')
+    await expect(page.getByRole('region', { name: '仕訳の詳細' }).getByLabel('摘要(任意)')).toHaveValue(
+      '関連仕訳遷移確認用の食事代の割勘',
+    )
   })
 
   test('世帯外の相手との割勘を起票できる', async ({ page }) => {
@@ -495,21 +495,16 @@ test.describe('割勘起票', () => {
 
     // 両方の元仕訳の詳細画面から、同じ1件の割勘仕訳への履歴を辿れることを確認
     await page.getByRole('link', { name: '仕訳', exact: true }).click()
-    await page.getByRole('link', { name: '仕訳一覧', exact: true }).click()
-    const splitItem = findJournalEntryListRow(page, '2件の支出の割勘')
-    await expect(splitItem).toBeVisible()
+    await expect(findJournalEntryListRow(page, '2件の支出の割勘')).toBeVisible()
 
     // 割勘仕訳は「この支出から生まれた割勘」(履歴trail)と「関連する仕訳」(関連仕訳グループの
     // 合算一覧、計画Issue #138)の両方に表示されうるため、.first()で曖昧性を解消する
-    const entry1Item = findJournalEntryListRow(page, '複数選択テスト用の食事代1')
-    await entry1Item.getByRole('button', { name: '詳細を見る' }).click()
-    await expect(page.getByText('この支出から生まれた割勘')).toBeVisible()
+    await findJournalEntryListRow(page, '複数選択テスト用の食事代1').click()
+    await expect(page.getByText('この支出から生まれた割勘').first()).toBeVisible()
     await expect(page.getByText('2件の支出の割勘', { exact: true }).first()).toBeVisible()
-    await page.getByRole('button', { name: '戻る' }).click()
 
-    const entry2Item = findJournalEntryListRow(page, '複数選択テスト用の食事代2')
-    await entry2Item.getByRole('button', { name: '詳細を見る' }).click()
-    await expect(page.getByText('この支出から生まれた割勘')).toBeVisible()
+    await findJournalEntryListRow(page, '複数選択テスト用の食事代2').click()
+    await expect(page.getByText('この支出から生まれた割勘').first()).toBeVisible()
     await expect(page.getByText('2件の支出の割勘', { exact: true }).first()).toBeVisible()
   })
 

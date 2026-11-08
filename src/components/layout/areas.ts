@@ -1,7 +1,7 @@
 /**
  * サイドナビの5領域と、領域内のタブ(旧ハブ画面の入口)の定義(計画Issue #150)。
  * 各領域は「入口のパス」と、その領域に属するパスの接頭辞(prefixes)を持つ。
- * 定期取引のルールはマスタ領域のタブ(/master/recurring)に置き、提案の確認は仕訳領域のタブに置く
+ * 定期取引のルールはマスタ領域のタブ(/master/recurring)に置き、提案の確認は仕訳画面内のタブに置く
  * (計画Issue #154で、ルールの画面を旧/journal/recurring/rulesからマスタ配下へ移した)。
  */
 export type AreaKey = 'import' | 'journal' | 'split' | 'master' | 'analysis'
@@ -21,16 +21,8 @@ export interface Area {
 
 export const AREAS: Area[] = [
   { key: 'import', to: '/journal/create/import', prefixes: ['/journal/create/import'], tabs: [] },
-  {
-    key: 'journal',
-    to: '/journal/entries',
-    prefixes: ['/journal/entries', '/journal/create/manual', '/journal/recurring/proposals'],
-    tabs: [
-      { labelKey: 'entries', to: '/journal/entries' },
-      { labelKey: 'manualEntry', to: '/journal/create/manual' },
-      { labelKey: 'proposals', to: '/journal/recurring/proposals' },
-    ],
-  },
+  // 仕訳領域の「仕訳一覧」「下書き」「定期の確認」は、画面内のタブにした(計画Issue #152)
+  { key: 'journal', to: '/journal/entries', prefixes: ['/journal/entries'], tabs: [] },
   {
     key: 'split',
     to: '/journal/splitting/new',

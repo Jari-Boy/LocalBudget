@@ -96,10 +96,9 @@ describe('AppShell', () => {
     expect(within(tabs).getByRole('link', { name: '勘定科目' })).toHaveAttribute('aria-current', 'page')
   })
 
-  it('仕訳領域のタブ帯から定期取引の提案へ、マスタ領域のタブ帯から定期取引のルールへ到達できる', () => {
-    renderShell('/journal/recurring/proposals')
-    const journalTabs = screen.getByRole('navigation', { name: '領域内のタブ' })
-    expect(within(journalTabs).getByRole('link', { name: '定期取引の確認' })).toHaveAttribute('href', '/journal/recurring/proposals')
+  it('仕訳領域には領域タブ帯が無く(画面内のタブにした)、マスタ領域のタブ帯から定期取引のルールへ到達できる', () => {
+    renderShell('/journal/entries')
+    expect(screen.queryByRole('navigation', { name: '領域内のタブ' })).not.toBeInTheDocument()
     cleanup()
     renderShell('/master/recurring')
     const masterTabs = screen.getByRole('navigation', { name: '領域内のタブ' })

@@ -1,0 +1,221 @@
+/* 仕訳の詳細パネルの編集部分(計画Issue #152)。値はdesign/tokens.cssのトークンを使う。 */
+.journal-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.journal-editor__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.journal-editor__field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.journal-editor__field--date {
+  flex: 1 1 120px;
+}
+
+.journal-editor__field--memo {
+  flex: 3 1 220px;
+}
+
+.journal-editor__field--bookkeeper {
+  flex: 0 1 90px;
+}
+
+.journal-editor__field--comment {
+  flex: 1 1 100%;
+}
+
+.journal-editor__label {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.journal-editor__bookkeeper {
+  min-height: var(--control-height);
+  display: flex;
+  align-items: center;
+  font-size: var(--font-size-base);
+}
+
+.journal-editor__control {
+  font: inherit;
+  font-size: var(--font-size-base);
+  min-height: var(--control-height);
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  min-width: 0;
+}
+
+.journal-editor__control:disabled {
+  background: var(--color-field-subtle);
+  color: var(--color-text-muted);
+}
+
+.journal-editor__textarea {
+  padding: 6px 10px;
+  resize: vertical;
+}
+
+.journal-editor__columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.journal-editor__column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -1px 0 0 var(--color-border);
+}
+
+.journal-editor__column-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--color-field-subtle);
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 7px 7px 0 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.journal-editor__amount-text {
+  font-variant-numeric: tabular-nums;
+}
+
+.journal-editor__line {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.journal-editor__line-main {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.journal-editor__line-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.journal-editor__grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.journal-editor__static {
+  font-size: var(--font-size-base);
+  font-weight: 500;
+}
+
+.journal-editor__amount {
+  flex: 0 1 96px;
+  text-align: right;
+}
+
+.journal-editor__sub-field {
+  flex: 1 1 110px;
+  min-width: 0;
+}
+
+.journal-editor__select {
+  flex: 1 1 110px;
+  min-height: var(--control-height-sm);
+  font-size: var(--font-size-sm);
+  padding: 0 6px;
+  background: var(--color-field-subtle);
+  border-color: transparent;
+}
+
+.journal-editor__locked {
+  flex: 1 1 110px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.journal-editor__icon-button {
+  font: inherit;
+  flex: 0 0 auto;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.journal-editor__icon-button:hover:not(:disabled) {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.journal-editor__icon-button:disabled {
+  color: var(--color-border-strong);
+  cursor: default;
+}
+
+.journal-editor__small-button {
+  font: inherit;
+  font-size: var(--font-size-sm);
+  min-height: var(--control-height-sm);
+  padding: 0 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.journal-editor__add {
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  min-height: var(--control-height);
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  text-align: left;
+  cursor: pointer;
+}
+
+.journal-editor__add:hover {
+  background: var(--color-hover);
+}
+
+.journal-editor__balance {
+  align-self: flex-end;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.journal-editor__balance--off {
+  color: var(--color-danger);
+}

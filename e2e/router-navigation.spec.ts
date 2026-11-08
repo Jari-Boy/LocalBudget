@@ -93,7 +93,7 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
     await expect(page).toHaveURL(/#\/journal\/splitting\/new$/)
 
     await page.goto('/#/journal/recurring')
-    await expect(page).toHaveURL(/#\/journal\/recurring\/proposals$/)
+    await expect(page).toHaveURL(/#\/journal\/entries\?tab=proposals$/)
   })
 
   test('存在しないパスへ直接アクセスすると仕訳領域へリダイレクトされる', async ({ page }) => {
