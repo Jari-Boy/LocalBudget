@@ -2,17 +2,21 @@
 /**
  * 仕訳画面(JournalScreen、計画Issue #152)のコンポーネントテスト。
  * 絞り込み・結果一覧・詳細が画面遷移なしで切り替わること、保存で精算バッチのタグとコメントが
- * 保持されること、貸借が合わないと保存されないこと、確定済みの仕訳の削除(2回押し・影響の表示・
+ * 保持されること、貸借が合わないと保存されないこと、精算バッチを付けられない科目で拒否されたときの
+ * 表示(計画Issue #167)、確定済みの仕訳の削除(2回押し・影響の表示・
  * 次の行の選択)、割勘できない理由の表示、下書き(保存・確定・削除)、定期取引の提案
  * (金額修正して確定・見送り・古い提案が残っていると処理できない)、関連仕訳の表示を検証する。
  * 外部依存はインメモリの偽Repository(vi.fn)で置き換える。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import i18n from '../../infrastructure/i18n/i18n'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
 import type { JournalEntryDraft } from '../../domain/journal/JournalEntryDraft'
+import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { JournalScreen, type JournalScreenProps } from './JournalScreen'
 
 afterEach(cleanup)
@@ -205,7 +209,11 @@ function setup(overrides: Partial<{ entries: JournalEntry[]; drafts: JournalEntr
     onSplit: vi.fn(),
     onProposalsChanged: vi.fn(),
   }
-  render(<JournalScreen {...(props as unknown as JournalScreenProps)} />)
+  render(
+    <I18nextProvider i18n={i18n}>
+      <JournalScreen {...(props as unknown as JournalScreenProps)} />
+    </I18nextProvider>,
+  )
   return props
 }
 
@@ -252,6 +260,14 @@ describe('JournalScreen', () => {
     fireEvent.click(within(detail()).getByRole('button', { name: '保存' }))
     expect(await within(detail()).findByText(/貸借が一致していません/)).toBeInTheDocument()
     expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+  })
+
+  it('精算バッチを付けられない科目だとRepositoryに拒否されたら、立替金・未払金のままにするよう表示する(計画Issue #167)', async () => {
+    const props = setup()
+    await ready()
+    props.journalEntryRepository.update.mockRejectedValueOnce(new SettlementBatchOnNonAdvanceAccountError(1))
+    fireEvent.click(within(detail()).getByRole('button', { name: '保存' }))
+    expect(await within(detail()).findByText('精算バッチのタグが付いた明細の科目は、立替金・未払金のままにしてください。')).toBeInTheDocument()
   })
 
   it('削除は2回押して確定し、確認中は影響を表示して、削除後は次の仕訳を選ぶ', async () => {
