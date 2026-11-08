@@ -100,6 +100,20 @@ function makeDrafts(): JournalEntryDraft[] {
   ]
 }
 
+/** 貸借が一致している下書き(借方: 科目1、貸方: 科目2、同額) */
+function balancedDraft(id: number, memo: string): JournalEntryDraft {
+  const base = makeDrafts()[0]
+  return {
+    ...base,
+    id,
+    memo,
+    lines: [
+      { ...base.lines[0], id: id * 10, journalEntryDraftId: id, amount: 1200 },
+      { ...base.lines[1], id: id * 10 + 1, journalEntryDraftId: id, accountId: 2, amount: 1200 },
+    ],
+  }
+}
+
 function setup(overrides: Partial<{ entries: JournalEntry[]; drafts: JournalEntryDraft[] }> = {}) {
   let entries = overrides.entries ?? makeEntries()
   let drafts = overrides.drafts ?? makeDrafts()
@@ -126,7 +140,10 @@ function setup(overrides: Partial<{ entries: JournalEntry[]; drafts: JournalEntr
     delete: vi.fn(async (id: number) => {
       drafts = drafts.filter((d) => d.id !== id)
     }),
-    confirm: vi.fn(async () => entries[0]),
+    confirm: vi.fn(async (id: number) => {
+      drafts = drafts.filter((d) => d.id !== id)
+      return entries[0]
+    }),
   }
   const recurringTransactionProposalApi = {
     listPending: vi.fn(async () => proposals),
@@ -345,6 +362,31 @@ describe('JournalScreen', () => {
     // 科目を選ばずに保存しようとしても作成されない
     fireEvent.click(within(detail()).getByRole('button', { name: '保存して続けて入力' }))
     expect(props.journalEntryRepository.create).not.toHaveBeenCalled()
+  })
+
+  it('貸借が合った下書きを確定すると draft.confirm が呼ばれ、ほかに下書きが無ければ仕訳一覧タブへ戻る', async () => {
+    const props = setup({ drafts: [balancedDraft(101, '確定する下書き')] })
+    await ready()
+    fireEvent.click(screen.getByRole('tab', { name: /下書き/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /確定する下書き/ }))
+    const confirm = within(detail()).getByRole('button', { name: '確定して仕訳にする' })
+    expect(confirm).toBeEnabled()
+    fireEvent.click(confirm)
+
+    await waitFor(() => expect(props.journalEntryDraftRepository.confirm).toHaveBeenCalledWith(101))
+    await waitFor(() => expect(screen.getByRole('tab', { name: '仕訳一覧' })).toHaveAttribute('aria-selected', 'true'))
+  })
+
+  it('下書きを確定すると、下書きタブに別の下書きが残っていればその下書きが選ばれる', async () => {
+    const props = setup({ drafts: [balancedDraft(101, '確定する下書き'), balancedDraft(102, '次の下書き')] })
+    await ready()
+    fireEvent.click(screen.getByRole('tab', { name: /下書き/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /確定する下書き/ }))
+    fireEvent.click(within(detail()).getByRole('button', { name: '確定して仕訳にする' }))
+
+    await waitFor(() => expect(props.journalEntryDraftRepository.confirm).toHaveBeenCalledWith(101))
+    await waitFor(() => expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('次の下書き'))
+    expect(screen.getByRole('tab', { name: /下書き/ })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('下書きタブで下書きを選び、貸借が合わなくても下書きとして保存できる', async () => {
