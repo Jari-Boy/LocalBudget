@@ -46,7 +46,8 @@ export class SqlJsSettlementBatchRepository implements SettlementBatchRepository
     if (!current) {
       throw new Error(`settlement batch not found: ${id}`)
     }
-    this.db.run('UPDATE settlement_batches SET counterparty_id = ? WHERE id = ?', [
+    this.db.run('UPDATE settlement_batches SET name = ?, counterparty_id = ? WHERE id = ?', [
+      input.name === undefined ? current.name : input.name,
       input.counterpartyId === undefined ? current.counterpartyId : input.counterpartyId,
       id,
     ])

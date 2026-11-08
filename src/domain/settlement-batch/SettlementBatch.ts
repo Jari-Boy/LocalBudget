@@ -21,5 +21,7 @@ export interface CreateSettlementBatchInput {
 }
 
 export interface UpdateSettlementBatchInput {
+  /** バッチ名の変更(計画Issue #153の精算タブ)。省略時は変えない */
+  name?: string
   counterpartyId?: number | null
 }
