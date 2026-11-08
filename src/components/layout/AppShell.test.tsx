@@ -82,7 +82,7 @@ describe('AppShell', () => {
     expect(within(tabs).getByRole('link', { name: '精算' })).toHaveAttribute('aria-current', 'page')
   })
 
-  it('マスタ領域のタブ帯に、勘定科目・取引先・世帯メンバー・プロジェクト・定期取引の5つが並ぶ(計画Issue #154)', () => {
+  it('マスタ領域のタブ帯に、勘定科目・取引先・世帯メンバー・プロジェクト・定期取引・明細マッピングの6つが並ぶ(計画Issue #154・#151)', () => {
     renderShell('/master/accounts')
     const tabs = screen.getByRole('navigation', { name: '領域内のタブ' })
     expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual([
@@ -91,6 +91,7 @@ describe('AppShell', () => {
       '世帯メンバー',
       'プロジェクト',
       '定期取引',
+      '明細マッピング',
     ])
     expect(within(tabs).getByRole('link', { name: '勘定科目' })).toHaveAttribute('aria-current', 'page')
   })

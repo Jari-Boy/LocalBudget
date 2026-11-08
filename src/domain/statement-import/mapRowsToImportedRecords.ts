@@ -14,48 +14,70 @@ export function mapRowsToImportedRecords(
   rows: string[][],
   definition: ImportMappingDefinition,
 ): ImportedRecord[] {
+  const columns = resolveMappingColumns(rows, definition)
+  return rows.slice(definition.headerRowCount).map((row) => mapRowToImportedRecord(row, definition, columns))
+}
+
+/** 定義が指す各列の位置(0始まり)。列の解決は行ごとではなくCSV全体で一度だけ行う。 */
+export interface MappingColumns {
+  date: number
+  description: number
+  balance: number | null
+  externalId: number | null
+  amount: number | null
+  debit: number | null
+  credit: number | null
+}
+
+/** 定義の列指定をCSVの列位置に解決する。見つからない列があればMappingColumnNotFoundErrorを投げる。 */
+export function resolveMappingColumns(rows: string[][], definition: ImportMappingDefinition): MappingColumns {
   const headerRow = definition.headerRowCount > 0 ? (rows[definition.headerRowCount - 1] ?? []) : null
-  const dataRows = rows.slice(definition.headerRowCount)
+  const optional = (fieldName: string, spec: string | null) =>
+    spec == null ? null : resolveColumnIndex(fieldName, spec, headerRow)
+  const split = definition.amountMode === 'debit_credit_split'
+  return {
+    date: resolveColumnIndex('dateColumn', definition.dateColumn, headerRow),
+    description: resolveColumnIndex('descriptionColumn', definition.descriptionColumn, headerRow),
+    balance: optional('balanceColumn', definition.balanceColumn),
+    externalId: optional('externalIdColumn', definition.externalIdColumn),
+    amount: split ? null : resolveColumnIndex('amountColumn', definition.amountColumn!, headerRow),
+    debit: split ? resolveColumnIndex('debitColumn', definition.debitColumn!, headerRow) : null,
+    credit: split ? resolveColumnIndex('creditColumn', definition.creditColumn!, headerRow) : null,
+  }
+}
 
-  const dateIndex = resolveColumnIndex('dateColumn', definition.dateColumn, headerRow)
-  const descriptionIndex = resolveColumnIndex(
-    'descriptionColumn',
-    definition.descriptionColumn,
-    headerRow,
-  )
-  const balanceIndex =
-    definition.balanceColumn == null
-      ? null
-      : resolveColumnIndex('balanceColumn', definition.balanceColumn, headerRow)
-  const externalIdIndex =
-    definition.externalIdColumn == null
-      ? null
-      : resolveColumnIndex('externalIdColumn', definition.externalIdColumn, headerRow)
-
-  const amountIndex =
-    definition.amountMode === 'single_signed'
-      ? resolveColumnIndex('amountColumn', definition.amountColumn!, headerRow)
-      : null
-  const debitIndex =
-    definition.amountMode === 'debit_credit_split'
-      ? resolveColumnIndex('debitColumn', definition.debitColumn!, headerRow)
-      : null
-  const creditIndex =
-    definition.amountMode === 'debit_credit_split'
-      ? resolveColumnIndex('creditColumn', definition.creditColumn!, headerRow)
-      : null
-
-  return dataRows.map((row) => ({
-    entryDate: parseDateWithFormat(row[dateIndex], definition.dateFormat),
-    description: row[descriptionIndex]?.trim() ?? '',
+/**
+ * 1行をImportedRecordへ変換する。日付・金額が読み取れなければMappingCellErrorを投げる。
+ * 実際の取込(mapRowsToImportedRecords)とマッピング編集画面のプレビュー(previewMappingRows)が
+ * 同じ変換を共有し、結果がずれないようにするために切り出している。
+ */
+export function mapRowToImportedRecord(
+  row: string[],
+  definition: ImportMappingDefinition,
+  columns: MappingColumns,
+): ImportedRecord {
+  return {
+    entryDate: parseDateWithFormat(row[columns.date], definition.dateFormat),
+    description: row[columns.description]?.trim() ?? '',
     amount:
-      amountIndex !== null
-        ? parseAmountCell(row[amountIndex])
-        : parseAmountCell(row[creditIndex!]) - parseAmountCell(row[debitIndex!]),
-    balanceAfter: balanceIndex === null ? null : parseAmountCell(row[balanceIndex]),
-    externalId: externalIdIndex === null ? null : (row[externalIdIndex]?.trim() || null),
+      columns.amount !== null
+        ? parseAmountCell(row[columns.amount])
+        : parseAmountCell(row[columns.credit!]) - parseAmountCell(row[columns.debit!]),
+    balanceAfter: columns.balance === null ? null : parseAmountCell(row[columns.balance]),
+    externalId: columns.externalId === null ? null : (row[columns.externalId]?.trim() || null),
     isSettled: definition.isSettled,
-  }))
+  }
+}
+
+/** 日付・金額のセルが読み取れないことを表すエラー。kindで原因を区別する。 */
+export class MappingCellError extends Error {
+  readonly kind: 'invalidDate' | 'invalidAmount'
+
+  constructor(kind: 'invalidDate' | 'invalidAmount', message: string) {
+    super(message)
+    this.name = 'MappingCellError'
+    this.kind = kind
+  }
 }
 
 function resolveColumnIndex(
@@ -83,7 +105,7 @@ function parseAmountCell(raw: string | undefined): number {
   const normalized = trimmed.replace(/,/g, '')
   const value = Number(normalized)
   if (Number.isNaN(value)) {
-    throw new Error(`invalid amount cell: "${raw}"`)
+    throw new MappingCellError('invalidAmount', `invalid amount cell: "${raw}"`)
   }
   return Math.trunc(value)
 }
@@ -92,7 +114,7 @@ const DATE_TOKEN_PATTERN = /YYYY|MM|DD|M|D/g
 
 function parseDateWithFormat(raw: string | undefined, format: string): string {
   if (raw === undefined) {
-    throw new Error(`date cell is missing for format "${format}"`)
+    throw new MappingCellError('invalidDate', `date cell is missing for format "${format}"`)
   }
 
   const tokens = format.match(DATE_TOKEN_PATTERN)
@@ -109,7 +131,7 @@ function parseDateWithFormat(raw: string | undefined, format: string): string {
     .replace(/D/g, '(\\d{1,2})')
   const match = raw.trim().match(new RegExp(`^${pattern}$`))
   if (!match) {
-    throw new Error(`date "${raw}" does not match format "${format}"`)
+    throw new MappingCellError('invalidDate', `date "${raw}" does not match format "${format}"`)
   }
 
   const values: Partial<Record<'YYYY' | 'MM' | 'DD' | 'M' | 'D', string>> = {}

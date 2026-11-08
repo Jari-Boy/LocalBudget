@@ -1,4 +1,5 @@
 import type { AccountCategory } from '../../domain/account/Account'
+import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 
 /**
  * 外部明細取込の対象科目として選択肢に出してよいかどうかを判定する
@@ -18,12 +19,32 @@ export function isStatementImportEligibleAccount(account: {
 }
 
 /**
- * CSV取込レビュー画面で相手勘定科目として選択してよいかどうかを判定する。
+ * 明細取込画面で相手勘定科目として選択してよいかどうかを判定する。
  * マニュアル入力(isManualEntryEligibleAccount)と異なり、is_reconcilable = trueの科目
  * (銀行口座等)も候補に含める。docs/domain/reconciliation.md 1.2の直接記帳制限ホワイトリストに
  * external_importが含まれているため、CSV取込由来の仕訳では口座間振替のようにis_reconcilable
- * = true科目同士を相手科目として使うことが許可されている。isSystemManagedな科目のみを除外する。
+ * = true科目同士を相手科目として使うことが許可されている。システム管理の科目(初期残高・残高調整等)は
+ * 除くが、割勘の一時勘定である立替金(資産)・未払金(負債)だけは、精算バッチを付けて取り込めるように
+ * 候補に含める(計画Issue #151)。
  */
-export function isStatementImportCounterAccountEligible(account: { isSystemManaged: boolean }): boolean {
-  return !account.isSystemManaged
+export function isStatementImportCounterAccountEligible(account: {
+  category: AccountCategory
+  isReconcilable: boolean | null
+  isSystemManaged: boolean
+}): boolean {
+  return !account.isSystemManaged || isStatementImportSettlementBatchAccount(account)
+}
+
+/**
+ * 明細取込画面で精算バッチを付けられる相手科目か(計画Issue #151)。モックアップと計画Issueの通り
+ * 「立替金・未払金の行だけ」とするため、割勘の一時勘定(システム管理で、照合しない資産・負債)に限る。
+ * リポジトリの検証(照合しない資産・負債ならタグを付けられる、docs/domain/settlement.md)より狭い、
+ * 取込画面の入力上の制限である。利用者が作った有価証券などの科目には付けられない。
+ */
+export function isStatementImportSettlementBatchAccount(account: {
+  category: AccountCategory
+  isReconcilable: boolean | null
+  isSystemManaged: boolean
+}): boolean {
+  return account.isSystemManaged && isSettlementBatchTaggableAccount(account)
 }

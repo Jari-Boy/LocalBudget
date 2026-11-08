@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
+import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsImportMappingDefinitionRepository } from './SqlJsImportMappingDefinitionRepository'
 import { seedBuiltInMappingDefinitions } from './seedBuiltInMappingDefinitions'
 import { BUILT_IN_MAPPING_DEFINITIONS } from './builtInMappingDefinitions'
@@ -22,12 +23,12 @@ beforeEach(async () => {
 })
 
 describe('seedBuiltInMappingDefinitions', () => {
-  it('組み込み定義がaccount_id = NULLの汎用定義としてすべて投入される', () => {
+  it('組み込み定義が、どの科目にも紐づかない汎用定義としてすべて投入される', () => {
     seedBuiltInMappingDefinitions(db)
 
     const definitions = repository.findAll()
     expect(definitions).toHaveLength(BUILT_IN_MAPPING_DEFINITIONS.length)
-    expect(definitions.every((definition) => definition.accountId === null)).toBe(true)
+    expect(definitions.every((definition) => definition.accountIds.length === 0)).toBe(true)
   })
 
   it('楽天カードの確定/速報明細が別定義として投入され、列構成が正しい', () => {
@@ -76,7 +77,6 @@ describe('seedBuiltInMappingDefinitions', () => {
 
   it('既に同じformat_group_id・is_settledの組み込み定義が存在する場合はスキップし、それ以外の科目専用定義には影響しない', () => {
     const userDefinition = repository.create({
-      accountId: null,
       formatGroupId: 'rakuten-card',
       isSettled: true,
       label: 'ユーザーが独自にカスタマイズした楽天カード定義',
@@ -95,5 +95,19 @@ describe('seedBuiltInMappingDefinitions', () => {
     expect(rakutenCardSettled).toHaveLength(1)
     expect(rakutenCardSettled[0].id).toBe(userDefinition.id)
     expect(rakutenCardSettled[0].label).toBe('ユーザーが独自にカスタマイズした楽天カード定義')
+  })
+
+  it('科目に紐づけ済みの組み込み定義があっても、再投入で重複しない', () => {
+    const accounts = new SqlJsAccountRepository(db)
+    const cardId = accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false }).id
+    seedBuiltInMappingDefinitions(db)
+    for (const definition of repository.findAll()) repository.linkAccount(definition.id, cardId)
+
+    seedBuiltInMappingDefinitions(db)
+    seedBuiltInMappingDefinitions(db)
+
+    const definitions = repository.findAll()
+    expect(definitions).toHaveLength(BUILT_IN_MAPPING_DEFINITIONS.length)
+    expect(definitions.every((d) => d.accountIds.includes(cardId))).toBe(true)
   })
 })

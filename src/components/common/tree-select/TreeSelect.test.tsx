@@ -186,6 +186,41 @@ describe('TreeSelect', () => {
     expect(search).toHaveFocus()
   })
 
+  it('ポップアップは、overflowで切れる親の枠の中ではなく画面全体に固定して描画する(表の中でも見切れない、計画Issue #151)', () => {
+    const { container } = renderSelect()
+    fireEvent.click(trigger())
+
+    expect(container.contains(popup())).toBe(false)
+    expect(popup()).toHaveStyle({ position: 'fixed' })
+  })
+
+  it('外側のクリックで閉じる動きは、画面に固定したポップアップの中のクリックでは起きない', () => {
+    renderSelect()
+    fireEvent.click(trigger())
+
+    fireEvent.pointerDown(within(popup()).getByRole('searchbox'))
+
+    expect(popup()).toBeInTheDocument()
+  })
+
+  it('onCreateを渡すと一覧の末尾に新規追加のボタンが出て、押すと閉じてonCreateが呼ばれる(計画Issue #151)', () => {
+    const onCreate = vi.fn()
+    renderSelect({ onCreate, createLabel: '科目を新規追加' })
+    fireEvent.click(trigger())
+
+    fireEvent.click(within(popup()).getByRole('button', { name: '+ 科目を新規追加' }))
+
+    expect(onCreate).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog', { name: '科目' })).not.toBeInTheDocument()
+  })
+
+  it('onCreateを渡さなければ新規追加のボタンは出ない', () => {
+    renderSelect()
+    fireEvent.click(trigger())
+
+    expect(within(popup()).queryByRole('button', { name: /新規追加/ })).not.toBeInTheDocument()
+  })
+
   it('ボタンはlistboxのポップアップを持つことをaria-haspopupで示す', () => {
     renderSelect()
     expect(trigger()).toHaveAttribute('aria-haspopup', 'dialog')

@@ -3,7 +3,6 @@
 
 CREATE TABLE import_mapping_definitions (
   id                    INTEGER PRIMARY KEY,
-  account_id            INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
   format_group_id       TEXT NOT NULL,
   is_settled            BOOLEAN,
   label                 TEXT NOT NULL,
@@ -29,8 +28,17 @@ CREATE TABLE import_mapping_definitions (
   )
 );
 
-CREATE INDEX idx_import_mapping_definitions_account ON import_mapping_definitions(account_id);
 CREATE INDEX idx_import_mapping_definitions_format_group ON import_mapping_definitions(format_group_id);
+
+-- 定義と科目の多対多の紐づけ。制限ではなく取込時の候補の優先順位として使う
+-- (docs/domain/statement-import.md 2.1・2.3)。定義・科目のどちらを削除しても、紐づけだけが消える
+CREATE TABLE import_mapping_definition_accounts (
+  definition_id         INTEGER NOT NULL REFERENCES import_mapping_definitions(id) ON DELETE CASCADE,
+  account_id            INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  PRIMARY KEY (definition_id, account_id)
+);
+
+CREATE INDEX idx_import_mapping_definition_accounts_account ON import_mapping_definition_accounts(account_id);
 
 -- updated_at の自動更新
 CREATE TRIGGER import_mapping_definitions_set_updated_at
