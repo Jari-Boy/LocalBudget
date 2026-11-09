@@ -458,3 +458,33 @@
   border-top: 1px solid var(--color-border-soft);
   font-size: var(--font-size-sm);
 }
+
+.split-settle__field--grow {
+  flex: 2 1 180px;
+}
+
+.split-settle__field--date {
+  flex: 1 1 110px;
+}
+
+.split-settle__field--amount {
+  flex: 1 1 100px;
+}
+
+.split-settle__control--right {
+  text-align: right;
+}
+
+.split-settle__diff--warn {
+  font-weight: 600;
+  color: var(--color-warning-text);
+}
+
+.split-settle__link--grow {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.split-settle__scroll {
+  overflow-x: auto;
+}

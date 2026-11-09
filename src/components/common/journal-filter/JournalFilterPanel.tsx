@@ -31,12 +31,17 @@ export interface JournalFilterOptions {
   sourceTypes: readonly JournalFilterChoice[]
 }
 
+/** 隠せる項目(計画Issue #153。精算の候補探しでは、精算バッチで絞り込まない) */
+export type JournalFilterFieldKey = 'account' | 'counterparty' | 'project' | 'member' | 'batch' | 'source'
+
 export interface JournalFilterPanelProps {
   filter: JournalEntryFilter
   onChange: (filter: JournalEntryFilter) => void
   options: JournalFilterOptions
   /** 絞り込み後の件数。渡すと右下に表示する */
   resultCount?: number
+  /** 出さない項目。省略時はすべて出す */
+  hide?: readonly JournalFilterFieldKey[]
 }
 
 const flat = (choices: readonly JournalFilterChoice[]): TreeSelectCategory[] => [
@@ -54,8 +59,9 @@ const flat = (choices: readonly JournalFilterChoice[]): TreeSelectCategory[] => 
  * (JournalFilterPopup)の中でも使える。絞り込みの実行はドメイン層(filterJournalEntries)の責務で、
  * ここはJournalEntryFilterの生成だけを行う。
  */
-export function JournalFilterPanel({ filter, onChange, options, resultCount }: JournalFilterPanelProps) {
+export function JournalFilterPanel({ filter, onChange, options, resultCount, hide = [] }: JournalFilterPanelProps) {
   const activeCount = countActiveConditions(filter)
+  const shows = (key: JournalFilterFieldKey) => !hide.includes(key)
   const batchCategories = flat([{ value: NO_BATCH_VALUE, name: '未割当' }, ...options.batches])
 
   return (
@@ -110,63 +116,75 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount }: J
       </div>
 
       <div className="journal-filter__fields">
-        <Field label="科目">
-          <TreeSelect
-            label="科目"
-            categories={options.accountCategories}
-            value={getTreeValue(filter, 'account')}
-            onChange={(value) => onChange(setTreeValue(filter, 'account', value))}
-            allowGroupSelect
-            emptyLabel="指定なし"
-          />
-        </Field>
-        <Field label="取引先">
-          <TreeSelect
-            label="取引先"
-            categories={options.counterpartyCategories}
-            value={getTreeValue(filter, 'counterparty')}
-            onChange={(value) => onChange(setTreeValue(filter, 'counterparty', value))}
-            allowGroupSelect
-            emptyLabel="指定なし"
-          />
-        </Field>
-        <Field label="プロジェクト">
-          <TreeSelect
-            label="プロジェクト"
-            categories={options.projectCategories}
-            value={getTreeValue(filter, 'project')}
-            onChange={(value) => onChange(setTreeValue(filter, 'project', value))}
-            allowGroupSelect
-            emptyLabel="指定なし"
-          />
-        </Field>
-        <Field label="世帯メンバー">
-          <TreeSelect
-            label="世帯メンバー"
-            categories={flat(options.members)}
-            value={getSingleValue(filter, 'householdMemberIds')}
-            onChange={(value) => onChange(setSingleValue(filter, 'householdMemberIds', value))}
-            emptyLabel="指定なし"
-          />
-        </Field>
-        <Field label="精算バッチ">
-          <TreeSelect
-            label="精算バッチ"
-            categories={batchCategories}
-            value={getBatchValue(filter)}
-            onChange={(value) => onChange(setBatchValue(filter, value))}
-            emptyLabel="指定なし"
-          />
-        </Field>
-        <Field label="出どころ">
-          <TreeSelect
-            label="出どころ"
-            categories={flat(options.sourceTypes)}
-            value={getSingleValue(filter, 'sourceTypes')}
-            onChange={(value) => onChange(setSingleValue(filter, 'sourceTypes', value))}
-            emptyLabel="指定なし"
-          />
-        </Field>
+        {shows('account') && (
+          <Field label="科目">
+            <TreeSelect
+              label="科目"
+              categories={options.accountCategories}
+              value={getTreeValue(filter, 'account')}
+              onChange={(value) => onChange(setTreeValue(filter, 'account', value))}
+              allowGroupSelect
+              emptyLabel="指定なし"
+            />
+          </Field>
+        )}
+        {shows('counterparty') && (
+          <Field label="取引先">
+            <TreeSelect
+              label="取引先"
+              categories={options.counterpartyCategories}
+              value={getTreeValue(filter, 'counterparty')}
+              onChange={(value) => onChange(setTreeValue(filter, 'counterparty', value))}
+              allowGroupSelect
+              emptyLabel="指定なし"
+            />
+          </Field>
+        )}
+        {shows('project') && (
+          <Field label="プロジェクト">
+            <TreeSelect
+              label="プロジェクト"
+              categories={options.projectCategories}
+              value={getTreeValue(filter, 'project')}
+              onChange={(value) => onChange(setTreeValue(filter, 'project', value))}
+              allowGroupSelect
+              emptyLabel="指定なし"
+            />
+          </Field>
+        )}
+        {shows('member') && (
+          <Field label="世帯メンバー">
+            <TreeSelect
+              label="世帯メンバー"
+              categories={flat(options.members)}
+              value={getSingleValue(filter, 'householdMemberIds')}
+              onChange={(value) => onChange(setSingleValue(filter, 'householdMemberIds', value))}
+              emptyLabel="指定なし"
+            />
+          </Field>
+        )}
+        {shows('batch') && (
+          <Field label="精算バッチ">
+            <TreeSelect
+              label="精算バッチ"
+              categories={batchCategories}
+              value={getBatchValue(filter)}
+              onChange={(value) => onChange(setBatchValue(filter, value))}
+              emptyLabel="指定なし"
+            />
+          </Field>
+        )}
+        {shows('source') && (
+          <Field label="出どころ">
+            <TreeSelect
+              label="出どころ"
+              categories={flat(options.sourceTypes)}
+              value={getSingleValue(filter, 'sourceTypes')}
+              onChange={(value) => onChange(setSingleValue(filter, 'sourceTypes', value))}
+              emptyLabel="指定なし"
+            />
+          </Field>
+        )}
       </div>
 
       <div className="journal-filter__footer">
