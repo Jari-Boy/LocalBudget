@@ -92,8 +92,8 @@ describe('マスタの削除条件のDB制約(仕訳以外の参照)', () => {
       entryDate: '2026-11-01',
       householdMemberId: memberId,
       lines: [
-        { accountId: expenseId, side: 'debit', amount: 1000 },
-        { accountId: cashId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: expenseId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashId, side: 'credit', amount: 1000 },
       ],
     })
 

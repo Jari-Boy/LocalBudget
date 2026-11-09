@@ -16,7 +16,7 @@ function line(overrides: Partial<JournalLine> = {}): JournalLine {
     journalEntryId: 1,
     accountId: 10,
     projectId: null,
-    householdMemberId: null,
+    householdMemberId: 1,
     counterpartyId: null,
     settlementBatchId: null,
     side: 'debit',

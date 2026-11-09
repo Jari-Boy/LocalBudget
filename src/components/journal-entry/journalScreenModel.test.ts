@@ -31,7 +31,7 @@ function line(id: number, side: 'debit' | 'credit', accountId: number, amount: n
     journalEntryId: 1,
     accountId,
     projectId: null,
-    householdMemberId: null,
+    householdMemberId: 1,
     counterpartyId: null,
     settlementBatchId: null,
     side,

@@ -130,7 +130,7 @@ describe('toJournalLineInput', () => {
       side: 'credit' as const,
       amountInput: '5000',
       projectId: null,
-      householdMemberId: null,
+      householdMemberId: 3,
       counterpartyId: null,
     }
     expect(toJournalLineInput(line)).toEqual({
@@ -138,9 +138,22 @@ describe('toJournalLineInput', () => {
       side: 'credit',
       amount: 5000,
       projectId: null,
-      householdMemberId: null,
+      householdMemberId: 3,
       counterpartyId: null,
     })
+  })
+
+  it('世帯メンバーが未選択の行はnullを返す(明細行は常に世帯メンバーを持つ、計画Issue #169)', () => {
+    expect(
+      toJournalLineInput({
+        accountId: 1,
+        side: 'credit',
+        amountInput: '5000',
+        projectId: null,
+        householdMemberId: null,
+        counterpartyId: null,
+      }),
+    ).toBeNull()
   })
 
   it('科目が未選択の行はnullを返す(確定送信の対象から除外する)', () => {
@@ -170,7 +183,7 @@ describe('toJournalLineInput', () => {
   })
 
   it('金額が未入力・0以下・数値に変換できない行はnullを返す', () => {
-    const base = { accountId: 1, side: 'debit' as const, projectId: null, householdMemberId: null, counterpartyId: null }
+    const base = { accountId: 1, side: 'debit' as const, projectId: null, householdMemberId: 3, counterpartyId: null }
     expect(toJournalLineInput({ ...base, amountInput: '' })).toBeNull()
     expect(toJournalLineInput({ ...base, amountInput: '0' })).toBeNull()
     expect(toJournalLineInput({ ...base, amountInput: '-100' })).toBeNull()
@@ -276,7 +289,7 @@ describe('fromJournalLine', () => {
       journalEntryId: 1,
       accountId: 1,
       projectId: null,
-      householdMemberId: null,
+      householdMemberId: 1,
       counterpartyId: null,
       settlementBatchId: null,
       side: 'credit',
@@ -293,7 +306,7 @@ describe('行id(lineId)の保持(計画Issue #132)', () => {
     side: 'debit' as const,
     amountInput: '3000',
     projectId: null,
-    householdMemberId: null,
+    householdMemberId: 3,
     counterpartyId: null,
   }
 
@@ -304,7 +317,7 @@ describe('行id(lineId)の保持(計画Issue #132)', () => {
       side: 'debit',
       amount: 3000,
       projectId: null,
-      householdMemberId: null,
+      householdMemberId: 3,
       counterpartyId: null,
     })
   })
@@ -363,7 +376,7 @@ describe('精算バッチタグ(settlementBatchId)の保持(計画Issue #144)', 
     journalEntryId: 1,
     accountId: 1,
     projectId: null,
-    householdMemberId: null,
+    householdMemberId: 1,
     counterpartyId: null,
     settlementBatchId: 5,
     side: 'debit',
@@ -382,7 +395,7 @@ describe('精算バッチタグ(settlementBatchId)の保持(計画Issue #144)', 
       side: 'debit',
       amount: 7000,
       projectId: null,
-      householdMemberId: null,
+      householdMemberId: 1,
       counterpartyId: null,
       settlementBatchId: 5,
     })
@@ -394,7 +407,7 @@ describe('精算バッチタグ(settlementBatchId)の保持(計画Issue #144)', 
   })
 
   it('新規に追加した行(タグ未設定)は送信用に変換してもタグなしのまま扱われる', () => {
-    const newLine = { ...createEmptyJournalEntryFormLine(), accountId: 1, side: 'debit' as const, amountInput: '100' }
+    const newLine = { ...createEmptyJournalEntryFormLine(), accountId: 1, side: 'debit' as const, amountInput: '100', householdMemberId: 1 }
     const input = toJournalLineInput(newLine)
     expect(input?.settlementBatchId ?? null).toBeNull()
   })

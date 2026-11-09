@@ -21,7 +21,7 @@ export interface JournalEntryFilter {
   dateTo?: string
   /** いずれかの明細行がこの科目を含む仕訳のみを対象にする */
   accountId?: number
-  /** いずれかの明細行の実効メンバー(resolveEffectiveHouseholdMemberId)がこのメンバーと一致する仕訳のみを対象にする */
+  /** いずれかの明細行の世帯メンバーがこのメンバーと一致する仕訳のみを対象にする */
   householdMemberId?: number
   /** いずれかの明細行がこのプロジェクトを含む仕訳のみを対象にする */
   projectId?: number

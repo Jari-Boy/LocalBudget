@@ -16,7 +16,7 @@ function buildLine(overrides: Partial<JournalLine> & Pick<JournalLine, 'id' | 'a
     journalEntryId: 1,
     accountId: ACCOUNT_ID,
     projectId: null,
-    householdMemberId: null,
+    householdMemberId: 1,
     counterpartyId: null,
     settlementBatchId: BATCH_ID,
     createdAt: '2026-01-01T00:00:00.000Z',

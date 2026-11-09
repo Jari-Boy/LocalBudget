@@ -1,4 +1,5 @@
 import type { CreateJournalEntryInput } from '../journal/JournalEntry'
+import type { LineHouseholdMemberResolver } from '../journal/resolveLineHouseholdMemberId'
 import { NoBalanceDiscrepancyError } from './NoBalanceDiscrepancyError'
 
 export interface BuildBalanceAdjustmentJournalEntryInputParams {
@@ -12,6 +13,11 @@ export interface BuildBalanceAdjustmentJournalEntryInputParams {
   /** 起票者(CreateJournalEntryInput.householdMemberId、計画Issue #88)。解決は呼び出し側の責務 */
   householdMemberId: number
   memo?: string | null
+  /**
+   * 明細行の世帯メンバーの決め方(科目の既定メンバー > 指定 > 起票者、計画Issue #169)。
+   * 科目と起票者を知っている呼び出し側が createLineHouseholdMemberResolver で作って渡す
+   */
+  resolveLineHouseholdMemberId: LineHouseholdMemberResolver
 }
 
 /**
@@ -35,15 +41,25 @@ export function buildBalanceAdjustmentJournalEntryInput(
   }
 
   const amount = Math.abs(difference)
+  const target = {
+    accountId: params.targetAccountId,
+    householdMemberId: params.resolveLineHouseholdMemberId(params.targetAccountId),
+    amount,
+  }
+  const adjustment = {
+    accountId: params.adjustmentAccountId,
+    householdMemberId: params.resolveLineHouseholdMemberId(params.adjustmentAccountId),
+    amount,
+  }
   const lines =
     difference > 0
       ? [
-          { accountId: params.targetAccountId, side: 'debit' as const, amount },
-          { accountId: params.adjustmentAccountId, side: 'credit' as const, amount },
+          { ...target, side: 'debit' as const },
+          { ...adjustment, side: 'credit' as const },
         ]
       : [
-          { accountId: params.adjustmentAccountId, side: 'debit' as const, amount },
-          { accountId: params.targetAccountId, side: 'credit' as const, amount },
+          { ...adjustment, side: 'debit' as const },
+          { ...target, side: 'credit' as const },
         ]
 
   return {

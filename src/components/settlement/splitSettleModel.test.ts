@@ -104,7 +104,7 @@ describe('buildSplitHistoryRows', () => {
       journalEntryId: entryId,
       accountId,
       projectId: null,
-      householdMemberId: null,
+      householdMemberId: 1,
       counterpartyId: null,
       settlementBatchId: null,
       side,

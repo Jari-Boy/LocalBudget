@@ -23,7 +23,7 @@ export function generateFilteredBalanceSheet(
   filter: FinancialStatementFilter = {},
 ): BalanceSheet {
   const entriesAsOfDate = entries.filter((entry) => entry.entryDate <= asOfDate)
-  const lines = filterJournalLinesByFinancialStatementFilter(entriesAsOfDate, accounts, filter)
+  const lines = filterJournalLinesByFinancialStatementFilter(entriesAsOfDate, filter)
   const accountsById = new Map(accounts.map((account) => [account.id, account]))
 
   const assets = summarizeAccountsByCategory(lines, accounts, 'asset')

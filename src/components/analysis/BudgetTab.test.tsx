@@ -69,8 +69,8 @@ beforeEach(async () => {
       entryDate,
       memo,
       lines: [
-        { accountId, side: 'debit', amount },
-        { accountId: cash, side: 'credit', amount },
+        { householdMemberId: memberId, accountId, side: 'debit', amount },
+        { householdMemberId: memberId, accountId: cash, side: 'credit', amount },
       ],
     })
   entry('2026-06-10', '食費(6月)', foodId, 20000)
@@ -282,8 +282,8 @@ describe('BudgetTab(実績が負のとき)', () => {
       entryDate: '2026-07-15',
       memo: '大きな返金',
       lines: [
-        { accountId: cash, side: 'debit', amount: 9000 },
-        { accountId: transportId, side: 'credit', amount: 9000 },
+        { householdMemberId: member.id, accountId: cash, side: 'debit', amount: 9000 },
+        { householdMemberId: member.id, accountId: transportId, side: 'credit', amount: 9000 },
       ],
     })
     budgetRepository.create({ accountId: transportId, yearMonth: '2026-07', amount: 5000 })

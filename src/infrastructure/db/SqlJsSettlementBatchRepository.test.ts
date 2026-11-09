@@ -110,9 +110,9 @@ describe('delete', () => {
     db.run(`INSERT INTO journal_entries (entry_date, household_member_id) VALUES ('2026-07-01', ?)`, [memberId])
     const entryId = lastInsertRowId(db)
     db.run(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, settlement_batch_id, side, amount)
-       VALUES (?, ?, ?, 'debit', 500)`,
-      [entryId, accountId, batch.id],
+      `INSERT INTO journal_lines (journal_entry_id, account_id, household_member_id, settlement_batch_id, side, amount)
+       VALUES (?, ?, ?, ?, 'debit', 500)`,
+      [entryId, accountId, memberId, batch.id],
     )
 
     expect(() => repository.delete(batch.id)).toThrow()

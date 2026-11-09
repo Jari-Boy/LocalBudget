@@ -10,6 +10,7 @@ import type {
 } from '../../domain/journal/JournalEntryDraft'
 import type { JournalEntryDraftRepository } from '../../domain/journal/JournalEntryDraftRepository'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
+import { JournalLineHouseholdMemberRequiredError } from '../../domain/journal/JournalLineHouseholdMemberRequiredError'
 
 /**
  * 明細が仕訳化できる最小限の完成状態(科目・貸借・正の金額がすべて入力済み)かどうかを
@@ -130,16 +131,21 @@ export class SqlJsJournalEntryDraftRepository implements JournalEntryDraftReposi
       throw new Error(`journal entry draft not found: ${id}`)
     }
 
+    const completeLines = draft.lines.filter(isCompleteDraftLine)
+    if (completeLines.some((line) => line.householdMemberId === null)) {
+      throw new JournalLineHouseholdMemberRequiredError()
+    }
+
     const created = journalEntryRepository.create({
       entryDate: draft.entryDate as string,
       memo: draft.memo,
       comment: draft.comment,
       currency: draft.currency ?? undefined,
       householdMemberId: draft.householdMemberId as number,
-      lines: draft.lines.filter(isCompleteDraftLine).map((line) => ({
+      lines: completeLines.map((line) => ({
         accountId: line.accountId,
         projectId: line.projectId,
-        householdMemberId: line.householdMemberId,
+        householdMemberId: line.householdMemberId as number,
         counterpartyId: line.counterpartyId,
         side: line.side,
         amount: line.amount,

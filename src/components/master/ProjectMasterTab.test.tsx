@@ -151,8 +151,8 @@ describe('ProjectMasterTab', () => {
       entryDate: '2026-11-01',
       householdMemberId: memberId,
       lines: [
-        { accountId: expenseId, side: 'debit', amount: 1000, projectId: project.id },
-        { accountId: cashId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: expenseId, side: 'debit', amount: 1000, projectId: project.id },
+        { householdMemberId: memberId, accountId: cashId, side: 'credit', amount: 1000 },
       ],
     })
     renderTab()
@@ -187,8 +187,8 @@ describe('ProjectMasterTab', () => {
       entryDate: '2026-07-15',
       householdMemberId: memberId,
       lines: [
-        { accountId: expenseId, side: 'debit', amount: 5000, projectId: project.id },
-        { accountId: cashId, side: 'credit', amount: 5000 },
+        { householdMemberId: memberId, accountId: expenseId, side: 'debit', amount: 5000, projectId: project.id },
+        { householdMemberId: memberId, accountId: cashId, side: 'credit', amount: 5000 },
       ],
     })
     renderTab()

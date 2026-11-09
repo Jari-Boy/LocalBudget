@@ -170,6 +170,23 @@ describe('seedDevSampleData', () => {
     expect(taggedLine).toBeDefined()
   })
 
+  it('投入される全ての明細行に世帯メンバーが入っている。イオンの後払い分の支払いは、支払った当人(自分)の行になる(計画Issue #169)', () => {
+    seedDevSampleData(db)
+
+    const members = new SqlJsHouseholdMemberRepository(db).findAll()
+    const memberIds = new Set(members.map((m) => m.id))
+    const lines = journalEntryRepository.findAll().flatMap((entry) => entry.lines)
+    expect(lines.length).toBeGreaterThan(0)
+    for (const line of lines) {
+      expect(memberIds.has(line.householdMemberId)).toBe(true)
+    }
+
+    const myselfId = members.find((m) => m.name === '自分')!.id
+    const aeonRepayment = journalEntryRepository.findAll().find((e) => e.memo === 'イオンへの後払い分の支払い')!
+    const advanceLiability = accountRepository.findAll().find((a) => a.category === 'liability' && a.isSystemManaged)!
+    expect(aeonRepayment.lines.find((l) => l.accountId === advanceLiability.id)?.householdMemberId).toBe(myselfId)
+  })
+
   it('世帯メンバー間の割勘仕訳(DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES)は元仕訳と同じ関連仕訳グループに属し、「割勘の履歴」画面で辿れる状態になっている(計画Issue #139)', () => {
     seedDevSampleData(db)
 
@@ -221,8 +238,8 @@ describe('seedDevSampleData', () => {
       householdMemberId: memberId,
       entryDate: '2026-08-01',
       lines: [
-        { accountId: foodAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
 
@@ -322,8 +339,8 @@ describe('seedDevSampleData', () => {
       householdMemberId: memberId,
       entryDate: '2026-08-01',
       lines: [
-        { accountId: foodAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
 

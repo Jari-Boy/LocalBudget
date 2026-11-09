@@ -3,13 +3,17 @@
  * docs/domain/financial-statements.md 1.2の「帳簿残高が外部残高より大きければ資産を貸方に、
  * 小さければ資産を借方に」という過不足の向きに応じた借方/貸方の決定と、
  * docs/domain/reconciliation.md 1.6のsource_type='balance_adjustment'を検証する。
+ * 明細行の世帯メンバーは、科目の既定メンバー、無ければ起票者になる(計画Issue #169)。
  * DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
+import { createLineHouseholdMemberResolver } from '../journal/resolveLineHouseholdMemberId'
 import { buildBalanceAdjustmentJournalEntryInput } from './buildBalanceAdjustmentJournalEntryInput'
 import { NoBalanceDiscrepancyError } from './NoBalanceDiscrepancyError'
 
 const HOUSEHOLD_MEMBER_ID = 42
+/** 科目に既定の世帯メンバーが無い前提で、起票者を既定値にする */
+const resolveLineHouseholdMemberId = createLineHouseholdMemberResolver([], HOUSEHOLD_MEMBER_ID)
 
 describe('buildBalanceAdjustmentJournalEntryInput', () => {
   it('帳簿残高が外部残高より大きい(超過)場合は資産を貸方に、費用・残高調整を借方に減額計上する', () => {
@@ -21,14 +25,15 @@ describe('buildBalanceAdjustmentJournalEntryInput', () => {
       externalBalance: 9200,
       entryDate: '2026-08-01',
       householdMemberId: HOUSEHOLD_MEMBER_ID,
+      resolveLineHouseholdMemberId,
     })
 
     expect(input.sourceType).toBe('balance_adjustment')
     expect(input.entryDate).toBe('2026-08-01')
     expect(input.householdMemberId).toBe(HOUSEHOLD_MEMBER_ID)
     expect(input.lines).toEqual([
-      { accountId: 99, side: 'debit', amount: 800 },
-      { accountId: 1, side: 'credit', amount: 800 },
+      { accountId: 99, side: 'debit', amount: 800, householdMemberId: HOUSEHOLD_MEMBER_ID },
+      { accountId: 1, side: 'credit', amount: 800, householdMemberId: HOUSEHOLD_MEMBER_ID },
     ])
   })
 
@@ -41,12 +46,28 @@ describe('buildBalanceAdjustmentJournalEntryInput', () => {
       externalBalance: 10000,
       entryDate: '2026-08-01',
       householdMemberId: HOUSEHOLD_MEMBER_ID,
+      resolveLineHouseholdMemberId,
     })
 
     expect(input.lines).toEqual([
-      { accountId: 1, side: 'debit', amount: 300 },
-      { accountId: 99, side: 'credit', amount: 300 },
+      { accountId: 1, side: 'debit', amount: 300, householdMemberId: HOUSEHOLD_MEMBER_ID },
+      { accountId: 99, side: 'credit', amount: 300, householdMemberId: HOUSEHOLD_MEMBER_ID },
     ])
+  })
+
+  it('対象科目に既定の世帯メンバーがあれば、その行は既定値になり、調整科目の行は起票者になる(計画Issue #169)', () => {
+    const input = buildBalanceAdjustmentJournalEntryInput({
+      targetAccountId: 1,
+      adjustmentAccountId: 99,
+      bookBalance: 10000,
+      externalBalance: 9200,
+      entryDate: '2026-08-01',
+      householdMemberId: HOUSEHOLD_MEMBER_ID,
+      resolveLineHouseholdMemberId: createLineHouseholdMemberResolver([{ id: 1, householdMemberId: 7 }], HOUSEHOLD_MEMBER_ID),
+    })
+
+    expect(input.lines.find((l) => l.accountId === 1)?.householdMemberId).toBe(7)
+    expect(input.lines.find((l) => l.accountId === 99)?.householdMemberId).toBe(HOUSEHOLD_MEMBER_ID)
   })
 
   it('memoを渡した場合はそのままentryのmemoに使われる', () => {
@@ -57,6 +78,7 @@ describe('buildBalanceAdjustmentJournalEntryInput', () => {
       externalBalance: 9200,
       entryDate: '2026-08-01',
       householdMemberId: HOUSEHOLD_MEMBER_ID,
+      resolveLineHouseholdMemberId,
       memo: '原因不明差異の確定',
     })
 
@@ -72,6 +94,7 @@ describe('buildBalanceAdjustmentJournalEntryInput', () => {
         externalBalance: 10000,
         entryDate: '2026-08-01',
         householdMemberId: HOUSEHOLD_MEMBER_ID,
+        resolveLineHouseholdMemberId,
       }),
     ).toThrow(NoBalanceDiscrepancyError)
   })
@@ -85,6 +108,7 @@ describe('buildBalanceAdjustmentJournalEntryInput', () => {
       externalBalance: 9200,
       entryDate: '2026-08-01',
       householdMemberId: HOUSEHOLD_MEMBER_ID,
+      resolveLineHouseholdMemberId,
     })
 
     expect(() => assertJournalBalance(input.lines)).not.toThrow()

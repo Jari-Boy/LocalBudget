@@ -20,6 +20,7 @@ import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { SqlJsJournalEntryDraftRepository } from './SqlJsJournalEntryDraftRepository'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
+import { JournalLineHouseholdMemberRequiredError } from '../../domain/journal/JournalLineHouseholdMemberRequiredError'
 
 let db: Database
 let repository: SqlJsJournalEntryDraftRepository
@@ -148,8 +149,8 @@ describe('confirm', () => {
       memo: 'スーパーで食材購入',
       householdMemberId,
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
-        { accountId: cashAccountId, side: 'credit', amount: 3000 },
+        { accountId: foodExpenseAccountId, householdMemberId, side: 'debit', amount: 3000 },
+        { accountId: cashAccountId, householdMemberId, side: 'credit', amount: 3000 },
       ],
     })
 
@@ -162,13 +163,45 @@ describe('confirm', () => {
     expect(repository.findById(created.id)).toBeNull()
   })
 
+  it('世帯メンバーが入っていない明細行がある下書きは、確定を拒否して下書きを残す(計画Issue #169)', () => {
+    const created = repository.create({
+      entryDate: '2026-07-22',
+      householdMemberId,
+      lines: [
+        { accountId: foodExpenseAccountId, householdMemberId, side: 'debit', amount: 3000 },
+        { accountId: cashAccountId, side: 'credit', amount: 3000 },
+      ],
+    })
+
+    expect(() => repository.confirm(created.id, journalEntryRepository)).toThrow(
+      JournalLineHouseholdMemberRequiredError,
+    )
+
+    expect(repository.findById(created.id)).not.toBeNull()
+    expect(journalEntryRepository.findAll()).toHaveLength(0)
+  })
+
+  it('世帯メンバーが未入力でも、科目・貸借・金額が揃っていない明細行(末尾の空行)は確定の対象外なので拒否しない', () => {
+    const created = repository.create({
+      entryDate: '2026-07-22',
+      householdMemberId,
+      lines: [
+        { accountId: foodExpenseAccountId, householdMemberId, side: 'debit', amount: 3000 },
+        { accountId: cashAccountId, householdMemberId, side: 'credit', amount: 3000 },
+        { accountId: foodExpenseAccountId },
+      ],
+    })
+
+    expect(repository.confirm(created.id, journalEntryRepository).lines).toHaveLength(2)
+  })
+
   it('下書きの明細が貸借不一致の場合はUnbalancedJournalEntryErrorをスローし、下書きを残す', () => {
     const created = repository.create({
       entryDate: '2026-07-22',
       householdMemberId,
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
-        { accountId: cashAccountId, side: 'credit', amount: 2000 },
+        { accountId: foodExpenseAccountId, householdMemberId, side: 'debit', amount: 3000 },
+        { accountId: cashAccountId, householdMemberId, side: 'credit', amount: 2000 },
       ],
     })
 
@@ -185,8 +218,8 @@ describe('confirm', () => {
       entryDate: '2026-07-22',
       householdMemberId,
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
-        { accountId: cashAccountId, side: 'credit', amount: 3000 },
+        { accountId: foodExpenseAccountId, householdMemberId, side: 'debit', amount: 3000 },
+        { accountId: cashAccountId, householdMemberId, side: 'credit', amount: 3000 },
         {},
       ],
     })
@@ -201,8 +234,8 @@ describe('confirm', () => {
     const created = repository.create({
       entryDate: '2026-07-22',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
-        { accountId: cashAccountId, side: 'credit', amount: 3000 },
+        { accountId: foodExpenseAccountId, householdMemberId, side: 'debit', amount: 3000 },
+        { accountId: cashAccountId, householdMemberId, side: 'credit', amount: 3000 },
       ],
     })
 
@@ -232,8 +265,8 @@ describe('下書きのコメント(comment、計画Issue #144)', () => {
       comment: '引き継ぐコメント',
       householdMemberId,
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
-        { accountId: cashAccountId, side: 'credit', amount: 3000 },
+        { accountId: foodExpenseAccountId, householdMemberId, side: 'debit', amount: 3000 },
+        { accountId: cashAccountId, householdMemberId, side: 'credit', amount: 3000 },
       ],
     })
     const confirmed = repository.confirm(created.id, journalEntryRepository)

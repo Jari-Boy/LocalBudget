@@ -1,11 +1,12 @@
 import type { Account, CreateAccountInput } from '../../domain/account/Account'
 import type { CreateJournalEntryInput, JournalEntry } from '../../domain/journal/JournalEntry'
+import { createLineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
 
 export interface InitialBalanceLine {
   /**
-   * この金額をjournal_lines.householdMemberIdに反映する世帯メンバー。nullの場合は
-   * 明細に明示的な値を設定せず、口座側の名義(household_member_id)継承ルール
-   * (docs/domain/household-members.md 1.2節)に委ねる。世帯メンバーごとに複数行を
+   * この金額をjournal_lines.householdMemberIdに反映する世帯メンバー。nullの場合は、口座に既定の
+   * 世帯メンバーがあればそれ、無ければ起票者を明細行に保存する(docs/domain/household-members.md
+   * 1.2節、計画Issue #169。明細行は常に実際の世帯メンバーを持つ)。世帯メンバーごとに複数行を
    * 渡す設計(計画Issue #90、現金の世帯メンバーごとの初期残高入力)は計画Issue #102で
    * 統合フローに一本化された際に廃止されたため、現在の唯一の呼び出し元
    * (AccountRegistrationFlow)は常に要素1件(householdMemberId: null)の配列を渡す。
@@ -102,6 +103,11 @@ export async function registerAccount(
   }
 
   const total = validLines.reduce((sum, line) => sum + line.amount, 0)
+  // 明細行の世帯メンバー: 科目の既定メンバー > 入力した世帯メンバー > 起票者(計画Issue #169)
+  const resolveMemberId = createLineHouseholdMemberResolver(
+    [account, initialBalanceAccount],
+    input.journalEntryHouseholdMemberId,
+  )
   const accountSide = input.category === 'asset' ? 'debit' : 'credit'
   const counterSide = input.category === 'asset' ? 'credit' : 'debit'
 
@@ -114,9 +120,14 @@ export async function registerAccount(
         accountId: account.id,
         side: accountSide as 'debit' | 'credit',
         amount: line.amount,
-        householdMemberId: line.householdMemberId,
+        householdMemberId: resolveMemberId(account.id, line.householdMemberId),
       })),
-      { accountId: initialBalanceAccount.id, side: counterSide, amount: total },
+      {
+        accountId: initialBalanceAccount.id,
+        side: counterSide,
+        amount: total,
+        householdMemberId: resolveMemberId(initialBalanceAccount.id),
+      },
     ],
   })
 

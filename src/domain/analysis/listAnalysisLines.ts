@@ -35,7 +35,7 @@ function collect(
     .sort((a, b) => a.entryDate.localeCompare(b.entryDate) || a.id - b.id)
   const result: AnalysisLine[] = []
   for (const entry of entriesInPeriod) {
-    const lines = filterJournalLinesByFinancialStatementFilter([entry], accounts, filter)
+    const lines = filterJournalLinesByFinancialStatementFilter([entry], filter)
     for (const line of lines) {
       const account = accountsById.get(line.accountId)
       if (!account || !accountPredicate(account)) continue

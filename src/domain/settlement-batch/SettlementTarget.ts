@@ -1,9 +1,7 @@
 /**
- * 精算画面の「対象者」(計画Issue #139)。世帯メンバー間の精算は明細行のhousehold_member_idで、
- * 世帯外の相手(取引先)との精算はsettlement_batches.counterparty_idで識別する
- * (docs/domain/settlement.md、journal_lines.counterparty_idは資産・負債の行に設定できないため、
- * 取引先側の識別は明細行ではなくバッチ側のタグに委ねる、docs/domain/counterparties.md 1.2)。
+ * 精算画面の「対象者」(計画Issue #139、#169)。対象者は常に世帯メンバーで、立替金・未払金の残高は
+ * 「科目×世帯メンバー」の明細行(journal_lines.household_member_id)で持つ。世帯外の相手(取引先)との
+ * 精算でも、バッチが取引先(settlement_batches.counterparty_id)を表すだけで、立替金・未払金の行は
+ * 世帯メンバーの行である(docs/domain/settlement.md、docs/domain/counterparties.md 1.2)。
  */
-export type SettlementTarget =
-  | { kind: 'householdMember'; householdMemberId: number }
-  | { kind: 'counterparty'; counterpartyId: number }
+export type SettlementTarget = { kind: 'householdMember'; householdMemberId: number }

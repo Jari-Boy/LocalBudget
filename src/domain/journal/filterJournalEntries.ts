@@ -1,6 +1,5 @@
 import type { Account } from '../account/Account'
 import { expandGroupIds } from '../account-group/expandGroupIds'
-import { resolveEffectiveHouseholdMemberId } from '../financial-statement/resolveEffectiveHouseholdMemberId'
 import type { JournalEntry, JournalLine } from './JournalEntry'
 import type { JournalEntryFilter, JournalEntryFilterContext } from './JournalEntryFilter'
 
@@ -16,8 +15,8 @@ function isActive<T>(values: readonly T[] | undefined): values is readonly T[] {
  * (配下すべてを対象)を、AND条件で組み合わせる。各軸は「仕訳内のいずれかの明細行が条件に
  * 一致すればその仕訳を含める」(行単位ではなく仕訳単位でフィルタする)ため、複数の軸を
  * 別々の明細行で満たしてもヒットする。1つの軸の中の複数指定はOR。
- * 世帯メンバーの判定は財務諸表ドメインのresolveEffectiveHouseholdMemberId
- * (科目既定値→明細の上書き→起票者の順のフォールバック)を再利用する。
+ * 世帯メンバーの判定は明細行のhouseholdMemberIdと直接比較する(明細行は常に実際の世帯メンバーを
+ * 持つ、docs/domain/household-members.md 1.2節、計画Issue #169)。
  * グループ指定の展開にはcontext(グループ・取引先・プロジェクトのマスタ)を渡す。DB非依存の純粋関数。
  */
 export function filterJournalEntries(
@@ -62,10 +61,7 @@ export function filterJournalEntries(
     }
     if (
       filter.householdMemberId !== undefined &&
-      !anyLine(
-        entry,
-        (line) => resolveEffectiveHouseholdMemberId(line, accountsById, entry.householdMemberId) === filter.householdMemberId,
-      )
+      !anyLine(entry, (line) => line.householdMemberId === filter.householdMemberId)
     ) {
       return false
     }
@@ -91,9 +87,7 @@ export function filterJournalEntries(
     }
     if (
       memberIdSet !== null &&
-      !anyLine(entry, (line) =>
-        memberIdSet.has(resolveEffectiveHouseholdMemberId(line, accountsById, entry.householdMemberId)),
-      )
+      !anyLine(entry, (line) => memberIdSet.has(line.householdMemberId))
     ) {
       return false
     }

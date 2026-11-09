@@ -227,8 +227,8 @@ describe('RuleMasterTab', () => {
       generatedFromRuleId: rule.id,
       householdMemberId: memberId,
       lines: [
-        { accountId: expenseId, side: 'debit', amount: 98000 },
-        { accountId: cashId, side: 'credit', amount: 98000 },
+        { householdMemberId: memberId, accountId: expenseId, side: 'debit', amount: 98000 },
+        { householdMemberId: memberId, accountId: cashId, side: 'credit', amount: 98000 },
       ],
     })
     renderTab()

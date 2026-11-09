@@ -53,7 +53,7 @@ const panel = () => within(screen.getByRole('region', { name: '世帯メンバ�
 const open = async (name: string) => fireEvent.click(await screen.findByRole('button', { name }))
 
 /** メンバーを起票者にした仕訳を1件登録する */
-function postEntry(authorId: number, lineMemberId: number | null = null) {
+function postEntry(authorId: number, lineMemberId = 1) {
   const expense = accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
   const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
   entries.create({
@@ -61,7 +61,7 @@ function postEntry(authorId: number, lineMemberId: number | null = null) {
     householdMemberId: authorId,
     lines: [
       { accountId: expense.id, side: 'debit', amount: 1000, householdMemberId: lineMemberId },
-      { accountId: cash.id, side: 'credit', amount: 1000 },
+      { householdMemberId: 1, accountId: cash.id, side: 'credit', amount: 1000 },
     ],
   })
   return { expense, cash }

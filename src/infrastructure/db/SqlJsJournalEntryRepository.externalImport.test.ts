@@ -53,8 +53,8 @@ describe('externalTransactionRefを渡した場合', () => {
       memo: 'セブンイレブン 日本橋店',
       sourceType: 'external_import',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 150 },
-        { accountId: bankAccountId, side: 'credit', amount: 150 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 150 },
+        { householdMemberId: memberId, accountId: bankAccountId, side: 'credit', amount: 150 },
       ],
       externalTransactionRef: {
         accountId: bankAccountId,
@@ -83,8 +83,8 @@ describe('externalTransactionRefを渡した場合', () => {
       memo: '1件目',
       sourceType: 'external_import',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 100 },
-        { accountId: bankAccountId, side: 'credit', amount: 100 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 100 },
+        { householdMemberId: memberId, accountId: bankAccountId, side: 'credit', amount: 100 },
       ],
       externalTransactionRef: {
         accountId: bankAccountId,
@@ -105,8 +105,8 @@ describe('externalTransactionRefを渡した場合', () => {
         memo: '2件目(重複external_id)',
         sourceType: 'external_import',
         lines: [
-          { accountId: foodExpenseAccountId, side: 'debit', amount: 200 },
-          { accountId: bankAccountId, side: 'credit', amount: 200 },
+          { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 200 },
+          { householdMemberId: memberId, accountId: bankAccountId, side: 'credit', amount: 200 },
         ],
         externalTransactionRef: {
           accountId: bankAccountId,
@@ -138,8 +138,8 @@ describe('externalTransactionRefを渡さない場合', () => {
       entryDate: '2026-08-01',
       memo: '手入力',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 100 },
-        { accountId: cashAccountId, side: 'credit', amount: 100 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 100 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 100 },
       ],
     })
 

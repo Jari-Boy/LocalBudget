@@ -139,9 +139,9 @@ function insertJournalLine(
   counterpartyId: number,
 ): number {
   database.run(
-    `INSERT INTO journal_lines (journal_entry_id, account_id, counterparty_id, side, amount)
-     VALUES (?, ?, ?, 'debit', 4000)`,
-    [journalEntryId, accountId, counterpartyId],
+    `INSERT INTO journal_lines (journal_entry_id, account_id, household_member_id, counterparty_id, side, amount)
+     VALUES (?, ?, (SELECT household_member_id FROM journal_entries WHERE id = ?), ?, 'debit', 4000)`,
+    [journalEntryId, accountId, journalEntryId, counterpartyId],
   )
   return lastInsertRowId(database)
 }

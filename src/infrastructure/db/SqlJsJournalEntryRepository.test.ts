@@ -71,8 +71,8 @@ describe('create / findById', () => {
       entryDate: '2026-07-20',
       memo: 'スーパーで食材購入',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
-        { accountId: cashAccountId, side: 'credit', amount: 3000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 3000 },
       ],
     })
 
@@ -102,9 +102,9 @@ describe('create / findById', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-21',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 7000 },
-        { accountId: miscExpenseAccountId, side: 'debit', amount: 3000 },
-        { accountId: cashAccountId, side: 'credit', amount: 10000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 7000 },
+        { householdMemberId: memberId, accountId: miscExpenseAccountId, side: 'debit', amount: 3000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 10000 },
       ],
     })
 
@@ -125,7 +125,7 @@ describe('create / findById', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-23',
       lines: [
-        { accountId: cashAccountId, side: 'debit', amount: 5000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'debit', amount: 5000 },
         {
           accountId: revenueAccountId,
           side: 'credit',
@@ -157,8 +157,8 @@ describe('貸借バランス検証', () => {
         householdMemberId: memberId,
         entryDate: '2026-07-22',
         lines: [
-          { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
-          { accountId: cashAccountId, side: 'credit', amount: 2000 },
+          { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
+          { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 2000 },
         ],
       }),
     ).toThrow(UnbalancedJournalEntryError)
@@ -172,8 +172,8 @@ describe('貸借バランス検証', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-22',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
-        { accountId: cashAccountId, side: 'credit', amount: 3000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 3000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 3000 },
       ],
     })
 
@@ -181,8 +181,8 @@ describe('貸借バランス検証', () => {
       repository.update(created.id, {
         entryDate: '2026-07-22',
         lines: [
-          { accountId: foodExpenseAccountId, side: 'debit', amount: 5000 },
-          { accountId: cashAccountId, side: 'credit', amount: 3000 },
+          { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 5000 },
+          { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 3000 },
         ],
       }),
     ).toThrow(UnbalancedJournalEntryError)
@@ -211,7 +211,7 @@ describe('貸借バランス検証', () => {
       repository.create({
         householdMemberId: memberId,
         entryDate: '2026-07-27',
-        lines: [{ accountId: foodExpenseAccountId, side: 'debit', amount: 1000 }],
+        lines: [{ householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 }],
       }),
     ).toThrow(UnbalancedJournalEntryError)
 
@@ -224,8 +224,8 @@ describe('貸借バランス検証', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-28',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1500 },
-        { accountId: cashAccountId, side: 'credit', amount: 1500 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1500 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1500 },
       ],
     })
 
@@ -244,15 +244,15 @@ describe('貸借バランス検証', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-29',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1200 },
-        { accountId: cashAccountId, side: 'credit', amount: 1200 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1200 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1200 },
       ],
     })
 
     expect(() =>
       repository.update(created.id, {
         entryDate: '2026-07-29',
-        lines: [{ accountId: foodExpenseAccountId, side: 'debit', amount: 1200 }],
+        lines: [{ householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1200 }],
       }),
     ).toThrow(UnbalancedJournalEntryError)
 
@@ -277,8 +277,8 @@ describe('is_reconcilable資産・負債への記帳(計画Issue #145で直接�
       entryDate: '2026-07-24',
       sourceType,
       lines: [
-        { accountId: bankAccountId, side: 'debit', amount: 1000 },
-        { accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: bankAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
       ],
     })
 
@@ -292,16 +292,16 @@ describe('is_reconcilable資産・負債への記帳(計画Issue #145で直接�
       entryDate: '2026-07-24',
       sourceType: 'manual',
       lines: [
-        { accountId: cashAccountId, side: 'debit', amount: 1000 },
-        { accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
       ],
     })
 
     const updated = repository.update(created.id, {
       entryDate: '2026-07-24',
       lines: [
-        { id: created.lines[0].id, accountId: bankAccountId, side: 'debit', amount: 1000 },
-        { id: created.lines[1].id, accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, id: created.lines[0].id, accountId: bankAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, id: created.lines[1].id, accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
       ],
     })
 
@@ -318,8 +318,8 @@ describe('source_type = expense_splitting(計画Issue #149)', () => {
       entryDate: '2026-07-24',
       sourceType: 'expense_splitting',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
-        { accountId: foodExpenseAccountId, side: 'credit', amount: 500 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'credit', amount: 500 },
       ],
     })
 
@@ -333,16 +333,16 @@ describe('findAll', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
     repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-02',
       lines: [
-        { accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
-        { accountId: cashAccountId, side: 'credit', amount: 2000 },
+        { householdMemberId: memberId, accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 2000 },
       ],
     })
 
@@ -361,8 +361,8 @@ function createLaterEntry(): void {
     householdMemberId: memberId,
     entryDate: '2026-12-31',
     lines: [
-      { accountId: miscExpenseAccountId, side: 'debit', amount: 1 },
-      { accountId: cashAccountId, side: 'credit', amount: 1 },
+      { householdMemberId: memberId, accountId: miscExpenseAccountId, side: 'debit', amount: 1 },
+      { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1 },
     ],
   })
 }
@@ -374,8 +374,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       entryDate: '2026-07-10',
       memo: '当初の内容',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
     // 更新によってupdated_atが変わることを、時計を待たずに確認するため
@@ -388,8 +388,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       entryDate: '2026-07-11',
       memo: '差し替え後の内容',
       lines: [
-        { accountId: miscExpenseAccountId, side: 'debit', amount: 4000 },
-        { accountId: cashAccountId, side: 'credit', amount: 4000 },
+        { householdMemberId: memberId, accountId: miscExpenseAccountId, side: 'debit', amount: 4000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 4000 },
       ],
     })
 
@@ -408,8 +408,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-12',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
     // journal_linesテーブルが更新対象の仕訳の行だけで完全に空にならないよう、
@@ -420,8 +420,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-13',
       lines: [
-        { accountId: miscExpenseAccountId, side: 'debit', amount: 500 },
-        { accountId: cashAccountId, side: 'credit', amount: 500 },
+        { householdMemberId: memberId, accountId: miscExpenseAccountId, side: 'debit', amount: 500 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 500 },
       ],
     })
     const originalLineIds = created.lines.map((l) => l.id).sort()
@@ -429,8 +429,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
     const updated = repository.update(created.id, {
       entryDate: '2026-07-12',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
     const newLineIds = updated.lines.map((l) => l.id).sort()
@@ -447,8 +447,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       entryDate: '2026-07-12',
       memo: '更新前',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
     const [debitLine, creditLine] = created.lines
@@ -458,8 +458,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       entryDate: '2026-07-20',
       memo: '更新後',
       lines: [
-        { id: debitLine.id, accountId: miscExpenseAccountId, side: 'debit', amount: 1500 },
-        { id: creditLine.id, accountId: cashAccountId, side: 'credit', amount: 1500 },
+        { householdMemberId: memberId, id: debitLine.id, accountId: miscExpenseAccountId, side: 'debit', amount: 1500 },
+        { householdMemberId: memberId, id: creditLine.id, accountId: cashAccountId, side: 'credit', amount: 1500 },
       ],
     })
 
@@ -476,8 +476,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-12',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000, projectId },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000, projectId },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
     const [debitLine, creditLine] = created.lines
@@ -486,7 +486,7 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
     const updated = repository.update(created.id, {
       entryDate: '2026-07-12',
       lines: [
-        { id: debitLine.id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000, projectId: null },
+        { householdMemberId: memberId, id: debitLine.id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000, projectId: null },
         { id: creditLine.id, accountId: cashAccountId, side: 'credit', amount: 1000, householdMemberId: memberId },
       ],
     })
@@ -500,8 +500,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-12',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
     const [debitLine, creditLine] = created.lines
@@ -510,9 +510,9 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
     const updated = repository.update(created.id, {
       entryDate: '2026-07-12',
       lines: [
-        { id: debitLine.id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { id: creditLine.id, accountId: cashAccountId, side: 'credit', amount: 700 },
-        { accountId: payableAccountId, side: 'credit', amount: 300 },
+        { householdMemberId: memberId, id: debitLine.id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, id: creditLine.id, accountId: cashAccountId, side: 'credit', amount: 700 },
+        { householdMemberId: memberId, accountId: payableAccountId, side: 'credit', amount: 300 },
       ],
     })
 
@@ -526,9 +526,9 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-12',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 600 },
-        { accountId: miscExpenseAccountId, side: 'debit', amount: 400 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 600 },
+        { householdMemberId: memberId, accountId: miscExpenseAccountId, side: 'debit', amount: 400 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
     const [foodLine, miscLine, cashLine] = created.lines
@@ -537,8 +537,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
     const updated = repository.update(created.id, {
       entryDate: '2026-07-12',
       lines: [
-        { id: foodLine.id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { id: cashLine.id, accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, id: foodLine.id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, id: cashLine.id, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
 
@@ -552,16 +552,16 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       entryDate: '2026-07-12',
       memo: '更新前',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
     const other = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-13',
       lines: [
-        { accountId: miscExpenseAccountId, side: 'debit', amount: 500 },
-        { accountId: cashAccountId, side: 'credit', amount: 500 },
+        { householdMemberId: memberId, accountId: miscExpenseAccountId, side: 'debit', amount: 500 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 500 },
       ],
     })
 
@@ -570,8 +570,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
         entryDate: '2026-07-12',
         memo: '更新後',
         lines: [
-          { id: other.lines[0].id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-          { id: created.lines[1].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
+          { householdMemberId: memberId, id: other.lines[0].id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+          { householdMemberId: memberId, id: created.lines[1].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
         ],
       }),
     ).toThrow()
@@ -585,8 +585,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-12',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
 
@@ -594,8 +594,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       repository.update(created.id, {
         entryDate: '2026-07-12',
         lines: [
-          { id: created.lines[0].id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-          { id: created.lines[0].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
+          { householdMemberId: memberId, id: created.lines[0].id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+          { householdMemberId: memberId, id: created.lines[0].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
         ],
       }),
     ).toThrow()
@@ -608,8 +608,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-12',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
 
@@ -617,8 +617,8 @@ describe('update(行idによる差分更新、計画Issue #132)', () => {
       repository.update(created.id, {
         entryDate: '2026-07-12',
         lines: [
-          { id: created.lines[0].id, accountId: 99999, side: 'debit', amount: 1000 },
-          { id: created.lines[1].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
+          { householdMemberId: memberId, id: created.lines[0].id, accountId: 99999, side: 'debit', amount: 1000 },
+          { householdMemberId: memberId, id: created.lines[1].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
         ],
       }),
     ).toThrow()
@@ -634,8 +634,8 @@ describe('DB制約違反時のロールバック(FK制約有効化)', () => {
         householdMemberId: memberId,
         entryDate: '2026-07-25',
         lines: [
-          { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-          { accountId: 999999, side: 'credit', amount: 1000 },
+          { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+          { householdMemberId: memberId, accountId: 999999, side: 'credit', amount: 1000 },
         ],
       }),
     ).toThrow()
@@ -649,8 +649,8 @@ describe('DB制約違反時のロールバック(FK制約有効化)', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-26',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 2000 },
-        { accountId: cashAccountId, side: 'credit', amount: 2000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 2000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 2000 },
       ],
     })
 
@@ -658,8 +658,8 @@ describe('DB制約違反時のロールバック(FK制約有効化)', () => {
       repository.update(created.id, {
         entryDate: '2026-07-26',
         lines: [
-          { accountId: foodExpenseAccountId, side: 'debit', amount: 2000 },
-          { accountId: 999999, side: 'credit', amount: 2000 },
+          { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 2000 },
+          { householdMemberId: memberId, accountId: 999999, side: 'credit', amount: 2000 },
         ],
       }),
     ).toThrow()
@@ -676,8 +676,8 @@ describe('delete', () => {
       householdMemberId: memberId,
       entryDate: '2026-07-05',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
-        { accountId: cashAccountId, side: 'credit', amount: 500 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 500 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 500 },
       ],
     })
 
@@ -693,8 +693,8 @@ describe('delete', () => {
       entryDate: '2026-07-06',
       sourceType: 'external_import',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 800 },
-        { accountId: cashAccountId, side: 'credit', amount: 800 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 800 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 800 },
       ],
     })
 
@@ -710,16 +710,16 @@ describe('deleteBySettlementBatchId(settlement_batch_id単位での一括物理�
       householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: payableAccountId, side: 'credit', amount: 1000, settlementBatchId: batchId },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: payableAccountId, side: 'credit', amount: 1000, settlementBatchId: batchId },
       ],
     })
     const entryB = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-02',
       lines: [
-        { accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
-        { accountId: payableAccountId, side: 'credit', amount: 2000, settlementBatchId: batchId },
+        { householdMemberId: memberId, accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
+        { householdMemberId: memberId, accountId: payableAccountId, side: 'credit', amount: 2000, settlementBatchId: batchId },
       ],
     })
 
@@ -735,8 +735,8 @@ describe('deleteBySettlementBatchId(settlement_batch_id単位での一括物理�
       householdMemberId: memberId,
       entryDate: '2026-07-03',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 300 },
-        { accountId: cashAccountId, side: 'credit', amount: 300 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 300 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 300 },
       ],
     })
 
@@ -752,24 +752,24 @@ describe('deleteBySettlementBatchId(settlement_batch_id単位での一括物理�
       householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: payableAccountId, side: 'credit', amount: 1000, settlementBatchId: targetBatchId },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: payableAccountId, side: 'credit', amount: 1000, settlementBatchId: targetBatchId },
       ],
     })
     const other = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-02',
       lines: [
-        { accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
-        { accountId: payableAccountId, side: 'credit', amount: 2000, settlementBatchId: otherBatchId },
+        { householdMemberId: memberId, accountId: miscExpenseAccountId, side: 'debit', amount: 2000 },
+        { householdMemberId: memberId, accountId: payableAccountId, side: 'credit', amount: 2000, settlementBatchId: otherBatchId },
       ],
     })
     const untagged = repository.create({
       householdMemberId: memberId,
       entryDate: '2026-07-03',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 300 },
-        { accountId: cashAccountId, side: 'credit', amount: 300 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 300 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 300 },
       ],
     })
 
@@ -786,8 +786,8 @@ describe('deleteBySettlementBatchId(settlement_batch_id単位での一括物理�
       householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
-        { accountId: payableAccountId, side: 'credit', amount: 80000, settlementBatchId: batchId },
+        { householdMemberId: memberId, accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
+        { householdMemberId: memberId, accountId: payableAccountId, side: 'credit', amount: 80000, settlementBatchId: batchId },
       ],
     })
     const fromEntry = repository.create({
@@ -795,8 +795,8 @@ describe('deleteBySettlementBatchId(settlement_batch_id単位での一括物理�
       entryDate: '2026-07-05',
       sourceType: 'external_import',
       lines: [
-        { accountId: payableAccountId, side: 'debit', amount: 80000, settlementBatchId: batchId },
-        { accountId: bankAccountId, side: 'credit', amount: 80000 },
+        { householdMemberId: memberId, accountId: payableAccountId, side: 'debit', amount: 80000, settlementBatchId: batchId },
+        { householdMemberId: memberId, accountId: bankAccountId, side: 'credit', amount: 80000 },
       ],
     })
 
@@ -842,14 +842,20 @@ describe('仕訳コメント(comment、計画Issue #144)', () => {
       memo: '摘要',
       ...(comment === undefined ? {} : { comment }),
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
   }
 
   function toKeptLines(entry: ReturnType<typeof createWithComment>) {
-    return entry.lines.map((line) => ({ id: line.id, accountId: line.accountId, side: line.side, amount: line.amount }))
+    return entry.lines.map((line) => ({
+      id: line.id,
+      accountId: line.accountId,
+      householdMemberId: line.householdMemberId,
+      side: line.side,
+      amount: line.amount,
+    }))
   }
 
   it('commentを指定して作成すると保存され、摘要(memo)とは別に取得できる', () => {
@@ -901,8 +907,8 @@ describe('精算バッチタグは割勘の一時勘定(システム管理の立
       householdMemberId: memberId,
       entryDate: '2026-07-01',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: payableAccountId, side: 'credit', amount: 1000, settlementBatchId: batchId },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: payableAccountId, side: 'credit', amount: 1000, settlementBatchId: batchId },
       ],
     })
     expect(created.lines.map((line) => line.settlementBatchId)).toEqual([null, batchId])
@@ -920,8 +926,8 @@ describe('精算バッチタグは割勘の一時勘定(システム管理の立
         householdMemberId: memberId,
         entryDate: '2026-07-01',
         lines: [
-          { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-          { accountId: cardPayableAccountId, side: 'credit', amount: 1000, settlementBatchId: batchId },
+          { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+          { householdMemberId: memberId, accountId: cardPayableAccountId, side: 'credit', amount: 1000, settlementBatchId: batchId },
         ],
       }),
     ).toThrow(SettlementBatchOnNonAdvanceAccountError)
@@ -935,8 +941,8 @@ describe('精算バッチタグは割勘の一時勘定(システム管理の立
         householdMemberId: memberId,
         entryDate: '2026-07-01',
         lines: [
-          { accountId: foodExpenseAccountId, side: 'debit', amount: 1000, settlementBatchId: batchId },
-          { accountId: cashAccountId, side: 'credit', amount: 1000 },
+          { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000, settlementBatchId: batchId },
+          { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
         ],
       }),
     ).toThrow(SettlementBatchOnNonAdvanceAccountError)
@@ -951,8 +957,8 @@ describe('精算バッチタグは割勘の一時勘定(システム管理の立
         entryDate: '2026-07-01',
         sourceType: 'external_import',
         lines: [
-          { accountId: bankAccountId, side: 'debit', amount: 1000, settlementBatchId: batchId },
-          { accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
+          { householdMemberId: memberId, accountId: bankAccountId, side: 'debit', amount: 1000, settlementBatchId: batchId },
+          { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'credit', amount: 1000 },
         ],
       }),
     ).toThrow(SettlementBatchOnNonAdvanceAccountError)
@@ -965,8 +971,8 @@ describe('精算バッチタグは割勘の一時勘定(システム管理の立
       entryDate: '2026-07-01',
       memo: '更新前',
       lines: [
-        { accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
-        { accountId: cashAccountId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
       ],
     })
     expect(() =>
@@ -974,8 +980,8 @@ describe('精算バッチタグは割勘の一時勘定(システム管理の立
         entryDate: '2026-07-01',
         memo: '更新後',
         lines: [
-          { id: created.lines[0].id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000, settlementBatchId: batchId },
-          { id: created.lines[1].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
+          { householdMemberId: memberId, id: created.lines[0].id, accountId: foodExpenseAccountId, side: 'debit', amount: 1000, settlementBatchId: batchId },
+          { householdMemberId: memberId, id: created.lines[1].id, accountId: cashAccountId, side: 'credit', amount: 1000 },
         ],
       }),
     ).toThrow(SettlementBatchOnNonAdvanceAccountError)

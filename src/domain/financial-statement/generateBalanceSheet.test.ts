@@ -65,7 +65,7 @@ function line(
     journalEntryId,
     accountId,
     projectId: null,
-    householdMemberId: null,
+    householdMemberId: 1,
     counterpartyId: null,
     settlementBatchId: null,
     side,

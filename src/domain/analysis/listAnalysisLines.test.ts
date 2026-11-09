@@ -39,13 +39,14 @@ const accounts: Account[] = [
 ]
 
 let nextLineId = 1
+/** 仕訳(entry)に入れるときに、世帯メンバー未指定の行は仕訳の世帯メンバーにする(入力時の既定値は起票者) */
 function line(accountId: number, side: 'debit' | 'credit', amount: number, extra: Partial<JournalLine> = {}): JournalLine {
   return {
     id: nextLineId++,
     journalEntryId: 0,
     accountId,
     projectId: null,
-    householdMemberId: null,
+    householdMemberId: 0,
     counterpartyId: null,
     settlementBatchId: null,
     side,
@@ -67,7 +68,7 @@ function entry(id: number, entryDate: string, memo: string, lines: JournalLine[]
     generatedFromRuleId: null,
     createdAt: '',
     updatedAt: '',
-    lines: lines.map((l) => ({ ...l, journalEntryId: id })),
+    lines: lines.map((l) => ({ ...l, journalEntryId: id, householdMemberId: l.householdMemberId === 0 ? householdMemberId : l.householdMemberId })),
   }
 }
 

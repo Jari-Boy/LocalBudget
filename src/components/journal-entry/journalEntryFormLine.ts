@@ -85,14 +85,14 @@ export function toJournalEntryDraftLineInput(
 }
 
 /**
- * 確定送信(JournalEntryRepository.create)用に変換する。科目・貸借・正の金額の
+ * 確定送信(JournalEntryRepository.create)用に変換する。科目・貸借・正の金額・世帯メンバーの
  * いずれかが欠けている行は仕訳明細として不完全なためnullを返し、呼び出し側で
  * 送信対象から除外する。これによりUI側は「何が足りないか」を個別に判定・表示せず、
  * 不完全な行を除いた結果として明細不足・貸借不一致になった場合はRepository層の
  * UnbalancedJournalEntryErrorにそのまま委ねる(docs/architecture.md 12章の方針)。
  */
 export function toJournalLineInput(line: JournalEntryFormLine): JournalLineInput | null {
-  if (line.accountId === null || line.side === null) return null
+  if (line.accountId === null || line.side === null || line.householdMemberId === null) return null
 
   const amount = Number(line.amountInput)
   if (line.amountInput === '' || !Number.isFinite(amount) || amount <= 0) return null

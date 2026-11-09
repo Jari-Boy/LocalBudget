@@ -1,5 +1,6 @@
 import type { AccountCategory } from '../account/Account'
 import type { CreateJournalEntryInput, JournalLineSide } from '../journal/JournalEntry'
+import type { LineHouseholdMemberResolver } from '../journal/resolveLineHouseholdMemberId'
 import type { ImportedRecord } from './ImportedRecord'
 
 export interface BuildConfirmedJournalEntryInputParams {
@@ -23,6 +24,11 @@ export interface BuildConfirmedJournalEntryInputParams {
   comment?: string | null
   /** 起票者(CreateJournalEntryInput.householdMemberId、計画Issue #88)。解決は呼び出し側の責務 */
   entryHouseholdMemberId: number
+  /**
+   * 明細行の世帯メンバーの決め方(科目の既定メンバー > 指定 > 起票者、計画Issue #169)。
+   * 科目と起票者を知っている呼び出し側が createLineHouseholdMemberResolver で作って渡す
+   */
+  resolveLineHouseholdMemberId: LineHouseholdMemberResolver
 }
 
 /**
@@ -41,14 +47,19 @@ export function buildConfirmedJournalEntryInput(
   const targetSide = determineTargetSide(params.targetAccountCategory, record.amount)
   const counterSide: JournalLineSide = targetSide === 'debit' ? 'credit' : 'debit'
 
-  const targetLine = { accountId: params.targetAccountId, side: targetSide, amount }
+  const targetLine = {
+    accountId: params.targetAccountId,
+    side: targetSide,
+    amount,
+    householdMemberId: params.resolveLineHouseholdMemberId(params.targetAccountId),
+  }
   const counterLine = {
     accountId: params.counterAccountId,
     side: counterSide,
     amount,
     counterpartyId: params.counterpartyId ?? null,
     projectId: params.projectId ?? null,
-    householdMemberId: params.householdMemberId ?? null,
+    householdMemberId: params.resolveLineHouseholdMemberId(params.counterAccountId, params.householdMemberId),
     ...(params.settlementBatchId == null ? {} : { settlementBatchId: params.settlementBatchId }),
   }
   const comment = params.comment?.trim() ? params.comment : null

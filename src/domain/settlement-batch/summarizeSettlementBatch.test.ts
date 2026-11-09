@@ -88,18 +88,18 @@ describe('summarizeSettlementBatch', () => {
     expect(summary.payable).toMatchObject({ hasLines: false, balance: 0, breakdown: [] })
   })
 
-  it('世帯メンバーごとの内訳を返し、世帯メンバーの無い行は householdMemberId が null になる', () => {
+  it('世帯メンバーごとの内訳を返す', () => {
     const lines = [
       line({ accountId: ADVANCE_ID, side: 'debit', amount: 5000, householdMemberId: 2 }),
       line({ accountId: ADVANCE_ID, side: 'debit', amount: 1000, householdMemberId: 2 }),
-      line({ accountId: ADVANCE_ID, side: 'debit', amount: 700, householdMemberId: null }),
+      line({ accountId: ADVANCE_ID, side: 'debit', amount: 700, householdMemberId: 1 }),
     ]
 
     const summary = summarizeSettlementBatch(batch, lines, accounts)
 
     expect(summary.advance?.breakdown).toEqual([
       { householdMemberId: 2, balance: 6000 },
-      { householdMemberId: null, balance: 700 },
+      { householdMemberId: 1, balance: 700 },
     ])
   })
 

@@ -46,7 +46,7 @@ function buildLine(entryId: number, accountId: number, side: JournalLine['side']
     journalEntryId: entryId,
     accountId,
     projectId: null,
-    householdMemberId: null,
+    householdMemberId: 1,
     counterpartyId: null,
     settlementBatchId: null,
     side,

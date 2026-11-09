@@ -1,5 +1,6 @@
 import type { Database } from 'sql.js'
 import { buildHouseholdMemberExpenseSplittingJournalEntryInput } from '../../domain/expense-splitting/buildHouseholdMemberExpenseSplittingJournalEntryInput'
+import { createLineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsCounterpartyRepository } from './SqlJsCounterpartyRepository'
 import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
@@ -85,8 +86,12 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
     householdMemberRepository.findAll().map((member) => [member.name, member.id]),
   )
   const householdMemberId = householdMemberRepository.findAll()[0]!.id
+  // 明細行の世帯メンバー: 科目の既定メンバー > 起票者(計画Issue #169。明細行は常に世帯メンバーを持つ)
+  const allAccounts = accountRepository.findAll()
+  const memberOf = (entryMemberId: number) => createLineHouseholdMemberResolver(allAccounts, entryMemberId)
 
   for (const entry of DEV_SAMPLE_JOURNAL_ENTRIES) {
+    const resolveMemberId = memberOf(householdMemberId)
     const projectId = entry.projectName ? projectIdByName.get(entry.projectName)! : null
     journalEntryRepository.create({
       entryDate: formatDateDaysAgo(today, entry.daysAgo),
@@ -95,6 +100,7 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
       lines: [
         {
           accountId: accountIdByName.get(entry.debitAccountName)!,
+          householdMemberId: resolveMemberId(accountIdByName.get(entry.debitAccountName)!),
           side: 'debit',
           amount: entry.amount,
           counterpartyId: entry.debitCounterpartyName
@@ -104,6 +110,7 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
         },
         {
           accountId: accountIdByName.get(entry.creditAccountName)!,
+          householdMemberId: resolveMemberId(accountIdByName.get(entry.creditAccountName)!),
           side: 'credit',
           amount: entry.amount,
           counterpartyId: entry.creditCounterpartyName
@@ -138,6 +145,9 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
 
   for (const seed of DEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES) {
     const fromMemberId = householdMemberIdByName.get(seed.fromMemberName)!
+    const resolveFromMemberId = memberOf(fromMemberId)
+    const expenseAccountId = accountIdByName.get(seed.expenseAccountName)!
+    const cashAccountId = accountIdByName.get(seed.originalCashAccountName)!
     // 割勘仕訳は、実際に支払いが発生した元仕訳の存在を前提に、その一部を付け替えるものであり
     // 単独では成立しない(docs/domain/expense-splitting.md 1.3節の例「元仕訳(カード利用)」参照)
     const originalEntry = journalEntryRepository.create({
@@ -145,8 +155,8 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
       memo: seed.originalMemo,
       householdMemberId: fromMemberId,
       lines: [
-        { accountId: accountIdByName.get(seed.expenseAccountName)!, side: 'debit', amount: seed.originalAmount },
-        { accountId: accountIdByName.get(seed.originalCashAccountName)!, side: 'credit', amount: seed.originalAmount },
+        { accountId: expenseAccountId, householdMemberId: resolveFromMemberId(expenseAccountId), side: 'debit', amount: seed.originalAmount },
+        { accountId: cashAccountId, householdMemberId: resolveFromMemberId(cashAccountId), side: 'credit', amount: seed.originalAmount },
       ],
     })
     const splitEntry = journalEntryRepository.create(
@@ -170,12 +180,19 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
 
   for (const seed of DEV_SAMPLE_SETTLEMENT_PAYABLE_ENTRIES) {
     const payerMemberId = householdMemberIdByName.get(seed.payerMemberName)!
+    const resolvePayerMemberId = memberOf(payerMemberId)
+    const payableExpenseAccountId = accountIdByName.get(seed.expenseAccountName)!
     journalEntryRepository.create({
       entryDate: formatDateDaysAgo(today, seed.daysAgo),
       memo: seed.memo,
       householdMemberId: payerMemberId,
       lines: [
-        { accountId: accountIdByName.get(seed.expenseAccountName)!, side: 'debit', amount: seed.amount },
+        {
+          accountId: payableExpenseAccountId,
+          householdMemberId: resolvePayerMemberId(payableExpenseAccountId),
+          side: 'debit',
+          amount: seed.amount,
+        },
         {
           accountId: advanceLiabilityAccountId,
           side: 'credit',
@@ -188,7 +205,9 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
   }
 
   for (const seed of DEV_SAMPLE_SETTLEMENT_REPAYMENT_CANDIDATES) {
-    const memberId = seed.memberName ? householdMemberIdByName.get(seed.memberName)! : null
+    const memberId = householdMemberIdByName.get(seed.memberName)!
+    const resolveRepaymentMemberId = memberOf(memberId)
+    const cashAccountId = accountIdByName.get(seed.cashAccountName)!
     const advanceAccountId = seed.accountCategory === 'asset' ? advanceAssetAccountId : advanceLiabilityAccountId
     // 資産の減少・負債の減少は逆の借方/貸方になる(docs/domain/expense-splitting.md 1.3節の精算1・精算2)
     const decreasingSide = seed.accountCategory === 'asset' ? 'credit' : 'debit'
@@ -196,10 +215,15 @@ export function seedDevSampleData(db: Database, today: Date = new Date()): void 
     journalEntryRepository.create({
       entryDate: formatDateDaysAgo(today, seed.daysAgo),
       memo: seed.memo,
-      householdMemberId: memberId ?? householdMemberId,
+      householdMemberId: memberId,
       lines: [
         { accountId: advanceAccountId, side: decreasingSide, amount: seed.amount, householdMemberId: memberId },
-        { accountId: accountIdByName.get(seed.cashAccountName)!, side: increasingSide, amount: seed.amount },
+        {
+          accountId: cashAccountId,
+          side: increasingSide,
+          amount: seed.amount,
+          householdMemberId: resolveRepaymentMemberId(cashAccountId),
+        },
       ],
     })
   }

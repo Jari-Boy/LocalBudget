@@ -19,6 +19,7 @@ import { countActiveConditions } from '../common/journal-filter/journalFilterMod
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { SplitSettleData, SplitSettleDerived, SplitSettleRepositories } from './splitSettleData'
 import { EntryDetailDialog } from './EntryDetailDialog'
+import { createLineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
 import { createSettlementEntry, tagCandidatesToBatch } from './submitSettlement'
 import './SplitSettleScreen.css'
 
@@ -159,8 +160,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
   const taggedEntries = data.entries.filter((e) => e.lines.some((l) => l.settlementBatchId === batch.id))
   const detailEntry = data.entries.find((e) => e.id === detailEntryId)
   const taggedEntryIds = taggedEntries.map((e) => e.id)
-  const entryHouseholdMemberId =
-    (resolved.target?.kind === 'householdMember' ? resolved.target.householdMemberId : null) ?? data.members[0]?.id ?? null
+  const entryHouseholdMemberId = resolved.target?.householdMemberId ?? data.members[0]?.id ?? null
 
   const run = async (action: () => Promise<void>, done: string) => {
     if (submitting) return
@@ -193,6 +193,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
           accountId: directionSummary.accountId,
           target: resolved.target!,
           entryHouseholdMemberId,
+          resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(data.accounts, entryHouseholdMemberId),
           repositories,
           candidates: chosen,
           diff,
@@ -263,6 +264,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
         accountId: directionSummary.accountId,
         target: resolved.target!,
         entryHouseholdMemberId,
+        resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(data.accounts, entryHouseholdMemberId),
         repositories,
         counterAccountId: Number(draftAccount),
         amount,

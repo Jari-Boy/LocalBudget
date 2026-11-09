@@ -37,8 +37,8 @@ function createEntry(): number {
     householdMemberId: memberId,
     entryDate: '2026-11-01',
     lines: [
-      { accountId: expenseAccountId, side: 'debit', amount: 1000 },
-      { accountId: cashAccountId, side: 'credit', amount: 1000 },
+      { householdMemberId: memberId, accountId: expenseAccountId, side: 'debit', amount: 1000 },
+      { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 1000 },
     ],
   }).id
 }

@@ -13,7 +13,8 @@ export interface JournalLine {
   journalEntryId: number
   accountId: number
   projectId: number | null
-  householdMemberId: number | null
+  /** 誰の行か。必須(継承=nullは廃止、docs/domain/household-members.md 1.2節、計画Issue #169) */
+  householdMemberId: number
   counterpartyId: number | null
   /** 精算バッチのタグ(docs/domain/settlement.md、計画Issue #133)。projectIdとは独立 */
   settlementBatchId: number | null
@@ -32,9 +33,9 @@ export interface JournalEntry {
   sourceType: JournalEntrySourceType
   /**
    * 起票者(この仕訳を切った主体、docs/domain/journal.md 1.1)。NOT NULL。
-   * journal_lines.householdMemberId(明細の上書き)とは役割が異なり、科目に既定値が無く
-   * 明細側も未指定の行の実効メンバーのフォールバック先になる(household-members.md 1.2節、
-   * resolveEffectiveHouseholdMemberId参照)。
+   * journal_lines.householdMemberId(誰の行か)とは役割が異なり、明細行の世帯メンバーの
+   * 入力時の既定値になる。明細行は常に自分の世帯メンバーを持つため、読み取り側で
+   * 起票者へフォールバックはしない(household-members.md 1.2節、計画Issue #169)。
    */
   householdMemberId: number
   /**
@@ -56,7 +57,8 @@ export interface JournalLineInput {
   id?: number
   accountId: number
   projectId?: number | null
-  householdMemberId?: number | null
+  /** 誰の行か。必須。科目に既定の世帯メンバーがある行は、その既定値を明示して渡す */
+  householdMemberId: number
   counterpartyId?: number | null
   settlementBatchId?: number | null
   side: JournalLineSide

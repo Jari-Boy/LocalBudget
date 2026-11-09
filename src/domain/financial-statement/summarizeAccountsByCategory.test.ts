@@ -36,7 +36,7 @@ function buildLine(accountId: number, side: 'debit' | 'credit', amount: number):
     journalEntryId: 1,
     accountId,
     projectId: null,
-    householdMemberId: null,
+    householdMemberId: 1,
     counterpartyId: null,
     settlementBatchId: null,
     side,

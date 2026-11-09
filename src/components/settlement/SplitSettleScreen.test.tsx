@@ -33,8 +33,8 @@ function makeRepositories() {
     createdAt: '',
     updatedAt: '',
     lines: [
-      { id: 11, journalEntryId: 1, accountId: 1, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 1200, createdAt: '' },
-      { id: 12, journalEntryId: 1, accountId: 2, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 1200, createdAt: '' },
+      { id: 11, journalEntryId: 1, accountId: 1, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 1200, createdAt: '' },
+      { id: 12, journalEntryId: 1, accountId: 2, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 1200, createdAt: '' },
     ],
   } as JournalEntry
   const repositories = {

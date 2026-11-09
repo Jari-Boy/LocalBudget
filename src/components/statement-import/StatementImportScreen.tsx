@@ -22,6 +22,7 @@ import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBa
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
 import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
 import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
+import { createLineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
 import { buildConfirmedJournalEntryInput } from '../../domain/statement-import/buildConfirmedJournalEntryInput'
 import { buildStatementImportReview, type StatementImportReviewResult } from '../../domain/statement-import/buildStatementImportReview'
 import { collectUnreferencedTransactions } from '../../domain/statement-import/collectUnreferencedTransactions'
@@ -482,6 +483,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             deleted.add(candidate.journalEntryId)
           }
         }
+        // 起票者: 相手科目の行の世帯メンバー、無ければ取込先の既定の名義、無ければ先頭のメンバー
+        const entryHouseholdMemberId = (state.householdMemberId ?? account.householdMemberId ?? data!.members[0]?.id) as number
         await Promise.resolve(
           journalEntryRepository.create(
             buildConfirmedJournalEntryInput({
@@ -495,8 +498,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               householdMemberId: state.householdMemberId,
               settlementBatchId: isTaggableAccountId(state.counterAccountId, accountList) ? state.settlementBatchId : null,
               comment: state.comment,
-              // 起票者: 相手科目の行の世帯メンバー、無ければ取込先の既定の名義、無ければ先頭のメンバー
-              entryHouseholdMemberId: (state.householdMemberId ?? account.householdMemberId ?? data!.members[0]?.id) as number,
+              entryHouseholdMemberId,
+              // 明細行の世帯メンバー: 科目の既定メンバー > 相手科目の行に選んだ世帯メンバー > 起票者(計画Issue #169)
+              resolveLineHouseholdMemberId: createLineHouseholdMemberResolver([account, ...accountList], entryHouseholdMemberId),
             }),
           ),
         )

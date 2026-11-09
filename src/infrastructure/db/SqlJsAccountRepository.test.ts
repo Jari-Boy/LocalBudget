@@ -111,9 +111,9 @@ describe('delete', () => {
     )
     const entryId = lastInsertRowId(db)
     db.run(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, side, amount)
-       VALUES (?, ?, 'debit', 500)`,
-      [entryId, account.id],
+      `INSERT INTO journal_lines (journal_entry_id, account_id, household_member_id, side, amount)
+       VALUES (?, ?, ?, 'debit', 500)`,
+      [entryId, account.id, memberId],
     )
 
     expect(() => repository.delete(account.id)).toThrow()

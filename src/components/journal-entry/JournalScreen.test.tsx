@@ -63,7 +63,7 @@ function line(id: number, entryId: number, side: 'debit' | 'credit', accountId: 
     journalEntryId: entryId,
     accountId,
     projectId: null,
-    householdMemberId: null,
+    householdMemberId: 1,
     counterpartyId: null,
     settlementBatchId: batch,
     side,

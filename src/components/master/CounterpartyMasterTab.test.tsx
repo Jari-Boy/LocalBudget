@@ -168,8 +168,8 @@ describe('CounterpartyMasterTab', () => {
       entryDate: '2026-11-01',
       householdMemberId: memberId,
       lines: [
-        { accountId: expenseId, side: 'debit', amount: 1000, counterpartyId: aeon.id },
-        { accountId: cashId, side: 'credit', amount: 1000 },
+        { householdMemberId: memberId, accountId: expenseId, side: 'debit', amount: 1000, counterpartyId: aeon.id },
+        { householdMemberId: memberId, accountId: cashId, side: 'credit', amount: 1000 },
       ],
     })
     renderTab()

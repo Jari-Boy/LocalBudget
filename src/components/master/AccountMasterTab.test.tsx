@@ -66,8 +66,8 @@ function postEntry(debitId: number, creditId: number, sourceType: 'manual' | 'in
     sourceType,
     householdMemberId: memberId,
     lines: [
-      { accountId: debitId, side: 'debit', amount: 1000 },
-      { accountId: creditId, side: 'credit', amount: 1000 },
+      { householdMemberId: memberId, accountId: debitId, side: 'debit', amount: 1000 },
+      { householdMemberId: memberId, accountId: creditId, side: 'credit', amount: 1000 },
     ],
   })
 }

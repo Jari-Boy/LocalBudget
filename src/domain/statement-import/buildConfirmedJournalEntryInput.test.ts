@@ -4,11 +4,16 @@
  * レビュー確定内容から、JournalEntryRepository.create()にそのまま渡せるCreateJournalEntryInput
  * (external_transaction_ref込み)を組み立てることを検証する。「amount正 = 対象科目残高が増える
  * 方向」であり、資産(asset)は借方増加・負債(liability)は貸方増加という科目区分による向きの
- * 反転(1.2の注記)を含む。DB非依存、外部依存なし。
+ * 反転(1.2の注記)を含む。明細行の世帯メンバーは、科目の既定メンバー > 相手科目の行に選んだ世帯メンバー >
+ * 起票者の順で必ず確定する(計画Issue #169)。DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
+import { createLineHouseholdMemberResolver } from '../journal/resolveLineHouseholdMemberId'
 import type { ImportedRecord } from './ImportedRecord'
 import { buildConfirmedJournalEntryInput } from './buildConfirmedJournalEntryInput'
+
+/** 科目に既定の世帯メンバーが無い前提で、起票者(99)を既定値にする */
+const resolveLineHouseholdMemberId = createLineHouseholdMemberResolver([], 99)
 
 function record(overrides: Partial<ImportedRecord> = {}): ImportedRecord {
   return {
@@ -31,12 +36,13 @@ describe('資産科目(asset)の場合', () => {
       targetAccountCategory: 'asset',
       counterAccountId: 2,
       entryHouseholdMemberId: 99,
+      resolveLineHouseholdMemberId,
     })
 
     expect(input.householdMemberId).toBe(99)
     expect(input.lines).toEqual([
-      { accountId: 2, side: 'debit', amount: 150, counterpartyId: null, projectId: null, householdMemberId: null },
-      { accountId: 1, side: 'credit', amount: 150 },
+      { accountId: 2, side: 'debit', amount: 150, counterpartyId: null, projectId: null, householdMemberId: 99 },
+      { accountId: 1, side: 'credit', amount: 150, householdMemberId: 99 },
     ])
   })
 
@@ -48,11 +54,12 @@ describe('資産科目(asset)の場合', () => {
       targetAccountCategory: 'asset',
       counterAccountId: 3,
       entryHouseholdMemberId: 99,
+      resolveLineHouseholdMemberId,
     })
 
     expect(input.lines).toEqual([
-      { accountId: 1, side: 'debit', amount: 250000 },
-      { accountId: 3, side: 'credit', amount: 250000, counterpartyId: null, projectId: null, householdMemberId: null },
+      { accountId: 1, side: 'debit', amount: 250000, householdMemberId: 99 },
+      { accountId: 3, side: 'credit', amount: 250000, counterpartyId: null, projectId: null, householdMemberId: 99 },
     ])
   })
 })
@@ -66,11 +73,12 @@ describe('負債科目(liability、クレジットカード未払金)の場合',
       targetAccountCategory: 'liability',
       counterAccountId: 4,
       entryHouseholdMemberId: 99,
+      resolveLineHouseholdMemberId,
     })
 
     expect(input.lines).toEqual([
-      { accountId: 4, side: 'debit', amount: 3000, counterpartyId: null, projectId: null, householdMemberId: null },
-      { accountId: 1, side: 'credit', amount: 3000 },
+      { accountId: 4, side: 'debit', amount: 3000, counterpartyId: null, projectId: null, householdMemberId: 99 },
+      { accountId: 1, side: 'credit', amount: 3000, householdMemberId: 99 },
     ])
   })
 })
@@ -84,6 +92,7 @@ describe('共通のヘッダー情報', () => {
       targetAccountCategory: 'asset',
       counterAccountId: 2,
       entryHouseholdMemberId: 99,
+      resolveLineHouseholdMemberId,
     })
 
     expect(input.entryDate).toBe('2026-08-01')
@@ -105,6 +114,7 @@ describe('共通のヘッダー情報', () => {
       targetAccountCategory: 'asset',
       counterAccountId: 2,
       entryHouseholdMemberId: 99,
+      resolveLineHouseholdMemberId,
     })
 
     expect(input.externalTransactionRef).toEqual({
@@ -129,6 +139,7 @@ describe('共通のヘッダー情報', () => {
       projectId: 20,
       householdMemberId: 30,
       entryHouseholdMemberId: 99,
+      resolveLineHouseholdMemberId,
     })
 
     expect(input.lines[0]).toEqual({
@@ -142,6 +153,38 @@ describe('共通のヘッダー情報', () => {
   })
 })
 
+describe('明細行の世帯メンバー(計画Issue #169)', () => {
+  const base = {
+    record: record({ amount: -150 }),
+    externalId: 'HASH-001',
+    targetAccountId: 1,
+    targetAccountCategory: 'asset' as const,
+    counterAccountId: 2,
+    entryHouseholdMemberId: 99,
+  }
+
+  it('相手科目の行に世帯メンバーを選ばなければ、両行とも起票者になる', () => {
+    const input = buildConfirmedJournalEntryInput({ ...base, resolveLineHouseholdMemberId })
+
+    expect(input.lines.map((l) => l.householdMemberId)).toEqual([99, 99])
+  })
+
+  it('取込先の科目に既定の世帯メンバーがあれば、対象科目の行はその既定値になる(起票者によらない)', () => {
+    const resolve = createLineHouseholdMemberResolver([{ id: 1, householdMemberId: 7 }], 99)
+    const input = buildConfirmedJournalEntryInput({ ...base, resolveLineHouseholdMemberId: resolve })
+
+    expect(input.lines.find((l) => l.accountId === 1)?.householdMemberId).toBe(7)
+    expect(input.lines.find((l) => l.accountId === 2)?.householdMemberId).toBe(99)
+  })
+
+  it('相手科目に既定の世帯メンバーがあれば、選んだ世帯メンバーより既定値が優先される', () => {
+    const resolve = createLineHouseholdMemberResolver([{ id: 2, householdMemberId: 7 }], 99)
+    const input = buildConfirmedJournalEntryInput({ ...base, householdMemberId: 30, resolveLineHouseholdMemberId: resolve })
+
+    expect(input.lines.find((l) => l.accountId === 2)?.householdMemberId).toBe(7)
+  })
+})
+
 describe('精算バッチとコメントの設定(計画Issue #144)', () => {
   const base = {
     record: record({ amount: -150 }),
@@ -150,6 +193,7 @@ describe('精算バッチとコメントの設定(計画Issue #144)', () => {
     targetAccountCategory: 'asset' as const,
     counterAccountId: 2,
     entryHouseholdMemberId: 99,
+    resolveLineHouseholdMemberId,
   }
 
   it('settlementBatchIdを指定すると相手科目の行にのみタグが付く(対象科目の行には付かない)', () => {
@@ -162,10 +206,10 @@ describe('精算バッチとコメントの設定(計画Issue #144)', () => {
         amount: 150,
         counterpartyId: null,
         projectId: null,
-        householdMemberId: null,
+        householdMemberId: 99,
         settlementBatchId: 7,
       },
-      { accountId: 1, side: 'credit', amount: 150 },
+      { accountId: 1, side: 'credit', amount: 150, householdMemberId: 99 },
     ])
   })
 

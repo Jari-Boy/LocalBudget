@@ -128,7 +128,7 @@ describe('calculateSettlementBatchBalance', () => {
   it('counterparty_idで対象を絞り込める(世帯外の相手の立替金は立て替えた世帯メンバーのhousehold_member_idで区別するため、通常はnull同士の一致で絞り込まれる)', () => {
     const lines = [
       buildLine({ id: 1, amount: 500, side: 'debit', counterpartyId: null }),
-      buildLine({ id: 2, amount: 999, side: 'debit', householdMemberId: null, counterpartyId: 5 }),
+      buildLine({ id: 2, amount: 999, side: 'debit', householdMemberId: 1, counterpartyId: 5 }),
     ]
 
     const balance = calculateSettlementBatchBalance(lines, 'asset', {
