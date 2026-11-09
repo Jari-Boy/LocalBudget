@@ -269,3 +269,8 @@
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
 }
+
+/* 選択した期間の範囲を示す帯(推移のグラフで、期間が12か月未満のとき) */
+.chart__band {
+  fill: var(--color-hover);
+}
