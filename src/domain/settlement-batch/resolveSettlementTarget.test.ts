@@ -1,8 +1,8 @@
 /**
  * resolveSettlementTarget(精算タブで、選んだバッチ・方向の「対象者」と、比べる残高を決める純粋関数、
- * 計画Issue #153)のユニットテスト。世帯外の相手(取引先)のバッチは取引先を対象者にして方向全体の
- * 残高と比べ、世帯内のバッチは残高が残っている世帯メンバーを対象者にしてそのメンバーの残高と比べる
- * ことを検証する。DB非依存の純粋関数。
+ * 計画Issue #153)のユニットテスト。バッチが世帯内でも世帯外の相手でも、対象者は残高が残っている
+ * 世帯メンバー(残高は「科目×世帯メンバー」で持ち、バッチはイベントをまとめるだけ)で、そのメンバーの
+ * 残高と比べることを検証する。すべての行に世帯メンバーが入る前提(制約の実装は別Issue)。DB非依存の純粋関数。
  */
 import { describe, expect, it } from 'vitest'
 import type { SettlementBatch } from './SettlementBatch'
@@ -35,12 +35,12 @@ function summary(
 }
 
 describe('resolveSettlementTarget', () => {
-  it('世帯外の相手のバッチは、取引先を対象者にして方向全体の残高と比べる', () => {
+  it('世帯外の相手のバッチも、対象者は残高が残っている世帯メンバーで、そのメンバーの残高と比べる', () => {
     const b = batch(9)
     const s = summary(b, direction('advance', [{ householdMemberId: 1, balance: 12000 }]), direction('payable', []))
 
-    expect(resolveSettlementTarget(b, s, 'advance')).toEqual({
-      target: { kind: 'counterparty', counterpartyId: 9 },
+    expect(resolveSettlementTarget(s, 'advance')).toEqual({
+      target: { kind: 'householdMember', householdMemberId: 1 },
       balance: 12000,
     })
   })
@@ -56,7 +56,7 @@ describe('resolveSettlementTarget', () => {
       direction('payable', []),
     )
 
-    expect(resolveSettlementTarget(b, s, 'advance')).toEqual({
+    expect(resolveSettlementTarget(s, 'advance')).toEqual({
       target: { kind: 'householdMember', householdMemberId: 2 },
       balance: 6000,
     })
@@ -66,7 +66,7 @@ describe('resolveSettlementTarget', () => {
     const b = batch(null)
     const s = summary(b, direction('advance', [{ householdMemberId: 2, balance: 6000 }]), direction('payable', []))
 
-    expect(resolveSettlementTarget(b, s, 'payable')).toEqual({
+    expect(resolveSettlementTarget(s, 'payable')).toEqual({
       target: { kind: 'householdMember', householdMemberId: 2 },
       balance: 0,
     })
@@ -76,6 +76,6 @@ describe('resolveSettlementTarget', () => {
     const b = batch(null)
     const s = summary(b, direction('advance', []), direction('payable', []))
 
-    expect(resolveSettlementTarget(b, s, 'advance')).toEqual({ target: null, balance: 0 })
+    expect(resolveSettlementTarget(s, 'advance')).toEqual({ target: null, balance: 0 })
   })
 })

@@ -121,7 +121,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
     'advance'
   const direction = directionOverride ?? primaryDirection
   const directionSummary = summary[direction]
-  const resolved = resolveSettlementTarget(batch, summary, direction)
+  const resolved = resolveSettlementTarget(summary, direction)
   const side = direction === 'advance' ? 'credit' : 'debit'
   const category = direction === 'advance' ? 'asset' : 'liability'
 

@@ -1,6 +1,7 @@
 import type { Account } from '../account/Account'
 import type { JournalLine } from '../journal/JournalEntry'
 import type { SettlementBatch } from './SettlementBatch'
+import { isSettlementBatchBalanceZero } from './isSettlementBatchBalanceZero'
 
 /** 精算の方向。立替金(資産)を減らす'advance'と、未払金(負債)を減らす'payable' */
 export type SettlementDirection = 'advance' | 'payable'
@@ -29,10 +30,7 @@ export interface SettlementBatchSummary {
   payable: SettlementDirectionSummary | null
   /** 立替金・未払金のどちらかにタグ付き明細が1行以上あるか */
   hasLines: boolean
-  /**
-   * 明細が1行以上あり、方向ごとの残高が0。世帯内のバッチは(科目, 世帯メンバー)の組ごとに、
-   * 世帯外の相手のバッチは、精算の行が世帯メンバーを持てないため方向ごとの合計で判定する
-   */
+  /** 明細が1行以上あり、(科目, 世帯メンバー)の組ごとの残高がすべて0。明細の無い方向は見ない */
   isSettled: boolean
 }
 
@@ -62,19 +60,10 @@ function summarizeDirection(
   }
 }
 
-function isSettled(batch: SettlementBatch, directions: readonly (SettlementDirectionSummary | null)[]): boolean {
-  const withLines = directions.filter((d): d is SettlementDirectionSummary => d !== null && d.hasLines)
-  if (withLines.length === 0) return false
-  return withLines.every((d) =>
-    batch.counterpartyId === null ? d.breakdown.every((b) => b.balance === 0) : d.balance === 0,
-  )
-}
-
 /**
  * 精算画面の精算バッチ一覧・方向カードに出す集計(docs/domain/settlement.md 1.9、計画Issue #153)。
  * 同じバッチの立替金(資産)と未払金(負債)の残高を別々に求め、合算も相殺もしない。
- * 精算済みは「バッチの残高が0かどうか」だけで判定する(明細のある方向がすべて0。判定の単位は
- * isSettledを参照)ため、
+ * 精算済みは「バッチの残高が0かどうか」だけで判定する(isSettlementBatchBalanceZeroと同じ)ため、
  * 仕訳を削除して残高が0でなくなれば未精算に戻る。DB非依存の純粋関数。
  */
 export function summarizeSettlementBatch(
@@ -92,6 +81,6 @@ export function summarizeSettlementBatch(
     advance,
     payable,
     hasLines: (advance?.hasLines ?? false) || (payable?.hasLines ?? false),
-    isSettled: isSettled(batch, [advance, payable]),
+    isSettled: isSettlementBatchBalanceZero(batch, lines, accounts),
   }
 }

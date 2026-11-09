@@ -372,6 +372,23 @@ describe('SettleTab: 候補の仕訳で精算する', () => {
     expect(repositories.journalEntryLinkGroupRepository.joinOrCreateGroups).toHaveBeenCalled()
   })
 
+  it('世帯外の相手のバッチでも、精算の仕訳の立替金の行に、バッチの行と同じ世帯メンバーを付ける', async () => {
+    const data = makeData()
+    data.batches = data.batches.map((b) => (b.id === 1 ? { ...b, counterpartyId: 9 } : b))
+    const { repositories, onChanged } = setup(data)
+
+    fireEvent.click(within(selected()).getByRole('button', { name: '+ 精算の仕訳を起票' }))
+    fireEvent.click(within(selected()).getByRole('button', { name: /^相手科目/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '相手科目' })).getByRole('button', { name: '普通預金' }))
+    fireEvent.click(within(selected()).getByRole('button', { name: '起票してバッチに紐付け' }))
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+    const created = (repositories.journalEntryRepository.create.mock.calls as unknown as [{ lines: JournalLine[] }][])[0][0]
+    expect(created.lines).toContainEqual(
+      expect.objectContaining({ accountId: ADVANCE, settlementBatchId: 1, householdMemberId: 1 }),
+    )
+  })
+
   it('条件に合う候補が無いときは、その旨を出す', () => {
     setup()
 
