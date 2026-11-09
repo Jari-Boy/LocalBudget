@@ -7,6 +7,8 @@ export interface ChartSeriesData {
   name: string
   /** カテゴリごとの値。値がないカテゴリはnull */
   values: readonly (number | null)[]
+  /** 系列の色。省略時は系列の並びに固定の色(「その他」を固定色にするときに指定する) */
+  color?: string
 }
 
 export type ChartType = 'bar' | 'stacked' | 'line'
@@ -263,4 +265,26 @@ export function tableRows(
       return value === null ? '-' : formatValue(value)
     }),
   }))
+}
+
+/** 横軸のラベルを間引かずに出せるカテゴリ数の上限(超えたら末尾から1つおきに出す) */
+const MAX_ALL_LABELS = 12
+
+/** 横軸にラベルを出すカテゴリの番号。13個以上は、重ならないよう末尾から1つおきにする。 */
+export function visibleLabelIndexes(categoryCount: number): number[] {
+  const all = Array.from({ length: categoryCount }, (_, i) => i)
+  if (categoryCount <= MAX_ALL_LABELS) return all
+  return all.filter((i) => i % 2 === (categoryCount - 1) % 2)
+}
+
+/**
+ * 選択した範囲(カテゴリの番号、両端を含む)を示す帯のx座標と幅。
+ * すべてのカテゴリを覆うときは帯を出さないためnullを返す。
+ */
+export function selectionBand(categoryCount: number, start: number, end: number): { x: number; width: number } | null {
+  const first = Math.max(start, 0)
+  const last = Math.min(end, categoryCount - 1)
+  if (first <= 0 && last >= categoryCount - 1) return null
+  const band = (PLOT.right - PLOT.left) / categoryCount
+  return { x: PLOT.left + band * first, width: band * (last - first + 1) }
 }

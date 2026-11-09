@@ -48,7 +48,7 @@ describe('AppShell', () => {
   it('サイドナビのリンクを1回クリックすると各領域の入口画面へ移動する', () => {
     renderShell('/journal/entries')
     fireEvent.click(within(nav()).getByRole('link', { name: '分析' }))
-    expect(screen.getByTestId('where')).toHaveTextContent('/reports/financial-statements')
+    expect(screen.getByTestId('where')).toHaveTextContent('/reports/analysis')
     fireEvent.click(within(nav()).getByRole('link', { name: 'マスタ' }))
     expect(screen.getByTestId('where')).toHaveTextContent('/master/accounts')
     fireEvent.click(within(nav()).getByRole('link', { name: '割勘・精算' }))

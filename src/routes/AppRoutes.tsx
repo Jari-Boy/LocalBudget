@@ -18,7 +18,9 @@ import type { ExternalTransactionRefRepository } from '../domain/reconciliation/
 import type { JournalEntryDraftRpcApi } from '../infrastructure/rpc/createRepositoryRegistry'
 import type { RecurringTransactionProposalRpcApi } from '../infrastructure/rpc/createRecurringTransactionProposalApi'
 import { useDbClient } from '../infrastructure/rpc/DbClientProvider'
-import { FinancialStatementScreen } from '../components/financial-statement/FinancialStatementScreen'
+import { AnalysisScreen } from '../components/analysis/AnalysisScreen'
+import type { AnalysisRepositories } from '../components/analysis/analysisData'
+import type { JournalEntryFilter } from '../domain/journal/JournalEntryFilter'
 import { JournalScreen, type JournalScreenProps, type JournalScreenTab } from '../components/journal-entry/JournalScreen'
 import { SplitSettleScreen, type SplitSettleTab } from '../components/settlement/SplitSettleScreen'
 import type { SplitSettleRepositories } from '../components/settlement/splitSettleData'
@@ -327,16 +329,22 @@ export function AppRoutes() {
         }
       />
 
+      {/* 分析画面は、財務諸表・グラフ分析・予算の3タブを画面内に持つ(計画Issue #155)。旧URLも同じ画面へ */}
+      <Route path="/reports" element={<Navigate to="/reports/analysis" replace />} />
+      <Route path="/reports/financial-statements" element={<Navigate to="/reports/analysis" replace />} />
       <Route
-        path="/reports/financial-statements"
+        path="/reports/analysis"
         element={
-          <FinancialStatementScreen
+          <AnalysisScreenRoute
             accountRepository={accountRepository}
+            accountGroupRepository={accountGroupRepository}
             journalEntryRepository={journalEntryRepository}
-            projectRepository={projectRepository}
             householdMemberRepository={householdMemberRepository}
+            projectRepository={projectRepository}
+            projectGroupRepository={projectGroupRepository}
             counterpartyRepository={counterpartyRepository}
-            onBack={() => navigate('/journal/entries')}
+            counterpartyGroupRepository={counterpartyGroupRepository}
+            budgetRepository={budgetRepository}
           />
         }
       />
@@ -362,6 +370,7 @@ function JournalScreenRoute(props: JournalScreenRouteProps) {
   const [searchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
   const initialTab: JournalScreenTab = tabParam === 'drafts' || tabParam === 'proposals' ? tabParam : 'list'
+  const initialFilter = (useLocation().state as { filter?: JournalEntryFilter } | null)?.filter
   const entryId = id === undefined ? undefined : Number(id)
 
   if (entryId !== undefined && !Number.isFinite(entryId)) {
@@ -370,10 +379,11 @@ function JournalScreenRoute(props: JournalScreenRouteProps) {
 
   return (
     <JournalScreen
-      key={`${initialTab}:${entryId ?? ''}`}
+      key={`${initialTab}:${entryId ?? ''}:${JSON.stringify(initialFilter ?? null)}`}
       {...props}
       initialTab={initialTab}
       initialEntryId={entryId}
+      initialFilter={initialFilter}
       onSplit={(entry) => navigate('/journal/splitting', { state: { entryIds: [entry.id] } })}
     />
   )
@@ -405,6 +415,26 @@ function SplitSettleScreenRoute(props: SplitSettleScreenRouteProps) {
       repositories={repositories}
       initialTab={initialTab}
       initialCheckedEntryIds={entryIds}
+    />
+  )
+}
+
+/**
+ * 分析画面のルート(/reports/analysis)。科目の行・グラフの内訳の行から仕訳一覧へ移るときは、
+ * 期間と選んだ条件(JournalEntryFilter)を`navigate()`の`state`で渡す(計画Issue #155)。
+ * 画面は渡されたRepositoryが変わるとデータを読み直すため、オブジェクトは作り直さない。
+ */
+function AnalysisScreenRoute(props: AnalysisRepositories) {
+  const navigate = useNavigate()
+  const repositories = useMemo(
+    () => props,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    Object.values(props),
+  )
+  return (
+    <AnalysisScreen
+      repositories={repositories}
+      onOpenJournal={(filter) => navigate('/journal/entries', { state: { filter } })}
     />
   )
 }

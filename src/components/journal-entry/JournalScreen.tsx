@@ -102,6 +102,8 @@ export interface JournalScreenProps {
   initialTab?: JournalScreenTab
   /** 最初に選ぶ仕訳(割勘の履歴などから開くとき) */
   initialEntryId?: number
+  /** 最初の絞り込み条件(分析画面から、期間と選んだ条件を引き継いで開くとき。計画Issue #155) */
+  initialFilter?: JournalEntryFilter
 }
 
 interface LoadedData {
@@ -165,7 +167,7 @@ export function JournalScreen(props: JournalScreenProps) {
 
   const [data, setData] = useState<LoadedData | null>(null)
   const [tab, setTab] = useState<JournalScreenTab>(props.initialTab ?? 'list')
-  const [filter, setFilter] = useState<JournalEntryFilter>({})
+  const [filter, setFilter] = useState<JournalEntryFilter>(props.initialFilter ?? {})
   const [selection, setSelection] = useState<Selection | null>(null)
   const [editor, setEditor] = useState<JournalEditorValue | null>(null)
   const [flash, setFlash] = useState('')

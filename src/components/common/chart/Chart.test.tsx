@@ -193,3 +193,49 @@ describe('HorizontalBarChart', () => {
     expect(screen.getByText('データがありません')).toBeInTheDocument()
   })
 })
+
+describe('Chart(分析画面向けの拡張、計画Issue #155)', () => {
+  it('系列にcolorを渡すと、凡例の色がその色になる(「その他」を固定色にするため)', () => {
+    render(
+      <Chart
+        {...baseProps}
+        series={[
+          { key: 'a', name: '食', values: [1, 2, 3] },
+          { key: 'b', name: 'その他', values: [1, 2, 3], color: '#123456' },
+        ]}
+      />,
+    )
+    const legend = screen.getByRole('list', { name: '凡例' })
+    const swatch = within(legend).getByText('その他').querySelector('.chart__swatch') as HTMLElement
+    expect(swatch.style.background).toBe('rgb(18, 52, 86)')
+  })
+
+  it('formatAxisを渡すと、縦軸の目盛りだけをその整形にする(ツールチップは変えない)', () => {
+    render(<Chart {...baseProps} formatAxis={(n) => `${n / 10000}万`} />)
+    const svg = screen.getByRole('img', { name: baseProps.summary })
+    expect(svg).toHaveTextContent('万')
+    fireEvent.mouseEnter(hitOf(/10月/))
+    expect(screen.getByRole('tooltip')).toHaveTextContent('300,000円')
+  })
+
+  it('highlightRangeを渡すと、選択した範囲の帯を描く', () => {
+    const { container } = render(<Chart {...baseProps} highlightRange={[1, 2]} />)
+    expect(container.querySelector('.chart__band')).not.toBeNull()
+  })
+
+  it('highlightRangeがすべてのカテゴリを覆うときは、帯を描かない', () => {
+    const { container } = render(<Chart {...baseProps} highlightRange={[0, 2]} />)
+    expect(container.querySelector('.chart__band')).toBeNull()
+  })
+
+  it('renderTooltipExtraを渡すと、ツールチップに追加の内容を出す', () => {
+    render(<Chart {...baseProps} renderTooltipExtra={(i) => <p>上位の仕訳 {i}</p>} />)
+    fireEvent.mouseEnter(hitOf(/11月/))
+    expect(within(screen.getByRole('tooltip')).getByText('上位の仕訳 1')).toBeInTheDocument()
+  })
+
+  it('showTable={false}のときは、グラフごとの「数値を表で見る」を出さない', () => {
+    render(<Chart {...baseProps} showTable={false} />)
+    expect(screen.queryByText('数値を表で見る')).toBeNull()
+  })
+})

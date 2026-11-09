@@ -1,6 +1,16 @@
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import { colorForSeries } from './chartPalette'
-import { barPath, layoutChart, PLOT, scaleY, tableRows, type ChartSeriesData, type ChartType } from './chartModel'
+import {
+  barPath,
+  layoutChart,
+  PLOT,
+  scaleY,
+  selectionBand,
+  tableRows,
+  visibleLabelIndexes,
+  type ChartSeriesData,
+  type ChartType,
+} from './chartModel'
 import './Chart.css'
 
 export interface ChartProps {
@@ -14,6 +24,14 @@ export interface ChartProps {
   summary: string
   /** 渡すと、カテゴリのクリック・Enterでその内訳を下に固定表示する */
   renderDetail?: (categoryIndex: number) => ReactNode
+  /** 縦軸の目盛りだけの整形(例: 「10万」)。省略時はformatValue */
+  formatAxis?: (value: number) => string
+  /** 選択した範囲(カテゴリの番号、両端を含む)。すべてを覆うときは帯を出さない */
+  highlightRange?: readonly [number, number]
+  /** ツールチップの下に足す内容(例: 対象の仕訳行の上位) */
+  renderTooltipExtra?: (categoryIndex: number) => ReactNode
+  /** falseで、グラフごとの「数値を表で見る」を出さない(画面側で1つの表にまとめるとき) */
+  showTable?: boolean
 }
 
 /** 直接ラベル(線の端の系列名)を出す系列数の上限。これを超えると凡例だけにする。 */
@@ -25,13 +43,28 @@ const MAX_DIRECT_LABELS = 4
  * 各カテゴリの領域は、ホバー・フォーカスでツールチップ、クリック・Enterで内訳の固定表示、
  * ←→キーでカテゴリ間の移動ができる。グラフライブラリは使わない(ユーザー決定)。
  */
-export function Chart({ type, title, categories, series, formatValue, summary, renderDetail }: ChartProps) {
+export function Chart({
+  type,
+  title,
+  categories,
+  series,
+  formatValue,
+  summary,
+  renderDetail,
+  formatAxis = formatValue,
+  highlightRange,
+  renderTooltipExtra,
+  showTable = true,
+}: ChartProps) {
   const [hovered, setHovered] = useState<number | null>(null)
   const [pinned, setPinned] = useState<number | null>(null)
 
   const layout = layoutChart(type, categories.length, series)
   const rows = tableRows(categories, series, formatValue)
   const labelPoints = series.length <= MAX_DIRECT_LABELS
+  const colorOf = (index: number) => series[index]?.color ?? colorForSeries(index)
+  const band = highlightRange ? selectionBand(categories.length, highlightRange[0], highlightRange[1]) : null
+  const labelIndexes = new Set(visibleLabelIndexes(categories.length))
 
   const hitLabel = (categoryIndex: number) =>
     `${categories[categoryIndex]}: ${series
@@ -72,7 +105,7 @@ export function Chart({ type, title, categories, series, formatValue, summary, r
           <ul className="chart__legend" aria-label="凡例">
             {series.map((s, index) => (
               <li key={s.key} className="chart__legend-item">
-                <span aria-hidden="true" className="chart__swatch" style={{ background: colorForSeries(index) }} />
+                <span aria-hidden="true" className="chart__swatch" style={{ background: colorOf(index) }} />
                 {s.name}
               </li>
             ))}
@@ -82,6 +115,15 @@ export function Chart({ type, title, categories, series, formatValue, summary, r
 
       <div className="chart__plot">
         <svg viewBox={`0 0 ${PLOT.width} ${PLOT.height}`} role="img" aria-label={summary} className="chart__svg">
+          {band && (
+            <rect
+              x={band.x}
+              y={PLOT.top - 8}
+              width={band.width}
+              height={PLOT.bottom - PLOT.top + 8}
+              className="chart__band"
+            />
+          )}
           {layout.scale.ticks.map((tick) => {
             const y = scaleY(tick, layout.scale)
             return (
@@ -94,7 +136,7 @@ export function Chart({ type, title, categories, series, formatValue, summary, r
                   className={tick === 0 ? 'chart__baseline' : 'chart__grid'}
                 />
                 <text x={PLOT.left - 6} y={y + 4} data-axis="y" className="chart__axis-label chart__axis-label--y">
-                  {formatValue(tick)}
+                  {formatAxis(tick)}
                 </text>
               </g>
             )
@@ -104,7 +146,7 @@ export function Chart({ type, title, categories, series, formatValue, summary, r
             <path
               key={`${bar.seriesIndex}-${bar.categoryIndex}`}
               d={barPath(bar)}
-              fill={colorForSeries(bar.seriesIndex)}
+              fill={colorOf(bar.seriesIndex)}
               data-series={bar.seriesIndex}
               data-category={bar.categoryIndex}
             />
@@ -117,7 +159,7 @@ export function Chart({ type, title, categories, series, formatValue, summary, r
                   key={i}
                   points={segment.map((p) => `${p.x},${p.y}`).join(' ')}
                   fill="none"
-                  stroke={colorForSeries(line.seriesIndex)}
+                  stroke={colorOf(line.seriesIndex)}
                   strokeWidth={2}
                   strokeLinejoin="round"
                   strokeLinecap="round"
@@ -130,7 +172,7 @@ export function Chart({ type, title, categories, series, formatValue, summary, r
                   cx={p.x}
                   cy={p.y}
                   r={hovered === p.categoryIndex ? 5 : 3}
-                  fill={colorForSeries(line.seriesIndex)}
+                  fill={colorOf(line.seriesIndex)}
                   className="chart__dot"
                 />
               ))}
@@ -146,7 +188,8 @@ export function Chart({ type, title, categories, series, formatValue, summary, r
             </g>
           ))}
 
-          {categories.map((category, index) => (
+          {categories.map((category, index) =>
+            labelIndexes.has(index) ? (
             <text
               key={category}
               x={layout.hits[index].x + layout.hits[index].width / 2}
@@ -155,7 +198,8 @@ export function Chart({ type, title, categories, series, formatValue, summary, r
             >
               {category}
             </text>
-          ))}
+            ) : null,
+          )}
 
           {layout.hits.map((hit) => (
             <rect
@@ -190,13 +234,14 @@ export function Chart({ type, title, categories, series, formatValue, summary, r
               return (
                 <div key={s.key} className="chart__tooltip-row">
                   <span>
-                    <span aria-hidden="true" className="chart__swatch" style={{ background: colorForSeries(index) }} />{' '}
+                    <span aria-hidden="true" className="chart__swatch" style={{ background: colorOf(index) }} />{' '}
                     {s.name}
                   </span>
                   <span className="chart__num">{value === null ? '-' : formatValue(value)}</span>
                 </div>
               )
             })}
+            {renderTooltipExtra?.(hovered)}
           </div>
         )}
       </div>
@@ -218,6 +263,7 @@ export function Chart({ type, title, categories, series, formatValue, summary, r
         </div>
       )}
 
+      {showTable && (
       <details className="chart__table">
         <summary>数値を表で見る</summary>
         <div className="chart__table-scroll">
@@ -247,6 +293,7 @@ export function Chart({ type, title, categories, series, formatValue, summary, r
           </table>
         </div>
       </details>
+      )}
     </section>
   )
 }

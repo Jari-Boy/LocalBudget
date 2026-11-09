@@ -12,6 +12,8 @@ import {
   PLOT,
   scaleY,
   tableRows,
+  visibleLabelIndexes,
+  selectionBand,
   type ChartSeriesData,
 } from './chartModel'
 
@@ -153,5 +155,28 @@ describe('tableRows', () => {
       { category: '1月', cells: ['1000円'] },
       { category: '2月', cells: ['-'] },
     ])
+  })
+})
+
+describe('visibleLabelIndexes', () => {
+  it('12個以下のカテゴリは、すべての横軸ラベルを出す', () => {
+    expect(visibleLabelIndexes(12)).toEqual(Array.from({ length: 12 }, (_, i) => i))
+  })
+
+  it('13個以上のカテゴリは、重ならないよう末尾から1つおきにラベルを出す', () => {
+    expect(visibleLabelIndexes(14)).toEqual([1, 3, 5, 7, 9, 11, 13])
+    expect(visibleLabelIndexes(13)).toEqual([0, 2, 4, 6, 8, 10, 12])
+  })
+})
+
+describe('selectionBand', () => {
+  it('選択した月の範囲を、プロット領域のx座標と幅で返す', () => {
+    const band = selectionBand(12, 10, 11)
+    const slot = (PLOT.right - PLOT.left) / 12
+    expect(band).toEqual({ x: PLOT.left + slot * 10, width: slot * 2 })
+  })
+
+  it('範囲がすべてのカテゴリを覆うときは、帯を出さない(null)', () => {
+    expect(selectionBand(12, 0, 11)).toBeNull()
   })
 })
