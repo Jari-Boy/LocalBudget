@@ -99,5 +99,7 @@ export interface UpdateJournalEntryInput {
   memo?: string | null
   /** 未指定の場合は既存のコメントを維持する。nullを指定すると消去する(計画Issue #144) */
   comment?: string | null
+  /** 起票者。未指定の場合は既存の起票者を維持する(計画Issue #169)。明細行の世帯メンバーは各行で渡す */
+  householdMemberId?: number
   lines: JournalLineInput[]
 }

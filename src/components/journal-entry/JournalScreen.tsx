@@ -290,16 +290,17 @@ export function JournalScreen(props: JournalScreenProps) {
   const withKeys = (lines: JournalEntryFormLine[]): JournalEditorLine[] =>
     lines.map((line) => ({ key: (lineKey.current += 1), line }))
 
-  const emptyLines = () =>
+  /** 新しい仕訳の空の2行。明細行の世帯メンバーの既定値は起票者(計画Issue #169) */
+  const emptyLines = (memberId: number | null) =>
     withKeys([
-      { ...createEmptyJournalEntryFormLine(), side: 'debit' },
-      { ...createEmptyJournalEntryFormLine(), side: 'credit' },
+      { ...createEmptyJournalEntryFormLine(), side: 'debit', householdMemberId: memberId },
+      { ...createEmptyJournalEntryFormLine(), side: 'credit', householdMemberId: memberId },
     ])
 
   function buildValue(sel: Selection, d: LoadedData): JournalEditorValue | null {
     const firstMember = d.members.find((m) => m.isActive)?.id ?? null
     if (sel.kind === 'new') {
-      return { entryDate: today(), memo: '', comment: '', householdMemberId: firstMember, lines: emptyLines() }
+      return { entryDate: today(), memo: '', comment: '', householdMemberId: firstMember, lines: emptyLines(firstMember) }
     }
     if (sel.kind === 'entry') {
       const entry = d.entries.find((e) => e.id === sel.id)
@@ -315,12 +316,27 @@ export function JournalScreen(props: JournalScreenProps) {
     if (sel.kind === 'draft') {
       const draft = d.drafts.find((x) => x.id === sel.id)
       if (draft === undefined) return null
+      const draftMember = draft.householdMemberId ?? firstMember
+      const accountDefaultOf = (accountId: number | null) =>
+        accountId === null ? null : (d.accounts.find((a) => a.id === accountId)?.householdMemberId ?? null)
       return {
         entryDate: draft.entryDate ?? today(),
         memo: draft.memo ?? '',
         comment: draft.comment ?? '',
-        householdMemberId: draft.householdMemberId ?? firstMember,
-        lines: draft.lines.length > 0 ? withKeys(draft.lines.map(fromJournalEntryDraftLine)) : emptyLines(),
+        householdMemberId: draftMember,
+        // 下書きの未入力の世帯メンバーは、再開時に科目の既定メンバー、無ければ起票者で補う(明細行は常に世帯メンバーを持つ)
+        lines:
+          draft.lines.length > 0
+            ? withKeys(
+                draft.lines.map((l) => {
+                  const formLine = fromJournalEntryDraftLine(l)
+                  return {
+                    ...formLine,
+                    householdMemberId: formLine.householdMemberId ?? accountDefaultOf(formLine.accountId) ?? draftMember,
+                  }
+                }),
+              )
+            : emptyLines(draftMember),
       }
     }
     const rule = d.rules.find((r) => r.id === sel.ruleId)
@@ -333,7 +349,7 @@ export function JournalScreen(props: JournalScreenProps) {
         side: s,
         amountInput: String(rule.amount),
         projectId: rule.projectId,
-        householdMemberId: rule.householdMemberId,
+        householdMemberId: rule.householdMemberId ?? firstMember,
         counterpartyId: account !== undefined && isCounterpartyEligibleCategory(account.category) ? rule.counterpartyId : null,
       }
     }
@@ -490,7 +506,10 @@ export function JournalScreen(props: JournalScreenProps) {
         })
         savedId = created.id
       } else {
-        await journalEntryRepository.update((selection as { id: number }).id, common)
+        await journalEntryRepository.update((selection as { id: number }).id, {
+          ...common,
+          ...(editor.householdMemberId === null ? {} : { householdMemberId: editor.householdMemberId }),
+        })
         savedId = (selection as { id: number }).id
       }
       await reloadAndOpen(

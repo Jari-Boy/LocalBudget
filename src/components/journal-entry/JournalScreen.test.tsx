@@ -191,7 +191,10 @@ function setup(
     projectRepository: { findAll: vi.fn(async () => []) },
     projectGroupRepository: { findAll: vi.fn(async () => []) },
     householdMemberRepository: {
-      findAll: vi.fn(async () => [{ id: 1, name: '夫', isGroup: false, isActive: true, createdAt: '', updatedAt: '' }]),
+      findAll: vi.fn(async () => [
+        { id: 1, name: '夫', isGroup: false, isActive: true, createdAt: '', updatedAt: '' },
+        { id: 2, name: '妻', isGroup: false, isActive: true, createdAt: '', updatedAt: '' },
+      ]),
     },
     settlementBatchRepository: {
       findAll: vi.fn(async () => [{ id: 7, name: '旅行', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]),
@@ -429,6 +432,50 @@ describe('JournalScreen', () => {
     expect(within(detail()).getByRole('button', { name: '保存' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
     expect(within(detail()).getByRole('button', { name: '保存して続けて入力' })).toBeInTheDocument()
+  })
+
+  describe('起票者と明細行の世帯メンバー(計画Issue #169)', () => {
+    it('起票者を変えて保存すると、更新に起票者が渡り、手で変えていない明細行も追従する', async () => {
+      const props = setup()
+      await ready()
+      fireEvent.change(within(detail()).getByRole('combobox', { name: '起票者' }), { target: { value: '2' } })
+      fireEvent.click(within(detail()).getByRole('button', { name: '保存' }))
+
+      await waitFor(() =>
+        expect(props.journalEntryRepository.update).toHaveBeenCalledWith(
+          1,
+          expect.objectContaining({
+            householdMemberId: 2,
+            lines: [
+              expect.objectContaining({ accountId: 1, householdMemberId: 2 }),
+              expect.objectContaining({ accountId: 2, householdMemberId: 2 }),
+            ],
+          }),
+        ),
+      )
+    })
+
+    it('新規仕訳では、明細行の世帯メンバーの既定値は起票者(有効な最初のメンバー)になる', async () => {
+      setup()
+      await ready()
+      fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+
+      const memberSelects = within(detail()).getAllByRole('combobox', { name: '世帯メンバー' })
+      expect(memberSelects).toHaveLength(2)
+      for (const select of memberSelects) expect(select).toHaveValue('1')
+    })
+
+    it('世帯メンバーが入っていない下書きの行は、再開すると起票者で補われて確定できる', async () => {
+      setup({ drafts: [balancedDraft(101, '確定する下書き')] })
+      await ready()
+      fireEvent.click(screen.getByRole('tab', { name: /下書き/ }))
+      fireEvent.click(await screen.findByRole('button', { name: /確定する下書き/ }))
+
+      for (const select of within(detail()).getAllByRole('combobox', { name: '世帯メンバー' })) {
+        expect(select).toHaveValue('1')
+      }
+      expect(within(detail()).getByRole('button', { name: '確定して仕訳にする' })).toBeEnabled()
+    })
   })
 
   describe('未保存の変更があるまま移動しようとしたとき', () => {

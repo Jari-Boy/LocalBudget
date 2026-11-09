@@ -367,6 +367,56 @@ function createLaterEntry(): void {
   })
 }
 
+describe('update: 起票者の変更(計画Issue #169)', () => {
+  function createWith(memberIdOfEntry: number) {
+    return repository.create({
+      householdMemberId: memberIdOfEntry,
+      entryDate: '2026-07-10',
+      lines: [
+        { householdMemberId: memberIdOfEntry, accountId: foodExpenseAccountId, side: 'debit', amount: 1000 },
+        { householdMemberId: memberIdOfEntry, accountId: cashAccountId, side: 'credit', amount: 1000 },
+      ],
+    })
+  }
+
+  it('householdMemberIdを渡すと起票者が変わる(明細行の世帯メンバーは、渡した行の値のまま)', () => {
+    const otherId = insertHouseholdMember(db, '妻')
+    const created = createWith(memberId)
+
+    const updated = repository.update(created.id, {
+      entryDate: created.entryDate,
+      householdMemberId: otherId,
+      lines: created.lines.map((l) => ({
+        id: l.id,
+        accountId: l.accountId,
+        householdMemberId: otherId,
+        side: l.side,
+        amount: l.amount,
+      })),
+    })
+
+    expect(updated.householdMemberId).toBe(otherId)
+    expect(updated.lines.map((l) => l.householdMemberId)).toEqual([otherId, otherId])
+  })
+
+  it('householdMemberIdを渡さなければ、起票者は変わらない', () => {
+    const created = createWith(memberId)
+
+    const updated = repository.update(created.id, {
+      entryDate: '2026-07-11',
+      lines: created.lines.map((l) => ({
+        id: l.id,
+        accountId: l.accountId,
+        householdMemberId: l.householdMemberId,
+        side: l.side,
+        amount: l.amount,
+      })),
+    })
+
+    expect(updated.householdMemberId).toBe(memberId)
+  })
+})
+
 describe('update(行idによる差分更新、計画Issue #132)', () => {
   it('全明細をid未指定で差し替えjournal_entries.updated_atを更新する', () => {
     const created = repository.create({

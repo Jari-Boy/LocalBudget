@@ -12,6 +12,7 @@ import {
   isCounterpartyEligibleCategory,
   type JournalEntryFormLine,
 } from './journalEntryFormLine'
+import { followBookkeeper, memberAfterAccountChange } from './journalEditorMember'
 import { summarizeBalance } from './journalScreenModel'
 import './JournalEntryEditor.css'
 
@@ -25,7 +26,7 @@ export interface JournalEditorValue {
   entryDate: string
   memo: string
   comment: string
-  /** 起票者。表示のみ(確定済みの仕訳では変更できない) */
+  /** 起票者。変えると、手で変えていない明細行の世帯メンバーが追従する(計画Issue #169) */
   householdMemberId: number | null
   lines: JournalEditorLine[]
 }
@@ -59,7 +60,8 @@ const SIDES: { side: JournalLineSide; label: string }[] = [
 /**
  * 仕訳の詳細パネルの編集部分(計画Issue #152)。取引日・摘要・起票者・コメントと、借方・貸方の2列の
  * 明細を編集する。1行目に科目・金額・削除、2行目に取引先(費用・収益のみ)・精算バッチ(システム管理の
- * 立替金・未払金のみ)・プロジェクト・世帯メンバーを置く。精算バッチのタグは行に保持され、編集しても落ちない
+ * 立替金・未払金のみ)・プロジェクト・世帯メンバーを置く。明細行の世帯メンバーは常に1人を選び、既定値は
+ * 起票者、科目に既定メンバーがある行はその既定値で固定する(計画Issue #169)。精算バッチのタグは行に保持され、編集しても落ちない
  * (計画Issue #144)。貸借の合計と差額は入力支援で、正式な検証はRepositoryが行う
  * (docs/architecture.md 12章)。保存などの操作ボタンと関連仕訳は、呼び出し側(JournalScreen)が置く。
  */
@@ -81,10 +83,25 @@ export function JournalEntryEditor({
   const updateLine = (key: number, change: (line: JournalEntryFormLine) => JournalEntryFormLine) =>
     update({ lines: value.lines.map((l) => (l.key === key ? { key, line: change(l.line) } : l)) })
 
+  const defaultMemberOf = (accountId: number | null): number | null =>
+    accountId === null ? null : (accountById.get(accountId)?.householdMemberId ?? null)
+
   const addLine = (side: JournalLineSide) => {
     const key = value.lines.reduce((max, l) => Math.max(max, l.key), 0) + 1
-    update({ lines: [...value.lines, { key, line: { ...createEmptyJournalEntryFormLine(), side } }] })
+    update({
+      lines: [
+        ...value.lines,
+        { key, line: { ...createEmptyJournalEntryFormLine(), side, householdMemberId: value.householdMemberId } },
+      ],
+    })
   }
+
+  /** 起票者を変えたとき、手で変えていない行の世帯メンバーを追従させる */
+  const changeBookkeeper = (next: number | null) =>
+    update({
+      householdMemberId: next,
+      lines: [...followBookkeeper(value.lines, defaultMemberOf, value.householdMemberId, next)],
+    })
 
   /** 科目を変えたとき、その科目では持てない取引先・精算バッチ・メンバーの指定を外す */
   const changeAccount = (key: number, accountId: number | null) =>
@@ -95,9 +112,24 @@ export function JournalEntryEditor({
         accountId,
         counterpartyId: account !== undefined && isCounterpartyEligibleCategory(account.category) ? line.counterpartyId : null,
         settlementBatchId: account !== undefined && isSettlementBatchTaggableAccount(account) ? line.settlementBatchId : null,
-        householdMemberId: account !== undefined && account.householdMemberId !== null ? null : line.householdMemberId,
+        householdMemberId: memberAfterAccountChange({
+          line,
+          newAccountDefault: account?.householdMemberId ?? null,
+          previousAccountDefault: defaultMemberOf(line.accountId),
+          entryMemberId: value.householdMemberId,
+        }),
       }
     })
+
+  /** 選べる世帯メンバー。無効なメンバーは、いま選ばれている場合だけ残す */
+  const memberOptions = (selectedId: number | null) =>
+    master.members
+      .filter((m) => m.isActive || m.id === selectedId)
+      .map((m) => (
+        <option key={m.id} value={m.id}>
+          {m.name}
+        </option>
+      ))
 
   const createBatch = async (key: number) => {
     if (onCreateBatch === undefined || newBatchName.trim() === '') return
@@ -106,8 +138,6 @@ export function JournalEntryEditor({
     setCreatingBatchKey(null)
     setNewBatchName('')
   }
-
-  const bookkeeper = value.householdMemberId === null ? '' : (memberById.get(value.householdMemberId)?.name ?? '')
 
   return (
     <div className="journal-editor">
@@ -138,8 +168,19 @@ export function JournalEntryEditor({
           />
         </div>
         <div className="journal-editor__field journal-editor__field--bookkeeper">
-          <span className="journal-editor__label">起票者</span>
-          <span className="journal-editor__bookkeeper">{bookkeeper}</span>
+          <label className="journal-editor__label" htmlFor="journal-editor-bookkeeper">
+            起票者
+          </label>
+          <select
+            id="journal-editor-bookkeeper"
+            className="journal-editor__control journal-editor__select"
+            value={value.householdMemberId === null ? '' : String(value.householdMemberId)}
+            disabled={readOnlyLines}
+            onChange={(e) => changeBookkeeper(e.target.value === '' ? null : Number(e.target.value))}
+          >
+            {value.householdMemberId === null && <option value="">選択してください</option>}
+            {memberOptions(value.householdMemberId)}
+          </select>
         </div>
         <div className="journal-editor__field journal-editor__field--comment">
           <label className="journal-editor__label" htmlFor="journal-editor-comment">
@@ -261,7 +302,7 @@ export function JournalEntryEditor({
                             onChange={(v) => updateLine(key, (l) => ({ ...l, projectId: v === '' ? null : Number(v) }))}
                           />
                         </div>
-                        {defaultMember !== undefined ? (
+                        {defaultMember !== undefined && line.householdMemberId === defaultMember.id ? (
                           <span className="journal-editor__locked">{defaultMember.name}(科目の既定)</span>
                         ) : (
                           <select
@@ -275,14 +316,19 @@ export function JournalEntryEditor({
                               }))
                             }
                           >
-                            <option value="">メンバーなし</option>
-                            {master.members
-                              .filter((m) => m.isActive || m.id === line.householdMemberId)
-                              .map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  {m.name}
+                            {line.householdMemberId === null && <option value="">選択してください</option>}
+                            {defaultMember === undefined ? (
+                              memberOptions(line.householdMemberId)
+                            ) : (
+                              // 科目の既定メンバーを後から変えて、旧メンバーのまま残した行。旧メンバーのまま保存するか、既定値にだけ変えられる
+                              [line.householdMemberId, defaultMember.id].map((id) => (
+                                <option key={id} value={id ?? ''}>
+                                  {id === defaultMember.id
+                                    ? `${defaultMember.name}(科目の既定)`
+                                    : (memberById.get(id ?? -1)?.name ?? '')}
                                 </option>
-                              ))}
+                              ))
+                            )}
                           </select>
                         )}
                       </div>

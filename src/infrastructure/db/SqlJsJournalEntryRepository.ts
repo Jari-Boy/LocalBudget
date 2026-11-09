@@ -105,12 +105,16 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
 
     this.db.run('BEGIN')
     try {
-      this.db.run(`UPDATE journal_entries SET entry_date = ?, memo = ?, comment = ? WHERE id = ?`, [
-        input.entryDate,
-        input.memo ?? null,
-        input.comment === undefined ? current.comment : input.comment,
-        id,
-      ])
+      this.db.run(
+        `UPDATE journal_entries SET entry_date = ?, memo = ?, comment = ?, household_member_id = ? WHERE id = ?`,
+        [
+          input.entryDate,
+          input.memo ?? null,
+          input.comment === undefined ? current.comment : input.comment,
+          input.householdMemberId === undefined ? current.householdMemberId : input.householdMemberId,
+          id,
+        ],
+      )
       applyLineDiff(this.db, current, input.lines)
       this.db.run('COMMIT')
       return this.findById(id)!

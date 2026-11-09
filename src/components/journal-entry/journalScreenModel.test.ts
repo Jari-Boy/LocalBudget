@@ -21,8 +21,13 @@ import {
 } from './journalScreenModel'
 import type { JournalEntryFormLine } from './journalEntryFormLine'
 
-function formLine(side: 'debit' | 'credit' | null, amountInput: string, accountId: number | null = 1): JournalEntryFormLine {
-  return { accountId, side, amountInput, projectId: null, householdMemberId: null, counterpartyId: null }
+function formLine(
+  side: 'debit' | 'credit' | null,
+  amountInput: string,
+  accountId: number | null = 1,
+  householdMemberId: number | null = 1,
+): JournalEntryFormLine {
+  return { accountId, side, amountInput, projectId: null, householdMemberId, counterpartyId: null }
 }
 
 function line(id: number, side: 'debit' | 'credit', accountId: number, amount: number): JournalLine {
@@ -76,6 +81,11 @@ describe('summarizeBalance', () => {
 describe('findIncompleteReason', () => {
   it('科目が未選択の行があれば unselectedAccount を返す', () => {
     expect(findIncompleteReason([formLine('debit', '100', null), formLine('credit', '100')])).toBe('unselectedAccount')
+  })
+
+  it('世帯メンバーが未選択の行があれば unselectedMember を返す(明細行は常に世帯メンバーを持つ、計画Issue #169)', () => {
+    expect(findIncompleteReason([formLine('debit', '100', 1, null), formLine('credit', '100')])).toBe('unselectedMember')
+    expect(describeIncompleteReason('unselectedMember')).toBe('世帯メンバーが未選択の行があります')
   })
 
   it('金額が0以下または未入力の行があれば invalidAmount を返す', () => {
