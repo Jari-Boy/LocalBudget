@@ -312,6 +312,17 @@
   color: var(--color-danger);
 }
 
+.split-settle__btn--danger-solid {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.split-settle__btn--danger-solid:hover:not(:disabled) {
+  background: var(--color-danger);
+  filter: brightness(0.9);
+}
+
 .split-settle__btn--small {
   min-height: 30px;
   padding: 0 10px;

@@ -557,53 +557,6 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
           </div>
         )}
 
-        {!summary.isSettled && (
-          <div className="split-settle__section">
-            <h3 className="split-settle__h3">バッチの削除</h3>
-            {!deletion.deletable ? (
-              <>
-                <p className="split-settle__note">
-                  精算が進んでいる(精算で紐づけた仕訳がある)ため、削除できません。
-                </p>
-                <button type="button" className="split-settle__btn split-settle__btn--small" disabled>
-                  このバッチを削除
-                </button>
-              </>
-            ) : confirmingDelete ? (
-              <>
-                <p className="split-settle__note">
-                  割勘仕訳{deletion.splitEntryIds.length}件とこのバッチを削除します。元の仕訳は削除しません。
-                </p>
-                <span className="split-settle__confirm">
-                  <button
-                    type="button"
-                    className="split-settle__btn split-settle__btn--small"
-                    onClick={() => setConfirmingDelete(false)}
-                  >
-                    やめる
-                  </button>
-                  <button
-                    type="button"
-                    className="split-settle__btn split-settle__btn--small split-settle__btn--danger"
-                    disabled={submitting}
-                    onClick={() => void deleteBatch()}
-                  >
-                    本当に削除する
-                  </button>
-                </span>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="split-settle__btn split-settle__btn--small"
-                onClick={() => setConfirmingDelete(true)}
-              >
-                このバッチを削除
-              </button>
-            )}
-          </div>
-        )}
-
         <div className="split-settle__section">
           <h3 className="split-settle__h3">このバッチの仕訳</h3>
           {taggedEntries.flatMap((entry) =>
@@ -626,6 +579,53 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
               )),
           )}
         </div>
+
+        {!summary.isSettled && (
+          <div className="split-settle__section">
+            <h3 className="split-settle__h3">バッチの削除</h3>
+            {!deletion.deletable ? (
+              <>
+                <p className="split-settle__note">
+                  精算が進んでいる(精算で紐づけた仕訳がある)ため、削除できません。
+                </p>
+                <button type="button" className="split-settle__btn split-settle__btn--small split-settle__btn--danger" disabled>
+                  このバッチを削除
+                </button>
+              </>
+            ) : confirmingDelete ? (
+              <>
+                <p className="split-settle__note">
+                  割勘仕訳{deletion.splitEntryIds.length}件とこのバッチを削除します。元の仕訳は削除しません。
+                </p>
+                <span className="split-settle__confirm">
+                  <button
+                    type="button"
+                    className="split-settle__btn split-settle__btn--small"
+                    onClick={() => setConfirmingDelete(false)}
+                  >
+                    やめる
+                  </button>
+                  <button
+                    type="button"
+                    className="split-settle__btn split-settle__btn--small split-settle__btn--danger-solid"
+                    disabled={submitting}
+                    onClick={() => void deleteBatch()}
+                  >
+                    本当に削除する
+                  </button>
+                </span>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="split-settle__btn split-settle__btn--small split-settle__btn--danger-solid"
+                onClick={() => setConfirmingDelete(true)}
+              >
+                このバッチを削除
+              </button>
+            )}
+          </div>
+        )}
       </section>
 
       {detailEntry !== undefined && (
