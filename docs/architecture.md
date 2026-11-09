@@ -139,6 +139,8 @@ interface StorageAdapter {
 
 **実装状況の更新（Issue #154、マスタ画面の刷新）**: マスタ領域のタブ帯を勘定科目・取引先・世帯メンバー・プロジェクト・定期取引の5つにし（`/master/accounts`・`/master/counterparties`・`/master/household-members`・`/master/projects`・`/master/recurring`）、各タブを`src/components/master/`の画面部品（`AccountMasterTab`・`CounterpartyMasterTab`・`MemberMasterTab`・`ProjectMasterTab`・`RuleMasterTab`）に置き換えた。一覧と右パネルで画面遷移なしに編集でき、取引先・プロジェクトの共通部分は`GroupedMasterTab`にまとめた。ツリー表（`tree-table`）と選択ツリー（`tree-select`）は、このIssueで初めて画面から使われた。旧画面（科目一覧・科目グループ管理・科目登録フロー・取引先・世帯メンバー・プロジェクト・定期取引ルールの各管理画面）は削除し、旧URL（`/master/accounts/list`・`/master/accounts/new`・`/master/accounts/groups`・`/journal/recurring/rules`）は新しいタブへリダイレクトする。画面のデータ取得・更新はRepositoryの同期・非同期どちらの戻り値も受け取れる型（`MaybeAsync`）で受け、削除可否は`summarizeMasterUsage`・`listDeletionBlocks`（`src/domain/master/`）で事前に判定して理由を表示する（DBの制約は最終防御線）。
 
+**実装状況の更新(Issue #155、分析画面の刷新)**: 旧の財務諸表画面(`FinancialStatementScreen`)を、サイドナビの「分析」領域(`/reports/analysis`)の1画面`AnalysisScreen`(`src/components/analysis/`)に置き換えた。画面内に「財務諸表」「グラフ分析」「予算」の3つのタブを持ち(領域上部のタブ帯は使わない)、条件(期間・比較・世帯メンバー・プロジェクト・取引先)は3タブで共通にする。旧URL(`/reports`・`/reports/financial-statements`)は`/reports/analysis`へリダイレクトする。グラフは共通部品`Chart`を拡張して使い(系列の固定色・選択範囲の帯・ツールチップへの追加表示等)、グラフの内訳の仕訳行や月次集計などの計算は`src/domain/analysis/`の純粋関数が担う。仕訳画面(`JournalScreen`)は`initialFilter`を受け取り、分析画面から期間と選んだ条件を`navigate()`の`state`で引き継いで開く。予算の集計は`src/domain/budget/summarizeBudgetProgress.ts`。個別の設計判断は`docs/decisions.md`の計画Issue #155の項を参照。
+
 ## 7. PWA構成
 
 - ビルドはVite、PWA化は`vite-plugin-pwa`（Workbox）を用いる。
