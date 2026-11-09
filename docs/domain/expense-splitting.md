@@ -102,7 +102,7 @@
 負債側の立替金は発生しない(友人自身の負債を家計簿で管理する意味がないため)。`counterparty_id`は食費(A)の行(PL科目)にのみ設定でき、立替金の行(BS科目)には設定できない([counterparties.md 1.2 紐づけ対象](./counterparties.md#12-紐づけ対象)の通りPL限定のまま変更しない)。
 
 > **相手(取引先)の選択は必須(計画Issue #40)**
-> 割勘起票フォームで世帯外の相手を分担者として追加した場合、相手(取引先)の選択は必須であり、未選択のまま確定はできない。相手が選択されないまま金額だけ入力されて確定すると、その分担者だけが無警告で送信対象から除外されてしまう(Review Attempt 1で世帯メンバー分担者について修正済みの「無警告データ欠落」と同種の不具合)ため、事前バリデーション(`counterpartyTargetRequiredError`)でブロックする。取引先マスタに対象者が未登録の場合に画面を離脱せず追加できるよう、既存の`CounterpartyQuickAddSelect`(CSV取込レビュー画面)・`ProjectQuickAddSelect`(本ドメインのプロジェクトのその場作成)と同じその場作成(quick add)パターンを「相手」選択にも適用している。詳細は`docs/decisions.md`(2026-09-06)参照。
+> 割勘タブ(計画Issue #153で旧割勘起票フォームを統合した画面)で世帯外の相手を分担者として追加した場合、相手(取引先)の選択は必須であり、未選択のまま確定はできない。相手が選択されないまま金額だけ入力されて確定すると、その分担者だけが無警告で送信対象から除外されてしまう(Review Attempt 1で世帯メンバー分担者について修正済みの「無警告データ欠落」と同種の不具合)ため、事前バリデーション(`submitExpenseSplit`の`counterpartyTargetRequired`)でブロックする。取引先マスタに対象者が未登録の場合に画面を離脱せず追加できるよう、分担相手の選択ツリーの末尾の「+ 取引先を追加」から、その場で取引先を作成できる(`QuickCreateDialog`)。詳細は`docs/decisions.md`(2026-09-06)参照。
 
 > **3人以上への割勘・複数の元仕訳をまとめた一括割勘(計画Issue #40)**
 > 上記1.3・1.4の例はいずれも立替者と分担者1名の2者間仕訳だが、実際の割勘起票フォームでは分担者を3名以上(世帯メンバー・世帯外相手の混在可)選べるほか、複数の元仕訳をまとめて選択して一括で割勘することもできる。いずれの場合も1.3・1.4の2者間仕訳パターン自体は変更しない。分担者ごと・元仕訳ごとに個別に組み立てた行(4行または2行)は、`mergeExpenseSplittingJournalEntryInputs`により**分担者(人)ごとに1件の複合仕訳へ統合**される(可変長の単一仕訳パターンや専用のバッチ仕訳構造を新設するのではなく、既存パターンの行を集約する形。逆仕訳・取り消しを1回の操作で完結させやすくするための設計、人間レビューでの指摘への対応)。同じ分担者が複数の元仕訳にまたがって登場する場合、その分も同じ分担者の1件の仕訳にまとまり、割勘仕訳の作成時に選択した全元仕訳と合わせて1つの関連仕訳グループに所属する(1件の仕訳から複数の元仕訳への多対多、[journal.md 1.8](./journal.md#18-関連仕訳グループjournal_entry_link_groups)参照)。**統合の単位を分担者ごとに限定しているのは、異なる分担者の立替金(負債)行を同じ仕訳に混在させると、[settlement.md 1.7](./settlement.md#17-タグ付き一時勘定の消込settlement_batch_idによるタグ付け)が定める「タグの組み合わせごとに消込対象を一意に特定できる」という精算ドメインの不変条件が崩れ、ある世帯メンバーの精算操作で無関係な別の世帯メンバーの債務まで無警告で消し込まれてしまうため**(evaluatorレビューで実際に再現・確認された不具合)。3人以上への複数人割勘のように異なる分担者が複数いる場合は、分担者ごとに独立した仕訳のままになる(=割勘確定操作1回で作られる仕訳は分担者の人数分)。総額を人数・比率で按分する際に生じる端数(円未満の丸め)は、常に立替者側の配分額に寄せて吸収する(`allocateExpenseSplitAmounts`)。詳細な設計判断は`docs/decisions.md`(2026-08-15、2026-09-06)参照。
@@ -111,7 +111,7 @@
 
 ### 1.5 割勘の履歴と取り消し
 
-**割勘できるかの判定**: `checkExpenseSplittability`(計画Issue #149)が、仕訳ごとに「割勘できるか」と「できない理由」を1つの純粋関数で返す。割勘の対象選択画面(`ExpenseSplittingEntryPickerScreen`)はこの結果で候補を絞る。割勘できない仕訳は次の3つで、複数に当たる場合は上から順の理由を返す。
+**割勘できるかの判定**: `checkExpenseSplittability`(計画Issue #149)が、仕訳ごとに「割勘できるか」と「できない理由」を1つの純粋関数で返す。割勘・精算画面の割勘タブ(`SplitTab`)は、`listSplittableEntries`を通してこの結果で候補を絞る(計画Issue #153)。割勘できない仕訳は次の3つで、複数に当たる場合は上から順の理由を返す。
 
 | 理由(`reason`) | 内容 |
 |---|---|
@@ -130,9 +130,9 @@
 
 明細1行だけを割勘から外す指定は作らない。
 
-**履歴の閲覧**: 割勘仕訳作成時、元仕訳と割勘仕訳は自動的に同一の関連仕訳グループへ所属する([journal.md 1.8 関連仕訳グループ](./journal.md#18-関連仕訳グループjournal_entry_link_groups)参照、計画Issue #138)。複数の元仕訳をまとめて割勘した場合、全元仕訳+割勘仕訳が1つのグループにまとまる(多対多)。精算仕訳も、精算対象のタグ(`settlement_batch_id`・科目・世帯メンバー/取引先)が一致する割勘仕訳の所属グループへ自動的に参加する(`findEntryIdsWithSettlementTag`で対象を特定、`SettlementScreen`の配線)。元仕訳の詳細画面(`JournalEntryDetailScreen`)から、所属グループ内で`source_type`が割勘仕訳(`isExpenseSplitEntry`)の仕訳を辿り、さらにその割勘仕訳の所属グループ内で精算仕訳(`isExpenseSplitSettlementEntry`)と判定できる仕訳を辿れば、「元の支出 → 割勘 → 精算」の一連の流れを追跡できる(`traceExpenseSplittingHistory`)。また、`settlement_batch_id`でバッチ全体の仕訳を横断的に一覧することもできる(計画Issue #133)。
+**履歴の閲覧**: 割勘仕訳作成時、元仕訳と割勘仕訳は自動的に同一の関連仕訳グループへ所属する([journal.md 1.8 関連仕訳グループ](./journal.md#18-関連仕訳グループjournal_entry_link_groups)参照、計画Issue #138)。複数の元仕訳をまとめて割勘した場合、全元仕訳+割勘仕訳が1つのグループにまとまる(多対多)。精算仕訳も、精算対象のタグ(`settlement_batch_id`・科目・世帯メンバー/取引先)が一致する割勘仕訳の所属グループへ自動的に参加する(`findEntryIdsWithSettlementTag`で対象を特定、精算タブ(`SettleTab`)の書き込み処理`submitSettlement`の配線)。元仕訳の詳細画面(`JournalEntryDetailScreen`)から、所属グループ内で`source_type`が割勘仕訳(`isExpenseSplitEntry`)の仕訳を辿り、さらにその割勘仕訳の所属グループ内で精算仕訳(`isExpenseSplitSettlementEntry`)と判定できる仕訳を辿れば、「元の支出 → 割勘 → 精算」の一連の流れを追跡できる(`traceExpenseSplittingHistory`)。また、`settlement_batch_id`でバッチ全体の仕訳を横断的に一覧することもできる(計画Issue #133)。
 
-**割勘履歴一覧画面(計画Issue #110)**: 上記のトラバーサル(元仕訳→割勘仕訳→精算仕訳)は`traceExpenseSplittingHistory`として実装されており、特定の元仕訳を起点にした個別の追跡に使う。これとは別に`listExpenseSplittingHistory`は、全仕訳を起点候補として`traceExpenseSplittingHistory`を実行し、結果を割勘仕訳(`splitEntry`)のidでグルーピングし直す合成関数であり、個々の元仕訳を事前に把握していなくても「これまでに行われた割勘」を横断的に一覧できる。1件の割勘仕訳が複数の元仕訳を対象にする場合(上記「複数の元仕訳をまとめた一括割勘」)、同じ割勘仕訳が起点候補の数だけ重複して見つかるが、グルーピングによって1件の履歴エントリに統合する。一覧の各行の分担者は`resolveExpenseSplittingParticipant`(立替金(負債)行の`household_member_id`、無ければ`counterparty_id`を持つ行から解決、1.3・1.4節の行構成に対応)で、精算状況は`isExpenseSplittingEntrySettled`(下記callout参照)で判定する。UI(`ExpenseSplittingHistoryScreen`)はこれら3関数を組み合わせるだけの薄い層であり、各行から既存の仕訳詳細画面(`JournalEntryDetailScreen`)へ遷移すればそこで上記のトラバーサルによる詳細な追跡ができるため、履歴一覧画面自体は追跡ロジックを再実装しない。
+**割勘履歴(計画Issue #110。計画Issue #153で割勘・精算画面の割勘タブの下の表になった)**: 上記のトラバーサル(元仕訳→割勘仕訳→精算仕訳)は`traceExpenseSplittingHistory`として実装されており、特定の元仕訳を起点にした個別の追跡に使う。これとは別に`listExpenseSplittingHistory`は、全仕訳を起点候補として`traceExpenseSplittingHistory`を実行し、結果を割勘仕訳(`splitEntry`)のidでグルーピングし直す合成関数であり、個々の元仕訳を事前に把握していなくても「これまでに行われた割勘」を横断的に一覧できる。1件の割勘仕訳が複数の元仕訳を対象にする場合(上記「複数の元仕訳をまとめた一括割勘」)、同じ割勘仕訳が起点候補の数だけ重複して見つかるが、グルーピングによって1件の履歴エントリに統合する。一覧の各行の分担者は`resolveExpenseSplittingParticipant`(立替金(負債)行の`household_member_id`、無ければ`counterparty_id`を持つ行から解決、1.3・1.4節の行構成に対応)で、精算状況は`isExpenseSplittingEntrySettled`(下記callout参照)で判定する。UI(割勘タブの履歴の表。行の組み立ては`buildSplitHistoryRows`)はこれら3関数を組み合わせるだけの薄い層であり、各行から仕訳画面で割勘仕訳を開けば、そこで上記のトラバーサルによる詳細な追跡ができるため、履歴の表自体は追跡ロジックを再実装しない。精算が1件も進んでいない割勘は、履歴の行から2回押して取り消せる(物理削除、`hasAnySettlementActivity`で判定)。
 
 > **originalEntriesは取引日(entryDate)昇順にソートして返す(計画Issue #110)**
 > `listExpenseSplittingHistory`が返す`originalEntries`(1件の割勘仕訳に対応する元仕訳群)は、Repositoryの`findAll()`が返す順序(id採番順=挿入順)をそのまま使わず、`entryDate`の昇順にソートしてから返す。挿入順と取引日順は通常一致するが、外部明細CSVの取込順序によっては一致しないことがある(例: 新しい日付から降順で並ぶ銀行明細CSV)。ソートしないままUI側が「先頭要素の日付」を代表値(最も古い支出日)として使うと、意図しない仕訳の日付を表示してしまう。この並び替えの責務はドメイン層(本関数)に閉じ、UI層は「ソート済みの配列が渡ってくる」ことだけを前提にする。詳細は`docs/decisions.md`(2026-09-11)・`docs/guides/patterns.md`参照。
