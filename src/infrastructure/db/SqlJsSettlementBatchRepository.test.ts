@@ -62,6 +62,24 @@ describe('update', () => {
 
     expect(updated.counterpartyId).toBe(counterpartyId)
   })
+
+  it('バッチ名を変更でき、名前だけを変えても世帯外の相手は保たれる(計画Issue #153)', () => {
+    const counterpartyId = insertCounterparty(db, '田中さん')
+    const created = repository.create({ name: '田中さんとの飲み代', type: 'expense_splitting', counterpartyId })
+
+    const updated = repository.update(created.id, { name: '10月分 飲み代' })
+
+    expect(updated).toMatchObject({ name: '10月分 飲み代', counterpartyId })
+  })
+
+  it('世帯外の相手をnullにして世帯内のバッチに戻せ、名前は保たれる(計画Issue #153)', () => {
+    const counterpartyId = insertCounterparty(db, '田中さん')
+    const created = repository.create({ name: '飲み代', type: 'expense_splitting', counterpartyId })
+
+    const updated = repository.update(created.id, { counterpartyId: null })
+
+    expect(updated).toMatchObject({ name: '飲み代', counterpartyId: null })
+  })
 })
 
 describe('findAll', () => {

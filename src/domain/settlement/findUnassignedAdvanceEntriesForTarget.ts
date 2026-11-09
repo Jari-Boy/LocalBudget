@@ -1,5 +1,5 @@
 import type { Account } from '../account/Account'
-import type { JournalEntry } from '../journal/JournalEntry'
+import type { JournalEntry, JournalLineSide } from '../journal/JournalEntry'
 import type { JournalEntryFilter, JournalEntryFilterContext } from '../journal/JournalEntryFilter'
 import { filterJournalEntries } from '../journal/filterJournalEntries'
 import type { SettlementTarget } from '../settlement-batch/SettlementTarget'
@@ -36,6 +36,9 @@ export interface UnassignedAdvanceEntrySearch {
  * 満たしてもヒットする)ため、行単位のこの固定条件とは別に、先に仕訳を絞り込む形で重ねる。
  * 精算の候補は`filterJournalEntries`を直接は使わず、この関数が固定条件と検索条件を組み合わせる。
  *
+ * sideを渡すと、方向(貸借)も同じ行で満たす固定条件に加える(計画Issue #153)。立替金を減らす精算は
+ * 立替金の貸方、未払金を減らす精算は未払金の借方の行が候補になる。省略時は方向で絞り込まない。
+ *
  * 結果は取引日の昇順に並べ替える。DBアクセスなしの純粋関数。
  */
 export function findUnassignedAdvanceEntriesForTarget(
@@ -43,6 +46,7 @@ export function findUnassignedAdvanceEntriesForTarget(
   accountId: number,
   target: SettlementTarget,
   search?: UnassignedAdvanceEntrySearch,
+  side?: JournalLineSide,
 ): UnassignedAdvanceEntryCandidate[] {
   const result: UnassignedAdvanceEntryCandidate[] = []
   const searched = search ? filterJournalEntries(entries, search.accounts, search.filter, search.context) : entries
@@ -50,6 +54,7 @@ export function findUnassignedAdvanceEntriesForTarget(
   for (const entry of searched) {
     for (const line of entry.lines) {
       if (line.accountId !== accountId || line.settlementBatchId !== null) continue
+      if (side !== undefined && line.side !== side) continue
       const matches =
         target.kind === 'householdMember' ? line.householdMemberId === target.householdMemberId : line.householdMemberId === null
       if (!matches) continue

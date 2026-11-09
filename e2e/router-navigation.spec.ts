@@ -28,7 +28,7 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
     await expect(currentLink(page, 'マスタ')).toHaveAttribute('aria-current', 'page')
 
     await currentLink(page, '割勘・精算').click()
-    await expect(page).toHaveURL(/#\/journal\/splitting\/new$/)
+    await expect(page).toHaveURL(/#\/journal\/splitting$/)
 
     // ブラウザの戻るボタン(page.goBack())で1階層ずつ正しく戻れる
     await page.goBack()
@@ -47,14 +47,14 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
   })
 
   test('領域内のタブで移動した後、ブラウザの戻るボタンで直前のタブへ戻れる', async ({ page }) => {
-    await page.goto('/#/journal/splitting/new')
-    await expect(currentLink(page, '割勘する')).toHaveAttribute('aria-current', 'page')
+    await page.goto('/#/master/accounts')
+    await expect(currentLink(page, '勘定科目')).toHaveAttribute('aria-current', 'page')
 
-    await currentLink(page, '精算').click()
-    await expect(currentLink(page, '精算')).toHaveAttribute('aria-current', 'page')
+    await currentLink(page, '取引先').click()
+    await expect(currentLink(page, '取引先')).toHaveAttribute('aria-current', 'page')
 
     await page.goBack()
-    await expect(currentLink(page, '割勘する')).toHaveAttribute('aria-current', 'page')
+    await expect(currentLink(page, '勘定科目')).toHaveAttribute('aria-current', 'page')
   })
 
   test('ネストしたルート(/master/accounts)でリロードしても同じ画面に留まる(HashRouterによりURLが維持される)', async ({
@@ -89,8 +89,11 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
     await page.goto('/#/journal/recurring/rules')
     await expect(page).toHaveURL(/#\/master\/recurring$/)
 
-    await page.goto('/#/journal/splitting')
-    await expect(page).toHaveURL(/#\/journal\/splitting\/new$/)
+    await page.goto('/#/journal/splitting/new')
+    await expect(page).toHaveURL(/#\/journal\/splitting$/)
+
+    await page.goto('/#/journal/splitting/settlement')
+    await expect(page).toHaveURL(/#\/journal\/splitting\?tab=settle$/)
 
     await page.goto('/#/journal/recurring')
     await expect(page).toHaveURL(/#\/journal\/entries\?tab=proposals$/)

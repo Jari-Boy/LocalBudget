@@ -9,7 +9,6 @@ import type { CounterpartyRepository } from '../domain/counterparty/Counterparty
 import type { CounterpartyGroupRepository } from '../domain/counterparty-group/CounterpartyGroupRepository'
 import type { JournalEntryRepository } from '../domain/journal/JournalEntryRepository'
 import type { JournalEntryLinkGroupRepository } from '../domain/journal-link-group/JournalEntryLinkGroupRepository'
-import type { JournalEntry } from '../domain/journal/JournalEntry'
 import type { HouseholdMemberRepository } from '../domain/household-member/HouseholdMemberRepository'
 import type { ProjectRepository } from '../domain/project/ProjectRepository'
 import type { ProjectGroupRepository } from '../domain/project-group/ProjectGroupRepository'
@@ -21,10 +20,8 @@ import type { RecurringTransactionProposalRpcApi } from '../infrastructure/rpc/c
 import { useDbClient } from '../infrastructure/rpc/DbClientProvider'
 import { FinancialStatementScreen } from '../components/financial-statement/FinancialStatementScreen'
 import { JournalScreen, type JournalScreenProps, type JournalScreenTab } from '../components/journal-entry/JournalScreen'
-import { ExpenseSplittingEntryPickerScreen } from '../components/expense-splitting/ExpenseSplittingEntryPickerScreen'
-import { ExpenseSplittingForm } from '../components/expense-splitting/ExpenseSplittingForm'
-import { ExpenseSplittingHistoryScreen } from '../components/expense-splitting/ExpenseSplittingHistoryScreen'
-import { SettlementScreen } from '../components/settlement/SettlementScreen'
+import { SplitSettleScreen, type SplitSettleTab } from '../components/settlement/SplitSettleScreen'
+import type { SplitSettleRepositories } from '../components/settlement/splitSettleData'
 import { StatementImportScreen } from '../components/statement-import/StatementImportScreen'
 import { AppShell } from '../components/layout/AppShell'
 import { AccountMasterTab } from '../components/master/AccountMasterTab'
@@ -169,7 +166,11 @@ export function AppRoutes() {
       <Route path="/journal/recurring/proposals" element={<Navigate to="/journal/entries?tab=proposals" replace />} />
       <Route path="/journal/create/manual" element={<Navigate to="/journal/entries?tab=drafts" replace />} />
       <Route path="/journal/create/manual/*" element={<Navigate to="/journal/entries?tab=drafts" replace />} />
-      <Route path="/journal/splitting" element={<Navigate to="/journal/splitting/new" replace />} />
+      {/* 割勘の対象選択・フォーム・精算・履歴は、割勘・精算画面の2タブに統合した(計画Issue #153) */}
+      <Route path="/journal/splitting/new" element={<Navigate to="/journal/splitting" replace />} />
+      <Route path="/journal/splitting/new/form" element={<Navigate to="/journal/splitting" replace />} />
+      <Route path="/journal/splitting/settlement" element={<Navigate to="/journal/splitting?tab=settle" replace />} />
+      <Route path="/journal/splitting/history" element={<Navigate to="/journal/splitting" replace />} />
 
       <Route element={<AppShell pendingProposalCount={pendingProposalCount} />}>
       <Route
@@ -309,58 +310,19 @@ export function AppRoutes() {
         }
       />
       <Route
-        path="/journal/splitting/new"
+        path="/journal/splitting"
         element={
-          <ExpenseSplittingEntryPickerScreen
+          <SplitSettleScreenRoute
             journalEntryRepository={journalEntryRepository}
             journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             accountRepository={accountRepository}
-            householdMemberRepository={householdMemberRepository}
+            accountGroupRepository={accountGroupRepository}
+            counterpartyRepository={counterpartyRepository}
+            counterpartyGroupRepository={counterpartyGroupRepository}
             projectRepository={projectRepository}
-            onSelectEntries={(entries) => navigate('/journal/splitting/new/form', { state: { entries } })}
-            onBack={() => navigate('/journal/splitting/new')}
-          />
-        }
-      />
-      <Route
-        path="/journal/splitting/new/form"
-        element={
-          <ExpenseSplittingFormRoute
-            accountRepository={accountRepository}
-            settlementBatchRepository={settlementBatchRepository}
+            projectGroupRepository={projectGroupRepository}
             householdMemberRepository={householdMemberRepository}
-            counterpartyRepository={counterpartyRepository}
-            journalEntryRepository={journalEntryRepository}
-            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
-          />
-        }
-      />
-      <Route
-        path="/journal/splitting/settlement"
-        element={
-          <SettlementScreen
             settlementBatchRepository={settlementBatchRepository}
-            accountRepository={accountRepository}
-            householdMemberRepository={householdMemberRepository}
-            counterpartyRepository={counterpartyRepository}
-            journalEntryRepository={journalEntryRepository}
-            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
-            onBack={() => navigate('/journal/splitting/new')}
-          />
-        }
-      />
-      <Route
-        path="/journal/splitting/history"
-        element={
-          <ExpenseSplittingHistoryScreen
-            journalEntryRepository={journalEntryRepository}
-            journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
-            accountRepository={accountRepository}
-            settlementBatchRepository={settlementBatchRepository}
-            householdMemberRepository={householdMemberRepository}
-            counterpartyRepository={counterpartyRepository}
-            onSelectEntry={(entry) => navigate(`/journal/entries/${entry.id}`)}
-            onBack={() => navigate('/journal/splitting/new')}
           />
         }
       />
@@ -412,53 +374,37 @@ function JournalScreenRoute(props: JournalScreenRouteProps) {
       {...props}
       initialTab={initialTab}
       initialEntryId={entryId}
-      onSplit={(entry) => navigate('/journal/splitting/new/form', { state: { entries: [entry] } })}
+      onSplit={(entry) => navigate('/journal/splitting', { state: { entryIds: [entry.id] } })}
     />
   )
 }
 
-interface ExpenseSplittingFormRouteProps {
-  accountRepository: Comlink.Remote<AccountRepository>
-  settlementBatchRepository: Comlink.Remote<SettlementBatchRepository>
-  householdMemberRepository: Comlink.Remote<HouseholdMemberRepository>
-  counterpartyRepository: Comlink.Remote<CounterpartyRepository>
-  journalEntryRepository: Comlink.Remote<JournalEntryRepository>
-  journalEntryLinkGroupRepository: Comlink.Remote<JournalEntryLinkGroupRepository>
-}
+type SplitSettleScreenRouteProps = SplitSettleRepositories
 
 /**
- * 割勘フォームルート(/journal/splitting/new/form)。対象選択画面から`navigate()`の
- * `state`経由で渡された対象仕訳配列を使う。リロード・直接URL入力等でstateが
- * 失われた場合(または空配列)は、対象選択画面(ウィザード入口相当)へフォールバックする
- * (旧実装のsplittingEntries.length > 0ガード条件を踏襲、計画Issue #118の制約)。
+ * 割勘・精算画面のルート(/journal/splitting)。URLの`tab`(settle)は最初に開くタブにだけ使い、
+ * 画面内でのタブ切り替えではURLを変えない。仕訳画面の「この仕訳を割勘」からは、対象の仕訳のidを
+ * `navigate()`の`state`で受け取り、割勘タブで最初から選んだ状態にする(計画Issue #153)。
+ * 画面は渡されたRepositoryが変わるとデータを読み直すため、オブジェクトは作り直さない。
  */
-function ExpenseSplittingFormRoute({
-  accountRepository,
-  settlementBatchRepository,
-  householdMemberRepository,
-  counterpartyRepository,
-  journalEntryRepository,
-  journalEntryLinkGroupRepository,
-}: ExpenseSplittingFormRouteProps) {
-  const navigate = useNavigate()
+function SplitSettleScreenRoute(props: SplitSettleScreenRouteProps) {
   const location = useLocation()
-  const state = location.state as { entries?: JournalEntry[] } | null
+  const [searchParams] = useSearchParams()
+  const initialTab: SplitSettleTab = searchParams.get('tab') === 'settle' ? 'settle' : 'split'
+  const entryIds = (location.state as { entryIds?: number[] } | null)?.entryIds
 
-  if (!state?.entries || state.entries.length === 0) {
-    return <Navigate to="/journal/splitting/new" replace />
-  }
+  const repositories = useMemo(
+    () => props,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    Object.values(props),
+  )
 
   return (
-    <ExpenseSplittingForm
-      originalEntries={state.entries}
-      accountRepository={accountRepository}
-      settlementBatchRepository={settlementBatchRepository}
-      householdMemberRepository={householdMemberRepository}
-      counterpartyRepository={counterpartyRepository}
-      journalEntryRepository={journalEntryRepository}
-      journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
-      onComplete={() => navigate('/journal/entries')}
-      onBack={() => navigate('/journal/splitting/new')}
+    <SplitSettleScreen
+      key={`${initialTab}:${(entryIds ?? []).join(',')}`}
+      repositories={repositories}
+      initialTab={initialTab}
+      initialCheckedEntryIds={entryIds}
     />
   )
 }

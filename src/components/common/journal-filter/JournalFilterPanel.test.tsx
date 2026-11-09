@@ -204,3 +204,19 @@ describe('JournalFilterPopup', () => {
     expect(screen.queryByRole('search')).toBeNull()
   })
 })
+
+describe('JournalFilterPanel: 項目を隠す(計画Issue #153)', () => {
+  it('hide に指定した項目は出さず、ほかの項目は出し続ける', () => {
+    render(<JournalFilterPanel filter={{}} onChange={() => {}} options={options} hide={['batch']} />)
+
+    expect(screen.queryByRole('button', { name: /^精算バッチ/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^科目/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^世帯メンバー/ })).toBeInTheDocument()
+  })
+
+  it('hide を指定しなければ、これまでどおりすべての項目を出す', () => {
+    render(<JournalFilterPanel filter={{}} onChange={() => {}} options={options} />)
+
+    expect(screen.getByRole('button', { name: /^精算バッチ/ })).toBeInTheDocument()
+  })
+})

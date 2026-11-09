@@ -52,13 +52,13 @@ describe('AppShell', () => {
     fireEvent.click(within(nav()).getByRole('link', { name: 'マスタ' }))
     expect(screen.getByTestId('where')).toHaveTextContent('/master/accounts')
     fireEvent.click(within(nav()).getByRole('link', { name: '割勘・精算' }))
-    expect(screen.getByTestId('where')).toHaveTextContent('/journal/splitting/new')
+    expect(screen.getByTestId('where')).toHaveTextContent('/journal/splitting')
     fireEvent.click(within(nav()).getByRole('link', { name: '明細取込' }))
     expect(screen.getByTestId('where')).toHaveTextContent('/journal/create/import')
   })
 
   it('現在の領域のリンクだけがaria-current="page"になる(配下の画面でも維持される)', () => {
-    renderShell('/journal/splitting/history')
+    renderShell('/journal/splitting')
     expect(within(nav()).getByRole('link', { name: '割勘・精算' })).toHaveAttribute('aria-current', 'page')
     expect(within(nav()).getByRole('link', { name: '仕訳' })).not.toHaveAttribute('aria-current')
   })
@@ -71,15 +71,9 @@ describe('AppShell', () => {
     expect(within(nav()).getByRole('link', { name: '仕訳' })).toHaveTextContent(/^仕訳$/)
   })
 
-  it('領域のタブ帯に旧ハブの入口が並び、現在のタブがaria-current="page"になる', () => {
-    renderShell('/journal/splitting/settlement')
-    const tabs = screen.getByRole('navigation', { name: '領域内のタブ' })
-    expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual([
-      '割勘する',
-      '精算',
-      '割勘の履歴',
-    ])
-    expect(within(tabs).getByRole('link', { name: '精算' })).toHaveAttribute('aria-current', 'page')
+  it('割勘・精算の領域には領域のタブ帯を出さない(割勘と精算は画面内のタブ、計画Issue #153)', () => {
+    renderShell('/journal/splitting')
+    expect(screen.queryByRole('navigation', { name: '領域内のタブ' })).not.toBeInTheDocument()
   })
 
   it('マスタ領域のタブ帯に、勘定科目・取引先・世帯メンバー・プロジェクト・定期取引・明細マッピングの6つが並ぶ(計画Issue #154・#151)', () => {

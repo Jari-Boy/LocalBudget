@@ -1,0 +1,609 @@
+/* 割勘・精算画面(計画Issue #153)。値はdesign/tokens.cssのトークンを使う。 */
+.split-settle {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  text-align: left;
+  color: var(--color-text);
+}
+
+.split-settle__title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  font-weight: 700;
+}
+
+.split-settle__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.split-settle__tab {
+  font: inherit;
+  font-size: var(--font-size-base);
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.split-settle__tab--current {
+  font-weight: 600;
+  border-bottom-color: var(--color-accent);
+}
+
+.split-settle__filter {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 10px 12px;
+}
+
+.split-settle__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.split-settle__card {
+  box-sizing: border-box;
+  min-width: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.split-settle__card--table {
+  flex: 3 1 480px;
+  overflow-x: auto;
+}
+
+.split-settle__side {
+  flex: 2 1 300px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.split-settle__panel {
+  flex: 3 1 560px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.split-settle__list {
+  flex: 2 1 360px;
+  overflow-x: auto;
+}
+
+.split-settle__list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.split-settle__h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.split-settle__h3 {
+  margin: 0 0 6px;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+.split-settle__note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.split-settle__note--pad {
+  padding: 10px 12px 0;
+}
+
+.split-settle__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-base);
+}
+
+.split-settle__table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.split-settle__table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--color-border-soft);
+  vertical-align: middle;
+}
+
+.split-settle__row--current {
+  background: var(--color-accent-soft);
+}
+
+.split-settle__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.split-settle__nowrap {
+  white-space: nowrap;
+}
+
+.split-settle__line {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-base);
+}
+
+.split-settle__line--total {
+  font-size: 15px;
+  font-weight: 600;
+  border-top: 1px solid var(--color-border-soft);
+  padding-top: 12px;
+}
+
+.split-settle__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.split-settle__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.split-settle__label {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.split-settle__control {
+  font: inherit;
+  font-size: var(--font-size-base);
+  min-height: var(--control-height);
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.split-settle__control--narrow {
+  flex: 0 1 60px;
+  min-width: 0;
+  text-align: right;
+}
+
+.split-settle__control--amount {
+  flex: 0 1 96px;
+  min-width: 0;
+  text-align: right;
+}
+
+.split-settle__partners {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.split-settle__partner {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.split-settle__partner-pick {
+  flex: 1 1 130px;
+  min-width: 0;
+}
+
+.split-settle__unit {
+  font-size: var(--font-size-sm);
+}
+
+.split-settle__share {
+  flex: 0 0 72px;
+  font-size: var(--font-size-sm);
+}
+
+.split-settle__icon-btn {
+  font: inherit;
+  font-size: 15px;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.split-settle__icon-btn:hover:not(:disabled) {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.split-settle__icon-btn:disabled {
+  color: var(--color-border-strong);
+  cursor: default;
+}
+
+.split-settle__add {
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  min-height: var(--control-height);
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+
+.split-settle__add:hover {
+  background: var(--color-hover);
+}
+
+.split-settle__btn {
+  font: inherit;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  min-height: var(--control-height);
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.split-settle__btn:hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+.split-settle__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.split-settle__btn--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #ffffff;
+}
+
+.split-settle__btn--primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.split-settle__btn--danger {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.split-settle__btn--danger-solid {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.split-settle__btn--danger-solid:hover:not(:disabled) {
+  background: var(--color-danger);
+  filter: brightness(0.9);
+}
+
+.split-settle__btn--small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: var(--font-size-sm);
+}
+
+.split-settle__btn--pressed {
+  background: var(--color-accent-soft);
+  font-weight: 600;
+}
+
+.split-settle__confirm {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.split-settle__link {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.split-settle__link:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+.split-settle__flash {
+  font-size: var(--font-size-base);
+  color: var(--color-accent);
+}
+
+.split-settle__error {
+  margin: 0;
+  font-size: var(--font-size-base);
+  color: var(--color-danger);
+}
+
+.split-settle__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 12px 10px;
+}
+
+.split-settle__directions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.split-settle__direction {
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.split-settle__direction[aria-pressed='true'] {
+  border: 2px solid var(--color-accent);
+  background: var(--color-accent-soft);
+  padding: 9px 11px;
+}
+
+.split-settle__direction-label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.split-settle__direction-sub {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.split-settle__direction-amount {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.split-settle__settled {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-radius: var(--radius-md);
+}
+
+.split-settle__section {
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.split-settle__popup-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.split-settle__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  font-size: var(--font-size-base);
+}
+
+.split-settle__spacer {
+  flex: 1 1 auto;
+}
+
+.split-settle__draft {
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.split-settle__tagged {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 1px solid var(--color-border-soft);
+  font-size: var(--font-size-sm);
+}
+
+.split-settle__tagged-account {
+  width: 130px;
+  text-align: right;
+}
+
+.split-settle__tagged-amount {
+  width: 90px;
+}
+
+.split-settle__tagged-action {
+  display: flex;
+  justify-content: flex-end;
+  width: 104px;
+}
+
+.split-settle__field--grow {
+  flex: 2 1 180px;
+}
+
+.split-settle__field--date {
+  flex: 1 1 110px;
+}
+
+.split-settle__field--amount {
+  flex: 1 1 100px;
+}
+
+.split-settle__control--right {
+  text-align: right;
+}
+
+.split-settle__diff--warn {
+  font-weight: 600;
+  color: var(--color-warning-text);
+}
+
+.split-settle__link--grow {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.split-settle__scroll {
+  overflow-x: auto;
+}
+
+/* 仕訳の詳細ダイアログ */
+.split-settle__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(23, 35, 31, 0.4);
+}
+
+.split-settle__dialog {
+  width: 1040px;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 20px;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.split-settle__detail {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  margin: 0;
+  font-size: var(--font-size-base);
+}
+
+.split-settle__detail dt {
+  color: var(--color-text-muted);
+}
+
+.split-settle__detail dd {
+  margin: 0;
+}
+
+.split-settle__dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 割勘履歴の見出しと精算状況の切り替え */
+.split-settle__history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px 0;
+}
+
+.split-settle__history-head .split-settle__filters {
+  padding: 0;
+}
+
+.split-settle__empty {
+  margin: 0;
+  padding: 12px;
+  font-size: var(--font-size-base);
+  color: var(--color-text-muted);
+}
+
+/* 仕訳の詳細: 画面幅に余裕があれば、借方と貸方を左右に並べる */
+.split-settle__sides {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 900px) {
+  .split-settle__sides {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.split-settle__side-pane {
+  min-width: 0;
+}
+
+/* 精算バッチの紐づけの解除の確認 */
+.split-settle__unlink-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 6px 0 10px;
+}

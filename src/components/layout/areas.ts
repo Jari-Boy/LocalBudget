@@ -23,16 +23,8 @@ export const AREAS: Area[] = [
   { key: 'import', to: '/journal/create/import', prefixes: ['/journal/create/import'], tabs: [] },
   // 仕訳領域の「仕訳一覧」「下書き」「定期の確認」は、画面内のタブにした(計画Issue #152)
   { key: 'journal', to: '/journal/entries', prefixes: ['/journal/entries'], tabs: [] },
-  {
-    key: 'split',
-    to: '/journal/splitting/new',
-    prefixes: ['/journal/splitting'],
-    tabs: [
-      { labelKey: 'newSplit', to: '/journal/splitting/new' },
-      { labelKey: 'settlement', to: '/journal/splitting/settlement' },
-      { labelKey: 'splitHistory', to: '/journal/splitting/history' },
-    ],
-  },
+  // 割勘・精算の「割勘」「精算」は、画面内のタブにした(計画Issue #153)
+  { key: 'split', to: '/journal/splitting', prefixes: ['/journal/splitting'], tabs: [] },
   {
     key: 'master',
     to: '/master/accounts',
