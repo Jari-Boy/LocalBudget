@@ -475,7 +475,7 @@ export function SplitTab({
           <thead>
             <tr>
               <th>日付</th>
-              <th>内容</th>
+              <th>摘要</th>
               <th>相手</th>
               <th className="split-settle__num">相手の負担額</th>
               <th>状態</th>

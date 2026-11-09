@@ -67,7 +67,7 @@ export interface SplitHistoryRow {
   splitEntryId: number
   /** 元の支出のうち最も古いものの日付 */
   date: string
-  /** 元の支出の摘要。複数をまとめた割勘は「N件の支出」 */
+  /** 割勘仕訳の摘要。無ければ元の支出の摘要(複数をまとめた割勘は「N件の支出」) */
   memo: string
   /** 分担相手の名前。特定できなければ空文字 */
   partner: string
@@ -114,7 +114,12 @@ export function buildSplitHistoryRows(
         splitEntryId: splitEntry.id,
         splitEntryDate: splitEntry.entryDate,
         date: originalEntries[0].entryDate,
-        memo: originalEntries.length === 1 ? (originalEntries[0].memo ?? '') : `${originalEntries.length}件の支出`,
+        memo:
+          splitEntry.memo !== null && splitEntry.memo !== ''
+            ? splitEntry.memo
+            : originalEntries.length === 1
+              ? (originalEntries[0].memo ?? '')
+              : `${originalEntries.length}件の支出`,
         partner,
         amount: amountLines.reduce((sum, l) => sum + l.amount, 0),
         isSettled: isExpenseSplittingEntrySettled(splitEntry, accounts, allLines),

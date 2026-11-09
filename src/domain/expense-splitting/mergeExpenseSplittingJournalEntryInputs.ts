@@ -5,7 +5,7 @@ type Line = CreateJournalEntryInput['lines'][number]
 const lineKey = (l: Line) =>
   [l.accountId, l.side, l.projectId ?? '', l.householdMemberId ?? '', l.counterpartyId ?? '', l.settlementBatchId ?? ''].join(':')
 
-/** 科目・貸借・プロジェクト・世帯メンバー・取引先・精算バッチが同じ行を1行にまとめて、金額を合計する(最初に出た順を保つ) */
+/** 科目・貸借・プロジェクト・世帯メンバー・取引先・精算バッチが同じ行を1行にまとめて、金額を合計する。立替金・未払金の行を先頭にする */
 function sumSameLines(lines: readonly Line[]): Line[] {
   const summed = new Map<string, Line>()
   for (const line of lines) {
@@ -13,7 +13,10 @@ function sumSameLines(lines: readonly Line[]): Line[] {
     const existing = summed.get(key)
     summed.set(key, existing === undefined ? { ...line } : { ...existing, amount: existing.amount + line.amount })
   }
-  return [...summed.values()]
+  // 精算バッチが付いた行(立替金・未払金)を先頭にまとめる。元の並びは保つ(貸借を分けて見ても先頭に来る)
+  const all = [...summed.values()]
+  const tagged = (l: Line) => l.settlementBatchId !== null && l.settlementBatchId !== undefined
+  return [...all.filter(tagged), ...all.filter((l) => !tagged(l))]
 }
 
 export interface MergeExpenseSplittingJournalEntryInputsParams {

@@ -216,10 +216,10 @@ describe('SplitTab: 割勘履歴', () => {
     const history = screen.getByRole('region', { name: '割勘履歴' })
     expect(within(history).getByRole('button', { name: '未精算 1' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(history).getByRole('button', { name: '精算済み 0' })).toHaveAttribute('aria-pressed', 'false')
-    expect(within(history).getByText('ランチ')).toBeInTheDocument()
+    expect(within(history).getByText('ランチの割勘')).toBeInTheDocument()
 
     fireEvent.click(within(history).getByRole('button', { name: '精算済み 0' }))
-    expect(within(history).queryByText('ランチ')).not.toBeInTheDocument()
+    expect(within(history).queryByText('ランチの割勘')).not.toBeInTheDocument()
     expect(within(history).getByText('精算済みの割勘はありません')).toBeInTheDocument()
   })
 
@@ -227,15 +227,15 @@ describe('SplitTab: 割勘履歴', () => {
     setup(historyData(true))
 
     const history = screen.getByRole('region', { name: '割勘履歴' })
-    expect(within(history).queryByText('ランチ')).not.toBeInTheDocument()
+    expect(within(history).queryByText('ランチの割勘')).not.toBeInTheDocument()
     fireEvent.click(within(history).getByRole('button', { name: '精算済み 1' }))
-    expect(within(history).getByText('ランチ')).toBeInTheDocument()
+    expect(within(history).getByText('ランチの割勘')).toBeInTheDocument()
   })
 
   it('履歴の摘要を押すと、仕訳画面へ移動せず、その割勘仕訳の詳細をダイアログで表示し、閉じられる', () => {
     setup(historyData(false))
 
-    fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+    fireEvent.click(screen.getByRole('button', { name: 'ランチの割勘' }))
 
     const dialog = screen.getByRole('dialog', { name: '仕訳の詳細' })
     expect(dialog).toHaveTextContent('2026-10-30')
@@ -397,7 +397,7 @@ describe('SplitTab', () => {
     setup(data)
 
     const history = screen.getByRole('region', { name: '割勘履歴' })
-    const row = within(history).getByText('ランチ').closest('tr')!
+    const row = within(history).getByText('ランチの割勘').closest('tr')!
     expect(within(row).getByText('妻')).toBeInTheDocument()
     expect(within(row).getByText(formatCurrency(600, 'JPY'))).toBeInTheDocument()
     expect(within(row).getByText('未精算')).toBeInTheDocument()

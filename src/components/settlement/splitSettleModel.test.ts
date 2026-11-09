@@ -146,14 +146,14 @@ describe('buildSplitHistoryRows', () => {
     { id: 2, name: '妻' },
   ]
 
-  it('割勘仕訳ごとに、元の支出の日付・摘要、相手、相手の負担額を1行にする', () => {
+  it('割勘仕訳ごとに、元の支出の日付、割勘仕訳の摘要、相手、相手の負担額を1行にする', () => {
     const rows = buildSplitHistoryRows([original, split], accounts, related, members, [])
 
     expect(rows).toEqual([
       expect.objectContaining({
         splitEntryId: 2,
         date: '2026-10-05',
-        memo: 'ランチ',
+        memo: 'ランチの割勘',
         partner: '妻',
         amount: 600,
         isSettled: false,
@@ -175,7 +175,15 @@ describe('buildSplitHistoryRows', () => {
     expect(row).toMatchObject({ isSettled: true, canCancel: false })
   })
 
-  it('複数の元の支出をまとめた割勘は、日付を最も古い支出にして摘要を件数で表す', () => {
+  it('割勘仕訳に摘要が無いときは、元の支出の摘要を使い、複数をまとめた割勘は件数で表す', () => {
+    const noMemo = { ...split, memo: null }
+
+    const [one] = buildSplitHistoryRows([original, noMemo], accounts, related, members, [])
+
+    expect(one.memo).toBe('ランチ')
+  })
+
+  it('複数の元の支出をまとめた割勘は、日付を最も古い支出にする(摘要は割勘仕訳の摘要)', () => {
     const second = entry(4, '2026-10-06', null, 'manual', [line(41, 4, FOOD, 'debit', 800), line(42, 4, CASH, 'credit', 800)])
     const both = new Map([
       [1, new Set([2])],
@@ -185,6 +193,9 @@ describe('buildSplitHistoryRows', () => {
 
     const [row] = buildSplitHistoryRows([original, second, split], accounts, both, members, [])
 
-    expect(row).toMatchObject({ date: '2026-10-05', memo: '2件の支出' })
+    expect(row).toMatchObject({ date: '2026-10-05', memo: 'ランチの割勘' })
+
+    const [noMemoRow] = buildSplitHistoryRows([original, second, { ...split, memo: '' }], accounts, both, members, [])
+    expect(noMemoRow.memo).toBe('2件の支出')
   })
 })

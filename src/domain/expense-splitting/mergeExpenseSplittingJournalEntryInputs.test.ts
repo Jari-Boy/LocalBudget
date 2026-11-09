@@ -67,7 +67,7 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
     expect(total(merged.lines, 'debit')).toBe(total(concatenated, 'debit'))
     expect(total(merged.lines, 'credit')).toBe(total(concatenated, 'credit'))
     expect(merged.lines.length).toBeLessThan(concatenated.length)
-    expect(merged.lines[0]).toEqual(memberInput.lines[0])
+    expect(merged.lines[0].settlementBatchId).toBe(SETTLEMENT_BATCH_ID) // 立替金・未払金の行が先頭
   })
 
   it('inputsが1件のみの場合でも、entryDate・memo・householdMemberIdの上書きを適用した1件の仕訳を返す', () => {
@@ -159,5 +159,30 @@ describe('mergeExpenseSplittingJournalEntryInputs', () => {
     expect(advance).toHaveLength(1)
     expect(advance[0].amount).toBe(1500)
     expect(merged.lines.filter((l) => l.accountId === ADVANCE_LIABILITY_ACCOUNT_ID)).toHaveLength(2)
+  })
+
+  it('精算バッチが付いた行(立替金・未払金)を、貸借それぞれの先頭に並べる(元の並びは保つ)', () => {
+    const merged = mergeExpenseSplittingJournalEntryInputs({
+      inputs: [
+        buildHouseholdMemberExpenseSplittingJournalEntryInput({
+          expenseAccountId: EXPENSE_ACCOUNT_ID,
+          advanceAssetAccountId: ADVANCE_ASSET_ACCOUNT_ID,
+          advanceLiabilityAccountId: ADVANCE_LIABILITY_ACCOUNT_ID,
+          fromMemberId: MEMBER_A,
+          toMemberId: MEMBER_B,
+          settlementBatchId: SETTLEMENT_BATCH_ID,
+          amount: 1000,
+          entryDate: '2026-09-06',
+        }),
+      ],
+      entryDate: '2026-09-06',
+      memo: null,
+      householdMemberId: MEMBER_A,
+    })
+
+    const batchFlags = merged.lines.map((l) => l.settlementBatchId !== null && l.settlementBatchId !== undefined)
+    expect(batchFlags[0]).toBe(true)
+    // 精算バッチ付きの行は、そうでない行より前にまとまる
+    expect(batchFlags.join()).toBe([...batchFlags].sort((x, y) => Number(y) - Number(x)).join())
   })
 })
