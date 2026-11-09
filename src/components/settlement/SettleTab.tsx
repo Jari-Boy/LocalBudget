@@ -593,20 +593,23 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
                     >
                       {entry.entryDate} {entry.memo ?? ''}
                     </button>
-                    <span className="split-settle__note">
+                    <span className="split-settle__note split-settle__tagged-account">
                       {l.side === 'debit' ? '借方' : '貸方'} {data.accounts.find((a) => a.id === l.accountId)?.name ?? ''}
                     </span>
-                    <span className="split-settle__num">{formatCurrency(l.amount, 'JPY')}</span>
-                    {isSettlingLine(l) && (
-                      <button
-                        type="button"
-                        className="split-settle__btn split-settle__btn--small"
-                        aria-label={`${entry.memo ?? ''}の紐づけを解除`}
-                        onClick={() => setConfirmingUnlinkLineId(l.id)}
-                      >
-                        紐づけを解除
-                      </button>
-                    )}
+                    <span className="split-settle__num split-settle__tagged-amount">{formatCurrency(l.amount, 'JPY')}</span>
+                    {/* 解除ボタンの有無で金額の位置がずれないよう、ボタンの欄は常に同じ幅を確保する */}
+                    <span className="split-settle__tagged-action">
+                      {isSettlingLine(l) && (
+                        <button
+                          type="button"
+                          className="split-settle__btn split-settle__btn--small"
+                          aria-label={`${entry.memo ?? ''}の紐づけを解除`}
+                          onClick={() => setConfirmingUnlinkLineId(l.id)}
+                        >
+                          紐づけを解除
+                        </button>
+                      )}
+                    </span>
                   </div>
                   {confirmingUnlinkLineId === l.id && (
                     <div className="split-settle__unlink-confirm">

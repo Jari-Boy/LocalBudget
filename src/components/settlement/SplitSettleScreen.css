@@ -470,6 +470,21 @@
   font-size: var(--font-size-sm);
 }
 
+.split-settle__tagged-account {
+  width: 130px;
+  text-align: right;
+}
+
+.split-settle__tagged-amount {
+  width: 90px;
+}
+
+.split-settle__tagged-action {
+  display: flex;
+  justify-content: flex-end;
+  width: 104px;
+}
+
 .split-settle__field--grow {
   flex: 2 1 180px;
 }
