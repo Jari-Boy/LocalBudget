@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import {
   findUnassignedAdvanceEntriesForTarget,
@@ -16,6 +16,7 @@ import { JournalFilterPopup } from '../common/journal-filter/JournalFilterPopup'
 import { countActiveConditions } from '../common/journal-filter/journalFilterModel'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { SplitSettleData, SplitSettleDerived, SplitSettleRepositories } from './splitSettleData'
+import { EntryDetailDialog } from './EntryDetailDialog'
 import { createSettlementEntry, tagCandidatesToBatch } from './submitSettlement'
 import './SplitSettleScreen.css'
 
@@ -44,8 +45,6 @@ export interface SettleTabProps {
   today: string
   /** 書き込みのあとにデータを読み直す */
   onChanged: () => Promise<void>
-  /** バッチの仕訳を仕訳画面で開く */
-  onOpenEntry: (entryId: number) => void
 }
 
 const matchesStatus = (summary: SettlementBatchSummary, key: StatusFilter) =>
@@ -62,7 +61,7 @@ const signed = (amount: number) => (amount > 0 ? `+${formatCurrency(amount, 'JPY
  * 完了するかを選ぶ(docs/domain/settlement.md 1.9)。候補の有無によらず、精算の仕訳を起票できる。
  * バッチ名と世帯外の相手(取引先)も編集できる。
  */
-export function SettleTab({ data, derived, repositories, today, onChanged, onOpenEntry }: SettleTabProps) {
+export function SettleTab({ data, derived, repositories, today, onChanged }: SettleTabProps) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('open')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [directionOverride, setDirectionOverride] = useState<SettlementDirection | null>(null)
@@ -75,6 +74,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged, onOpe
   const [flash, setFlash] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [detailEntryId, setDetailEntryId] = useState<number | null>(null)
 
   const allLines = useMemo(() => data.entries.flatMap((e) => e.lines), [data.entries])
   const summaries = useMemo(
@@ -83,6 +83,19 @@ export function SettleTab({ data, derived, repositories, today, onChanged, onOpe
   )
   const listed = summaries.filter((s) => matchesStatus(s, statusFilter))
   const summary = summaries.find((s) => s.batch.id === selectedId) ?? listed[0] ?? summaries[0] ?? null
+
+  // 精算して残高が0になったバッチは、精算済みの一覧に移して、そのまま選んだままにする
+  const effectiveId = summary?.batch.id ?? null
+  const wasSettled = useRef<{ id: number; settled: boolean } | null>(null)
+  useEffect(() => {
+    if (summary === null) return
+    if (selectedId === null) setSelectedId(summary.batch.id)
+    const before = wasSettled.current
+    if (before !== null && before.id === summary.batch.id && !before.settled && summary.isSettled) {
+      setStatusFilter((current) => (current === 'open' ? 'settled' : current))
+    }
+    wasSettled.current = { id: summary.batch.id, settled: summary.isSettled }
+  }, [effectiveId, summary?.isSettled]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const memberName = (id: number | null) => data.members.find((m) => m.id === id)?.name ?? ''
   const counterpartyName = (id: number | null) => data.counterparties.find((c) => c.id === id)?.name ?? ''
@@ -138,6 +151,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged, onOpe
     : ''
 
   const taggedEntries = data.entries.filter((e) => e.lines.some((l) => l.settlementBatchId === batch.id))
+  const detailEntry = data.entries.find((e) => e.id === detailEntryId)
   const taggedEntryIds = taggedEntries.map((e) => e.id)
   const entryHouseholdMemberId =
     (resolved.target?.kind === 'householdMember' ? resolved.target.householdMemberId : null) ?? data.members[0]?.id ?? null
@@ -528,7 +542,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged, onOpe
                   <button
                     type="button"
                     className="split-settle__link split-settle__link--grow"
-                    onClick={() => onOpenEntry(entry.id)}
+                    onClick={() => setDetailEntryId(entry.id)}
                   >
                     {entry.entryDate} {entry.memo ?? ''}
                   </button>
@@ -541,6 +555,17 @@ export function SettleTab({ data, derived, repositories, today, onChanged, onOpe
           )}
         </div>
       </section>
+
+      {detailEntry !== undefined && (
+        <EntryDetailDialog
+          entry={detailEntry}
+          accounts={data.accounts}
+          members={data.members}
+          counterparties={data.counterparties}
+          batches={data.batches}
+          onClose={() => setDetailEntryId(null)}
+        />
+      )}
     </div>
   )
 }

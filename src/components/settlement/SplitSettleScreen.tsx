@@ -12,8 +12,6 @@ export interface SplitSettleScreenProps {
   initialTab?: SplitSettleTab
   /** 割勘仕訳・精算の取引日の既定値(YYYY-MM-DD)。省略時は本日 */
   today?: string
-  /** 仕訳を仕訳画面で開く */
-  onOpenEntry: (entryId: number) => void
   /** 割勘タブで最初から選んだ状態にする仕訳(仕訳画面の「この仕訳を割勘」から来たとき) */
   initialCheckedEntryIds?: readonly number[]
 }
@@ -32,7 +30,6 @@ export function SplitSettleScreen({
   repositories,
   initialTab = 'split',
   today,
-  onOpenEntry,
   initialCheckedEntryIds,
 }: SplitSettleScreenProps) {
   const [tab, setTab] = useState<SplitSettleTab>(initialTab)
@@ -75,7 +72,6 @@ export function SplitSettleScreen({
           repositories={repositories}
           today={date}
           onChanged={reload}
-          onOpenEntry={onOpenEntry}
           initialCheckedEntryIds={initialCheckedEntryIds}
         />
       ) : (
@@ -85,7 +81,6 @@ export function SplitSettleScreen({
           repositories={repositories}
           today={date}
           onChanged={reload}
-          onOpenEntry={onOpenEntry}
         />
       )}
     </div>

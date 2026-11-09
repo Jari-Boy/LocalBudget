@@ -116,7 +116,6 @@ function setup(data: SplitSettleData = makeData(), extraProps: { initialCheckedE
     counterpartyRepository: { create: vi.fn(async () => ({ id: 20, name: '新しい人' })) },
   }
   const onChanged = vi.fn(async () => {})
-  const onOpenEntry = vi.fn()
   render(
     <SplitTab
       data={data}
@@ -124,17 +123,89 @@ function setup(data: SplitSettleData = makeData(), extraProps: { initialCheckedE
       repositories={repositories as unknown as SplitSettleRepositories}
       today="2026-10-31"
       onChanged={onChanged}
-      onOpenEntry={onOpenEntry}
       {...extraProps}
     />,
   )
-  return { repositories, onChanged, onOpenEntry }
+  return { repositories, onChanged }
 }
 
 const chooseOption = (triggerName: RegExp, optionName: string) => {
   fireEvent.click(screen.getByRole('button', { name: triggerName }))
   fireEvent.click(within(screen.getByRole('dialog', { name: /分担相手/ })).getByRole('button', { name: optionName }))
 }
+
+const splitEntry = () =>
+  entry(3, '2026-10-30', 'ランチの割勘', 'expense_splitting', [
+    line(31, 3, 'debit', 1, 600, { householdMemberId: 2 }),
+    line(32, 3, 'debit', 3, 600, { householdMemberId: 1, settlementBatchId: 7 }),
+    line(33, 3, 'credit', 1, 600, { householdMemberId: 1 }),
+    line(34, 3, 'credit', 4, 600, { householdMemberId: 2, settlementBatchId: 7 }),
+  ])
+
+/** 元の仕訳(id 1)と割勘(id 3)を関連づけ、必要なら割勘のバッチ7を精算し切った状態にする */
+function historyData(settled: boolean): SplitSettleData {
+  const data = makeData([
+    splitEntry(),
+    ...(settled
+      ? [
+          entry(4, '2026-11-02', '妻から振込', 'manual', [
+            line(41, 4, 'debit', 2, 600),
+            line(42, 4, 'credit', 3, 600, { householdMemberId: 1, settlementBatchId: 7 }),
+            line(43, 4, 'debit', 4, 600, { householdMemberId: 2, settlementBatchId: 7 }),
+            line(44, 4, 'credit', 2, 600),
+          ]),
+        ]
+      : []),
+  ])
+  data.memberships = [
+    { id: 1, linkGroupId: 1, journalEntryId: 1, createdAt: '' },
+    { id: 2, linkGroupId: 1, journalEntryId: 3, createdAt: '' },
+  ] as never
+  return data
+}
+
+describe('SplitTab: 割勘履歴', () => {
+  it('履歴には「過去の割勘」の見出しをつけ、過去の記録であることを示す', () => {
+    setup(historyData(false))
+
+    const history = screen.getByRole('region', { name: '割勘履歴' })
+    expect(within(history).getByRole('heading', { name: '過去の割勘' })).toBeInTheDocument()
+  })
+
+  it('履歴は「未精算」「精算済み」で分かれ、既定では未精算だけを出し、件数をボタンに表示する', () => {
+    setup(historyData(false))
+
+    const history = screen.getByRole('region', { name: '割勘履歴' })
+    expect(within(history).getByRole('button', { name: '未精算 1' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(history).getByRole('button', { name: '精算済み 0' })).toHaveAttribute('aria-pressed', 'false')
+    expect(within(history).getByText('ランチ')).toBeInTheDocument()
+
+    fireEvent.click(within(history).getByRole('button', { name: '精算済み 0' }))
+    expect(within(history).queryByText('ランチ')).not.toBeInTheDocument()
+    expect(within(history).getByText('精算済みの割勘はありません')).toBeInTheDocument()
+  })
+
+  it('精算し切った割勘は「精算済み」に分かれ、「未精算」には出ない', () => {
+    setup(historyData(true))
+
+    const history = screen.getByRole('region', { name: '割勘履歴' })
+    expect(within(history).queryByText('ランチ')).not.toBeInTheDocument()
+    fireEvent.click(within(history).getByRole('button', { name: '精算済み 1' }))
+    expect(within(history).getByText('ランチ')).toBeInTheDocument()
+  })
+
+  it('履歴の摘要を押すと、仕訳画面へ移動せず、その割勘仕訳の詳細をダイアログで表示し、閉じられる', () => {
+    setup(historyData(false))
+
+    fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+
+    const dialog = screen.getByRole('dialog', { name: '仕訳の詳細' })
+    expect(dialog).toHaveTextContent('2026-10-30')
+    expect(dialog).toHaveTextContent('ランチの割勘')
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }))
+    expect(screen.queryByRole('dialog', { name: '仕訳の詳細' })).not.toBeInTheDocument()
+  })
+})
 
 describe('SplitTab', () => {
   it('割勘できる仕訳(借方に費用の行がある仕訳)だけを候補の表に出す', () => {

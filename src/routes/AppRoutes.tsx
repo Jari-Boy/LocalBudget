@@ -388,7 +388,6 @@ type SplitSettleScreenRouteProps = SplitSettleRepositories
  * 画面は渡されたRepositoryが変わるとデータを読み直すため、オブジェクトは作り直さない。
  */
 function SplitSettleScreenRoute(props: SplitSettleScreenRouteProps) {
-  const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const initialTab: SplitSettleTab = searchParams.get('tab') === 'settle' ? 'settle' : 'split'
@@ -406,7 +405,6 @@ function SplitSettleScreenRoute(props: SplitSettleScreenRouteProps) {
       repositories={repositories}
       initialTab={initialTab}
       initialCheckedEntryIds={entryIds}
-      onOpenEntry={(entryId) => navigate(`/journal/entries/${entryId}`)}
     />
   )
 }

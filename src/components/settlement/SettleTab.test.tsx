@@ -171,18 +171,19 @@ function setup(data: SplitSettleData = makeData()) {
     counterpartyRepository: { create: vi.fn(async () => ({ id: 20, name: '新しい人' })) },
   }
   const onChanged = vi.fn(async () => {})
-  const onOpenEntry = vi.fn()
-  render(
+  const element = (next: SplitSettleData) => (
     <SettleTab
-      data={data}
-      derived={deriveSplitSettle(data)}
+      data={next}
+      derived={deriveSplitSettle(next)}
       repositories={repositories as unknown as SplitSettleRepositories}
       today="2026-11-09"
       onChanged={onChanged}
-      onOpenEntry={onOpenEntry}
-    />,
+    />
   )
-  return { repositories, onChanged, onOpenEntry, updated }
+  const view = render(element(data))
+  /** 親が書き込み後にデータを読み直した状態を再現する */
+  const rerender = (next: SplitSettleData) => view.rerender(element(next))
+  return { repositories, onChanged, updated, rerender }
 }
 
 const batchList = () => screen.getByRole('region', { name: '精算バッチ一覧' })
@@ -212,13 +213,46 @@ describe('SettleTab: 精算バッチの一覧', () => {
     expect(within(selected()).getByText('精算済みです。立替金と未払金の残高はどちらも0です。')).toBeInTheDocument()
   })
 
-  it('精算済みのバッチでは、紐づく仕訳を閲覧でき、仕訳をクリックすると仕訳画面で開く', () => {
-    const { onOpenEntry } = setup()
+  it('精算済みのバッチでは、紐づく仕訳を閲覧でき、仕訳をクリックすると仕訳画面へ移動せずダイアログで開く', () => {
+    setup()
 
     fireEvent.click(screen.getByRole('button', { name: '精算済み 1' }))
     fireEvent.click(within(selected()).getAllByRole('button', { name: /9月分の精算/ })[0])
 
-    expect(onOpenEntry).toHaveBeenCalledWith(201)
+    const dialog = screen.getByRole('dialog', { name: '仕訳の詳細' })
+    expect(dialog).toHaveTextContent('2026-10-05')
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }))
+    expect(screen.queryByRole('dialog', { name: '仕訳の詳細' })).not.toBeInTheDocument()
+  })
+
+  it('精算して残高が0になったバッチは、「精算済み」の一覧に移り、そのまま精算済みとして表示する', async () => {
+    const data = makeData()
+    // 10月分は立替金の方向だけ6000が残る状態にしておき、立替金を精算し切ると全体が0になる
+    data.entries = data.entries.map((e) =>
+      e.id === 100
+        ? { ...e, lines: e.lines.filter((l) => l.accountId !== PAYABLE) }
+        : e,
+    )
+    const view = setup(data)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '妻から振込を選択' }))
+    fireEvent.click(within(selected()).getByRole('button', { name: '精算完了' }))
+    await waitFor(() => expect(view.onChanged).toHaveBeenCalled())
+
+    // 親が読み直したデータ(妻から振込に10月分のタグが付いた状態)を渡し直す
+    const reloaded = {
+      ...data,
+      entries: data.entries.map((e) =>
+        e.id === 101
+          ? { ...e, lines: e.lines.map((l) => (l.id === 1012 ? { ...l, settlementBatchId: 1 } : l)) }
+          : e,
+      ),
+    }
+    view.rerender(reloaded)
+
+    expect(screen.getByRole('button', { name: '精算済み 2' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(batchList()).getByRole('button', { name: '10月分 割勘(妻)' })).toBeInTheDocument()
+    expect(within(selected()).getByText('精算済みです。立替金と未払金の残高はどちらも0です。')).toBeInTheDocument()
   })
 })
 

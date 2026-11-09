@@ -7,6 +7,7 @@ import { listSplittableEntries, type SplittableEntry } from '../../domain/expens
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { JournalFilterPanel } from '../common/journal-filter/JournalFilterPanel'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
+import { EntryDetailDialog } from './EntryDetailDialog'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
 import {
   calculateParticipantAmounts,
@@ -31,8 +32,6 @@ export interface SplitTabProps {
   today: string
   /** 書き込みのあとにデータを読み直す */
   onChanged: () => Promise<void>
-  /** 履歴の行から仕訳画面でその仕訳を開く */
-  onOpenEntry: (entryId: number) => void
   /** 最初から選んだ状態にする仕訳(仕訳画面の「この仕訳を割勘」から来たとき) */
   initialCheckedEntryIds?: readonly number[]
 }
@@ -79,7 +78,6 @@ export function SplitTab({
   repositories,
   today,
   onChanged,
-  onOpenEntry,
   initialCheckedEntryIds = [],
 }: SplitTabProps) {
   const [filter, setFilter] = useState<JournalEntryFilter>({})
@@ -95,6 +93,8 @@ export function SplitTab({
   const [error, setError] = useState('')
   const [confirmingCancelId, setConfirmingCancelId] = useState<number | null>(null)
   const [createForRowKey, setCreateForRowKey] = useState<number | null>(null)
+  const [historyStatus, setHistoryStatus] = useState<'open' | 'settled'>('open')
+  const [detailEntryId, setDetailEntryId] = useState<number | null>(null)
 
   const relatedIds = useMemo(() => buildRelatedEntryIdsByEntryId(data.memberships), [data.memberships])
   const candidates = useMemo(
@@ -205,6 +205,11 @@ export function SplitTab({
     () => buildSplitHistoryRows(data.entries, data.accounts, relatedIds, data.members, data.counterparties),
     [data.entries, data.accounts, relatedIds, data.members, data.counterparties],
   )
+
+  const openCount = historyRows.filter((r) => !r.isSettled).length
+  const settledCount = historyRows.length - openCount
+  const shownHistory = historyRows.filter((r) => r.isSettled === (historyStatus === 'settled'))
+  const detailEntry = data.entries.find((e) => e.id === detailEntryId)
 
   const cancelSplit = async (splitEntryId: number) => {
     setConfirmingCancelId(null)
@@ -400,6 +405,35 @@ export function SplitTab({
       </div>
 
       <section aria-label="割勘履歴" className="split-settle__card split-settle__card--table">
+        <div className="split-settle__history-head">
+          <h2 className="split-settle__h2">過去の割勘</h2>
+          <div role="group" aria-label="精算状況で絞り込む" className="split-settle__filters">
+            {(
+              [
+                { key: 'open', label: '未精算', count: openCount },
+                { key: 'settled', label: '精算済み', count: settledCount },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                aria-pressed={historyStatus === item.key}
+                className={`split-settle__btn split-settle__btn--small${historyStatus === item.key ? ' split-settle__btn--pressed' : ''}`}
+                onClick={() => {
+                  setHistoryStatus(item.key)
+                  setConfirmingCancelId(null)
+                }}
+              >
+                {item.label} {item.count}
+              </button>
+            ))}
+          </div>
+        </div>
+        {shownHistory.length === 0 && (
+          <p className="split-settle__empty">
+            {historyStatus === 'open' ? '未精算の割勘はありません' : '精算済みの割勘はありません'}
+          </p>
+        )}
         <table className="split-settle__table">
           <thead>
             <tr>
@@ -412,11 +446,11 @@ export function SplitTab({
             </tr>
           </thead>
           <tbody>
-            {historyRows.map((row) => (
+            {shownHistory.map((row) => (
               <tr key={row.splitEntryId}>
                 <td className="split-settle__nowrap">{row.date}</td>
                 <td>
-                  <button type="button" className="split-settle__link" onClick={() => onOpenEntry(row.splitEntryId)}>
+                  <button type="button" className="split-settle__link" onClick={() => setDetailEntryId(row.splitEntryId)}>
                     {row.memo === '' ? '(摘要なし)' : row.memo}
                   </button>
                 </td>
@@ -458,6 +492,17 @@ export function SplitTab({
           </tbody>
         </table>
       </section>
+
+      {detailEntry !== undefined && (
+        <EntryDetailDialog
+          entry={detailEntry}
+          accounts={data.accounts}
+          members={data.members}
+          counterparties={data.counterparties}
+          batches={data.batches}
+          onClose={() => setDetailEntryId(null)}
+        />
+      )}
 
       {createForRowKey !== null && (
         <QuickCreateDialog

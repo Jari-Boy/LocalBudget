@@ -488,3 +488,70 @@
 .split-settle__scroll {
   overflow-x: auto;
 }
+
+/* 仕訳の詳細ダイアログ */
+.split-settle__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(23, 35, 31, 0.4);
+}
+
+.split-settle__dialog {
+  width: 640px;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 20px;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.split-settle__detail {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  margin: 0;
+  font-size: var(--font-size-base);
+}
+
+.split-settle__detail dt {
+  color: var(--color-text-muted);
+}
+
+.split-settle__detail dd {
+  margin: 0;
+}
+
+.split-settle__dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 割勘履歴の見出しと精算状況の切り替え */
+.split-settle__history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px 0;
+}
+
+.split-settle__history-head .split-settle__filters {
+  padding: 0;
+}
+
+.split-settle__empty {
+  margin: 0;
+  padding: 12px;
+  font-size: var(--font-size-base);
+  color: var(--color-text-muted);
+}

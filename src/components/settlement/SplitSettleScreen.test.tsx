@@ -68,16 +68,14 @@ function makeRepositories() {
 
 function renderScreen(props: { initialTab?: 'split' | 'settle' } = {}) {
   const repositories = makeRepositories()
-  const onOpenEntry = vi.fn()
   render(
     <SplitSettleScreen
       repositories={repositories as unknown as SplitSettleRepositories}
       today="2026-10-31"
-      onOpenEntry={onOpenEntry}
       {...props}
     />,
   )
-  return { repositories, onOpenEntry }
+  return { repositories }
 }
 
 describe('SplitSettleScreen', () => {

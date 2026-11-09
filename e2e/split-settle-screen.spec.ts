@@ -169,10 +169,20 @@ test.describe('割勘タブ', () => {
     await splitWithMember(page, '履歴テストの食事代')
     await waitForJournalEntryCount(page, 2)
 
-    const row = page.getByRole('region', { name: '割勘履歴' }).getByRole('row').filter({ hasText: '履歴テストの食事代' })
+    const history = page.getByRole('region', { name: '割勘履歴' })
+    await expect(history.getByRole('heading', { name: '過去の割勘' })).toBeVisible()
+    const row = history.getByRole('row').filter({ hasText: '履歴テストの食事代' })
     await expect(row).toContainText('割勘相手Bさん')
     await expect(row).toContainText(MONEY_500)
     await expect(row).toContainText('未精算')
+
+    // 履歴の摘要を押すと、仕訳画面へ移動せずダイアログで仕訳の詳細を見られる
+    await row.getByRole('button', { name: '履歴テストの食事代' }).click()
+    const dialog = page.getByRole('dialog', { name: '仕訳の詳細' })
+    await expect(dialog).toContainText('履歴テストの食事代の割勘')
+    await expect(page).toHaveURL(/\/journal\/splitting/)
+    await dialog.getByRole('button', { name: '閉じる' }).click()
+    await expect(dialog).toHaveCount(0)
   })
 
   test('世帯外の相手(取引先)を分担相手に選んで割勘できる', async ({ page }) => {
@@ -266,7 +276,8 @@ test.describe('精算タブ', () => {
     await expect(panel.getByText('精算済みです。立替金と未払金の残高はどちらも0です。')).toBeVisible()
     await waitForJournalEntryCount(page, 4)
 
-    await page.getByRole('button', { name: /^精算済み/ }).click()
+    // 残高が0になったバッチは精算済みの一覧に移り、そのまま精算済みとして表示される
+    await expect(page.getByRole('button', { name: /^精算済み 1/ })).toHaveAttribute('aria-pressed', 'true')
     await expect(list.getByRole('button', { name: '精算テストの食事代の割勘' })).toBeVisible()
   })
 
