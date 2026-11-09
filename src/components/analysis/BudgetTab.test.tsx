@@ -175,13 +175,42 @@ describe('BudgetTab(予算の入力)', () => {
     expect(await within(rowOf('日用品')).findByText('未設定')).toBeInTheDocument()
   })
 
-  it('数字として読めない入力は保存せず、元の金額に戻す', async () => {
+  it('数字として読めない入力は保存せず、理由を表示し、入力は戻さず直せるようにする', async () => {
     await openBudget()
     const input = within(rowOf('食費')).getByLabelText('食費の予算')
     fireEvent.change(input, { target: { value: 'abc' } })
     fireEvent.blur(input)
     expect(budgetRepository.findByAccountAndYearMonth(foodId, '2026-07')?.amount).toBe(25000)
-    await waitFor(() => expect(input).toHaveValue('25000'))
+    expect(await screen.findByText('予算は0以上の整数で入力してください')).toBeInTheDocument()
+    expect(input).toHaveValue('abc')
+  })
+
+  it('負の数も保存せず、理由を表示する', async () => {
+    await openBudget()
+    const input = within(rowOf('食費')).getByLabelText('食費の予算')
+    fireEvent.change(input, { target: { value: '-5' } })
+    fireEvent.blur(input)
+    expect(await screen.findByText('予算は0以上の整数で入力してください')).toBeInTheDocument()
+    expect(budgetRepository.findByAccountAndYearMonth(foodId, '2026-07')?.amount).toBe(25000)
+  })
+
+  it('桁区切りのカンマや全角数字は、数字に直して保存する', async () => {
+    await openBudget()
+    const input = within(rowOf('交通費')).getByLabelText('交通費の予算')
+    fireEvent.change(input, { target: { value: '１,２００' } })
+    fireEvent.blur(input)
+    await waitFor(() => expect(budgetRepository.findByAccountAndYearMonth(transportId, '2026-07')?.amount).toBe(1200))
+  })
+
+  it('不正な入力のあとに正しい金額を入れて保存すると、エラーの表示を消す', async () => {
+    await openBudget()
+    const input = within(rowOf('食費')).getByLabelText('食費の予算')
+    fireEvent.change(input, { target: { value: 'abc' } })
+    fireEvent.blur(input)
+    await screen.findByText('予算は0以上の整数で入力してください')
+    fireEvent.change(input, { target: { value: '26000' } })
+    fireEvent.blur(input)
+    await waitFor(() => expect(screen.queryByText('予算は0以上の整数で入力してください')).toBeNull())
   })
 })
 
@@ -194,6 +223,15 @@ describe('BudgetTab(先月の内容をコピー)', () => {
     expect(screen.getByText('1件をコピーしました(設定済みの1件はそのままです)')).toBeInTheDocument()
   })
 
+  it('連打しても、2回目は実行せず、エラーを出さずにコピーの結果を表示する', async () => {
+    await openBudget()
+    const button = screen.getByRole('button', { name: '先月の内容をコピー' })
+    fireEvent.click(button)
+    fireEvent.click(button)
+    expect(await screen.findByText('1件をコピーしました(設定済みの1件はそのままです)')).toBeInTheDocument()
+    expect(screen.queryByText('予算を保存できませんでした')).toBeNull()
+  })
+
   it('先月の予算がないときは、その旨を表示して何も作らない', async () => {
     for (const b of budgetRepository.findByYearMonth('2026-06')) budgetRepository.delete(b.id)
     await openBudget()
@@ -204,11 +242,53 @@ describe('BudgetTab(先月の内容をコピー)', () => {
 })
 
 describe('BudgetTab(予算と実績の推移)', () => {
+  it('グラフと同じ数値を、表(数値を表で見る)でも確認できる', async () => {
+    await openBudget()
+    const chart = screen.getByRole('region', { name: '予算と実績の推移' })
+    const details = within(chart).getByText('数値を表で見る').closest('details') as HTMLElement
+    const july = within(details).getByText('7月').closest('tr') as HTMLElement
+    expect(within(july).getByText('￥30,000')).toBeInTheDocument()
+    expect(within(july).getByText('￥32,001')).toBeInTheDocument()
+  })
+
+  it('グラフの内訳の行から仕訳一覧へ移るときも、予算に適用していない絞り込み(世帯メンバー等)は引き継がない', async () => {
+    const onOpenJournal = vi.fn()
+    await openBudget(onOpenJournal)
+    fireEvent.click(screen.getByRole('button', { name: /世帯全体/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '家族' }))
+    const chart = screen.getByRole('region', { name: '予算と実績の推移' })
+    fireEvent.click(within(chart).getByRole('button', { name: /^7月/ }))
+    fireEvent.click(within(within(chart).getByRole('region', { name: '7月の内訳' })).getByRole('button', { name: /スーパー/ }))
+    expect(onOpenJournal).toHaveBeenCalledWith({ dateFrom: '2026-07-05', dateTo: '2026-07-05', accountIds: [foodId] })
+  })
+
   it('予算と実績の推移のグラフを出し、月にカーソルを合わせると予算のある科目の仕訳行を出す', async () => {
     await openBudget()
     const chart = screen.getByRole('region', { name: '予算と実績の推移' })
     fireEvent.mouseEnter(within(chart).getByRole('button', { name: /^7月/ }))
     expect(within(chart).getByRole('tooltip')).toHaveTextContent('スーパー')
     expect(within(chart).getByRole('tooltip')).not.toHaveTextContent('電車')
+  })
+})
+
+describe('BudgetTab(実績が負のとき)', () => {
+  it('貸方の取消が借方より大きく実績が負でも、消化バーの幅は0%〜100%に収める', async () => {
+    const entries = repositories.journalEntryRepository as unknown as SqlJsJournalEntryRepository
+    const [member] = (repositories.householdMemberRepository as unknown as SqlJsHouseholdMemberRepository).findAll()
+    const accounts = (repositories.accountRepository as unknown as SqlJsAccountRepository).findAll()
+    const cash = accounts.find((a) => a.name === '現金')!.id
+    entries.create({
+      householdMemberId: member.id,
+      entryDate: '2026-07-15',
+      memo: '大きな返金',
+      lines: [
+        { accountId: cash, side: 'debit', amount: 9000 },
+        { accountId: transportId, side: 'credit', amount: 9000 },
+      ],
+    })
+    budgetRepository.create({ accountId: transportId, yearMonth: '2026-07', amount: 5000 })
+    await openBudget()
+    const fill = rowOf('交通費').querySelector('.analysis__meter-fill') as HTMLElement
+    expect(fill.style.width).toBe('0%')
   })
 })

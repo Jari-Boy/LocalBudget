@@ -146,6 +146,7 @@
       "budget": "予算",
       "actual": "実績",
       "actualOfBudgeted": "実績(予算のある科目)"
-    }
+    },
+    "invalidInput": "予算は0以上の整数で入力してください"
   }
 }

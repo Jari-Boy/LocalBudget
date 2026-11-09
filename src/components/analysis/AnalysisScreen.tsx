@@ -32,6 +32,9 @@ export interface AnalysisScreenProps {
   onOpenJournal: (filter: JournalEntryFilter) => void
 }
 
+/** 絞り込みなし(予算タブから仕訳一覧へ移るとき、予算に適用していない条件を引き継がない) */
+const NO_CONDITIONS: AnalysisConditionValues = { member: '', project: '', counterparty: '' }
+
 const TABS: AnalysisTab[] = ['statements', 'charts', 'budget']
 const DEFAULT_PRESET: AnalysisPresetKey = 'thisMonth'
 /** 月の選択肢の下限: 最も古い仕訳の月、なければこの月数だけ前まで */
@@ -251,10 +254,10 @@ export function AnalysisScreen({ repositories, today, onOpenJournal }: AnalysisS
           budgetRepository={repositories.budgetRepository}
           onChanged={reload}
           // 予算タブには、世帯メンバーなどの絞り込みを適用しない(引き継がない)
-          onOpenAccount={(accountId, month) =>
-            onOpenJournal(toJournalFilter(month, { member: '', project: '', counterparty: '' }, { accountIds: [accountId] }))
+          onOpenAccount={(accountId, month) => onOpenJournal(toJournalFilter(month, NO_CONDITIONS, { accountIds: [accountId] }))}
+          onOpenLine={(line) =>
+            onOpenJournal(toJournalFilter({ from: line.date, to: line.date }, NO_CONDITIONS, { accountIds: [line.accountId] }))
           }
-          onOpenLine={openLine}
         />
       )}
     </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { resolveTrendWindowMonths } from '../../domain/analysis/analysisPeriod'
 import { listPeriodLines, type AnalysisLine } from '../../domain/analysis/listAnalysisLines'
@@ -51,11 +51,14 @@ const monthLabel = (month: string) => `${month.slice(0, 4)}年${Number(month.sli
 const axisLabel = (month: string, index: number) =>
   Number(month.slice(5, 7)) === 1 || index === 0 ? `${month.slice(2, 4)}年${Number(month.slice(5, 7))}月` : `${Number(month.slice(5, 7))}月`
 
-/** 予算の入力欄の文字列を金額にする。空欄はnull(削除)、0以上の整数以外はundefined(無効)。 */
+/**
+ * 予算の入力欄の文字列を金額にする。全角数字は半角に、桁区切りのカンマと空白は取り除く。
+ * 空欄はnull(削除)、0以上の整数以外はundefined(無効)を返す。
+ */
 function parseBudgetInput(text: string): number | null | undefined {
-  const trimmed = text.trim()
-  if (trimmed === '') return null
-  return /^\d+$/.test(trimmed) ? Number(trimmed) : undefined
+  const normalized = text.normalize('NFKC').replace(/[,\s]/g, '')
+  if (normalized === '') return null
+  return /^\d+$/.test(normalized) ? Number(normalized) : undefined
 }
 
 /**
@@ -71,6 +74,9 @@ export function BudgetTab({ data, period, budgetRepository, onChanged, onOpenAcc
   const [drafts, setDrafts] = useState<Record<number, string>>({})
   const [message, setMessage] = useState('')
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(new Set())
+  const [copying, setCopying] = useState(false)
+  /** コピーの実行中(連打で2回目が走らないよう、描画を待たずに同期で判定する) */
+  const copyingRef = useRef(false)
 
   const summary = useMemo(
     () => summarizeBudgetProgress(data.budgets, data.accounts, data.entries, month),
@@ -122,11 +128,15 @@ export function BudgetTab({ data, period, budgetRepository, onChanged, onOpenAcc
   const commit = async (accountId: number, text: string) => {
     const amount = parseBudgetInput(text)
     const existing = data.budgets.find((b) => b.accountId === accountId && b.yearMonth === month)
+    if (amount === undefined) {
+      // 入力は戻さず、直せるようにする
+      setMessage(t('budget.invalidInput'))
+      return
+    }
     setDrafts((prev) => {
       const { [accountId]: _discarded, ...rest } = prev
       return rest
     })
-    if (amount === undefined) return
     try {
       if (amount === null) {
         if (existing) await budgetRepository.delete(existing.id)
@@ -143,6 +153,18 @@ export function BudgetTab({ data, period, budgetRepository, onChanged, onOpenAcc
   }
 
   const copyPrevious = async () => {
+    if (copyingRef.current) return
+    copyingRef.current = true
+    setCopying(true)
+    try {
+      await runCopy()
+    } finally {
+      copyingRef.current = false
+      setCopying(false)
+    }
+  }
+
+  const runCopy = async () => {
     const previousMonth = previousMonthOf(month)
     const previous = data.budgets.filter((b) => b.yearMonth === previousMonth)
     if (previous.length === 0) {
@@ -224,8 +246,8 @@ export function BudgetTab({ data, period, budgetRepository, onChanged, onOpenAcc
     const ratio = budget ? actual / budget : actual > 0 ? 2 : 0
     const over = actual > budget
     return {
-      pct: Math.min(ratio * 100, 100),
-      status: over ? t('budget.status.over') : `${Math.round(ratio * 100)}%`,
+      pct: Math.min(Math.max(ratio, 0) * 100, 100),
+      status: over ? t('budget.status.over') : `${Math.round(Math.max(ratio, 0) * 100)}%`,
       over,
       unset: false,
       remaining: budget - actual,
@@ -240,7 +262,7 @@ export function BudgetTab({ data, period, budgetRepository, onChanged, onOpenAcc
           <span role="status" className="analysis__budget-message">
             {message}
           </span>
-          <button type="button" className="analysis__button" onClick={() => void copyPrevious()}>
+          <button type="button" className="analysis__button" disabled={copying} onClick={() => void copyPrevious()}>
             {t('budget.copyPrevious')}
           </button>
         </div>
@@ -357,7 +379,6 @@ export function BudgetTab({ data, period, budgetRepository, onChanged, onOpenAcc
           highlightRange={[rangeStart, rangeEnd]}
           renderTooltipExtra={(i) => <AnalysisLineSections sections={budgetedLines(i)} limit={TOOLTIP_LINE_COUNT} />}
           renderDetail={(i) => <AnalysisLineSections sections={budgetedLines(i)} onOpenLine={onOpenLine} />}
-          showTable={false}
         />
       </div>
     </div>
