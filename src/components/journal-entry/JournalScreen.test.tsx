@@ -16,6 +16,7 @@ import i18n from '../../infrastructure/i18n/i18n'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
 import type { JournalEntryDraft } from '../../domain/journal/JournalEntryDraft'
+import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { JournalScreen, type JournalScreenProps } from './JournalScreen'
 
@@ -118,7 +119,9 @@ function balancedDraft(id: number, memo: string): JournalEntryDraft {
   }
 }
 
-function setup(overrides: Partial<{ entries: JournalEntry[]; drafts: JournalEntryDraft[] }> = {}) {
+function setup(
+  overrides: Partial<{ entries: JournalEntry[]; drafts: JournalEntryDraft[]; initialFilter: JournalEntryFilter }> = {},
+) {
   let entries = overrides.entries ?? makeEntries()
   let drafts = overrides.drafts ?? makeDrafts()
   const proposals = [
@@ -208,6 +211,7 @@ function setup(overrides: Partial<{ entries: JournalEntry[]; drafts: JournalEntr
     },
     onSplit: vi.fn(),
     onProposalsChanged: vi.fn(),
+    initialFilter: overrides.initialFilter,
   }
   render(
     <I18nextProvider i18n={i18n}>
@@ -225,6 +229,14 @@ async function ready() {
 const detail = () => screen.getByRole('region', { name: '仕訳の詳細' })
 
 describe('JournalScreen', () => {
+  it('initialFilterを渡すと、その条件で絞り込んだ状態で開く(分析画面から期間・条件を引き継ぐため、計画Issue #155)', async () => {
+    setup({ initialFilter: { dateFrom: '2026-10-01', dateTo: '2026-10-04', accountIds: [4] } })
+    await screen.findByRole('heading', { name: '仕訳', level: 1 })
+    expect(await screen.findByText('家賃', { selector: '.journal-result-list__memo' })).toBeInTheDocument()
+    expect(screen.queryByText('ランチ')).not.toBeInTheDocument()
+    expect(screen.getByText('1件')).toBeInTheDocument()
+  })
+
   it('一覧と詳細が同じ画面に出て、行を選ぶと画面遷移なしで詳細が切り替わる', async () => {
     setup()
     await ready()

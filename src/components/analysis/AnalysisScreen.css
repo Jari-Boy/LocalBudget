@@ -1,0 +1,306 @@
+/* 分析画面(計画Issue #155)。値はdesign/tokens.cssのトークンを使う。 */
+.analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  text-align: left;
+  color: var(--color-text);
+}
+
+.analysis__title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  font-weight: 700;
+}
+
+/* ---- 条件バー ---- */
+.analysis__conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-end;
+  padding: 10px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.analysis__presets,
+.analysis__range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.analysis__preset {
+  font: inherit;
+  font-size: var(--font-size-sm);
+  min-height: var(--control-height);
+  padding: 0 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.analysis__preset[aria-pressed='true'] {
+  font-weight: 600;
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.analysis__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.analysis__field--picker {
+  flex: 1 1 130px;
+}
+
+.analysis__label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.analysis__control {
+  font: inherit;
+  font-size: var(--font-size-base);
+  min-height: var(--control-height);
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.analysis__range-separator {
+  padding-bottom: 8px;
+}
+
+.analysis__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--control-height);
+  font-size: var(--font-size-sm);
+}
+
+/* ---- タブ ---- */
+.analysis__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.analysis__tab {
+  font: inherit;
+  font-size: var(--font-size-base);
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.analysis__tab--current {
+  font-weight: 600;
+  border-bottom-color: var(--color-accent);
+}
+
+/* ---- カード・表 ---- */
+.analysis__statements {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.analysis__card {
+  box-sizing: border-box;
+  flex: 1 1 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.analysis__card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.analysis__card-title {
+  margin: 0;
+  font-size: var(--font-size-nav);
+  font-weight: 600;
+}
+
+.analysis__card-note {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.analysis__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.analysis__table th,
+.analysis__table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border-soft);
+  text-align: left;
+}
+
+.analysis__table th {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.analysis__table .analysis__num,
+.analysis__num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis__num--muted {
+  color: var(--color-text-muted);
+}
+
+.analysis__row--summary {
+  background: var(--color-hover);
+  font-weight: 700;
+}
+
+.analysis__cell--group {
+  font-weight: 600;
+}
+
+.analysis__name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.analysis__toggle {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.analysis__toggle:hover {
+  background: var(--color-hover);
+}
+
+.analysis__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--color-accent);
+  text-align: left;
+  cursor: pointer;
+}
+
+.analysis__link:hover {
+  text-decoration: underline;
+}
+
+/* ---- BSの帯 ---- */
+.analysis__bs-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.analysis__bs-bar {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.analysis__bs-segments {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+}
+
+.analysis__bs-segment {
+  min-width: 2px;
+}
+
+.analysis__bs-segment--assets {
+  background: #2a78d6;
+}
+
+.analysis__bs-segment--liabilities {
+  background: #eb6834;
+}
+
+.analysis__bs-segment--equity {
+  background: #1baf7a;
+}
+
+.analysis__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.analysis__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.analysis__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.analysis__identity {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.analysis__identity--error {
+  color: var(--color-danger);
+}

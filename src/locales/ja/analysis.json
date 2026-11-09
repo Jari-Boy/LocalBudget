@@ -1,0 +1,59 @@
+{
+  "title": "分析",
+  "conditionsLabel": "分析の条件",
+  "periodStart": "開始",
+  "periodEndMonth": "終了(BSの基準月)",
+  "periodEndDate": "終了(BSの基準日)",
+  "periodRangeSeparator": "〜",
+  "byDate": "日付で指定",
+  "yearMonthOption": "{{year}}年{{month}}月",
+  "preset": {
+    "thisMonth": "今月",
+    "last3Months": "直近3か月",
+    "thisYear": "今年",
+    "last12Months": "直近12か月",
+    "lastYear": "昨年"
+  },
+  "comparison": {
+    "label": "比較",
+    "none": "なし",
+    "previousPeriod": "前期",
+    "previousYear": "前年同期"
+  },
+  "filter": {
+    "member": "世帯メンバー",
+    "memberAll": "世帯全体",
+    "project": "プロジェクト",
+    "counterparty": "取引先",
+    "any": "指定なし"
+  },
+  "tabsLabel": "分析の種類",
+  "tab": {
+    "statements": "財務諸表",
+    "charts": "グラフ分析",
+    "budget": "予算"
+  },
+  "statements": {
+    "pl": "損益計算書(PL)",
+    "bs": "貸借対照表(BS)",
+    "account": "科目",
+    "difference": "差額",
+    "asOf": "{{date}}時点",
+    "toggleGroup": "{{name}}を開閉",
+    "revenueTotal": "収益合計",
+    "expenseTotal": "費用合計",
+    "netIncome": "当期純利益",
+    "assetTotal": "資産合計",
+    "liabilityTotal": "負債合計",
+    "cumulativeNetIncome": "損益の累計",
+    "equityTotal": "純資産合計",
+    "liabilityEquityTotal": "負債・純資産合計",
+    "assets": "資産",
+    "liabilityEquity": "負債・純資産",
+    "liabilities": "負債",
+    "equity": "純資産",
+    "balanced": "貸借が一致しています(資産 {{assets}} = 負債・純資産 {{liabilityEquity}})",
+    "unbalanced": "貸借が一致していません(資産 {{assets}}、負債・純資産 {{liabilityEquity}})"
+  },
+  "loading": "読み込み中..."
+}

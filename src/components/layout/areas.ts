@@ -38,7 +38,7 @@ export const AREAS: Area[] = [
       { labelKey: 'mappings', to: '/master/mappings' },
     ],
   },
-  { key: 'analysis', to: '/reports/financial-statements', prefixes: ['/reports'], tabs: [] },
+  { key: 'analysis', to: '/reports/analysis', prefixes: ['/reports'], tabs: [] },
 ]
 
 /** パスが接頭辞(セグメント境界で)に一致するか。 */
