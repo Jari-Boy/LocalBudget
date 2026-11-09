@@ -33,6 +33,8 @@ export interface SplitTabProps {
   onChanged: () => Promise<void>
   /** 履歴の行から仕訳画面でその仕訳を開く */
   onOpenEntry: (entryId: number) => void
+  /** 最初から選んだ状態にする仕訳(仕訳画面の「この仕訳を割勘」から来たとき) */
+  initialCheckedEntryIds?: readonly number[]
 }
 
 const ERROR_TEXT: Record<SubmitExpenseSplitError, string> = {
@@ -71,9 +73,17 @@ function payerAccountName(item: SplittableEntry, accounts: readonly Account[]): 
  * (金額指定は仕訳を1件だけ選んだときのみ)。精算バッチは新規作成(既定)か既存から選ぶ。
  * 下に割勘履歴を出し、精算が進んでいない割勘は2回押して取り消せる。
  */
-export function SplitTab({ data, derived, repositories, today, onChanged, onOpenEntry }: SplitTabProps) {
+export function SplitTab({
+  data,
+  derived,
+  repositories,
+  today,
+  onChanged,
+  onOpenEntry,
+  initialCheckedEntryIds = [],
+}: SplitTabProps) {
   const [filter, setFilter] = useState<JournalEntryFilter>({})
-  const [checkedIds, setCheckedIds] = useState<ReadonlySet<number>>(new Set())
+  const [checkedIds, setCheckedIds] = useState<ReadonlySet<number>>(() => new Set(initialCheckedEntryIds))
   const nextKey = useRef(2)
   const [partners, setPartners] = useState<ExpenseSplittingParticipantRow[]>([
     { key: 1, kind: 'householdMember', targetId: null, ratioInput: '50', amountInput: '' },

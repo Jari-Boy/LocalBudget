@@ -14,6 +14,8 @@ export interface SplitSettleScreenProps {
   today?: string
   /** 仕訳を仕訳画面で開く */
   onOpenEntry: (entryId: number) => void
+  /** 割勘タブで最初から選んだ状態にする仕訳(仕訳画面の「この仕訳を割勘」から来たとき) */
+  initialCheckedEntryIds?: readonly number[]
 }
 
 const TABS: { key: SplitSettleTab; label: string }[] = [
@@ -26,7 +28,13 @@ const TABS: { key: SplitSettleTab; label: string }[] = [
  * 「精算」「割勘履歴」の4画面を、「割勘」「精算」の2タブにまとめた1画面。タブの切り替えでは
  * URLを変えず、データはこの画面で1回読み込んで両タブに渡す。書き込みのあとは読み直す。
  */
-export function SplitSettleScreen({ repositories, initialTab = 'split', today, onOpenEntry }: SplitSettleScreenProps) {
+export function SplitSettleScreen({
+  repositories,
+  initialTab = 'split',
+  today,
+  onOpenEntry,
+  initialCheckedEntryIds,
+}: SplitSettleScreenProps) {
   const [tab, setTab] = useState<SplitSettleTab>(initialTab)
   const [data, setData] = useState<SplitSettleData | null>(null)
 
@@ -68,6 +76,7 @@ export function SplitSettleScreen({ repositories, initialTab = 'split', today, o
           today={date}
           onChanged={reload}
           onOpenEntry={onOpenEntry}
+          initialCheckedEntryIds={initialCheckedEntryIds}
         />
       ) : (
         <SettleTab

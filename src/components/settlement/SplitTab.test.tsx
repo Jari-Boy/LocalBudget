@@ -102,7 +102,7 @@ function makeData(extraEntries: JournalEntry[] = []): SplitSettleData {
   }
 }
 
-function setup(data: SplitSettleData = makeData()) {
+function setup(data: SplitSettleData = makeData(), extraProps: { initialCheckedEntryIds?: readonly number[] } = {}) {
   const repositories = {
     journalEntryRepository: {
       create: vi.fn(async () => ({ id: 500 }) as JournalEntry),
@@ -125,6 +125,7 @@ function setup(data: SplitSettleData = makeData()) {
       today="2026-10-31"
       onChanged={onChanged}
       onOpenEntry={onOpenEntry}
+      {...extraProps}
     />,
   )
   return { repositories, onChanged, onOpenEntry }
@@ -169,6 +170,14 @@ describe('SplitTab', () => {
     expect(repositories.journalEntryRepository.create).toHaveBeenCalledTimes(1)
     expect(repositories.journalEntryLinkGroupRepository.joinOrCreateGroups).toHaveBeenCalledWith([1], [500])
     expect(screen.getByText('割勘を記録しました')).toBeInTheDocument()
+  })
+
+  it('仕訳画面の「この仕訳を割勘」から来たときは、その仕訳を最初から選んだ状態にする', () => {
+    setup(makeData(), { initialCheckedEntryIds: [1] })
+
+    expect(screen.getByRole('checkbox', { name: 'ランチを選択' })).toBeChecked()
+    const panel = screen.getByRole('region', { name: '分担' })
+    expect(within(panel).getByText('選択した合計').nextElementSibling).toHaveTextContent(formatCurrency(1200, 'JPY'))
   })
 
   it('仕訳を選んでいないと「割勘を記録」は押せない', () => {
