@@ -84,6 +84,70 @@ describe('update', () => {
   })
 })
 
+describe('update: 既定の世帯メンバーの変更と過去の明細行(計画Issue #169)', () => {
+  /** 現金(既定メンバーなし)に、夫の行と妻の行を1行ずつ持つ仕訳と、別の科目だけの行を作る */
+  function setUp() {
+    db.run(`INSERT INTO household_members (name) VALUES ('夫')`)
+    const husbandId = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number
+    db.run(`INSERT INTO household_members (name) VALUES ('妻')`)
+    const wifeId = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number
+    const cash = repository.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const food = repository.create({ category: 'expense', name: '食費', isReconcilable: null })
+    db.run(`INSERT INTO journal_entries (entry_date, household_member_id) VALUES ('2026-07-01', ?)`, [husbandId])
+    const entryId = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number
+    const insert = (accountId: number, memberId: number, side: string) =>
+      db.run(
+        `INSERT INTO journal_lines (journal_entry_id, account_id, household_member_id, side, amount) VALUES (?, ?, ?, ?, 500)`,
+        [entryId, accountId, memberId, side],
+      )
+    insert(cash.id, husbandId, 'debit')
+    insert(cash.id, wifeId, 'debit')
+    insert(food.id, wifeId, 'credit')
+    const membersOf = (accountId: number) =>
+      (db.exec(`SELECT household_member_id FROM journal_lines WHERE account_id = ${accountId} ORDER BY id`)[0]?.values ?? []).map(
+        (row) => row[0] as number,
+      )
+    return { husbandId, wifeId, cash, food, membersOf }
+  }
+
+  it('updateExistingLinesを指定すると、その科目の過去の明細行がすべて新しい既定メンバーになる(ほかの科目の行は変わらない)', () => {
+    const { husbandId, wifeId, cash, food, membersOf } = setUp()
+
+    const updated = repository.update(cash.id, { householdMemberId: husbandId }, { updateExistingLines: true })
+
+    expect(updated.householdMemberId).toBe(husbandId)
+    expect(membersOf(cash.id)).toEqual([husbandId, husbandId])
+    expect(membersOf(food.id)).toEqual([wifeId])
+  })
+
+  it('updateExistingLinesを指定しなければ、過去の明細行は旧メンバーのまま残る', () => {
+    const { husbandId, wifeId, cash, membersOf } = setUp()
+
+    const updated = repository.update(cash.id, { householdMemberId: husbandId })
+
+    expect(updated.householdMemberId).toBe(husbandId)
+    expect(membersOf(cash.id)).toEqual([husbandId, wifeId])
+  })
+
+  it('既定メンバーを解除する(null)場合は、updateExistingLinesを指定しても明細行は変わらない', () => {
+    const { husbandId, wifeId, cash, membersOf } = setUp()
+    repository.update(cash.id, { householdMemberId: husbandId }, { updateExistingLines: true })
+
+    repository.update(cash.id, { householdMemberId: null }, { updateExistingLines: true })
+
+    expect(repository.findById(cash.id)?.householdMemberId).toBeNull()
+    expect(membersOf(cash.id)).toEqual([husbandId, husbandId])
+    expect(wifeId).not.toBe(husbandId)
+  })
+
+  it('旧メンバーのまま残した行は、金額などを編集しても保存できる(UPDATEトリガ)', () => {
+    const { husbandId, cash } = setUp()
+    repository.update(cash.id, { householdMemberId: husbandId })
+
+    expect(() => db.run(`UPDATE journal_lines SET amount = 900 WHERE account_id = ?`, [cash.id])).not.toThrow()
+  })
+})
+
 describe('delete', () => {
   it('紐づく参照が0件の科目は物理削除できる', () => {
     const created = repository.create({

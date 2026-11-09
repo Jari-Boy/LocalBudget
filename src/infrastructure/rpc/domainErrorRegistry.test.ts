@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
+import { JournalLineHouseholdMemberRequiredError } from '../../domain/journal/JournalLineHouseholdMemberRequiredError'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
@@ -28,6 +29,7 @@ describe('isDomainError', () => {
     expect(isDomainError(new RecurringTransactionHouseholdMemberRequiredError(1))).toBe(true)
     expect(isDomainError(new MappingColumnNotFoundError('date', 'A'))).toBe(true)
     expect(isDomainError(new InvalidBackupFileError('invalid'))).toBe(true)
+    expect(isDomainError(new JournalLineHouseholdMemberRequiredError())).toBe(true)
   })
 
   it('登録されていない通常のErrorはfalseと判定する', () => {
@@ -68,6 +70,15 @@ describe('serializeDomainError / deserializeDomainError', () => {
 
     expect(revived).toBeInstanceOf(SettlementBatchOnNonAdvanceAccountError)
     expect((revived as SettlementBatchOnNonAdvanceAccountError).accountId).toBe(12)
+  })
+
+  it('JournalLineHouseholdMemberRequiredError(下書きの確定時、世帯メンバーのない明細行がある、計画Issue #169)を往復する', () => {
+    const original = new JournalLineHouseholdMemberRequiredError()
+
+    const revived = deserializeDomainError(serializeDomainError(original))
+
+    expect(revived).toBeInstanceOf(JournalLineHouseholdMemberRequiredError)
+    expect(revived.message).toBe(original.message)
   })
 
   it('NoBalanceDiscrepancyErrorを往復する', () => {

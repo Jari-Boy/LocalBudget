@@ -4,6 +4,7 @@ import type {
   AccountCategory,
   CreateAccountInput,
   UpdateAccountInput,
+  UpdateAccountOptions,
 } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 
@@ -51,24 +52,38 @@ export class SqlJsAccountRepository implements AccountRepository {
     return result.values.map((values) => mapRowToAccount(result.columns, values))
   }
 
-  update(id: number, input: UpdateAccountInput): Account {
+  update(id: number, input: UpdateAccountInput, options: UpdateAccountOptions = {}): Account {
     const current = this.findById(id)
     if (!current) {
       throw new Error(`account not found: ${id}`)
     }
 
-    this.db.run(
-      `UPDATE accounts SET name = ?, household_member_id = ?, account_group_id = ?, sort_order = ? WHERE id = ?`,
-      [
-        input.name ?? current.name,
-        input.householdMemberId === undefined
-          ? current.householdMemberId
-          : input.householdMemberId,
-        input.accountGroupId === undefined ? current.accountGroupId : input.accountGroupId,
-        input.sortOrder === undefined ? current.sortOrder : input.sortOrder,
-        id,
-      ],
-    )
+    const nextMemberId =
+      input.householdMemberId === undefined ? current.householdMemberId : input.householdMemberId
+
+    // 科目の更新と過去の明細行の更新は同時に行う(片方だけ反映された状態を残さない)。
+    // 先に科目の既定値を変えてから明細行を更新するのは、UPDATEトリガが「明細行のメンバーを変える場合は
+    // 科目の既定値と一致すること」を求めるため(docs/schema/journal.sql)
+    this.db.run('BEGIN')
+    try {
+      this.db.run(
+        `UPDATE accounts SET name = ?, household_member_id = ?, account_group_id = ?, sort_order = ? WHERE id = ?`,
+        [
+          input.name ?? current.name,
+          nextMemberId,
+          input.accountGroupId === undefined ? current.accountGroupId : input.accountGroupId,
+          input.sortOrder === undefined ? current.sortOrder : input.sortOrder,
+          id,
+        ],
+      )
+      if (options.updateExistingLines === true && nextMemberId !== null) {
+        this.db.run(`UPDATE journal_lines SET household_member_id = ? WHERE account_id = ?`, [nextMemberId, id])
+      }
+      this.db.run('COMMIT')
+    } catch (error) {
+      this.db.run('ROLLBACK')
+      throw error
+    }
     return this.findById(id)!
   }
 

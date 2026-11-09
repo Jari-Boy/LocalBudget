@@ -1,4 +1,4 @@
-import type { Account, CreateAccountInput, UpdateAccountInput } from './Account'
+import type { Account, CreateAccountInput, UpdateAccountInput, UpdateAccountOptions } from './Account'
 
 /**
  * 勘定科目(accounts)の永続化を担うRepositoryのポート(インターフェース)。
@@ -11,7 +11,7 @@ export interface AccountRepository {
   create(input: CreateAccountInput): Account
   findById(id: number): Account | null
   findAll(): Account[]
-  update(id: number, input: UpdateAccountInput): Account
+  update(id: number, input: UpdateAccountInput, options?: UpdateAccountOptions): Account
   delete(id: number): void
   deactivate(id: number): Account
   activate(id: number): Account
