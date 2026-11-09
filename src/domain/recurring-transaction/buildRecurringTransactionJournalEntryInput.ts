@@ -1,5 +1,6 @@
 import type { AccountCategory } from '../account/Account'
 import type { CreateJournalEntryInput } from '../journal/JournalEntry'
+import type { LineHouseholdMemberResolver } from '../journal/resolveLineHouseholdMemberId'
 import type { RecurringTransactionRule } from './RecurringTransactionRule'
 
 const PL_CATEGORIES: readonly AccountCategory[] = ['revenue', 'expense']
@@ -16,6 +17,11 @@ export interface BuildRecurringTransactionJournalEntryInputParams {
   creditAccountCategory: AccountCategory
   /** 省略時はrule.amountを使う。レビュー時の編集(2.1節、値上げ等の反映)に対応するための上書き */
   amount?: number
+  /**
+   * 明細行の世帯メンバーの決め方(科目の既定メンバー > 指定 > 起票者、計画Issue #169)。
+   * 科目と起票者を知っている呼び出し側が createLineHouseholdMemberResolver で作って渡す
+   */
+  resolveLineHouseholdMemberId: LineHouseholdMemberResolver
 }
 
 /**
@@ -35,6 +41,7 @@ export function buildRecurringTransactionJournalEntryInput(
     bookkeeperHouseholdMemberId,
     debitAccountCategory,
     creditAccountCategory,
+    resolveLineHouseholdMemberId,
   } = params
   const amount = params.amount ?? rule.amount
 
@@ -47,7 +54,7 @@ export function buildRecurringTransactionJournalEntryInput(
       {
         accountId: rule.debitAccountId,
         projectId: rule.projectId,
-        householdMemberId: rule.householdMemberId,
+        householdMemberId: resolveLineHouseholdMemberId(rule.debitAccountId, rule.householdMemberId),
         counterpartyId: PL_CATEGORIES.includes(debitAccountCategory) ? rule.counterpartyId : null,
         side: 'debit',
         amount,
@@ -55,7 +62,7 @@ export function buildRecurringTransactionJournalEntryInput(
       {
         accountId: rule.creditAccountId,
         projectId: rule.projectId,
-        householdMemberId: rule.householdMemberId,
+        householdMemberId: resolveLineHouseholdMemberId(rule.creditAccountId, rule.householdMemberId),
         counterpartyId: PL_CATEGORIES.includes(creditAccountCategory) ? rule.counterpartyId : null,
         side: 'credit',
         amount,

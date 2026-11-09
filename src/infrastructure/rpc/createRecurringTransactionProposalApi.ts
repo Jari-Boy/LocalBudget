@@ -5,6 +5,7 @@ import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
 import type { RecurringTransactionProposal } from '../../domain/recurring-transaction/RecurringTransactionProposal'
+import { createLineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
 import type { RecurringTransactionRule } from '../../domain/recurring-transaction/RecurringTransactionRule'
 import { SqlJsAccountRepository } from '../db/SqlJsAccountRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
@@ -124,6 +125,11 @@ export function createRecurringTransactionProposalApi(
           debitAccountCategory: debitAccount.category,
           creditAccountCategory: creditAccount.category,
           amount: input.amount,
+          // 明細行の世帯メンバー: 科目の既定メンバー > ルールの世帯メンバー > 起票者(計画Issue #169)
+          resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(
+            [debitAccount, creditAccount],
+            bookkeeperHouseholdMemberId,
+          ),
         }),
       )
     },

@@ -1,7 +1,7 @@
 /**
  * filterJournalEntries(仕訳の複数軸絞り込み)の純粋関数としてのユニットテスト。
- * 期間(dateFrom/dateTo)・科目(accountId)・世帯メンバー(householdMemberId、実効メンバー
- * 解決込み)・プロジェクト(projectId)の4軸をAND条件で組み合わせて仕訳を絞り込む
+ * 期間(dateFrom/dateTo)・科目(accountId)・世帯メンバー(householdMemberId、明細行の世帯メンバーと
+ * 直接比較、計画Issue #169)・プロジェクト(projectId)の4軸をAND条件で組み合わせて仕訳を絞り込む
  * ロジックを検証する(計画Issue #40、割勘対象選択画面での再利用を見据えた共通フィルタ)。
  * 計画Issue #145で追加した条件(摘要・金額の範囲・取引先・精算バッチ(未割当を含む)・作成経路・
  * 複数選択・グループ指定(配下すべて))を、個別・AND・別々の明細行での充足・入れ子グループの展開の
@@ -61,7 +61,7 @@ function buildEntry(overrides: {
       journalEntryId: overrides.id,
       accountId: line.accountId,
       projectId: line.projectId ?? null,
-      householdMemberId: line.householdMemberId ?? null,
+      householdMemberId: line.householdMemberId ?? overrides.householdMemberId ?? 1,
       counterpartyId: line.counterpartyId ?? null,
       settlementBatchId: line.settlementBatchId ?? null,
       side: line.side ?? ('debit' as const),
@@ -118,17 +118,16 @@ describe('filterJournalEntries', () => {
     expect(result.map((e) => e.id)).toEqual([1])
   })
 
-  it('householdMemberIdで、実効メンバー(科目既定値優先・無ければ明細→起票者の順)が一致しない仕訳を除外する', () => {
+  it('householdMemberIdで、明細行の世帯メンバーが一致しない仕訳を除外する(科目の既定値・起票者は使わない、計画Issue #169)', () => {
     const accounts = [buildAccount(10, { householdMemberId: 100 }), buildAccount(20)]
     const entries = [
-      // 科目10には既定メンバー100が設定されているため、明細のhouseholdMemberIdは無視される
+      // 科目10に既定メンバー100があっても、判定するのは明細行自身の世帯メンバー(200)
       buildEntry({
         id: 1,
         entryDate: '2026-08-01',
         householdMemberId: 999,
         lines: [{ accountId: 10, householdMemberId: 200 }],
       }),
-      // 科目20には既定値が無いため、明細のhouseholdMemberId(300)が使われる
       buildEntry({
         id: 2,
         entryDate: '2026-08-01',
@@ -137,9 +136,9 @@ describe('filterJournalEntries', () => {
       }),
     ]
 
-    const result = filterJournalEntries(entries, accounts, { householdMemberId: 100 })
-
-    expect(result.map((e) => e.id)).toEqual([1])
+    expect(filterJournalEntries(entries, accounts, { householdMemberId: 300 }).map((e) => e.id)).toEqual([2])
+    expect(filterJournalEntries(entries, accounts, { householdMemberId: 100 })).toEqual([])
+    expect(filterJournalEntries(entries, accounts, { householdMemberId: 999 })).toEqual([])
   })
 
   it('複数軸を同時に指定した場合、AND条件で絞り込む', () => {
@@ -231,7 +230,7 @@ describe('filterJournalEntries: 拡張した条件(計画Issue #145)', () => {
       expect(ids(filterJournalEntries(entries, [], { accountIds: [10, 12] }))).toEqual([1, 3])
     })
 
-    it('householdMemberIdsはいずれかの実効メンバーに一致する仕訳を返す', () => {
+    it('householdMemberIdsはいずれかの明細行の世帯メンバーに一致する仕訳を返す', () => {
       const entries = [
         buildEntry({ id: 1, entryDate: '2026-08-01', householdMemberId: 1 }),
         buildEntry({ id: 2, entryDate: '2026-08-01', householdMemberId: 2 }),

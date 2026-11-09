@@ -117,7 +117,7 @@ CSV到着後の消込(CSV由来): (借) 資産・普通預金        250,000
 
 **消込残高の定義**
 
-ある一時勘定(`settlement_batch_id`・科目・世帯メンバー/取引先のタグの組)の消込残高は、そのタグに一致するすべての明細行を対象に、科目の区分(資産/負債)に応じた増加側を正としてamountを合算して求める(`calculateSettlementBatchBalance`)。
+ある一時勘定(`settlement_batch_id`・科目・世帯メンバーのタグの組。取引先で識別する経路は計画Issue #169で廃止し、対象者は常に世帯メンバー)の消込残高は、そのタグに一致するすべての明細行を対象に、科目の区分(資産/負債)に応じた増加側を正としてamountを合算して求める(`calculateSettlementBatchBalance`)。
 
 ```
 消込残高 = Σ(amount WHERE settlement_batch_id = 対象バッチ AND account_id = 対象科目
@@ -168,7 +168,7 @@ CSV到着後の消込(CSV由来): (借) 資産・普通預金        250,000
 
 ### 1.7 タグ付き一時勘定の消込(settlement_batch_idによるタグ付け)
 
-割勘の一時勘定([expense-splitting.md 1.2 一時勘定(立替金/未払金)](./expense-splitting.md#12-一時勘定立替金未払金)のシステム管理の立替金・未払金)を使い回す設計では、`journal_lines.settlement_batch_id`([settlement_batches](#2-精算バッチマスタsettlement_batches)、計画Issue #133)・`household_member_id`([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承))で「どの割勘バッチ・誰の残高か」をタグ付けする。
+割勘の一時勘定([expense-splitting.md 1.2 一時勘定(立替金/未払金)](./expense-splitting.md#12-一時勘定立替金未払金)のシステム管理の立替金・未払金)を使い回す設計では、`journal_lines.settlement_batch_id`([settlement_batches](#2-精算バッチマスタsettlement_batches)、計画Issue #133)・`household_member_id`([household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方))で「どの割勘バッチ・誰の残高か」をタグ付けする。
 
 タグを付けられるのはこの2科目の行だけである(計画Issue #167)。精算画面([1.9](#19-精算画面の操作モデル計画issue-139))が残高を見るのもこの2科目だけで、ほかの一時勘定や口座・損益科目に付けたタグはどの画面にも現れない。1つの科目の中に「誰の」「どの割勘の」分が混ざるのは割勘の一時勘定だけであり、それ以外は科目の残高そのもの、または科目を分けることで足りる([1.6](#16-分割消込消込残高による完了判定)参照)。判定は`isSettlementBatchTaggableAccount`(システム管理の資産・負債科目。システム管理の資産・負債はこの2科目しかない)にまとめ、仕訳画面・明細取込画面の選択欄の出し分けとRepositoryの書き込み時検証で共有する。これにより、[1.6](#16-分割消込消込残高による完了判定)の集計でタグ別残高を追うことができる。精算残高が0になった時点で、そのバッチの非アクティブ化が`settlement_batches`側からユーザーに提案される。
 
@@ -218,10 +218,10 @@ Bからの振込CSV(1:N):        (借) 資産・普通預金        50,000
 **画面の流れ**
 
 1. 一覧で精算バッチを選ぶ。一覧には立替金と未払金の残高を別々の列で出す(`summarizeSettlementBatch`。同じバッチの立替金と未払金は合算も相殺もしない。明細が無い方は「-」)。「未精算」「精算済み」「すべて」で切り替える。**精算済みは、バッチの残高が0かどうかだけで判定する**(`isSettlementBatchBalanceZero`: バッチ内の(科目、世帯メンバー)の組ごとの残高がすべて0で、明細が1行以上ある。明細の無い方向は見ない)。仕訳を削除して残高が0でなくなれば、未精算に戻る。精算済みのバッチも選べて、紐づく仕訳を履歴として見られる。
-2. 選んだバッチの「立替金を減らす」「未払金を減らす」の2枚のカードで残高と内訳を示し、方向を切り替える。対象者と比べる残高は`resolveSettlementTarget`が決める。残高は「科目×世帯メンバー」で持ち、バッチはイベントをまとめるだけなので、バッチが世帯内でも世帯外の相手でも、その方向で残高が残っている世帯メンバーを対象者にして、そのメンバーの残高と比べる(すべての行に世帯メンバーが入る前提。制約の実装は別Issue)。
+2. 選んだバッチの「立替金を減らす」「未払金を減らす」の2枚のカードで残高と内訳を示し、方向を切り替える。対象者と比べる残高は`resolveSettlementTarget`が決める。残高は「科目×世帯メンバー」で持ち、バッチはイベントをまとめるだけなので、バッチが世帯内でも世帯外の相手でも、その方向で残高が残っている世帯メンバーを対象者にして、そのメンバーの残高と比べる(すべての明細行が世帯メンバーを持つ。journal_lines.household_member_idのNOT NULLは計画Issue #169で実装した)。
 3. 「精算する仕訳を探す」で、未割当(`settlement_batch_id`が`null`)の候補仕訳をチェックボックスで複数選択する(`findUnassignedAdvanceEntriesForTarget`)。候補は「科目、方向(貸借)、対象者」を**同じ行で**満たす固定条件で、それ以外の絞り込み(ポップアップの絞り込み)は仕訳全体で判定する。方向は、立替金を減らす精算なら立替金の貸方、未払金を減らす精算なら未払金の借方の行である。対象者の条件は次のとおり。
-   - 世帯メンバーが対象者の場合: 明細行の`household_member_id`が対象者と厳密に一致する行。
-   - 世帯外の相手のバッチも対象者は世帯メンバーである。`journal_lines.counterparty_id`は資産・負債の行に設定できない([counterparties.md 1.2](./counterparties.md#12-紐づけ対象))ため、誰の残高かは行の世帯メンバーで表し、相手はバッチの取引先で表す。精算の行にも同じ世帯メンバーを付ける。
+   - 世帯メンバーが対象者の場合: 明細行の`household_member_id`が対象者と厳密に一致する行。 取引先(`counterparty`種別)を対象者とする`SettlementTarget`は廃止した(計画Issue #169)。
+   - 世帯外の相手のバッチも対象者は世帯メンバーである。`journal_lines.counterparty_id`は資産・負債の行に設定できない([counterparties.md 1.2](./counterparties.md#12-紐づけ対象))ため、誰の残高かは行の世帯メンバーで表し、相手はバッチの取引先で表す。精算の行にも同じ世帯メンバーを付ける。本番で使われていなかった`listSettlementTargetOptions`・`findUnsettledSettlementBatchesForTarget`・`findEntryIdsWithSettlementTag`は削除した(計画Issue #169)。
 4. 選択した仕訳群の金額合計と、選んだ方向の残高を比較する(別の方向の残高とは比べない)。
    - **一致**: 「精算完了」ボタンのみ表示。選択した仕訳群の対象行に`settlement_batch_id`を割り当てるだけで、新規の仕訳は作らない(`buildJournalEntryUpdateWithAssignedSettlementBatch`、`JournalEntryRepository.update`)。
    - **不一致**: 「未精算として残す」(タグ付けのみ行い、差額をバッチ残高に残したまま次回以降の精算を待つ。[1.2](#12-家賃給与の例)・[1.6](#16-分割消込消込残高による完了判定)で許容している「按分しきらず残高が残る」ケースと同じ)と、「精算完了」(差額を損益として計上する調整仕訳を追加作成し、バッチ残高を0にする)の2択を提示する。

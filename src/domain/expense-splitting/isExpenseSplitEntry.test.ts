@@ -19,7 +19,7 @@ function buildLine(overrides: Partial<JournalLine>): JournalLine {
     journalEntryId: 1,
     accountId: EXPENSE_ACCOUNT_ID,
     projectId: null,
-    householdMemberId: null,
+    householdMemberId: 1,
     counterpartyId: null,
     settlementBatchId: null,
     side: 'debit',

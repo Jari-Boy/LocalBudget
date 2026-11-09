@@ -4,10 +4,11 @@
  * handleManualCreateを切り出したもの。選んだ仕訳の対象行へバッチのタグを付けること、
  * 差額を雑収入・雑損失に計上して残高を0にすること、仕訳を新規起票してバッチに紐づけること、
  * いずれも既存のタグ付き仕訳と同じ関連仕訳グループへ合流することを、偽のRepositoryで検証する。
- * 外部依存なし。
+ * 精算の行・相手科目の行には世帯メンバーが必ず入る(計画Issue #169)。外部依存なし。
  */
 import { describe, expect, it, vi } from 'vitest'
 import type { CreateJournalEntryInput, JournalEntry, UpdateJournalEntryInput } from '../../domain/journal/JournalEntry'
+import { createLineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
 import { createSettlementEntry, tagCandidatesToBatch, type SettlementRepositories } from './submitSettlement'
 
 const ADVANCE = 10
@@ -53,6 +54,7 @@ const base = {
   taggedEntryIds: [100],
   today: '2026-10-31',
   entryHouseholdMemberId: 1,
+  resolveLineHouseholdMemberId: createLineHouseholdMemberResolver([], 1),
   adjustmentAccountIds: { gain: GAIN, loss: LOSS },
 }
 
@@ -155,14 +157,14 @@ describe('createSettlementEntry', () => {
     expect(repos.journalEntryLinkGroupRepository.joinOrCreateGroups).toHaveBeenCalledWith([100], [901])
   })
 
-  it('未払金を減らす精算の仕訳は、未払金を借方、相手科目を貸方にする', async () => {
+  it('未払金を減らす精算の仕訳は、未払金を借方(対象者の世帯メンバーの行)、相手科目を貸方(起票者の世帯メンバーの行)にする(計画Issue #169)', async () => {
     const { repos, created } = fakeRepos()
 
     await createSettlementEntry({
       ...base,
       direction: 'payable',
       accountId: PAYABLE,
-      target: { kind: 'counterparty', counterpartyId: 9 },
+      target: { kind: 'householdMember', householdMemberId: 2 },
       counterAccountId: BANK,
       amount: 2500,
       entryDate: '2026-10-20',
@@ -170,7 +172,7 @@ describe('createSettlementEntry', () => {
       repositories: repos,
     })
 
-    expect(created[0].lines).toContainEqual(expect.objectContaining({ accountId: PAYABLE, side: 'debit', householdMemberId: null }))
-    expect(created[0].lines).toContainEqual(expect.objectContaining({ accountId: BANK, side: 'credit' }))
+    expect(created[0].lines).toContainEqual(expect.objectContaining({ accountId: PAYABLE, side: 'debit', householdMemberId: 2 }))
+    expect(created[0].lines).toContainEqual(expect.objectContaining({ accountId: BANK, side: 'credit', householdMemberId: 1 }))
   })
 })

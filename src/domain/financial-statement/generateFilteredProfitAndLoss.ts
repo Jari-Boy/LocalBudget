@@ -24,7 +24,7 @@ export function generateFilteredProfitAndLoss(
   const entriesInPeriod = entries.filter(
     (entry) => entry.entryDate >= periodFrom && entry.entryDate <= periodTo,
   )
-  const lines = filterJournalLinesByFinancialStatementFilter(entriesInPeriod, accounts, filter)
+  const lines = filterJournalLinesByFinancialStatementFilter(entriesInPeriod, filter)
 
   const revenues = summarizeAccountsByCategory(lines, accounts, 'revenue')
   const expenses = summarizeAccountsByCategory(lines, accounts, 'expense')

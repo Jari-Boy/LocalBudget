@@ -217,8 +217,8 @@ test.describe('仕訳画面での仕訳入力', () => {
         memo: '削除テスト用',
         householdMemberId: member.id,
         lines: [
-          { accountId: expense.id, side: 'debit', amount: 800 },
-          { accountId: cash.id, side: 'credit', amount: 800 },
+          { householdMemberId: member.id, accountId: expense.id, side: 'debit', amount: 800 },
+          { householdMemberId: member.id, accountId: cash.id, side: 'credit', amount: 800 },
         ],
       })
       await client.autoSave.flush()
@@ -227,7 +227,7 @@ test.describe('仕訳画面での仕訳入力', () => {
     await page.getByRole('link', { name: '仕訳', exact: true }).click()
     await expect(detailPanel(page).getByLabel('摘要(任意)')).toHaveValue('削除テスト用')
 
-    await detailPanel(page).getByRole('button', { name: '削除', exact: true }).click()
+    await detailPanel(page).getByRole('button', { name: 'この仕訳を削除', exact: true }).click()
     await expect(detailPanel(page).getByText('この仕訳を削除します。元に戻せません。')).toBeVisible()
     await waitForJournalEntryCount(page, 1)
 

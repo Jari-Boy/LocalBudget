@@ -65,7 +65,7 @@ beforeEach(async () => {
       householdMemberId: memberId,
       entryDate,
       memo,
-      lines: lines.map(([accountId, side, amount]) => ({ accountId, side, amount })),
+      lines: lines.map(([accountId, side, amount]) => ({ accountId, side, amount, householdMemberId: memberId })),
     })
   entry('2026-05-01', '初期残高', [[cash, 'debit', 100000], [equity, 'credit', 100000]])
   entry('2026-06-10', '食費(前月)', [[foodId, 'debit', 4000], [cash, 'credit', 4000]])

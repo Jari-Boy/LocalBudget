@@ -57,8 +57,8 @@ describe('generatedFromRuleIdを渡した場合', () => {
       sourceType: 'recurring_generated',
       generatedFromRuleId: ruleId,
       lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
-        { accountId: bankAccountId, side: 'credit', amount: 80000 },
+        { householdMemberId: memberId, accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
+        { householdMemberId: memberId, accountId: bankAccountId, side: 'credit', amount: 80000 },
       ],
     })
 
@@ -73,8 +73,8 @@ describe('generatedFromRuleIdを渡さない場合', () => {
       householdMemberId: memberId,
       entryDate: '2026-09-01',
       lines: [
-        { accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
-        { accountId: bankAccountId, side: 'credit', amount: 80000 },
+        { householdMemberId: memberId, accountId: rentExpenseAccountId, side: 'debit', amount: 80000 },
+        { householdMemberId: memberId, accountId: bankAccountId, side: 'credit', amount: 80000 },
       ],
     })
 

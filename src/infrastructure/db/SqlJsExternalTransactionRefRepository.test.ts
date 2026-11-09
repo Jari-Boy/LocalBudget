@@ -44,8 +44,8 @@ beforeEach(async () => {
     sourceType: 'external_import',
     householdMemberId: memberId,
     lines: [
-      { accountId: foodExpenseAccountId, side: 'debit', amount: 150 },
-      { accountId: bankAccountId, side: 'credit', amount: 150 },
+      { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 150 },
+      { householdMemberId: memberId, accountId: bankAccountId, side: 'credit', amount: 150 },
     ],
   }).id
 })

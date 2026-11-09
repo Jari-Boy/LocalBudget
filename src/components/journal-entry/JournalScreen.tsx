@@ -40,6 +40,8 @@ import { SOURCE_TAGS, DRAFT_TAG, type JournalResultItem } from '../common/journa
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
 import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../master/masterTreeNodes'
 import type { MaybeAsync } from '../master/maybeAsync'
+import { UnsavedChangesDialog } from '../common/unsaved-changes/UnsavedChangesDialog'
+import { useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
 import { JournalEntryEditor, type JournalEditorLine, type JournalEditorMaster, type JournalEditorValue } from './JournalEntryEditor'
 import {
@@ -138,6 +140,11 @@ interface ProposalRow {
 
 const today = () => new Date().toISOString().slice(0, 10)
 
+/** 詳細パネルの編集内容の比較用の文字列。行の通し番号(key)は含めず、入力値だけを見る */
+function serializeEditor(value: JournalEditorValue): string {
+  return JSON.stringify({ ...value, lines: value.lines.map((l) => l.line) })
+}
+
 function inactiveIds(items: ReadonlyArray<{ id: number; isActive: boolean }>): Set<number> {
   return new Set(items.filter((i) => !i.isActive).map((i) => i.id))
 }
@@ -176,6 +183,11 @@ export function JournalScreen(props: JournalScreenProps) {
   const [busy, setBusy] = useState(false)
   const [proposalMemberId, setProposalMemberId] = useState<number | ''>('')
   const [counterpartyDialog, setCounterpartyDialog] = useState<{ apply: (id: number) => void } | null>(null)
+  /** 詳細を開いた時点の編集内容。現在の内容と違えば、未保存の変更がある */
+  const [baseline, setBaseline] = useState('')
+  /** 未保存の変更があるまま移動しようとしたときの、保存か破棄の後に実行する移動 */
+  const [leaveRequest, setLeaveRequest] = useState<(() => void) | null>(null)
+  const guard = useUnsavedChangesGuard()
   const lineKey = useRef(0)
   const selectionRef = useRef<Selection | null>(null)
   selectionRef.current = selection
@@ -278,16 +290,17 @@ export function JournalScreen(props: JournalScreenProps) {
   const withKeys = (lines: JournalEntryFormLine[]): JournalEditorLine[] =>
     lines.map((line) => ({ key: (lineKey.current += 1), line }))
 
-  const emptyLines = () =>
+  /** 新しい仕訳の空の2行。明細行の世帯メンバーの既定値は起票者(計画Issue #169) */
+  const emptyLines = (memberId: number | null) =>
     withKeys([
-      { ...createEmptyJournalEntryFormLine(), side: 'debit' },
-      { ...createEmptyJournalEntryFormLine(), side: 'credit' },
+      { ...createEmptyJournalEntryFormLine(), side: 'debit', householdMemberId: memberId },
+      { ...createEmptyJournalEntryFormLine(), side: 'credit', householdMemberId: memberId },
     ])
 
   function buildValue(sel: Selection, d: LoadedData): JournalEditorValue | null {
     const firstMember = d.members.find((m) => m.isActive)?.id ?? null
     if (sel.kind === 'new') {
-      return { entryDate: today(), memo: '', comment: '', householdMemberId: firstMember, lines: emptyLines() }
+      return { entryDate: today(), memo: '', comment: '', householdMemberId: firstMember, lines: emptyLines(firstMember) }
     }
     if (sel.kind === 'entry') {
       const entry = d.entries.find((e) => e.id === sel.id)
@@ -303,12 +316,27 @@ export function JournalScreen(props: JournalScreenProps) {
     if (sel.kind === 'draft') {
       const draft = d.drafts.find((x) => x.id === sel.id)
       if (draft === undefined) return null
+      const draftMember = draft.householdMemberId ?? firstMember
+      const accountDefaultOf = (accountId: number | null) =>
+        accountId === null ? null : (d.accounts.find((a) => a.id === accountId)?.householdMemberId ?? null)
       return {
         entryDate: draft.entryDate ?? today(),
         memo: draft.memo ?? '',
         comment: draft.comment ?? '',
-        householdMemberId: draft.householdMemberId ?? firstMember,
-        lines: draft.lines.length > 0 ? withKeys(draft.lines.map(fromJournalEntryDraftLine)) : emptyLines(),
+        householdMemberId: draftMember,
+        // 下書きの未入力の世帯メンバーは、再開時に科目の既定メンバー、無ければ起票者で補う(明細行は常に世帯メンバーを持つ)
+        lines:
+          draft.lines.length > 0
+            ? withKeys(
+                draft.lines.map((l) => {
+                  const formLine = fromJournalEntryDraftLine(l)
+                  return {
+                    ...formLine,
+                    householdMemberId: formLine.householdMemberId ?? accountDefaultOf(formLine.accountId) ?? draftMember,
+                  }
+                }),
+              )
+            : emptyLines(draftMember),
       }
     }
     const rule = d.rules.find((r) => r.id === sel.ruleId)
@@ -321,7 +349,7 @@ export function JournalScreen(props: JournalScreenProps) {
         side: s,
         amountInput: String(rule.amount),
         projectId: rule.projectId,
-        householdMemberId: rule.householdMemberId,
+        householdMemberId: rule.householdMemberId ?? firstMember,
         counterpartyId: account !== undefined && isCounterpartyEligibleCategory(account.category) ? rule.counterpartyId : null,
       }
     }
@@ -339,8 +367,10 @@ export function JournalScreen(props: JournalScreenProps) {
     setError('')
     setDeleteArmed(false)
     setProposalMemberId('')
+    const value = sel === null ? null : buildValue(sel, d)
     setSelection(sel)
-    setEditor(sel === null ? null : buildValue(sel, d))
+    setEditor(value)
+    setBaseline(value === null ? '' : serializeEditor(value))
   }
 
   const firstOf = (which: JournalScreenTab, d: LoadedData, entries: JournalEntry[]): Selection | null => {
@@ -372,11 +402,39 @@ export function JournalScreen(props: JournalScreenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // 定期取引の提案は確定か見送りで処理するもので保存の対象ではないため、未保存の判定から外す
+  const dirty =
+    editor !== null && selection !== null && selection.kind !== 'proposal' && serializeEditor(editor) !== baseline
+
+  // 画面の外(サイドナビなど)への移動と、リロード・タブを閉じる操作の前に確認を挟む
+  useEffect(() => {
+    if (!dirty) return
+    guard.register((proceed) => {
+      setLeaveRequest(() => proceed)
+      return true
+    })
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => {
+      guard.register(null)
+      window.removeEventListener('beforeunload', warnBeforeUnload)
+    }
+  }, [dirty, guard])
+
   if (data === null || derived === null) {
     return <p role="status">{tCommon('loading')}</p>
   }
 
   const { accountNameOf, master, filterOptions, relatedIdsByEntryId, proposalRows } = derived
+
+  /** 画面内の移動。未保存の変更があれば、保存か破棄かを聞いてから実行する */
+  const guarded = (action: () => void) => {
+    if (dirty) setLeaveRequest(() => action)
+    else action()
+  }
 
   /** 保存・削除などの後にデータを取り直し、指定の選択で詳細を開き直す */
   async function reloadAndOpen(pick: (d: LoadedData) => Selection | null, message = '') {
@@ -395,15 +453,17 @@ export function JournalScreen(props: JournalScreenProps) {
     return fallback
   }
 
-  const run = async (action: () => Promise<void>, fallback: string) => {
-    if (busy) return
+  /** 操作を実行する。最後まで成功したか(actionがtrueを返したか)を返す */
+  const run = async (action: () => Promise<boolean | void>, fallback: string): Promise<boolean> => {
+    if (busy) return false
     setBusy(true)
     setError('')
     setFlash('')
     try {
-      await action()
+      return (await action()) === true
     } catch (err) {
       setError(mapError(err, fallback))
+      return false
     } finally {
       setBusy(false)
     }
@@ -446,13 +506,17 @@ export function JournalScreen(props: JournalScreenProps) {
         })
         savedId = created.id
       } else {
-        await journalEntryRepository.update((selection as { id: number }).id, common)
+        await journalEntryRepository.update((selection as { id: number }).id, {
+          ...common,
+          ...(editor.householdMemberId === null ? {} : { householdMemberId: editor.householdMemberId }),
+        })
         savedId = (selection as { id: number }).id
       }
       await reloadAndOpen(
         () => (andNew ? { kind: 'new' } : { kind: 'entry', id: savedId }),
         andNew ? '保存しました。続けて入力できます' : '保存しました',
       )
+      return true
     }, t('updateError'))
 
   const saveDraft = (after: 'stay' | 'new') =>
@@ -476,6 +540,7 @@ export function JournalScreen(props: JournalScreenProps) {
         () => (after === 'new' ? { kind: 'new' } : { kind: 'draft', id: draftId }),
         '下書きを保存しました',
       )
+      return true
     }, t('updateError'))
 
   const confirmDraft = () =>
@@ -634,9 +699,27 @@ export function JournalScreen(props: JournalScreenProps) {
     creditSummary: accountNameOf(p.rule.creditAccountId),
   }))
 
-  const switchTab = (next: JournalScreenTab) => {
-    setTab(next)
-    open(firstOf(next, data, visibleEntries), data)
+  const switchTab = (next: JournalScreenTab) =>
+    guarded(() => {
+      setTab(next)
+      open(firstOf(next, data, visibleEntries), data)
+    })
+
+  const cancelLeave = () => setLeaveRequest(null)
+
+  const discardAndLeave = () => {
+    const next = leaveRequest
+    setLeaveRequest(null)
+    next?.()
+  }
+
+  /** 編集中の内容を保存し、保存できたときだけ移動する(保存できなければ理由を出して編集に残る) */
+  const saveAndLeave = async () => {
+    const next = leaveRequest
+    if (next === null) return
+    setLeaveRequest(null)
+    const saved = selection?.kind === 'draft' ? await saveDraft('stay') : await saveEntry(false)
+    if (saved) next()
   }
 
   const tabs: { key: JournalScreenTab; label: string }[] = [
@@ -718,10 +801,12 @@ export function JournalScreen(props: JournalScreenProps) {
         <button
           type="button"
           className="journal-screen__button journal-screen__button--primary"
-          onClick={() => {
-            setTab('list')
-            open({ kind: 'new' }, data)
-          }}
+          onClick={() =>
+            guarded(() => {
+              setTab('list')
+              open({ kind: 'new' }, data)
+            })
+          }
         >
           新規仕訳
         </button>
@@ -761,11 +846,11 @@ export function JournalScreen(props: JournalScreenProps) {
             onSelectionChange={(ids) => {
               const id = ids[0]
               if (id === undefined) return
-              if (tab === 'list') open({ kind: 'entry', id }, data)
-              else if (tab === 'drafts') open({ kind: 'draft', id }, data)
+              if (tab === 'list') guarded(() => open({ kind: 'entry', id }, data))
+              else if (tab === 'drafts') guarded(() => open({ kind: 'draft', id }, data))
               else {
                 const row = proposalRows.find((p) => p.id === id)
-                if (row) open({ kind: 'proposal', ruleId: row.ruleId, dueDate: row.dueDate }, data)
+                if (row) guarded(() => open({ kind: 'proposal', ruleId: row.ruleId, dueDate: row.dueDate }, data))
               }
             }}
           />
@@ -836,9 +921,11 @@ export function JournalScreen(props: JournalScreenProps) {
                     <button type="button" className="journal-screen__button journal-screen__button--primary" disabled={busy} onClick={() => void saveEntry(false)}>
                       保存
                     </button>
-                    <button type="button" className="journal-screen__button" disabled={busy} onClick={() => void saveEntry(true)}>
-                      保存して続けて入力
-                    </button>
+                    {selection.kind === 'new' && (
+                      <button type="button" className="journal-screen__button" disabled={busy} onClick={() => void saveEntry(true)}>
+                        保存して続けて入力
+                      </button>
+                    )}
                   </>
                 )}
                 {selection.kind === 'new' && (
@@ -853,17 +940,13 @@ export function JournalScreen(props: JournalScreenProps) {
                       className="journal-screen__button"
                       disabled={!split.splittable}
                       aria-describedby="journal-split-reason"
-                      onClick={() => selectedEntry && onSplit(selectedEntry)}
+                      onClick={() => selectedEntry && guarded(() => onSplit(selectedEntry))}
                     >
                       この仕訳を割勘
                     </button>
                     <span id="journal-split-reason" className="journal-screen__note">
                       {split.splittable ? '' : describeSplitBlock(split.reason)}
                     </span>
-                    <span className="journal-screen__spacer" />
-                    <button type="button" className="journal-screen__button journal-screen__button--danger" disabled={busy} onClick={deleteEntry}>
-                      {deleteArmed ? '本当に削除する' : '削除'}
-                    </button>
                   </>
                 )}
                 {selection.kind === 'draft' && (
@@ -913,20 +996,6 @@ export function JournalScreen(props: JournalScreenProps) {
                   {error}
                 </p>
               )}
-              {deleteArmed && selection.kind === 'entry' && (
-                <div role="alert" className="journal-screen__delete-box">
-                  <div className="journal-screen__delete-title">この仕訳を削除します。元に戻せません。</div>
-                  {deleteNotes.map((note) => (
-                    <div key={note}>{note}</div>
-                  ))}
-                  <div className="journal-screen__delete-actions">
-                    <button type="button" className="journal-screen__button" onClick={() => setDeleteArmed(false)}>
-                      やめる
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {selection.kind === 'entry' && trails.length > 0 && (
                 <section aria-label="この支出から生まれた割勘" className="journal-screen__history">
                   <h3 className="journal-screen__history-title">この支出から生まれた割勘</h3>
@@ -954,10 +1023,12 @@ export function JournalScreen(props: JournalScreenProps) {
                   groups={relatedGroups}
                   findCandidates={findCandidates}
                   filterOptions={filterOptions}
-                  onOpenEntry={(entry) => {
-                    setTab('list')
-                    open({ kind: 'entry', id: entry.id }, data)
-                  }}
+                  onOpenEntry={(entry) =>
+                    guarded(() => {
+                      setTab('list')
+                      open({ kind: 'entry', id: entry.id }, data)
+                    })
+                  }
                   onRename={(groupId, name) => void relationAction(() => journalEntryLinkGroupRepository.renameGroup(groupId, name))}
                   onRemove={(groupId, entryId) =>
                     void relationAction(() => journalEntryLinkGroupRepository.removeMember(groupId, entryId))
@@ -977,10 +1048,52 @@ export function JournalScreen(props: JournalScreenProps) {
                   }
                 />
               )}
+
+              {selection.kind === 'entry' && selectedEntry && (
+                <div className="journal-screen__delete-section">
+                  <h3 className="journal-screen__delete-heading">仕訳の削除</h3>
+                  {deleteArmed ? (
+                    <div role="alert" className="journal-screen__delete-box">
+                      <div className="journal-screen__delete-title">この仕訳を削除します。元に戻せません。</div>
+                      {deleteNotes.map((note) => (
+                        <div key={note}>{note}</div>
+                      ))}
+                      <div className="journal-screen__delete-actions">
+                        <button type="button" className="journal-screen__button" onClick={() => setDeleteArmed(false)}>
+                          やめる
+                        </button>
+                        <button
+                          type="button"
+                          className="journal-screen__button journal-screen__button--danger-solid"
+                          disabled={busy}
+                          onClick={deleteEntry}
+                        >
+                          本当に削除する
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <button
+                        type="button"
+                        className="journal-screen__button journal-screen__button--danger-solid"
+                        disabled={busy}
+                        onClick={deleteEntry}
+                      >
+                        この仕訳を削除
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </section>
       </div>
+
+      {leaveRequest !== null && (
+        <UnsavedChangesDialog saving={busy} onCancel={cancelLeave} onDiscard={discardAndLeave} onSave={() => void saveAndLeave()} />
+      )}
 
       {counterpartyDialog && (
         <QuickCreateDialog

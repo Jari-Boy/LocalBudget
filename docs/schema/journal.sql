@@ -17,8 +17,9 @@ CREATE TABLE journal_entries (
       'expense_splitting'
     )),
   -- 起票者(この仕訳を切った主体)。NOT NULL(docs/domain/journal.md 1.1「起票者」)。
-  -- journal_lines.household_member_id(明細の上書き)とは別の列で、科目に既定値が無く
-  -- 明細側も未指定の行の実効メンバーのフォールバック先になる(household-members.md 1.2節)。
+  -- journal_lines.household_member_id(誰の行か)とは別の列。明細行の世帯メンバーの入力時の
+  -- 既定値になるが、明細行は常に自分の世帯メンバーを持つため、読み取り側で起票者へ
+  -- フォールバックはしない(household-members.md 1.2節、計画Issue #169)。
   household_member_id INTEGER NOT NULL REFERENCES household_members(id),
   created_at   TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
@@ -34,7 +35,9 @@ CREATE TABLE journal_lines (
     REFERENCES accounts(id),
   project_id            INTEGER
     REFERENCES projects(id),
-  household_member_id   INTEGER
+  -- 誰の行か。NOT NULL(継承=NULLは廃止、docs/domain/household-members.md 1.2節、計画Issue #169)。
+  -- 開発用のDBは作り直す前提でマイグレーションは行わない(旧バックアップの取込は対象外)
+  household_member_id   INTEGER NOT NULL
     REFERENCES household_members(id),
   counterparty_id       INTEGER
     REFERENCES counterparties(id),
@@ -86,14 +89,16 @@ BEGIN
 END;
 
 -- 科目(accounts)に既定のhousehold_member_idが設定されている場合、その科目を使う明細行の
--- household_member_idは科目の既定値で強制的に確定させ、明細側での上書きを禁止する
--- (docs/domain/household-members.md 1.2節、計画Issue #88)。明細側がNULL(未指定、科目の
--- 既定値を継承)、または科目の既定値と同じ値を明示指定した場合は許可し、異なる値を
--- 明示指定した場合のみ拒否する(counterparty_idの区分制約と同じTRIGGERパターン)。
+-- household_member_idは科目の既定値で確定させ、明細側での上書きを禁止する
+-- (docs/domain/household-members.md 1.2節、計画Issue #88、#169)。明細行は常に世帯メンバーを
+-- 持つ(NOT NULL)ため、既定値と同じ値を明示保存する。新規(INSERT)は科目の既定値と異なる値を
+-- 拒否する。更新(UPDATE)は、household_member_idを変えない限り許可する。科目の既定メンバーを
+-- 変えて過去の行を「そのまま残す」と選んだ場合、旧メンバーのままの行の金額等を編集できる
+-- ようにするため。household_member_idを変える場合だけ、科目の既定値との一致を検証する
+-- (counterparty_idの区分制約と同じTRIGGERパターン)。
 CREATE TRIGGER prevent_household_member_override_on_default_account_line_insert
 BEFORE INSERT ON journal_lines
-WHEN NEW.household_member_id IS NOT NULL
-  AND (SELECT household_member_id FROM accounts WHERE id = NEW.account_id) IS NOT NULL
+WHEN (SELECT household_member_id FROM accounts WHERE id = NEW.account_id) IS NOT NULL
   AND NEW.household_member_id != (SELECT household_member_id FROM accounts WHERE id = NEW.account_id)
 BEGIN
   SELECT RAISE(ABORT, 'household_member_id cannot override an account default household_member_id');
@@ -101,7 +106,7 @@ END;
 
 CREATE TRIGGER prevent_household_member_override_on_default_account_line_update
 BEFORE UPDATE ON journal_lines
-WHEN NEW.household_member_id IS NOT NULL
+WHEN NEW.household_member_id != OLD.household_member_id
   AND (SELECT household_member_id FROM accounts WHERE id = NEW.account_id) IS NOT NULL
   AND NEW.household_member_id != (SELECT household_member_id FROM accounts WHERE id = NEW.account_id)
 BEGIN

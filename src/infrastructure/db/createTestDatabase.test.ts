@@ -22,9 +22,9 @@ describe('createTestDatabase', () => {
 
     expect(() =>
       db.run(
-        `INSERT INTO journal_lines (journal_entry_id, account_id, side, amount)
-         VALUES (?, 9999, 'debit', 100)`,
-        [entryId],
+        `INSERT INTO journal_lines (journal_entry_id, account_id, household_member_id, side, amount)
+         VALUES (?, 9999, ?, 'debit', 100)`,
+        [entryId, memberId],
       ),
     ).toThrow()
   })

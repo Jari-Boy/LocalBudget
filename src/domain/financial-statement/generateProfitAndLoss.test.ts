@@ -56,16 +56,16 @@ describe('generateProfitAndLoss', () => {
         id: 1,
         entryDate: '2026-07-10',
         lines: [
-          { id: 1, journalEntryId: 1, accountId: 1, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 3000, createdAt: '2026-07-10T00:00:00.000Z' },
-          { id: 2, journalEntryId: 1, accountId: 3, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 3000, createdAt: '2026-07-10T00:00:00.000Z' },
+          { id: 1, journalEntryId: 1, accountId: 1, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 3000, createdAt: '2026-07-10T00:00:00.000Z' },
+          { id: 2, journalEntryId: 1, accountId: 3, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 3000, createdAt: '2026-07-10T00:00:00.000Z' },
         ],
       }),
       buildEntry({
         id: 2,
         entryDate: '2026-07-15',
         lines: [
-          { id: 3, journalEntryId: 2, accountId: 3, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 250000, createdAt: '2026-07-15T00:00:00.000Z' },
-          { id: 4, journalEntryId: 2, accountId: 2, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 250000, createdAt: '2026-07-15T00:00:00.000Z' },
+          { id: 3, journalEntryId: 2, accountId: 3, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 250000, createdAt: '2026-07-15T00:00:00.000Z' },
+          { id: 4, journalEntryId: 2, accountId: 2, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 250000, createdAt: '2026-07-15T00:00:00.000Z' },
         ],
       }),
     ]
@@ -85,8 +85,8 @@ describe('generateProfitAndLoss', () => {
         id: 1,
         entryDate: '2026-07-10',
         lines: [
-          { id: 1, journalEntryId: 1, accountId: 1, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 1000, createdAt: '2026-07-10T00:00:00.000Z' },
-          { id: 2, journalEntryId: 1, accountId: 3, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 1000, createdAt: '2026-07-10T00:00:00.000Z' },
+          { id: 1, journalEntryId: 1, accountId: 1, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 1000, createdAt: '2026-07-10T00:00:00.000Z' },
+          { id: 2, journalEntryId: 1, accountId: 3, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 1000, createdAt: '2026-07-10T00:00:00.000Z' },
         ],
       }),
     ]
@@ -103,16 +103,16 @@ describe('generateProfitAndLoss', () => {
         id: 1,
         entryDate: '2026-07-01',
         lines: [
-          { id: 1, journalEntryId: 1, accountId: 1, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 100, createdAt: '2026-07-01T00:00:00.000Z' },
-          { id: 2, journalEntryId: 1, accountId: 3, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 100, createdAt: '2026-07-01T00:00:00.000Z' },
+          { id: 1, journalEntryId: 1, accountId: 1, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 100, createdAt: '2026-07-01T00:00:00.000Z' },
+          { id: 2, journalEntryId: 1, accountId: 3, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 100, createdAt: '2026-07-01T00:00:00.000Z' },
         ],
       }),
       buildEntry({
         id: 2,
         entryDate: '2026-07-31',
         lines: [
-          { id: 3, journalEntryId: 2, accountId: 1, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 200, createdAt: '2026-07-31T00:00:00.000Z' },
-          { id: 4, journalEntryId: 2, accountId: 3, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 200, createdAt: '2026-07-31T00:00:00.000Z' },
+          { id: 3, journalEntryId: 2, accountId: 1, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 200, createdAt: '2026-07-31T00:00:00.000Z' },
+          { id: 4, journalEntryId: 2, accountId: 3, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 200, createdAt: '2026-07-31T00:00:00.000Z' },
         ],
       }),
     ]
@@ -128,16 +128,16 @@ describe('generateProfitAndLoss', () => {
         id: 1,
         entryDate: '2026-06-30',
         lines: [
-          { id: 1, journalEntryId: 1, accountId: 1, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 100, createdAt: '2026-06-30T00:00:00.000Z' },
-          { id: 2, journalEntryId: 1, accountId: 3, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 100, createdAt: '2026-06-30T00:00:00.000Z' },
+          { id: 1, journalEntryId: 1, accountId: 1, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 100, createdAt: '2026-06-30T00:00:00.000Z' },
+          { id: 2, journalEntryId: 1, accountId: 3, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 100, createdAt: '2026-06-30T00:00:00.000Z' },
         ],
       }),
       buildEntry({
         id: 2,
         entryDate: '2026-08-01',
         lines: [
-          { id: 3, journalEntryId: 2, accountId: 1, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 200, createdAt: '2026-08-01T00:00:00.000Z' },
-          { id: 4, journalEntryId: 2, accountId: 3, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 200, createdAt: '2026-08-01T00:00:00.000Z' },
+          { id: 3, journalEntryId: 2, accountId: 1, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'debit', amount: 200, createdAt: '2026-08-01T00:00:00.000Z' },
+          { id: 4, journalEntryId: 2, accountId: 3, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 200, createdAt: '2026-08-01T00:00:00.000Z' },
         ],
       }),
     ]

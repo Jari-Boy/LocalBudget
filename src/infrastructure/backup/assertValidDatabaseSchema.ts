@@ -36,4 +36,14 @@ export function assertValidDatabaseSchema(db: Database): void {
   if (missing.length > 0) {
     throw new InvalidBackupFileError(`invalid backup file: missing expected tables (${missing.join(', ')})`)
   }
+
+  // 計画Issue #169: 明細行の世帯メンバーがNOT NULLになった。移行は行わない(旧バックアップの取込は対象外)ため、
+  // NULL許容の旧スキーマのDBは、制約が効かない状態で取り込まれないようここで拒否する
+  const lineColumns = db.exec('PRAGMA table_info(journal_lines)')[0]?.values ?? []
+  const memberColumn = lineColumns.find((row) => row[1] === 'household_member_id')
+  if (memberColumn === undefined || memberColumn[3] !== 1) {
+    throw new InvalidBackupFileError(
+      'invalid backup file: journal_lines.household_member_id must be NOT NULL (backups created before this constraint are not supported)',
+    )
+  }
 }

@@ -89,8 +89,8 @@ test.describe('Web Worker + RPC層', () => {
         entryDate: '2026-08-01',
         householdMemberId: householdMember.id,
         lines: [
-          { accountId: expenseAccount.id, side: 'debit', amount: 1000 },
-          { accountId: cashAccount.id, side: 'credit', amount: 1000 },
+          { householdMemberId: householdMember.id, accountId: expenseAccount.id, side: 'debit', amount: 1000 },
+          { householdMemberId: householdMember.id, accountId: cashAccount.id, side: 'credit', amount: 1000 },
         ],
       })
       const externalTransactionRef = await client.externalTransactionRef.create({
@@ -178,8 +178,8 @@ test.describe('Web Worker + RPC層', () => {
           entryDate: '2026-08-01',
           householdMemberId: householdMember.id,
           lines: [
-            { accountId: expenseAccount.id, side: 'debit', amount: 1000 },
-            { accountId: cashAccount.id, side: 'credit', amount: 900 },
+            { householdMemberId: householdMember.id, accountId: expenseAccount.id, side: 'debit', amount: 1000 },
+            { householdMemberId: householdMember.id, accountId: cashAccount.id, side: 'credit', amount: 900 },
           ],
         })
       } catch (e) {
@@ -226,8 +226,8 @@ test.describe('Web Worker + RPC層', () => {
           entryDate: '2026-08-01',
           householdMemberId: householdMember.id,
           lines: [
-            { accountId: 999999, side: 'debit', amount: 100 },
-            { accountId: 999999, side: 'credit', amount: 100 },
+            { householdMemberId: householdMember.id, accountId: 999999, side: 'debit', amount: 100 },
+            { householdMemberId: householdMember.id, accountId: 999999, side: 'credit', amount: 100 },
           ],
         })
         return false

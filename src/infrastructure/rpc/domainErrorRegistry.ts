@@ -1,4 +1,5 @@
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
+import { JournalLineHouseholdMemberRequiredError } from '../../domain/journal/JournalLineHouseholdMemberRequiredError'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
@@ -19,7 +20,8 @@ type DomainErrorReviver = (message: string, extra: Record<string, unknown>) => E
  * ドメインエラー型を追加する際はここに1エントリ追加するだけでよい(RPC層の
  * レジストリパターンと同じ思想)。docs/decisions.md「エラー型の使い分け基準」で
  * 列挙された6種に加え、InvalidBackupFileError(計画Issue #26)・
- * SettlementBatchOnNonAdvanceAccountError(計画Issue #144・#167)を登録済み。
+ * SettlementBatchOnNonAdvanceAccountError(計画Issue #144・#167)・
+ * JournalLineHouseholdMemberRequiredError(計画Issue #169)を登録済み。
  */
 const DOMAIN_ERROR_REVIVERS: Record<string, DomainErrorReviver> = {
   UnbalancedJournalEntryError: (message, extra) =>
@@ -30,6 +32,7 @@ const DOMAIN_ERROR_REVIVERS: Record<string, DomainErrorReviver> = {
     ),
   SettlementBatchOnNonAdvanceAccountError: (_message, extra) =>
     new SettlementBatchOnNonAdvanceAccountError(extra.accountId as number),
+  JournalLineHouseholdMemberRequiredError: () => new JournalLineHouseholdMemberRequiredError(),
   NoBalanceDiscrepancyError: () => new NoBalanceDiscrepancyError(),
   InvalidRecurringScheduleError: (message) => new InvalidRecurringScheduleError(message),
   RecurringTransactionHouseholdMemberRequiredError: (_message, extra) =>

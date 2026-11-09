@@ -5,10 +5,16 @@
  * 設定する」ルールと、2.1節「amountは生成時のレビューで編集可能」を検証する。
  * 科目区分(AccountCategory)の解決は呼び出し側の責務(既存のbuildCounterpartyExpenseSplitting
  * JournalEntryInput等と同じパターン)のため、本関数はDB非依存・外部依存なし。
+ * 明細行の世帯メンバーは、科目の既定メンバー > ルールの世帯メンバー > 起票者の順で必ず確定する
+ * (計画Issue #169)。
  */
 import { describe, expect, it } from 'vitest'
+import { createLineHouseholdMemberResolver } from '../journal/resolveLineHouseholdMemberId'
 import type { RecurringTransactionRule } from './RecurringTransactionRule'
 import { buildRecurringTransactionJournalEntryInput } from './buildRecurringTransactionJournalEntryInput'
+
+/** 科目に既定の世帯メンバーが無い前提で、起票者(1)を既定値にする */
+const resolveLineHouseholdMemberId = createLineHouseholdMemberResolver([], 1)
 
 function makeRule(overrides: Partial<RecurringTransactionRule>): RecurringTransactionRule {
   return {
@@ -34,6 +40,33 @@ function makeRule(overrides: Partial<RecurringTransactionRule>): RecurringTransa
 }
 
 describe('buildRecurringTransactionJournalEntryInput', () => {
+  it('ルールに世帯メンバーが無ければ、両行とも起票者になる(明細行は常に世帯メンバーを持つ、計画Issue #169)', () => {
+    const input = buildRecurringTransactionJournalEntryInput({
+      rule: makeRule({ householdMemberId: null }),
+      dueDate: '2026-09-01',
+      bookkeeperHouseholdMemberId: 1,
+      debitAccountCategory: 'expense',
+      creditAccountCategory: 'liability',
+      resolveLineHouseholdMemberId,
+    })
+
+    expect(input.lines.map((l) => l.householdMemberId)).toEqual([1, 1])
+  })
+
+  it('科目に既定の世帯メンバーがあれば、その行はルールの世帯メンバーより既定値が優先される', () => {
+    const input = buildRecurringTransactionJournalEntryInput({
+      rule: makeRule({ householdMemberId: 3 }),
+      dueDate: '2026-09-01',
+      bookkeeperHouseholdMemberId: 1,
+      debitAccountCategory: 'expense',
+      creditAccountCategory: 'liability',
+      resolveLineHouseholdMemberId: createLineHouseholdMemberResolver([{ id: 20, householdMemberId: 9 }], 1),
+    })
+
+    expect(input.lines.find((l) => l.side === 'debit')?.householdMemberId).toBe(3)
+    expect(input.lines.find((l) => l.side === 'credit')?.householdMemberId).toBe(9)
+  })
+
   it('sourceType=recurring_generated・generatedFromRuleId・entryDateを設定する', () => {
     const rule = makeRule({ id: 42 })
 
@@ -43,6 +76,7 @@ describe('buildRecurringTransactionJournalEntryInput', () => {
       bookkeeperHouseholdMemberId: 1,
       debitAccountCategory: 'expense',
       creditAccountCategory: 'liability',
+      resolveLineHouseholdMemberId,
     })
 
     expect(input.sourceType).toBe('recurring_generated')
@@ -60,6 +94,7 @@ describe('buildRecurringTransactionJournalEntryInput', () => {
       bookkeeperHouseholdMemberId: 1,
       debitAccountCategory: 'expense',
       creditAccountCategory: 'liability',
+      resolveLineHouseholdMemberId,
     })
 
     expect(input.lines.map((l) => l.amount)).toEqual([80000, 80000])
@@ -74,6 +109,7 @@ describe('buildRecurringTransactionJournalEntryInput', () => {
       bookkeeperHouseholdMemberId: 1,
       debitAccountCategory: 'expense',
       creditAccountCategory: 'liability',
+      resolveLineHouseholdMemberId,
       amount: 85000,
     })
 
@@ -89,6 +125,7 @@ describe('buildRecurringTransactionJournalEntryInput', () => {
       bookkeeperHouseholdMemberId: 1,
       debitAccountCategory: 'expense',
       creditAccountCategory: 'liability',
+      resolveLineHouseholdMemberId,
     })
 
     for (const line of input.lines) {
@@ -106,6 +143,7 @@ describe('buildRecurringTransactionJournalEntryInput', () => {
       bookkeeperHouseholdMemberId: 1,
       debitAccountCategory: 'expense',
       creditAccountCategory: 'liability',
+      resolveLineHouseholdMemberId,
     })
 
     const debitLine = input.lines.find((l) => l.side === 'debit')!
@@ -123,6 +161,7 @@ describe('buildRecurringTransactionJournalEntryInput', () => {
       bookkeeperHouseholdMemberId: 1,
       debitAccountCategory: 'asset',
       creditAccountCategory: 'liability',
+      resolveLineHouseholdMemberId,
     })
 
     for (const line of input.lines) {

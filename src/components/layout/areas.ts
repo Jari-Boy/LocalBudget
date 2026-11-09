@@ -4,7 +4,7 @@
  * 定期取引のルールはマスタ領域のタブ(/master/recurring)に置き、提案の確認は仕訳画面内のタブに置く
  * (計画Issue #154で、ルールの画面を旧/journal/recurring/rulesからマスタ配下へ移した)。
  */
-export type AreaKey = 'import' | 'journal' | 'split' | 'master' | 'analysis'
+export type AreaKey = 'journal' | 'master' | 'import' | 'split' | 'analysis'
 
 export interface AreaTab {
   /** common.jsonのnav.tab.*のキー */
@@ -19,12 +19,10 @@ export interface Area {
   tabs: AreaTab[]
 }
 
+/** サイドナビの並び順は、仕訳・マスタ・明細取込・割勘・精算・分析。 */
 export const AREAS: Area[] = [
-  { key: 'import', to: '/journal/create/import', prefixes: ['/journal/create/import'], tabs: [] },
   // 仕訳領域の「仕訳一覧」「下書き」「定期の確認」は、画面内のタブにした(計画Issue #152)
   { key: 'journal', to: '/journal/entries', prefixes: ['/journal/entries'], tabs: [] },
-  // 割勘・精算の「割勘」「精算」は、画面内のタブにした(計画Issue #153)
-  { key: 'split', to: '/journal/splitting', prefixes: ['/journal/splitting'], tabs: [] },
   {
     key: 'master',
     to: '/master/accounts',
@@ -38,6 +36,9 @@ export const AREAS: Area[] = [
       { labelKey: 'mappings', to: '/master/mappings' },
     ],
   },
+  { key: 'import', to: '/journal/create/import', prefixes: ['/journal/create/import'], tabs: [] },
+  // 割勘・精算の「割勘」「精算」は、画面内のタブにした(計画Issue #153)
+  { key: 'split', to: '/journal/splitting', prefixes: ['/journal/splitting'], tabs: [] },
   { key: 'analysis', to: '/reports/analysis', prefixes: ['/reports'], tabs: [] },
 ]
 

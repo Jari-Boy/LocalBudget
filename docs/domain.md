@@ -48,7 +48,7 @@
 | 勘定科目 | 資産・負債・純資産・収益・費用の5区分と、ユーザーが自由に追加する勘定科目(`accounts`)。ライフサイクル・表示用グルーピング(`account_groups`)・口座登録UX/クレジットカード登録UXを含む。 | [domain/accounts.md](./domain/accounts.md) |
 | 仕訳 | 複式簿記の仕訳(JournalEntry)・仕訳明細(JournalLine)。貸借バランス検証、金額と通貨の扱い、外部明細取込との関係、途中入力を保持する下書き(journal_entry_drafts)。 | [domain/journal.md](./domain/journal.md) |
 | プロジェクト | 「何の目的で使ったお金か」を表す横断的な軸。全区分(資産・負債・純資産・収益・費用)の行に設定可能。 | [domain/projects.md](./domain/projects.md) |
-| 世帯メンバー | 「誰の口座/誰の取引か」を表す軸。既定値の継承、個人・グループ(複数メンバーの集合)を扱う。 | [domain/household-members.md](./domain/household-members.md) |
+| 世帯メンバー | 「誰の口座/誰の取引か」を表す軸。明細行の世帯メンバーの決め方(科目の既定メンバー・起票者)、個人・グループ(複数メンバーの集合)を扱う。 | [domain/household-members.md](./domain/household-members.md) |
 | 取引先 | 「どこで/誰に対しての取引か」を表す軸。外部明細取込・勘定科目のデフォルト推定に利用。 | [domain/counterparties.md](./domain/counterparties.md) |
 | 期間確定・財務諸表 | 締め(ロック)を設けない方針、PL/BS等FSの生成方式と表示UI。 | [domain/financial-statements.md](./domain/financial-statements.md) |
 | 予算 | 勘定科目ごとの月次予算額と実績比較。 | [domain/budgets.md](./domain/budgets.md) |

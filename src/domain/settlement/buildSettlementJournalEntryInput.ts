@@ -1,5 +1,6 @@
 import type { CreateJournalEntryInput } from '../journal/JournalEntry'
 import type { AccountCategory } from '../account/Account'
+import type { LineHouseholdMemberResolver } from '../journal/resolveLineHouseholdMemberId'
 
 export interface BuildSettlementJournalEntryInputParams {
   /** 消込対象の精算バッチのid(docs/domain/settlement.md、計画Issue #133) */
@@ -12,15 +13,20 @@ export interface BuildSettlementJournalEntryInputParams {
   counterAccountId: number
   amount: number
   /**
-   * 一時勘定行のhousehold_member_id。対象者が世帯メンバーの場合はそのid、取引先の場合はnull
-   * (journal_lines.counterparty_idは資産・負債の行に設定できないため、advance行は誰にも紐付けない。
-   * docs/domain/counterparties.md 1.2、計画Issue #139)。
+   * 一時勘定行のhousehold_member_id(誰の立替金・未払金の残高か)。必須。
+   * journal_lines.counterparty_idは資産・負債の行に設定できないため、世帯外の相手(取引先)の
+   * バッチでも世帯メンバーの行として表す(docs/domain/counterparties.md 1.2、計画Issue #169)。
    */
-  settlementHouseholdMemberId: number | null
-  /** 仕訳の起票者(CreateJournalEntryInput.householdMemberId、NOT NULL)。取引先が対象者の場合も必須 */
+  settlementHouseholdMemberId: number
+  /** 仕訳の起票者(CreateJournalEntryInput.householdMemberId、NOT NULL) */
   entryHouseholdMemberId: number
   entryDate: string
   memo?: string | null
+  /**
+   * 明細行の世帯メンバーの決め方(科目の既定メンバー > 指定 > 起票者、計画Issue #169)。
+   * 科目と起票者を知っている呼び出し側が createLineHouseholdMemberResolver で作って渡す
+   */
+  resolveLineHouseholdMemberId: LineHouseholdMemberResolver
 }
 
 /**
@@ -35,9 +41,9 @@ export interface BuildSettlementJournalEntryInputParams {
  * タグを正しく付与するだけで消込が成立する。
  *
  * 計画Issue #139で、精算画面の「金額不一致時に差額を損益計上して精算完了する」操作
- * (counterAccountIdに雑収入/雑損失科目を渡す)にも再利用する。取引先が対象者の調整仕訳では
- * 一時勘定行のhousehold_member_idを設定できないため、settlementHouseholdMemberIdをnullに
- * できるようにし、仕訳の起票者(entryHouseholdMemberId)を別パラメータとして分離した。
+ * (counterAccountIdに雑収入/雑損失科目を渡す)にも再利用する。一時勘定行の世帯メンバー
+ * (settlementHouseholdMemberId)と仕訳の起票者(entryHouseholdMemberId)は別パラメータ。
+ * 相手科目の行の世帯メンバーは、科目の既定メンバーがあればそれ、無ければ起票者になる(計画Issue #169)。
  */
 export function buildSettlementJournalEntryInput(
   params: BuildSettlementJournalEntryInputParams,
@@ -45,10 +51,17 @@ export function buildSettlementJournalEntryInput(
   const settlementLine = {
     accountId: params.settlementAccountId,
     settlementBatchId: params.settlementBatchId,
-    householdMemberId: params.settlementHouseholdMemberId,
+    householdMemberId: params.resolveLineHouseholdMemberId(
+      params.settlementAccountId,
+      params.settlementHouseholdMemberId,
+    ),
     amount: params.amount,
   }
-  const counterLine = { accountId: params.counterAccountId, amount: params.amount }
+  const counterLine = {
+    accountId: params.counterAccountId,
+    householdMemberId: params.resolveLineHouseholdMemberId(params.counterAccountId),
+    amount: params.amount,
+  }
 
   const lines =
     params.settlementAccountCategory === 'liability'

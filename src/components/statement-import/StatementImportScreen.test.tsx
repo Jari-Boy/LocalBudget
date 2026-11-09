@@ -247,8 +247,8 @@ describe('StatementImportScreen', () => {
       entryDate: '2026-10-05',
       sourceType: 'manual',
       lines: [
-        { accountId: food.id, side: 'debit', amount: 3000 },
-        { accountId: bank.id, side: 'credit', amount: 3000 },
+        { householdMemberId: memberId, accountId: food.id, side: 'debit', amount: 3000 },
+        { householdMemberId: memberId, accountId: bank.id, side: 'credit', amount: 3000 },
       ],
     })
     renderScreen()

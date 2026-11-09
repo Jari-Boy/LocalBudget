@@ -3,7 +3,8 @@
  * 仕訳の詳細パネル(JournalEntryEditor)のコンポーネントテスト(計画Issue #152)。
  * 借方・貸方の2列、列ごとの合計、貸借一致/差額の表示、行の追加・削除、
  * 科目の区分に応じた取引先・精算バッチ・世帯メンバー欄の出し分け、
- * 提案用の「金額だけ編集できる」モードを検証する。
+ * 提案用の「金額だけ編集できる」モードを検証する。計画Issue #169で、起票者を選べるようにし、
+ * 明細行の世帯メンバーは常に1人を選ぶ(既定値は起票者、科目に既定メンバーがあれば固定)ことも検証する。
  * 外部依存なし(マスタは props で渡す。科目の選択ツリーは開閉せず、トリガーの表示だけを見る)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -56,11 +57,11 @@ function value(lines: JournalEditorValue['lines']): JournalEditorValue {
 
 const debit = (key: number, accountId: number | null, amount: string): JournalEditorLine => ({
   key,
-  line: { accountId, side: 'debit' as const, amountInput: amount, projectId: null, householdMemberId: null, counterpartyId: null },
+  line: { accountId, side: 'debit' as const, amountInput: amount, projectId: null, householdMemberId: 1, counterpartyId: null },
 })
 const credit = (key: number, accountId: number | null, amount: string): JournalEditorLine => ({
   key,
-  line: { accountId, side: 'credit' as const, amountInput: amount, projectId: null, householdMemberId: null, counterpartyId: null },
+  line: { accountId, side: 'credit' as const, amountInput: amount, projectId: null, householdMemberId: 1, counterpartyId: null },
 })
 
 function Harness({ initial, readOnlyLines }: { initial: JournalEditorValue; readOnlyLines?: boolean }) {
@@ -137,9 +138,55 @@ describe('JournalEntryEditor', () => {
     expect(screen.getByText('夫(科目の既定)')).toBeInTheDocument()
   })
 
-  it('起票者を表示する', () => {
+  it('起票者をセレクトで選べ、有効なメンバーが並ぶ(計画Issue #169)', () => {
     render(<Harness initial={value([debit(1, 1, '1000'), credit(2, 2, '1000')])} />)
-    expect(screen.getByText('夫', { selector: '.journal-editor__bookkeeper' })).toBeInTheDocument()
+    const select = screen.getByRole('combobox', { name: '起票者' })
+    expect(select).toHaveValue('1')
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['夫', '妻'])
+  })
+
+  it('明細行の世帯メンバー欄に「メンバーなし」の選択肢は無い', () => {
+    render(<Harness initial={value([debit(1, 1, '1000'), credit(2, 2, '1000')])} />)
+    const memberSelects = screen.getAllByRole('combobox', { name: '世帯メンバー' })
+    expect(memberSelects.length).toBeGreaterThan(0)
+    for (const select of memberSelects) {
+      expect(within(select).queryByRole('option', { name: 'メンバーなし' })).not.toBeInTheDocument()
+    }
+  })
+
+  it('起票者を変えると、旧起票者のままで科目に既定メンバーがない行だけが追従する', () => {
+    // 食費(夫のまま)→追従、夫の口座(科目の既定が夫)→固定、食費(妻に手で変更)→そのまま
+    const manual = debit(3, 1, '500')
+    manual.line = { ...manual.line, householdMemberId: 2 }
+    const onChange = vi.fn()
+    render(
+      <JournalEntryEditor
+        value={value([debit(1, 1, '1000'), credit(2, 4, '1500'), manual])}
+        onChange={onChange}
+        master={master}
+      />,
+    )
+
+    fireEvent.change(screen.getByRole('combobox', { name: '起票者' }), { target: { value: '2' } })
+
+    const next = onChange.mock.calls[0][0] as JournalEditorValue
+    expect(next.householdMemberId).toBe(2)
+    expect(next.lines.map((l) => l.line.householdMemberId)).toEqual([2, 1, 2])
+  })
+
+  it('行を追加すると、その行の世帯メンバーは起票者になる', () => {
+    const onChange = vi.fn()
+    render(<JournalEntryEditor value={value([debit(1, 1, '1000'), credit(2, 2, '1000')])} onChange={onChange} master={master} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ 借方の行を追加' }))
+
+    const next = onChange.mock.calls[0][0] as JournalEditorValue
+    expect(next.lines[next.lines.length - 1].line.householdMemberId).toBe(1)
+  })
+
+  it('提案(readOnlyLines)では起票者を変えられない', () => {
+    render(<Harness initial={value([debit(1, 1, '1000'), credit(2, 2, '1000')])} readOnlyLines />)
+    expect(screen.getByRole('combobox', { name: '起票者' })).toBeDisabled()
   })
 
   it('摘要・コメントを編集すると onChange に反映される', () => {

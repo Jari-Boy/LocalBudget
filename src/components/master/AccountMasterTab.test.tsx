@@ -66,8 +66,8 @@ function postEntry(debitId: number, creditId: number, sourceType: 'manual' | 'in
     sourceType,
     householdMemberId: memberId,
     lines: [
-      { accountId: debitId, side: 'debit', amount: 1000 },
-      { accountId: creditId, side: 'credit', amount: 1000 },
+      { householdMemberId: memberId, accountId: debitId, side: 'debit', amount: 1000 },
+      { householdMemberId: memberId, accountId: creditId, side: 'credit', amount: 1000 },
     ],
   })
 }
@@ -137,6 +137,73 @@ describe('AccountMasterTab', () => {
     fireEvent.click(panel('科目の編集').getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(accounts.findById(account.id)!.householdMemberId).toBe(memberId))
+  })
+
+  describe('既定の世帯メンバーを変えるときの、過去の明細行の扱い(計画Issue #169)', () => {
+    /** 現金(既定メンバーなし)に、夫の明細行を1行持つ仕訳を作り、名義を妻に変える操作まで進める */
+    async function startChangingToWife() {
+      const wifeId = new SqlJsHouseholdMemberRepository(db).create({ name: '妻' }).id
+      const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
+      const food = accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+      postEntry(food.id, cash.id)
+      renderTab()
+      await open('現金')
+      fireEvent.change(panel('科目の編集').getByLabelText('名義'), { target: { value: String(wifeId) } })
+      fireEvent.click(panel('科目の編集').getByRole('button', { name: '保存' }))
+      return { wifeId, cash, food }
+    }
+
+    const cashLineMember = (cashId: number) =>
+      entries.findAll().flatMap((e) => e.lines).find((l) => l.accountId === cashId)!.householdMemberId
+
+    it('名義を変えて保存すると、対象の明細行の件数を示す確認が出て、選ぶまでは何も変わらない', async () => {
+      const { cash } = await startChangingToWife()
+
+      const dialog = await screen.findByRole('dialog', { name: '既定の世帯メンバーの変更' })
+      expect(dialog).toHaveTextContent('1 件')
+      expect(accounts.findById(cash.id)!.householdMemberId).toBeNull()
+    })
+
+    it('「過去の明細行も更新する」を選ぶと、科目の名義と過去の明細行がすべて新しい名義になる', async () => {
+      const { wifeId, cash } = await startChangingToWife()
+
+      fireEvent.click(await screen.findByRole('button', { name: '変更する' }))
+
+      await waitFor(() => expect(accounts.findById(cash.id)!.householdMemberId).toBe(wifeId))
+      expect(cashLineMember(cash.id)).toBe(wifeId)
+    })
+
+    it('「そのまま残す」を選ぶと、科目の名義だけが変わり、過去の明細行は旧メンバーのまま残る', async () => {
+      const { wifeId, cash } = await startChangingToWife()
+
+      fireEvent.click(await screen.findByRole('radio', { name: /そのまま残す/ }))
+      fireEvent.click(screen.getByRole('button', { name: '変更する' }))
+
+      await waitFor(() => expect(accounts.findById(cash.id)!.householdMemberId).toBe(wifeId))
+      expect(cashLineMember(cash.id)).toBe(memberId)
+    })
+
+    it('キャンセルすると、科目の名義も明細行も変わらない', async () => {
+      const { cash } = await startChangingToWife()
+
+      fireEvent.click(await screen.findByRole('button', { name: 'キャンセル' }))
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(accounts.findById(cash.id)!.householdMemberId).toBeNull()
+      expect(cashLineMember(cash.id)).toBe(memberId)
+    })
+
+    it('対象の明細行がない科目や、名義を解除する場合は、確認を出さずに保存する', async () => {
+      const account = accounts.create({ category: 'asset', name: '現金', isReconcilable: false, householdMemberId: memberId })
+      renderTab()
+      await open('現金')
+
+      fireEvent.change(panel('科目の編集').getByLabelText('名義'), { target: { value: '' } })
+      fireEvent.click(panel('科目の編集').getByRole('button', { name: '保存' }))
+
+      await waitFor(() => expect(accounts.findById(account.id)!.householdMemberId).toBeNull())
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
   })
 
   it('所属グループを選び直すと、すぐに別のグループへ移る', async () => {

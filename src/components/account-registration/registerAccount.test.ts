@@ -167,7 +167,7 @@ describe('registerAccount', () => {
           accountId: account.id,
           side: 'debit',
           amount: 100000,
-          householdMemberId: null,
+          householdMemberId: creatorId,
         }),
         expect.objectContaining({
           accountId: initialBalanceAccount.id,

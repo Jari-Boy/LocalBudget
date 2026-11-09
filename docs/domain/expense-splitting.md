@@ -39,7 +39,7 @@
 | 立替金(資産) | asset | 自分が立て替えた分の債権 |
 | 未払金(負債) | liability | 自分が立て替えてもらった分の債務 |
 
-**科目自体は割勘のたびに新規作成しない。** 恒久的な汎用科目として1組だけ用意し、以降のすべての割勘で使い回す。「誰の債権/債務か」は`journal_lines.household_member_id`([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)、全区分に適用可)で区別する。「どの割勘バッチに属する残高か」は`journal_lines.settlement_batch_id`([settlement.md 2章](./settlement.md#2-精算バッチマスタsettlement_batches)、計画Issue #133)で区別する。
+**科目自体は割勘のたびに新規作成しない。** 恒久的な汎用科目として1組だけ用意し、以降のすべての割勘で使い回す。「誰の債権/債務か」は`journal_lines.household_member_id`([household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方)、全区分に適用可)で区別する。「どの割勘バッチに属する残高か」は`journal_lines.settlement_batch_id`([settlement.md 2章](./settlement.md#2-精算バッチマスタsettlement_batches)、計画Issue #133)で区別する。
 
 > **立替金/未払金科目は初回起動時に自動投入され、ユーザーには選択させない(計画Issue #40)**
 > `seedAdvanceAccounts`(`src/infrastructure/db/seedAdvanceAccounts.ts`、Worker起動時に`seedDefaultAccounts`の直後で呼び出す)が、asset・liability区分それぞれについて`is_system_managed = true`の科目が1件も存在しなければ、資産側は「立替金」・負債側は「未払金」を1件投入する(区分ごとに独立した冪等シード)。`is_system_managed = true`にすることで、削除・区分変更・is_reconcilable変更をDBスキーマのトリガー(`docs/schema/accounts.sql`)で防ぎつつ、科目一覧画面・手動仕訳フォームの選択肢からも除外する([accounts.md 3.1](./accounts.md#31-フィールド定義)の初期残高科目と同じ扱い)。割勘起票フォーム・精算画面は、投入された科目を`category`・`isSystemManaged`で自動解決して使い、ユーザーに科目一覧から選ばせるUIは持たない。当初の実装(Implementation Attempt 1〜4)はこの方針に反し全資産/負債科目から毎回手動選択させるUIになっており、PR作成前のユーザーレビューで指摘され本方針に修正した。詳細は`docs/decisions.md`(2026-08-18)参照。既存の同名(`is_system_managed = false`)科目とのUNIQUE制約衝突時は、Worker起動全体をクラッシュさせずログに残すだけでその区分の投入をスキップし、起動を継続する(該当区分の割勘/精算機能のみ利用不可のままになる)。詳細は`docs/decisions.md`(2026-08-31)参照。

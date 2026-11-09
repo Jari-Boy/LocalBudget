@@ -49,7 +49,7 @@ function entry(id: number, entryDate: string, accountId: number, side: 'debit' |
         journalEntryId: id,
         accountId,
         projectId: null,
-        householdMemberId: null,
+        householdMemberId: 1,
         counterpartyId: null,
         settlementBatchId: null,
         side,

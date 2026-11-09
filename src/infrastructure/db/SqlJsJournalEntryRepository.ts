@@ -105,12 +105,16 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
 
     this.db.run('BEGIN')
     try {
-      this.db.run(`UPDATE journal_entries SET entry_date = ?, memo = ?, comment = ? WHERE id = ?`, [
-        input.entryDate,
-        input.memo ?? null,
-        input.comment === undefined ? current.comment : input.comment,
-        id,
-      ])
+      this.db.run(
+        `UPDATE journal_entries SET entry_date = ?, memo = ?, comment = ?, household_member_id = ? WHERE id = ?`,
+        [
+          input.entryDate,
+          input.memo ?? null,
+          input.comment === undefined ? current.comment : input.comment,
+          input.householdMemberId === undefined ? current.householdMemberId : input.householdMemberId,
+          id,
+        ],
+      )
       applyLineDiff(this.db, current, input.lines)
       this.db.run('COMMIT')
       return this.findById(id)!
@@ -183,7 +187,7 @@ function insertLine(db: Database, entryId: number, line: JournalLineInput): numb
       entryId,
       line.accountId,
       line.projectId ?? null,
-      line.householdMemberId ?? null,
+      line.householdMemberId,
       line.counterpartyId ?? null,
       line.settlementBatchId ?? null,
       line.side,
@@ -238,7 +242,7 @@ function applyLineDiff(db: Database, current: JournalEntry, lines: readonly Jour
       [
         line.accountId,
         line.projectId ?? null,
-        line.householdMemberId ?? null,
+        line.householdMemberId,
         line.counterpartyId ?? null,
         line.settlementBatchId ?? null,
         line.side,
@@ -277,7 +281,7 @@ function mapRowToJournalLine(columns: string[], values: unknown[]): JournalLine 
     journalEntryId: get<number>('journal_entry_id'),
     accountId: get<number>('account_id'),
     projectId: get<number | null>('project_id'),
-    householdMemberId: get<number | null>('household_member_id'),
+    householdMemberId: get<number>('household_member_id'),
     counterpartyId: get<number | null>('counterparty_id'),
     settlementBatchId: get<number | null>('settlement_batch_id'),
     side: get<JournalLineSide>('side'),

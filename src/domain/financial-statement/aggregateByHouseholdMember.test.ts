@@ -2,10 +2,10 @@
  * aggregateByHouseholdMember(世帯メンバー別集計)の純粋関数としてのユニットテスト。
  * docs/domain/household-members.md 1.4節の
  * 「メンバー別合計 = Σ(amount WHERE side=増加側) - Σ(amount WHERE side=減少側)、
- * 実効メンバー = 対象household_member、期間で絞らず全期間が既定」という
- * メンバー軸の集計ルールを検証する。実効メンバーの解決(計画Issue #88改訂後の
- * 「科目既定値の強制→明細の上書き→ヘッダーの起票者」フォールバックルール、1.2節)を
- * 経由すること、全区分(資産等)にまたがる集計ができることを含む。
+ * 対象household_memberの明細行、期間で絞らず全期間が既定」という
+ * メンバー軸の集計ルールを検証する。明細行は常に実際の世帯メンバーを持つため(1.2節、
+ * 計画Issue #169)、明細行のhouseholdMemberIdで絞り込むこと(科目の既定値や起票者の
+ * 値は使わない)、全区分(資産等)にまたがる集計ができることを含む。
  * DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
@@ -52,7 +52,7 @@ function line(
   accountId: number,
   side: 'debit' | 'credit',
   amount: number,
-  householdMemberId: number | null,
+  householdMemberId: number,
 ): JournalEntry['lines'][number] {
   return {
     id,
@@ -79,23 +79,25 @@ describe('aggregateByHouseholdMember', () => {
     expect(aggregateByHouseholdMember(entries, accounts, 10)).toBe(3000)
   })
 
-  it('明細側がnullの場合は口座の既定値(accounts.householdMemberId)を継承して集計する', () => {
+  it('科目の既定値と異なる世帯メンバーの行(既定値を変えて過去の行を残した場合)も、行自身の世帯メンバーで集計する', () => {
     const accounts: Account[] = [buildAccount({ id: 1, category: 'expense', householdMemberId: 10 })]
     const entries: JournalEntry[] = [
-      buildEntry({ id: 1, lines: [line(1, 1, 1, 'debit', 3000, null)] }),
+      buildEntry({ id: 1, lines: [line(1, 1, 1, 'debit', 3000, 20)] }),
+      buildEntry({ id: 2, lines: [line(2, 2, 1, 'debit', 5000, 10)] }),
     ]
 
-    expect(aggregateByHouseholdMember(entries, accounts, 10)).toBe(3000)
+    expect(aggregateByHouseholdMember(entries, accounts, 10)).toBe(5000)
+    expect(aggregateByHouseholdMember(entries, accounts, 20)).toBe(3000)
   })
 
-  it('科目に既定値が無く明細もnullの場合はヘッダーの起票者を実効メンバーとして集計する(計画Issue #88)', () => {
+  it('仕訳の起票者は集計に使わず、明細行の世帯メンバーで集計する(計画Issue #169)', () => {
     const accounts: Account[] = [buildAccount({ id: 1, category: 'expense', householdMemberId: null })]
     const entries: JournalEntry[] = [
-      buildEntry({ id: 1, householdMemberId: 10, lines: [line(1, 1, 1, 'debit', 3000, null)] }),
-      buildEntry({ id: 2, householdMemberId: 20, lines: [line(2, 2, 1, 'debit', 5000, null)] }),
+      buildEntry({ id: 1, householdMemberId: 10, lines: [line(1, 1, 1, 'debit', 3000, 20)] }),
+      buildEntry({ id: 2, householdMemberId: 20, lines: [line(2, 2, 1, 'debit', 5000, 10)] }),
     ]
 
-    expect(aggregateByHouseholdMember(entries, accounts, 10)).toBe(3000)
+    expect(aggregateByHouseholdMember(entries, accounts, 10)).toBe(5000)
   })
 
   it('全区分(資産・費用等)にまたがる明細を区分に応じて符号反転して合算する', () => {

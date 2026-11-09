@@ -19,7 +19,7 @@ function line(overrides: Partial<JournalLine>): JournalLine {
     journalEntryId: 1,
     accountId: 10,
     projectId: null,
-    householdMemberId: null,
+    householdMemberId: 1,
     counterpartyId: null,
     settlementBatchId: null,
     side: 'debit',
@@ -59,18 +59,6 @@ describe('findUnassignedAdvanceEntriesForTarget', () => {
     })
 
     expect(result).toEqual([{ entry: matching, lineId: 1, amount: 1000 }])
-  })
-
-  it('取引先が対象者の場合、settlement_batch_id未設定かつhousehold_member_idがnullの行を候補にする', () => {
-    const candidate = entry(1, '2026-10-05', [line({ id: 1, journalEntryId: 1, householdMemberId: null })])
-    const memberOwned = entry(2, '2026-10-06', [line({ id: 2, journalEntryId: 2, householdMemberId: 300 })])
-
-    const result = findUnassignedAdvanceEntriesForTarget([candidate, memberOwned], 10, {
-      kind: 'counterparty',
-      counterpartyId: 999,
-    })
-
-    expect(result).toEqual([{ entry: candidate, lineId: 1, amount: 1000 }])
   })
 
   it('対象科目と異なる科目の行は候補から除外する', () => {

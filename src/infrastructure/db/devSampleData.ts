@@ -150,10 +150,10 @@ export const DEV_SAMPLE_SETTLEMENT_PAYABLE_ENTRIES: readonly {
  * settlement_batch_id未設定の立替金(資産)/未払金(負債)行を持つ仕訳。accountCategoryで
  * 資産側(自分が受け取る側)・負債側(自分が支払う側)のどちらの候補かを指定する(docs/domain/
  * expense-splitting.md 1.3節の精算1(負債側)・精算2(資産側)に対応、口座ごとに別々のタイミング・
- * 別々のCSVで到着するため、資産側・負債側は独立した仕訳になる)。memberNameを指定したものは
- * 世帯メンバーが対象者の候補(household_member_idを明細行に設定)、省略したものは取引先が
- * 対象者の候補(household_member_idをnullにする、findUnassignedAdvanceEntriesForTargetの
- * 検索条件に合わせる)。1500円の返済(負債側・資産側それぞれ)はDEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES
+ * 別々のCSVで到着するため、資産側・負債側は独立した仕訳になる)。memberNameは対象者の世帯メンバーで、
+ * 明細行のhousehold_member_idに設定する(明細行は常に世帯メンバーを持つ。世帯外の相手(取引先)の
+ * バッチでも、立替金・未払金の行は世帯メンバーの行として表す、計画Issue #169)。
+ * 1500円の返済(負債側・資産側それぞれ)はDEV_SAMPLE_SETTLEMENT_SPLIT_ENTRIES
  * の1件目(1500円)と一致(精算画面で対象者=自分/配偶者どちらでも「一致」判定を確認できる)、
  * 1200円の返済は2件目(2000円、負債側)と不一致(「不一致」判定・差額損益計上を確認できる)、
  * 4000円の返済はDEV_SAMPLE_SETTLEMENT_PAYABLE_ENTRIES(4000円、取引先: イオン)と一致する。
@@ -163,7 +163,7 @@ export const DEV_SAMPLE_SETTLEMENT_REPAYMENT_CANDIDATES: readonly {
   memo: string
   amount: number
   accountCategory: 'asset' | 'liability'
-  memberName?: string
+  memberName: string
   cashAccountName: string
 }[] = [
   {
@@ -195,6 +195,7 @@ export const DEV_SAMPLE_SETTLEMENT_REPAYMENT_CANDIDATES: readonly {
     memo: 'イオンへの後払い分の支払い',
     amount: 4000,
     accountCategory: 'liability',
+    memberName: '自分',
     cashAccountName: '普通預金',
   },
 ] as const

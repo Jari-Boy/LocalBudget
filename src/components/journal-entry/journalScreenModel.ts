@@ -33,7 +33,7 @@ export function summarizeBalance(lines: readonly JournalEntryFormLine[]): Balanc
 }
 
 /** 確定(仕訳として保存)できない理由。下書きにはこの制限はかからない */
-export type IncompleteReason = 'unselectedAccount' | 'invalidAmount' | 'insufficientLines' | 'unbalanced'
+export type IncompleteReason = 'unselectedAccount' | 'unselectedMember' | 'invalidAmount' | 'insufficientLines' | 'unbalanced'
 
 function hasPositiveAmount(line: JournalEntryFormLine): boolean {
   const amount = Number(line.amountInput)
@@ -43,6 +43,8 @@ function hasPositiveAmount(line: JournalEntryFormLine): boolean {
 /** 優先順に判定し、最初に当たった理由を返す。完成していれば null */
 export function findIncompleteReason(lines: readonly JournalEntryFormLine[]): IncompleteReason | null {
   if (lines.some((line) => line.accountId === null)) return 'unselectedAccount'
+  // 明細行は常に世帯メンバーを持つ(継承=未指定は廃止、計画Issue #169)
+  if (lines.some((line) => line.householdMemberId === null)) return 'unselectedMember'
   if (lines.some((line) => !hasPositiveAmount(line))) return 'invalidAmount'
   const hasDebit = lines.some((line) => line.side === 'debit')
   const hasCredit = lines.some((line) => line.side === 'credit')
@@ -53,6 +55,7 @@ export function findIncompleteReason(lines: readonly JournalEntryFormLine[]): In
 
 const INCOMPLETE_MESSAGES: Record<IncompleteReason, string> = {
   unselectedAccount: '未選択の科目があります',
+  unselectedMember: '世帯メンバーが未選択の行があります',
   invalidAmount: '金額が正しくない行があります',
   insufficientLines: '借方と貸方の行がそれぞれ1行以上必要です',
   unbalanced: '貸借が一致していません',

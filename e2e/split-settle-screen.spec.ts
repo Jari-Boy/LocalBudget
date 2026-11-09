@@ -73,8 +73,8 @@ async function createOriginalExpenseEntry(
         memo: entryMemo,
         householdMemberId: defaultMember.id,
         lines: [
-          { accountId: expenseAccountId, side: 'debit', amount: entryAmount },
-          { accountId: cashAccountId, side: 'credit', amount: entryAmount },
+          { householdMemberId: defaultMember.id, accountId: expenseAccountId, side: 'debit', amount: entryAmount },
+          { householdMemberId: defaultMember.id, accountId: cashAccountId, side: 'credit', amount: entryAmount },
         ],
       })
       await client.autoSave.flush()
@@ -140,8 +140,8 @@ test.describe('割勘タブ', () => {
         memo: '候補にならない給与',
         householdMemberId: member.id,
         lines: [
-          { accountId: cash.id, side: 'debit', amount: 300000 },
-          { accountId: salary.id, side: 'credit', amount: 300000 },
+          { householdMemberId: member.id, accountId: cash.id, side: 'debit', amount: 300000 },
+          { householdMemberId: member.id, accountId: salary.id, side: 'credit', amount: 300000 },
         ],
       })
       await client.autoSave.flush()

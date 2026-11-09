@@ -1,4 +1,5 @@
 import type { CreateJournalEntryInput, JournalEntry, UpdateJournalEntryInput } from '../../domain/journal/JournalEntry'
+import type { LineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
 import type { SettlementDirection } from '../../domain/settlement-batch/summarizeSettlementBatch'
 import type { SettlementTarget } from '../../domain/settlement-batch/SettlementTarget'
 import type { UnassignedAdvanceEntryCandidate } from '../../domain/settlement/findUnassignedAdvanceEntriesForTarget'
@@ -26,11 +27,12 @@ interface CommonParams {
   target: SettlementTarget
   /** 仕訳の起票者 */
   entryHouseholdMemberId: number
+  /** 明細行の世帯メンバーの決め方(科目の既定メンバー > 指定 > 起票者、計画Issue #169) */
+  resolveLineHouseholdMemberId: LineHouseholdMemberResolver
   repositories: SettlementRepositories
 }
 
 const categoryOf = (direction: SettlementDirection) => (direction === 'advance' ? 'asset' : 'liability')
-const memberIdOf = (target: SettlementTarget) => (target.kind === 'householdMember' ? target.householdMemberId : null)
 
 export interface TagCandidatesParams extends CommonParams {
   candidates: readonly UnassignedAdvanceEntryCandidate[]
@@ -69,9 +71,10 @@ export async function tagCandidatesToBatch(params: TagCandidatesParams): Promise
         settlementAccountCategory: adjustment.effectiveCategory,
         counterAccountId: adjustment.isGain ? params.adjustmentAccountIds.gain : params.adjustmentAccountIds.loss,
         amount: adjustment.amount,
-        settlementHouseholdMemberId: memberIdOf(params.target),
+        settlementHouseholdMemberId: params.target.householdMemberId,
         entryHouseholdMemberId: params.entryHouseholdMemberId,
         entryDate: params.today,
+        resolveLineHouseholdMemberId: params.resolveLineHouseholdMemberId,
       }),
     )
     newEntryIds.push(created.id)
@@ -102,10 +105,11 @@ export async function createSettlementEntry(params: CreateSettlementEntryParams)
       settlementAccountCategory: categoryOf(params.direction),
       counterAccountId: params.counterAccountId,
       amount: params.amount,
-      settlementHouseholdMemberId: memberIdOf(params.target),
+      settlementHouseholdMemberId: params.target.householdMemberId,
       entryHouseholdMemberId: params.entryHouseholdMemberId,
       entryDate: params.entryDate,
       memo: params.memo,
+      resolveLineHouseholdMemberId: params.resolveLineHouseholdMemberId,
     }),
   )
   await params.repositories.journalEntryLinkGroupRepository.joinOrCreateGroups(params.taggedEntryIds, [created.id])

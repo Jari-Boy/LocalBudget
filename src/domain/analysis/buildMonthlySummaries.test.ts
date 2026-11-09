@@ -60,7 +60,7 @@ function entry(id: number, entryDate: string, lines: [number, 'debit' | 'credit'
         journalEntryId: id,
         accountId,
         projectId: null,
-        householdMemberId: null,
+        householdMemberId,
         counterpartyId: null,
         settlementBatchId: null,
         side,

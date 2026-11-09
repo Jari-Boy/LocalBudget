@@ -81,8 +81,8 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
           householdMemberId: defaultMember.id,
           generatedFromRuleId: rule.id,
           lines: [
-            { accountId: expenseAccount.id, side: 'debit', amount: 1000 },
-            { accountId: liabilityAccount.id, side: 'credit', amount: 1000 },
+            { householdMemberId: defaultMember.id, accountId: expenseAccount.id, side: 'debit', amount: 1000 },
+            { householdMemberId: defaultMember.id, accountId: liabilityAccount.id, side: 'credit', amount: 1000 },
           ],
         })
       },
@@ -133,8 +133,8 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
           householdMemberId: defaultMember.id,
           generatedFromRuleId: rule.id,
           lines: [
-            { accountId: expenseAccount.id, side: 'debit', amount: 2000 },
-            { accountId: liabilityAccount.id, side: 'credit', amount: 2000 },
+            { householdMemberId: defaultMember.id, accountId: expenseAccount.id, side: 'debit', amount: 2000 },
+            { householdMemberId: defaultMember.id, accountId: liabilityAccount.id, side: 'credit', amount: 2000 },
           ],
         })
       },
@@ -194,8 +194,8 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
           householdMemberId: defaultMember.id,
           generatedFromRuleId: rule.id,
           lines: [
-            { accountId: expenseAccount.id, side: 'debit', amount: 3000 },
-            { accountId: liabilityAccount.id, side: 'credit', amount: 3000 },
+            { householdMemberId: defaultMember.id, accountId: expenseAccount.id, side: 'debit', amount: 3000 },
+            { householdMemberId: defaultMember.id, accountId: liabilityAccount.id, side: 'credit', amount: 3000 },
           ],
         })
       },
@@ -211,7 +211,7 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
     await expect(confirm).toBeDisabled()
 
     await detailPanel(page).getByLabel('通信費(提案テスト3)の金額').fill('3500')
-    const memberSelect = detailPanel(page).getByLabel('起票者')
+    const memberSelect = detailPanel(page).locator('select.journal-screen__select')
     const memberOptions = await memberSelect.locator('option').all()
     const memberValue = await memberOptions[1].getAttribute('value')
     await memberSelect.selectOption(memberValue!)

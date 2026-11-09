@@ -21,6 +21,7 @@ import {
   type TreeTableNode,
 } from '../common/tree-table/treeTableModel'
 import { AccountCreateForm } from './AccountCreateForm'
+import { DefaultMemberChangeDialog } from './DefaultMemberChangeDialog'
 import { buildAccountTree, groupNodeId, leafNodeId, parseNodeId } from './masterTreeNodes'
 import type { MaybeAsync } from './maybeAsync'
 import './master.css'
@@ -94,6 +95,8 @@ export function AccountMasterTab({
   const [flash, setFlash] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 既定の世帯メンバーを変えるときの、過去の明細行の扱いの確認待ち(計画Issue #169) */
+  const [memberChange, setMemberChange] = useState<MemberChangePlan | null>(null)
 
   const load = useCallback(async () => {
     const [accounts, groups, members, entries, budgets, rules] = await Promise.all([
@@ -300,10 +303,18 @@ export function AccountMasterTab({
           }
           onMoveInto={(targetId) => moveInto(selected.id, targetId)}
           onShift={(delta) => shift(selected, delta)}
-          onSave={(patch) =>
-            run(
+          onSave={(patch) => {
+            const { kind, id } = parseNodeId(selected.id)
+            if (kind === 'leaf') {
+              const change = planMemberChange(data, id, patch)
+              if (change !== null) {
+                // 過去の明細行に影響するときは、更新するか残すかを選んでもらってから保存する
+                setMemberChange(change)
+                return
+              }
+            }
+            void run(
               async () => {
-                const { kind, id } = parseNodeId(selected.id)
                 if (kind === 'group') {
                   await accountGroupRepository.update(id, { name: patch.name })
                 } else {
@@ -315,7 +326,7 @@ export function AccountMasterTab({
               t('accountTab.saveError'),
               t('accountTab.saved'),
             )
-          }
+          }}
           onToggleActive={() =>
             run(async () => {
               const account = data.accounts.find((a) => a.id === parseNodeId(selected.id).id)!
@@ -346,8 +357,75 @@ export function AccountMasterTab({
           }}
         />
       )}
+
+      {memberChange !== null && (
+        <DefaultMemberChangeDialog
+          accountName={memberChange.accountName}
+          fromName={memberChange.fromName}
+          toName={memberChange.toName}
+          lineCount={memberChange.lineCount}
+          busy={busy}
+          onCancel={() => setMemberChange(null)}
+          onConfirm={(updateExistingLines) => {
+            const change = memberChange
+            setMemberChange(null)
+            void run(
+              async () => {
+                await accountRepository.update(
+                  change.accountId,
+                  { name: change.name, householdMemberId: change.toId },
+                  { updateExistingLines },
+                )
+              },
+              t('accountTab.saveError'),
+              t('accountTab.saved'),
+            )
+          }}
+        />
+      )}
     </div>
   )
+}
+
+/** 既定の世帯メンバーの変更で、過去の明細行の扱いを選んでもらう必要があるときの内容 */
+interface MemberChangePlan {
+  accountId: number
+  accountName: string
+  name: string
+  fromName: string
+  toId: number
+  toName: string
+  lineCount: number
+}
+
+/**
+ * 既定の世帯メンバーを非nullの別のメンバーへ変えるとき、新しい既定メンバーと異なる世帯メンバーを持つ
+ * この科目の明細行が1行でもあれば、確認の内容を返す。確認が要らなければ(変更なし・解除・対象の行なし)null
+ */
+function planMemberChange(
+  data: LoadedData,
+  accountId: number,
+  patch: { name: string; householdMemberId?: number | null },
+): MemberChangePlan | null {
+  const account = data.accounts.find((a) => a.id === accountId)
+  const nextMemberId = patch.householdMemberId
+  if (account === undefined || nextMemberId === undefined || nextMemberId === null) return null
+  if (nextMemberId === account.householdMemberId) return null
+  const lineCount = data.entries
+    .flatMap((e) => e.lines)
+    .filter((l) => l.accountId === accountId && l.householdMemberId !== nextMemberId).length
+  if (lineCount === 0) return null
+  const nameOf = (memberId: number | null) =>
+    memberId === null ? 'なし' : (data.members.find((m) => m.id === memberId)?.name ?? '')
+  return {
+    accountId,
+    accountName: account.name,
+    name: patch.name,
+    fromName: nameOf(account.householdMemberId),
+    toId: nextMemberId,
+    toName: nameOf(nextMemberId),
+    lineCount,
+  }
 }
 
 /** 削除できない理由の文言。削除できるときは空文字 */

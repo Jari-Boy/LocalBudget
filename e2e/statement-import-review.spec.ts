@@ -90,6 +90,7 @@ async function setupAccountsAndMapping(
           ...entryFields,
           householdMemberId: defaultMember.id,
           lines: lines.map((line) => ({
+            householdMemberId: defaultMember.id,
             accountId: ids[line.accountIndex],
             side: line.side,
             amount: line.amount,
