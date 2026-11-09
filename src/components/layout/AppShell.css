@@ -50,6 +50,14 @@
   font-weight: 600;
 }
 
+/* 設定の前の区切り。上の余白を伸ばして、設定をサイドナビの一番下へ寄せる */
+.app-shell__nav-separator {
+  margin-top: auto;
+  padding-top: 16px;
+  border-bottom: 1px solid var(--color-nav-active);
+  margin-bottom: 4px;
+}
+
 .app-shell__badge {
   font-size: var(--font-size-xs);
   color: var(--color-nav-muted);

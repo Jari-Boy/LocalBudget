@@ -10,6 +10,7 @@
     "split": "割勘・精算",
     "master": "マスタ",
     "analysis": "分析",
+    "settings": "設定",
     "pendingProposals": "確認待ち{{count}}件",
     "tab": {
       "entries": "仕訳一覧",

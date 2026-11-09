@@ -32,6 +32,9 @@ import { MemberMasterTab } from '../components/master/MemberMasterTab'
 import { ProjectMasterTab } from '../components/master/ProjectMasterTab'
 import { MappingMasterTab } from '../components/master/MappingMasterTab'
 import { RuleMasterTab } from '../components/master/RuleMasterTab'
+import { SettingsScreen, type BackupApi } from '../components/settings/SettingsScreen'
+import { sessionNoticeStorage } from '../components/settings/importNotice'
+import { downloadDatabaseBackup } from '../infrastructure/backup/downloadDatabaseBackup'
 
 /**
  * 確認待ちの定期取引提案の件数(サイドナビの「仕訳」のバッジ用、計画Issue #150)。
@@ -112,6 +115,7 @@ export function AppRoutes() {
     budgetRepository,
     recurringTransactionRuleRepository,
     recurringTransactionProposalApi,
+    backupApi,
   } = useMemo(
     () => ({
       accountRepository: client.account as unknown as Comlink.Remote<AccountRepository>,
@@ -139,6 +143,7 @@ export function AppRoutes() {
         client.recurringTransactionRule as unknown as Comlink.Remote<RecurringTransactionRuleRepository>,
       recurringTransactionProposalApi:
         client.recurringTransactionProposal as unknown as Comlink.Remote<RecurringTransactionProposalRpcApi>,
+      backupApi: client.backup as unknown as Comlink.Remote<BackupApi>,
     }),
     [client],
   )
@@ -345,6 +350,19 @@ export function AppRoutes() {
             counterpartyRepository={counterpartyRepository}
             counterpartyGroupRepository={counterpartyGroupRepository}
             budgetRepository={budgetRepository}
+          />
+        }
+      />
+
+      {/* 設定画面(計画Issue #173)。読み込みの成功後は、ページを再読み込みしてWorkerに新しいDBを読み直させる */}
+      <Route
+        path="/settings"
+        element={
+          <SettingsScreen
+            backup={backupApi}
+            download={downloadDatabaseBackup}
+            reload={() => window.location.reload()}
+            noticeStorage={sessionNoticeStorage}
           />
         }
       />

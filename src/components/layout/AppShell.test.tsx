@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * 全体の枠(AppShell)とサイドナビ・領域タブのテスト(計画Issue #150)。
- * 常設の左サイドナビ(仕訳・マスタ・明細取込・割勘・精算・分析)から1クリックで各領域へ
+ * 常設の左サイドナビ(仕訳・マスタ・明細取込・割勘・精算・分析、一番下に区切って設定)から1クリックで各領域へ
  * 移動でき、現在の領域が強調され、確認待ちの定期取引提案の件数が「仕訳」に表示されること、
  * 旧ハブ画面の入口が領域内のタブとして残ることを検証する。
  * 外部依存: react-routerのMemoryRouter(DB・Repositoryには依存しない)。
@@ -39,12 +39,21 @@ function renderShell(path: string, pendingProposalCount = 0) {
 const nav = () => screen.getByRole('navigation', { name: 'メインメニュー' })
 
 describe('AppShell', () => {
-  it('サイドナビに5領域が仕訳・マスタ・明細取込・割勘・精算・分析の順で並ぶ', () => {
+  it('サイドナビに仕訳・マスタ・明細取込・割勘・精算・分析・設定の順で並ぶ', () => {
     renderShell('/journal/entries')
     const labels = within(nav())
       .getAllByRole('link')
       .map((a) => a.textContent)
-    expect(labels).toEqual(['仕訳', 'マスタ', '明細取込', '割勘・精算', '分析'])
+    expect(labels).toEqual(['仕訳', 'マスタ', '明細取込', '割勘・精算', '分析', '設定'])
+  })
+
+  it('「設定」は区切り線の後ろ(一番下)に置き、クリックすると設定画面へ移動して強調される(計画Issue #173)', () => {
+    renderShell('/journal/entries')
+    const settings = within(nav()).getByRole('link', { name: '設定' })
+    expect(settings.previousElementSibling).toHaveClass('app-shell__nav-separator')
+    fireEvent.click(settings)
+    expect(screen.getByTestId('where')).toHaveTextContent('/settings')
+    expect(within(nav()).getByRole('link', { name: '設定' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('マスタ領域では左上にタイトル「マスタ」を見出しとして出し、他の領域では出さない', () => {
