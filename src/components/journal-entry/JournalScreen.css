@@ -123,10 +123,6 @@
   align-items: center;
 }
 
-.journal-screen__spacer {
-  flex: 1 1 auto;
-}
-
 .journal-screen__button {
   font: inherit;
   font-size: var(--font-size-base);
@@ -163,8 +159,29 @@
   background: var(--color-accent-hover);
 }
 
-.journal-screen__button--danger {
-  color: var(--color-danger);
+.journal-screen__button--danger-solid {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.journal-screen__button--danger-solid:hover:not(:disabled) {
+  background: var(--color-danger);
+  filter: brightness(0.9);
+}
+
+.journal-screen__delete-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.journal-screen__delete-heading {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: 600;
 }
 
 .journal-screen__flash {

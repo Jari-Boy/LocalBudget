@@ -45,6 +45,8 @@ export function AppShell({ pendingProposalCount }: AppShellProps) {
         })}
       </nav>
       <main className="app-shell__main">
+        {/* 他の領域は各画面が見出しを持つ。マスタはタブごとの画面なので、枠がタイトルを出す */}
+        {currentArea?.key === 'master' && <h1 className="app-shell__title">{t('nav.master')}</h1>}
         {currentArea && currentArea.tabs.length > 0 && (
           <nav className="app-shell__tabs" aria-label={t('nav.areaTabs')}>
             {currentArea.tabs.map((tab) => (

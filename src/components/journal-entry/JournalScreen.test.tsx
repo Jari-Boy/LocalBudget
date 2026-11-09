@@ -286,7 +286,7 @@ describe('JournalScreen', () => {
     const props = setup()
     await ready()
     fireEvent.click(screen.getByRole('button', { name: /家賃/ }))
-    fireEvent.click(within(detail()).getByRole('button', { name: '削除' }))
+    fireEvent.click(within(detail()).getByRole('button', { name: 'この仕訳を削除' }))
     expect(props.journalEntryRepository.delete).not.toHaveBeenCalled()
     expect(within(detail()).getByText(/元に戻せません/)).toBeInTheDocument()
     expect(within(detail()).getByText(/同じCSVを取り込むと、もう一度取り込まれます/)).toBeInTheDocument()
@@ -295,10 +295,19 @@ describe('JournalScreen', () => {
     await waitFor(() => expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('旅行の立替'))
   })
 
+  it('仕訳の削除ボタンは詳細の最下部(関連仕訳より後)に、赤い塗りのボタンで置く', async () => {
+    setup()
+    await ready()
+    const button = within(detail()).getByRole('button', { name: 'この仕訳を削除' })
+    expect(button).toHaveClass('journal-screen__button--danger-solid')
+    const related = within(detail()).getByRole('region', { name: '関連仕訳' })
+    expect(related.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('削除をやめると何も消えない', async () => {
     const props = setup()
     await ready()
-    fireEvent.click(within(detail()).getByRole('button', { name: '削除' }))
+    fireEvent.click(within(detail()).getByRole('button', { name: 'この仕訳を削除' }))
     fireEvent.click(within(detail()).getByRole('button', { name: 'やめる' }))
     expect(props.journalEntryRepository.delete).not.toHaveBeenCalled()
   })
@@ -307,7 +316,7 @@ describe('JournalScreen', () => {
     const props = setup()
     await ready()
     fireEvent.click(screen.getByRole('button', { name: /旅行の立替/ }))
-    fireEvent.click(within(detail()).getByRole('button', { name: '削除' }))
+    fireEvent.click(within(detail()).getByRole('button', { name: 'この仕訳を削除' }))
     expect(within(detail()).getByText(/精算バッチ「旅行」の残高が変わります/)).toBeInTheDocument()
     expect(within(detail()).getByText(/関連仕訳のグループから外れます/)).toBeInTheDocument()
     fireEvent.click(within(detail()).getByRole('button', { name: '本当に削除する' }))

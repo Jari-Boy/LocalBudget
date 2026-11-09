@@ -860,10 +860,6 @@ export function JournalScreen(props: JournalScreenProps) {
                     <span id="journal-split-reason" className="journal-screen__note">
                       {split.splittable ? '' : describeSplitBlock(split.reason)}
                     </span>
-                    <span className="journal-screen__spacer" />
-                    <button type="button" className="journal-screen__button journal-screen__button--danger" disabled={busy} onClick={deleteEntry}>
-                      {deleteArmed ? '本当に削除する' : '削除'}
-                    </button>
                   </>
                 )}
                 {selection.kind === 'draft' && (
@@ -913,20 +909,6 @@ export function JournalScreen(props: JournalScreenProps) {
                   {error}
                 </p>
               )}
-              {deleteArmed && selection.kind === 'entry' && (
-                <div role="alert" className="journal-screen__delete-box">
-                  <div className="journal-screen__delete-title">この仕訳を削除します。元に戻せません。</div>
-                  {deleteNotes.map((note) => (
-                    <div key={note}>{note}</div>
-                  ))}
-                  <div className="journal-screen__delete-actions">
-                    <button type="button" className="journal-screen__button" onClick={() => setDeleteArmed(false)}>
-                      やめる
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {selection.kind === 'entry' && trails.length > 0 && (
                 <section aria-label="この支出から生まれた割勘" className="journal-screen__history">
                   <h3 className="journal-screen__history-title">この支出から生まれた割勘</h3>
@@ -976,6 +958,44 @@ export function JournalScreen(props: JournalScreenProps) {
                     })
                   }
                 />
+              )}
+
+              {selection.kind === 'entry' && selectedEntry && (
+                <div className="journal-screen__delete-section">
+                  <h3 className="journal-screen__delete-heading">仕訳の削除</h3>
+                  {deleteArmed ? (
+                    <div role="alert" className="journal-screen__delete-box">
+                      <div className="journal-screen__delete-title">この仕訳を削除します。元に戻せません。</div>
+                      {deleteNotes.map((note) => (
+                        <div key={note}>{note}</div>
+                      ))}
+                      <div className="journal-screen__delete-actions">
+                        <button type="button" className="journal-screen__button" onClick={() => setDeleteArmed(false)}>
+                          やめる
+                        </button>
+                        <button
+                          type="button"
+                          className="journal-screen__button journal-screen__button--danger-solid"
+                          disabled={busy}
+                          onClick={deleteEntry}
+                        >
+                          本当に削除する
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <button
+                        type="button"
+                        className="journal-screen__button journal-screen__button--danger-solid"
+                        disabled={busy}
+                        onClick={deleteEntry}
+                      >
+                        この仕訳を削除
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </>
           )}

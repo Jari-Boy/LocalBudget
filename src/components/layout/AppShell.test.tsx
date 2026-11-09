@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * 全体の枠(AppShell)とサイドナビ・領域タブのテスト(計画Issue #150)。
- * 常設の左サイドナビ(明細取込・仕訳・割勘・精算・マスタ・分析)から1クリックで各領域へ
+ * 常設の左サイドナビ(仕訳・マスタ・明細取込・割勘・精算・分析)から1クリックで各領域へ
  * 移動でき、現在の領域が強調され、確認待ちの定期取引提案の件数が「仕訳」に表示されること、
  * 旧ハブ画面の入口が領域内のタブとして残ることを検証する。
  * 外部依存: react-routerのMemoryRouter(DB・Repositoryには依存しない)。
@@ -37,12 +37,20 @@ function renderShell(path: string, pendingProposalCount = 0) {
 const nav = () => screen.getByRole('navigation', { name: 'メインメニュー' })
 
 describe('AppShell', () => {
-  it('サイドナビに5領域(明細取込・仕訳・割勘・精算・マスタ・分析)のリンクが並ぶ', () => {
+  it('サイドナビに5領域が仕訳・マスタ・明細取込・割勘・精算・分析の順で並ぶ', () => {
     renderShell('/journal/entries')
     const labels = within(nav())
       .getAllByRole('link')
       .map((a) => a.textContent)
-    expect(labels).toEqual(['明細取込', '仕訳', '割勘・精算', 'マスタ', '分析'])
+    expect(labels).toEqual(['仕訳', 'マスタ', '明細取込', '割勘・精算', '分析'])
+  })
+
+  it('マスタ領域では左上にタイトル「マスタ」を見出しとして出し、他の領域では出さない', () => {
+    renderShell('/master/accounts')
+    expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: 'マスタ' })).toBeInTheDocument()
+    cleanup()
+    renderShell('/journal/entries')
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
   })
 
   it('サイドナビのリンクを1回クリックすると各領域の入口画面へ移動する', () => {
