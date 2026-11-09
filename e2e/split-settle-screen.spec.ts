@@ -281,6 +281,27 @@ test.describe('精算タブ', () => {
     await expect(list.getByRole('button', { name: '精算テストの食事代の割勘' })).toBeVisible()
   })
 
+  test('未精算のバッチは、割勘仕訳ごと削除でき、元の仕訳は残る', async ({ page }) => {
+    await page.goto('/')
+    const data = await setupBaseData(page, '削除テスト')
+    await createOriginalExpenseEntry(page, data, '削除テストの食事代', 1000)
+    await openSplitSettle(page)
+    await splitWithMember(page, '削除テストの食事代')
+    await waitForJournalEntryCount(page, 2)
+
+    await page.getByRole('tab', { name: '精算' }).click()
+    const list = page.getByRole('region', { name: '精算バッチ一覧' })
+    await list.getByRole('button', { name: '削除テストの食事代の割勘' }).click()
+    const panel = page.getByRole('region', { name: '選択中の精算バッチ' })
+    await panel.getByRole('button', { name: 'このバッチを削除' }).click()
+    await expect(panel).toContainText('割勘仕訳1件とこのバッチを削除します')
+    await panel.getByRole('button', { name: '本当に削除する' }).click()
+
+    // 割勘仕訳だけが消え、元の仕訳は残る
+    await waitForJournalEntryCount(page, 1)
+    await expect(list.getByRole('button', { name: '削除テストの食事代の割勘' })).toHaveCount(0)
+  })
+
   test('バッチ名を変更でき、変更後の名前が一覧に出る', async ({ page }) => {
     await page.goto('/')
     const data = await setupBaseData(page, '名前変更テスト')

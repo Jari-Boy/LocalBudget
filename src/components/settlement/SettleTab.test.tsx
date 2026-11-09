@@ -161,12 +161,14 @@ function setup(data: SplitSettleData = makeData()) {
         updated.push({ id, input })
         return { id } as JournalEntry
       }),
+      delete: vi.fn(async () => {}),
       create: vi.fn(async () => ({ id: 900 }) as JournalEntry),
     },
     journalEntryLinkGroupRepository: { joinOrCreateGroups: vi.fn(async () => {}) },
     settlementBatchRepository: {
       create: vi.fn(),
       update: vi.fn(async () => ({})),
+      delete: vi.fn(async () => {}),
     },
     counterpartyRepository: { create: vi.fn(async () => ({ id: 20, name: '新しい人' })) },
   }
@@ -302,6 +304,70 @@ describe('SettleTab: 選んだバッチ', () => {
     await waitFor(() =>
       expect(repositories.settlementBatchRepository.update).toHaveBeenCalledWith(1, { counterpartyId: 9 }),
     )
+  })
+})
+
+describe('SettleTab: 精算バッチの削除', () => {
+  const removeButton = () => within(selected()).getByRole('button', { name: 'このバッチを削除' })
+
+  it('割勘仕訳だけで成り立つ未精算のバッチは、2回押して、割勘仕訳ごと削除できる', async () => {
+    const data = makeData()
+    data.entries = data.entries.filter((e) => e.id !== 101 && e.id !== 102 && e.id !== 103)
+    const { repositories, onChanged } = setup(data)
+
+    fireEvent.click(removeButton())
+    expect(within(selected()).getByText(/割勘仕訳1件とこのバッチを削除します/)).toBeInTheDocument()
+    expect(repositories.settlementBatchRepository.delete).not.toHaveBeenCalled()
+    fireEvent.click(within(selected()).getByRole('button', { name: '本当に削除する' }))
+
+    await waitFor(() => expect(repositories.settlementBatchRepository.delete).toHaveBeenCalledWith(1))
+    expect(repositories.journalEntryRepository.delete).toHaveBeenCalledWith(100)
+    expect(repositories.journalEntryRepository.delete).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  })
+
+  it('割勘仕訳を消したあとにバッチを消す順で、途中で失敗したらバッチは消さない', async () => {
+    const data = makeData()
+    data.entries = data.entries.filter((e) => e.id !== 101 && e.id !== 102 && e.id !== 103)
+    const { repositories } = setup(data)
+    repositories.journalEntryRepository.delete.mockRejectedValueOnce(new Error('失敗'))
+
+    fireEvent.click(removeButton())
+    fireEvent.click(within(selected()).getByRole('button', { name: '本当に削除する' }))
+
+    expect(await within(selected()).findByRole('alert')).toHaveTextContent('削除できませんでした')
+    expect(repositories.settlementBatchRepository.delete).not.toHaveBeenCalled()
+  })
+
+  it('明細の無い空のバッチも、仕訳を消さずに削除できる', async () => {
+    const { repositories } = setup()
+
+    fireEvent.click(within(batchList()).getByRole('button', { name: '空のバッチ' }))
+    fireEvent.click(removeButton())
+    expect(within(selected()).getByText(/割勘仕訳0件とこのバッチを削除します/)).toBeInTheDocument()
+    fireEvent.click(within(selected()).getByRole('button', { name: '本当に削除する' }))
+
+    await waitFor(() => expect(repositories.settlementBatchRepository.delete).toHaveBeenCalledWith(5))
+    expect(repositories.journalEntryRepository.delete).not.toHaveBeenCalled()
+  })
+
+  it('精算で紐づけた仕訳があるバッチは、削除ボタンを押せず、理由を出す', () => {
+    const data = makeData()
+    data.entries = data.entries.map((e) =>
+      e.id === 101 ? { ...e, lines: e.lines.map((l) => (l.id === 1012 ? { ...l, settlementBatchId: 1 } : l)) } : e,
+    )
+    setup(data)
+
+    expect(removeButton()).toBeDisabled()
+    expect(within(selected()).getByText(/精算が進んでいる/)).toBeInTheDocument()
+  })
+
+  it('精算済みのバッチには削除ボタンを出さない', () => {
+    setup()
+
+    fireEvent.click(screen.getByRole('button', { name: '精算済み 1' }))
+
+    expect(within(selected()).queryByRole('button', { name: 'このバッチを削除' })).not.toBeInTheDocument()
   })
 })
 

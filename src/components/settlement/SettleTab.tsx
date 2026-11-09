@@ -5,6 +5,7 @@ import {
   type UnassignedAdvanceEntryCandidate,
 } from '../../domain/settlement/findUnassignedAdvanceEntriesForTarget'
 import { resolveSettlementAdjustment } from '../../domain/settlement/resolveSettlementAdjustment'
+import { planSettlementBatchDeletion } from '../../domain/settlement-batch/planSettlementBatchDeletion'
 import { resolveSettlementTarget } from '../../domain/settlement-batch/resolveSettlementTarget'
 import {
   summarizeSettlementBatch,
@@ -75,6 +76,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [detailEntryId, setDetailEntryId] = useState<number | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const allLines = useMemo(() => data.entries.flatMap((e) => e.lines), [data.entries])
   const summaries = useMemo(
@@ -105,6 +107,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
     setFilter({})
     setCheckedLineIds(new Set())
     setDraftOpen(false)
+    setConfirmingDelete(false)
     setDraftAmount('')
     setFlash('')
     setError('')
@@ -200,6 +203,28 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
           ? '精算が完了しました'
           : '選択した仕訳をバッチに割り当てました',
     )
+  }
+
+  const deletion = planSettlementBatchDeletion(batch.id, data.entries)
+
+  // 割勘仕訳を消してから、最後にバッチを消す(紐づく明細があるバッチはDBが削除を拒否するため)
+  const deleteBatch = async () => {
+    if (submitting) return
+    setSubmitting(true)
+    setError('')
+    try {
+      for (const id of deletion.splitEntryIds) await repositories.journalEntryRepository.delete(id)
+      await repositories.settlementBatchRepository.delete(batch.id)
+      resetWorking()
+      setSelectedId(null)
+      await onChanged()
+    } catch {
+      setConfirmingDelete(false)
+      setError('精算バッチを削除できませんでした。画面を読み直して、残りを確認してください')
+      await onChanged()
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const createDraft = () => {
@@ -528,6 +553,53 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
                   起票してバッチに紐付け
                 </button>
               </div>
+            )}
+          </div>
+        )}
+
+        {!summary.isSettled && (
+          <div className="split-settle__section">
+            <h3 className="split-settle__h3">バッチの削除</h3>
+            {!deletion.deletable ? (
+              <>
+                <p className="split-settle__note">
+                  精算が進んでいる(精算で紐づけた仕訳がある)ため、削除できません。
+                </p>
+                <button type="button" className="split-settle__btn split-settle__btn--small" disabled>
+                  このバッチを削除
+                </button>
+              </>
+            ) : confirmingDelete ? (
+              <>
+                <p className="split-settle__note">
+                  割勘仕訳{deletion.splitEntryIds.length}件とこのバッチを削除します。元の仕訳は削除しません。
+                </p>
+                <span className="split-settle__confirm">
+                  <button
+                    type="button"
+                    className="split-settle__btn split-settle__btn--small"
+                    onClick={() => setConfirmingDelete(false)}
+                  >
+                    やめる
+                  </button>
+                  <button
+                    type="button"
+                    className="split-settle__btn split-settle__btn--small split-settle__btn--danger"
+                    disabled={submitting}
+                    onClick={() => void deleteBatch()}
+                  >
+                    本当に削除する
+                  </button>
+                </span>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="split-settle__btn split-settle__btn--small"
+                onClick={() => setConfirmingDelete(true)}
+              >
+                このバッチを削除
+              </button>
             )}
           </div>
         )}
