@@ -173,7 +173,7 @@ export function JournalEntryEditor({
           </label>
           <select
             id="journal-editor-bookkeeper"
-            className="journal-editor__control journal-editor__select"
+            className="journal-editor__control"
             value={value.householdMemberId === null ? '' : String(value.householdMemberId)}
             disabled={readOnlyLines}
             onChange={(e) => changeBookkeeper(e.target.value === '' ? null : Number(e.target.value))}
