@@ -502,7 +502,7 @@
 }
 
 .split-settle__dialog {
-  width: 640px;
+  width: 1040px;
   max-width: 100%;
   max-height: 90vh;
   overflow-y: auto;
@@ -554,4 +554,21 @@
   padding: 12px;
   font-size: var(--font-size-base);
   color: var(--color-text-muted);
+}
+
+/* 仕訳の詳細: 画面幅に余裕があれば、借方と貸方を左右に並べる */
+.split-settle__sides {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 900px) {
+  .split-settle__sides {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.split-settle__side-pane {
+  min-width: 0;
 }

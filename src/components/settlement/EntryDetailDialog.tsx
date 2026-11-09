@@ -36,31 +36,47 @@ export function EntryDetailDialog({ entry, accounts, members, counterparties, ba
             </>
           )}
         </dl>
-        <div className="split-settle__scroll">
-          <table className="split-settle__table">
-            <thead>
-              <tr>
-                <th>区分</th>
-                <th>科目</th>
-                <th className="split-settle__num">金額</th>
-                <th>世帯メンバー</th>
-                <th>取引先</th>
-                <th>精算バッチ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entry.lines.map((l) => (
-                <tr key={l.id}>
-                  <td>{l.side === 'debit' ? '借方' : '貸方'}</td>
-                  <td>{nameOf(accounts, l.accountId)}</td>
-                  <td className="split-settle__num">{formatCurrency(l.amount, 'JPY')}</td>
-                  <td>{nameOf(members, l.householdMemberId)}</td>
-                  <td>{nameOf(counterparties, l.counterpartyId)}</td>
-                  <td>{nameOf(batches, l.settlementBatchId)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="split-settle__sides">
+          {(['debit', 'credit'] as const).map((side) => {
+            const label = side === 'debit' ? '借方' : '貸方'
+            const lines = entry.lines.filter((l) => l.side === side)
+            return (
+              <section key={side} aria-label={label} className="split-settle__side-pane">
+                <h3 className="split-settle__h3">{label}</h3>
+                <div className="split-settle__scroll">
+                  <table className="split-settle__table">
+                    <thead>
+                      <tr>
+                        <th>科目</th>
+                        <th className="split-settle__num">金額</th>
+                        <th>世帯メンバー</th>
+                        <th>取引先</th>
+                        <th>精算バッチ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="split-settle__note">
+                            {label}の行はありません
+                          </td>
+                        </tr>
+                      )}
+                      {lines.map((l) => (
+                        <tr key={l.id}>
+                          <td>{nameOf(accounts, l.accountId)}</td>
+                          <td className="split-settle__num">{formatCurrency(l.amount, 'JPY')}</td>
+                          <td>{nameOf(members, l.householdMemberId)}</td>
+                          <td>{nameOf(counterparties, l.counterpartyId)}</td>
+                          <td>{nameOf(batches, l.settlementBatchId)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )
+          })}
         </div>
         <div className="split-settle__dialog-actions">
           <button type="button" className="split-settle__btn" autoFocus onClick={onClose}>

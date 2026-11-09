@@ -112,6 +112,7 @@ function setup(data: SplitSettleData = makeData(), extraProps: { initialCheckedE
     settlementBatchRepository: {
       create: vi.fn(async (input: { name: string }) => ({ id: 77, name: input.name })),
       update: vi.fn(async () => ({})),
+      delete: vi.fn(async () => {}),
     },
     counterpartyRepository: { create: vi.fn(async () => ({ id: 20, name: '新しい人' })) },
   }
@@ -163,6 +164,43 @@ function historyData(settled: boolean): SplitSettleData {
   ] as never
   return data
 }
+
+describe('SplitTab: 割勘の取り消しと精算バッチ', () => {
+  const cancel = () => {
+    fireEvent.click(screen.getByRole('button', { name: 'この割勘を取り消す' }))
+    fireEvent.click(screen.getByRole('button', { name: '本当に取り消す' }))
+  }
+
+  it('取り消した結果、精算バッチに紐づく仕訳が0件になるなら、精算バッチも削除する', async () => {
+    const data = historyData(false)
+    data.batches = [{ id: 7, name: 'ランチの割勘', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
+    const { repositories, onChanged } = setup(data)
+
+    cancel()
+
+    await waitFor(() => expect(repositories.settlementBatchRepository.delete).toHaveBeenCalledWith(7))
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+    expect(repositories.journalEntryRepository.delete).toHaveBeenCalledWith(3)
+  })
+
+  it('同じ精算バッチに別の仕訳が残っているなら、精算バッチは削除しない', async () => {
+    const data = historyData(false)
+    data.batches = [{ id: 7, name: 'ランチの割勘', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
+    data.entries.push(
+      entry(5, '2026-10-31', '別の割勘', 'expense_splitting', [
+        line(51, 5, 'debit', 3, 300, { householdMemberId: 1, settlementBatchId: 7 }),
+        line(52, 5, 'credit', 4, 300, { householdMemberId: 2, settlementBatchId: 7 }),
+      ]),
+    )
+    const { repositories, onChanged } = setup(data)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'この割勘を取り消す' })[0])
+    fireEvent.click(screen.getByRole('button', { name: '本当に取り消す' }))
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+    expect(repositories.settlementBatchRepository.delete).not.toHaveBeenCalled()
+  })
+})
 
 describe('SplitTab: 割勘履歴', () => {
   it('履歴には「過去の割勘」の見出しをつけ、過去の記録であることを示す', () => {

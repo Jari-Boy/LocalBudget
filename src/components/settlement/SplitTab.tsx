@@ -213,7 +213,18 @@ export function SplitTab({
 
   const cancelSplit = async (splitEntryId: number) => {
     setConfirmingCancelId(null)
+    const splitEntry = data.entries.find((e) => e.id === splitEntryId)
     await repositories.journalEntryRepository.delete(splitEntryId)
+    // 取り消した結果、紐づく仕訳が0件になった精算バッチは残さずに削除する
+    const batchIds = new Set(
+      (splitEntry?.lines ?? []).flatMap((l) => (l.settlementBatchId === null ? [] : [l.settlementBatchId])),
+    )
+    for (const batchId of batchIds) {
+      const stillUsed = data.entries.some(
+        (e) => e.id !== splitEntryId && e.lines.some((l) => l.settlementBatchId === batchId),
+      )
+      if (!stillUsed) await repositories.settlementBatchRepository.delete(batchId)
+    }
     await onChanged()
   }
 

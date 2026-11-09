@@ -48,19 +48,45 @@ function renderDialog(onClose = vi.fn()) {
 }
 
 describe('EntryDetailDialog', () => {
-  it('日付・摘要・コメントと、各行の借方/貸方・科目・金額・世帯メンバー・取引先・精算バッチを表示する', () => {
+  it('日付・摘要・コメントを表示し、借方と貸方を別々の欄に分けて科目・金額・世帯メンバー・取引先・精算バッチを出す', () => {
     renderDialog()
 
     const dialog = screen.getByRole('dialog', { name: '仕訳の詳細' })
     expect(dialog).toHaveTextContent('2026-10-30')
     expect(dialog).toHaveTextContent('会社の同僚と')
-    const rows = within(dialog).getAllByRole('row')
-    expect(rows[1]).toHaveTextContent('借方')
-    expect(rows[1]).toHaveTextContent('食費')
-    expect(rows[1]).toHaveTextContent('妻')
-    expect(rows[1]).toHaveTextContent(formatCurrency(600, 'JPY'))
-    expect(rows[2]).toHaveTextContent('友人A')
-    expect(rows[2]).toHaveTextContent('ランチの割勘')
+    const debit = within(dialog).getByRole('region', { name: '借方' })
+    const debitRows = within(debit).getAllByRole('row')
+    expect(debitRows).toHaveLength(3)
+    expect(debitRows[1]).toHaveTextContent('食費')
+    expect(debitRows[1]).toHaveTextContent('妻')
+    expect(debitRows[1]).toHaveTextContent(formatCurrency(600, 'JPY'))
+    expect(debitRows[2]).toHaveTextContent('友人A')
+    expect(debitRows[2]).toHaveTextContent('ランチの割勘')
+    const credit = within(dialog).getByRole('region', { name: '貸方' })
+    expect(within(credit).getAllByRole('row')).toHaveLength(2)
+    expect(within(credit).getByText('貸方の行はありません')).toBeInTheDocument()
+  })
+
+  it('貸方の行は貸方の欄に出る', () => {
+    render(
+      <EntryDetailDialog
+        entry={
+          {
+            ...entry,
+            lines: [{ id: 33, accountId: 1, side: 'credit', amount: 900, householdMemberId: null, counterpartyId: null, settlementBatchId: null }],
+          } as unknown as JournalEntry
+        }
+        accounts={accounts}
+        members={[]}
+        counterparties={[]}
+        batches={[]}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const credit = screen.getByRole('region', { name: '貸方' })
+    expect(within(credit).getByText('食費')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: '借方' })).queryByText('食費')).not.toBeInTheDocument()
   })
 
   it('「閉じる」を押すと onClose を呼ぶ', () => {

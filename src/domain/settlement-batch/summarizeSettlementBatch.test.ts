@@ -120,6 +120,28 @@ describe('summarizeSettlementBatch', () => {
     expect(summarizeSettlementBatch(batch, lines, accounts)).toMatchObject({ hasLines: true, isSettled: true })
   })
 
+  it('世帯外の相手のバッチは、方向ごとの合計が0なら精算済みになる(精算の行は世帯メンバーを持たないため)', () => {
+    const counterpartyBatch = { ...batch, counterpartyId: 9 }
+    const lines = [
+      line({ accountId: PAYABLE_ID, side: 'credit', amount: 4000, householdMemberId: 1 }),
+      line({ accountId: PAYABLE_ID, side: 'debit', amount: 4000, householdMemberId: null }),
+    ]
+
+    expect(summarizeSettlementBatch(counterpartyBatch, lines, accounts)).toMatchObject({
+      payable: { balance: 0 },
+      isSettled: true,
+    })
+  })
+
+  it('片方の方向に明細が無くても、もう一方の残高が0なら精算済みになる', () => {
+    const lines = [
+      line({ accountId: ADVANCE_ID, side: 'debit', amount: 3000 }),
+      line({ accountId: ADVANCE_ID, side: 'credit', amount: 3000 }),
+    ]
+
+    expect(summarizeSettlementBatch(batch, lines, accounts)).toMatchObject({ payable: { hasLines: false }, isSettled: true })
+  })
+
   it('合計が0でも組ごとに残高が残っていれば精算済みにならない', () => {
     const lines = [
       line({ accountId: ADVANCE_ID, side: 'debit', amount: 500, householdMemberId: 1 }),

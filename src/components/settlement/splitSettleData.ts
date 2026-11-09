@@ -39,7 +39,7 @@ export interface SplitSettleRepositories {
   projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll'>>
   projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
-  settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll' | 'create' | 'update'>>
+  settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll' | 'create' | 'update' | 'delete'>>
 }
 
 export interface SplitSettleData {
