@@ -294,6 +294,48 @@ describe('SplitTab', () => {
     expect(screen.getByText('割勘を記録しました')).toBeInTheDocument()
   })
 
+  it('摘要を入力して割勘すると、その摘要が割勘仕訳の摘要と、新しく作る精算バッチの名前になる', async () => {
+    const { repositories } = setup()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'ランチを選択' }))
+    chooseOption(/^分担相手/, '妻')
+    fireEvent.change(screen.getByLabelText('摘要'), { target: { value: '10月の外食まとめ' } })
+    fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
+
+    await waitFor(() =>
+      expect(repositories.settlementBatchRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: '10月の外食まとめ' }),
+      ),
+    )
+    const created = (repositories.journalEntryRepository.create.mock.calls as unknown as [{ memo: string }][])[0][0]
+    expect(created.memo).toBe('10月の外食まとめ')
+  })
+
+  it('摘要が空のときは、既定の摘要(元の摘要+の割勘)を使い、入力欄の例としても見せる', () => {
+    setup()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'ランチを選択' }))
+
+    expect(screen.getByLabelText('摘要')).toHaveAttribute('placeholder', 'ランチの割勘')
+  })
+
+  it('既存の精算バッチを選んだときも、入力した摘要は割勘仕訳の摘要になり、バッチは作らない', async () => {
+    const data = makeData()
+    data.batches = [{ id: 7, name: '9月の精算', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
+    const { repositories } = setup(data)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'ランチを選択' }))
+    chooseOption(/^分担相手/, '妻')
+    fireEvent.change(screen.getByLabelText('摘要'), { target: { value: '追加分' } })
+    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: '7' } })
+    fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
+
+    await waitFor(() => expect(repositories.journalEntryRepository.create).toHaveBeenCalled())
+    const created = (repositories.journalEntryRepository.create.mock.calls as unknown as [{ memo: string }][])[0][0]
+    expect(created.memo).toBe('追加分')
+    expect(repositories.settlementBatchRepository.create).not.toHaveBeenCalled()
+  })
+
   it('仕訳画面の「この仕訳を割勘」から来たときは、その仕訳を最初から選んだ状態にする', () => {
     setup(makeData(), { initialCheckedEntryIds: [1] })
 

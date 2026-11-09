@@ -70,6 +70,7 @@ function payerAccountName(item: SplittableEntry, accounts: readonly Account[]): 
  * 仕訳を選び、分担相手(世帯メンバーと取引先をグループつきで選ぶ)と負担の割合で割勘を記録する。
  * 絞り込みで隠れた行も、チェック済みなら合計に含める。按分は割合のほか、均等・金額指定を選べる
  * (金額指定は仕訳を1件だけ選んだときのみ)。精算バッチは新規作成(既定)か既存から選ぶ。
+ * 割勘仕訳の摘要は入力でき、空のときは既定の摘要を使う(新しい精算バッチを作るときは、その摘要がバッチ名になる)。
  * 下に割勘履歴を出し、精算が進んでいない割勘は2回押して取り消せる。
  */
 export function SplitTab({
@@ -88,6 +89,7 @@ export function SplitTab({
   ])
   const [mode, setMode] = useState<ExpenseSplittingAllocationMode>('ratio')
   const [batchId, setBatchId] = useState<number | 'new'>('new')
+  const [memoInput, setMemoInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [flash, setFlash] = useState('')
   const [error, setError] = useState('')
@@ -181,7 +183,7 @@ export function SplitTab({
         settlementBatches: data.batches,
         participants: partners,
         allocationMode: mode,
-        memo: defaultMemo(chosen),
+        memo: memoInput.trim() === '' ? defaultMemo(chosen) : memoInput.trim(),
         settlementBatchId: batchId,
         today,
         repositories,
@@ -192,6 +194,7 @@ export function SplitTab({
       }
       setCheckedIds(new Set())
       setBatchId('new')
+      setMemoInput('')
       await onChanged()
       setFlash('割勘を記録しました')
     } catch {
@@ -377,6 +380,25 @@ export function SplitTab({
             >
               + 分担相手を追加
             </button>
+          </div>
+
+          <div className="split-settle__field">
+            <label className="split-settle__label" htmlFor="split-memo">
+              摘要
+            </label>
+            <input
+              id="split-memo"
+              className="split-settle__control"
+              value={memoInput}
+              placeholder={chosen.length === 0 ? '' : defaultMemo(chosen)}
+              onChange={(e) => {
+                setMemoInput(e.target.value)
+                setFlash('')
+              }}
+            />
+            <span className="split-settle__note">
+              新しい精算バッチを作るときは、この摘要がバッチの名前になります。空のときは例の摘要を使います。
+            </span>
           </div>
 
           <div className="split-settle__field">
