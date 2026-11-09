@@ -338,6 +338,16 @@ describe('SettleTab: 精算バッチの紐づけの解除', () => {
     expect(within(selected()).queryByRole('button', { name: /10月分の割勘の紐づけを解除/ })).not.toBeInTheDocument()
   })
 
+  it('割勘以外の仕訳でも、債権債務を生む側の行(立替金の借方・未払金の貸方)には、紐づけの解除を出さない', () => {
+    const data = makeData()
+    // 手入力の後払いの仕訳のように、割勘仕訳ではなくても未払金の貸方にバッチが付いている状態
+    data.entries = data.entries.map((e) => (e.id === 100 ? { ...e, sourceType: 'manual' as const } : e))
+    setup(data)
+
+    expect(within(selected()).getAllByRole('button', { name: /10月分の割勘/ }).length).toBeGreaterThan(0)
+    expect(within(selected()).queryByRole('button', { name: /10月分の割勘の紐づけを解除/ })).not.toBeInTheDocument()
+  })
+
   it('精算済みのバッチでも、紐づけを解除できる', () => {
     setup()
 
@@ -391,7 +401,7 @@ describe('SettleTab: 精算バッチの削除', () => {
     expect(repositories.journalEntryRepository.delete).not.toHaveBeenCalled()
   })
 
-  it('精算で紐づけた仕訳があるバッチは、削除ボタンを押せず、理由を出す', () => {
+  it('割勘仕訳以外の仕訳(精算で紐づけた仕訳など)があるバッチは、削除ボタンを押せず、理由を出す', () => {
     const data = makeData()
     data.entries = data.entries.map((e) =>
       e.id === 101 ? { ...e, lines: e.lines.map((l) => (l.id === 1012 ? { ...l, settlementBatchId: 1 } : l)) } : e,
@@ -399,7 +409,7 @@ describe('SettleTab: 精算バッチの削除', () => {
     setup(data)
 
     expect(removeButton()).toBeDisabled()
-    expect(within(selected()).getByText(/精算が進んでいる/)).toBeInTheDocument()
+    expect(within(selected()).getByText(/割勘仕訳以外の仕訳.*紐づいているため、削除できません/)).toBeInTheDocument()
   })
 
   it('精算済みのバッチには削除ボタンを出さない', () => {

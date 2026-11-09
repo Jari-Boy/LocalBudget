@@ -230,6 +230,12 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
     }
   }
 
+  // 精算タブが紐づけるのは、残高を減らす側の行(立替金の貸方・未払金の借方)だけ。債権債務を生む側の行は
+  // 割勘や仕訳画面で付けたものなので、ここでは解除できない
+  const isSettlingLine = (l: { accountId: number; side: 'debit' | 'credit' }) =>
+    (l.accountId === summary.advance?.accountId && l.side === 'credit') ||
+    (l.accountId === summary.payable?.accountId && l.side === 'debit')
+
   // 精算で紐づけた行のタグだけを外して、未割当(候補)に戻す。仕訳は削除しない
   const unlinkLine = (entryId: number, lineId: number) => {
     const target = data.entries.find((e) => e.id === entryId)
@@ -591,7 +597,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
                       {l.side === 'debit' ? '借方' : '貸方'} {data.accounts.find((a) => a.id === l.accountId)?.name ?? ''}
                     </span>
                     <span className="split-settle__num">{formatCurrency(l.amount, 'JPY')}</span>
-                    {entry.sourceType !== 'expense_splitting' && (
+                    {isSettlingLine(l) && (
                       <button
                         type="button"
                         className="split-settle__btn split-settle__btn--small"
@@ -638,7 +644,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
             {!deletion.deletable ? (
               <>
                 <p className="split-settle__note">
-                  精算が進んでいる(精算で紐づけた仕訳がある)ため、削除できません。
+                  割勘仕訳以外の仕訳(精算で紐づけた仕訳や、手入力の仕訳)が紐づいているため、削除できません。精算で紐づけた行は「紐づけを解除」で外せます。
                 </p>
                 <button type="button" className="split-settle__btn split-settle__btn--small split-settle__btn--danger" disabled>
                   このバッチを削除
