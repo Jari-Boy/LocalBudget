@@ -18,9 +18,21 @@ import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntr
 import type { JournalEntryDraft } from '../../domain/journal/JournalEntryDraft'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
+import { UnsavedChangesGuardProvider, useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
 import { JournalScreen, type JournalScreenProps } from './JournalScreen'
 
 afterEach(cleanup)
+
+/** サイドナビなど、画面の外からの移動を模す。未保存の変更があればガードが引き受けて続行関数を預かる */
+const leaveSpy = vi.fn()
+function LeaveProbe() {
+  const guard = useUnsavedChangesGuard()
+  return (
+    <button type="button" onClick={() => !guard.intercept(() => leaveSpy()) && leaveSpy()}>
+      テスト用: 画面を離れる
+    </button>
+  )
+}
 
 function account(id: number, name: string, category: Account['category'], isReconcilable: boolean | null = null): Account {
   return {
@@ -215,11 +227,18 @@ function setup(
   }
   render(
     <I18nextProvider i18n={i18n}>
-      <JournalScreen {...(props as unknown as JournalScreenProps)} />
+      <UnsavedChangesGuardProvider>
+        <LeaveProbe />
+        <JournalScreen {...(props as unknown as JournalScreenProps)} />
+      </UnsavedChangesGuardProvider>
     </I18nextProvider>,
   )
   return props
 }
+
+const memoInput = () => within(detail()).getByLabelText('摘要(任意)')
+const editMemo = (value: string) => fireEvent.change(memoInput(), { target: { value } })
+const leaveDialog = () => screen.queryByRole('dialog', { name: '未保存の変更があります' })
 
 async function ready() {
   await screen.findByRole('heading', { name: '仕訳', level: 1 })
@@ -401,6 +420,141 @@ describe('JournalScreen', () => {
     // 科目を選ばずに保存しようとしても作成されない
     fireEvent.click(within(detail()).getByRole('button', { name: '保存して続けて入力' }))
     expect(props.journalEntryRepository.create).not.toHaveBeenCalled()
+  })
+
+  it('既存の仕訳の編集には「保存して続けて入力」を出さない(新規仕訳にだけ出す)', async () => {
+    setup()
+    await ready()
+    expect(within(detail()).queryByRole('button', { name: '保存して続けて入力' })).not.toBeInTheDocument()
+    expect(within(detail()).getByRole('button', { name: '保存' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+    expect(within(detail()).getByRole('button', { name: '保存して続けて入力' })).toBeInTheDocument()
+  })
+
+  describe('未保存の変更があるまま移動しようとしたとき', () => {
+    it('編集していなければ、別の仕訳を選んでもダイアログを出さずに切り替わる', async () => {
+      setup()
+      await ready()
+      fireEvent.click(screen.getByRole('button', { name: /家賃/ }))
+      expect(leaveDialog()).not.toBeInTheDocument()
+      expect(memoInput()).toHaveValue('家賃')
+    })
+
+    it('編集して別の仕訳を選ぶと、保存するか破棄するかを聞き、キャンセルすれば編集中の内容が残る', async () => {
+      const props = setup()
+      await ready()
+      editMemo('ランチ(修正中)')
+      fireEvent.click(screen.getByRole('button', { name: /家賃/ }))
+      expect(leaveDialog()).toBeInTheDocument()
+      expect(memoInput()).toHaveValue('ランチ(修正中)')
+      fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+      expect(leaveDialog()).not.toBeInTheDocument()
+      expect(memoInput()).toHaveValue('ランチ(修正中)')
+      expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+    })
+
+    it('「破棄して移動」を選ぶと、保存せずに選んだ仕訳へ移る', async () => {
+      const props = setup()
+      await ready()
+      editMemo('ランチ(修正中)')
+      fireEvent.click(screen.getByRole('button', { name: /家賃/ }))
+      fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+      expect(leaveDialog()).not.toBeInTheDocument()
+      expect(memoInput()).toHaveValue('家賃')
+      expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+    })
+
+    it('「保存して移動」を選ぶと、編集中の仕訳を保存してから選んだ仕訳へ移る', async () => {
+      const props = setup()
+      await ready()
+      editMemo('ランチ(修正中)')
+      fireEvent.click(screen.getByRole('button', { name: /家賃/ }))
+      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+      await waitFor(() => expect(props.journalEntryRepository.update).toHaveBeenCalledWith(1, expect.objectContaining({ memo: 'ランチ(修正中)' })))
+      await waitFor(() => expect(memoInput()).toHaveValue('家賃'))
+      expect(leaveDialog()).not.toBeInTheDocument()
+    })
+
+    it('「保存して移動」で保存できなかったとき(科目が未選択など)は、移動せず編集中の内容と理由を残す', async () => {
+      const props = setup()
+      await ready()
+      fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+      editMemo('書きかけ')
+      fireEvent.click(screen.getByRole('button', { name: /家賃/ }))
+      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('保存できません')
+      expect(props.journalEntryRepository.create).not.toHaveBeenCalled()
+      expect(within(detail()).getByRole('heading', { name: '新しい仕訳' })).toBeInTheDocument()
+      expect(memoInput()).toHaveValue('書きかけ')
+    })
+
+    it('編集してタブを切り替えるときも確認する', async () => {
+      setup()
+      await ready()
+      editMemo('ランチ(修正中)')
+      fireEvent.click(screen.getByRole('tab', { name: /下書き/ }))
+      expect(leaveDialog()).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+      expect(screen.getByRole('tab', { name: /下書き/ })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('編集してから「新規仕訳」を押すときも確認する', async () => {
+      setup()
+      await ready()
+      editMemo('ランチ(修正中)')
+      fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+      expect(leaveDialog()).toBeInTheDocument()
+      expect(memoInput()).toHaveValue('ランチ(修正中)')
+    })
+
+    it('下書きを編集して移動するときは、「保存して移動」で下書きとして保存する', async () => {
+      const props = setup()
+      await ready()
+      fireEvent.click(screen.getByRole('tab', { name: /下書き/ }))
+      fireEvent.click(await screen.findByRole('button', { name: /書きかけ/ }))
+      editMemo('書きかけ(修正)')
+      fireEvent.click(screen.getByRole('tab', { name: '仕訳一覧' }))
+      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+      await waitFor(() => expect(props.journalEntryDraftRepository.update).toHaveBeenCalledWith(100, expect.objectContaining({ memo: '書きかけ(修正)' })))
+      await waitFor(() => expect(screen.getByRole('tab', { name: '仕訳一覧' })).toHaveAttribute('aria-selected', 'true'))
+    })
+
+    it('保存した直後は未保存ではなくなり、続けて別の仕訳を選んでもダイアログを出さない', async () => {
+      setup()
+      await ready()
+      editMemo('ランチ(修正中)')
+      fireEvent.click(within(detail()).getByRole('button', { name: '保存' }))
+      await waitFor(() => expect(screen.getByText('保存しました')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: /家賃/ }))
+      expect(leaveDialog()).not.toBeInTheDocument()
+    })
+
+    it('画面の外(サイドナビなど)への移動も、未保存の変更があるときだけ確認し、破棄すると続行する', async () => {
+      leaveSpy.mockClear()
+      setup()
+      await ready()
+      fireEvent.click(screen.getByRole('button', { name: 'テスト用: 画面を離れる' }))
+      expect(leaveSpy).toHaveBeenCalledTimes(1)
+      leaveSpy.mockClear()
+      editMemo('ランチ(修正中)')
+      fireEvent.click(screen.getByRole('button', { name: 'テスト用: 画面を離れる' }))
+      expect(leaveSpy).not.toHaveBeenCalled()
+      expect(leaveDialog()).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+      expect(leaveSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('リロードやタブを閉じるときは、未保存の変更があるときだけブラウザ標準の確認を出す', async () => {
+      setup()
+      await ready()
+      const clean = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(clean)
+      expect(clean.defaultPrevented).toBe(false)
+      editMemo('ランチ(修正中)')
+      const dirty = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(dirty)
+      expect(dirty.defaultPrevented).toBe(true)
+    })
   })
 
   it('貸借が合った下書きを確定すると draft.confirm が呼ばれ、ほかに下書きが無ければ仕訳一覧タブへ戻る', async () => {
