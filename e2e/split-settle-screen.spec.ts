@@ -281,6 +281,34 @@ test.describe('精算タブ', () => {
     await expect(list.getByRole('button', { name: '精算テストの食事代の割勘' })).toBeVisible()
   })
 
+  test('精算で紐づけた行は、紐づけを解除でき、バッチの残高が元に戻る', async ({ page }) => {
+    await page.goto('/')
+    const data = await setupBaseData(page, '解除テスト')
+    await createOriginalExpenseEntry(page, data, '解除テストの食事代', 1000)
+    await openSplitSettle(page)
+    await splitWithMember(page, '解除テストの食事代')
+    await waitForJournalEntryCount(page, 2)
+
+    await page.getByRole('tab', { name: '精算' }).click()
+    const list = page.getByRole('region', { name: '精算バッチ一覧' })
+    const row = list.getByRole('row').filter({ hasText: '解除テストの食事代の割勘' })
+    await row.getByRole('button', { name: '解除テストの食事代の割勘' }).click()
+    const panel = page.getByRole('region', { name: '選択中の精算バッチ' })
+    await panel.getByRole('button', { name: '+ 精算の仕訳を起票' }).click()
+    await chooseFromTree(page, /^相手科目/, '割勘用現金')
+    await panel.getByRole('button', { name: '起票してバッチに紐付け' }).click()
+    await expect(panel.getByText('仕訳を起票してバッチに紐付けました')).toBeVisible()
+    await expect(row).toContainText(/[¥￥]0[¥￥]500/) // 立替金は0、未払金は残る
+
+    await panel.getByRole('button', { name: /の紐づけを解除$/ }).click()
+    await panel.getByRole('button', { name: '本当に解除する' }).click()
+
+    await expect(panel.getByText('紐づけを解除しました')).toBeVisible()
+    await expect(row).toContainText(/[¥￥]500[¥￥]500/)
+    // 仕訳は削除されず、割勘仕訳・元の仕訳・精算の仕訳の3件が残る
+    await waitForJournalEntryCount(page, 3)
+  })
+
   test('未精算のバッチは、割勘仕訳ごと削除でき、元の仕訳は残る', async ({ page }) => {
     await page.goto('/')
     const data = await setupBaseData(page, '削除テスト')

@@ -82,4 +82,22 @@ describe('buildJournalEntryUpdateWithAssignedSettlementBatch', () => {
       ],
     })
   })
+
+  it('settlementBatchId に null を渡すと、対象行のタグだけを外し、ほかの行はそのまま渡す(精算バッチの紐づけの解除)', () => {
+    const entry = {
+      entryDate: '2026-11-02',
+      memo: '妻から振込',
+      lines: [
+        { id: 10, accountId: 20, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: 5, side: 'credit', amount: 600 },
+        { id: 11, accountId: 30, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: 5, side: 'debit', amount: 600 },
+      ],
+    } as unknown as JournalEntry
+
+    const input = buildJournalEntryUpdateWithAssignedSettlementBatch(entry, 10, null)
+
+    expect(input.lines?.map((l) => [l.id, l.settlementBatchId])).toEqual([
+      [10, null],
+      [11, 5],
+    ])
+  })
 })

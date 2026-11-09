@@ -4,6 +4,7 @@ import {
   findUnassignedAdvanceEntriesForTarget,
   type UnassignedAdvanceEntryCandidate,
 } from '../../domain/settlement/findUnassignedAdvanceEntriesForTarget'
+import { buildJournalEntryUpdateWithAssignedSettlementBatch } from '../../domain/settlement/buildJournalEntryUpdateWithAssignedSettlementBatch'
 import { resolveSettlementAdjustment } from '../../domain/settlement/resolveSettlementAdjustment'
 import { planSettlementBatchDeletion } from '../../domain/settlement-batch/planSettlementBatchDeletion'
 import { resolveSettlementTarget } from '../../domain/settlement-batch/resolveSettlementTarget'
@@ -77,6 +78,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
   const [submitting, setSubmitting] = useState(false)
   const [detailEntryId, setDetailEntryId] = useState<number | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [confirmingUnlinkLineId, setConfirmingUnlinkLineId] = useState<number | null>(null)
 
   const allLines = useMemo(() => data.entries.flatMap((e) => e.lines), [data.entries])
   const summaries = useMemo(
@@ -108,6 +110,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
     setCheckedLineIds(new Set())
     setDraftOpen(false)
     setConfirmingDelete(false)
+    setConfirmingUnlinkLineId(null)
     setDraftAmount('')
     setFlash('')
     setError('')
@@ -225,6 +228,18 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
     } finally {
       setSubmitting(false)
     }
+  }
+
+  // 精算で紐づけた行のタグだけを外して、未割当(候補)に戻す。仕訳は削除しない
+  const unlinkLine = (entryId: number, lineId: number) => {
+    const target = data.entries.find((e) => e.id === entryId)
+    if (target === undefined) return
+    void run(async () => {
+      await repositories.journalEntryRepository.update(
+        entryId,
+        buildJournalEntryUpdateWithAssignedSettlementBatch(target, lineId, null),
+      )
+    }, '紐づけを解除しました')
   }
 
   const createDraft = () => {
@@ -563,18 +578,55 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
             entry.lines
               .filter((l) => l.settlementBatchId === batch.id)
               .map((l) => (
-                <div key={l.id} className="split-settle__tagged">
-                  <button
-                    type="button"
-                    className="split-settle__link split-settle__link--grow"
-                    onClick={() => setDetailEntryId(entry.id)}
-                  >
-                    {entry.entryDate} {entry.memo ?? ''}
-                  </button>
-                  <span className="split-settle__note">
-                    {l.side === 'debit' ? '借方' : '貸方'} {data.accounts.find((a) => a.id === l.accountId)?.name ?? ''}
-                  </span>
-                  <span className="split-settle__num">{formatCurrency(l.amount, 'JPY')}</span>
+                <div key={l.id}>
+                  <div className="split-settle__tagged">
+                    <button
+                      type="button"
+                      className="split-settle__link split-settle__link--grow"
+                      onClick={() => setDetailEntryId(entry.id)}
+                    >
+                      {entry.entryDate} {entry.memo ?? ''}
+                    </button>
+                    <span className="split-settle__note">
+                      {l.side === 'debit' ? '借方' : '貸方'} {data.accounts.find((a) => a.id === l.accountId)?.name ?? ''}
+                    </span>
+                    <span className="split-settle__num">{formatCurrency(l.amount, 'JPY')}</span>
+                    {entry.sourceType !== 'expense_splitting' && (
+                      <button
+                        type="button"
+                        className="split-settle__btn split-settle__btn--small"
+                        aria-label={`${entry.memo ?? ''}の紐づけを解除`}
+                        onClick={() => setConfirmingUnlinkLineId(l.id)}
+                      >
+                        紐づけを解除
+                      </button>
+                    )}
+                  </div>
+                  {confirmingUnlinkLineId === l.id && (
+                    <div className="split-settle__unlink-confirm">
+                      <p className="split-settle__note">
+                        この行のバッチへの紐づけを外します。仕訳は削除せず、行は候補に戻り、バッチの残高が増えます。
+                        精算の仕訳を間違えて作った場合は、仕訳画面で削除してください。
+                      </p>
+                      <span className="split-settle__confirm">
+                        <button
+                          type="button"
+                          className="split-settle__btn split-settle__btn--small"
+                          onClick={() => setConfirmingUnlinkLineId(null)}
+                        >
+                          やめる
+                        </button>
+                        <button
+                          type="button"
+                          className="split-settle__btn split-settle__btn--small split-settle__btn--danger"
+                          disabled={submitting}
+                          onClick={() => unlinkLine(entry.id, l.id)}
+                        >
+                          本当に解除する
+                        </button>
+                      </span>
+                    </div>
+                  )}
                 </div>
               )),
           )}

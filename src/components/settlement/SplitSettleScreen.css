@@ -583,3 +583,12 @@
 .split-settle__side-pane {
   min-width: 0;
 }
+
+/* 精算バッチの紐づけの解除の確認 */
+.split-settle__unlink-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 6px 0 10px;
+}

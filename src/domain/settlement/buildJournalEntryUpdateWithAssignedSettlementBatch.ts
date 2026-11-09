@@ -4,12 +4,13 @@ import type { JournalEntry, UpdateJournalEntryInput } from '../journal/JournalEn
  * 精算画面(計画Issue #139)で、選んだ候補仕訳の対象行にsettlement_batch_idを割り当てる
  * UpdateJournalEntryInputを組み立てる純粋関数。JournalEntryRepository.updateは明細行のidによる
  * 差分更新(docs/domain/journal.md)のため、対象行以外もidを含めてそのまま渡し、意図しない
- * 削除・新規作成を起こさない。対象行(lineId)だけsettlementBatchIdを書き換える。DBアクセスなし。
+ * 削除・新規作成を起こさない。対象行(lineId)だけsettlementBatchIdを書き換える。nullを渡すと、その行のタグを外す(精算バッチの
+ * 紐づけの解除、計画Issue #153)。DBアクセスなし。
  */
 export function buildJournalEntryUpdateWithAssignedSettlementBatch(
   entry: JournalEntry,
   lineId: number,
-  settlementBatchId: number,
+  settlementBatchId: number | null,
 ): UpdateJournalEntryInput {
   return {
     entryDate: entry.entryDate,

@@ -307,6 +307,46 @@ describe('SettleTab: 選んだバッチ', () => {
   })
 })
 
+describe('SettleTab: 精算バッチの紐づけの解除', () => {
+  /** 10月分に、精算で紐づけた「妻から振込」(立替金の行1012)がある状態 */
+  function dataWithLinkedEntry() {
+    const data = makeData()
+    data.entries = data.entries.map((e) =>
+      e.id === 101 ? { ...e, lines: e.lines.map((l) => (l.id === 1012 ? { ...l, settlementBatchId: 1 } : l)) } : e,
+    )
+    return data
+  }
+
+  it('精算で紐づけた行は、2回押して、その行のタグだけを外して解除できる', async () => {
+    const { updated, onChanged } = setup(dataWithLinkedEntry())
+
+    fireEvent.click(within(selected()).getByRole('button', { name: '妻から振込の紐づけを解除' }))
+    expect(within(selected()).getByText(/候補に戻り、バッチの残高が増えます/)).toBeInTheDocument()
+    expect(updated).toHaveLength(0)
+    fireEvent.click(within(selected()).getByRole('button', { name: '本当に解除する' }))
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+    expect(updated).toHaveLength(1)
+    expect(updated[0].id).toBe(101)
+    expect(updated[0].input.lines?.find((l) => l.id === 1012)?.settlementBatchId).toBeNull()
+    expect(updated[0].input.lines?.find((l) => l.id === 1011)?.settlementBatchId).toBeNull()
+  })
+
+  it('割勘仕訳の行には、紐づけの解除を出さない(割勘の取り消しは割勘履歴・バッチの削除で行う)', () => {
+    setup(dataWithLinkedEntry())
+
+    expect(within(selected()).queryByRole('button', { name: /10月分の割勘の紐づけを解除/ })).not.toBeInTheDocument()
+  })
+
+  it('精算済みのバッチでも、紐づけを解除できる', () => {
+    setup()
+
+    fireEvent.click(screen.getByRole('button', { name: '精算済み 1' }))
+
+    expect(within(selected()).getAllByRole('button', { name: /9月分の精算の紐づけを解除/ }).length).toBeGreaterThan(0)
+  })
+})
+
 describe('SettleTab: 精算バッチの削除', () => {
   const removeButton = () => within(selected()).getByRole('button', { name: 'このバッチを削除' })
 
