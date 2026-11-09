@@ -84,7 +84,7 @@
 
 複合仕訳(3行以上)のテンプレート化は複雑になるため、MVPでは「借方1科目・貸方1科目」の単純な2行仕訳のみを対象とする。ルールが持つ`project_id`・`household_member_id`・`counterparty_id`はそれぞれ1つのみであり、生成時に借方・貸方どちらの行に設定するかが軸ごとに異なる。
 
-- `project_id`([projects.md 1.2](./projects.md#12-紐づけ対象))・`household_member_id`([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承))は全区分の仕訳明細に設定できるため、生成される2行の両方に同じ値を設定する。
+- `project_id`([projects.md 1.2](./projects.md#12-紐づけ対象))・`household_member_id`([household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方))は全区分の仕訳明細に設定できるため、生成される2行の両方に同じ値を設定する。
 - `counterparty_id`は[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)の通りPL科目(収益・費用)の行にのみ設定可能(TRIGGERで強制)なため、`debit_account_id`・`credit_account_id`のうちPL区分(revenue/expense)である側の行にのみ設定する。両方ともBS科目のルール([3章 大口費用の按分](#3-大口費用の按分)の支払いルール等)ではPL行が存在しないため、`counterparty_id`を設定しても実質無視される。
 
 > **実装状況(計画Issue #39)**

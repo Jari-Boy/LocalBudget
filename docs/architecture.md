@@ -141,6 +141,8 @@ interface StorageAdapter {
 
 **実装状況の更新(Issue #155、分析画面の刷新)**: 旧の財務諸表画面(`FinancialStatementScreen`)を、サイドナビの「分析」領域(`/reports/analysis`)の1画面`AnalysisScreen`(`src/components/analysis/`)に置き換えた。画面内に「財務諸表」「グラフ分析」「予算」の3つのタブを持ち(領域上部のタブ帯は使わない)、条件(期間・比較・世帯メンバー・プロジェクト・取引先)は3タブで共通にする。旧URL(`/reports`・`/reports/financial-statements`)は`/reports/analysis`へリダイレクトする。グラフは共通部品`Chart`を拡張して使い(系列の固定色・選択範囲の帯・ツールチップへの追加表示等)、グラフの内訳の仕訳行や月次集計などの計算は`src/domain/analysis/`の純粋関数が担う。仕訳画面(`JournalScreen`)は`initialFilter`を受け取り、分析画面から期間と選んだ条件を`navigate()`の`state`で引き継いで開く。予算の集計は`src/domain/budget/summarizeBudgetProgress.ts`。個別の設計判断は`docs/decisions.md`の計画Issue #155の項を参照。
 
+**実装状況の更新(Issue #169、仕訳画面の改善)**: サイドナビの並びを「仕訳・マスタ・明細取込・割勘・精算・分析」に改め(`areas.ts`の`AreaKey`の並び)、マスタ領域の左上にタイトル「マスタ」を出す。仕訳画面で未保存の変更があるまま移動しようとしたとき(サイドナビ・領域タブ、画面内の切り替え、割勘への移動、関連仕訳を開く操作)に「キャンセル／破棄して移動／保存して移動」のダイアログを出す。`HashRouter`は`useBlocker`を使えないため、`AppShell`のリンクを`GuardedLink`にしてコンテキストのガードを通す。リロード・タブを閉じる操作にはブラウザ標準の確認(`beforeunload`)を出す。ブラウザの戻るボタンは対象外とする。判断は`docs/decisions.md` 2026-11-09(計画Issue #169)を参照。
+
 ## 7. PWA構成
 
 - ビルドはVite、PWA化は`vite-plugin-pwa`（Workbox）を用いる。
@@ -164,6 +166,8 @@ interface StorageAdapter {
 **実装状況（Issue #26）**: 上記のエクスポート/インポート機能自体（`src/infrastructure/backup/`）を実装済み。エクスポートは`downloadDatabaseBackup`が`databaseFileCodec.toDatabaseBlob`をそのまま再利用し、一時的な`<a download>`要素をDOMに追加してクリックすることでブラウザ標準のダウンロードを発火させる。インポートは`importDatabaseBackup`が担い、アップロードされたバイト列から使い捨ての一時`Database`を生成した上で、新設した`assertValidDatabaseSchema`（`sqlite_master`を直接確認し、`docs/schema/*.sql`の9ファイルそれぞれの代表テーブルが揃っているかを判定）で検証してから初めて`storageAdapter.save()`へ永続化する。検証が失敗した場合は`InvalidBackupFileError`（ドメインエラーとして`domainErrorRegistry`に登録済み、Comlink越しでも`instanceof`判定できる）を投げ、既存データへは一切書き込まない。`RepositoryRegistry`には`backup: { export(), importDatabase() }`を追加し、`db.worker.ts`から`storageAdapter`を配線した。E2Eテスト（`e2e/backup-export-import.spec.ts`）は、エクスポート、エクスポート→インポートの往復（`toDatabaseBlob`でBlob化→`File`化→`fromDatabaseFile`で読み戻す経路を経由し、シリアライズ/デシリアライズ双方の再利用を検証）、不正ファイル（パース不能なガベージ、および未マイグレーションの空DB／LocalBudgetと無関係なテーブルしか持たないDB）の拒否を検証している。
 
 **設計上の重要な注意点（実装時に発覚）**: `assertValidDatabaseSchema`は必ず`runMigrations`より先に実行する。`runMigrations`は`PRAGMA user_version`が0（未マイグレーション）のDBに対してLocalBudgetの全テーブルを新規作成してしまうため、先に適用すると空のsql.js DBファイルや無関係なテーブルしか持たないファイルでも検証をすり抜けてしまう（実装当初はこの順序を誤り、evaluatorレビューで実機バイパスとして発覚・修正した。詳細は`docs/decisions.md`参照）。また`importDatabaseBackup`は保存直前に`AutoSaveController.flush()`（4.2節参照）を呼び、インポート直前の編集操作に由来する保留中のデバウンス保存が、インポートの保存より後に発火して上書きしてしまう競合を防いでいる（同じく`docs/decisions.md`参照）。本体のエクスポート/インポートUI（ボタン配置等）・インポート成功後の`window.location.reload()`呼び出しは引き続き別Issue（UIエントリポイント）のスコープとして未実装（前者は元々本節が明記していた前提、後者は`window`がWeb Worker内に存在せずメインスレッド側の責務として残るという設計判断による）。
+
+**旧バックアップの取込は対象外とする場合がある(計画Issue #169)**: `journal_lines.household_member_id`をNOT NULLにした際、開発用DBは作り直す前提のため、データ移行用のマイグレーション(バージョン2以降・テーブル再作成)は作らなかった。したがって、NULL行を含む、または`journal_lines.household_member_id`がNULL許容の旧スキーマのバックアップは取込の対象外で、取込時のスキーマ検証(`assertValidDatabaseSchema`)が`InvalidBackupFileError`で拒否する。スキーマを破壊的に変える際は、この前提(作り直し・旧バックアップ非対応)で進めるか、マイグレーションを書くかをその都度決める(判断は`docs/decisions.md` 2026-11-09、計画Issue #169)。
 
 ## 9. 既知の制約・将来課題
 

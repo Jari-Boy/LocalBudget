@@ -31,8 +31,8 @@ async function setupData(page: Page) {
         memo: '分析用の給料',
         householdMemberId: member.id,
         lines: [
-          { accountId: cash.id, side: 'debit', amount: 200000 },
-          { accountId: salary.id, side: 'credit', amount: 200000 },
+          { householdMemberId: member.id, accountId: cash.id, side: 'debit', amount: 200000 },
+          { householdMemberId: member.id, accountId: salary.id, side: 'credit', amount: 200000 },
         ],
       })
       await client.journalEntry.create({
@@ -40,8 +40,8 @@ async function setupData(page: Page) {
         memo: '分析用のスーパー',
         householdMemberId: member.id,
         lines: [
-          { accountId: food.id, side: 'debit', amount: 3000 },
-          { accountId: cash.id, side: 'credit', amount: 3000 },
+          { householdMemberId: member.id, accountId: food.id, side: 'debit', amount: 3000 },
+          { householdMemberId: member.id, accountId: cash.id, side: 'credit', amount: 3000 },
         ],
       })
       await client.autoSave.flush()

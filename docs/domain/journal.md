@@ -33,7 +33,7 @@
 
 取引は「仕訳(JournalEntry)」という単位で記録される。仕訳は日付・摘要を持つヘッダーであり、実際の金額の増減は子レコードである「仕訳明細(JournalLine)」に記録される。1件の仕訳は2件以上の仕訳明細から成り、その合計金額は借方・貸方で必ず一致する(複式簿記の恒等式)。
 
-仕訳ヘッダーは、この仕訳を切った主体を表す「起票者」(`household_member_id`、NOT NULL)を持つ(計画Issue #88)。起票者は仕訳明細の`household_member_id`(明細の上書き、[household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照)とは役割が異なり、科目に既定の世帯メンバーが無く明細側も未指定の行における実効メンバーのフォールバック先として使われる。
+仕訳ヘッダーは、この仕訳を切った主体を表す「起票者」(`household_member_id`、NOT NULL)を持つ(計画Issue #88)。起票者は仕訳明細の`household_member_id`(明細の上書き、[household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方)参照)とは役割が異なり、明細行の世帯メンバーを書き込み時に決めるときの既定値(科目に既定メンバーが無く、行で指定もされない場合の値)として使われる。読み取り側が起票者へフォールバックすることはない(明細行は常に実際の世帯メンバーを持つ、計画Issue #169)。仕訳画面で起票者を選択・変更でき、変更すると旧起票者のままで科目に既定メンバーがない明細行だけが追従する([household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方)参照)。
 
 仕訳明細は勘定科目に加えて、任意でプロジェクト([projects.md 1章](./projects.md#1-プロジェクト))・世帯メンバー([household-members.md 1章](./household-members.md#1-世帯メンバー))を紐づけられる。
 
@@ -55,7 +55,7 @@
 仕訳明細の借方/貸方は、金額を表す`amount`(常に正の整数)と、借方/貸方を表す`side`(`debit`/`credit`)の2列で表現する。1行=1エントリとして扱えるため、口座残高やFSの集計クエリを「`side`に応じて符号を反転して合算する」という単一のロジックで一貫して書ける(詳細は[financial-statements.md 2.1 生成方式](./financial-statements.md#21-生成方式))。
 
 > **仕訳の複数軸絞り込み(JournalEntryFilter、計画Issue #40)**
-> 期間(`entry_date`の範囲)・科目・世帯メンバー(実効メンバー、[household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照)・プロジェクトをANDで組み合わせて仕訳を絞り込む共通の型`JournalEntryFilter`と、これを適用する純粋関数`filterJournalEntries`(`src/domain/journal/`)を持つ。いずれかの明細行が条件に一致すればその仕訳(entry単位)を候補に含める(財務諸表の[financial-statements.md](./financial-statements.md)の`FinancialStatementFilter`とは型・粒度が異なる別物)。計画Issue #145で条件を拡張した(下記)。割勘対象選択画面([expense-splitting.md 1.5](./expense-splitting.md#15-割勘の履歴と取り消し)参照)を含む複数画面の絞り込みUIから再利用される共通のドメイン関数として設計されている。詳細は`docs/decisions.md`(2026-08-15)参照。
+> 期間(`entry_date`の範囲)・科目・世帯メンバー(明細行の`household_member_id`との比較、[household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方)参照)・プロジェクトをANDで組み合わせて仕訳を絞り込む共通の型`JournalEntryFilter`と、これを適用する純粋関数`filterJournalEntries`(`src/domain/journal/`)を持つ。いずれかの明細行が条件に一致すればその仕訳(entry単位)を候補に含める(財務諸表の[financial-statements.md](./financial-statements.md)の`FinancialStatementFilter`とは型・粒度が異なる別物)。計画Issue #145で条件を拡張した(下記)。割勘対象選択画面([expense-splitting.md 1.5](./expense-splitting.md#15-割勘の履歴と取り消し)参照)を含む複数画面の絞り込みUIから再利用される共通のドメイン関数として設計されている。詳細は`docs/decisions.md`(2026-08-15)参照。
 
 > **検索条件の拡張(計画Issue #145)**
 > `JournalEntryFilter`に次の条件を追加した。検索の画面と共通部品はUI刷新のIssueで扱い、ここはドメイン側だけである。保存した検索条件は作らない。
@@ -119,6 +119,7 @@
 - [financial-statements.md 1章 期間確定と締め](./financial-statements.md#1-期間確定と締め)の方針により、過去の仕訳の編集・削除は常に可能とする。ロックは設けない。
 - 明細行を編集する場合も、保存前に[1.3](#13-貸借バランスの検証)のバランス検証を通す。
 - 編集のたびに`journal_entries.updated_at`を更新する(明細行自体は`updated_at`を持たない。[2.1 フィールド定義](#21-フィールド定義)参照)。
+- 仕訳画面(`JournalScreen`、計画Issue #169)の編集操作: (1)詳細パネルの「起票者」はセレクトで、変更すると旧起票者のままで科目に既定メンバーがない明細行だけが追従する([household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方))。(2)「保存して続けて入力」ボタンは新規仕訳にだけ出し、既存仕訳の編集画面には出さない。(3)仕訳の削除ボタンは詳細の最下部の「仕訳の削除」セクションにあり、赤い塗りのボタンを2回押して確定する(精算タブのバッチ削除と同じ形式)。(4)未保存の変更があるまま移動しようとすると「キャンセル／破棄して移動／保存して移動」のダイアログを出す。対象はサイドナビ・領域タブ、画面内の別の仕訳/タブ/新規への切り替え、割勘への移動、関連仕訳を開く操作。リロードやタブを閉じるときはブラウザ標準の確認を出す。ブラウザの戻るボタンは対象外(HashRouterは`useBlocker`を使えないため、`AppShell`のリンクを`GuardedLink`にしてコンテキストのガードを通している)。
 
 **物理削除は常に許可する**([GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)で決着)。反対仕訳を挟むことは強制しない。日常的な訂正では関連仕訳グループを作らず、物理削除・直接編集のみで完結させる。
 
@@ -193,7 +194,7 @@
 | `comment` | コメント | 任意。摘要とは役割を分けた自由な補足(計画Issue #144)。仕訳ごとに1つで履歴は持たない。更新時は未指定なら既存を維持し、`null`で消去する(`UpdateJournalEntryInput.comment`) |
 | `currency` | 通貨コード | ISO 4217、MVPでは`JPY`固定 |
 | `source_type` | 作成経路 | ENUM、既定`manual`([1.7 作成経路(source_type)](#17-作成経路source_type)参照) |
-| `household_member_id` | 起票者 | FK、NOT NULL。この仕訳を切った主体([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照、計画Issue #88) |
+| `household_member_id` | 起票者 | FK、NOT NULL。この仕訳を切った主体([household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方)参照、計画Issue #88) |
 | `generated_from_rule_id` | 生成元の定期取引ルール | FK、任意。`source_type = 'recurring_generated'`の仕訳でのみ値を持ち、手入力・外部明細取込由来の仕訳では`NULL`。参照のみで複式簿記の整合性検証には関与しない([recurring-transactions.md 1.5](./recurring-transactions.md#15-生成された仕訳との関係)参照、計画Issue #121) |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
@@ -206,7 +207,7 @@
 | `journal_entry_id`    | 親仕訳ID         | FK、親削除時はCASCADE                                                                 |
 | `account_id`          | 勘定科目ID        | FK                                                                              |
 | `project_id`          | プロジェクトID      | FK、任意。全区分の行に設定可([projects.md 1.2](./projects.md#12-紐づけ対象)参照)              |
-| `household_member_id` | 世帯メンバーID(上書き) | FK、任意。全区分で設定可。科目(`accounts.household_member_id`)に既定値がある場合、その値と異なる値は設定できない(TRIGGERで強制)。NULL=科目の既定値、または(科目に既定値が無ければ)ヘッダーの起票者を継承([household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)参照) |
+| `household_member_id` | 世帯メンバーID | FK、NOT NULL(計画Issue #169)。全区分で設定可。常に実際の世帯メンバーを持ち、NULL(継承)は無い。書き込み時は科目の既定メンバー > 指定 > 起票者の順で決める(`resolveLineHouseholdMemberId`)。科目(`accounts.household_member_id`)に既定値がある場合、その値と異なる値は設定できない(TRIGGERで強制)。読み取り側は科目既定値や起票者へフォールバックせず、この値をそのまま使う([household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方)参照) |
 | `counterparty_id`     | 取引先ID         | FK、任意。PL科目(revenue/expense)の行にのみ設定可(TRIGGERで強制、[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)参照)              |
 | `side`                | 借方/貸方         | ENUM: debit/credit                                                              |
 | `amount`              | 金額            | 通貨最小単位の正の整数                                                                     |
@@ -231,7 +232,7 @@
 > [1.3]の通り、DBでは強制しない。この検証は`JournalEntryRepository`が担う。
 
 > **科目の既定値がある明細行への異なる世帯メンバーの指定はDBトリガーで拒否する**
-> [household-members.md 1.2](./household-members.md#12-紐づけ対象と既定値の継承)の通り、科目(`accounts.household_member_id`)に既定値がある場合、その科目を使う`journal_lines.household_member_id`は科目の既定値と異なる値を明示指定できない(`prevent_household_member_override_on_default_account_line_insert`/`_update`トリガー、`counterparty_id`のPL科目限定制約と同じINSERT/UPDATE両対応のTRIGGERパターン)。`NULL`(未指定)または科目の既定値と同じ値は許可する。
+> [household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方)の通り、科目(`accounts.household_member_id`)に既定値がある場合、その科目を使う`journal_lines.household_member_id`は科目の既定値と異なる値を明示指定できない(`prevent_household_member_override_on_default_account_line_insert`/`_update`トリガー、`counterparty_id`のPL科目限定制約と同じINSERT/UPDATE両対応のTRIGGERパターン)。INSERTは科目の既定値と異なる値を拒否する。UPDATEは`household_member_id`を変えない限り許可し(科目の既定メンバーを変えて過去の行を旧メンバーのまま残したとき、その行の金額等を編集できるように)、変える場合だけ科目の既定値との一致を検証する。`journal_lines.household_member_id`自体はNOT NULLで、開発用DBは作り直す前提のためマイグレーションは行わない(NULL許容の旧スキーマのバックアップの取込は対象外、取込時のスキーマ検証が`InvalidBackupFileError`で拒否する、計画Issue #169)。
 
 ### 2.3 関連仕訳グループマスタ(journal_entry_link_groups)
 
@@ -320,7 +321,7 @@
 | `journal_entry_draft_id` | 親下書きID | FK、親削除時CASCADE |
 | `account_id` | 勘定科目ID | FK、任意。未選択状態を許容するためNULL可 |
 | `project_id` | プロジェクトID | FK、任意 |
-| `household_member_id` | 世帯メンバーID | FK、任意 |
+| `household_member_id` | 世帯メンバーID | FK、任意。NULL許容のまま(下書き段階の未入力を許容)。確定時に世帯メンバーのない明細行があれば`JournalLineHouseholdMemberRequiredError`で確定を拒否する(計画Issue #169)。下書きを再開したときは、未入力の世帯メンバーを科目の既定メンバー、無ければ起票者で補う |
 | `counterparty_id` | 取引先ID | FK、任意。[2.1](#21-フィールド定義)の`journal_lines.counterparty_id`と異なり、下書き段階ではPL科目行への限定をTRIGGERで強制しない(確定時に`journal_lines`側のTRIGGERで検証される) |
 | `side` | 借方/貸方 | ENUM: debit/credit、任意。未選択状態を許容するためNULL可 |
 | `amount` | 金額 | 任意。未入力状態を許容するためNULL可、`journal_lines.amount`と異なり`amount > 0`のCHECKは課さない |

@@ -217,8 +217,8 @@ test.describe('仕訳画面での仕訳入力', () => {
         memo: '削除テスト用',
         householdMemberId: member.id,
         lines: [
-          { accountId: expense.id, side: 'debit', amount: 800 },
-          { accountId: cash.id, side: 'credit', amount: 800 },
+          { householdMemberId: member.id, accountId: expense.id, side: 'debit', amount: 800 },
+          { householdMemberId: member.id, accountId: cash.id, side: 'credit', amount: 800 },
         ],
       })
       await client.autoSave.flush()
