@@ -14,7 +14,10 @@ import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
 import { buildCounterpartyTree, buildProjectTree } from '../master/masterTreeNodes'
 import { AnalysisConditionBar, type AnalysisPeriodInput } from './AnalysisConditionBar'
+import { BudgetTab } from './BudgetTab'
+import { ChartsTab } from './ChartsTab'
 import { StatementsTab } from './StatementsTab'
+import type { AnalysisLine } from '../../domain/analysis/listAnalysisLines'
 import { loadAnalysisData, type AnalysisData, type AnalysisRepositories } from './analysisData'
 import { toJournalFilter, toStatementFilter, type AnalysisConditionValues } from './analysisConditionsModel'
 import './AnalysisScreen.css'
@@ -108,6 +111,9 @@ export function AnalysisScreen({ repositories, today, onOpenJournal }: AnalysisS
     }
   }, [repositories])
 
+  /** 予算を変更したあとなど、データを読み直す */
+  const reload = async () => setData(await loadAnalysisData(repositories))
+
   const period = useMemo(() => resolvePeriod(periodInput), [periodInput])
   const comparisonPeriod = useMemo(() => resolveComparisonPeriod(period, comparison), [period, comparison])
 
@@ -173,6 +179,10 @@ export function AnalysisScreen({ repositories, today, onOpenJournal }: AnalysisS
       return { ...prev, mode, fromMonth: toMonth(prev.fromDate), toMonth: toMonth(prev.toDate) }
     })
 
+  /** 内訳の行から仕訳一覧へ。その日・その科目と、選んだ世帯メンバー・プロジェクト・取引先を引き継ぐ */
+  const openLine = (line: AnalysisLine) =>
+    onOpenJournal(toJournalFilter({ from: line.date, to: line.date }, values, { accountIds: [line.accountId] }))
+
   const periodLabel = labelPeriod(period, periodInput.mode)
   const comparisonLabel = comparisonPeriod ? labelPeriod(comparisonPeriod, 'date') : ''
 
@@ -219,6 +229,32 @@ export function AnalysisScreen({ repositories, today, onOpenJournal }: AnalysisS
           periodLabel={periodLabel}
           comparisonLabel={comparisonLabel}
           onOpenAccount={(accountId) => onOpenJournal(toJournalFilter(period, values, { accountIds: [accountId] }))}
+        />
+      )}
+
+      {tab === 'charts' && (
+        <ChartsTab
+          data={data}
+          period={period}
+          comparisonPeriod={comparisonPeriod}
+          comparisonMode={comparison}
+          filter={statementFilter}
+          periodLabel={periodLabel}
+          onOpenLine={openLine}
+        />
+      )}
+
+      {tab === 'budget' && (
+        <BudgetTab
+          data={data}
+          period={period}
+          budgetRepository={repositories.budgetRepository}
+          onChanged={reload}
+          // 予算タブには、世帯メンバーなどの絞り込みを適用しない(引き継がない)
+          onOpenAccount={(accountId, month) =>
+            onOpenJournal(toJournalFilter(month, { member: '', project: '', counterparty: '' }, { accountIds: [accountId] }))
+          }
+          onOpenLine={openLine}
         />
       )}
     </div>

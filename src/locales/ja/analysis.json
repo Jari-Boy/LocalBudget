@@ -55,5 +55,97 @@
     "balanced": "貸借が一致しています(資産 {{assets}} = 負債・純資産 {{liabilityEquity}})",
     "unbalanced": "貸借が一致していません(資産 {{assets}}、負債・純資産 {{liabilityEquity}})"
   },
-  "loading": "読み込み中..."
+  "loading": "読み込み中...",
+  "charts": {
+    "insight": "{{period}}の収支は{{net}}です。費用で最も大きいのは{{name}}({{share}}%)で、期末の純資産は{{equity}}です。",
+    "kpi": {
+      "revenue": "収益",
+      "expense": "費用",
+      "net": "収支",
+      "savingsRate": "貯蓄率",
+      "equity": "純資産(期末)",
+      "savingsRateNote": "収支 ÷ 収益"
+    },
+    "compare": {
+      "previousPeriod": "前期比",
+      "previousYear": "前年同期比",
+      "none": "比較データなし"
+    },
+    "flow": {
+      "title": "月次の収益と費用",
+      "summary": "月ごとの収益と費用の縦棒グラフ。数値は月次の表でも確認できます",
+      "revenue": "収益",
+      "expense": "費用"
+    },
+    "equityTrend": {
+      "title": "純資産の推移",
+      "summary": "月末の純資産の折れ線グラフ。数値は月次の表でも確認できます",
+      "series": "純資産",
+      "change": "純資産の増減"
+    },
+    "breakdown": {
+      "title": "費用の内訳",
+      "other": "その他",
+      "label": "{{name}} {{amount}}。Enterで仕訳行を表示"
+    },
+    "stack": {
+      "title": "費用の推移(グループ別)",
+      "summary": "月ごとの費用をグループ別に積み上げた縦棒グラフ。数値は月次の表でも確認できます",
+      "other": "その他"
+    },
+    "lines": {
+      "more": "ほか{{count}}行",
+      "pinHint": "クリックで全行を表示",
+      "sectionTitle": "{{name}} {{amount}}({{count}}行)",
+      "titleWithCount": "{{title}}({{count}}行)",
+      "close": "内訳を閉じる",
+      "none": "該当する仕訳はありません"
+    },
+    "table": {
+      "summary": "月次の数値を表で見る",
+      "month": "月"
+    }
+  },
+  "budget": {
+    "tableLabel": "科目別の予算",
+    "note": "予算は月と科目の単位で設定します。期間の終了月({{month}})を表示します。世帯メンバーなどの絞り込みは、このタブには適用しません。",
+    "copyPrevious": "先月の内容をコピー",
+    "copied": "{{count}}件をコピーしました",
+    "copiedWithSkipped": "{{count}}件をコピーしました(設定済みの{{skipped}}件はそのままです)",
+    "noPrevious": "先月の予算がありません",
+    "nothingToCopy": "コピーする予算はありません(すべて設定済みです)",
+    "saveFailed": "予算を保存できませんでした",
+    "kpi": {
+      "budget": "予算",
+      "actual": "実績(予算のある科目)",
+      "remaining": "残り",
+      "unbudgeted": "予算のない費用",
+      "consumed": "{{percent}}%を消化",
+      "notSet": "予算が未設定です",
+      "over": "✕ 予算を超過しています",
+      "within": "予算の範囲内です",
+      "unbudgetedNote": "{{names}}など"
+    },
+    "sectionTitle": "{{month}}の予算と実績",
+    "columns": {
+      "account": "科目",
+      "budget": "予算",
+      "actual": "実績",
+      "remaining": "残り",
+      "consumed": "消化"
+    },
+    "inputLabel": "{{name}}の予算",
+    "placeholder": "未設定",
+    "status": {
+      "unset": "未設定",
+      "over": "✕ 超過"
+    },
+    "chart": {
+      "title": "予算と実績の推移",
+      "summary": "月ごとの予算と実績の縦棒グラフ。数値は月次の表でも確認できます",
+      "budget": "予算",
+      "actual": "実績",
+      "actualOfBudgeted": "実績(予算のある科目)"
+    }
+  }
 }

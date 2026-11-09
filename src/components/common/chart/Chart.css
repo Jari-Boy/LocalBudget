@@ -117,7 +117,7 @@
   flex-direction: column;
   gap: 2px;
   box-sizing: border-box;
-  width: 240px;
+  width: 290px;
   max-width: 80vw;
   padding: 8px 10px;
   background: var(--color-surface);
