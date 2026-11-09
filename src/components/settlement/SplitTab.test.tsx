@@ -254,6 +254,19 @@ describe('SplitTab', () => {
     expect(within(table).queryByText('10月の給与')).not.toBeInTheDocument()
   })
 
+  it('候補の摘要を押すと、仕訳画面へ移動せず、その仕訳の詳細をダイアログで表示し、選択状態は変えない', () => {
+    setup()
+
+    fireEvent.click(within(screen.getByRole('region', { name: '割勘する仕訳' })).getByRole('button', { name: 'ランチ' }))
+
+    const dialog = screen.getByRole('dialog', { name: '仕訳の詳細' })
+    expect(dialog).toHaveTextContent('2026-10-05')
+    expect(within(dialog).getByRole('region', { name: '借方' })).toHaveTextContent('食費')
+    expect(screen.getByRole('checkbox', { name: 'ランチを選択' })).not.toBeChecked()
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }))
+    expect(screen.queryByRole('dialog', { name: '仕訳の詳細' })).not.toBeInTheDocument()
+  })
+
   it('仕訳を選ぶと、選んだ合計と、設定した割合での相手の負担額を表示する', () => {
     setup()
 

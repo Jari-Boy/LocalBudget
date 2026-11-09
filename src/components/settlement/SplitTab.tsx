@@ -274,7 +274,11 @@ export function SplitTab({
                       />
                     </td>
                     <td className="split-settle__nowrap">{item.entry.entryDate}</td>
-                    <td>{memo}</td>
+                    <td>
+                      <button type="button" className="split-settle__link" onClick={() => setDetailEntryId(item.entry.id)}>
+                        {memo === '' ? '(摘要なし)' : memo}
+                      </button>
+                    </td>
                     <td>{payerAccountName(item, data.accounts)}</td>
                     <td className="split-settle__num">{formatCurrency(item.amount, 'JPY')}</td>
                   </tr>
