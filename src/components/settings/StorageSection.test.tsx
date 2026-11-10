@@ -77,6 +77,20 @@ describe('StorageSection', () => {
       expect(await within(region()).findByText(/表示できるのはフォルダ名のみ/)).toBeInTheDocument()
     })
 
+    it('フォルダ保存のときは、同時に編集できるのは1台だけ・リアルタイム同期ではない旨の注意書きを表示する(計画Issue #175)', async () => {
+      setup({ status: FOLDER })
+      const note = await within(region()).findByText('同期フォルダを使うときの注意')
+      const box = note.parentElement as HTMLElement
+      expect(box).toHaveTextContent('同時に編集できるのは1台だけ')
+      expect(box).toHaveTextContent('リアルタイム同期ではありません')
+    })
+
+    it('ブラウザ内のときは、同期フォルダの注意書きを出さない', async () => {
+      setup()
+      await within(region()).findByText('このブラウザ内')
+      expect(within(region()).queryByText('同期フォルダを使うときの注意')).not.toBeInTheDocument()
+    })
+
     it('ブラウザ内のときは、フォルダ名の注記を出さない', async () => {
       setup()
       await within(region()).findByText('このブラウザ内')
