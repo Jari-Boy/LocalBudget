@@ -248,3 +248,43 @@
     animation: none;
   }
 }
+
+/* 起動時の「フォルダに再接続」画面(計画Issue #174、承認済みモックアップ) */
+.settings__reconnect {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 24px;
+  background: var(--color-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings__reconnect-card {
+  width: 520px;
+  max-width: 100%;
+  padding: 28px;
+  gap: 14px;
+}
+
+.settings__reconnect-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.settings__reconnect-message {
+  margin: 0;
+  font-size: var(--font-size-base);
+  line-height: 1.7;
+}
+
+.settings__reconnect-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings__button--large {
+  min-height: 44px;
+}
