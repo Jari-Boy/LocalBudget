@@ -71,6 +71,17 @@ describe('StorageSection', () => {
       expect(region()).toHaveTextContent('接続中')
       expect(within(region()).getByRole('button', { name: 'ブラウザ保存に戻す…' })).toBeInTheDocument()
     })
+
+    it('フォルダの場所は取得できないため、表示できるのはフォルダ名のみであることを注記する', async () => {
+      setup({ status: FOLDER })
+      expect(await within(region()).findByText(/表示できるのはフォルダ名のみ/)).toBeInTheDocument()
+    })
+
+    it('ブラウザ内のときは、フォルダ名の注記を出さない', async () => {
+      setup()
+      await within(region()).findByText('このブラウザ内')
+      expect(within(region()).queryByText(/表示できるのはフォルダ名のみ/)).not.toBeInTheDocument()
+    })
   })
 
   describe('フォルダ選択に非対応の環境', () => {

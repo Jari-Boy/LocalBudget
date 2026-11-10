@@ -119,6 +119,8 @@ export function StorageSection({ storage, folderPicker, exportCurrent, reload }:
         </>
       )}
       <p className="settings__hint">{inFolder ? t('storage.folderNote') : t('storage.browserNote')}</p>
+      {/* ブラウザはプライバシー保護のため、選んだフォルダの場所(フルパス)をアプリに渡さない */}
+      {inFolder && <p className="settings__hint">{t('storage.folderNameNote')}</p>}
 
       {!writable && (
         <div role="status" className="settings__warning-box">
