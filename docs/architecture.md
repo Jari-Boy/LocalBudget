@@ -114,6 +114,8 @@ interface StorageAdapter {
 - **書き込み途中のクラッシュ**: `createWritable()`はスワップファイルへ書き、`close()`で初めて元のファイルに反映される（Chromiumの仕様）ため、書き込み中にクラッシュしても元のファイルは壊れない。独自の一時ファイル経由の書き込みは追加していない。
 - **クラウドAPIとの直接連携はしない**: 「アプリは外部サーバーと通信しない」原則を保つため、PCの同期クライアントが作るローカルフォルダを選ぶ方式のみ（`docs/decisions.md`の2026-11-10の判断）。
 
+**実装状況（Issue #175）**: 同期フォルダでの上書き事故を防ぐ安全装置を入れた。`FileSystemAccessStorageAdapter`が、読み込み時・保存後のファイルの更新日時とサイズを記録し、`save()`の直前に外部で変わっていたら`ExternalChangeError`で書き込まずに止める（自分の保存は記録し直すので誤検知しない。一度も読み込み・保存していないときは検査しない）。`withAutoSave`はこのエラーで保存を止め、`resume()`では解除せず、ページの再読み込みで最新のファイルを読み直すまで止め続ける。`StorageStatus.externalChange`（`getStatus()`のたびに取り直す）で画面に伝わり、`ExternalChangeBanner`が画面の上部に閉じられない警告を出す（今のデータの書き出しと、確認ダイアログ付きのフォルダのファイルの開き直し）。自動マージはしない。フォルダ保存中の保存先欄には、同時に編集できるのは1台だけ・リアルタイム同期ではない旨の注意書きを表示する。`importDatabaseBackup`は、`stop()`の後に保存が失敗したら`resume()`してからエラーを伝える。同期クライアント特有の挙動の調査結果は`docs/guides/knowledge.md`、設計判断は`docs/decisions.md`の計画Issue #175の項を参照。検知から書き込み完了までの短い隙間の競合は残る（注意書きで補う）。
+
 ## 5. DBアクセス層とWorker設計
 
 - DBは必ずWeb Worker内で実行し、Reactのメインスレッドはメッセージパッシング（RPC）経由でのみアクセスする。UIをブロックしないことが目的。RPCの実装には`Comlink`を採用する。Worker側（`src/infrastructure/worker/`）で全Repositoryインスタンスを1つのレジストリオブジェクトへ集約して`Comlink.expose()`し、メインスレッド側（`src/infrastructure/rpc/`）は`Comlink.wrap()`した型安全なプロキシとして呼び出す。Worker側の初期化（sql.jsのWASMロード等、非同期）が完了する前にメインスレッドがRPC呼び出しを送ると応答が失われるため、Worker起動完了をメインスレッドが待ち合わせてからRPCクライアントを生成する（Issue #24、詳細は`docs/decisions.md`）。
