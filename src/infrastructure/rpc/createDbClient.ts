@@ -2,7 +2,19 @@ import * as Comlink from 'comlink'
 import type { RepositoryRegistry } from './createRepositoryRegistry'
 import { flushOnPageHide } from './flushOnPageHide'
 import { registerDomainErrorTransferHandler } from './registerDomainErrorTransferHandler'
+import { acquireWriteLock } from '../storage/acquireWriteLock'
 import { waitForWorkerReadyOrTerminate } from './waitForWorkerReadyOrTerminate'
+import { READ_ONLY_WORKER_NAME, WRITABLE_WORKER_NAME } from './workerLifecycleMessages'
+
+/**
+ * 保存先への書き込みの権利(計画Issue #174)は、ページごとに1回だけ取る。createDbClientが複数回
+ * 呼ばれても(開発時のStrictMode等)、同じ結果を使い回す。ロックはページが閉じるまで持たれる。
+ */
+let pageWriteLock: Promise<boolean> | null = null
+function acquirePageWriteLock(): Promise<boolean> {
+  pageWriteLock ??= acquireWriteLock(navigator.locks)
+  return pageWriteLock
+}
 
 /**
  * メインスレッドからWeb Worker(db.worker.ts)を起動し、Comlinkでラップした
@@ -23,8 +35,11 @@ import { waitForWorkerReadyOrTerminate } from './waitForWorkerReadyOrTerminate'
 export async function createDbClient(): Promise<Comlink.Remote<RepositoryRegistry>> {
   registerDomainErrorTransferHandler()
 
+  const writable = await acquirePageWriteLock()
+  // Viteはnew Worker()のオプションを静的に読むため、条件はnameの値の中に置く
   const worker = new Worker(new URL('../worker/db.worker.ts', import.meta.url), {
     type: 'module',
+    name: writable ? WRITABLE_WORKER_NAME : READ_ONLY_WORKER_NAME,
   })
 
   await waitForWorkerReadyOrTerminate(worker)

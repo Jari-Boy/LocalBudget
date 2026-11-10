@@ -314,3 +314,18 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* 別のタブが書き込みの権利を持つときの警告(計画Issue #174) */
+.settings__read-only {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--color-tag-yellow-bg);
+  border-bottom: 1px solid var(--color-warning-text);
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+  color: var(--color-tag-yellow-text);
+}

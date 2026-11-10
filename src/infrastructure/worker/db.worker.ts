@@ -12,9 +12,8 @@ import { seedSettlementAdjustmentAccounts } from '../db/seedSettlementAdjustment
 import { seedStandardAccountGroups } from '../db/seedStandardAccountGroups'
 import { createRepositoryRegistry } from '../rpc/createRepositoryRegistry'
 import { registerDomainErrorTransferHandler } from '../rpc/registerDomainErrorTransferHandler'
-import { WORKER_READY_MESSAGE, createWorkerInitErrorMessage } from '../rpc/workerLifecycleMessages'
+import { READ_ONLY_WORKER_NAME, WORKER_READY_MESSAGE, createWorkerInitErrorMessage } from '../rpc/workerLifecycleMessages'
 import { createStorageApi } from '../rpc/createStorageApi'
-import { acquireWriteLock } from '../storage/acquireWriteLock'
 import { loadDirectoryHandle, saveDirectoryHandle } from '../storage/directoryHandleStore'
 import { FileSystemAccessStorageAdapter } from '../storage/FileSystemAccessStorageAdapter'
 import { IndexedDBStorageAdapter } from '../storage/IndexedDBStorageAdapter'
@@ -75,14 +74,15 @@ async function main(): Promise<void> {
 
   // 保存先は保存された選択に従う(計画Issue #174)。フォルダの権限が無ければここで例外になり、
   // DBを開かずにworker-init-errorで止まる(通常はメインスレッドの再接続画面が先に止める)。
-  // 書き込みの権利が取れない(別のタブが保持している)ときは、読み込みだけ行い保存は無視する
+  // 書き込みの権利(Web Locks)はページ側で取り、取れなかった(別のタブが保持している)ときはWorkerの名前で
+  // 伝わる(createDbClient)。その場合は、読み込みだけ行い保存は無視する
   const opened = await openStorageAdapter({
     loadConfig: loadStorageConfig,
     loadFolderHandle: loadDirectoryHandle,
     createIndexedDbAdapter: () => new IndexedDBStorageAdapter(),
     createFolderAdapter: (folder) => FileSystemAccessStorageAdapter.fromDirectoryHandle(folder),
   })
-  const writable = await acquireWriteLock(navigator.locks)
+  const writable = self.name !== READ_ONLY_WORKER_NAME
   const storageAdapter = writable ? opened.adapter : createReadOnlyStorageAdapter(opened.adapter)
   const savedData = await storageAdapter.load()
 
