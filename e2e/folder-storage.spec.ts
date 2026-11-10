@@ -130,10 +130,10 @@ test.describe('ローカルフォルダへの保存', () => {
     await addAssetAccount(page, 'コピー戻し口座B')
     await openFromNav(page, '設定')
 
-    await storageRegion(page).getByRole('button', { name: 'ブラウザ内に戻す…' }).click()
+    await storageRegion(page).getByRole('button', { name: 'ブラウザ保存に戻す…' }).click()
     await page
-      .getByRole('dialog', { name: '保存先をブラウザ内に戻します' })
-      .getByRole('button', { name: 'ブラウザ内に戻す' })
+      .getByRole('dialog', { name: 'ブラウザ保存に戻します' })
+      .getByRole('button', { name: 'ブラウザ保存に戻す' })
       .click()
 
     await expect(storageRegion(page)).toContainText('このブラウザ内', { timeout: 15000 })
@@ -149,10 +149,10 @@ test.describe('ローカルフォルダへの保存', () => {
     await addAssetAccount(page, '既存ファイル口座B')
     await expect.poll(() => folderFileSize(page)).toBeGreaterThan(0)
     await openFromNav(page, '設定')
-    await storageRegion(page).getByRole('button', { name: 'ブラウザ内に戻す…' }).click()
-    const revert = page.getByRole('dialog', { name: '保存先をブラウザ内に戻します' })
+    await storageRegion(page).getByRole('button', { name: 'ブラウザ保存に戻す…' }).click()
+    const revert = page.getByRole('dialog', { name: 'ブラウザ保存に戻します' })
     await revert.getByRole('radio', { name: /古いデータをそのまま使う/ }).check()
-    await revert.getByRole('button', { name: 'ブラウザ内に戻す' }).click()
+    await revert.getByRole('button', { name: 'ブラウザ保存に戻す' }).click()
     await expect(storageRegion(page)).toContainText('このブラウザ内', { timeout: 15000 })
     await expectAccount(page, '既存ファイル口座B', false)
 
@@ -216,8 +216,8 @@ test.describe('ローカルフォルダへの保存', () => {
 
     await page.evaluate((key) => localStorage.setItem(key, 'prompt'), PERMISSION_KEY)
     await page.reload()
-    await page.getByRole('button', { name: 'ブラウザ内のデータに戻す…' }).click()
-    await page.getByRole('dialog').getByRole('button', { name: 'ブラウザ内に戻す' }).click()
+    await page.getByRole('button', { name: 'ブラウザ保存に戻す…' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'ブラウザ保存に戻す' }).click()
 
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible({ timeout: 15000 })
     await openFromNav(page, '設定')

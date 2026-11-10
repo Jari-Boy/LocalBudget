@@ -9,7 +9,7 @@ export interface StorageGateProps {
   resolve: () => Promise<StartupStorage>
   /** フォルダのreadwrite権限を再要求する。クリック操作の中で呼ばれる。得られたらtrue(本番はensureReadWritePermission) */
   reconnect: (handle: FileSystemDirectoryHandle) => Promise<boolean>
-  /** 保存先の選択をブラウザ内に戻す(本番はsaveStorageConfig({ kind: 'indexeddb' })) */
+  /** 保存先の選択をブラウザ保存に戻す(本番はsaveStorageConfig({ kind: 'indexeddb' })) */
   revertToIndexedDb: () => Promise<void>
   /** ページを再読み込みする(本番はwindow.location.reload) */
   reload: () => void

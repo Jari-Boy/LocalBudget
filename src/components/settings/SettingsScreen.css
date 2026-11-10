@@ -52,6 +52,12 @@
   font-size: var(--font-size-sm);
   line-height: 1.6;
   color: var(--color-text-muted);
+  /* 日本語を文節の途中で折り返さず、最後の行だけ極端に短くならないようにする */
+  word-break: auto-phrase;
+  text-wrap: pretty;
+  /* 文言中の改行(
+)を、文ごとの改行として表示する */
+  white-space: pre-line;
 }
 
 .settings__example {
@@ -90,6 +96,14 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* 書き出し・読み込み・保存先の各行のボタンは、幅をそろえる */
+.settings__row > .settings__button {
+  flex: none;
+  width: 184px;
+  box-sizing: border-box;
+  padding: 0 8px;
 }
 
 .settings__button {

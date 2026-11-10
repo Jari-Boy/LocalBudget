@@ -28,7 +28,7 @@ export interface StorageRpcApi {
    */
   moveToFolder(folder: FileSystemDirectoryHandle, mode: 'copy' | 'open'): Promise<void>
   /**
-   * 保存先をブラウザ内に戻す。copyは今のデータをブラウザ内へ書き込み、keepはブラウザ内に残っている
+   * 保存先をブラウザ保存に戻す。copyは今のデータをブラウザ内へ書き込み、keepはブラウザ内に残っている
    * (フォルダに切り替えた時点の)データをそのまま使う。どちらもフォルダのファイルは消さない。
    */
   moveToIndexedDb(mode: 'copy' | 'keep'): Promise<void>

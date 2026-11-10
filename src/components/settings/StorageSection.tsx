@@ -20,7 +20,7 @@ export type { FolderPicker }
 export interface StorageSectionProps {
   storage: StorageApi
   folderPicker: FolderPicker
-  /** 今のデータを書き出す(ブラウザ内に戻す前の退避。設定画面のバックアップ書き出しと同じ) */
+  /** 今のデータを書き出す(ブラウザ保存に戻す前の退避。設定画面のバックアップ書き出しと同じ) */
   exportCurrent: () => void
   /** ページを再読み込みし、Workerに新しい保存先から読み直させる */
   reload: () => void

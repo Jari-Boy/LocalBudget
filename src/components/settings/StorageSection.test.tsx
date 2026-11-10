@@ -69,7 +69,7 @@ describe('StorageSection', () => {
       expect(await within(region()).findByText('家計簿(OneDrive)')).toBeInTheDocument()
       expect(region()).toHaveTextContent('local-budget.sqlite')
       expect(region()).toHaveTextContent('接続中')
-      expect(within(region()).getByRole('button', { name: 'ブラウザ内に戻す…' })).toBeInTheDocument()
+      expect(within(region()).getByRole('button', { name: 'ブラウザ保存に戻す…' })).toBeInTheDocument()
     })
   })
 
@@ -89,7 +89,7 @@ describe('StorageSection', () => {
       setup({ status: { ...FOLDER, writable: false } })
       expect(await within(region()).findByText(/別のタブ/)).toBeInTheDocument()
       expect(within(region()).getByRole('button', { name: 'フォルダを選ぶ…' })).toBeDisabled()
-      expect(within(region()).getByRole('button', { name: 'ブラウザ内に戻す…' })).toBeDisabled()
+      expect(within(region()).getByRole('button', { name: 'ブラウザ保存に戻す…' })).toBeDisabled()
     })
   })
 
@@ -182,8 +182,8 @@ describe('StorageSection', () => {
 
   describe('ブラウザ内へ戻す', () => {
     async function openRevertDialog() {
-      fireEvent.click(await within(region()).findByRole('button', { name: 'ブラウザ内に戻す…' }))
-      return screen.findByRole('dialog', { name: '保存先をブラウザ内に戻します' })
+      fireEvent.click(await within(region()).findByRole('button', { name: 'ブラウザ保存に戻す…' }))
+      return screen.findByRole('dialog', { name: 'ブラウザ保存に戻します' })
     }
 
     it('既定は「フォルダの最新データをコピーして戻す」で、進むと戻して再読み込みする', async () => {
@@ -191,7 +191,7 @@ describe('StorageSection', () => {
       const d = await openRevertDialog()
       expect(within(d).getByRole('radio', { name: /最新データを、ブラウザ内にコピーして戻す/ })).toBeChecked()
 
-      fireEvent.click(within(d).getByRole('button', { name: 'ブラウザ内に戻す' }))
+      fireEvent.click(within(d).getByRole('button', { name: 'ブラウザ保存に戻す' }))
 
       await waitFor(() => expect(reload).toHaveBeenCalled())
       expect(storage.moveToIndexedDb).toHaveBeenCalledWith('copy')
@@ -202,7 +202,7 @@ describe('StorageSection', () => {
       const d = await openRevertDialog()
 
       fireEvent.click(within(d).getByRole('radio', { name: /古いデータをそのまま使う/ }))
-      fireEvent.click(within(d).getByRole('button', { name: 'ブラウザ内に戻す' }))
+      fireEvent.click(within(d).getByRole('button', { name: 'ブラウザ保存に戻す' }))
 
       await waitFor(() => expect(reload).toHaveBeenCalled())
       expect(storage.moveToIndexedDb).toHaveBeenCalledWith('keep')

@@ -3,8 +3,8 @@
  * 起動時の保存先ゲート(StorageGate)と「フォルダに再接続」画面のテスト(計画Issue #174)。
  * 保存先がそのまま開けるなら子要素(アプリ本体)を出し、フォルダの権限が「確認が必要」に戻って
  * いるときはDBを開かずに再接続画面を出す。再接続ボタンで権限が得られれば子要素へ進み、得られなければ
- * 理由を示して画面に留まる。フォルダのハンドルが無いときは再接続できないため、ブラウザ内に戻す導線だけを出す。
- * ブラウザ内に戻すときは確認ダイアログを経て、保存先の選択を戻して再読み込みする。
+ * 理由を示して画面に留まる。フォルダのハンドルが無いときは再接続できないため、ブラウザ保存に戻す導線だけを出す。
+ * ブラウザ保存に戻すときは確認ダイアログを経て、保存先の選択を戻して再読み込みする。
  * 外部依存: なし。保存先の判定・権限の再要求・戻す処理・再読み込みは偽物を渡す。
  */
 import '@testing-library/jest-dom/vitest'
@@ -65,20 +65,20 @@ describe('StorageGate', () => {
     expect(screen.queryByText('アプリ本体')).not.toBeInTheDocument()
   })
 
-  it('ハンドルが無いときは再接続ボタンを出さず、ブラウザ内に戻す導線だけを出す', async () => {
+  it('ハンドルが無いときは再接続ボタンを出さず、ブラウザ保存に戻す導線だけを出す', async () => {
     setup({ kind: 'needs-reconnect', folderName: null, handle: null })
     expect(await screen.findByText(/見つかりません/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'フォルダに再接続する' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'ブラウザ内のデータに戻す…' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ブラウザ保存に戻す…' })).toBeInTheDocument()
   })
 
-  it('ブラウザ内に戻すは確認ダイアログを経て、確定すると保存先を戻して再読み込みする', async () => {
+  it('ブラウザ保存に戻すは確認ダイアログを経て、確定すると保存先を戻して再読み込みする', async () => {
     const { revertToIndexedDb, reload } = setup({ kind: 'needs-reconnect', folderName: '家計簿', handle: HANDLE })
-    fireEvent.click(await screen.findByRole('button', { name: 'ブラウザ内のデータに戻す…' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'ブラウザ保存に戻す…' }))
     const dialog = screen.getByRole('dialog')
     expect(revertToIndexedDb).not.toHaveBeenCalled()
 
-    fireEvent.click(within(dialog).getByRole('button', { name: 'ブラウザ内に戻す' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'ブラウザ保存に戻す' }))
 
     await waitFor(() => expect(reload).toHaveBeenCalled())
     expect(revertToIndexedDb).toHaveBeenCalled()
@@ -86,7 +86,7 @@ describe('StorageGate', () => {
 
   it('確認ダイアログでキャンセルすると、何も変えずに閉じる', async () => {
     const { revertToIndexedDb, reload } = setup({ kind: 'needs-reconnect', folderName: '家計簿', handle: HANDLE })
-    fireEvent.click(await screen.findByRole('button', { name: 'ブラウザ内のデータに戻す…' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'ブラウザ保存に戻す…' }))
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'キャンセル' }))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
