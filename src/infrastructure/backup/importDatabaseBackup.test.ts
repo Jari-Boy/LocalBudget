@@ -50,6 +50,7 @@ function createRecorder(options: { saveError?: Error } = {}) {
     stop: async () => {
       calls.push('stop')
     },
+    resume: () => {},
     getLastSaveError: () => null,
   }
   const storageAdapter: StorageAdapter = {

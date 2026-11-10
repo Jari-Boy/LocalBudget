@@ -514,4 +514,55 @@ SAVE_DEBOUNCE_MS経過するまでsave()を呼ばない', async () => {
       expect(storageAdapter.saveCallCount).toBe(1)
     })
   })
+
+  describe('resume()', () => {
+    it('stop()後にresume()すると、以後のrun()がSAVE_DEBOUNCE_MS経過後に保存される(保存先の切り替えが失敗しても編集が保存され続ける)', async () => {
+      const db = await createTestDatabase()
+      const storageAdapter = createRecordingStorageAdapter()
+      const controller = withAutoSave(db, storageAdapter)
+      await controller.stop()
+
+      controller.resume()
+      db.run('CREATE TABLE t (id INTEGER)')
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+
+      expect(storageAdapter.saveCallCount).toBe(1)
+    })
+
+    it('stop()中に行われた変更も、resume()で保存される(停止中のrun()は保存を予約しないため)', async () => {
+      const db = await createTestDatabase()
+      const storageAdapter = createRecordingStorageAdapter()
+      const controller = withAutoSave(db, storageAdapter)
+      await controller.stop()
+      db.run('CREATE TABLE t (id INTEGER)')
+
+      controller.resume()
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+
+      expect(storageAdapter.saveCallCount).toBe(1)
+    })
+
+    it('stop()後にresume()すると、flush()も再び保存できる', async () => {
+      const db = await createTestDatabase()
+      const storageAdapter = createRecordingStorageAdapter()
+      const controller = withAutoSave(db, storageAdapter)
+      await controller.stop()
+
+      controller.resume()
+      await controller.flush()
+
+      expect(storageAdapter.saveCallCount).toBe(1)
+    })
+
+    it('stop()していなければresume()しても何も起きない(保存は予約されない)', async () => {
+      const db = await createTestDatabase()
+      const storageAdapter = createRecordingStorageAdapter()
+      const controller = withAutoSave(db, storageAdapter)
+
+      controller.resume()
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+
+      expect(storageAdapter.saveCallCount).toBe(0)
+    })
+  })
 })

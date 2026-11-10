@@ -34,6 +34,9 @@ async function setup(options: {
   status?: Partial<StorageStatus>
   folderFile?: Uint8Array | null
   folderSaveError?: Error
+  indexedDbSaveError?: Error
+  saveHandleError?: Error
+  saveConfigError?: Error
 } = {}) {
   const db = await createTestDatabase()
   runMigrations(db)
@@ -50,6 +53,9 @@ async function setup(options: {
     stop: async () => {
       calls.push('stop')
     },
+    resume: () => {
+      calls.push('resume')
+    },
     getLastSaveError: () => null,
   }
   const folderAdapter: StorageAdapter = {
@@ -64,6 +70,7 @@ async function setup(options: {
     load: async () => null,
     save: async (data) => {
       calls.push('indexedDb.save')
+      if (options.indexedDbSaveError) throw options.indexedDbSaveError
       indexedDbSaved.push(data)
     },
   }
@@ -76,10 +83,12 @@ async function setup(options: {
     indexedDbAdapter,
     saveFolderHandle: async (handle) => {
       calls.push('saveHandle')
+      if (options.saveHandleError) throw options.saveHandleError
       savedHandles.push(handle)
     },
     saveConfig: async (config) => {
       calls.push(`saveConfig:${config.kind}`)
+      if (options.saveConfigError) throw options.saveConfigError
       savedConfigs.push(config)
     },
   })
@@ -111,6 +120,38 @@ describe('createStorageApi', () => {
 
       expect(calls).not.toContain('saveHandle')
       expect(calls).not.toContain('saveConfig:folder')
+    })
+
+    it('フォルダへの保存が失敗したら、止めた自動保存を再開する(ページは再読み込みされず、元の保存先で編集が続くため)', async () => {
+      const { api, calls, folder } = await setup({ folderSaveError: new Error('disk full') })
+
+      await expect(api.moveToFolder(folder, 'copy')).rejects.toThrow('disk full')
+
+      expect(calls).toEqual(['flush', 'stop', 'folder.save', 'resume'])
+    })
+
+    it('ハンドルの保存が失敗しても、自動保存を再開し、保存先の選択は変えない', async () => {
+      const { api, calls, folder } = await setup({ saveHandleError: new Error('idb failed') })
+
+      await expect(api.moveToFolder(folder, 'copy')).rejects.toThrow('idb failed')
+
+      expect(calls).toEqual(['flush', 'stop', 'folder.save', 'saveHandle', 'resume'])
+    })
+
+    it('保存先の選択の保存が失敗しても、自動保存を再開する', async () => {
+      const { api, calls, folder } = await setup({ saveConfigError: new Error('idb failed') })
+
+      await expect(api.moveToFolder(folder, 'copy')).rejects.toThrow('idb failed')
+
+      expect(calls.at(-1)).toBe('resume')
+    })
+
+    it('成功したときは自動保存を再開しない(再読み込みで新しい保存先から起動し直すため)', async () => {
+      const { api, calls, folder } = await setup()
+
+      await api.moveToFolder(folder, 'copy')
+
+      expect(calls).not.toContain('resume')
     })
   })
 
@@ -165,6 +206,36 @@ describe('createStorageApi', () => {
 
       expect(calls).toEqual(['flush', 'stop', 'saveConfig:indexeddb'])
       expect(indexedDbSaved).toEqual([])
+    })
+
+    it('ブラウザ内への書き込みが失敗したら、自動保存を再開し、保存先の選択は変えない', async () => {
+      const { api, calls } = await setup({
+        status: { kind: 'folder', folderName: '家計簿' },
+        indexedDbSaveError: new Error('quota exceeded'),
+      })
+
+      await expect(api.moveToIndexedDb('copy')).rejects.toThrow('quota exceeded')
+
+      expect(calls).toEqual(['flush', 'stop', 'indexedDb.save', 'resume'])
+    })
+
+    it('keepで保存先の選択の保存が失敗したら、自動保存を再開する', async () => {
+      const { api, calls } = await setup({
+        status: { kind: 'folder', folderName: '家計簿' },
+        saveConfigError: new Error('idb failed'),
+      })
+
+      await expect(api.moveToIndexedDb('keep')).rejects.toThrow('idb failed')
+
+      expect(calls).toEqual(['flush', 'stop', 'saveConfig:indexeddb', 'resume'])
+    })
+
+    it('成功したときは自動保存を再開しない', async () => {
+      const { api, calls } = await setup({ status: { kind: 'folder', folderName: '家計簿' } })
+
+      await api.moveToIndexedDb('copy')
+
+      expect(calls).not.toContain('resume')
     })
   })
 

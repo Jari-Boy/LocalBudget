@@ -63,6 +63,20 @@ export function createStorageApi(deps: StorageApiDeps): StorageRpcApi {
     await autoSave.stop()
   }
 
+  /**
+   * 自動保存を止めた後の手順(新しい保存先への書き込み、ハンドルと保存先の選択の保存)を実行する。
+   * 失敗したらページは再読み込みされず、元の保存先のまま編集が続くため、止めた自動保存を再開する。
+   * 成功したときは再開しない(再読み込みで新しい保存先から起動し直す)。
+   */
+  async function afterSettling(steps: () => Promise<void>): Promise<void> {
+    try {
+      await steps()
+    } catch (error) {
+      autoSave.resume()
+      throw error
+    }
+  }
+
   return {
     getStatus: () => status,
 
@@ -74,21 +88,23 @@ export function createStorageApi(deps: StorageApiDeps): StorageRpcApi {
         const data = await folderAdapter.load()
         if (data === null) throw new InvalidBackupFileError('the folder has no database file')
         await assertImportableDatabase(data)
-        await settleAutoSave()
-      } else {
-        await settleAutoSave()
-        await folderAdapter.save(db.export())
       }
 
-      await deps.saveFolderHandle(folder)
-      await deps.saveConfig({ kind: 'folder' })
+      await settleAutoSave()
+      await afterSettling(async () => {
+        if (mode === 'copy') await folderAdapter.save(db.export())
+        await deps.saveFolderHandle(folder)
+        await deps.saveConfig({ kind: 'folder' })
+      })
     },
 
     async moveToIndexedDb(mode) {
       assertWritable()
       await settleAutoSave()
-      if (mode === 'copy') await deps.indexedDbAdapter.save(db.export())
-      await deps.saveConfig({ kind: 'indexeddb' })
+      await afterSettling(async () => {
+        if (mode === 'copy') await deps.indexedDbAdapter.save(db.export())
+        await deps.saveConfig({ kind: 'indexeddb' })
+      })
     },
   }
 }
