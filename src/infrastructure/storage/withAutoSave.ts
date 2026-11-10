@@ -31,6 +31,11 @@ export interface AutoSaveController {
    * 止めていなければ何もしない。
    */
   resume(): void
+  /**
+   * 保存先のファイルが外部(別の端末の同期等)で更新されていたため、保存を止めているか(計画Issue #175)。
+   * trueの間は上書きを避けて保存せず、ページを再読み込みして最新のファイルを読み直すまで続く。
+   */
+  hasExternalChange(): boolean
   /** 直近のsave()呼び出しが失敗していればそのエラー、成功していればnull。 */
   getLastSaveError(): unknown
 }
@@ -166,6 +171,7 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
       stopped = false
       scheduleSave()
     },
+    hasExternalChange: () => false,
     getLastSaveError: () => lastSaveError,
   }
 }

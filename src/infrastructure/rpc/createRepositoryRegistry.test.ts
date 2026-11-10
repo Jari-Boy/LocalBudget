@@ -39,6 +39,7 @@ function createStubAutoSaveController(): AutoSaveController {
     flush: async () => {},
     stop: async () => {},
     resume: () => {},
+    hasExternalChange: () => false,
     getLastSaveError: () => null,
   }
 }

@@ -50,7 +50,10 @@ function createRecorder(options: { saveError?: Error } = {}) {
     stop: async () => {
       calls.push('stop')
     },
-    resume: () => {},
+    resume: () => {
+      calls.push('resume')
+    },
+    hasExternalChange: () => false,
     getLastSaveError: () => null,
   }
   const storageAdapter: StorageAdapter = {
@@ -103,6 +106,47 @@ describe('importDatabaseBackup', () => {
     const { autoSaveController, storageAdapter } = createRecorder({ saveError })
 
     await expect(importDatabaseBackup(data, storageAdapter, autoSaveController)).rejects.toBe(saveError)
+  })
+
+  it('バイト列の保存に失敗したら、自動保存を再開(resume)してからエラーを伝える', async () => {
+    const data = await validBackup()
+    const saveError = new Error('IndexedDB quota exceeded')
+    const { calls, autoSaveController, storageAdapter } = createRecorder({ saveError })
+
+    await expect(importDatabaseBackup(data, storageAdapter, autoSaveController)).rejects.toBe(saveError)
+    expect(calls).toEqual(['flush', 'stop', 'save', 'resume'])
+  })
+
+  it('保存に成功したときは再開(resume)しない(再読み込みで起動し直すため)', async () => {
+    const data = await validBackup()
+    const { calls, autoSaveController, storageAdapter } = createRecorder()
+
+    await importDatabaseBackup(data, storageAdapter, autoSaveController)
+    expect(calls).not.toContain('resume')
+  })
+
+  it('保存に失敗した後は、その後の変更が再び自動保存される', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const data = await validBackup()
+    const liveDb = await createTestDatabase()
+    const saved: Uint8Array[] = []
+    let count = 0
+    const storageAdapter: StorageAdapter = {
+      load: async () => null,
+      save: async (bytes) => {
+        count += 1
+        // 1回目(flushによる今のDBの保存)は成功、2回目(インポート自身の保存)だけ失敗させる
+        if (count === 2) throw new Error('IndexedDB quota exceeded')
+        saved.push(bytes)
+      },
+    }
+    const autoSaveController = withAutoSave(liveDb, storageAdapter)
+
+    await expect(importDatabaseBackup(data, storageAdapter, autoSaveController)).rejects.toBeInstanceOf(Error)
+    const before = saved.length
+    liveDb.run('CREATE TABLE t (id INTEGER)')
+    await autoSaveController.flush()
+    expect(saved.length).toBeGreaterThan(before)
   })
 
   it('事前のflush()での保存が失敗しても読み込みを続けてバイト列を保存し、その後の変更は自動保存されない', async () => {

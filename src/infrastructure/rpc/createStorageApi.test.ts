@@ -56,6 +56,7 @@ async function setup(options: {
     resume: () => {
       calls.push('resume')
     },
+    hasExternalChange: () => false,
     getLastSaveError: () => null,
   }
   const folderAdapter: StorageAdapter = {
