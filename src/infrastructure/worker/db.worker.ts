@@ -13,7 +13,14 @@ import { seedStandardAccountGroups } from '../db/seedStandardAccountGroups'
 import { createRepositoryRegistry } from '../rpc/createRepositoryRegistry'
 import { registerDomainErrorTransferHandler } from '../rpc/registerDomainErrorTransferHandler'
 import { WORKER_READY_MESSAGE, createWorkerInitErrorMessage } from '../rpc/workerLifecycleMessages'
+import { createStorageApi } from '../rpc/createStorageApi'
+import { acquireWriteLock } from '../storage/acquireWriteLock'
+import { loadDirectoryHandle, saveDirectoryHandle } from '../storage/directoryHandleStore'
+import { FileSystemAccessStorageAdapter } from '../storage/FileSystemAccessStorageAdapter'
 import { IndexedDBStorageAdapter } from '../storage/IndexedDBStorageAdapter'
+import { openStorageAdapter } from '../storage/openStorageAdapter'
+import { createReadOnlyStorageAdapter } from '../storage/readOnlyStorageAdapter'
+import { loadStorageConfig, saveStorageConfig } from '../storage/storageConfig'
 import { withAutoSave } from '../storage/withAutoSave'
 
 /**
@@ -23,8 +30,9 @@ import { withAutoSave } from '../storage/withAutoSave'
  * WORKER_READY_MESSAGEを送出し、メインスレッド側(createDbClient/waitForWorkerReady)は
  * これを待ってからComlink.wrap()する。初期化中に例外が発生した場合はworker-init-error
  * メッセージを送出し、メインスレッド側のPromiseを無期限にハングさせず確実にrejectさせる。
- * 起動時はIndexedDBStorageAdapterから既存DBのバイト列をロードして復元し(計画Issue #25、
- * FileSystemAccessStorageAdapterへの対応・保存先切り替えは別Issue)、マイグレーション適用後
+ * 起動時は保存された保存先の選択(storageConfig、計画Issue #174)に応じたStorageAdapter
+ * (IndexedDB、またはメインスレッドで権限確認済みのフォルダ)から既存DBのバイト列をロードして復元し(計画Issue #25)、
+ * 書き込みの権利(Web Locks)が取れないタブでは保存を無視する読み取り専用のアダプタで包む。マイグレーション適用後
  * withAutoSaveでDB変更をtrailing debounce(計画Issue #58)で永続化する。withAutoSaveが返す
  * AutoSaveControllerはRepositoryRegistryのautoSaveキーとして公開し、メインスレッド側が
  * ページ非表示時等にRPC越しにflush()を呼べるようにする。同じstorageAdapterインスタンスは
@@ -65,7 +73,17 @@ import { withAutoSave } from '../storage/withAutoSave'
 async function main(): Promise<void> {
   registerDomainErrorTransferHandler()
 
-  const storageAdapter = new IndexedDBStorageAdapter()
+  // 保存先は保存された選択に従う(計画Issue #174)。フォルダの権限が無ければここで例外になり、
+  // DBを開かずにworker-init-errorで止まる(通常はメインスレッドの再接続画面が先に止める)。
+  // 書き込みの権利が取れない(別のタブが保持している)ときは、読み込みだけ行い保存は無視する
+  const opened = await openStorageAdapter({
+    loadConfig: loadStorageConfig,
+    loadFolderHandle: loadDirectoryHandle,
+    createIndexedDbAdapter: () => new IndexedDBStorageAdapter(),
+    createFolderAdapter: (folder) => FileSystemAccessStorageAdapter.fromDirectoryHandle(folder),
+  })
+  const writable = await acquireWriteLock(navigator.locks)
+  const storageAdapter = writable ? opened.adapter : createReadOnlyStorageAdapter(opened.adapter)
   const savedData = await storageAdapter.load()
 
   const db = await createBrowserDatabase(savedData ?? undefined)
@@ -80,7 +98,16 @@ async function main(): Promise<void> {
   seedDevSampleDataIfDev(db)
   const autoSaveController = withAutoSave(db, storageAdapter)
 
-  const registry = createRepositoryRegistry(db, autoSaveController, storageAdapter)
+  const storageApi = createStorageApi({
+    db,
+    autoSave: autoSaveController,
+    status: { kind: opened.kind, folderName: opened.folderName, writable },
+    createFolderAdapter: (folder) => FileSystemAccessStorageAdapter.fromDirectoryHandle(folder),
+    indexedDbAdapter: new IndexedDBStorageAdapter(),
+    saveFolderHandle: saveDirectoryHandle,
+    saveConfig: saveStorageConfig,
+  })
+  const registry = createRepositoryRegistry(db, autoSaveController, storageAdapter, storageApi)
   registry.recurringTransactionProposal.listPending()
   Comlink.expose(registry)
 

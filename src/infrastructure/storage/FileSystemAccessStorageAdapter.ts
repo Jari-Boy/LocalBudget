@@ -26,11 +26,25 @@ export class FileSystemAccessStorageAdapter implements StorageAdapter {
   private directoryHandle: FileSystemDirectoryHandle | null = null
   private readonly fileName: string
 
-  constructor(fileName: string = DEFAULT_FILE_NAME) {
-    if (!isFileSystemAccessSupported()) {
+  /**
+   * `directoryHandle`は、メインスレッドで選択・権限確認済みのハンドルを受け取るときに渡す
+   * (計画Issue #174)。Worker内には`window`が無くコンストラクタの対応判定
+   * (`showDirectoryPicker`の有無)が使えないため、ハンドルがあれば判定を通さない。
+   * ハンドルがあること自体が、対応環境の証拠になる。
+   */
+  constructor(fileName: string = DEFAULT_FILE_NAME, directoryHandle: FileSystemDirectoryHandle | null = null) {
+    if (directoryHandle === null && !isFileSystemAccessSupported()) {
       throw new FileSystemAccessNotSupportedError()
     }
     this.fileName = fileName
+    this.directoryHandle = directoryHandle
+  }
+
+  static fromDirectoryHandle(
+    directoryHandle: FileSystemDirectoryHandle,
+    fileName: string = DEFAULT_FILE_NAME,
+  ): FileSystemAccessStorageAdapter {
+    return new FileSystemAccessStorageAdapter(fileName, directoryHandle)
   }
 
   /** showDirectoryPickerでユーザーにディレクトリを選択させ、ハンドルをIndexedDBに保存する。 */
