@@ -36,9 +36,9 @@ import { InvalidBackupFileError } from './InvalidBackupFileError'
  * バイト列を上書きしてしまう。flush()を先に呼ぶのは、インポートの保存自体が失敗した場合でも
  * 直前までの編集がStorageAdapterに残るようにするため。
  *
- * ブラウザのWASM読み込みに依存するcreateBrowserDatabaseを使うため、db.worker.ts等の
- * 既存コードと同様にNode/Vitestでは検証できず、Playwrightで検証する
- * (docs/architecture.md 10章)。
+ * ブラウザのWASM読み込みに依存するcreateBrowserDatabaseを使うため、実ブラウザでの動作は
+ * Playwrightで検証する(docs/architecture.md 10章)。検証・flush・stop・saveの呼び出しの有無と順序は、
+ * createBrowserDatabaseをNode版のsql.jsに差し替えたimportDatabaseBackup.test.tsで検証する(計画Issue #173)。
  */
 export async function importDatabaseBackup(
   data: Uint8Array,

@@ -10,7 +10,8 @@
  * 確かめられなくなる。なお、アプリ自身のWorkerが読み込み後の再読み込みで古いDBを書き戻さないための
  * AutoSaveController.stop()は、stop()を外してもこのテストが通ることを実装時に確認している
  * (Chromiumでは、再読み込み時のpagehideからのflush()がWorkerの終了までに保存を終えられないため)。
- * stop()は起きうる競合への備えであり、その振る舞いはwithAutoSave.test.tsで検証する。
+ * stop()は起きうる競合への備えであり、その振る舞いはwithAutoSave.test.tsで、インポートでの呼び出しの
+ * 有無と順序はimportDatabaseBackup.test.tsで検証する。
  * 外部依存: Playwright(実ブラウザ、ネットワークアクセスなし)。
  */
 import { test, expect, type Page } from '@playwright/test'
