@@ -4,7 +4,9 @@ import { InvalidBackupFileError } from '../../infrastructure/backup/InvalidBacku
 import { fromDatabaseFile } from '../../infrastructure/storage/databaseFileCodec'
 import '../common/unsaved-changes/UnsavedChangesDialog.css'
 import { backupFileName } from './backupFileName'
+import { formatDateTime, formatFileSize } from './fileInfoFormat'
 import { markImportCompleted, takeImportNotice, type NoticeStorage } from './importNotice'
+import { StorageSection, type FolderPicker, type StorageApi } from './StorageSection'
 import './SettingsScreen.css'
 
 /** 設定画面が使うWorker側のバックアップAPI(RepositoryRegistry.backup、計画Issue #26)。 */
@@ -15,6 +17,10 @@ export interface BackupApi {
 
 export interface SettingsScreenProps {
   backup: BackupApi
+  /** 保存先の状態の取得と切り替え(Worker側、計画Issue #174) */
+  storage: StorageApi
+  /** フォルダ選択(メインスレッド、計画Issue #174) */
+  folderPicker: FolderPicker
   /** DBのバイト列をファイルとしてダウンロードさせる(本番はdownloadDatabaseBackup) */
   download: (data: Uint8Array, fileName: string) => void
   /** ページを再読み込みし、Workerに読み込んだDBを読み直させる(本番はwindow.location.reload) */
@@ -32,21 +38,9 @@ type ImportState =
   | { kind: 'invalid'; file: File }
   | { kind: 'failed'; file: File }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
-function formatDateTime(time: number): string {
-  const date = new Date(time)
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
 /**
  * 設定画面(計画Issue #173)。データの保存先の表示と、バックアップの書き出し・読み込みを置く。
- * 保存先は現状「このブラウザ内」(IndexedDB)の表示だけで、フォルダへの保存(計画Issue #174)で
- * この欄に切り替えの操作を加える。
+ * 保存先の表示と切り替え(ブラウザ内/フォルダ、計画Issue #174)はStorageSectionが受け持つ。
  *
  * 読み込みは、ファイルを選ぶ → 確認ダイアログ(置き換えて元に戻せないこと、直前の書き出し)
  * → 読み込み中 → 成功ならお知らせの印を残してページを再読み込みする。Worker内のDBは
@@ -55,7 +49,15 @@ function formatDateTime(time: number): string {
  * それ以外の失敗(保存先への書き込み失敗等)は、Worker側で自動保存を止めた後の可能性があるため、
  * ページの読み込み直しを促す。
  */
-export function SettingsScreen({ backup, download, reload, noticeStorage, now = () => new Date() }: SettingsScreenProps) {
+export function SettingsScreen({
+  backup,
+  storage,
+  folderPicker,
+  download,
+  reload,
+  noticeStorage,
+  now = () => new Date(),
+}: SettingsScreenProps) {
   const { t } = useTranslation('settings')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [importState, setImportState] = useState<ImportState>({ kind: 'idle' })
@@ -121,16 +123,12 @@ export function SettingsScreen({ backup, download, reload, noticeStorage, now = 
         </div>
       )}
 
-      <section className="settings__card" aria-labelledby="settings-storage-heading">
-        <h2 id="settings-storage-heading" className="settings__card-title">
-          {t('storage.heading')}
-        </h2>
-        <div className="settings__storage">
-          <span className="settings__muted">{t('storage.label')}</span>
-          <span className="settings__strong">{t('storage.browser')}</span>
-        </div>
-        <p className="settings__hint">{t('storage.browserNote')}</p>
-      </section>
+      <StorageSection
+        storage={storage}
+        folderPicker={folderPicker}
+        exportCurrent={() => void handleExport()}
+        reload={reload}
+      />
 
       <section className="settings__card" aria-labelledby="settings-backup-heading">
         <h2 id="settings-backup-heading" className="settings__card-title">

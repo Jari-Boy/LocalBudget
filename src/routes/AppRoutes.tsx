@@ -33,6 +33,8 @@ import { ProjectMasterTab } from '../components/master/ProjectMasterTab'
 import { MappingMasterTab } from '../components/master/MappingMasterTab'
 import { RuleMasterTab } from '../components/master/RuleMasterTab'
 import { SettingsScreen, type BackupApi } from '../components/settings/SettingsScreen'
+import type { StorageApi } from '../components/settings/StorageSection'
+import { browserFolderPicker } from '../infrastructure/storage/browserFolderPicker'
 import { sessionNoticeStorage } from '../components/settings/importNotice'
 import { downloadDatabaseBackup } from '../infrastructure/backup/downloadDatabaseBackup'
 
@@ -116,6 +118,7 @@ export function AppRoutes() {
     recurringTransactionRuleRepository,
     recurringTransactionProposalApi,
     backupApi,
+    storageApi,
   } = useMemo(
     () => ({
       accountRepository: client.account as unknown as Comlink.Remote<AccountRepository>,
@@ -144,6 +147,7 @@ export function AppRoutes() {
       recurringTransactionProposalApi:
         client.recurringTransactionProposal as unknown as Comlink.Remote<RecurringTransactionProposalRpcApi>,
       backupApi: client.backup as unknown as Comlink.Remote<BackupApi>,
+      storageApi: client.storage as unknown as Comlink.Remote<StorageApi>,
     }),
     [client],
   )
@@ -360,6 +364,8 @@ export function AppRoutes() {
         element={
           <SettingsScreen
             backup={backupApi}
+            storage={storageApi}
+            folderPicker={browserFolderPicker}
             download={downloadDatabaseBackup}
             reload={() => window.location.reload()}
             noticeStorage={sessionNoticeStorage}

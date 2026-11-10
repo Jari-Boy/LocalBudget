@@ -46,6 +46,12 @@ function setup(options: { backup?: Partial<BackupApi>; noticeStorage?: NoticeSto
     <I18nextProvider i18n={i18n}>
       <SettingsScreen
         backup={backup}
+        storage={{
+          getStatus: async () => ({ kind: 'indexeddb', folderName: null, writable: true }),
+          moveToFolder: async () => {},
+          moveToIndexedDb: async () => {},
+        }}
+        folderPicker={{ isSupported: true, pick: async () => null, describe: async () => null }}
         download={download}
         reload={reload}
         noticeStorage={noticeStorage}
@@ -71,11 +77,11 @@ function chooseFile(container: HTMLElement, file: File) {
 const dialog = () => screen.getByRole('dialog')
 
 describe('SettingsScreen', () => {
-  it('見出し「設定」と、データの保存先が「このブラウザ内」であることを表示する', () => {
+  it('見出し「設定」と、データの保存先が「このブラウザ内」であることを表示する', async () => {
     setup()
     expect(screen.getByRole('heading', { level: 1, name: '設定' })).toBeInTheDocument()
     const storage = screen.getByRole('region', { name: 'データの保存先' })
-    expect(within(storage).getByText('このブラウザ内')).toBeInTheDocument()
+    expect(await within(storage).findByText('このブラウザ内')).toBeInTheDocument()
   })
 
   it('「書き出す」を押すと、Workerから受け取ったDBを日時入りのファイル名でダウンロードさせる', async () => {
