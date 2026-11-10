@@ -18,9 +18,11 @@ function createFakeFolder(initial?: Uint8Array) {
   let data: Uint8Array | null = initial ?? null
   let lastModified = 1000
   let writeCount = 0
+  let failGetFileAfterWrite = false
 
   const fileHandle = {
     async getFile() {
+      if (failGetFileAfterWrite && writeCount > 0) throw new DOMException('transient', 'NotReadableError')
       const bytes = data as Uint8Array
       return {
         lastModified,
@@ -68,6 +70,10 @@ function createFakeFolder(initial?: Uint8Array) {
     externalWrite(bytes: Uint8Array, options: { keepLastModified?: boolean } = {}) {
       data = bytes
       if (!options.keepLastModified) lastModified += 500
+    },
+    /** 書き込みの後の getFile() を失敗させる(同期クライアントがファイルを掴んでいる状況など)。 */
+    failGetFileAfterWrite(value: boolean) {
+      failGetFileAfterWrite = value
     },
     externalDelete() {
       data = null
@@ -173,5 +179,17 @@ describe('FileSystemAccessStorageAdapter の外部変更検知', () => {
     await adapter.save(bytes(2))
 
     expect(folder.writeCount).toBe(2)
+  })
+  it('書き込みは成功したが直後の getFile() が失敗した場合も、保存は成功として扱い、次の保存を外部変更と誤検知して止めない', async () => {
+    const folder = createFakeFolder(bytes(1, 2, 3))
+    const adapter = FileSystemAccessStorageAdapter.fromDirectoryHandle(folder.directoryHandle)
+    await adapter.load()
+    folder.failGetFileAfterWrite(true)
+
+    await adapter.save(bytes(4))
+    folder.failGetFileAfterWrite(false)
+    await adapter.save(bytes(5))
+
+    expect(Array.from(folder.content as Uint8Array)).toEqual([5])
   })
 })

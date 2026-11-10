@@ -119,8 +119,15 @@ export class FileSystemAccessStorageAdapter implements StorageAdapter {
 
     const fileHandle = await directoryHandle.getFileHandle(this.fileName, { create: true })
     await writeDatabaseToFileHandle(fileHandle, data)
-    // 自分の書き込みによる更新日時の変化を、次の保存で外部変更と誤検知しないよう記録し直す
-    this.knownState = stampOf(await fileHandle.getFile())
+    // 自分の書き込みによる更新日時の変化を、次の保存で外部変更と誤検知しないよう記録し直す。
+    // 書き込みは成功しているので、ここで取り直せなくても保存は失敗にしない。古い記録のままだと次の保存を
+    // 誤検知で止めてしまい、利用者は未保存の入力を捨てて開き直すしかなくなる(誤検知の害の方が大きい)ため、
+    // 記録を未確認(null)に戻し、次の保存は検査せずに書いて記録し直す。
+    try {
+      this.knownState = stampOf(await fileHandle.getFile())
+    } catch {
+      this.knownState = null
+    }
   }
 
   private requireDirectoryHandle(): FileSystemDirectoryHandle {
