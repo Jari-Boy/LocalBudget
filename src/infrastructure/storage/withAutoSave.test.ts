@@ -10,6 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTestDatabase } from '../db/createTestDatabase'
+import { ExternalChangeError } from './ExternalChangeError'
 import type { StorageAdapter } from './StorageAdapter'
 import { SAVE_DEBOUNCE_MS, withAutoSave } from './withAutoSave'
 
@@ -563,6 +564,85 @@ SAVE_DEBOUNCE_MS経過するまでsave()を呼ばない', async () => {
       await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
 
       expect(storageAdapter.saveCallCount).toBe(0)
+    })
+  })
+  describe('外部変更の検知による保存の停止(計画Issue #175)', () => {
+    /** 1回目のsave()だけExternalChangeErrorで拒否し、以降は成功する偽物。 */
+    function createConflictingStorageAdapter() {
+      let calls = 0
+      return {
+        get saveCallCount() {
+          return calls
+        },
+        async load() {
+          return null
+        },
+        async save() {
+          calls += 1
+          if (calls === 1) throw new ExternalChangeError()
+        },
+      } satisfies StorageAdapter & { saveCallCount: number }
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+    })
+
+    it('save()がExternalChangeErrorで拒否されると、hasExternalChange()がtrueになる', async () => {
+      const db = await createTestDatabase()
+      const controller = withAutoSave(db, createConflictingStorageAdapter())
+
+      expect(controller.hasExternalChange()).toBe(false)
+      db.run('CREATE TABLE t (id INTEGER)')
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+
+      expect(controller.hasExternalChange()).toBe(true)
+    })
+
+    it('検知後は以後の変更もflush()もsave()を呼ばず、保存が止まったままになる', async () => {
+      const db = await createTestDatabase()
+      const adapter = createConflictingStorageAdapter()
+      const controller = withAutoSave(db, adapter)
+      db.run('CREATE TABLE t (id INTEGER)')
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+
+      db.run('CREATE TABLE u (id INTEGER)')
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+      await controller.flush()
+
+      expect(adapter.saveCallCount).toBe(1)
+    })
+
+    it('resume()では外部変更による停止は解除されない(再読み込みでのみ復帰する)', async () => {
+      const db = await createTestDatabase()
+      const adapter = createConflictingStorageAdapter()
+      const controller = withAutoSave(db, adapter)
+      db.run('CREATE TABLE t (id INTEGER)')
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+
+      await controller.stop()
+      controller.resume()
+      db.run('CREATE TABLE u (id INTEGER)')
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+
+      expect(controller.hasExternalChange()).toBe(true)
+      expect(adapter.saveCallCount).toBe(1)
+    })
+
+    it('ExternalChangeError以外の失敗ではhasExternalChange()はfalseのままで、次の変更で保存を試みる', async () => {
+      const db = await createTestDatabase()
+      const controller = withAutoSave(db, createFailingStorageAdapter(new Error('quota')))
+
+      db.run('CREATE TABLE t (id INTEGER)')
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+
+      expect(controller.hasExternalChange()).toBe(false)
+      expect(controller.getLastSaveError()).toBeInstanceOf(Error)
     })
   })
 })

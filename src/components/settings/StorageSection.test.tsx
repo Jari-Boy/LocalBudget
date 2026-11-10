@@ -22,8 +22,8 @@ afterEach(cleanup)
 const HANDLE = { name: '家計簿(OneDrive)' } as FileSystemDirectoryHandle
 const EXISTING: FolderDatabaseInfo = { size: 412 * 1024, lastModified: new Date(2026, 10, 8, 21, 14).getTime() }
 
-const BROWSER: StorageStatus = { kind: 'indexeddb', folderName: null, writable: true }
-const FOLDER: StorageStatus = { kind: 'folder', folderName: '家計簿(OneDrive)', writable: true }
+const BROWSER: StorageStatus = { kind: 'indexeddb', folderName: null, writable: true, externalChange: false }
+const FOLDER: StorageStatus = { kind: 'folder', folderName: '家計簿(OneDrive)', writable: true, externalChange: false }
 
 function setup(
   options: {
@@ -97,7 +97,7 @@ describe('StorageSection', () => {
 
   describe('書き込みの権利が無いタブ', () => {
     it('保存先を変える操作を無効にし、別のタブで開いていることを伝える', async () => {
-      setup({ status: { ...FOLDER, writable: false } })
+      setup({ status: { ...FOLDER, writable: false, externalChange: false } })
       expect(await within(region()).findByText(/別のタブ/)).toBeInTheDocument()
       expect(within(region()).getByRole('button', { name: 'フォルダを選ぶ…' })).toBeDisabled()
       expect(within(region()).getByRole('button', { name: 'ブラウザ保存に戻す…' })).toBeDisabled()

@@ -13,6 +13,11 @@ export interface StorageStatus {
   folderName: string | null
   /** falseなら別のタブが書き込みの権利を持っており、このタブの変更は保存されない */
   writable: boolean
+  /**
+   * 保存先のファイルが外部(別の端末の同期等)で更新されたため、保存を止めている(計画Issue #175)。
+   * 起動後に変わりうるので、getStatus()が呼ばれるたびに自動保存の状態から取り直す。
+   */
+  externalChange: boolean
 }
 
 /**
@@ -37,7 +42,7 @@ export interface StorageRpcApi {
 export interface StorageApiDeps {
   db: Database
   autoSave: AutoSaveController
-  status: StorageStatus
+  status: Omit<StorageStatus, 'externalChange'>
   createFolderAdapter(folder: FileSystemDirectoryHandle): StorageAdapter
   indexedDbAdapter: StorageAdapter
   saveFolderHandle(folder: FileSystemDirectoryHandle): Promise<void>
@@ -78,7 +83,7 @@ export function createStorageApi(deps: StorageApiDeps): StorageRpcApi {
   }
 
   return {
-    getStatus: () => status,
+    getStatus: () => ({ ...status, externalChange: autoSave.hasExternalChange() }),
 
     async moveToFolder(folder, mode) {
       assertWritable()

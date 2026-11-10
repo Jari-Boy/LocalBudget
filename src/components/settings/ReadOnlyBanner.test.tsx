@@ -28,20 +28,20 @@ function setup(status: StorageStatus) {
 
 describe('ReadOnlyBanner', () => {
   it('書き込めないタブでは、別のタブで開いていて変更が保存されないことを警告する', async () => {
-    setup({ kind: 'indexeddb', folderName: null, writable: false })
+    setup({ kind: 'indexeddb', folderName: null, writable: false, externalChange: false })
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('別のタブでこのアプリを開いています')
     expect(alert).toHaveTextContent('変更は保存されません')
   })
 
   it('書き込めるタブでは何も表示しない', async () => {
-    const { getStatus } = setup({ kind: 'indexeddb', folderName: null, writable: true })
+    const { getStatus } = setup({ kind: 'indexeddb', folderName: null, writable: true, externalChange: false })
     await waitFor(() => expect(getStatus).toHaveBeenCalled())
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('「もう一度確認する」でページを再読み込みする', async () => {
-    const { reload } = setup({ kind: 'folder', folderName: '家計簿', writable: false })
+    const { reload } = setup({ kind: 'folder', folderName: '家計簿', writable: false, externalChange: false })
     fireEvent.click(await screen.findByRole('button', { name: 'もう一度確認する' }))
     expect(reload).toHaveBeenCalledTimes(1)
   })
