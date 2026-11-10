@@ -33,6 +33,9 @@ import { ProjectMasterTab } from '../components/master/ProjectMasterTab'
 import { MappingMasterTab } from '../components/master/MappingMasterTab'
 import { RuleMasterTab } from '../components/master/RuleMasterTab'
 import { SettingsScreen, type BackupApi } from '../components/settings/SettingsScreen'
+import { ReadOnlyBanner } from '../components/settings/ReadOnlyBanner'
+import type { StorageApi } from '../components/settings/StorageSection'
+import { browserFolderPicker } from '../infrastructure/storage/browserFolderPicker'
 import { sessionNoticeStorage } from '../components/settings/importNotice'
 import { downloadDatabaseBackup } from '../infrastructure/backup/downloadDatabaseBackup'
 
@@ -116,6 +119,7 @@ export function AppRoutes() {
     recurringTransactionRuleRepository,
     recurringTransactionProposalApi,
     backupApi,
+    storageApi,
   } = useMemo(
     () => ({
       accountRepository: client.account as unknown as Comlink.Remote<AccountRepository>,
@@ -144,6 +148,7 @@ export function AppRoutes() {
       recurringTransactionProposalApi:
         client.recurringTransactionProposal as unknown as Comlink.Remote<RecurringTransactionProposalRpcApi>,
       backupApi: client.backup as unknown as Comlink.Remote<BackupApi>,
+      storageApi: client.storage as unknown as Comlink.Remote<StorageApi>,
     }),
     [client],
   )
@@ -158,6 +163,9 @@ export function AppRoutes() {
   )
 
   return (
+    <>
+    {/* 別のタブが書き込みの権利を持つとき、このタブの変更が保存されないことを画面の上部に知らせる(計画Issue #174) */}
+    <ReadOnlyBanner storage={storageApi} reload={() => window.location.reload()} />
     <Routes>
       {/* 中継(ハブ)画面とホーム画面は廃止した。旧URLは各領域の入口画面へリダイレクトする */}
       <Route path="/" element={<Navigate to="/journal/entries" replace />} />
@@ -360,6 +368,8 @@ export function AppRoutes() {
         element={
           <SettingsScreen
             backup={backupApi}
+            storage={storageApi}
+            folderPicker={browserFolderPicker}
             download={downloadDatabaseBackup}
             reload={() => window.location.reload()}
             noticeStorage={sessionNoticeStorage}
@@ -371,6 +381,7 @@ export function AppRoutes() {
 
       <Route path="*" element={<Navigate to="/journal/entries" replace />} />
     </Routes>
+    </>
   )
 }
 

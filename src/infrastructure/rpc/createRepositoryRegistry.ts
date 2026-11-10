@@ -41,6 +41,7 @@ import {
   type RecurringTransactionProposalRpcApi,
 } from './createRecurringTransactionProposalApi'
 import type { StorageAdapter } from '../storage/StorageAdapter'
+import type { StorageRpcApi } from './createStorageApi'
 import type { AutoSaveController } from '../storage/withAutoSave'
 
 /**
@@ -104,6 +105,8 @@ export interface RepositoryRegistry {
    */
   autoSave: AutoSaveController & Comlink.ProxyMarked
   backup: BackupRpcApi
+  /** 保存先の状態の取得と切り替え(計画Issue #174) */
+  storage: StorageRpcApi
 }
 
 /**
@@ -118,6 +121,7 @@ export function createRepositoryRegistry(
   db: Database,
   autoSaveController: AutoSaveController,
   storageAdapter: StorageAdapter,
+  storage: StorageRpcApi,
 ): RepositoryRegistry {
   const journalEntryRepository = new SqlJsJournalEntryRepository(db)
   const journalEntryDraftRepository = new SqlJsJournalEntryDraftRepository(db)
@@ -151,5 +155,6 @@ export function createRepositoryRegistry(
       export: () => db.export(),
       importDatabase: (data) => importDatabaseBackup(data, storageAdapter, autoSaveController),
     },
+    storage,
   }
 }

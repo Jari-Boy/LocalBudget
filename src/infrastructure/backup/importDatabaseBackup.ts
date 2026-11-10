@@ -1,10 +1,6 @@
-import type { Database } from 'sql.js'
-import { createBrowserDatabase } from '../db/createBrowserDatabase'
-import { runMigrations } from '../db/migrations'
 import type { StorageAdapter } from '../storage/StorageAdapter'
 import type { AutoSaveController } from '../storage/withAutoSave'
-import { assertValidDatabaseSchema } from './assertValidDatabaseSchema'
-import { InvalidBackupFileError } from './InvalidBackupFileError'
+import { assertImportableDatabase } from './assertImportableDatabase'
 
 /**
  * アップロードされたDBバイト列を検証し、有効な場合のみStorageAdapterへ永続化する
@@ -45,19 +41,7 @@ export async function importDatabaseBackup(
   storageAdapter: StorageAdapter,
   autoSaveController: AutoSaveController,
 ): Promise<void> {
-  let scratchDb: Database | undefined
-  try {
-    scratchDb = await createBrowserDatabase(data)
-    assertValidDatabaseSchema(scratchDb)
-    runMigrations(scratchDb)
-  } catch (error) {
-    if (error instanceof InvalidBackupFileError) {
-      throw error
-    }
-    throw new InvalidBackupFileError(`invalid backup file: ${String(error)}`)
-  } finally {
-    scratchDb?.close()
-  }
+  await assertImportableDatabase(data)
 
   await autoSaveController.flush()
   await autoSaveController.stop()

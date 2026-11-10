@@ -24,6 +24,13 @@ export interface AutoSaveController {
    * pagehide等からflush()が呼ばれるため、止めておかないとインポートした内容が上書きされる。
    */
   stop(): Promise<void>
+  /**
+   * stop()で止めた自動保存を再開する(計画Issue #174)。保存先の切り替えが途中で失敗すると、
+   * ページが再読み込みされず元の保存先のまま編集が続くため、止めたままだと以後の変更が保存されない。
+   * 停止中のrun()は保存を予約しないので、再開時に1回保存を予約し、停止中の変更も保存する。
+   * 止めていなければ何もしない。
+   */
+  resume(): void
   /** 直近のsave()呼び出しが失敗していればそのエラー、成功していればnull。 */
   getLastSaveError(): unknown
 }
@@ -153,6 +160,11 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
         debounceTimer = null
       }
       await (pendingRerun ?? inFlightSave)
+    },
+    resume(): void {
+      if (!stopped) return
+      stopped = false
+      scheduleSave()
     },
     getLastSaveError: () => lastSaveError,
   }

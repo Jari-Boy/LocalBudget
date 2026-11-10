@@ -52,6 +52,12 @@
   font-size: var(--font-size-sm);
   line-height: 1.6;
   color: var(--color-text-muted);
+  /* 日本語を文節の途中で折り返さず、最後の行だけ極端に短くならないようにする */
+  word-break: auto-phrase;
+  text-wrap: pretty;
+  /* 文言中の改行(
+)を、文ごとの改行として表示する */
+  white-space: pre-line;
 }
 
 .settings__example {
@@ -90,6 +96,14 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* 書き出し・読み込み・保存先の各行のボタンは、幅をそろえる */
+.settings__row > .settings__button {
+  flex: none;
+  width: 184px;
+  box-sizing: border-box;
+  padding: 0 8px;
 }
 
 .settings__button {
@@ -247,4 +261,85 @@
   .settings__progress-bar {
     animation: none;
   }
+}
+
+/* 起動時の「フォルダに再接続」画面(計画Issue #174、承認済みモックアップ) */
+.settings__reconnect {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 24px;
+  background: var(--color-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings__reconnect-card {
+  width: 520px;
+  max-width: 100%;
+  padding: 28px;
+  gap: 14px;
+}
+
+.settings__reconnect-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.settings__reconnect-message {
+  margin: 0;
+  font-size: var(--font-size-base);
+  line-height: 1.7;
+}
+
+.settings__reconnect-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings__button--large {
+  min-height: 44px;
+}
+
+/* データの保存先欄(計画Issue #174) */
+.settings__badge {
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.settings__warning-box {
+  padding: 12px 16px;
+  background: var(--color-tag-yellow-bg);
+  border: 1px solid var(--color-warning-text);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--color-tag-yellow-text);
+}
+
+.settings__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 別のタブが書き込みの権利を持つときの警告(計画Issue #174) */
+.settings__read-only {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--color-tag-yellow-bg);
+  border-bottom: 1px solid var(--color-warning-text);
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+  color: var(--color-tag-yellow-text);
 }

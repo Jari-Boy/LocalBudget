@@ -5,6 +5,14 @@
  */
 export const WORKER_READY_MESSAGE = { type: 'worker-ready' } as const
 
+/**
+ * 書き込みの権利(Web Locks、計画Issue #174)を取れなかったページが起動するWorkerに付ける名前。
+ * 権利の取得はページ(メインスレッド)で1回だけ行い、結果をWorkerの名前で渡す。Workerごとに取ると、
+ * 開発時のStrictModeが作る使われないWorkerがロックを握り、本来のWorkerが読み取り専用になってしまう。
+ */
+export const READ_ONLY_WORKER_NAME = 'db-worker-read-only'
+export const WRITABLE_WORKER_NAME = 'db-worker'
+
 const WORKER_INIT_ERROR_TYPE = 'worker-init-error'
 
 export interface WorkerInitErrorMessage {

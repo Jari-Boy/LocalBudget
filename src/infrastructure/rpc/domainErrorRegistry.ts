@@ -6,6 +6,7 @@ import { InvalidRecurringScheduleError } from '../../domain/recurring-transactio
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
 import { MappingColumnNotFoundError } from '../../domain/statement-import/MappingColumnNotFoundError'
 import { InvalidBackupFileError } from '../backup/InvalidBackupFileError'
+import { ReadOnlyStorageError } from '../storage/ReadOnlyStorageError'
 
 export interface SerializedDomainError {
   name: string
@@ -40,6 +41,7 @@ const DOMAIN_ERROR_REVIVERS: Record<string, DomainErrorReviver> = {
   MappingColumnNotFoundError: (_message, extra) =>
     new MappingColumnNotFoundError(extra.fieldName as string, extra.columnSpec as string),
   InvalidBackupFileError: (message) => new InvalidBackupFileError(message),
+  ReadOnlyStorageError: () => new ReadOnlyStorageError(),
 }
 
 const NON_EXTRA_KEYS = new Set(['name'])
