@@ -458,4 +458,60 @@ SAVE_DEBOUNCE_MS経過するまでsave()を呼ばない', async () => {
       expect(controller.getLastSaveError()).toBe(saveError)
     })
   })
+
+  describe('stop()', () => {
+    it('stop()後はrun()があってもSAVE_DEBOUNCE_MS経過後にsave()が呼ばれない', async () => {
+      const db = await createTestDatabase()
+      const storageAdapter = createRecordingStorageAdapter()
+      const controller = withAutoSave(db, storageAdapter)
+
+      await controller.stop()
+      db.run('CREATE TABLE t (id INTEGER)')
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+
+      expect(storageAdapter.saveCallCount).toBe(0)
+    })
+
+    it('stop()前に保留中だったデバウンスタイマーは破棄され、save()が呼ばれない', async () => {
+      const db = await createTestDatabase()
+      const storageAdapter = createRecordingStorageAdapter()
+      const controller = withAutoSave(db, storageAdapter)
+
+      db.run('CREATE TABLE t (id INTEGER)')
+      await controller.stop()
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+
+      expect(storageAdapter.saveCallCount).toBe(0)
+    })
+
+    it('stop()後にflush()を呼んでもsave()が呼ばれない(インポート後のページ再読み込み時のpagehideで古いDBが書き戻されない)', async () => {
+      const db = await createTestDatabase()
+      const storageAdapter = createRecordingStorageAdapter()
+      const controller = withAutoSave(db, storageAdapter)
+
+      await controller.stop()
+      await controller.flush()
+
+      expect(storageAdapter.saveCallCount).toBe(0)
+    })
+
+    it('保存が進行中にstop()を呼ぶと、その保存の完了を待ってから解決する', async () => {
+      const db = await createTestDatabase()
+      const storageAdapter = createControllableStorageAdapter()
+      const controller = withAutoSave(db, storageAdapter)
+
+      void controller.flush()
+      let stopped = false
+      const stopPromise = controller.stop().then(() => {
+        stopped = true
+      })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(stopped).toBe(false)
+
+      storageAdapter.resolveAll()
+      await stopPromise
+      expect(stopped).toBe(true)
+      expect(storageAdapter.saveCallCount).toBe(1)
+    })
+  })
 })

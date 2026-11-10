@@ -1084,3 +1084,16 @@
 **不採用案**: 継承(NULL=科目既定値/起票者)を残して読み取り側の関数を一本化する案(DBが「誰の行か」を保証せず、集計のたびに結合が要る)。既定メンバー変更時の挙動を「常に過去も更新」または「常に残す」に固定する案(上記のとおりどちらかで誤る)。既存データを移行するマイグレーションを書く案(開発用DBは作り直す前提のため見送り)。ブラウザの戻るボタンも守る案(`HashRouter`が`useBlocker`を使えず、実装が大きくなるため対象外)。
 
 **影響**: `docs/domain/household-members.md` 1.2、`journal.md`、`settlement.md`、`counterparties.md` 1.2、`accounts.md`、`architecture.md`(8章・6章)を更新した。過去の決定が挙げる「継承」「実効メンバー」は、当時の記録として残している。
+
+## 2026-11-10: 設定画面のバックアップ読み込みで AutoSaveController.stop() を足す。書き出しファイル名の分け方、E2E のデータ準備、サイドナビの固定(計画Issue #173)
+
+**背景**: 設定画面(`/settings`)からバックアップを書き出し・読み込めるようにした。読み込みは成功後に`window.location.reload()`する。再読み込みでは`pagehide`から`flush()`が呼ばれるため、読み込み直後に古い(読み込み前の)DBが保存されてバックアップを上書きする競合が起こりうる。
+
+**決定**:
+1. **`stop()`の追加と位置づけ**: `AutoSaveController.stop()`を追加し、`importDatabaseBackup`は検証成功後に`flush()` → `stop()` → `save()`の順で処理する(順序は`importDatabaseBackup.test.ts`で、`createBrowserDatabase`を`vi.mock`でNode版sql.jsに差し替えて検証)。`stop()`を外してもChromiumのE2Eでは上書きは再現しなかった。したがって確認済みの不具合の修正ではなく、起こりうる競合への備えとして入れた。事前の`flush()`の保存が失敗しても読み込みは続け、その後の変更は自動保存されない(再読み込みで読み込んだデータに戻るため)。
+2. **ファイル名の分け方**: 書き出しは`local-budget-backup-YYYYMMDD-HHmm.sqlite`(`backupFileName`)とした。フォルダ保存の`local-budget.sqlite`と取り違えて、バックアップを保存先のファイルとして置いてしまうことを避けるため。
+3. **読み込み後のお知らせ**: 再読み込みを挟むため、`importNotice`がsessionStorageにファイル名を残し、再読み込み後に1回だけ取り出す。ストレージが例外を投げても読み込み自体は止めない。
+4. **E2Eのデータ準備に別クライアントを使わない**: `e2e/settings-backup.spec.ts`では、`page.evaluate`で`createDbClient`を使ってデータを準備しない。別のWorkerができ、そのWorkerが`pagehide`で古いDBをIndexedDBに書き戻しうるため、読み込んだデータを上書きして結果が不安定になる。画面操作でデータを変える。
+5. **サイドナビの固定**: 幅768px以上(サイドナビとmainが横に並ぶ幅)では、サイドナビを`position: sticky`で画面の高さ(`100vh`/`100dvh`)に固定し、収まらないときはサイドナビの中だけをスクロールさせる。縦に長い画面(仕訳一覧等)で、一番下の「設定」が見切れていたため。狭い画面(サイドナビが上に積まれる)は従来どおり。`e2e/side-nav.spec.ts`で、縦に長いページの上端・下端で「設定」が画面内に見えることを検証する。
+
+**影響**: `docs/architecture.md` 4.2節・8章・10章を更新した。`StorageAdapter.save()`を生きたDBと別経路で呼ぶ処理(2026-08-02のflush決定の延長)では、`flush()`に加え`stop()`が必要か検討する。

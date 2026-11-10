@@ -20,6 +20,23 @@
   gap: 4px;
 }
 
+/*
+ * サイドナビとmainが横に並ぶ幅(200px + 560px が収まる幅)では、サイドナビを画面の高さに固定する。
+ * ページの縦の長さに合わせて伸びると、一番下の「設定」が長い画面で見切れるため(計画Issue #173)。
+ * 画面の高さに収まらないときは、サイドナビの中だけをスクロールさせる。狭い画面ではサイドナビが
+ * mainの上に積まれるため、固定しない。
+ */
+@media (min-width: 768px) {
+  .app-shell__nav {
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
+  }
+}
+
 .app-shell__brand {
   font-size: var(--font-size-brand);
   font-weight: 700;
@@ -48,6 +65,14 @@
   background: var(--color-nav-active);
   color: var(--color-surface);
   font-weight: 600;
+}
+
+/* 設定の前の区切り。上の余白を伸ばして、設定をサイドナビの一番下へ寄せる */
+.app-shell__nav-separator {
+  margin-top: auto;
+  padding-top: 16px;
+  border-bottom: 1px solid var(--color-nav-active);
+  margin-bottom: 4px;
 }
 
 .app-shell__badge {

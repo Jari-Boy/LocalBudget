@@ -16,6 +16,14 @@ export interface AutoSaveController {
    * 側からRPC越しに呼ぶ想定)。
    */
   flush(): Promise<void>
+  /**
+   * 以後の自動保存を止める。保留中のデバウンスタイマーは破棄し、進行中の保存があれば
+   * その完了を待って解決する。stop()後はrun()による保存予約もflush()も何もしない。
+   * バックアップのインポート(計画Issue #173)が、検証済みのバイト列を保存した後に
+   * 古いDBの状態が書き戻されないようにするために使う。インポート後のページ再読み込みでは
+   * pagehide等からflush()が呼ばれるため、止めておかないとインポートした内容が上書きされる。
+   */
+  stop(): Promise<void>
   /** 直近のsave()呼び出しが失敗していればそのエラー、成功していればnull。 */
   getLastSaveError(): unknown
 }
@@ -48,6 +56,7 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
   let inFlightSave: Promise<void> | null = null
   let pendingRerun: Promise<void> | null = null
+  let stopped = false
   const originalRun = db.run.bind(db)
 
   db.run = ((...args: Parameters<Database['run']>) => {
@@ -69,6 +78,7 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
   }) as Database['run']
 
   function scheduleSave(): void {
+    if (stopped) return
     if (debounceTimer !== null) {
       clearTimeout(debounceTimer)
     }
@@ -129,11 +139,20 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
 
   return {
     flush(): Promise<void> {
+      if (stopped) return Promise.resolve()
       if (debounceTimer !== null) {
         clearTimeout(debounceTimer)
         debounceTimer = null
       }
       return triggerSave()
+    },
+    async stop(): Promise<void> {
+      stopped = true
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer)
+        debounceTimer = null
+      }
+      await (pendingRerun ?? inFlightSave)
     },
     getLastSaveError: () => lastSaveError,
   }

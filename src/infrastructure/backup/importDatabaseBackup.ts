@@ -30,11 +30,15 @@ import { InvalidBackupFileError } from './InvalidBackupFileError'
  * 生きたdbの現在の状態を書き込もうとするタイマー)が、このインポートの保存より
  * 後に発火して上書きしてしまうのを防ぐため(実装時に発見した競合)。flush()は
  * 保留中のタイマーを解消して即座に保存を確定させるため、以後は本関数が保存する
- * バイト列が最後の書き込みになることが保証される。
+ * バイト列が最後の書き込みになることが保証される。flush()の後はautoSaveController.stop()で
+ * 自動保存を止める(計画Issue #173)。止めないと、呼び出し元がこの後ページを再読み込みする際の
+ * pagehide/visibilitychangeでflush()が呼ばれ、Worker内に残る古いDBの状態がインポートした
+ * バイト列を上書きしてしまう。flush()を先に呼ぶのは、インポートの保存自体が失敗した場合でも
+ * 直前までの編集がStorageAdapterに残るようにするため。
  *
- * ブラウザのWASM読み込みに依存するcreateBrowserDatabaseを使うため、db.worker.ts等の
- * 既存コードと同様にNode/Vitestでは検証できず、Playwrightで検証する
- * (docs/architecture.md 10章)。
+ * ブラウザのWASM読み込みに依存するcreateBrowserDatabaseを使うため、実ブラウザでの動作は
+ * Playwrightで検証する(docs/architecture.md 10章)。検証・flush・stop・saveの呼び出しの有無と順序は、
+ * createBrowserDatabaseをNode版のsql.jsに差し替えたimportDatabaseBackup.test.tsで検証する(計画Issue #173)。
  */
 export async function importDatabaseBackup(
   data: Uint8Array,
@@ -56,5 +60,6 @@ export async function importDatabaseBackup(
   }
 
   await autoSaveController.flush()
+  await autoSaveController.stop()
   await storageAdapter.save(data)
 }

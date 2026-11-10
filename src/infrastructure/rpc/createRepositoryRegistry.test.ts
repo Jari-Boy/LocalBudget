@@ -37,6 +37,7 @@ import { createRepositoryRegistry, type RepositoryRegistry } from './createRepos
 function createStubAutoSaveController(): AutoSaveController {
   return {
     flush: async () => {},
+    stop: async () => {},
     getLastSaveError: () => null,
   }
 }

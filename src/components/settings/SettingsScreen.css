@@ -1,0 +1,250 @@
+/* 設定画面(計画Issue #173、承認済みモックアップ) */
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings__title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  font-weight: 700;
+}
+
+.settings__card {
+  max-width: 760px;
+  box-sizing: border-box;
+  padding: 20px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings__card-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.settings__storage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  align-items: baseline;
+}
+
+.settings__muted {
+  min-width: 72px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.settings__strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.settings__hint {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+.settings__example {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.settings__warning {
+  font-weight: 600;
+  color: var(--color-warning-text);
+}
+
+.settings__error {
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+}
+
+.settings__danger-text {
+  color: var(--color-danger);
+}
+
+/* 書き出し・読み込みの行。狭い画面ではボタンが説明の下へ回り込む */
+.settings__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.settings__row-text {
+  flex: 1 1 360px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings__button {
+  font: inherit;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  min-height: var(--control-height);
+  padding: 0 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.settings__button:hover {
+  background: var(--color-hover);
+}
+
+.settings__button--primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.settings__button--primary:hover {
+  background: var(--color-accent-hover);
+}
+
+.settings__button--small {
+  font-size: var(--font-size-sm);
+  min-height: var(--control-height-sm);
+  padding: 0 12px;
+  color: var(--color-accent);
+}
+
+/* 元に戻せない置き換えの実行ボタン(確認ダイアログ) */
+.settings__button--danger {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: #fff;
+}
+
+/* 読み込み後のお知らせ */
+.settings__notice {
+  max-width: 760px;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--color-accent-soft);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-base);
+}
+
+.settings__notice-text {
+  flex: 1 1 400px;
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
+.settings__notice-text svg {
+  flex: none;
+  color: var(--color-accent);
+}
+
+.settings__notice-close {
+  font: inherit;
+  font-size: var(--font-size-sm);
+  min-height: var(--control-height-sm);
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+/* 確認ダイアログの中身 */
+.settings__file-info {
+  margin: 0;
+  padding: 12px;
+  background: var(--color-field-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 16px;
+  font-size: var(--font-size-sm);
+}
+
+.settings__file-info dt {
+  color: var(--color-text-muted);
+}
+
+.settings__file-info dd {
+  margin: 0;
+}
+
+.settings__file-box {
+  padding: 10px 12px;
+  background: var(--color-field-subtle);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.settings__export-first {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+}
+
+.settings__export-first .settings__hint {
+  flex: 1 1 200px;
+}
+
+.settings__progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-accent-soft);
+  overflow: hidden;
+}
+
+/* 進み具合は分からないため、往復するバーで動いていることだけを示す */
+.settings__progress-bar {
+  width: 40%;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--color-accent);
+  animation: settings-progress 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes settings-progress {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(150%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings__progress-bar {
+    animation: none;
+  }
+}
