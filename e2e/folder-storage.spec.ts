@@ -3,7 +3,9 @@
  * 設定画面から保存先をフォルダに切り替え、データがフォルダのDBファイルに保存されること、再読み込み後も
  * 保存先が保たれること、ブラウザ内へ戻せること、既存ファイルを開けること、起動時にフォルダの権限が
  * 「確認が必要」に戻っていれば再接続画面が出ること、2つ目のタブが読み取り専用になること、
- * フォルダ選択に非対応の環境で選択肢が無効になることを検証する。
+ * フォルダ選択に非対応の環境で選択肢が無効になることを検証する。計画Issue #175では、同期フォルダの
+ * 注意書きの表示と、フォルダのファイルが外部で更新された後の保存が上書きされず警告が出ること
+ * (開き直すと復帰すること)を検証する。
  *
  * showDirectoryPickerは実際のOSダイアログを開くためPlaywrightから操作できない。file-system-access-storage-adapter
  * .spec.tsと同じく、Origin Private File Systemの本物のFileSystemDirectoryHandleを返す偽物に差し替える
@@ -222,6 +224,60 @@ test.describe('ローカルフォルダへの保存', () => {
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible({ timeout: 15000 })
     await openFromNav(page, '設定')
     await expect(storageRegion(page)).toContainText('このブラウザ内')
+  })
+})
+
+/** 別の端末の同期クライアントがファイルを置き換えた状況を再現する(内容はそのままで更新日時だけ進める)。 */
+async function touchFolderFileExternally(page: Page) {
+  await page.evaluate(async (folderName) => {
+    const root = await navigator.storage.getDirectory()
+    const folder = await root.getDirectoryHandle(folderName)
+    const handle = await folder.getFileHandle('local-budget.sqlite')
+    const bytes = await (await handle.getFile()).arrayBuffer()
+    // 更新日時が同じ値にならないよう、少し待ってから書き直す
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const writable = await handle.createWritable()
+    await writable.write(bytes)
+    await writable.close()
+  }, FOLDER_NAME)
+}
+
+test.describe('同期フォルダの外部変更の検知(計画Issue #175)', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubFolderPicker(page)
+    await page.goto('/')
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
+  })
+
+  test('フォルダ保存を選ぶ設定画面に、1台だけで編集する旨とリアルタイム同期ではない旨の注意書きが出る', async ({ page }) => {
+    await switchToFolder(page)
+    await expect(storageRegion(page)).toContainText(FOLDER_NAME, { timeout: 15000 })
+    await expect(storageRegion(page)).toContainText('同時に編集できるのは1台だけ')
+    await expect(storageRegion(page)).toContainText('リアルタイム同期ではありません')
+  })
+
+  test('ファイルが外部で更新された後の変更は上書き保存されず、警告が出る。開き直すと警告が消える', async ({ page }) => {
+    await switchToFolder(page)
+    await expect(storageRegion(page)).toContainText(FOLDER_NAME, { timeout: 15000 })
+    await expect.poll(() => folderFileSize(page)).toBeGreaterThan(0)
+
+    await touchFolderFileExternally(page)
+    const modifiedByOthers = await folderFileModified(page)
+    await addAssetAccount(page, '外部変更後の口座')
+
+    const alert = page.getByRole('alert').filter({ hasText: '保存を停止しています' })
+    await expect(alert).toBeVisible({ timeout: 15000 })
+    await expect(alert).toContainText('保存されていません')
+    // 他の端末が更新したファイルを、古い内容で上書きしていない
+    expect(await folderFileModified(page)).toBe(modifiedByOthers)
+
+    await alert.getByRole('button', { name: 'フォルダのファイルを開き直す' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: '破棄して開き直す' }).click()
+
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: '保存を停止しています' })).toHaveCount(0)
+    // 破棄した入力は、フォルダのファイルに無い
+    await expectAccount(page, '外部変更後の口座', false)
   })
 })
 

@@ -47,7 +47,7 @@ function setup(options: { backup?: Partial<BackupApi>; noticeStorage?: NoticeSto
       <SettingsScreen
         backup={backup}
         storage={{
-          getStatus: async () => ({ kind: 'indexeddb', folderName: null, writable: true }),
+          getStatus: async () => ({ kind: 'indexeddb', folderName: null, writable: true, externalChange: false }),
           moveToFolder: async () => {},
           moveToIndexedDb: async () => {},
         }}

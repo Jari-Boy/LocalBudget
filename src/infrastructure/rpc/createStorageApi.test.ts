@@ -31,7 +31,8 @@ vi.mock('../db/createBrowserDatabase', () => ({
 }))
 
 async function setup(options: {
-  status?: Partial<StorageStatus>
+  status?: Partial<Omit<StorageStatus, 'externalChange'>>
+  externalChange?: boolean
   folderFile?: Uint8Array | null
   folderSaveError?: Error
   indexedDbSaveError?: Error
@@ -56,6 +57,7 @@ async function setup(options: {
     resume: () => {
       calls.push('resume')
     },
+    hasExternalChange: () => options.externalChange ?? false,
     getLastSaveError: () => null,
   }
   const folderAdapter: StorageAdapter = {
@@ -98,7 +100,12 @@ async function setup(options: {
 describe('createStorageApi', () => {
   it('getStatus()は起動時に決まった保存先の状態を返す', async () => {
     const { api } = await setup({ status: { kind: 'folder', folderName: '家計簿', writable: false } })
-    expect(api.getStatus()).toEqual({ kind: 'folder', folderName: '家計簿', writable: false })
+    expect(api.getStatus()).toEqual({ kind: 'folder', folderName: '家計簿', writable: false, externalChange: false })
+  })
+
+  it('getStatus()は、保存先のファイルの外部変更で保存を止めている間、externalChangeがtrueになる(計画Issue #175)', async () => {
+    const { api } = await setup({ status: { kind: 'folder', folderName: '家計簿' }, externalChange: true })
+    expect(api.getStatus().externalChange).toBe(true)
   })
 
   describe('moveToFolder(copy): 今のデータをフォルダへ移す', () => {

@@ -1,4 +1,5 @@
 import type { Database } from 'sql.js'
+import { ExternalChangeError } from './ExternalChangeError'
 import type { StorageAdapter } from './StorageAdapter'
 
 /** 最終更新からsave()実行までのデバウンス間隔(ミリ秒)。計画Issue #58で2秒に決定。 */
@@ -31,6 +32,11 @@ export interface AutoSaveController {
    * 止めていなければ何もしない。
    */
   resume(): void
+  /**
+   * 保存先のファイルが外部(別の端末の同期等)で更新されていたため、保存を止めているか(計画Issue #175)。
+   * trueの間は上書きを避けて保存せず、ページを再読み込みして最新のファイルを読み直すまで続く。
+   */
+  hasExternalChange(): boolean
   /** 直近のsave()呼び出しが失敗していればそのエラー、成功していればnull。 */
   getLastSaveError(): unknown
 }
@@ -64,6 +70,9 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
   let inFlightSave: Promise<void> | null = null
   let pendingRerun: Promise<void> | null = null
   let stopped = false
+  // 外部変更を検知して保存を止めた状態。stop()/resume()とは独立で、resume()では解除しない
+  // (再読み込みして最新のファイルを読み直すまで、上書きを避けて止め続ける、計画Issue #175)
+  let externalChange = false
   const originalRun = db.run.bind(db)
 
   db.run = ((...args: Parameters<Database['run']>) => {
@@ -85,7 +94,7 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
   }) as Database['run']
 
   function scheduleSave(): void {
-    if (stopped) return
+    if (stopped || externalChange) return
     if (debounceTimer !== null) {
       clearTimeout(debounceTimer)
     }
@@ -139,6 +148,7 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
       },
       (error: unknown) => {
         lastSaveError = error
+        if (error instanceof ExternalChangeError) externalChange = true
         console.error('StorageAdapterへのDB保存に失敗しました', error)
       },
     )
@@ -146,7 +156,7 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
 
   return {
     flush(): Promise<void> {
-      if (stopped) return Promise.resolve()
+      if (stopped || externalChange) return Promise.resolve()
       if (debounceTimer !== null) {
         clearTimeout(debounceTimer)
         debounceTimer = null
@@ -166,6 +176,7 @@ export function withAutoSave(db: Database, storageAdapter: StorageAdapter): Auto
       stopped = false
       scheduleSave()
     },
+    hasExternalChange: () => externalChange,
     getLastSaveError: () => lastSaveError,
   }
 }

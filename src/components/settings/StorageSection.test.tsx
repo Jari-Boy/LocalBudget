@@ -22,8 +22,8 @@ afterEach(cleanup)
 const HANDLE = { name: '家計簿(OneDrive)' } as FileSystemDirectoryHandle
 const EXISTING: FolderDatabaseInfo = { size: 412 * 1024, lastModified: new Date(2026, 10, 8, 21, 14).getTime() }
 
-const BROWSER: StorageStatus = { kind: 'indexeddb', folderName: null, writable: true }
-const FOLDER: StorageStatus = { kind: 'folder', folderName: '家計簿(OneDrive)', writable: true }
+const BROWSER: StorageStatus = { kind: 'indexeddb', folderName: null, writable: true, externalChange: false }
+const FOLDER: StorageStatus = { kind: 'folder', folderName: '家計簿(OneDrive)', writable: true, externalChange: false }
 
 function setup(
   options: {
@@ -77,6 +77,20 @@ describe('StorageSection', () => {
       expect(await within(region()).findByText(/表示できるのはフォルダ名のみ/)).toBeInTheDocument()
     })
 
+    it('フォルダ保存のときは、同時に編集できるのは1台だけ・リアルタイム同期ではない旨の注意書きを表示する(計画Issue #175)', async () => {
+      setup({ status: FOLDER })
+      const note = await within(region()).findByText('同期フォルダを使うときの注意')
+      const box = note.parentElement as HTMLElement
+      expect(box).toHaveTextContent('同時に編集できるのは1台だけ')
+      expect(box).toHaveTextContent('リアルタイム同期ではありません')
+    })
+
+    it('ブラウザ内のときは、同期フォルダの注意書きを出さない', async () => {
+      setup()
+      await within(region()).findByText('このブラウザ内')
+      expect(within(region()).queryByText('同期フォルダを使うときの注意')).not.toBeInTheDocument()
+    })
+
     it('ブラウザ内のときは、フォルダ名の注記を出さない', async () => {
       setup()
       await within(region()).findByText('このブラウザ内')
@@ -97,7 +111,7 @@ describe('StorageSection', () => {
 
   describe('書き込みの権利が無いタブ', () => {
     it('保存先を変える操作を無効にし、別のタブで開いていることを伝える', async () => {
-      setup({ status: { ...FOLDER, writable: false } })
+      setup({ status: { ...FOLDER, writable: false, externalChange: false } })
       expect(await within(region()).findByText(/別のタブ/)).toBeInTheDocument()
       expect(within(region()).getByRole('button', { name: 'フォルダを選ぶ…' })).toBeDisabled()
       expect(within(region()).getByRole('button', { name: 'ブラウザ保存に戻す…' })).toBeDisabled()

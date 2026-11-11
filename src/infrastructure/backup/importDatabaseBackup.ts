@@ -45,5 +45,12 @@ export async function importDatabaseBackup(
 
   await autoSaveController.flush()
   await autoSaveController.stop()
-  await storageAdapter.save(data)
+  try {
+    await storageAdapter.save(data)
+  } catch (error) {
+    // 失敗したらページは再読み込みされず編集が続くため、止めた自動保存を再開してから伝える
+    // (再開しないと、画面は動くのに以後の変更が保存されない、計画Issue #175)。成功時は再読み込みで起動し直す。
+    autoSaveController.resume()
+    throw error
+  }
 }

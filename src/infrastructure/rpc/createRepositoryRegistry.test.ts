@@ -39,6 +39,7 @@ function createStubAutoSaveController(): AutoSaveController {
     flush: async () => {},
     stop: async () => {},
     resume: () => {},
+    hasExternalChange: () => false,
     getLastSaveError: () => null,
   }
 }
@@ -61,7 +62,7 @@ beforeEach(async () => {
   autoSaveController = createStubAutoSaveController()
   storageAdapter = createStubStorageAdapter()
   registry = createRepositoryRegistry(db, autoSaveController, storageAdapter, {
-    getStatus: () => ({ kind: 'indexeddb', folderName: null, writable: true }),
+    getStatus: () => ({ kind: 'indexeddb', folderName: null, writable: true, externalChange: false }),
     moveToFolder: async () => {},
     moveToIndexedDb: async () => {},
   })

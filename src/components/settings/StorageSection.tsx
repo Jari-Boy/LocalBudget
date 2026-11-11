@@ -122,6 +122,18 @@ export function StorageSection({ storage, folderPicker, exportCurrent, reload }:
       {/* ブラウザはプライバシー保護のため、選んだフォルダの場所(フルパス)をアプリに渡さない */}
       {inFolder && <p className="settings__hint">{t('storage.folderNameNote')}</p>}
 
+      {/* 同期フォルダは複数のPCから見えるため、上書き事故を防ぐ前提を利用者に伝える(計画Issue #175) */}
+      {inFolder && (
+        <div className="settings__sync-note">
+          <div className="settings__sync-note-title">{t('storage.syncNote.title')}</div>
+          <ul>
+            <li>{t('storage.syncNote.single')}</li>
+            <li>{t('storage.syncNote.mirror')}</li>
+            <li>{t('storage.syncNote.stale')}</li>
+          </ul>
+        </div>
+      )}
+
       {!writable && (
         <div role="status" className="settings__warning-box">
           {t('storage.readOnly')}
