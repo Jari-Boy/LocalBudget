@@ -773,11 +773,11 @@ describe('JournalScreen', () => {
     }
     const checkbox = (name: RegExp) => screen.getAllByRole('checkbox', { name })
 
-    it('一覧には科目(借方→貸方)を表示しない', async () => {
+    it('一覧には科目(借方 / 貸方)を表示しない', async () => {
       await openProposals()
 
       for (const row of screen.getAllByRole('button', { name: /ネット代|ジム会費/ })) {
-        expect(row).not.toHaveTextContent('→')
+        expect(row).not.toHaveTextContent(' / ')
         expect(row).not.toHaveTextContent('家賃')
       }
     })

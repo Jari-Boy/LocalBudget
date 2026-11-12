@@ -147,7 +147,7 @@ function Row({
       <span className="journal-result-list__sub">
         {formatDate(toDate(item.entryDate))}
         {item.note ? ` ・ ${item.note}` : ''}
-        {hideAccounts ? '' : ` ・ ${item.debitSummary} → ${item.creditSummary}`}
+        {hideAccounts ? '' : ` ・ ${item.debitSummary} / ${item.creditSummary}`}
       </span>
     </>
   )

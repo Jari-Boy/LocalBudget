@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * 仕訳の結果一覧(JournalResultList)のコンポーネントテスト(計画Issue #150)。
- * 1仕訳1行の要約(出どころタグ・摘要・金額・日付・借方→貸方の代表科目)を表示し、
+ * 1仕訳1行の要約(出どころタグ・摘要・金額・日付・借方 / 貸方の代表科目)を表示し、
  * 選択なし・単一・複数を切り替えられること、↑↓キーで移動できることを検証する。
  * 計画Issue #164で、承認待ちの定期仕訳タブ向けに、科目を出さない(hideAccounts)・日付のあとに補足(note)を出す・
  * 詳細の選択とは別のチェックボックス(checkable)を付けられることも検証する。
@@ -75,14 +75,14 @@ function Harness({
 const list = () => screen.getByRole('group', { name: '仕訳一覧。上下キーで選択を移動' })
 
 describe('JournalResultList(表示)', () => {
-  it('1仕訳1行で、出どころタグ・摘要・金額・日付・借方→貸方を表示する', () => {
+  it('1仕訳1行で、出どころタグ・摘要・金額・日付・借方 / 貸方を表示する', () => {
     render(<Harness mode="none" />)
     const first = within(list()).getAllByRole('listitem')[0]
     expect(first).toHaveTextContent('外部明細')
     expect(first).toHaveTextContent('セブンイレブン')
     expect(first).toHaveTextContent(/1,280/)
     expect(first).toHaveTextContent('2026/10/5')
-    expect(first).toHaveTextContent('食費 ほか1件 → 楽天カード')
+    expect(first).toHaveTextContent('食費 ほか1件 / 楽天カード')
     expect(within(list()).getAllByRole('listitem')).toHaveLength(3)
   })
 
@@ -166,17 +166,17 @@ describe('JournalResultList(複数選択)', () => {
 })
 
 describe('JournalResultList(承認待ちの定期仕訳で使う拡張、計画Issue #164)', () => {
-  it('hideAccounts のとき、科目(借方→貸方)は表示せず、日付は表示する。指定しなければ従来どおり表示する', () => {
+  it('hideAccounts のとき、科目(借方 / 貸方)は表示せず、日付は表示する。指定しなければ従来どおり表示する', () => {
     const { rerender } = render(
       <JournalResultList items={items} selectionMode="single" selectedIds={[]} onSelectionChange={() => {}} hideAccounts />,
     )
     const first = within(list()).getAllByRole('listitem')[0]
     expect(first).toHaveTextContent('2026/10/5')
     expect(first).not.toHaveTextContent('食費 ほか1件')
-    expect(first).not.toHaveTextContent('→')
+    expect(first).not.toHaveTextContent(' / ')
 
     rerender(<JournalResultList items={items} selectionMode="single" selectedIds={[]} onSelectionChange={() => {}} />)
-    expect(within(list()).getAllByRole('listitem')[0]).toHaveTextContent('食費 ほか1件 → 楽天カード')
+    expect(within(list()).getAllByRole('listitem')[0]).toHaveTextContent('食費 ほか1件 / 楽天カード')
   })
 
   it('note があれば、日付のあとに表示する', () => {
