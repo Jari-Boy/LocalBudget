@@ -196,6 +196,7 @@
 | `source_type` | 作成経路 | ENUM、既定`manual`([1.7 作成経路(source_type)](#17-作成経路source_type)参照) |
 | `household_member_id` | 起票者 | FK、NOT NULL。この仕訳を切った主体([household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方)参照、計画Issue #88) |
 | `generated_from_rule_id` | 生成元の定期取引ルール | FK、任意。`source_type = 'recurring_generated'`の仕訳でのみ値を持ち、手入力・外部明細取込由来の仕訳では`NULL`。参照のみで複式簿記の整合性検証には関与しない([recurring-transactions.md 1.5](./recurring-transactions.md#15-生成された仕訳との関係)参照、計画Issue #121) |
+| `recurring_due_date` | 土日の調整前の期日 | YYYY-MM-DD、任意。定期取引から生成した仕訳にだけ値を持ち、手入力・外部明細取込由来の仕訳では`NULL`。`entry_date`は仕訳の編集や土日の調整で動くため、定期取引の提案の起点はこの列で求める。`(generated_from_rule_id, recurring_due_date)`に一意制約があり、同じルール・同じ期日の二重生成を防ぐ([recurring-transactions.md 1.2](./recurring-transactions.md#12-自動生成-vs-レビュー確認)・[2.1](./recurring-transactions.md#21-フィールド定義)参照、計画Issue #164) |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
 

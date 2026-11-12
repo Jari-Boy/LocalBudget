@@ -25,6 +25,10 @@ CREATE TABLE journal_entries (
   updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 定期取引の生成元(generated_from_rule_id)と、土日の調整でずらす前の期日(recurring_due_date、
+-- 計画Issue #164)の列と、その一意インデックスは、定期取引ルールの表を参照するため、
+-- docs/schema/recurring_transactions.sql のALTER TABLEで追加する(この表より後に適用される)。
+
 CREATE INDEX idx_journal_entries_member ON journal_entries(household_member_id);
 
 CREATE TABLE journal_lines (
