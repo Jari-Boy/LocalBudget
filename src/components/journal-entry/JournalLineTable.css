@@ -103,6 +103,28 @@
   font-weight: 500;
 }
 
+/* 一括編集の行の選択の列(計画Issue #182)。借方・貸方それぞれの先頭に置く固定幅の列 */
+.journal-line-table__cell--check {
+  padding-right: 0;
+  padding-left: 8px;
+}
+
+.journal-line-table__checkbox {
+  display: block;
+  margin: 0;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.journal-line-table__checkbox:disabled {
+  cursor: not-allowed;
+}
+
+/* 一括編集で選んだ行のセルを強調する */
+.journal-line-table td.journal-line-table__cell--bulk-selected {
+  background: var(--color-accent-soft);
+}
+
 .journal-line-table__cell--amount,
 .journal-line-table th.journal-line-table__cell--amount {
   text-align: right;
