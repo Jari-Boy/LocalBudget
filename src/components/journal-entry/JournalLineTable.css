@@ -162,14 +162,11 @@
 }
 
 /* ---- インライン編集(計画Issue #182)。既存の仕訳一覧と同じ緑系のトーンに合わせる ---- */
+/* 編集中の行は、背景色を変えない(入力欄の罫線と操作バーで、編集中だと見た目で分かるため) */
 .journal-line-table tbody.journal-line-table__editing tr,
 .journal-line-table tbody.journal-line-table__editing tr:hover {
-  background: var(--color-accent-soft);
+  background: transparent;
   cursor: default;
-}
-
-.journal-line-table tbody.journal-line-table__editing tr.journal-line-table__bar {
-  background: var(--color-accent-soft);
 }
 
 /*
