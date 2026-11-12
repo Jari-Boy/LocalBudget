@@ -1,6 +1,6 @@
 /**
  * recurringRuleForm(計画Issue #154)のテスト。
- * マスタ画面の定期取引ルールのフォーム入力を、Repository送信用の入力に変換する純粋関数を検証する。
+ * マスタ画面の定期仕訳ルールのフォーム入力を、Repository送信用の入力に変換する純粋関数を検証する。
  * 繰り返し(毎週・毎月の日付・毎月の第N曜日・毎年)ごとに使うカラムの組み合わせ
  * (docs/domain/recurring-transactions.md 1.3、使わないカラムは必ずnull)、入力が揃ったかの判定、
  * 既存ルールからフォームへの復元を確認する。計画Issue #164で追加した、開始日(既定は今日)・終了日・
@@ -9,11 +9,13 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { RecurringTransactionRule } from '../../domain/recurring-transaction/RecurringTransactionRule'
+import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type { JournalEditorLine } from '../journal-entry/JournalEntryEditor'
 import {
   buildRuleInput,
   emptyRuleForm,
   isRuleFormValid,
+  ruleFormFromEntry,
   ruleFormFromRule,
   type RuleForm,
 } from './recurringRuleForm'
@@ -328,3 +330,59 @@ describe('スケジュールの拡張(計画Issue #164)', () => {
     expect(ruleFormFromRule({ ...base, endsOn: '2026-12-31' }).endsOn).toBe('2026-12-31')
   })
 })
+
+describe('ruleFormFromEntry(既存の仕訳から定期仕訳を作る、計画Issue #180)', () => {
+  const entry: JournalEntry = {
+    id: 1,
+    entryDate: '2026-11-10',
+    memo: 'ジム年会費',
+    comment: null,
+    currency: 'JPY',
+    sourceType: 'manual',
+    householdMemberId: 3,
+    generatedFromRuleId: null,
+    recurringDueDate: null,
+    createdAt: '',
+    updatedAt: '',
+    lines: [
+      { id: 1, journalEntryId: 1, accountId: 10, projectId: 7, householdMemberId: 3, counterpartyId: 5, settlementBatchId: null, side: 'debit', amount: 9800, createdAt: '' },
+      { id: 2, journalEntryId: 1, accountId: 20, projectId: null, householdMemberId: 4, counterpartyId: null, settlementBatchId: 8, side: 'credit', amount: 9800, createdAt: '' },
+    ],
+  }
+
+  it('行(科目・金額・取引先・プロジェクト・世帯メンバー・精算バッチ)をそのまま写し、名称は元の摘要、起票者は元の起票者になる', () => {
+    const result = ruleFormFromEntry(entry)
+
+    expect(result.name).toBe('ジム年会費')
+    expect(result.householdMemberId).toBe(3)
+    expect(result.lines.map((l) => l.line)).toEqual([
+      { accountId: 10, side: 'debit', amountInput: '9800', projectId: 7, householdMemberId: 3, counterpartyId: 5, settlementBatchId: null },
+      { accountId: 20, side: 'credit', amountInput: '9800', projectId: null, householdMemberId: 4, counterpartyId: null, settlementBatchId: 8 },
+    ])
+  })
+
+  it('繰り返しの初期値は「毎月、その仕訳の日付の日」、開始日は元の仕訳の翌日、金額の初期値は固定', () => {
+    const result = ruleFormFromEntry(entry)
+
+    expect(result).toMatchObject({
+      frequency: 'monthly',
+      monthlyMode: 'dayOfMonth',
+      dayOfMonth: 10,
+      startsOn: '2026-11-11',
+      amountMode: 'fixed',
+    })
+  })
+
+  it('月末の仕訳の翌日は、翌月1日になる。摘要が無ければ名称は空', () => {
+    const result = ruleFormFromEntry({ ...entry, entryDate: '2026-12-31', memo: null })
+
+    expect(result.startsOn).toBe('2027-01-01')
+    expect(result.dayOfMonth).toBe(31)
+    expect(result.name).toBe('')
+  })
+
+  it('作ったフォームは、そのまま保存できる入力になる', () => {
+    expect(isRuleFormValid(ruleFormFromEntry(entry))).toBe(true)
+  })
+})
+

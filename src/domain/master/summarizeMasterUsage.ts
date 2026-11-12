@@ -29,7 +29,7 @@ export interface MasterUsageCount {
   entryAuthors: number
   /** 科目の名義として使われた件数 */
   accountOwners: number
-  /** 定期取引ルールから生成された仕訳の件数 */
+  /** 定期仕訳ルールから生成された仕訳の件数 */
   generatedEntries: number
 }
 
@@ -71,8 +71,8 @@ function emptyCount(): MasterUsageCount {
 }
 
 /**
- * 仕訳・予算・定期取引ルール・精算バッチ・科目の名義から、項目ごとの使用状況を集計する。
- * Issueの削除条件の表(科目・取引先・プロジェクト・世帯メンバー・定期取引ルール)の根拠となる
+ * 仕訳・予算・定期仕訳ルール・精算バッチ・科目の名義から、項目ごとの使用状況を集計する。
+ * Issueの削除条件の表(科目・取引先・プロジェクト・世帯メンバー・定期仕訳ルール)の根拠となる
  * 参照を数える。どの参照が削除をさまたげるかの判定はlistDeletionBlocksが担う。
  */
 export function summarizeMasterUsage(input: MasterUsageInput): MasterUsage {

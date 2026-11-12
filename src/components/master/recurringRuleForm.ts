@@ -7,12 +7,13 @@ import type {
   RecurringTransactionRule,
   WeekendAdjustment,
 } from '../../domain/recurring-transaction/RecurringTransactionRule'
+import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type { JournalEditorLine } from '../journal-entry/JournalEntryEditor'
 import { summarizeBalance } from '../journal-entry/journalScreenModel'
 
 /**
  * マスタ画面の定期仕訳ルールのフォーム入力と、Repository送信用の入力への変換(計画Issue #154)。
- * 旧・定期取引ルール管理画面(計画Issue #39)の内部関数を、純粋関数として取り出したもの。
+ * 旧・定期仕訳ルール管理画面(計画Issue #39)の内部関数を、純粋関数として取り出したもの。
  * 計画Issue #180で、借方1・貸方1の固定の欄から、仕訳エディタと同じ行編集の共通部品(JournalLinesEditor)で
  * 扱う行(lines)と、回ごとの金額表(schedule)に置き換えた。
  */
@@ -106,6 +107,36 @@ export function ruleFormFromRule(rule: RecurringTransactionRule): RuleForm {
     interval: String(rule.interval),
     weekendAdjustment: rule.weekendAdjustment,
     amountMode: rule.amountMode,
+  }
+}
+
+/**
+ * 既存の仕訳から、定期仕訳のルールのフォームの初期値を作る(計画Issue #180、仕訳の詳細パネルの「定期仕訳にする」)。
+ * 行をそのまま写し(科目・金額・取引先・プロジェクト・世帯メンバー・精算バッチ)、起票者は元の仕訳の起票者、
+ * 名称は元の摘要。繰り返しは「毎月、その仕訳の日付の日」、開始日は元の仕訳の翌日。元の仕訳は変更せず、
+ * 生成済みの1回目としても紐づけない(手入力の仕訳の作成経路を書き換えないため)
+ */
+export function ruleFormFromEntry(entry: JournalEntry): RuleForm {
+  const nextDay = new Date(Date.parse(`${entry.entryDate}T00:00:00Z`) + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  return {
+    ...emptyRuleForm(nextDay),
+    name: entry.memo ?? '',
+    householdMemberId: entry.householdMemberId,
+    lines: entry.lines.map((l, index) => ({
+      key: index + 1,
+      line: {
+        accountId: l.accountId,
+        side: l.side,
+        amountInput: String(l.amount),
+        projectId: l.projectId,
+        householdMemberId: l.householdMemberId,
+        counterpartyId: l.counterpartyId,
+        settlementBatchId: l.settlementBatchId,
+      },
+    })),
+    frequency: 'monthly',
+    monthlyMode: 'dayOfMonth',
+    dayOfMonth: Number(entry.entryDate.slice(8, 10)),
   }
 }
 

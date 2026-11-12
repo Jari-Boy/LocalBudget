@@ -41,7 +41,7 @@ export interface JournalResultItem {
   entryDate: string
   debitSummary: string
   creditSummary: string
-  /** 日付のあとに添える補足(計画Issue #164。定期の確認の「期日 10/25 を前の平日に」など) */
+  /** 日付のあとに添える補足(計画Issue #164。承認待ちの定期仕訳の「期日 10/25 を前の平日に」など) */
   note?: string
 }
 

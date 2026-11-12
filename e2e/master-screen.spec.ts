@@ -1,6 +1,6 @@
 /**
  * マスタ画面(計画Issue #154)のE2Eテスト。実ブラウザ(Chromium)で、サイドナビの「マスタ」から
- * 勘定科目・取引先・世帯メンバー・プロジェクト・定期取引の5タブを画面遷移なしで切り替えて編集でき、
+ * 勘定科目・取引先・世帯メンバー・プロジェクト・定期仕訳の5タブを画面遷移なしで切り替えて編集でき、
  * 編集が実際のWeb Worker + RPC層を経由してDBに反映されることに絞って検証する。タブごとの
  * 詳細な振る舞い(削除条件・移動・パターン・統合など)はコンポーネントテスト
  * (src/components/master/*.test.tsx)側で検証済み。
@@ -92,7 +92,7 @@ test.describe('マスタ画面', () => {
     await expect(page.getByRole('region', { name: 'プロジェクトの編集' })).toBeVisible()
   })
 
-  test('定期取引タブで、科目を選んでルールを登録でき、一覧に次回の日付が出る', async ({ page }) => {
+  test('定期仕訳タブで、科目を選んでルールを登録でき、一覧に次回の日付が出る', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     await page.evaluate(async () => {
@@ -113,17 +113,20 @@ test.describe('マスタ画面', () => {
       .toBe(true)
     await page.reload()
 
-    await openMasterTab(page, '定期取引')
+    await openMasterTab(page, '定期仕訳')
 
-    await page.getByRole('button', { name: '定期取引を追加' }).click()
-    const form = page.getByRole('region', { name: '定期取引の追加' })
+    await page.getByRole('button', { name: '定期仕訳を追加' }).click()
+    const form = page.getByRole('region', { name: '定期仕訳の追加' })
     await form.getByLabel('名称').fill('Netflix')
-    await form.getByRole('button', { name: /^借方の科目/ }).click()
-    await page.getByRole('dialog', { name: '借方の科目' }).getByRole('button', { name: '娯楽費', exact: true }).click()
-    await form.getByRole('button', { name: /^貸方の科目/ }).click()
-    await page.getByRole('dialog', { name: '貸方の科目' }).getByRole('button', { name: '現金', exact: true }).click()
-    // 部分一致だと「下の金額(固定)」「貸方の金額」なども拾うため、厳密一致にする(計画Issue #164)
-    await form.getByLabel('金額', { exact: true }).fill('1590')
+    // 借方・貸方は、仕訳の起票と同じ行編集の共通部品(計画Issue #180)
+    const debit = form.getByRole('group', { name: '借方' })
+    const credit = form.getByRole('group', { name: '貸方' })
+    await debit.getByRole('button', { name: /^科目/ }).click()
+    await page.getByRole('dialog', { name: '科目' }).getByRole('button', { name: '娯楽費', exact: true }).click()
+    await credit.getByRole('button', { name: /^科目/ }).click()
+    await page.getByRole('dialog', { name: '科目' }).getByRole('button', { name: '現金', exact: true }).click()
+    await debit.getByLabel('娯楽費の金額').fill('1590')
+    await credit.getByLabel('現金の金額').fill('1590')
     await form.getByLabel('日', { exact: true }).selectOption('19')
     await form.getByRole('button', { name: '登録' }).click()
 

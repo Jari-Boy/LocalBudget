@@ -11,7 +11,7 @@ export interface JournalResultListProps {
   selectionMode: SelectionMode
   selectedIds: readonly number[]
   onSelectionChange: (ids: readonly number[]) => void
-  /** trueのとき、科目(借方→貸方)を出さない(定期の確認タブ、計画Issue #164) */
+  /** trueのとき、科目(借方→貸方)を出さない(承認待ちの定期仕訳タブ、計画Issue #164) */
   hideAccounts?: boolean
   /**
    * 渡すと、各行に詳細の選択(selectionMode)とは別のチェックボックスを付ける(まとめて確定用、計画Issue #164)。

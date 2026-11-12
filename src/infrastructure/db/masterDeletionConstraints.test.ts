@@ -1,7 +1,7 @@
 /**
  * マスタの削除条件のDB制約の統合テスト(計画Issue #154)。
- * Issue #154の削除条件の表(科目・取引先・プロジェクト・世帯メンバー・定期取引ルール)のうち、
- * 仕訳以外の参照(定期取引ルール・精算バッチの相手・仕訳の起票者・科目の名義)でも、DBが
+ * Issue #154の削除条件の表(科目・取引先・プロジェクト・世帯メンバー・定期仕訳ルール)のうち、
+ * 仕訳以外の参照(定期仕訳ルール・精算バッチの相手・仕訳の起票者・科目の名義)でも、DBが
  * 物理削除を拒否することを実際に確かめる。docs/domain/counterparties.md・projects.mdの削除条件が
  * 仕訳だけを挙げていた記述の誤りを訂正する根拠(Issueの懸念点「コード読解のみ、未実行」の検証)。
  * 画面側はこの制約を事前に判定して理由を表示する(summarizeMasterUsage)ため、DBは最終防御線である。
@@ -58,7 +58,7 @@ function createRule(
 }
 
 describe('マスタの削除条件のDB制約(仕訳以外の参照)', () => {
-  it('定期取引ルールの起票者になっている世帯メンバーは、物理削除できない(計画Issue #180)', () => {
+  it('定期仕訳ルールの起票者になっている世帯メンバーは、物理削除できない(計画Issue #180)', () => {
     const members = new SqlJsHouseholdMemberRepository(db)
     createRule({ bookkeeperId: memberId })
 
@@ -66,7 +66,7 @@ describe('マスタの削除条件のDB制約(仕訳以外の参照)', () => {
     expect(members.findById(memberId)).not.toBeNull()
   })
 
-  it('定期取引ルールで使われている取引先は、物理削除できない', () => {
+  it('定期仕訳ルールで使われている取引先は、物理削除できない', () => {
     const counterparties = new SqlJsCounterpartyRepository(db)
     const counterparty = counterparties.create({ name: 'イオン' })
     createRule({ counterpartyId: counterparty.id })
@@ -88,7 +88,7 @@ describe('マスタの削除条件のDB制約(仕訳以外の参照)', () => {
     expect(counterparties.findById(counterparty.id)).not.toBeNull()
   })
 
-  it('定期取引ルールで使われているプロジェクトは、物理削除できない', () => {
+  it('定期仕訳ルールで使われているプロジェクトは、物理削除できない', () => {
     const projects = new SqlJsProjectRepository(db)
     const project = projects.create({ name: '沖縄旅行' })
     createRule({ projectId: project.id })
@@ -97,7 +97,7 @@ describe('マスタの削除条件のDB制約(仕訳以外の参照)', () => {
     expect(projects.findById(project.id)).not.toBeNull()
   })
 
-  it('定期取引ルールで使われている世帯メンバーは、物理削除できない', () => {
+  it('定期仕訳ルールで使われている世帯メンバーは、物理削除できない', () => {
     const members = new SqlJsHouseholdMemberRepository(db)
     createRule({ lineHouseholdMemberId: memberId })
 

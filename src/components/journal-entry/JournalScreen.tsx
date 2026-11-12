@@ -48,6 +48,7 @@ import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../ma
 import type { MaybeAsync } from '../master/maybeAsync'
 import { UnsavedChangesDialog } from '../common/unsaved-changes/UnsavedChangesDialog'
 import { useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
+import { CreateRuleFromEntryDialog } from './CreateRuleFromEntryDialog'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
 import { JournalEntryEditor, type JournalEditorLine, type JournalEditorMaster, type JournalEditorValue } from './JournalEntryEditor'
 import {
@@ -105,7 +106,7 @@ export interface JournalScreenProps {
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
   settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll' | 'create'>>
   recurringTransactionProposalApi: MaybeAsync<Pick<RecurringTransactionProposalRpcApi, 'listPending' | 'confirm' | 'confirmMany' | 'skip'>>
-  recurringTransactionRuleRepository: MaybeAsync<Pick<RecurringTransactionRuleRepository, 'findAll'>>
+  recurringTransactionRuleRepository: MaybeAsync<Pick<RecurringTransactionRuleRepository, 'findAll' | 'create'>>
   /** 「この仕訳を割勘」を押したときの移動(割勘の入力フォームへ) */
   onSplit: (entry: JournalEntry) => void
   /** 提案を確定・見送りしたとき(サイドナビのバッジの件数を取り直すため) */
@@ -170,8 +171,8 @@ function inactiveIds(items: ReadonlyArray<{ id: number; isActive: boolean }>): S
 
 /**
  * 仕訳画面(計画Issue #152)。絞り込み・結果一覧・詳細を1画面にまとめ、「仕訳一覧」「下書き」
- * 「定期の確認」の3つのタブが同じ詳細パネルを使う。確定済みの仕訳は編集・削除・割勘への移動、
- * 下書きは貸借が合わなくても保存でき完成すれば確定、定期取引の提案は金額を直して確定か「今回は見送る」
+ * 「承認待ちの定期仕訳」の3つのタブが同じ詳細パネルを使う。確定済みの仕訳は編集・削除・割勘への移動、
+ * 下書きは貸借が合わなくても保存でき完成すれば確定、定期仕訳の提案は金額を直して確定か「今回は見送る」
  * で処理する。保存時は精算バッチのタグとコメントを行に保持したまま更新する(計画Issue #144)。
  * 確定済みの仕訳の削除は物理削除で元に戻せない(docs/domain/journal.md 1.5)ため、2回押して確定し、
  * 確認中は影響を表示する。関連仕訳は詳細の最下部に常に出す。旧画面(一覧・詳細・入力フォーム・
@@ -205,6 +206,8 @@ export function JournalScreen(props: JournalScreenProps) {
   const [checkedProposalKeys, setCheckedProposalKeys] = useState<string[]>([])
   /** まとめて確定で、起票者が決まっていないルールの分に使う起票者 */
   const [bulkMemberId, setBulkMemberId] = useState<number | ''>('')
+  /** 「定期仕訳にする」のダイアログ(計画Issue #180)。元にする仕訳 */
+  const [ruleDialogEntry, setRuleDialogEntry] = useState<JournalEntry | null>(null)
   const [counterpartyDialog, setCounterpartyDialog] = useState<{ apply: (id: number) => void } | null>(null)
   /** 詳細を開いた時点の編集内容。現在の内容と違えば、未保存の変更がある */
   const [baseline, setBaseline] = useState('')
@@ -431,7 +434,7 @@ export function JournalScreen(props: JournalScreenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 定期取引の提案は確定か見送りで処理するもので保存の対象ではないため、未保存の判定から外す
+  // 定期仕訳の提案は確定か見送りで処理するもので保存の対象ではないため、未保存の判定から外す
   const dirty =
     editor !== null && selection !== null && selection.kind !== 'proposal' && serializeEditor(editor) !== baseline
 
@@ -644,7 +647,7 @@ export function JournalScreen(props: JournalScreenProps) {
           comment: editor.comment,
         }),
       )
-      await afterProposal('仕訳を確定しました')
+      await afterProposal('仕訳帳に反映しました')
     }, t('confirmError'))
 
   const skipProposal = () =>
@@ -684,7 +687,7 @@ export function JournalScreen(props: JournalScreenProps) {
       await reloadAndOpen((d) => {
         const next = sortProposalsOldestFirst(d.proposals).find((p) => d.rules.some((r) => r.id === p.ruleId))
         return next ? { kind: 'proposal', ruleId: next.ruleId, dueDate: next.dueDate } : null
-      }, `${count}件の仕訳を確定しました`)
+      }, `${count}件の仕訳を仕訳帳に反映しました`)
       onProposalsChanged?.()
     }, t('confirmError'))
 
@@ -790,7 +793,7 @@ export function JournalScreen(props: JournalScreenProps) {
   const tabs: { key: JournalScreenTab; label: string }[] = [
     { key: 'list', label: '仕訳一覧' },
     { key: 'drafts', label: `下書き ${data.drafts.length}` },
-    { key: 'proposals', label: `定期の確認 ${proposalRows.length}` },
+    { key: 'proposals', label: `承認待ちの定期仕訳 ${proposalRows.length}` },
   ]
 
   const selectedIds =
@@ -847,14 +850,14 @@ export function JournalScreen(props: JournalScreenProps) {
       : selection?.kind === 'draft'
         ? '下書き'
         : selection?.kind === 'proposal'
-          ? `定期取引の提案: ${selectedProposal?.rule.name ?? ''}`
+          ? `承認待ちの定期仕訳: ${selectedProposal?.rule.name ?? ''}`
           : editor?.memo
             ? `仕訳の詳細: ${editor.memo}`
             : '仕訳の詳細'
 
   const note =
     tab === 'proposals'
-      ? '定期取引のルールから作られた提案です。確定すると仕訳になります。不要な回は見送れます。同じルールの提案は古い順に処理します。チェックを付けて、まとめて確定もできます。'
+      ? '起票時期がきた定期仕訳です。内容を編集して承認すると、仕訳帳に反映されます。不要な回は見送れます。同じ定期仕訳は古い順に処理します。チェックを付けて、まとめて承認もできます。'
       : tab === 'drafts'
         ? '保存前の仕訳です。貸借が合わなくても下書きとして残せます。'
         : ''
@@ -942,7 +945,7 @@ export function JournalScreen(props: JournalScreenProps) {
                   disabled={busy || checkedRows.length === 0 || (bulkNeedsMember && bulkMemberId === '')}
                   onClick={() => void confirmChecked()}
                 >
-                  選択した提案を確定
+                  選択した定期仕訳を承認して反映
                 </button>
               </div>
               {bulkNeedsMember && bulkMemberId === '' && (
@@ -951,7 +954,7 @@ export function JournalScreen(props: JournalScreenProps) {
                 </p>
               )}
               <p className="journal-screen__note">
-                金額は初期値のまま確定します。金額を直す提案は、開いて1件ずつ確定してください。
+                内容は初期値のまま承認します。内容を直す定期仕訳は、開いて1件ずつ承認してください。
               </p>
             </div>
           )}
@@ -1061,6 +1064,16 @@ export function JournalScreen(props: JournalScreenProps) {
                     下書きに保存
                   </button>
                 )}
+                {selection.kind === 'entry' && selectedEntry && (
+                  <button
+                    type="button"
+                    className="journal-screen__button"
+                    disabled={busy}
+                    onClick={() => guarded(() => setRuleDialogEntry(selectedEntry))}
+                  >
+                    定期仕訳にする
+                  </button>
+                )}
                 {selection.kind === 'entry' && split !== null && (
                   <>
                     <button
@@ -1103,7 +1116,7 @@ export function JournalScreen(props: JournalScreenProps) {
                       disabled={busy || stagedReason !== ''}
                       onClick={() => void confirmProposal()}
                     >
-                      確定
+                      承認して仕訳帳に反映
                     </button>
                     <button type="button" className="journal-screen__button" disabled={busy || proposalBlocked} onClick={() => void skipProposal()}>
                       今回は見送る
@@ -1223,6 +1236,21 @@ export function JournalScreen(props: JournalScreenProps) {
         <UnsavedChangesDialog saving={busy} onCancel={cancelLeave} onDiscard={discardAndLeave} onSave={() => void saveAndLeave()} />
       )}
 
+      {ruleDialogEntry !== null && derived !== null && (
+        <CreateRuleFromEntryDialog
+          entry={ruleDialogEntry}
+          master={derived.master}
+          today={today()}
+          onCreate={async (input) => {
+            const created = await Promise.resolve(props.recurringTransactionRuleRepository.create(input))
+            setData((prev) => (prev === null ? prev : { ...prev, rules: [...prev.rules, created] }))
+            setRuleDialogEntry(null)
+            setFlash('定期仕訳を作成しました')
+            onProposalsChanged?.()
+          }}
+          onCancel={() => setRuleDialogEntry(null)}
+        />
+      )}
       {counterpartyDialog && (
         <QuickCreateDialog
           title="取引先を追加"

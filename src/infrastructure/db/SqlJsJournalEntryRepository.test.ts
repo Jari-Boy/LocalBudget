@@ -5,7 +5,7 @@
  * 計画Issue #132)・削除(物理削除)、貸借バランス検証(不一致時は書き込まずUnbalancedJournalEntryErrorを投げる)、
  * is_reconcilable資産・負債への記帳がsource_typeによらず許可されること(docs/domain/reconciliation.md 1.2、
  * 計画Issue #145で直接記帳制限を廃止)、FK制約有効化によるDB側エラー時のロールバック保証を検証する。
- * 計画Issue #164で追加した、定期取引から生成した仕訳の調整前の期日(recurring_due_date)の保存・
+ * 計画Issue #164で追加した、定期仕訳から生成した仕訳の調整前の期日(recurring_due_date)の保存・
  * 同じルール・同じ期日の二重生成を防ぐ一意制約・複数の仕訳を1つのトランザクションで作るcreateMany
  * (全件成功か全件失敗)も検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
@@ -1044,7 +1044,7 @@ describe('精算バッチタグは割勘の一時勘定(システム管理の立
   })
 })
 
-describe('定期取引の期日(recurring_due_date)とcreateMany(計画Issue #164)', () => {
+describe('定期仕訳の期日(recurring_due_date)とcreateMany(計画Issue #164)', () => {
   let ruleId: number
 
   beforeEach(() => {

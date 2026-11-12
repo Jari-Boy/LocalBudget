@@ -6,7 +6,7 @@ import { AREAS, findActiveTab, findArea } from './areas'
 import './AppShell.css'
 
 export interface AppShellProps {
-  /** 確認待ちの定期取引提案の件数。1件以上のとき「仕訳」に表示する。 */
+  /** 承認待ちの定期仕訳提案の件数。1件以上のとき「仕訳」に表示する。 */
   pendingProposalCount: number
 }
 

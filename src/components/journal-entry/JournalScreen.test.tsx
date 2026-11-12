@@ -4,9 +4,9 @@
  * 絞り込み・結果一覧・詳細が画面遷移なしで切り替わること、保存で精算バッチのタグとコメントが
  * 保持されること、貸借が合わないと保存されないこと、精算バッチを付けられない科目で拒否されたときの
  * 表示(計画Issue #167)、確定済みの仕訳の削除(2回押し・影響の表示・
- * 次の行の選択)、割勘できない理由の表示、下書き(保存・確定・削除)、定期取引の提案
+ * 次の行の選択)、割勘できない理由の表示、下書き(保存・確定・削除)、定期仕訳の提案
  * (金額修正して確定・見送り・古い提案が残っていると処理できない)、関連仕訳の表示を検証する。計画Issue #164で追加した、
- * 定期の確認タブの摘要・コメントの編集と保存、土日の調整後の日付と金額の初期値の表示、一覧に科目を出さないこと、
+ * 承認待ちの定期仕訳タブの摘要・コメントの編集と保存、土日の調整後の日付と金額の初期値の表示、一覧に科目を出さないこと、
  * 複数の提案のまとめて確定(チェックの連動・すべて選択・起票者の一括指定・confirmManyの呼び出し)も検証する。
  * 外部依存はインメモリの偽Repository(vi.fn)で置き換える。
  */
@@ -254,6 +254,7 @@ function setup(
           updatedAt: '',
         },
       ]),
+      create: vi.fn(async (input: Record<string, unknown>) => ({ id: 99, ...input })),
     },
     onSplit: vi.fn(),
     onProposalsChanged: vi.fn(),
@@ -297,6 +298,33 @@ describe('JournalScreen', () => {
     expect(await screen.findByText('家賃', { selector: '.journal-result-list__memo' })).toBeInTheDocument()
     expect(screen.queryByText('ランチ')).not.toBeInTheDocument()
     expect(screen.getByText('1件')).toBeInTheDocument()
+  })
+
+  it('「定期仕訳にする」を押すとダイアログが開き、登録すると仕訳の行を写したルールが作られる(元の仕訳は変えない、計画Issue #180)', async () => {
+    const props = setup()
+    await ready()
+
+    fireEvent.click(within(detail()).getByRole('button', { name: '定期仕訳にする' }))
+    const dialog = screen.getByRole('dialog', { name: '定期仕訳の作成' })
+    expect(within(dialog).getByLabelText('名称')).toHaveValue('ランチ')
+    fireEvent.click(within(dialog).getByRole('button', { name: '登録' }))
+
+    await waitFor(() => expect(props.recurringTransactionRuleRepository.create).toHaveBeenCalledTimes(1))
+    expect(props.recurringTransactionRuleRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'ランチ',
+        frequency: 'monthly',
+        dayOfMonth: 5,
+        startsOn: '2026-10-06',
+        lines: [
+          expect.objectContaining({ side: 'debit', accountId: 1, amount: 1200 }),
+          expect.objectContaining({ side: 'credit', accountId: 2, amount: 1200 }),
+        ],
+      }),
+    )
+    expect(await screen.findByText('定期仕訳を作成しました')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '定期仕訳の作成' })).not.toBeInTheDocument()
+    expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
   })
 
   it('一覧と詳細が同じ画面に出て、行を選ぶと画面遷移なしで詳細が切り替わる', async () => {
@@ -688,15 +716,15 @@ describe('JournalScreen', () => {
     await waitFor(() => expect(props.journalEntryDraftRepository.delete).toHaveBeenCalledWith(100))
   })
 
-  it('定期の確認タブでは古い順に並び、先頭の提案を金額修正して確定できる', async () => {
+  it('承認待ちの定期仕訳タブでは古い順に並び、先頭の提案を金額修正して確定できる', async () => {
     const props = setup()
     await ready()
-    fireEvent.click(screen.getByRole('tab', { name: /定期の確認/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /承認待ちの定期仕訳/ }))
     const rows = await screen.findAllByRole('button', { name: /ネット代/ })
     expect(rows[0]).toHaveTextContent('2026')
     fireEvent.click(rows[0])
     fireEvent.change(within(detail()).getByLabelText('家賃の金額'), { target: { value: '5500' } })
-    fireEvent.click(within(detail()).getByRole('button', { name: '確定' }))
+    fireEvent.click(within(detail()).getByRole('button', { name: '承認して仕訳帳に反映' }))
     await waitFor(() =>
       expect(props.recurringTransactionProposalApi.confirm).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -714,10 +742,10 @@ describe('JournalScreen', () => {
   it('同じルールの古い提案が残っていると確定も見送りもできず理由を表示する', async () => {
     const props = setup()
     await ready()
-    fireEvent.click(screen.getByRole('tab', { name: /定期の確認/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /承認待ちの定期仕訳/ }))
     const rows = await screen.findAllByRole('button', { name: /ネット代/ })
     fireEvent.click(rows[1])
-    expect(within(detail()).getByRole('button', { name: '確定' })).toBeDisabled()
+    expect(within(detail()).getByRole('button', { name: '承認して仕訳帳に反映' })).toBeDisabled()
     expect(within(detail()).getByRole('button', { name: '今回は見送る' })).toBeDisabled()
     expect(within(detail()).getByText('先に同じルールの古い提案を確定するか見送ってください')).toBeInTheDocument()
     expect(props.recurringTransactionProposalApi.skip).not.toHaveBeenCalled()
@@ -726,7 +754,7 @@ describe('JournalScreen', () => {
   it('提案を見送ると skip を呼ぶ', async () => {
     const props = setup()
     await ready()
-    fireEvent.click(screen.getByRole('tab', { name: /定期の確認/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /承認待ちの定期仕訳/ }))
     const rows = await screen.findAllByRole('button', { name: /ネット代/ })
     fireEvent.click(rows[0])
     fireEvent.click(within(detail()).getByRole('button', { name: '今回は見送る' }))
@@ -735,11 +763,11 @@ describe('JournalScreen', () => {
     )
   })
 
-  describe('定期の確認タブ(計画Issue #164)', () => {
+  describe('承認待ちの定期仕訳タブ(計画Issue #164)', () => {
     async function openProposals() {
       const props = setup()
       await ready()
-      fireEvent.click(screen.getByRole('tab', { name: /定期の確認/ }))
+      fireEvent.click(screen.getByRole('tab', { name: /承認待ちの定期仕訳/ }))
       await screen.findAllByRole('button', { name: /ネット代/ })
       return props
     }
@@ -778,7 +806,7 @@ describe('JournalScreen', () => {
       fireEvent.click(screen.getAllByRole('button', { name: /ネット代/ })[0])
       fireEvent.change(within(detail()).getByLabelText('摘要(任意)'), { target: { value: 'ネット代 10月分' } })
       fireEvent.change(within(detail()).getByLabelText('コメント(任意)'), { target: { value: 'プラン変更あり' } })
-      fireEvent.click(within(detail()).getByRole('button', { name: '確定' }))
+      fireEvent.click(within(detail()).getByRole('button', { name: '承認して仕訳帳に反映' }))
 
       await waitFor(() =>
         expect(props.recurringTransactionProposalApi.confirm).toHaveBeenCalledWith(
@@ -859,17 +887,17 @@ describe('JournalScreen', () => {
       expect(screen.getByText('0件を選択中')).toBeInTheDocument()
     })
 
-    it('何もチェックしていないときは「選択した提案を確定」が押せない', async () => {
+    it('何もチェックしていないときは「選択した定期仕訳を承認して反映」が押せない', async () => {
       await openProposals()
 
-      expect(screen.getByRole('button', { name: '選択した提案を確定' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: '選択した定期仕訳を承認して反映' })).toBeDisabled()
     })
 
-    it('選択した提案を確定すると、選んだ提案をconfirmManyで確定する(金額は渡さず、初期値のまま)', async () => {
+    it('選択した定期仕訳を承認して反映すると、選んだ提案をconfirmManyで確定する(金額は渡さず、初期値のまま)', async () => {
       const props = await openProposals()
       fireEvent.click(checkbox(/ネット代/)[1])
 
-      fireEvent.click(screen.getByRole('button', { name: '選択した提案を確定' }))
+      fireEvent.click(screen.getByRole('button', { name: '選択した定期仕訳を承認して反映' }))
 
       await waitFor(() =>
         expect(props.recurringTransactionProposalApi.confirmMany).toHaveBeenCalledWith({
@@ -880,14 +908,14 @@ describe('JournalScreen', () => {
           householdMemberId: undefined,
         }),
       )
-      expect(await screen.findByText('2件の仕訳を確定しました')).toBeInTheDocument()
+      expect(await screen.findByText('2件の仕訳を仕訳帳に反映しました')).toBeInTheDocument()
     })
 
     it('起票者が決まっていないルールを選ぶと、まとめて起票者を選ぶまで確定できず、選ぶとその起票者で確定する', async () => {
       const props = await openProposals()
       fireEvent.click(checkbox(/ジム会費/)[0])
 
-      const confirmButton = screen.getByRole('button', { name: '選択した提案を確定' })
+      const confirmButton = screen.getByRole('button', { name: '選択した定期仕訳を承認して反映' })
       expect(confirmButton).toBeDisabled()
       expect(screen.getByText(/起票者が決まっていない提案\(ジム会費\)があります/)).toBeInTheDocument()
       fireEvent.change(screen.getByLabelText('まとめて確定の起票者'), { target: { value: '2' } })
@@ -915,10 +943,10 @@ describe('JournalScreen', () => {
       props.recurringTransactionProposalApi.confirmMany.mockRejectedValueOnce(new Error('boom'))
       fireEvent.click(checkbox(/ネット代/)[0])
 
-      fireEvent.click(screen.getByRole('button', { name: '選択した提案を確定' }))
+      fireEvent.click(screen.getByRole('button', { name: '選択した定期仕訳を承認して反映' }))
 
       expect(await screen.findByRole('alert')).toBeInTheDocument()
-      expect(screen.queryByText('1件の仕訳を確定しました')).not.toBeInTheDocument()
+      expect(screen.queryByText('1件の仕訳を仕訳帳に反映しました')).not.toBeInTheDocument()
     })
   })
 })

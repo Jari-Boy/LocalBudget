@@ -82,7 +82,7 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
     await page.goto('/#/master')
     await expect(page).toHaveURL(/#\/master\/accounts$/)
 
-    // 科目の一覧・追加・グループ、定期取引ルールの旧URLは、マスタ画面の該当タブへ(計画Issue #154)
+    // 科目の一覧・追加・グループ、定期仕訳ルールの旧URLは、マスタ画面の該当タブへ(計画Issue #154)
     await page.goto('/#/master/accounts/list')
     await expect(page).toHaveURL(/#\/master\/accounts$/)
 

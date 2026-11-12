@@ -1,8 +1,8 @@
 /**
  * 仕訳画面(計画Issue #152)の表示ロジックを担う純粋関数 journalScreenModel のユニットテスト。
  * 対象: 貸借の合計と差額・保存できない理由、割勘できない理由の文言、削除の影響の組み立て、
- * 削除後に選ぶ行、定期取引の提案の並びと処理順の制限、科目で絞り込んだときの代表科目と金額、
- * 定期取引の提案のまとめて確定のチェック(新しい提案にチェックを付けると同じルールの古い提案にも付き、
+ * 削除後に選ぶ行、定期仕訳の提案の並びと処理順の制限、科目で絞り込んだときの代表科目と金額、
+ * 定期仕訳の提案のまとめて確定のチェック(新しい提案にチェックを付けると同じルールの古い提案にも付き、
  * 古い提案のチェックを外すと新しい提案も外れる、計画Issue #164)。
  * 外部依存なし(DB・DOM非依存、ドメインの型だけを使う)。
  */
@@ -132,7 +132,7 @@ describe('buildDeleteImpactNotes', () => {
 
   it('定期は提案が再び表示されることを伝える', () => {
     const notes = buildDeleteImpactNotes({ sourceType: 'recurring_generated', batchNames: [], isRelated: false })
-    expect(notes).toEqual(['定期取引の提案として、再び表示されることがあります。'])
+    expect(notes).toEqual(['定期仕訳の提案として、再び表示されることがあります。'])
   })
 
   it('割勘は取り消され元の仕訳がまた割勘できることを伝える', () => {
@@ -169,7 +169,7 @@ describe('pickSelectionAfterDelete', () => {
   })
 })
 
-describe('定期取引の提案の順序', () => {
+describe('定期仕訳の提案の順序', () => {
   const proposals = [
     { ruleId: 2, dueDate: '2026-10-20' },
     { ruleId: 1, dueDate: '2026-11-01' },

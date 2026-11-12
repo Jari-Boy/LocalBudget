@@ -1,5 +1,5 @@
 /**
- * evaluateRecurringTransactionProposals(定期取引ルールの提案評価)の純粋関数としての
+ * evaluateRecurringTransactionProposals(定期仕訳ルールの提案評価)の純粋関数としての
  * ユニットテスト。docs/domain/recurring-transactions.md 1.2節「前回チェック日から現在までの
  * 間で発生すべき対象日をまとめて遅延評価し、提案を生成する」を、専用のチェックポイントを
  * 永続化せず「このルールから生成済みの最新entry_date」を起点として使う設計(1.6節の

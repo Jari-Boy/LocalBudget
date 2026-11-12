@@ -15,7 +15,7 @@
     "tab": {
       "entries": "仕訳一覧",
       "manualEntry": "手入力で起票",
-      "proposals": "定期取引の確認",
+      "proposals": "承認待ちの定期仕訳",
       "newSplit": "割勘する",
       "settlement": "精算",
       "splitHistory": "割勘の履歴",
@@ -23,7 +23,7 @@
       "counterparties": "取引先",
       "householdMembers": "世帯メンバー",
       "projects": "プロジェクト",
-      "recurringRules": "定期取引",
+      "recurringRules": "定期仕訳",
       "mappings": "明細マッピング"
     }
   }

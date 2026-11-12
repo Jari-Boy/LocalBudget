@@ -1,5 +1,5 @@
 /**
- * createRecurringTransactionProposalApi(RPC層: 定期取引の提案評価・仕訳生成)の統合テスト。
+ * createRecurringTransactionProposalApi(RPC層: 定期仕訳の提案評価・仕訳生成)の統合テスト。
  * listPendingがDBから都度読み直して再評価すること、confirmが科目区分の解決(counterparty_idの
  * PL側限定配置)・起票者の解決・仕訳生成(source_type=recurring_generated・
  * generated_from_rule_id設定)まで一貫して行うことを検証する。提案の見送り(skip)が仕訳を作らず、

@@ -305,7 +305,7 @@ describe('AccountMasterTab', () => {
     expect(editor.getByText(/仕訳の明細1行で使用中のため削除できません/)).toBeInTheDocument()
   })
 
-  it('予算と定期取引ルールで使用中の科目も、その理由が表示される', async () => {
+  it('予算と定期仕訳ルールで使用中の科目も、その理由が表示される', async () => {
     const food = accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
     const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
     new SqlJsBudgetRepository(db).create({ accountId: food.id, yearMonth: '2026-11', amount: 50000 })
@@ -321,7 +321,7 @@ describe('AccountMasterTab', () => {
     const editor = panel('科目の編集')
 
     expect(editor.getByText(/予算1件/)).toBeInTheDocument()
-    expect(editor.getByText(/定期取引ルール1件/)).toBeInTheDocument()
+    expect(editor.getByText(/定期仕訳ルール1件/)).toBeInTheDocument()
   })
 
   it('初期残高の仕訳だけが紐づく口座は、確認の文言でその旨が伝わり、仕訳と一緒に削除される', async () => {

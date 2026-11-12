@@ -1,7 +1,7 @@
 /**
  * SqlJsRecurringTransactionRuleRepository の統合テスト。
  * sql.js(SQLite WASM)をNode上で実際に動かし、docs/domain/recurring-transactions.md・
- * docs/schema/recurring_transactions.sql に定義された定期取引ルールの作成・参照・更新・
+ * docs/schema/recurring_transactions.sql に定義された定期仕訳ルールの作成・参照・更新・
  * 削除・非アクティブ化と、DDL側のトリガー(生成済み仕訳がある場合の物理削除禁止。is_reconcilable科目の
  * 直接指定禁止トリガーは計画Issue #145で廃止し、指定できることも検証する)・frequencyごとのカラム組み合わせCHECK制約が
  * 期待通り機能することを検証する。generated_from_rule_idのCOUNTで生成済み件数を

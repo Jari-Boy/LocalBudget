@@ -90,7 +90,7 @@ export interface RecurringTransactionProposalRpcApi {
 }
 
 /**
- * 定期取引の提案評価・仕訳生成(docs/domain/recurring-transactions.md 1.2節)のRPC API。
+ * 定期仕訳の提案評価・仕訳生成(docs/domain/recurring-transactions.md 1.2節)のRPC API。
  * listPendingは呼び出しごとにルール一覧・生成済み実績をDBから読み直し、
  * evaluateRecurringTransactionProposalsで都度再評価する(提案データ自体を永続化しない、
  * 1.2節「なぜ将来分をまとめて事前生成しないか」)。
