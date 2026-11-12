@@ -386,3 +386,7 @@
 .master-table__nowrap {
   white-space: nowrap;
 }
+
+.master-error__message {
+  margin: 0;
+}

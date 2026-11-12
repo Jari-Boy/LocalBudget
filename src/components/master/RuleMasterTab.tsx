@@ -125,7 +125,8 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
   const [data, setData] = useState<LoadedData | null>(null)
   const [mode, setMode] = useState<PanelMode>(null)
   const [armed, setArmed] = useState(false)
-  const [error, setError] = useState('')
+  /** 操作の失敗。右パネルの操作ボタンの直上に出す。reasonは失敗の原因(例外のメッセージ) */
+  const [error, setError] = useState<{ message: string; reason: string } | null>(null)
   const [busy, setBusy] = useState(false)
 
   const {
@@ -206,12 +207,12 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
   const projectNameById = new Map(data.projects.map((p) => [p.id, p.name]))
   const run = async (action: () => unknown, errorMessage: string) => {
     setBusy(true)
-    setError('')
+    setError(null)
     try {
       await action()
       await load()
-    } catch {
-      setError(errorMessage)
+    } catch (err) {
+      setError({ message: errorMessage, reason: err instanceof Error ? err.message : '' })
     } finally {
       setBusy(false)
     }
@@ -231,7 +232,7 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
             onClick={() => {
               setMode('create')
               setArmed(false)
-              setError('')
+              setError(null)
             }}
           >
             {t('ruleTab.add')}
@@ -263,7 +264,7 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
                         onClick={() => {
                           setMode(rule.id)
                           setArmed(false)
-                          setError('')
+                          setError(null)
                         }}
                       >
                         {rule.name}
@@ -299,12 +300,6 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
         </div>
       </div>
 
-      {error && (
-        <p role="alert" className="master-error master-split__alert">
-          {error}
-        </p>
-      )}
-
       {mode !== null && (mode === 'create' || selectedRule) && (
         <RuleForm
           key={mode === 'create' ? 'create' : selectedRule!.id}
@@ -320,6 +315,7 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           members={data.members}
           accountById={accountById}
           projectNameById={projectNameById}
+          error={error}
           busy={busy}
           armed={armed}
           blockedText={describeDeletionBlocks(listDeletionBlocks('recurringRule', generatedUsage), t)}
@@ -371,6 +367,8 @@ interface RuleFormProps {
   members: readonly HouseholdMember[]
   accountById: ReadonlyMap<number, Account>
   projectNameById: ReadonlyMap<number, string>
+  /** 直前の操作の失敗。操作ボタンの直上に表示する */
+  error: { message: string; reason: string } | null
   busy: boolean
   armed: boolean
   blockedText: string
@@ -812,6 +810,15 @@ function RuleForm(props: RuleFormProps) {
       <div role="status" className="journal-editor__balance">
         {t('ruleTab.balanced')}
       </div>
+
+      {props.error && (
+        <div role="alert" className="master-error">
+          <p className="master-error__message">{props.error.message}</p>
+          {props.error.reason !== '' && (
+            <p className="master-note">{t('ruleTab.errorReason', { reason: props.error.reason })}</p>
+          )}
+        </div>
+      )}
 
       <div className="master-actions">
         <button

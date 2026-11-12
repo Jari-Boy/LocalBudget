@@ -7,11 +7,13 @@
  * Node実装(createTestDatabase)を使って確認する。計画Issue #164で追加した、開始日・終了日・間隔・
  * 土日の調整・金額の初期値の入力と保存、これからの期日のプレビュー、仕訳エディタと同じ借方・貸方の
  * 2列(ルールの表で持てない項目は無効表示)、状態「終了」、再有効化(再開日の選択、終了したルールには
- * 出さない)も確認する。
+ * 出さない)も確認する。登録・保存などに失敗したときのエラーは、右パネルの操作ボタンの直上に、
+ * 失敗の原因とあわせて表示することも確認する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -47,11 +49,11 @@ beforeEach(async () => {
 
 afterEach(cleanup)
 
-function renderTab() {
+function renderTab(ruleRepository: ComponentProps<typeof RuleMasterTab>['recurringTransactionRuleRepository'] = rules) {
   render(
     <I18nextProvider i18n={i18n}>
       <RuleMasterTab
-        recurringTransactionRuleRepository={rules}
+        recurringTransactionRuleRepository={ruleRepository}
         accountRepository={new SqlJsAccountRepository(db)}
         accountGroupRepository={new SqlJsAccountGroupRepository(db)}
         counterpartyRepository={new SqlJsCounterpartyRepository(db)}
@@ -552,3 +554,62 @@ function insertGeneratedEntry(ruleId: number, dueDate: string) {
     ],
   })
 }
+
+describe('操作に失敗したときのエラー表示(計画Issue #164)', () => {
+  /** 作成だけが、指定した理由で失敗するRepository(ほかはSQLiteの実装に委ねる) */
+  const failingCreate = (reason: string) => ({
+    findAll: () => rules.findAll(),
+    create: () => {
+      throw new Error(reason)
+    },
+    update: (...args: Parameters<typeof rules.update>) => rules.update(...args),
+    delete: (id: number) => rules.delete(id),
+    deactivate: (id: number) => rules.deactivate(id),
+    activate: (...args: Parameters<typeof rules.activate>) => rules.activate(...args),
+    countGeneratedJournalEntries: (id: number) => rules.countGeneratedJournalEntries(id),
+  })
+
+  async function submitCreate() {
+    fireEvent.click(await screen.findByRole('button', { name: '定期取引を追加' }))
+    const form = panel('定期取引の追加')
+    fireEvent.change(form.getByLabelText('名称'), { target: { value: '家賃' } })
+    pick(form, '借方の科目', '家賃')
+    pick(form, '貸方の科目', '楽天銀行')
+    fireEvent.change(form.getByLabelText('金額', { exact: true }), { target: { value: '98000' } })
+    fireEvent.change(form.getByLabelText('日', { exact: true }), { target: { value: '27' } })
+    fireEvent.click(form.getByRole('button', { name: '登録' }))
+    return form
+  }
+
+  it('登録に失敗すると、右パネルの中の「登録」ボタンの直上にエラーを表示する(画面上部ではない)', async () => {
+    renderTab(failingCreate('table recurring_transaction_rules has no column named starts_on'))
+
+    const form = await submitCreate()
+
+    const alert = await form.findByRole('alert')
+    expect(alert).toHaveTextContent('登録に失敗しました。もう一度お試しください。')
+    const register = form.getByRole('button', { name: '登録' })
+    expect(alert.compareDocumentPosition(register) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // 画面上部(右パネルの外)には、エラーを出さない
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+  })
+
+  it('エラーには、失敗の原因(例外のメッセージ)も添えて表示する', async () => {
+    renderTab(failingCreate('table recurring_transaction_rules has no column named starts_on'))
+
+    const form = await submitCreate()
+
+    expect(await form.findByText(/原因: .*no column named starts_on/)).toBeInTheDocument()
+  })
+
+  it('操作をやり直して成功すると、エラーは消える', async () => {
+    renderTab(failingCreate('boom'))
+    const form = await submitCreate()
+    await form.findByRole('alert')
+
+    fireEvent.click(form.getByRole('button', { name: 'キャンセル' }))
+    fireEvent.click(await screen.findByRole('button', { name: '定期取引を追加' }))
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})

@@ -187,6 +187,7 @@
     "resumeHint": "再開日の当日以降の期日を提案します。過去の日付を選ぶと、無効にしていた間の期日も提案します。",
     "resumeStart": "この日から再開",
     "resumeCancel": "やめる",
+    "errorReason": "原因: {{reason}}",
     "activateError": "有効にできませんでした。もう一度お試しください。",
     "none": "なし",
     "bookkeeperNone": "確認時に選ぶ",
