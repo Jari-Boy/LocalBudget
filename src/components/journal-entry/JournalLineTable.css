@@ -189,8 +189,19 @@
   border-top-color: var(--color-border);
 }
 
-.journal-line-table__editing .journal-line-table__tag {
-  margin-left: 8px;
+/* 取引日と摘要の入力欄を横に並べる(日付は固定の幅、摘要は残りの幅いっぱい)。境目に薄い罫線 */
+.journal-line-table__edit-head {
+  display: flex;
+}
+
+.journal-line-table__edit-head > .journal-line-table__edit-date {
+  flex: 0 0 150px;
+  width: 150px;
+}
+
+.journal-line-table__edit-head > * + * {
+  flex: 1 1 auto;
+  border-left: 1px solid var(--color-border);
 }
 
 .journal-line-table__control {
@@ -321,12 +332,20 @@
   gap: 16px;
 }
 
-/* 貸借の一致状況: 貸方合計の真下に、合計と同じ右端に揃えて出す */
+/* 貸借の一致状況: 貸方合計の左隣に出す(合計とともに貸方の列の右端に寄せる) */
+.journal-line-table__balance-total {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
 .journal-line-table__balance {
-  text-align: right;
   font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-accent);
+  white-space: nowrap;
 }
 
 .journal-line-table__balance--off,

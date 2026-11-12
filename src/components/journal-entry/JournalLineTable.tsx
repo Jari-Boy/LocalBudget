@@ -304,20 +304,16 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
               <button type="button" className="journal-line-table__small-button" onClick={() => addLine('credit')}>
                 + 貸方の行
               </button>
-              <span className="journal-line-table__total">{`貸方合計 ${formatCurrency(balance.creditTotal, 'JPY')}`}</span>
-            </div>
-          </td>
-        </tr>
-        {/* 貸借の一致状況は、貸方合計の真下(貸方の列)に出す */}
-        <tr className="journal-line-table__bar journal-line-table__bar--balance">
-          <td colSpan={4} />
-          <td colSpan={SIDE_COLUMNS.length} className="journal-line-table__debit-start" />
-          <td colSpan={SIDE_COLUMNS.length} className="journal-line-table__credit-start">
-            <div
-              role="status"
-              className={`journal-line-table__balance${balance.isBalanced ? '' : ' journal-line-table__balance--off'}`}
-            >
-              {balance.isBalanced ? '貸借が一致しています' : `貸借が合っていません(差額 ${formatCurrency(balance.difference, 'JPY')})`}
+              {/* 貸借の一致状況は、貸方合計の左隣に出す */}
+              <span className="journal-line-table__balance-total">
+                <span
+                  role="status"
+                  className={`journal-line-table__balance${balance.isBalanced ? '' : ' journal-line-table__balance--off'}`}
+                >
+                  {balance.isBalanced ? '貸借が一致しています' : `貸借が合っていません(差額 ${formatCurrency(balance.difference, 'JPY')})`}
+                </span>
+                <span className="journal-line-table__total">{`貸方合計 ${formatCurrency(balance.creditTotal, 'JPY')}`}</span>
+              </span>
             </div>
           </td>
         </tr>
@@ -440,32 +436,24 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
               <tbody key={entry.id} data-entry-id={entry.id} className="journal-line-table__editing">
                 {pairLinesBySide(items).map((pair, index) => (
                   <tr key={index} className="journal-line-table__row--editing">
-                    <td className="journal-line-table__cell">
+                    {/* 編集中は出どころのタグを出さず、その列の幅を取引日と摘要の入力欄に回す(日付・出どころ・摘要の3列分を1つのセルにする) */}
+                    <td colSpan={3} className="journal-line-table__cell">
                       {index === 0 && (
-                        <input
-                          type="date"
-                          className="journal-line-table__control"
-                          aria-label="取引日"
-                          value={e.value.entryDate}
-                          onChange={(ev) => update({ entryDate: ev.target.value })}
-                        />
-                      )}
-                    </td>
-                    <td className="journal-line-table__cell">
-                      {index === 0 && (
-                        <span className="journal-line-table__tag" style={{ background: tag.bg, color: tag.fg }}>
-                          {tag.label}
-                        </span>
-                      )}
-                    </td>
-                    <td className="journal-line-table__cell">
-                      {index === 0 && (
-                        <input
-                          className="journal-line-table__control"
-                          aria-label="摘要"
-                          value={e.value.memo}
-                          onChange={(ev) => update({ memo: ev.target.value })}
-                        />
+                        <div className="journal-line-table__edit-head">
+                          <input
+                            type="date"
+                            className="journal-line-table__control journal-line-table__edit-date"
+                            aria-label="取引日"
+                            value={e.value.entryDate}
+                            onChange={(ev) => update({ entryDate: ev.target.value })}
+                          />
+                          <input
+                            className="journal-line-table__control"
+                            aria-label="摘要"
+                            value={e.value.memo}
+                            onChange={(ev) => update({ memo: ev.target.value })}
+                          />
+                        </div>
                       )}
                     </td>
                     <td className="journal-line-table__cell">

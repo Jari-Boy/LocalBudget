@@ -255,16 +255,29 @@ describe('JournalLineTable(インライン編集)', () => {
     expect(screen.getByRole('status')).toHaveTextContent('貸借が一致しています')
   })
 
-  it('貸借の一致状況は、貸方合計の下(貸方の列)に出る。保存などのボタンとは別の行', () => {
+  it('貸借の一致状況は、貸方合計の左隣(貸方の列の同じ行)に出る。保存などのボタンとは別の行', () => {
     render(<Harness />)
     const status = screen.getByRole('status')
     const creditTotal = screen.getByText(`貸方合計 ${yen(1280)}`, { exact: false })
-    // 貸方の列(境目の縦線のクラスが付いたセル)の中にあり、貸方合計より後ろ(下)にある
+    // 貸方の列(境目の縦線のクラスが付いたセル)の中で、貸方合計と同じセル・同じ行にあり、貸方合計より前(左)にある
     expect(status.closest('td')).toHaveClass('journal-line-table__credit-start')
-    expect(creditTotal.closest('td')).toHaveClass('journal-line-table__credit-start')
-    expect(creditTotal.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(status.closest('tr')).not.toBe(creditTotal.closest('tr'))
+    expect(status.closest('td')).toBe(creditTotal.closest('td'))
+    expect(creditTotal.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
     expect(status.closest('tr')).not.toBe(screen.getByRole('button', { name: '保存' }).closest('tr'))
+  })
+
+  it('編集中の仕訳には出どころのタグを出さない(他の仕訳には出る)', () => {
+    const { container } = render(<Harness />)
+    expect(within(rowsOf(container, 1)[0]).queryByText('手入力')).not.toBeInTheDocument()
+    expect(within(rowsOf(container, 2)[0]).getByText('手入力')).toBeInTheDocument()
+  })
+
+  it('出どころのタグの分、取引日と摘要の入力欄は同じ広いセルに並ぶ(出どころの列に食い込む)', () => {
+    render(<Harness />)
+    const cell = screen.getByLabelText('取引日').closest('td') as HTMLElement
+    expect(cell).toBe(screen.getByLabelText('摘要').closest('td'))
+    // 日付(1列)+出どころ(1列)+摘要(1列)の3列分
+    expect(cell).toHaveAttribute('colspan', '3')
   })
 
   it('金額を変えて貸借が合わなくなると、差額を表示し、保存が押せなくなる', () => {
