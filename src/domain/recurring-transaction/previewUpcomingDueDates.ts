@@ -1,6 +1,7 @@
 import { adjustForWeekend } from './adjustForWeekend'
 import { nextOccurrenceDate } from './enumerateDueDates'
 import type { RecurringTransactionRule } from './RecurringTransactionRule'
+import { effectiveMaxOccurrences } from './recurringAmountSchedule'
 
 export interface UpcomingDueDate {
   /** 土日の調整前の期日 */
@@ -24,7 +25,8 @@ export function previewUpcomingDueDates(
   count: number,
   generatedCount = 0,
 ): UpcomingDueDate[] {
-  const remaining = rule.maxOccurrences === null ? Infinity : Math.max(0, rule.maxOccurrences - generatedCount)
+  const max = effectiveMaxOccurrences(rule)
+  const remaining = max === null ? Infinity : Math.max(0, max - generatedCount)
   const limit = Math.min(count, remaining)
 
   const results: UpcomingDueDate[] = []

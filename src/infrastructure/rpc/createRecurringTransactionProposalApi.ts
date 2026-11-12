@@ -4,6 +4,7 @@ import {
   buildRecurringTransactionJournalEntryInput,
   type EditedRecurringJournalLine,
 } from '../../domain/recurring-transaction/buildRecurringTransactionJournalEntryInput'
+import { scheduleAmountsForRound } from '../../domain/recurring-transaction/recurringAmountSchedule'
 import { resolveLastConfirmedLines } from '../../domain/recurring-transaction/resolveLastConfirmedLines'
 import { evaluateRecurringTransactionProposals } from '../../domain/recurring-transaction/evaluateRecurringTransactionProposals'
 import type { CreateJournalEntryInput, JournalEntry } from '../../domain/journal/JournalEntry'
@@ -136,8 +137,16 @@ export function createRecurringTransactionProposalApi(
     return rule
   }
 
-  /** 行の初期値。固定ならルールの行のまま、前回確定額なら前回の仕訳と対応づけた金額に置き換える(計画Issue #180) */
-  function defaultLinesOf(rule: RecurringTransactionRule): RecurringTransactionRuleLine[] {
+  /**
+   * 行の初期値(計画Issue #180)。固定ならルールの行のまま、前回確定額なら前回の仕訳と対応づけた金額に置き換え、
+   * 金額表なら「生成済みの件数+1+offset」回目の金額にする(offsetは、同時に保留中の提案の何件目か。見送りは
+   * 生成済みの件数に数えないので回は進まない)。金額が0の行もそのまま返す(仕訳を作るときに除く)
+   */
+  function defaultLinesOf(rule: RecurringTransactionRule, offset = 0): RecurringTransactionRuleLine[] {
+    if (rule.amountMode === 'schedule') {
+      const amounts = scheduleAmountsForRound(rule.schedule, ruleRepository.countGeneratedJournalEntries(rule.id) + 1 + offset)
+      return rule.lines.map((line) => ({ ...line, amount: amounts?.get(line.lineNo) ?? line.amount }))
+    }
     if (rule.amountMode === 'last_confirmed') {
       return resolveLastConfirmedLines(rule.lines, ruleRepository.findLastConfirmedLines(rule.id))
     }
@@ -213,14 +222,16 @@ export function createRecurringTransactionProposalApi(
       return ruleRepository.findAll().flatMap((rule) => {
         const proposals = evaluatePendingForRule(rule)
         if (proposals.length === 0) return []
-        const defaultLines = defaultLinesOf(rule)
-        const defaultAmount = debitTotalOf(defaultLines)
-        return proposals.map((proposal) => ({
-          ...proposal,
-          entryDate: adjustForWeekend(proposal.dueDate, rule.weekendAdjustment),
-          defaultLines,
-          defaultAmount,
-        }))
+        return proposals.map((proposal, offset) => {
+          // 仕訳に含めない金額0の行は、確認パネルにも出さない
+          const defaultLines = defaultLinesOf(rule, offset).filter((l) => l.amount > 0)
+          return {
+            ...proposal,
+            entryDate: adjustForWeekend(proposal.dueDate, rule.weekendAdjustment),
+            defaultLines,
+            defaultAmount: debitTotalOf(defaultLines),
+          }
+        })
       })
     },
 
@@ -262,10 +273,14 @@ export function createRecurringTransactionProposalApi(
         }
 
         // 初期値は選択時点のもの。2件目以降を直前の確定額に追従させない
-        const defaultLines = defaultLinesOf(rule)
-        for (const dueDate of selected) {
-          inputs.push(buildJournalEntryInput(rule, dueDate, { householdMemberId: input.householdMemberId, defaultLines }))
-        }
+        selected.forEach((dueDate, offset) => {
+          inputs.push(
+            buildJournalEntryInput(rule, dueDate, {
+              householdMemberId: input.householdMemberId,
+              defaultLines: defaultLinesOf(rule, offset),
+            }),
+          )
+        })
       }
 
       return journalEntryRepository.createMany(inputs)

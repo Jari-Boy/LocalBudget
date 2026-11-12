@@ -20,6 +20,7 @@ function rule(overrides: Partial<RecurringTransactionRule> = {}): RecurringTrans
       { lineNo: 1, side: 'debit', accountId: 1, amount: 98000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
       { lineNo: 2, side: 'credit', accountId: 2, amount: 98000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
     ],
+    schedule: [],
     frequency: 'monthly',
     dayOfWeek: null,
     dayOfMonth: 27,

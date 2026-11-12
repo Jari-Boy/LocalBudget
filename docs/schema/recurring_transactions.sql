@@ -17,7 +17,7 @@ CREATE TABLE recurring_transaction_rules (
   ends_on               TEXT,                                  -- 終了日(当日を含む)。任意
   interval              INTEGER NOT NULL DEFAULT 1 CHECK (interval >= 1), -- N回ごと
   weekend_adjustment    TEXT NOT NULL DEFAULT 'none' CHECK (weekend_adjustment IN ('none', 'next', 'previous')),
-  amount_mode           TEXT NOT NULL DEFAULT 'fixed' CHECK (amount_mode IN ('fixed', 'last_confirmed')),
+  amount_mode           TEXT NOT NULL DEFAULT 'fixed' CHECK (amount_mode IN ('fixed', 'last_confirmed', 'schedule')), -- schedule=回ごとの金額表(計画Issue #180)
   resumed_on            TEXT,                                  -- 再有効化の再開日(当日を含む)。開始日とは別の列
   is_active             BOOLEAN NOT NULL DEFAULT TRUE,
   created_at            TEXT NOT NULL DEFAULT (datetime('now')),
@@ -53,7 +53,8 @@ CREATE TABLE recurring_transaction_rule_lines (
   line_no              INTEGER NOT NULL CHECK (line_no >= 1),
   side                 TEXT NOT NULL CHECK (side IN ('debit', 'credit')),
   account_id           INTEGER NOT NULL REFERENCES accounts(id),
-  amount               INTEGER NOT NULL CHECK (amount > 0),
+  -- 0以上(金額表のルールでは、行の金額は1回目の金額。fixed・last_confirmedでは正の整数をRepositoryが検証する)
+  amount               INTEGER NOT NULL CHECK (amount >= 0),
   project_id           INTEGER REFERENCES projects(id),
   household_member_id  INTEGER REFERENCES household_members(id),
   counterparty_id      INTEGER REFERENCES counterparties(id),
@@ -79,6 +80,19 @@ WHEN NEW.counterparty_id IS NOT NULL
 BEGIN
   SELECT RAISE(ABORT, 'counterparty_id can only be set on revenue/expense lines');
 END;
+
+-- 回ごとの金額表(計画Issue #180、amount_mode = 'schedule'のルールだけが持つ)。回(1始まり・連続)×ルールの
+-- 行ごとの金額。n回目の提案は表のn回目の金額を使い、回の数え方は回数の上限と同じ「生成済みの件数+1」
+-- (見送っても回は消費しない)。表の最後の回まで生成したら提案が止まる(回数の上限は表の長さに自動で揃う)。
+-- 各回の貸借の一致・回の連続・全行の金額の網羅は、Repositoryが書き込み前に検証する
+-- (assertValidAmountSchedule)。各回の残高は保存せず、表の値から都度計算する。
+CREATE TABLE recurring_transaction_rule_amounts (
+  rule_id  INTEGER NOT NULL REFERENCES recurring_transaction_rules(id) ON DELETE CASCADE,
+  round    INTEGER NOT NULL CHECK (round >= 1),
+  line_no  INTEGER NOT NULL CHECK (line_no >= 1),
+  amount   INTEGER NOT NULL CHECK (amount >= 0),
+  PRIMARY KEY (rule_id, round, line_no)
+);
 
 -- 見送った提案(計画Issue #145、recurring-transactions.md 1.2・1.7参照)。
 -- 提案は生成済みの仕訳の最新の期日(recurring_due_date)から都度導出しており、見送りは仕訳を作らないため、

@@ -47,6 +47,7 @@ export interface BuildRecurringTransactionJournalEntryInputParams {
  * 定期仕訳ルールから、確認済みの対象日1件分のCreateJournalEntryInputを組み立てる純粋関数
  * (docs/domain/recurring-transactions.md 1.4節)。ルールの行(2行でも3行以上でも同じ)を仕訳の明細行へ
  * 写し、counterparty_idはPL区分(revenue/expense)の行にだけ設定する(それ以外の行では設定しない)。
+ * 金額が0の行(金額表で利息が0の回など)は仕訳に含めない(計画Issue #180)。
  * 科目区分の解決は呼び出し側の責務(buildCounterpartyExpenseSplittingJournalEntryInput等の既存パターンを
  * 踏襲、ドメイン層は他集約をDB参照しない)。
  */
@@ -66,15 +67,17 @@ export function buildRecurringTransactionJournalEntryInput(
           counterpartyId: l.counterpartyId ?? null,
           settlementBatchId: l.settlementBatchId ?? null,
         }))
-      : rule.lines.map((l) => ({
-          accountId: l.accountId,
-          side: l.side,
-          amount: params.lineAmounts?.get(l.lineNo) ?? l.amount,
-          projectId: l.projectId,
-          householdMemberId: resolveLineHouseholdMemberId(l.accountId, l.householdMemberId),
-          counterpartyId: isPlAccount(accountCategoryById.get(l.accountId)) ? l.counterpartyId : null,
-          settlementBatchId: l.settlementBatchId,
-        }))
+      : rule.lines
+          .filter((l) => (params.lineAmounts?.get(l.lineNo) ?? l.amount) > 0)
+          .map((l) => ({
+            accountId: l.accountId,
+            side: l.side,
+            amount: params.lineAmounts?.get(l.lineNo) ?? l.amount,
+            projectId: l.projectId,
+            householdMemberId: resolveLineHouseholdMemberId(l.accountId, l.householdMemberId),
+            counterpartyId: isPlAccount(accountCategoryById.get(l.accountId)) ? l.counterpartyId : null,
+            settlementBatchId: l.settlementBatchId,
+          }))
 
   return {
     entryDate: adjustForWeekend(dueDate, rule.weekendAdjustment),

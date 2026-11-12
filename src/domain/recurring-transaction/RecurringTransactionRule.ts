@@ -5,8 +5,26 @@ export type RecurringTransactionFrequency = 'weekly' | 'monthly' | 'yearly'
 /** 土日の調整(計画Issue #164)。none=そのまま、next=翌平日、previous=前平日。祝日は扱わない */
 export type WeekendAdjustment = 'none' | 'next' | 'previous'
 
-/** 確認パネルの金額の初期値(計画Issue #164)。fixed=ルールの金額、last_confirmed=前回確定した金額 */
-export type RecurringAmountMode = 'fixed' | 'last_confirmed'
+/**
+ * 確認パネルの金額の初期値(計画Issue #164・#180)。fixed=ルールの金額、last_confirmed=前回確定した金額、
+ * schedule=回ごとの金額表(減価償却・ローン返済など、回ごとに金額が変わる取引)
+ */
+export type RecurringAmountMode = 'fixed' | 'last_confirmed' | 'schedule'
+
+/** 金額表の1つの金額(ルールの行ごと) */
+export interface RecurringScheduleAmount {
+  /** ルールの行の行番号 */
+  lineNo: number
+  /** 0以上の整数(利息が0の回など、0は有効) */
+  amount: number
+}
+
+/** 金額表の1回分(計画Issue #180)。回は1始まりで連続し、n回目の提案は表のn回目の金額を使う */
+export interface RecurringScheduleRound {
+  round: number
+  /** ルールの全行の金額(過不足なく) */
+  amounts: RecurringScheduleAmount[]
+}
 
 /**
  * ルールの行(recurring_transaction_rule_lines、計画Issue #180)。仕訳の明細行のひな形で、
@@ -46,6 +64,11 @@ export interface RecurringTransactionRule {
   bookkeeperHouseholdMemberId: number | null
   /** 行番号の昇順。貸借が一致する(保存時に仕訳と同じ検証で強制) */
   lines: RecurringTransactionRuleLine[]
+  /**
+   * 回ごとの金額表(amountMode = 'schedule'のときだけ値を持つ。それ以外は空)。回の昇順。
+   * 回の数え方は回数の上限と同じ「生成済みの件数+1」で、見送っても回は消費しない
+   */
+  schedule: RecurringScheduleRound[]
   frequency: RecurringTransactionFrequency
   dayOfWeek: number | null
   dayOfMonth: number | null
@@ -71,6 +94,8 @@ export interface CreateRecurringTransactionRuleInput {
   name: string
   bookkeeperHouseholdMemberId?: number | null
   lines: RecurringTransactionRuleLineInput[]
+  /** 回ごとの金額表。amountMode = 'schedule'のとき必須で、それ以外では指定できない */
+  schedule?: RecurringScheduleRound[]
   frequency: RecurringTransactionFrequency
   dayOfWeek?: number | null
   dayOfMonth?: number | null

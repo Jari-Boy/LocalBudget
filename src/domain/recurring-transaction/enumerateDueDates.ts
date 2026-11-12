@@ -1,4 +1,5 @@
 import type { RecurringTransactionRule } from './RecurringTransactionRule'
+import { effectiveMaxOccurrences } from './recurringAmountSchedule'
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
 // 通常の運用でこの日数以内に必ず次回発生日が見つかる(週次・月次・年次いずれの
@@ -30,15 +31,16 @@ export function nextOccurrenceDate(rule: RecurringTransactionRule, after: string
  * 発生すべき対象日を列挙する純粋関数。max_occurrencesが設定されているルールは、
  * generatedCount(既に生成済みの件数)との差分までしか列挙しない
  * (docs/domain/recurring-transactions.md 1.6・2.1)。終了日(当日を含む)を過ぎた対象日も列挙しない
- * ため、回数の上限と終了日の両方があれば先に来たほうで止まる(計画Issue #164)。
+ * ため、回数の上限と終了日の両方があれば先に来たほうで止まる(計画Issue #164)。金額表のルールは、
+ * 回数の上限が表の長さに自動で揃う(最後の回まで生成したら提案が止まる、計画Issue #180)。
  */
 export function enumerateDueDates(
   rule: RecurringTransactionRule,
   range: { since: string; until: string },
   generatedCount: number,
 ): string[] {
-  const remaining =
-    rule.maxOccurrences === null ? Infinity : Math.max(0, rule.maxOccurrences - generatedCount)
+  const max = effectiveMaxOccurrences(rule)
+  const remaining = max === null ? Infinity : Math.max(0, max - generatedCount)
 
   const results: string[] = []
   let cursor = range.since

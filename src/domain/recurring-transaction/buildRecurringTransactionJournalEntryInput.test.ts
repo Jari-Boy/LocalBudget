@@ -46,6 +46,7 @@ function makeRule(overrides: Partial<RecurringTransactionRule> = {}): RecurringT
     name: '家賃',
     bookkeeperHouseholdMemberId: null,
     lines: [line({ lineNo: 1, side: 'debit', accountId: 10 }), line({ lineNo: 2, side: 'credit', accountId: 20 })],
+    schedule: [],
     frequency: 'monthly',
     dayOfWeek: null,
     dayOfMonth: 1,

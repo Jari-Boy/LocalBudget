@@ -209,6 +209,7 @@ export function ruleFromForm(form: RuleForm): RecurringTransactionRule {
       counterpartyId: l.counterpartyId ?? null,
       settlementBatchId: l.settlementBatchId ?? null,
     })),
+    schedule: [],
     frequency: input.frequency,
     dayOfWeek: input.dayOfWeek ?? null,
     dayOfMonth: input.dayOfMonth ?? null,

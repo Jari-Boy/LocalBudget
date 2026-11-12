@@ -23,6 +23,7 @@ function baseRule(overrides: Partial<RecurringTransactionRule>): RecurringTransa
       { lineNo: 1, side: 'debit', accountId: 1, amount: 1000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
       { lineNo: 2, side: 'credit', accountId: 2, amount: 1000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
     ],
+    schedule: [],
     frequency: 'weekly',
     dayOfWeek: null,
     dayOfMonth: null,
