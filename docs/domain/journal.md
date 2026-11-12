@@ -141,7 +141,7 @@
 |---|---|
 | `manual` | 手入力(既定値) |
 | `external_import` | 外部明細取込のレビュー確定を経て作成された。通常の取引・消込のどちらも含む |
-| `recurring_generated` | 定期取引([recurring-transactions.md](./recurring-transactions.md))の提案をレビュー確認して作成された |
+| `recurring_generated` | 定期仕訳([recurring-transactions.md](./recurring-transactions.md))の提案をレビュー確認(承認)して作成された。ルールの行(2行でも3行以上でも)が仕訳の明細行になり、ルールの行に精算バッチが設定されていれば、立替金・未払金の行にそのバッチのタグが付く(計画Issue #180)。起票者はルール単位、行の世帯メンバーは 科目の既定 > 行 > 起票者 の順で決まる |
 | `initial_balance` | 口座/カード開設時の初期残高仕訳([accounts.md 4.3 初期残高の自動仕訳](./accounts.md#43-初期残高の自動仕訳)) |
 | `balance_adjustment` | 残高調整([reconciliation.md 1.6](./reconciliation.md#16-原因不明差異への残高調整)、[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)) |
 | `expense_splitting` | 割勘機能で作った仕訳([expense-splitting.md](./expense-splitting.md)、計画Issue #149)。割勘かどうかは科目構成ではなくこの値で判定する。精算の仕訳は分類を増やさず、口座明細からなら`external_import`、手で起票したものなら`manual`とする |
@@ -195,8 +195,8 @@
 | `currency` | 通貨コード | ISO 4217、MVPでは`JPY`固定 |
 | `source_type` | 作成経路 | ENUM、既定`manual`([1.7 作成経路(source_type)](#17-作成経路source_type)参照) |
 | `household_member_id` | 起票者 | FK、NOT NULL。この仕訳を切った主体([household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方)参照、計画Issue #88) |
-| `generated_from_rule_id` | 生成元の定期取引ルール | FK、任意。`source_type = 'recurring_generated'`の仕訳でのみ値を持ち、手入力・外部明細取込由来の仕訳では`NULL`。参照のみで複式簿記の整合性検証には関与しない([recurring-transactions.md 1.5](./recurring-transactions.md#15-生成された仕訳との関係)参照、計画Issue #121) |
-| `recurring_due_date` | 土日の調整前の期日 | YYYY-MM-DD、任意。定期取引から生成した仕訳にだけ値を持ち、手入力・外部明細取込由来の仕訳では`NULL`。`entry_date`は仕訳の編集や土日の調整で動くため、定期取引の提案の起点はこの列で求める。`(generated_from_rule_id, recurring_due_date)`に一意制約があり、同じルール・同じ期日の二重生成を防ぐ([recurring-transactions.md 1.2](./recurring-transactions.md#12-自動生成-vs-レビュー確認)・[2.1](./recurring-transactions.md#21-フィールド定義)参照、計画Issue #164) |
+| `generated_from_rule_id` | 生成元の定期仕訳ルール | FK、任意。`source_type = 'recurring_generated'`の仕訳でのみ値を持ち、手入力・外部明細取込由来の仕訳では`NULL`。参照のみで複式簿記の整合性検証には関与しない([recurring-transactions.md 1.5](./recurring-transactions.md#15-生成された仕訳との関係)参照、計画Issue #121) |
+| `recurring_due_date` | 土日の調整前の期日 | YYYY-MM-DD、任意。定期仕訳から生成した仕訳にだけ値を持ち、手入力・外部明細取込由来の仕訳では`NULL`。`entry_date`は仕訳の編集や土日の調整で動くため、定期仕訳の提案の起点はこの列で求める。`(generated_from_rule_id, recurring_due_date)`に一意制約があり、同じルール・同じ期日の二重生成を防ぐ([recurring-transactions.md 1.2](./recurring-transactions.md#12-自動生成-vs-レビュー確認)・[2.1](./recurring-transactions.md#21-フィールド定義)参照、計画Issue #164) |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
 
@@ -278,8 +278,8 @@
 > **なぜ`journal_entries`に`is_draft`フラグを持たせないか**
 > [1.3 貸借バランスの検証](#13-貸借バランスの検証)の通り、`journal_entries`への書き込みは「全明細行が揃った状態でRepository層がバランス検証を行う」ことが前提になっている。下書きは定義上バランスが崩れた状態(借方だけ入力済み等)や必須項目が空の状態を許容する必要がある。これを`journal_entries`側で許容すると、「入力経路によって整合性ルールが分岐しない」という[1.3](#13-貸借バランスの検証)の原則([architecture.md](../architecture.md) 12章由来)をis_draftという別軸の分岐で崩すことになる。そのため、バランス制約を一切課さない別テーブルとして持ち、確定操作の際に初めて通常の`JournalEntryRepository`を経由させ、そこで[1.3](#13-貸借バランスの検証)の検証を受けさせる。
 >
-> **なぜ定期取引の生成予定(先読み)をここに含めないか**
-> [recurring-transactions.md 1.2](./recurring-transactions.md#12-自動生成-vs-レビュー確認)の提案は、ルールから都度計算される派生データであり、ユーザーが入力した永続化すべきWIPデータではない。これを`journal_entry_drafts`に保存してしまうと、ルール変更時の追従(再計算して差し替えるか、そのまま残すか)という同期の問題が生じる。これは[recurring-transactions.md 1.2](./recurring-transactions.md#12-自動生成-vs-レビュー確認)の「なぜ将来分をまとめて事前生成しないか」で一度却下した事前生成のリスクが別の形で再発することを意味する。定期取引の見通し表示は、表示のたびにルールから計算し直す(保存しない)方式とし、本テーブルとは無関係に扱う。
+> **なぜ定期仕訳の生成予定(先読み)をここに含めないか**
+> [recurring-transactions.md 1.2](./recurring-transactions.md#12-自動生成-vs-レビュー確認)の提案は、ルールから都度計算される派生データであり、ユーザーが入力した永続化すべきWIPデータではない。これを`journal_entry_drafts`に保存してしまうと、ルール変更時の追従(再計算して差し替えるか、そのまま残すか)という同期の問題が生じる。これは[recurring-transactions.md 1.2](./recurring-transactions.md#12-自動生成-vs-レビュー確認)の「なぜ将来分をまとめて事前生成しないか」で一度却下した事前生成のリスクが別の形で再発することを意味する。定期仕訳の見通し表示は、表示のたびにルールから計算し直す(保存しない)方式とし、本テーブルとは無関係に扱う。
 
 `purpose`カラムで用途を区別する。現時点では手入力仕訳の途中保存(`manual_entry`)のみを値として持つが、将来別の「途中保存したいWIPデータ」が増えた場合もこのテーブルにタグを追加する形で使い回す想定である。
 

@@ -68,14 +68,15 @@ test.describe('承認待ちの定期仕訳(仕訳画面のタブ)', () => {
         const [defaultMember] = await client.householdMember.findAll()
         const rule = await client.recurringTransactionRule.create({
           name: 'サブスクA',
-          debitAccountId: expenseAccount.id,
-          creditAccountId: liabilityAccount.id,
-          amount: 1000,
+          lines: [
+            { side: 'debit', accountId: expenseAccount.id, amount: 1000 },
+            { side: 'credit', accountId: liabilityAccount.id, amount: 1000 },
+          ],
           frequency: 'weekly',
           dayOfWeek,
           // 開始日を最初の生成済みの期日と同じ日にして、その次の対象日から提案させる(計画Issue #164)
           startsOn: seedEntryDate,
-          householdMemberId: defaultMember.id,
+          bookkeeperHouseholdMemberId: defaultMember.id,
         })
         await client.journalEntry.create({
           entryDate: seedEntryDate,
@@ -123,14 +124,15 @@ test.describe('承認待ちの定期仕訳(仕訳画面のタブ)', () => {
         const [defaultMember] = await client.householdMember.findAll()
         const rule = await client.recurringTransactionRule.create({
           name: 'サブスクB',
-          debitAccountId: expenseAccount.id,
-          creditAccountId: liabilityAccount.id,
-          amount: 2000,
+          lines: [
+            { side: 'debit', accountId: expenseAccount.id, amount: 2000 },
+            { side: 'credit', accountId: liabilityAccount.id, amount: 2000 },
+          ],
           frequency: 'weekly',
           dayOfWeek,
           // 開始日を最初の生成済みの期日と同じ日にして、その次の対象日から提案させる(計画Issue #164)
           startsOn: seedEntryDate,
-          householdMemberId: defaultMember.id,
+          bookkeeperHouseholdMemberId: defaultMember.id,
         })
         await client.journalEntry.create({
           entryDate: seedEntryDate,
@@ -188,9 +190,10 @@ test.describe('承認待ちの定期仕訳(仕訳画面のタブ)', () => {
         const [defaultMember] = await client.householdMember.findAll()
         const rule = await client.recurringTransactionRule.create({
           name: 'サブスクC',
-          debitAccountId: expenseAccount.id,
-          creditAccountId: liabilityAccount.id,
-          amount: 3000,
+          lines: [
+            { side: 'debit', accountId: expenseAccount.id, amount: 3000 },
+            { side: 'credit', accountId: liabilityAccount.id, amount: 3000 },
+          ],
           frequency: 'weekly',
           dayOfWeek,
           // 開始日を最初の生成済みの期日と同じ日にして、その次の対象日から提案させる(計画Issue #164)
