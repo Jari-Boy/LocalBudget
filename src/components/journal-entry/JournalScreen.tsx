@@ -49,6 +49,7 @@ import type { MaybeAsync } from '../master/maybeAsync'
 import { UnsavedChangesDialog } from '../common/unsaved-changes/UnsavedChangesDialog'
 import { useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
 import { canCreateRuleFromEntry } from '../../domain/recurring-transaction/canCreateRuleFromEntry'
+import { AccountCreateForm } from '../master/AccountCreateForm'
 import { CreateRuleFromEntryDialog } from './CreateRuleFromEntryDialog'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
 import { JournalEntryEditor, type JournalEditorLine, type JournalEditorMaster, type JournalEditorValue } from './JournalEntryEditor'
@@ -98,7 +99,7 @@ export interface JournalScreenProps {
       | 'moveMember'
     >
   >
-  accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll'>>
+  accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll' | 'create'>>
   accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
   counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll' | 'create'>>
   counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll'>>
@@ -216,6 +217,8 @@ export function JournalScreen(props: JournalScreenProps) {
   const [ruleDialogEntry, setRuleDialogEntry] = useState<JournalEntry | null>(null)
   /** プロジェクトの追加ダイアログ(行のプロジェクトの選択ツリーの「+ 新規追加」、計画Issue #180) */
   const [projectDialog, setProjectDialog] = useState<{ apply: (id: number) => void } | null>(null)
+  /** 科目の登録ダイアログ(行の科目の選択ツリーの「+ 新規追加」、計画Issue #180) */
+  const [accountDialog, setAccountDialog] = useState<{ apply: (id: number) => void } | null>(null)
   const [counterpartyDialog, setCounterpartyDialog] = useState<{ apply: (id: number) => void } | null>(null)
   /** 詳細を開いた時点の編集内容。現在の内容と違えば、未保存の変更がある */
   const [baseline, setBaseline] = useState('')
@@ -1040,6 +1043,7 @@ export function JournalScreen(props: JournalScreenProps) {
                 onCreateBatch={createBatch}
                 onRequestCreateCounterparty={(apply) => setCounterpartyDialog({ apply })}
                 onRequestCreateProject={(apply) => setProjectDialog({ apply })}
+                onRequestCreateAccount={(apply) => setAccountDialog({ apply })}
               />
 
               {selection.kind === 'proposal' && selectedProposal !== undefined && selectedProposal.entryDate !== selectedProposal.dueDate && (
@@ -1280,7 +1284,27 @@ export function JournalScreen(props: JournalScreenProps) {
           onCreateBatch={createBatch}
           onRequestCreateCounterparty={(apply) => setCounterpartyDialog({ apply })}
           onRequestCreateProject={(apply) => setProjectDialog({ apply })}
+          onRequestCreateAccount={(apply) => setAccountDialog({ apply })}
         />
+      )}
+      {accountDialog && data !== null && (
+        <div className="import-dialog__backdrop">
+          <div role="dialog" aria-modal="true" aria-label="科目を登録" className="import-dialog import-dialog--wide">
+            <AccountCreateForm
+              accountRepository={props.accountRepository}
+              journalEntryRepository={props.journalEntryRepository}
+              groups={data.accountGroups}
+              householdMembers={data.members}
+              initialCategory="expense"
+              onCreated={(created) => {
+                setData((prev) => (prev === null ? prev : { ...prev, accounts: [...prev.accounts, created] }))
+                accountDialog.apply(created.id)
+                setAccountDialog(null)
+              }}
+              onCancel={() => setAccountDialog(null)}
+            />
+          </div>
+        </div>
       )}
       {projectDialog && (
         <QuickCreateDialog

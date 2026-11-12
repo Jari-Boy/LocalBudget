@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import type { Account } from '../../domain/account/Account'
+import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { AccountGroupRepository } from '../../domain/account-group/AccountGroupRepository'
@@ -37,6 +38,7 @@ import {
   ruleFormFromRule,
 } from './recurringRuleForm'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
+import { AccountCreateForm } from './AccountCreateForm'
 import { RuleEditForm, type RuleStatus } from './RuleEditForm'
 import '../journal-entry/JournalEntryEditor.css'
 import './master.css'
@@ -54,13 +56,18 @@ export interface RuleMasterTabProps {
       | 'countGeneratedJournalEntries'
     >
   >
-  accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll'>>
+  accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll' | 'create'>>
   accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
   counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll' | 'create'>>
   counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll'>>
   projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll' | 'create'>>
   projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
+  /**
+   * 科目をその場で新規登録するときの初期残高の仕訳の作成に使う(計画Issue #180)。省略時は、行の科目の選択ツリーに
+   * 「+ 新規追加」を出さない
+   */
+  journalEntryRepository?: MaybeAsync<Pick<JournalEntryRepository, 'create'>>
   /** 行の精算バッチの選択肢(計画Issue #180)。省略時は選択肢なし */
   settlementBatchRepository?: MaybeAsync<Pick<SettlementBatchRepository, 'findAll' | 'create'>>
   /** 「次回」・終了の判定・再開日の既定・開始日の既定の基準日(YYYY-MM-DD)。省略時は今日 */
@@ -134,6 +141,7 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
   /** 行の取引先・プロジェクトをその場で追加するダイアログ(選択ツリーの「+ 新規追加」、計画Issue #180) */
   const [counterpartyDialog, setCounterpartyDialog] = useState<{ apply: (id: number) => void } | null>(null)
   const [projectDialog, setProjectDialog] = useState<{ apply: (id: number) => void } | null>(null)
+  const [accountDialog, setAccountDialog] = useState<{ apply: (id: number) => void } | null>(null)
 
   const {
     recurringTransactionRuleRepository: ruleRepo,
@@ -342,6 +350,7 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           }
           onRequestCreateCounterparty={(apply) => setCounterpartyDialog({ apply })}
           onRequestCreateProject={(apply) => setProjectDialog({ apply })}
+          onRequestCreateAccount={props.journalEntryRepository === undefined ? undefined : (apply) => setAccountDialog({ apply })}
           error={error}
           busy={busy}
           armed={armed}
@@ -387,6 +396,26 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           }}
           onCancel={() => setCounterpartyDialog(null)}
         />
+      )}
+      {accountDialog && props.journalEntryRepository !== undefined && (
+        <div className="import-dialog__backdrop">
+          <div role="dialog" aria-modal="true" aria-label="科目を登録" className="import-dialog import-dialog--wide">
+            <AccountCreateForm
+              accountRepository={accountRepository}
+              journalEntryRepository={props.journalEntryRepository}
+              groups={data.accountGroups}
+              householdMembers={data.members}
+              initialCategory="expense"
+              today={today}
+              onCreated={(created) => {
+                setData((prev) => (prev === null ? prev : { ...prev, accounts: [...prev.accounts, created] }))
+                accountDialog.apply(created.id)
+                setAccountDialog(null)
+              }}
+              onCancel={() => setAccountDialog(null)}
+            />
+          </div>
+        </div>
       )}
       {projectDialog && (
         <QuickCreateDialog

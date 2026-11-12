@@ -62,6 +62,7 @@ function renderTab(ruleRepository: ComponentProps<typeof RuleMasterTab>['recurri
         projectRepository={new SqlJsProjectRepository(db)}
         projectGroupRepository={new SqlJsProjectGroupRepository(db)}
         householdMemberRepository={new SqlJsHouseholdMemberRepository(db)}
+        journalEntryRepository={new SqlJsJournalEntryRepository(db)}
         today="2026-11-07"
       />
     </I18nextProvider>,
@@ -479,6 +480,22 @@ describe('パネルの見た目(計画Issue #164、仕訳エディタと同じ�
 
     await waitFor(() => expect(new SqlJsCounterpartyRepository(db).findAll().map((c) => c.name)).toContain('不動産会社'))
     expect(await column(form, '借方').findByRole('button', { name: /^取引先.*不動産会社/ })).toBeInTheDocument()
+  })
+
+  it('行の科目を、選択ツリーの「+ 新規追加」からその場で登録して選べる(計画Issue #180)', async () => {
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
+
+    fireEvent.click(column(form, '借方').getByRole('button', { name: /^科目/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '科目' })).getByRole('button', { name: /新規追加/ }))
+    const dialog = within(screen.getByRole('dialog', { name: '科目を登録' }))
+    fireEvent.change(dialog.getByLabelText('区分'), { target: { value: 'expense' } })
+    fireEvent.change(dialog.getByLabelText('名称'), { target: { value: '光熱費' } })
+    fireEvent.click(dialog.getByRole('button', { name: '登録' }))
+
+    await waitFor(() => expect(new SqlJsAccountRepository(db).findAll().some((a) => a.name === '光熱費')).toBe(true))
+    expect(await column(form, '借方').findByLabelText('光熱費の金額')).toBeInTheDocument()
   })
 
   it('金額の初期値を「回ごとの金額表」にすると、金額表の編集欄と生成補助が出る', async () => {

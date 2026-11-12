@@ -36,6 +36,8 @@ export interface RuleEditFormProps {
   onRequestCreateCounterparty?: (apply: (id: number) => void) => void
   /** 渡すと、行のプロジェクトの選択ツリーに「+ 新規追加」を出す */
   onRequestCreateProject?: (apply: (id: number) => void) => void
+  /** 渡すと、行の科目の選択ツリーに「+ 新規追加」を出す */
+  onRequestCreateAccount?: (apply: (id: number) => void) => void
   isCreate: boolean
   /** 保存済みのルールの状態。作成フォームでは常にactive(状態の案内は出さない) */
   status: RuleStatus
@@ -398,6 +400,7 @@ export function RuleEditForm(props: RuleEditFormProps) {
         onCreateBatch={props.onCreateBatch}
         onRequestCreateCounterparty={props.onRequestCreateCounterparty}
         onRequestCreateProject={props.onRequestCreateProject}
+        onRequestCreateAccount={props.onRequestCreateAccount}
       />
 
       {form.amountMode === 'schedule' && (

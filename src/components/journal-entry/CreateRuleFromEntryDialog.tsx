@@ -20,6 +20,7 @@ export interface CreateRuleFromEntryDialogProps {
   onCreateBatch?: (name: string) => Promise<SettlementBatch>
   onRequestCreateCounterparty?: (apply: (id: number) => void) => void
   onRequestCreateProject?: (apply: (id: number) => void) => void
+  onRequestCreateAccount?: (apply: (id: number) => void) => void
 }
 
 /**
@@ -37,6 +38,7 @@ export function CreateRuleFromEntryDialog({
   onCreateBatch,
   onRequestCreateCounterparty,
   onRequestCreateProject,
+  onRequestCreateAccount,
 }: CreateRuleFromEntryDialogProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<{ message: string; reason: string } | null>(null)
@@ -50,6 +52,7 @@ export function CreateRuleFromEntryDialog({
           onCreateBatch={onCreateBatch}
           onRequestCreateCounterparty={onRequestCreateCounterparty}
           onRequestCreateProject={onRequestCreateProject}
+          onRequestCreateAccount={onRequestCreateAccount}
           isCreate
           status="active"
           endedReason=""

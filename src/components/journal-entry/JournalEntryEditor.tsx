@@ -48,6 +48,8 @@ export interface JournalEntryEditorProps {
   onRequestCreateCounterparty?: (apply: (id: number) => void) => void
   /** 渡すと、プロジェクトの選択ツリーに「+ 新規追加」を出す。作成後に呼ぶ apply へプロジェクトのIDを渡す */
   onRequestCreateProject?: (apply: (id: number) => void) => void
+  /** 渡すと、科目の選択ツリーに「+ 新規追加」を出す。作成後に呼ぶ apply へ科目のIDを渡す(計画Issue #180) */
+  onRequestCreateAccount?: (apply: (id: number) => void) => void
 }
 
 /**
@@ -67,6 +69,7 @@ export function JournalEntryEditor({
   onCreateBatch,
   onRequestCreateCounterparty,
   onRequestCreateProject,
+  onRequestCreateAccount,
 }: JournalEntryEditorProps) {
   const accountById = new Map(master.accounts.map((a) => [a.id, a]))
 
@@ -157,6 +160,7 @@ export function JournalEntryEditor({
         onCreateBatch={onCreateBatch}
         onRequestCreateCounterparty={onRequestCreateCounterparty}
         onRequestCreateProject={onRequestCreateProject}
+        onRequestCreateAccount={onRequestCreateAccount}
       />
     </div>
   )

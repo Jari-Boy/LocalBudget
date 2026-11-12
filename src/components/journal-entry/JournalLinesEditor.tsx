@@ -32,6 +32,8 @@ export interface JournalLinesEditorProps {
   onRequestCreateCounterparty?: (apply: (id: number) => void) => void
   /** 渡すと、プロジェクトの選択ツリーに「+ 新規追加」を出す。作成後に呼ぶ apply へプロジェクトのIDを渡す(計画Issue #180) */
   onRequestCreateProject?: (apply: (id: number) => void) => void
+  /** 渡すと、科目の選択ツリーに「+ 新規追加」を出す。作成後に呼ぶ apply へ科目のIDを渡す(計画Issue #180) */
+  onRequestCreateAccount?: (apply: (id: number) => void) => void
 }
 
 const SIDES: { side: JournalLineSide; label: string }[] = [
@@ -57,6 +59,7 @@ export function JournalLinesEditor({
   onCreateBatch,
   onRequestCreateCounterparty,
   onRequestCreateProject,
+  onRequestCreateAccount,
 }: JournalLinesEditorProps) {
   const [creatingBatchKey, setCreatingBatchKey] = useState<number | null>(null)
   const [newBatchName, setNewBatchName] = useState('')
@@ -137,6 +140,11 @@ export function JournalLinesEditor({
                             value={line.accountId === null ? '' : String(line.accountId)}
                             placeholder="未選択"
                             onChange={(v) => changeAccount(key, v === '' ? null : Number(v))}
+                            onCreate={
+                              onRequestCreateAccount === undefined
+                                ? undefined
+                                : () => onRequestCreateAccount((id) => changeAccount(key, id))
+                            }
                           />
                         )}
                       </div>
