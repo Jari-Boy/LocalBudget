@@ -30,6 +30,12 @@ const slashDate = (date: string) => date.replaceAll('-', '/')
 
 export interface RuleEditFormProps {
   initial: RuleForm
+  /** 渡すと、行の精算バッチの選択肢に「+ 新しいバッチ」を出す(計画Issue #180) */
+  onCreateBatch?: (name: string) => Promise<SettlementBatch>
+  /** 渡すと、行の取引先の選択ツリーに「+ 新規追加」を出す */
+  onRequestCreateCounterparty?: (apply: (id: number) => void) => void
+  /** 渡すと、行のプロジェクトの選択ツリーに「+ 新規追加」を出す */
+  onRequestCreateProject?: (apply: (id: number) => void) => void
   isCreate: boolean
   /** 保存済みのルールの状態。作成フォームでは常にactive(状態の案内は出さない) */
   status: RuleStatus
@@ -389,6 +395,9 @@ export function RuleEditForm(props: RuleEditFormProps) {
         master={master}
         bookkeeperId={null}
         memberNoneLabel={t('ruleTab.memberFollows')}
+        onCreateBatch={props.onCreateBatch}
+        onRequestCreateCounterparty={props.onRequestCreateCounterparty}
+        onRequestCreateProject={props.onRequestCreateProject}
       />
 
       {form.amountMode === 'schedule' && (

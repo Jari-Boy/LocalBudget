@@ -30,6 +30,8 @@ export interface JournalLinesEditorProps {
   onCreateBatch?: (name: string) => Promise<SettlementBatch>
   /** 渡すと、取引先の選択ツリーに「+ 新規追加」を出す。作成後に呼ぶ apply へ取引先のIDを渡す */
   onRequestCreateCounterparty?: (apply: (id: number) => void) => void
+  /** 渡すと、プロジェクトの選択ツリーに「+ 新規追加」を出す。作成後に呼ぶ apply へプロジェクトのIDを渡す(計画Issue #180) */
+  onRequestCreateProject?: (apply: (id: number) => void) => void
 }
 
 const SIDES: { side: JournalLineSide; label: string }[] = [
@@ -54,6 +56,7 @@ export function JournalLinesEditor({
   memberNoneLabel,
   onCreateBatch,
   onRequestCreateCounterparty,
+  onRequestCreateProject,
 }: JournalLinesEditorProps) {
   const [creatingBatchKey, setCreatingBatchKey] = useState<number | null>(null)
   const [newBatchName, setNewBatchName] = useState('')
@@ -211,6 +214,11 @@ export function JournalLinesEditor({
                           placeholder="プロジェクトなし"
                           disabled={readOnlyLines}
                           onChange={(v) => updateLine(key, (l) => ({ ...l, projectId: v === '' ? null : Number(v) }))}
+                          onCreate={
+                            onRequestCreateProject === undefined
+                              ? undefined
+                              : () => onRequestCreateProject((id) => updateLine(key, (l) => ({ ...l, projectId: id })))
+                          }
                         />
                       </div>
                       {defaultMember !== undefined && line.householdMemberId === defaultMember.id ? (

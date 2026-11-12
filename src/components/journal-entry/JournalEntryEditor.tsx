@@ -46,6 +46,8 @@ export interface JournalEntryEditorProps {
   onCreateBatch?: (name: string) => Promise<SettlementBatch>
   /** 渡すと、取引先の選択ツリーに「+ 新規追加」を出す。作成後に呼ぶ apply へ取引先のIDを渡す */
   onRequestCreateCounterparty?: (apply: (id: number) => void) => void
+  /** 渡すと、プロジェクトの選択ツリーに「+ 新規追加」を出す。作成後に呼ぶ apply へプロジェクトのIDを渡す */
+  onRequestCreateProject?: (apply: (id: number) => void) => void
 }
 
 /**
@@ -64,6 +66,7 @@ export function JournalEntryEditor({
   lockEntryDate = false,
   onCreateBatch,
   onRequestCreateCounterparty,
+  onRequestCreateProject,
 }: JournalEntryEditorProps) {
   const accountById = new Map(master.accounts.map((a) => [a.id, a]))
 
@@ -153,6 +156,7 @@ export function JournalEntryEditor({
         readOnlyLines={readOnlyLines}
         onCreateBatch={onCreateBatch}
         onRequestCreateCounterparty={onRequestCreateCounterparty}
+        onRequestCreateProject={onRequestCreateProject}
       />
     </div>
   )

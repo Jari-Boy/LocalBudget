@@ -9,10 +9,10 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEditorLine, JournalEditorMaster } from './JournalEntryEditor'
-import { JournalLinesEditor } from './JournalLinesEditor'
+import { JournalLinesEditor, type JournalLinesEditorProps } from './JournalLinesEditor'
 
 afterEach(cleanup)
 
@@ -51,7 +51,13 @@ const line = (key: number, side: 'debit' | 'credit', accountId: number | null, a
   line: { accountId, side, amountInput: amount, projectId: null, householdMemberId: 1, counterpartyId: null },
 })
 
-function Harness(props: { initial: JournalEditorLine[]; readOnlyLines?: boolean; bookkeeperId?: number | null }) {
+function Harness(props: {
+  initial: JournalEditorLine[]
+  readOnlyLines?: boolean
+  bookkeeperId?: number | null
+  onRequestCreateProject?: (apply: (id: number) => void) => void
+  onCreateBatch?: JournalLinesEditorProps['onCreateBatch']
+}) {
   const [lines, setLines] = useState(props.initial)
   return (
     <JournalLinesEditor
@@ -60,6 +66,8 @@ function Harness(props: { initial: JournalEditorLine[]; readOnlyLines?: boolean;
       master={master}
       bookkeeperId={props.bookkeeperId === undefined ? 1 : props.bookkeeperId}
       readOnlyLines={props.readOnlyLines}
+      onRequestCreateProject={props.onRequestCreateProject}
+      onCreateBatch={props.onCreateBatch}
     />
   )
 }
@@ -112,5 +120,34 @@ describe('JournalLinesEditor', () => {
 
     expect(within(screen.getByRole('group', { name: '貸方' })).getByLabelText('精算バッチ')).toBeInTheDocument()
     expect(within(screen.getByRole('group', { name: '借方' })).queryByLabelText('精算バッチ')).toBeNull()
+  })
+
+  it('onRequestCreateProject を渡すと、プロジェクトの選択ツリーに「+ 新規追加」が出て、押すと呼ばれる(計画Issue #180)', () => {
+    const onRequestCreateProject = vi.fn()
+    render(<Harness initial={[line(1, 'debit', 1, '1200'), line(2, 'credit', 2, '1200')]} onRequestCreateProject={onRequestCreateProject} />)
+
+    fireEvent.click(within(screen.getByRole('group', { name: '借方' })).getByRole('button', { name: /^プロジェクト/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクト' })).getByRole('button', { name: /新規追加/ }))
+
+    expect(onRequestCreateProject).toHaveBeenCalledTimes(1)
+  })
+
+  it('onRequestCreateProject を渡さないときは、「+ 新規追加」は出ない', () => {
+    render(<Harness initial={[line(1, 'debit', 1, '1200'), line(2, 'credit', 2, '1200')]} />)
+
+    fireEvent.click(within(screen.getByRole('group', { name: '借方' })).getByRole('button', { name: /^プロジェクト/ }))
+
+    expect(within(screen.getByRole('dialog', { name: 'プロジェクト' })).queryByRole('button', { name: /新規追加/ })).toBeNull()
+  })
+
+  it('onCreateBatch を渡すと、精算バッチの選択肢に「+ 新しいバッチ」が出る', () => {
+    render(
+      <Harness
+        initial={[line(1, 'debit', 1, '1200'), line(2, 'credit', 3, '1200')]}
+        onCreateBatch={async (name) => ({ id: 1, name, type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' })}
+      />,
+    )
+
+    expect(within(screen.getByLabelText('精算バッチ')).getByRole('option', { name: '+ 新しいバッチ' })).toBeInTheDocument()
   })
 })

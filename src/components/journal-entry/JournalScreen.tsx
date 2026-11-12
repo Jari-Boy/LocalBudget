@@ -102,7 +102,7 @@ export interface JournalScreenProps {
   accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
   counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll' | 'create'>>
   counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll'>>
-  projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll'>>
+  projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll' | 'create'>>
   projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
   settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll' | 'create'>>
@@ -214,6 +214,8 @@ export function JournalScreen(props: JournalScreenProps) {
   const [bulkMemberId, setBulkMemberId] = useState<number | ''>('')
   /** 「定期仕訳にする」のダイアログ(計画Issue #180)。元にする仕訳 */
   const [ruleDialogEntry, setRuleDialogEntry] = useState<JournalEntry | null>(null)
+  /** プロジェクトの追加ダイアログ(行のプロジェクトの選択ツリーの「+ 新規追加」、計画Issue #180) */
+  const [projectDialog, setProjectDialog] = useState<{ apply: (id: number) => void } | null>(null)
   const [counterpartyDialog, setCounterpartyDialog] = useState<{ apply: (id: number) => void } | null>(null)
   /** 詳細を開いた時点の編集内容。現在の内容と違えば、未保存の変更がある */
   const [baseline, setBaseline] = useState('')
@@ -780,6 +782,13 @@ export function JournalScreen(props: JournalScreenProps) {
       open(firstOf(next, data, visibleEntries), data)
     })
 
+  /** 精算バッチをその場で作る(行の精算バッチの選択肢の「+ 新しいバッチ」) */
+  const createBatch = async (name: string) => {
+    const created = await settlementBatchRepository.create({ name, type: 'expense_splitting' })
+    setData((prev) => (prev === null ? prev : { ...prev, batches: [...prev.batches, created] }))
+    return created
+  }
+
   const cancelLeave = () => setLeaveRequest(null)
 
   const discardAndLeave = () => {
@@ -1028,12 +1037,9 @@ export function JournalScreen(props: JournalScreenProps) {
                 onChange={changeEditor}
                 master={master}
                 lockEntryDate={selection.kind === 'proposal'}
-                onCreateBatch={async (name) => {
-                  const created = await settlementBatchRepository.create({ name, type: 'expense_splitting' })
-                  setData((prev) => (prev === null ? prev : { ...prev, batches: [...prev.batches, created] }))
-                  return created
-                }}
+                onCreateBatch={createBatch}
                 onRequestCreateCounterparty={(apply) => setCounterpartyDialog({ apply })}
+                onRequestCreateProject={(apply) => setProjectDialog({ apply })}
               />
 
               {selection.kind === 'proposal' && selectedProposal !== undefined && selectedProposal.entryDate !== selectedProposal.dueDate && (
@@ -1271,6 +1277,22 @@ export function JournalScreen(props: JournalScreenProps) {
             onProposalsChanged?.()
           }}
           onCancel={() => setRuleDialogEntry(null)}
+          onCreateBatch={createBatch}
+          onRequestCreateCounterparty={(apply) => setCounterpartyDialog({ apply })}
+          onRequestCreateProject={(apply) => setProjectDialog({ apply })}
+        />
+      )}
+      {projectDialog && (
+        <QuickCreateDialog
+          title="プロジェクトを追加"
+          nameLabel="プロジェクト名"
+          onSubmit={async (name) => {
+            const created = await props.projectRepository.create({ name })
+            setData((prev) => (prev === null ? prev : { ...prev, projects: [...prev.projects, created] }))
+            projectDialog.apply(created.id)
+            setProjectDialog(null)
+          }}
+          onCancel={() => setProjectDialog(null)}
         />
       )}
       {counterpartyDialog && (

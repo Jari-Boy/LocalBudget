@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
+import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import type { CreateRecurringTransactionRuleInput } from '../../domain/recurring-transaction/RecurringTransactionRule'
 import { buildRuleInput, ruleFormFromEntry } from '../master/recurringRuleForm'
 import { RuleEditForm } from '../master/RuleEditForm'
@@ -15,6 +16,10 @@ export interface CreateRuleFromEntryDialogProps {
   /** ルールを作成する。失敗したらエラーを投げる(ダイアログに表示する) */
   onCreate: (input: CreateRecurringTransactionRuleInput) => Promise<unknown>
   onCancel: () => void
+  /** 行の精算バッチ・取引先・プロジェクトをその場で新しく作る(渡すと選択肢に「+ 新規追加」を出す) */
+  onCreateBatch?: (name: string) => Promise<SettlementBatch>
+  onRequestCreateCounterparty?: (apply: (id: number) => void) => void
+  onRequestCreateProject?: (apply: (id: number) => void) => void
 }
 
 /**
@@ -23,7 +28,16 @@ export interface CreateRuleFromEntryDialogProps {
  * 元の仕訳は変更せず、生成済みの1回目としても紐づけない(手入力の仕訳の作成経路を書き換えないため。
  * 回数を数えたいときは、ユーザーが回数の上限を1つ減らす)。
  */
-export function CreateRuleFromEntryDialog({ entry, master, today, onCreate, onCancel }: CreateRuleFromEntryDialogProps) {
+export function CreateRuleFromEntryDialog({
+  entry,
+  master,
+  today,
+  onCreate,
+  onCancel,
+  onCreateBatch,
+  onRequestCreateCounterparty,
+  onRequestCreateProject,
+}: CreateRuleFromEntryDialogProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<{ message: string; reason: string } | null>(null)
   const initial = useMemo(() => ruleFormFromEntry(entry), [entry])
@@ -33,6 +47,9 @@ export function CreateRuleFromEntryDialog({ entry, master, today, onCreate, onCa
       <div role="dialog" aria-modal="true" aria-label="定期仕訳の作成" className="rule-dialog">
         <RuleEditForm
           initial={initial}
+          onCreateBatch={onCreateBatch}
+          onRequestCreateCounterparty={onRequestCreateCounterparty}
+          onRequestCreateProject={onRequestCreateProject}
           isCreate
           status="active"
           endedReason=""

@@ -36,6 +36,7 @@ import {
   emptyRuleForm,
   ruleFormFromRule,
 } from './recurringRuleForm'
+import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
 import { RuleEditForm, type RuleStatus } from './RuleEditForm'
 import '../journal-entry/JournalEntryEditor.css'
 import './master.css'
@@ -55,13 +56,13 @@ export interface RuleMasterTabProps {
   >
   accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll'>>
   accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
-  counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll'>>
+  counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll' | 'create'>>
   counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll'>>
-  projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll'>>
+  projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll' | 'create'>>
   projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
   /** 行の精算バッチの選択肢(計画Issue #180)。省略時は選択肢なし */
-  settlementBatchRepository?: MaybeAsync<Pick<SettlementBatchRepository, 'findAll'>>
+  settlementBatchRepository?: MaybeAsync<Pick<SettlementBatchRepository, 'findAll' | 'create'>>
   /** 「次回」・終了の判定・再開日の既定・開始日の既定の基準日(YYYY-MM-DD)。省略時は今日 */
   today?: string
 }
@@ -130,6 +131,9 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
   /** 操作の失敗。右パネルの操作ボタンの直上に出す。reasonは失敗の原因(例外のメッセージ) */
   const [error, setError] = useState<{ message: string; reason: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  /** 行の取引先・プロジェクトをその場で追加するダイアログ(選択ツリーの「+ 新規追加」、計画Issue #180) */
+  const [counterpartyDialog, setCounterpartyDialog] = useState<{ apply: (id: number) => void } | null>(null)
+  const [projectDialog, setProjectDialog] = useState<{ apply: (id: number) => void } | null>(null)
 
   const {
     recurringTransactionRuleRepository: ruleRepo,
@@ -327,6 +331,17 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           members={data.members}
           accounts={data.accounts}
           batches={data.batches}
+          onCreateBatch={
+            settlementBatchRepository === undefined
+              ? undefined
+              : async (name) => {
+                  const created = await settlementBatchRepository.create({ name, type: 'expense_splitting' })
+                  setData((prev) => (prev === null ? prev : { ...prev, batches: [...prev.batches, created] }))
+                  return created
+                }
+          }
+          onRequestCreateCounterparty={(apply) => setCounterpartyDialog({ apply })}
+          onRequestCreateProject={(apply) => setProjectDialog({ apply })}
           error={error}
           busy={busy}
           armed={armed}
@@ -358,6 +373,32 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
               setArmed(false)
             }, t('accountTab.deleteError'))
           }}
+        />
+      )}
+      {counterpartyDialog && (
+        <QuickCreateDialog
+          title="取引先を追加"
+          nameLabel="取引先名"
+          onSubmit={async (name) => {
+            const created = await counterpartyRepository.create({ name })
+            setData((prev) => (prev === null ? prev : { ...prev, counterparties: [...prev.counterparties, created] }))
+            counterpartyDialog.apply(created.id)
+            setCounterpartyDialog(null)
+          }}
+          onCancel={() => setCounterpartyDialog(null)}
+        />
+      )}
+      {projectDialog && (
+        <QuickCreateDialog
+          title="プロジェクトを追加"
+          nameLabel="プロジェクト名"
+          onSubmit={async (name) => {
+            const created = await projectRepository.create({ name })
+            setData((prev) => (prev === null ? prev : { ...prev, projects: [...prev.projects, created] }))
+            projectDialog.apply(created.id)
+            setProjectDialog(null)
+          }}
+          onCancel={() => setProjectDialog(null)}
         />
       )}
     </div>

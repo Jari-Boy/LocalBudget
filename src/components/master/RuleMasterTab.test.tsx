@@ -450,6 +450,37 @@ describe('パネルの見た目(計画Issue #164、仕訳エディタと同じ�
     expect(rules.findAll()[0].bookkeeperHouseholdMemberId).toBeNull()
   })
 
+  it('行のプロジェクトを、選択ツリーの「+ 新規追加」からその場で作って選べる(計画Issue #180)', async () => {
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
+
+    fireEvent.click(column(form, '借方').getByRole('button', { name: /^プロジェクト/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクト' })).getByRole('button', { name: /新規追加/ }))
+    const dialog = within(screen.getByRole('dialog', { name: 'プロジェクトを追加' }))
+    fireEvent.change(dialog.getByLabelText('プロジェクト名'), { target: { value: '沖縄旅行' } })
+    fireEvent.click(dialog.getByRole('button', { name: '追加' }))
+
+    await waitFor(() => expect(new SqlJsProjectRepository(db).findAll().map((p) => p.name)).toContain('沖縄旅行'))
+    expect(await column(form, '借方').findByRole('button', { name: /^プロジェクト.*沖縄旅行/ })).toBeInTheDocument()
+  })
+
+  it('費用・収益の行の取引先を、選択ツリーの「+ 新規追加」からその場で作って選べる(計画Issue #180)', async () => {
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
+    pick(column(form, '借方'), '科目', '家賃')
+
+    fireEvent.click(column(form, '借方').getByRole('button', { name: /^取引先/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '取引先' })).getByRole('button', { name: /新規追加/ }))
+    const dialog = within(screen.getByRole('dialog', { name: '取引先を追加' }))
+    fireEvent.change(dialog.getByLabelText('取引先名'), { target: { value: '不動産会社' } })
+    fireEvent.click(dialog.getByRole('button', { name: '追加' }))
+
+    await waitFor(() => expect(new SqlJsCounterpartyRepository(db).findAll().map((c) => c.name)).toContain('不動産会社'))
+    expect(await column(form, '借方').findByRole('button', { name: /^取引先.*不動産会社/ })).toBeInTheDocument()
+  })
+
   it('金額の初期値を「回ごとの金額表」にすると、金額表の編集欄と生成補助が出る', async () => {
     makeRule()
     renderTab()
