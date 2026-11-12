@@ -1067,10 +1067,16 @@ describe('JournalScreen(明細行単位)', () => {
       expect(screen.getByText('1件')).toBeInTheDocument()
     })
 
-    it('表の行を選ぶと仕訳が選ばれ、仕訳単位に切り替えるとその仕訳の詳細が開く', async () => {
+    it('開いた直後は、先頭の仕訳が選択状態で強調されるだけで、編集は始まっていない', async () => {
+      await setupLineView()
+      expect(screen.getByRole('button', { name: 'ランチ' }).closest('tr')).toHaveAttribute('aria-current', 'true')
+      expect(screen.queryByLabelText('摘要')).not.toBeInTheDocument()
+    })
+
+    it('表の行を押すと、その仕訳が選ばれて編集できる状態になり、仕訳単位に切り替えるとその仕訳の詳細が開く', async () => {
       await setupLineView()
       fireEvent.click(screen.getByRole('button', { name: '家賃' }))
-      expect(screen.getByRole('button', { name: '家賃' }).closest('tr')).toHaveAttribute('aria-current', 'true')
+      expect(screen.getByLabelText('摘要')).toHaveValue('家賃')
       switchTo('仕訳単位')
       expect(memoInput()).toHaveValue('家賃')
     })
@@ -1085,19 +1091,19 @@ describe('JournalScreen(明細行単位)', () => {
   })
 
   describe('インライン編集', () => {
-    it('「編集」を押すと、その仕訳の全行が入力欄になる(他の仕訳は閲覧のまま)', async () => {
+    it('行を押すと(編集ボタンはない)、その仕訳の全行が入力欄になる。他の仕訳は閲覧のまま', async () => {
       await setupLineView()
-      fireEvent.click(screen.getByRole('button', { name: 'ランチを編集' }))
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
       expect(screen.getByLabelText('摘要')).toHaveValue('ランチ')
       expect(screen.getByLabelText('借方の金額')).toHaveValue('1200')
       expect(screen.getByLabelText('貸方の金額')).toHaveValue('1200')
       expect(screen.getAllByLabelText('摘要')).toHaveLength(1)
-      expect(screen.getByRole('button', { name: '家賃を編集' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '家賃' })).toBeInTheDocument()
     })
 
     it('金額を直して貸借が合っていれば保存でき、保存すると表の閲覧に戻る', async () => {
       const props = await setupLineView()
-      fireEvent.click(screen.getByRole('button', { name: 'ランチを編集' }))
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
       fireEvent.change(screen.getByLabelText('借方の金額'), { target: { value: '1500' } })
       fireEvent.change(screen.getByLabelText('貸方の金額'), { target: { value: '1500' } })
       fireEvent.click(screen.getByRole('button', { name: '保存' }))
@@ -1107,12 +1113,12 @@ describe('JournalScreen(明細行単位)', () => {
       expect(id).toBe(1)
       expect(input.lines.map((l) => l.amount)).toEqual([1500, 1500])
       await waitFor(() => expect(screen.queryByLabelText('摘要')).not.toBeInTheDocument())
-      expect(screen.getByRole('button', { name: 'ランチを編集' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'ランチ' })).toBeInTheDocument()
     })
 
     it('貸借が合わない間は、差額を表示して保存できず、Repositoryも呼ばれない', async () => {
       const props = await setupLineView()
-      fireEvent.click(screen.getByRole('button', { name: 'ランチを編集' }))
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
       fireEvent.change(screen.getByLabelText('借方の金額'), { target: { value: '1500' } })
       expect(within(lineTable()).getByRole('status')).toHaveTextContent('貸借が合っていません')
       expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
@@ -1121,7 +1127,7 @@ describe('JournalScreen(明細行単位)', () => {
 
     it('科目が未選択の行があるなど、保存できない理由は操作バーに表示し、保存しない', async () => {
       const props = await setupLineView()
-      fireEvent.click(screen.getByRole('button', { name: 'ランチを編集' }))
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
       fireEvent.click(screen.getByRole('button', { name: '+ 借方の行' }))
       fireEvent.change(screen.getAllByLabelText('借方の金額')[1], { target: { value: '300' } })
       fireEvent.change(screen.getByLabelText('貸方の金額'), { target: { value: '1500' } })
@@ -1132,20 +1138,20 @@ describe('JournalScreen(明細行単位)', () => {
 
     it('「キャンセル」で編集前の内容に戻り、保存しない', async () => {
       const props = await setupLineView()
-      fireEvent.click(screen.getByRole('button', { name: 'ランチを編集' }))
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
       fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチ(修正中)' } })
       fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
       expect(screen.queryByLabelText('摘要')).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'ランチ' })).toBeInTheDocument()
       expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
       // もう一度開くと、修正中の内容は残っていない
-      fireEvent.click(screen.getByRole('button', { name: 'ランチを編集' }))
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
       expect(screen.getByLabelText('摘要')).toHaveValue('ランチ')
     })
 
     it('削除は2回押して確定する(確認中は元に戻せない旨を表示し、「やめる」で何も消えない)', async () => {
       const props = await setupLineView()
-      fireEvent.click(screen.getByRole('button', { name: 'ランチを編集' }))
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
       fireEvent.click(screen.getByRole('button', { name: '仕訳を削除' }))
       expect(props.journalEntryRepository.delete).not.toHaveBeenCalled()
       expect(screen.getByRole('alert')).toHaveTextContent('この仕訳を削除します。元に戻せません。')
@@ -1162,11 +1168,11 @@ describe('JournalScreen(明細行単位)', () => {
   })
 
   describe('未保存の変更があるまま移動しようとしたとき(既存の未保存ガード)', () => {
-    it('編集中に別の仕訳の「編集」を押すと、保存か破棄かを聞き、キャンセルすれば編集中の内容が残る', async () => {
+    it('編集中に別の仕訳の行を押すと、保存か破棄かを聞き、キャンセルすれば編集中の内容が残る', async () => {
       const props = await setupLineView()
-      fireEvent.click(screen.getByRole('button', { name: 'ランチを編集' }))
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
       fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチ(修正中)' } })
-      fireEvent.click(screen.getByRole('button', { name: '家賃を編集' }))
+      fireEvent.click(screen.getByRole('button', { name: '家賃' }))
       expect(leaveDialog()).toBeInTheDocument()
       // 表の操作バーにも「キャンセル」があるため、未保存ガードのダイアログの中で選ぶ
       fireEvent.click(within(leaveDialog() as HTMLElement).getByRole('button', { name: 'キャンセル' }))
@@ -1177,26 +1183,26 @@ describe('JournalScreen(明細行単位)', () => {
 
     it('「破棄して移動」を選ぶと、保存せずに選んだ仕訳の編集に移る', async () => {
       const props = await setupLineView()
-      fireEvent.click(screen.getByRole('button', { name: 'ランチを編集' }))
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
       fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチ(修正中)' } })
-      fireEvent.click(screen.getByRole('button', { name: '家賃を編集' }))
+      fireEvent.click(screen.getByRole('button', { name: '家賃' }))
       fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
       expect(leaveDialog()).not.toBeInTheDocument()
       expect(screen.getByLabelText('摘要')).toHaveValue('家賃')
       expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
     })
 
-    it('編集していなければ(変更がなければ)、別の仕訳の編集に移ってもダイアログを出さない', async () => {
+    it('変更がなければ、別の仕訳の行を押して編集に移ってもダイアログを出さない', async () => {
       await setupLineView()
-      fireEvent.click(screen.getByRole('button', { name: 'ランチを編集' }))
-      fireEvent.click(screen.getByRole('button', { name: '家賃を編集' }))
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+      fireEvent.click(screen.getByRole('button', { name: '家賃' }))
       expect(leaveDialog()).not.toBeInTheDocument()
       expect(screen.getByLabelText('摘要')).toHaveValue('家賃')
     })
 
     it('編集中に仕訳単位へ切り替えようとしても、保存か破棄かを聞く', async () => {
       await setupLineView()
-      fireEvent.click(screen.getByRole('button', { name: 'ランチを編集' }))
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
       fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチ(修正中)' } })
       switchTo('仕訳単位')
       expect(leaveDialog()).toBeInTheDocument()

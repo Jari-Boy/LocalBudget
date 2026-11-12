@@ -52,18 +52,24 @@ export interface JournalLineTableProps {
   lookup: JournalLineTableLookup
   /** 選択中の仕訳。その仕訳のすべての行を強調する */
   selectedId: number | null
-  /** どの行を押しても、その仕訳が選ばれる(選択は仕訳単位) */
+  /**
+   * どの行を押しても、その仕訳が選ばれる(選択は仕訳単位)。編集中の仕訳の行は押しても呼ばれない。
+   * 呼び出し側は、選ばれた仕訳をそのまま編集中にする(編集ボタンはない)
+   */
   onSelect: (entryId: number) => void
-  /** 先頭行の「編集」ボタン。その仕訳のインライン編集を始める */
-  onEdit: (entryId: number) => void
   /** 編集中の仕訳。渡すと、その仕訳の全行が入力欄になり、下に操作バーが出る */
   editing?: JournalLineTableEditing
 }
 
-/** 借方・貸方それぞれの列(科目・プロジェクト・取引先・精算バッチ・世帯メンバー・金額) */
-const SIDE_COLUMNS = ['科目', 'プロジェクト', '取引先', '精算バッチ', '世帯メンバー', '金額'] as const
+/**
+ * 借方・貸方それぞれの列。取引先は費用・収益の科目の行だけ、精算バッチはシステム管理の立替金・未払金の行だけが
+ * 持てて、同じ行に両方が付くことはないため、1列(「取引先・精算バッチ」)にまとめる
+ */
+const SIDE_COLUMNS = ['科目', 'プロジェクト', '取引先・精算バッチ', '世帯メンバー', '金額'] as const
+/** 列ごとの幅のクラス(colgroup)。SIDE_COLUMNS と同じ並び */
+const SIDE_COLUMN_CLASSES = ['account', 'project', 'partner', 'member', 'amount'] as const
 const SIDE_LABEL: Record<JournalLineSide, string> = { debit: '借方', credit: '貸方' }
-/** 表の列数(日付・出どころ・摘要・コメント + 借方6列 + 貸方6列) */
+/** 表の列数(日付・出どころ・摘要・コメント + 借方5列 + 貸方5列) */
 const COLUMN_COUNT = 4 + SIDE_COLUMNS.length * 2
 
 function toDate(entryDate: string): Date {
@@ -71,11 +77,16 @@ function toDate(entryDate: string): Date {
   return new Date(year, month - 1, day)
 }
 
-function cellClass(i: number, creditStart: boolean): string {
+/** 借方・貸方の先頭の列には、境目の縦線のクラスを付ける */
+function sideStartClass(side: JournalLineSide): string {
+  return side === 'debit' ? 'journal-line-table__debit-start' : 'journal-line-table__credit-start'
+}
+
+function cellClass(i: number, side: JournalLineSide): string {
   return [
     'journal-line-table__cell',
     i === 0 ? 'journal-line-table__cell--account' : '',
-    i === 0 && creditStart ? 'journal-line-table__cell--credit-start' : '',
+    i === 0 ? sideStartClass(side) : '',
     i === SIDE_COLUMNS.length - 1 ? 'journal-line-table__cell--amount' : '',
   ]
     .filter(Boolean)
@@ -87,12 +98,12 @@ function cellClass(i: number, creditStart: boolean): string {
  * 対応づけて並べる(複合仕訳は行が増え、足りない側は空欄)。日付・出どころ・摘要・コメントは
  * 仕訳の先頭行だけに出し、仕訳の境目は区切り線で分ける(仕訳ごとに tbody を分ける)。どの行を
  * 押しても選択は仕訳単位。幅が足りないときは、表を囲む枠が横スクロールする。
- * 先頭行の「編集」ボタンで、その仕訳の全行が入力欄になる(インライン編集。編集の単位は仕訳で、同時に
+ * 行を押すと、その仕訳の全行が入力欄になる(インライン編集。編集ボタンはない。編集の単位は仕訳で、同時に
  * 編集できるのは1仕訳だけ)。編集中の仕訳の下に操作バーを出し、借方・貸方それぞれの列の下に行の追加と合計、
  * 下段に貸借の一致状況と削除・キャンセル・保存を置く。貸借が合わない間と保存中は保存できない。
  * 表示用の名前解決(lookup)と編集内容(値と変更通知)だけを受け取り、DB・Repositoryには依存しない。
  */
-export function JournalLineTable({ entries, lookup, selectedId, onSelect, onEdit, editing }: JournalLineTableProps) {
+export function JournalLineTable({ entries, lookup, selectedId, onSelect, editing }: JournalLineTableProps) {
   if (entries.length === 0) {
     return <p className="journal-line-table__empty">該当する仕訳がありません</p>
   }
@@ -101,18 +112,24 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, onEdit
   const memberById = editing === undefined ? new Map() : new Map(editing.master.members.map((m) => [m.id, m]))
 
   // ---- 閲覧 ----
-  const viewSideCells = (line: JournalLine | null, currency: string, creditStart: boolean) => {
+  const viewSideCells = (line: JournalLine | null, currency: string, side: JournalLineSide) => {
     const text = (value: string | undefined) => value ?? ''
+    // 取引先と精算バッチは同じ行に両方付かないため、付いている方を1列に出す
+    const partner =
+      line?.counterpartyId != null
+        ? text(lookup.counterpartyName(line.counterpartyId))
+        : line?.settlementBatchId != null
+          ? text(lookup.batchName(line.settlementBatchId))
+          : ''
     const values = [
       line === null ? '' : lookup.accountName(line.accountId),
       line?.projectId == null ? '' : text(lookup.projectName(line.projectId)),
-      line?.counterpartyId == null ? '' : text(lookup.counterpartyName(line.counterpartyId)),
-      line?.settlementBatchId == null ? '' : text(lookup.batchName(line.settlementBatchId)),
+      partner,
       line === null ? '' : lookup.memberName(line.householdMemberId),
       line === null ? '' : formatCurrency(line.amount, currency),
     ]
     return values.map((value, i) => (
-      <td key={SIDE_COLUMNS[i]} className={cellClass(i, creditStart)}>
+      <td key={SIDE_COLUMNS[i]} className={cellClass(i, side)}>
         {value}
       </td>
     ))
@@ -157,9 +174,8 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, onEdit
       ))
 
   const editSideCells = (item: (JournalEditorLine & { side: JournalLineSide | null }) | null, side: JournalLineSide, sideCount: number): ReactNode[] => {
-    const creditStart = side === 'credit'
     if (editing === undefined || item === null) {
-      return SIDE_COLUMNS.map((name, i) => <td key={name} className={cellClass(i, creditStart)} />)
+      return SIDE_COLUMNS.map((name, i) => <td key={name} className={cellClass(i, side)} />)
     }
     const { key, line } = item
     const sideName = SIDE_LABEL[side]
@@ -195,14 +211,15 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, onEdit
             : () => editing.onRequestCreateProject?.((id) => updateLine(key, (l) => ({ ...l, projectId: id })))
         }
       />,
+      // 取引先(費用・収益の科目)と精算バッチ(システム管理の立替金・未払金)は、どちらか一方しか持てないため1つのセルに出す
       account !== undefined && isCounterpartyEligibleCategory(account.category) ? (
         <TreeSelect
-          key="counterparty"
+          key="partner"
           label={`${sideName}の取引先`}
           categories={master.counterpartyCategories}
           value={line.counterpartyId === null ? '' : String(line.counterpartyId)}
           emptyLabel="取引先なし"
-          placeholder="なし"
+          placeholder="取引先なし"
           onChange={(v) => updateLine(key, (l) => ({ ...l, counterpartyId: v === '' ? null : Number(v) }))}
           onCreate={
             editing.onRequestCreateCounterparty === undefined
@@ -210,16 +227,15 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, onEdit
               : () => editing.onRequestCreateCounterparty?.((id) => updateLine(key, (l) => ({ ...l, counterpartyId: id })))
           }
         />
-      ) : null,
-      account !== undefined && isSettlementBatchTaggableAccount(account) ? (
+      ) : account !== undefined && isSettlementBatchTaggableAccount(account) ? (
         <select
-          key="batch"
+          key="partner"
           className="journal-line-table__control"
           aria-label={`${sideName}の精算バッチ`}
           value={line.settlementBatchId == null ? '' : String(line.settlementBatchId)}
           onChange={(e) => updateLine(key, (l) => ({ ...l, settlementBatchId: e.target.value === '' ? null : Number(e.target.value) }))}
         >
-          <option value="">なし</option>
+          <option value="">精算バッチなし</option>
           {master.batches.map((b) => (
             <option key={b.id} value={b.id}>
               {b.name}
@@ -263,7 +279,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, onEdit
       </span>,
     ]
     return cells.map((cell, i) => (
-      <td key={SIDE_COLUMNS[i]} className={cellClass(i, creditStart)}>
+      <td key={SIDE_COLUMNS[i]} className={cellClass(i, side)}>
         {cell}
       </td>
     ))
@@ -275,7 +291,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, onEdit
       <>
         <tr className="journal-line-table__bar">
           <td colSpan={4} />
-          <td colSpan={SIDE_COLUMNS.length}>
+          <td colSpan={SIDE_COLUMNS.length} className="journal-line-table__debit-start">
             <div className="journal-line-table__bar-side">
               <button type="button" className="journal-line-table__small-button" onClick={() => addLine('debit')}>
                 + 借方の行
@@ -363,13 +379,13 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, onEdit
           <col className="journal-line-table__col-memo" />
           <col className="journal-line-table__col-comment" />
           {[0, 1].flatMap((side) =>
-            SIDE_COLUMNS.map((name) => <col key={`${side}-${name}`} className={`journal-line-table__col-${name === '金額' ? 'amount' : 'attr'}`} />),
+            SIDE_COLUMNS.map((name, i) => <col key={`${side}-${name}`} className={`journal-line-table__col-${SIDE_COLUMN_CLASSES[i]}`} />),
           )}
         </colgroup>
         <thead>
           <tr className="journal-line-table__group-head">
             <td colSpan={4} />
-            <th colSpan={SIDE_COLUMNS.length} scope="colgroup">
+            <th colSpan={SIDE_COLUMNS.length} scope="colgroup" className="journal-line-table__debit-start">
               借方
             </th>
             <th colSpan={SIDE_COLUMNS.length} scope="colgroup" className="journal-line-table__credit-start">
@@ -388,7 +404,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, onEdit
                   key={`${side}-${name}`}
                   scope="col"
                   className={[
-                    i === 0 && side === 1 ? 'journal-line-table__credit-start' : '',
+                    i === 0 ? sideStartClass(side === 0 ? 'debit' : 'credit') : '',
                     name === '金額' ? 'journal-line-table__cell--amount' : '',
                   ]
                     .filter(Boolean)
@@ -480,28 +496,16 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, onEdit
                     )}
                   </td>
                   <td className="journal-line-table__cell">
+                    {/* 行のどこを押しても選べるが、キーボードで選べるよう、摘要はボタンにする */}
                     {index === 0 && (
-                      <span className="journal-line-table__memo-cell">
-                        <button type="button" className="journal-line-table__memo">
-                          {memo}
-                        </button>
-                        <button
-                          type="button"
-                          className="journal-line-table__edit"
-                          aria-label={`${memo}を編集`}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            onEdit(entry.id)
-                          }}
-                        >
-                          編集
-                        </button>
-                      </span>
+                      <button type="button" className="journal-line-table__memo">
+                        {memo}
+                      </button>
                     )}
                   </td>
                   <td className="journal-line-table__cell journal-line-table__comment">{index === 0 ? (entry.comment ?? '') : ''}</td>
-                  {viewSideCells(pair.debit, entry.currency, false)}
-                  {viewSideCells(pair.credit, entry.currency, true)}
+                  {viewSideCells(pair.debit, entry.currency, 'debit')}
+                  {viewSideCells(pair.credit, entry.currency, 'credit')}
                 </tr>
               ))}
             </tbody>

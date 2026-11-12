@@ -2,6 +2,7 @@
 /**
  * 明細行単位の表(JournalLineTable)のインライン編集(計画Issue #182)のコンポーネントテスト。
  * 編集中の仕訳だけが入力欄になり他の仕訳は閲覧のままであること、摘要・コメント・取引日・金額・世帯メンバーの編集、
+ * 取引先と精算バッチが科目に応じてどちらか一方だけ「取引先・精算バッチ」の列に出ること、
  * 「+ 借方の行」「+ 貸方の行」と行の削除、借方合計・貸方合計と貸借の一致状況の表示、貸借が合わない間と
  * 保存中は保存できないこと、キャンセル、仕訳の削除(2回押して確定する確認の表示)を検証する。
  * 外部依存なし(編集内容は親が持つ値として Harness の state で模す。保存・削除の実処理は親の責務)。
@@ -133,7 +134,6 @@ function Harness({ initial = valueOf(target), busy = false, deleteArmed = false,
       lookup={lookup}
       selectedId={1}
       onSelect={vi.fn()}
-      onEdit={vi.fn()}
       editing={{
         entryId: 1,
         value,
@@ -162,14 +162,31 @@ function rowsOf(container: HTMLElement, entryId: number): HTMLElement[] {
 const yen = (n: number) => formatCurrency(n, 'JPY')
 
 describe('JournalLineTable(インライン編集)', () => {
-  it('編集中の仕訳だけが入力欄になり、その仕訳には「編集」ボタンが出ない。他の仕訳は閲覧のまま', () => {
+  it('編集中の仕訳だけが入力欄になる。他の仕訳は閲覧のままで、摘要は押せるボタンとして出る', () => {
     render(<Harness />)
     expect(screen.getByLabelText('摘要')).toHaveValue('コンビニ')
     expect(screen.getByLabelText('コメント')).toHaveValue('')
     expect(screen.getByLabelText('取引日')).toHaveValue('2026-11-10')
-    expect(screen.queryByRole('button', { name: 'コンビニを編集' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '家賃を編集' })).toBeInTheDocument()
     expect(screen.getAllByLabelText('摘要')).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'コンビニ' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '家賃' })).toBeInTheDocument()
+  })
+
+  it('食費など費用の科目の行には取引先の選択、立替金(システム管理)の行には精算バッチの選択が、どちらか一方だけ出る', () => {
+    const advance = entry(1, '立替', [line(11, 1, 'debit', 3, 3200), line(12, 1, 'credit', 1, 3200)])
+    render(<Harness initial={valueOf(advance)} />)
+    // 借方=立替金 → 精算バッチだけ。貸方=食費(費用) → 取引先だけ
+    expect(screen.getByLabelText('借方の精算バッチ')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /借方の取引先/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /貸方の取引先/ })).toBeInTheDocument()
+    expect(screen.queryByLabelText('貸方の精算バッチ')).not.toBeInTheDocument()
+  })
+
+  it('取引先も精算バッチも持てない科目(普通預金)の行には、どちらの選択も出ない', () => {
+    render(<Harness />)
+    // 貸方=普通預金(資産・システム管理でない)
+    expect(screen.queryByRole('button', { name: /貸方の取引先/ })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('貸方の精算バッチ')).not.toBeInTheDocument()
   })
 
   it('摘要・コメントを書き換えると、編集内容の onChange に反映される', () => {

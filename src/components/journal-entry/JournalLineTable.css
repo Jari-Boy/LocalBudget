@@ -33,8 +33,21 @@
   width: 170px;
 }
 
-.journal-line-table__col-attr {
-  width: 100px;
+.journal-line-table__col-account {
+  width: 120px;
+}
+
+.journal-line-table__col-project {
+  width: 110px;
+}
+
+/* 取引先と精算バッチは同じ列。名前が長くなりやすいので少し広めにする */
+.journal-line-table__col-partner {
+  width: 130px;
+}
+
+.journal-line-table__col-member {
+  width: 90px;
 }
 
 .journal-line-table__col-amount {
@@ -78,9 +91,17 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 借方と貸方の境目 */
+/*
+ * 「日付〜コメント」「借方」「貸方」の3つの境目の縦線。仕訳の区切り線や行の線より濃くして、
+ * 表を横に見渡したときにどこからどこまでが借方・貸方かすぐ分かるようにする
+ */
+.journal-line-table {
+  --journal-line-table-divider: color-mix(in srgb, var(--color-text-muted) 65%, transparent);
+}
+
+.journal-line-table__debit-start,
 .journal-line-table__credit-start {
-  border-left: 1px solid var(--color-border);
+  border-left: 2px solid var(--journal-line-table-divider);
 }
 
 .journal-line-table tbody tr:hover {
@@ -117,15 +138,10 @@
   font-weight: 600;
 }
 
-.journal-line-table__memo-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
+/* 摘要は行を選ぶためのボタン(行のどこを押しても選べる。キーボードで選ぶ入口) */
 .journal-line-table__memo {
-  flex: 1 1 auto;
+  display: block;
+  max-width: 100%;
   min-width: 0;
   padding: 0;
   border: 0;
@@ -137,20 +153,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: pointer;
-}
-
-.journal-line-table__edit {
-  flex: 0 0 auto;
-  min-height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--color-accent);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-accent);
-  font: inherit;
-  font-size: var(--font-size-xs);
-  font-weight: 600;
   cursor: pointer;
 }
 
@@ -180,12 +182,33 @@
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
 }
 
 .journal-line-table__control:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 0;
+}
+
+/*
+ * 編集中のセルは狭いため、プルダウンを示す矢印(▾)は出さない。矢印の分だけ入力欄が削られて、
+ * 科目名などが見切れてしまうため。選択ツリーのボタンと、世帯メンバー・精算バッチの選択のどちらも同じにする
+ */
+.journal-line-table .tree-select__caret {
+  display: none;
+}
+
+.journal-line-table .tree-select__trigger {
+  min-height: 32px;
+  padding: 0 6px;
+  border-color: var(--color-border);
+  font-size: var(--font-size-xs);
+}
+
+.journal-line-table select.journal-line-table__control {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: none;
 }
 
 .journal-line-table__amount-edit {

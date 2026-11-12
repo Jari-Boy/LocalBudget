@@ -879,14 +879,15 @@ export function JournalScreen(props: JournalScreenProps) {
     })
   }
 
-  /** 表の「編集」: その仕訳の全行を入力欄にする(別の仕訳を編集中で未保存なら、先に聞く) */
+  /**
+   * 表の行を押す: その仕訳を選び、そのまま全行を入力欄にする(編集ボタンはない)。別の仕訳を編集中で
+   * 未保存なら、先に保存か破棄かを聞く
+   */
   const startLineEdit = (id: number) =>
     guarded(() => {
       open({ kind: 'entry', id }, data)
       setLineEditing(true)
     })
-
-  const selectInTable = (id: number) => guarded(() => open({ kind: 'entry', id }, data))
 
   /** 編集をやめて、編集前の内容に戻す */
   const cancelLineEdit = () => open(selection, data)
@@ -1088,8 +1089,7 @@ export function JournalScreen(props: JournalScreenProps) {
                 entries={visibleEntries}
                 lookup={lineLookup}
                 selectedId={selection?.kind === 'entry' ? selection.id : null}
-                onSelect={selectInTable}
-                onEdit={startLineEdit}
+                onSelect={startLineEdit}
                 editing={lineEditingProps}
               />
             </>

@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 /**
  * 仕訳一覧の「明細行単位」の表(JournalLineTable、計画Issue #182)のコンポーネントテスト(閲覧表示)。
- * 列見出し(借方・貸方の各6列と日付・出どころ・摘要・コメント)、借方を左・貸方を右に行番号で対応づけた行、
+ * 列見出し(借方・貸方の各5列と日付・出どころ・摘要・コメント)、借方を左・貸方を右に行番号で対応づけた行、
  * 複合仕訳(3行以上)の全行表示と空欄、日付・出どころ・摘要・コメントが仕訳の先頭行だけであること、
- * 付帯項目(プロジェクト・取引先・精算バッチ・世帯メンバー)の表示、どの行を押しても仕訳単位で選択されること、
- * 先頭行の「編集」ボタン、仕訳がないときの表示を検証する。
+ * 付帯項目(プロジェクト・取引先または精算バッチ・世帯メンバー)の表示(取引先と精算バッチは科目によって
+ * どちらか一方しか持てないため1列にまとめる)、どの行を押しても仕訳単位で選択されること(編集ボタンはない)、
+ * 仕訳がないときの表示を検証する。
  * 外部依存なし(表示用の名前解決関数 lookup と JournalEntry を渡すだけ)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -89,7 +90,6 @@ function renderTable(overrides: Partial<Parameters<typeof JournalLineTable>[0]> 
     lookup,
     selectedId: null,
     onSelect: vi.fn(),
-    onEdit: vi.fn(),
     ...overrides,
   }
   const view = render(<JournalLineTable {...props} />)
@@ -109,9 +109,12 @@ describe('JournalLineTable(閲覧)', () => {
     }
     expect(screen.getByRole('columnheader', { name: '借方' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '貸方' })).toBeInTheDocument()
-    for (const name of ['科目', 'プロジェクト', '取引先', '精算バッチ', '世帯メンバー', '金額']) {
+    // 取引先と精算バッチはどちらか一方しか持てないため、1列にまとめている
+    for (const name of ['科目', 'プロジェクト', '取引先・精算バッチ', '世帯メンバー', '金額']) {
       expect(screen.getAllByRole('columnheader', { name })).toHaveLength(2)
     }
+    expect(screen.queryByRole('columnheader', { name: '取引先' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: '精算バッチ' })).not.toBeInTheDocument()
   })
 
   it('借方1行・貸方1行の仕訳は1行になり、借方が左・貸方が右に並ぶ', () => {
@@ -160,6 +163,15 @@ describe('JournalLineTable(閲覧)', () => {
     expect(within(rowsOf(container, 3)[0]).getByText('11月の割勘')).toBeInTheDocument()
   })
 
+  it('取引先と精算バッチは、同じ「取引先・精算バッチ」の列に出る', () => {
+    const { container } = renderTable()
+    const cellsOf = (id: number) => within(rowsOf(container, id)[0]).getAllByRole('cell').map((c) => c.textContent)
+    // 借方側の「取引先・精算バッチ」は、借方の先頭(科目)から数えて3列目
+    const partnerIndex = (id: number) => cellsOf(id).indexOf('食費') + 2
+    expect(cellsOf(1)[partnerIndex(1)]).toBe('セブンイレブン')
+    expect(cellsOf(3)[partnerIndex(3)]).toBe('11月の割勘')
+  })
+
   it('摘要がない仕訳は「(摘要なし)」と表示される', () => {
     const { container } = renderTable({ entries: [entry(9, '2026-11-01', null, [line(91, 9, 'debit', 1, 100), line(92, 9, 'credit', 2, 100)])] })
     expect(within(rowsOf(container, 9)[0]).getByText('(摘要なし)')).toBeInTheDocument()
@@ -183,12 +195,9 @@ describe('JournalLineTable(閲覧)', () => {
     for (const row of rowsOf(container, 1)) expect(row).not.toHaveAttribute('aria-current')
   })
 
-  it('「編集」ボタンは各仕訳の先頭行にだけあり、押すとその仕訳の編集が始まる', () => {
-    const { container, props } = renderTable()
-    expect(screen.getAllByRole('button', { name: /編集/ })).toHaveLength(3)
-    expect(within(rowsOf(container, 2)[1]).queryByRole('button', { name: /編集/ })).not.toBeInTheDocument()
-    fireEvent.click(within(rowsOf(container, 2)[0]).getByRole('button', { name: /編集/ }))
-    expect(props.onEdit).toHaveBeenCalledWith(2)
+  it('「編集」ボタンはない(行を選ぶと編集できるため)', () => {
+    renderTable()
+    expect(screen.queryByRole('button', { name: /編集/ })).not.toBeInTheDocument()
   })
 
   it('仕訳がないときは、該当する仕訳がない旨を表示する', () => {
