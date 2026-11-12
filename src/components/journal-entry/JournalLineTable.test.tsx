@@ -104,17 +104,20 @@ function rowsOf(container: HTMLElement, entryId: number): HTMLElement[] {
 describe('JournalLineTable(閲覧)', () => {
   it('列見出しに、日付・出どころ・摘要・コメントと、借方・貸方それぞれの科目・プロジェクト・取引先・精算バッチ・世帯メンバー・金額がある', () => {
     renderTable()
+    // 列の境目に列幅を変えるつまみ(separator、「日付の列幅」「借方の科目の列幅」など)があり、その名前が
+    // 見出しの名前に続く(例: 「日付日付の列幅」「科目借方の科目の列幅」)ため、その形で探す
+    const header = (name: string) => new RegExp(`^${name}(借方の|貸方の)?${name}の列幅$`)
     for (const name of ['日付', '出どころ', '摘要', 'コメント']) {
-      expect(screen.getByRole('columnheader', { name })).toBeInTheDocument()
+      expect(screen.getByRole('columnheader', { name: header(name) })).toBeInTheDocument()
     }
     expect(screen.getByRole('columnheader', { name: '借方' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '貸方' })).toBeInTheDocument()
     // 取引先と精算バッチはどちらか一方しか持てないため、1列にまとめている
     for (const name of ['科目', 'プロジェクト', '取引先・精算バッチ', '世帯メンバー', '金額']) {
-      expect(screen.getAllByRole('columnheader', { name })).toHaveLength(2)
+      expect(screen.getAllByRole('columnheader', { name: header(name) })).toHaveLength(2)
     }
-    expect(screen.queryByRole('columnheader', { name: '取引先' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: '精算バッチ' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: header('取引先') })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: header('精算バッチ') })).not.toBeInTheDocument()
   })
 
   it('借方1行・貸方1行の仕訳は1行になり、借方が左・貸方が右に並ぶ', () => {

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import type { JournalEntry, JournalLine, JournalLineSide } from '../../domain/journal/JournalEntry'
 import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
@@ -8,6 +8,18 @@ import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { createEmptyJournalEntryFormLine, isCounterpartyEligibleCategory, type JournalEntryFormLine } from './journalEntryFormLine'
 import type { JournalEditorLine, JournalEditorMaster, JournalEditorValue } from './JournalEntryEditor'
 import { applyAccountChange } from './journalLineAccountChange'
+import {
+  DEFAULT_COLUMN_WIDTHS,
+  LEFT_COLUMN_KEYS,
+  SIDE_COLUMN_KEYS,
+  isDefaultColumnWidths,
+  loadColumnWidths,
+  resizeColumn,
+  saveColumnWidths,
+  totalTableWidth,
+  type ColumnKey,
+} from './journalLineTableColumns'
+import { JournalLineTableResizeHandle } from './JournalLineTableResizeHandle'
 import { pairLinesBySide } from './journalLineTableModel'
 import { summarizeBalance } from './journalScreenModel'
 import './JournalLineTable.css'
@@ -66,8 +78,8 @@ export interface JournalLineTableProps {
  * 持てて、同じ行に両方が付くことはないため、1列(「取引先・精算バッチ」)にまとめる
  */
 const SIDE_COLUMNS = ['科目', 'プロジェクト', '取引先・精算バッチ', '世帯メンバー', '金額'] as const
-/** 列ごとの幅のクラス(colgroup)。SIDE_COLUMNS と同じ並び */
-const SIDE_COLUMN_CLASSES = ['account', 'project', 'partner', 'member', 'amount'] as const
+/** 日付〜コメントの列の名前(LEFT_COLUMN_KEYS と同じ並び) */
+const LEFT_COLUMNS = ['日付', '出どころ', '摘要', 'コメント'] as const
 const SIDE_LABEL: Record<JournalLineSide, string> = { debit: '借方', credit: '貸方' }
 /** 表の列数(日付・出どころ・摘要・コメント + 借方5列 + 貸方5列) */
 const COLUMN_COUNT = 4 + SIDE_COLUMNS.length * 2
@@ -101,9 +113,48 @@ function cellClass(i: number, side: JournalLineSide): string {
  * 行を押すと、その仕訳の全行が入力欄になる(インライン編集。編集ボタンはない。編集の単位は仕訳で、同時に
  * 編集できるのは1仕訳だけ)。編集中の仕訳の下に操作バーを出し、借方・貸方それぞれの列の下に行の追加と合計、
  * 下段に貸借の一致状況と削除・キャンセル・保存を置く。貸借が合わない間と保存中は保存できない。
+ * 列の境目のつまみで列幅を調整できる(ドラッグ・キーボード・ダブルクリック)。借方と貸方の同じ種類の列は
+ * 連動して同じ幅になり、調整した列幅はlocalStorageに保存して再訪時に復元する。表の上の「列幅を初期値に戻す」で
+ * すべての列を初期の幅に戻せる。
  * 表示用の名前解決(lookup)と編集内容(値と変更通知)だけを受け取り、DB・Repositoryには依存しない。
  */
 export function JournalLineTable({ entries, lookup, selectedId, onSelect, editing }: JournalLineTableProps) {
+  // ---- 列幅の調整(フックは、仕訳がないときの早期returnより前に置く) ----
+  const [widths, setWidths] = useState(loadColumnWidths)
+  /** 最新の列幅。ドラッグ・キー操作の途中で、再描画を待たずに次の幅を求めるため */
+  const widthsRef = useRef(widths)
+  const tableRef = useRef<HTMLTableElement>(null)
+
+  const applyWidths = (next: typeof widths) => {
+    widthsRef.current = next
+    setWidths(next)
+  }
+  const resizeTo = (key: ColumnKey, width: number) => applyWidths(resizeColumn(widthsRef.current, key, width))
+  const resetColumn = (key: ColumnKey) => {
+    applyWidths({ ...widthsRef.current, [key]: DEFAULT_COLUMN_WIDTHS[key] })
+    saveColumnWidths(widthsRef.current)
+  }
+  const resetAllColumns = () => {
+    applyWidths({ ...DEFAULT_COLUMN_WIDTHS })
+    saveColumnWidths(widthsRef.current)
+  }
+  /** 画面に出ている表の幅 ÷ 列幅の合計(枠が広くて余った幅が各列に配られているとき、1より大きくなる) */
+  const getScale = () => {
+    const shown = tableRef.current?.offsetWidth ?? 0
+    return shown > 0 ? shown / totalTableWidth(widthsRef.current) : 1
+  }
+
+  const resizeHandle = (key: ColumnKey, label: string) => (
+    <JournalLineTableResizeHandle
+      label={`${label}の列幅`}
+      value={widths[key]}
+      getScale={getScale}
+      onResize={(width) => resizeTo(key, width)}
+      onCommit={() => saveColumnWidths(widthsRef.current)}
+      onReset={() => resetColumn(key)}
+    />
+  )
+
   if (entries.length === 0) {
     return <p className="journal-line-table__empty">該当する仕訳がありません</p>
   }
@@ -376,16 +427,29 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
   }
 
   return (
-    <div className="journal-line-table">
-      <table className="journal-line-table__table" aria-label="仕訳の明細行">
+    <div className="journal-line-table-wrap">
+      <div className="journal-line-table__toolbar">
+        <button
+          type="button"
+          className="journal-line-table__small-button"
+          disabled={isDefaultColumnWidths(widths)}
+          onClick={resetAllColumns}
+        >
+          列幅を初期値に戻す
+        </button>
+      </div>
+      <div className="journal-line-table">
+      <table
+        ref={tableRef}
+        className="journal-line-table__table"
+        aria-label="仕訳の明細行"
+        style={{ minWidth: totalTableWidth(widths) }}
+      >
         <colgroup>
-          <col className="journal-line-table__col-date" />
-          <col className="journal-line-table__col-source" />
-          <col className="journal-line-table__col-memo" />
-          <col className="journal-line-table__col-comment" />
-          {[0, 1].flatMap((side) =>
-            SIDE_COLUMNS.map((name, i) => <col key={`${side}-${name}`} className={`journal-line-table__col-${SIDE_COLUMN_CLASSES[i]}`} />),
-          )}
+          {LEFT_COLUMN_KEYS.map((key) => (
+            <col key={key} style={{ width: widths[key] }} />
+          ))}
+          {[0, 1].flatMap((side) => SIDE_COLUMN_KEYS.map((key) => <col key={`${side}-${key}`} style={{ width: widths[key] }} />))}
         </colgroup>
         <thead>
           <tr className="journal-line-table__group-head">
@@ -398,9 +462,10 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
             </th>
           </tr>
           <tr>
-            {['日付', '出どころ', '摘要', 'コメント'].map((name) => (
+            {LEFT_COLUMNS.map((name, i) => (
               <th key={name} scope="col">
                 {name}
+                {resizeHandle(LEFT_COLUMN_KEYS[i], name)}
               </th>
             ))}
             {[0, 1].flatMap((side) =>
@@ -416,6 +481,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
                     .join(' ')}
                 >
                   {name}
+                  {resizeHandle(SIDE_COLUMN_KEYS[i], `${SIDE_LABEL[side === 0 ? 'debit' : 'credit']}の${name}`)}
                 </th>
               )),
             )}
@@ -509,6 +575,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
           )
         })}
       </table>
+      </div>
     </div>
   )
 }

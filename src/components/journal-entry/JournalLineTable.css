@@ -8,59 +8,76 @@
   color: var(--color-text);
 }
 
+.journal-line-table-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.journal-line-table__toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .journal-line-table__table {
-  /* 列が増えても詰まらないよう、最小幅を持たせて枠の中で横スクロールさせる */
-  min-width: 1620px;
+  /*
+   * 列幅(colgroup の col)と、列幅の合計の最小幅(min-width)は、ユーザーが調整した値でJournalLineTableが
+   * インラインで指定する。列が増えても詰まらないよう、枠の中で横スクロールさせる
+   */
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--font-size-base);
 }
 
-.journal-line-table__col-date {
-  width: 104px;
-}
-
-.journal-line-table__col-source {
-  width: 84px;
-}
-
-.journal-line-table__col-memo {
-  width: 220px;
-}
-
-.journal-line-table__col-comment {
-  width: 170px;
-}
-
-.journal-line-table__col-account {
-  width: 120px;
-}
-
-.journal-line-table__col-project {
-  width: 110px;
-}
-
-/* 取引先と精算バッチは同じ列。名前が長くなりやすいので少し広めにする */
-.journal-line-table__col-partner {
-  width: 130px;
-}
-
-.journal-line-table__col-member {
-  width: 90px;
-}
-
-.journal-line-table__col-amount {
-  width: 96px;
-}
-
 .journal-line-table th {
+  position: relative;
   padding: 8px 6px;
   background: var(--color-hover);
   font-size: var(--font-size-xs);
   font-weight: 700;
   text-align: left;
   color: var(--color-text-muted);
+}
+
+/*
+ * 列の境目のつまみ(列幅を変える)。見出しの右端に重ねて、触れる幅(7px)を確保する。普段は薄い線、
+ * 触れる・フォーカス・ドラッグ中は緑で示す。touch-action: none は、タッチ操作でドラッグできるようにするため
+ */
+.journal-line-table__resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  z-index: 2;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.journal-line-table__resizer::after {
+  content: '';
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  left: 3px;
+  width: 1px;
+  background: var(--color-border-strong);
+}
+
+.journal-line-table__resizer:hover::after,
+.journal-line-table__resizer:focus-visible::after,
+.journal-line-table__resizer[data-dragging='true']::after {
+  left: 2px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-accent);
+}
+
+.journal-line-table__resizer:focus-visible {
+  outline: none;
 }
 
 .journal-line-table__group-head th {
@@ -76,7 +93,8 @@
 .journal-line-table__cell {
   padding: 7px 6px;
   overflow: hidden;
-  font-size: var(--font-size-sm);
+  /* 閲覧の行と編集中の入力欄(.journal-line-table__control)で文字の大きさを揃える */
+  font-size: var(--font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -297,6 +315,11 @@
   border-bottom: 2px solid var(--color-accent);
 }
 
+/* 編集中の仕訳の上側にも、下側と同じ緑の枠線を引く(編集中の範囲が上下の線で分かる) */
+.journal-line-table tbody.journal-line-table__editing tr:first-child > td {
+  border-top: 2px solid var(--color-accent);
+}
+
 .journal-line-table__bar-side {
   display: flex;
   align-items: center;
@@ -314,6 +337,11 @@
   font: inherit;
   font-size: var(--font-size-sm);
   cursor: pointer;
+}
+
+.journal-line-table__small-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .journal-line-table__total {
