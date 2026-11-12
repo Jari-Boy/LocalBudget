@@ -90,7 +90,7 @@ export interface RepositoryRegistry {
   projectGroup: ProjectGroupRepository
   settlementBatch: SettlementBatchRepository
   recurringTransactionRule: RecurringTransactionRuleRepository
-  /** 定期取引の提案評価・仕訳生成(計画Issue #121、docs/domain/recurring-transactions.md 1.2節)のRPC API */
+  /** 定期仕訳の提案評価・仕訳生成(計画Issue #121、docs/domain/recurring-transactions.md 1.2節)のRPC API */
   recurringTransactionProposal: RecurringTransactionProposalRpcApi
   /**
    * DBの永続化制御(計画Issue #58)。Worker側で生成済みのAutoSaveControllerをそのまま

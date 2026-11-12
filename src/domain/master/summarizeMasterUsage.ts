@@ -1,7 +1,7 @@
 import type { Account } from '../account/Account'
 import type { Budget } from '../budget/Budget'
 import type { JournalEntry } from '../journal/JournalEntry'
-import type { RecurringTransactionRule } from '../recurring-transaction/RecurringTransactionRule'
+import type { RecurringTransactionRule, RecurringTransactionRuleLine } from '../recurring-transaction/RecurringTransactionRule'
 import type { SettlementBatch } from '../settlement-batch/SettlementBatch'
 
 /** マスタ画面で削除の可否を判定する対象(計画Issue #154) */
@@ -29,17 +29,20 @@ export interface MasterUsageCount {
   entryAuthors: number
   /** 科目の名義として使われた件数 */
   accountOwners: number
-  /** 定期取引ルールから生成された仕訳の件数 */
+  /** 定期仕訳ルールから生成された仕訳の件数 */
   generatedEntries: number
 }
 
 export interface MasterUsageInput {
   entries: readonly JournalEntry[]
   budgets: readonly Pick<Budget, 'accountId'>[]
-  rules: readonly Pick<
-    RecurringTransactionRule,
-    'debitAccountId' | 'creditAccountId' | 'counterpartyId' | 'projectId' | 'householdMemberId'
-  >[]
+  rules: readonly {
+    bookkeeperHouseholdMemberId: RecurringTransactionRule['bookkeeperHouseholdMemberId']
+    lines: readonly Pick<
+      RecurringTransactionRuleLine,
+      'accountId' | 'counterpartyId' | 'projectId' | 'householdMemberId'
+    >[]
+  }[]
   settlementBatches: readonly Pick<SettlementBatch, 'counterpartyId'>[]
   accounts: readonly Pick<Account, 'householdMemberId'>[]
 }
@@ -68,8 +71,8 @@ function emptyCount(): MasterUsageCount {
 }
 
 /**
- * 仕訳・予算・定期取引ルール・精算バッチ・科目の名義から、項目ごとの使用状況を集計する。
- * Issueの削除条件の表(科目・取引先・プロジェクト・世帯メンバー・定期取引ルール)の根拠となる
+ * 仕訳・予算・定期仕訳ルール・精算バッチ・科目の名義から、項目ごとの使用状況を集計する。
+ * Issueの削除条件の表(科目・取引先・プロジェクト・世帯メンバー・定期仕訳ルール)の根拠となる
  * 参照を数える。どの参照が削除をさまたげるかの判定はlistDeletionBlocksが担う。
  */
 export function summarizeMasterUsage(input: MasterUsageInput): MasterUsage {
@@ -111,11 +114,23 @@ export function summarizeMasterUsage(input: MasterUsageInput): MasterUsage {
     countOf('account', budget.accountId).budgets += 1
   }
   for (const rule of input.rules) {
-    countOf('account', rule.debitAccountId).recurringRules += 1
-    countOf('account', rule.creditAccountId).recurringRules += 1
-    if (rule.counterpartyId !== null) countOf('counterparty', rule.counterpartyId).recurringRules += 1
-    if (rule.projectId !== null) countOf('project', rule.projectId).recurringRules += 1
-    if (rule.householdMemberId !== null) countOf('householdMember', rule.householdMemberId).recurringRules += 1
+    // 1つのルールが同じマスタを複数の行で使っていても、使用中のルールの件数は1件と数える(計画Issue #180)
+    const used: Record<'account' | 'counterparty' | 'project' | 'householdMember', Set<number>> = {
+      account: new Set(),
+      counterparty: new Set(),
+      project: new Set(),
+      householdMember: new Set(),
+    }
+    if (rule.bookkeeperHouseholdMemberId !== null) used.householdMember.add(rule.bookkeeperHouseholdMemberId)
+    for (const line of rule.lines) {
+      used.account.add(line.accountId)
+      if (line.counterpartyId !== null) used.counterparty.add(line.counterpartyId)
+      if (line.projectId !== null) used.project.add(line.projectId)
+      if (line.householdMemberId !== null) used.householdMember.add(line.householdMemberId)
+    }
+    for (const kind of Object.keys(used) as (keyof typeof used)[]) {
+      for (const id of used[kind]) countOf(kind, id).recurringRules += 1
+    }
   }
   for (const batch of input.settlementBatches) {
     if (batch.counterpartyId !== null) countOf('counterparty', batch.counterpartyId).settlementBatches += 1

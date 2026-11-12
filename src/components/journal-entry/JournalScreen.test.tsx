@@ -4,14 +4,15 @@
  * 絞り込み・結果一覧・詳細が画面遷移なしで切り替わること、保存で精算バッチのタグとコメントが
  * 保持されること、貸借が合わないと保存されないこと、精算バッチを付けられない科目で拒否されたときの
  * 表示(計画Issue #167)、確定済みの仕訳の削除(2回押し・影響の表示・
- * 次の行の選択)、割勘できない理由の表示、下書き(保存・確定・削除)、定期取引の提案
+ * 次の行の選択)、割勘できない理由の表示、下書き(保存・確定・削除)、定期仕訳の提案
  * (金額修正して確定・見送り・古い提案が残っていると処理できない)、関連仕訳の表示を検証する。計画Issue #164で追加した、
- * 定期の確認タブの摘要・コメントの編集と保存、土日の調整後の日付と金額の初期値の表示、一覧に科目を出さないこと、
+ * 承認待ちの定期仕訳タブの摘要・コメントの編集と保存、土日の調整後の日付と金額の初期値の表示、一覧に科目を出さないこと、
  * 複数の提案のまとめて確定(チェックの連動・すべて選択・起票者の一括指定・confirmManyの呼び出し)も検証する。
  * 外部依存はインメモリの偽Repository(vi.fn)で置き換える。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import i18n from '../../infrastructure/i18n/i18n'
@@ -22,6 +23,7 @@ import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { UnsavedChangesGuardProvider, useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
 import { JournalScreen, type JournalScreenProps } from './JournalScreen'
+import type { RecurringTransactionRuleLine } from '../../domain/recurring-transaction/RecurringTransactionRule'
 
 afterEach(cleanup)
 
@@ -135,15 +137,15 @@ function balancedDraft(id: number, memo: string): JournalEntryDraft {
 }
 
 function setup(
-  overrides: Partial<{ entries: JournalEntry[]; drafts: JournalEntryDraft[]; initialFilter: JournalEntryFilter }> = {},
+  overrides: Partial<{ entries: JournalEntry[]; drafts: JournalEntryDraft[]; initialFilter: JournalEntryFilter; rulesPanel: ReactNode }> = {},
 ) {
   let entries = overrides.entries ?? makeEntries()
   let drafts = overrides.drafts ?? makeDrafts()
   const proposals = [
     // 2026-11-01は日曜日。翌平日調整で、仕訳の日付(entryDate)は11/2になる
-    { ruleId: 1, dueDate: '2026-11-01', entryDate: '2026-11-02', defaultAmount: 5200 },
-    { ruleId: 1, dueDate: '2026-10-01', entryDate: '2026-10-01', defaultAmount: 5000 },
-    { ruleId: 2, dueDate: '2026-10-15', entryDate: '2026-10-15', defaultAmount: 3000 },
+    { ruleId: 1, dueDate: '2026-11-01', entryDate: '2026-11-02', defaultAmount: 5200, defaultLines: ruleLines(4, 2, 5200) },
+    { ruleId: 1, dueDate: '2026-10-01', entryDate: '2026-10-01', defaultAmount: 5000, defaultLines: ruleLines(4, 2, 5000) },
+    { ruleId: 2, dueDate: '2026-10-15', entryDate: '2026-10-15', defaultAmount: 3000, defaultLines: ruleLines(4, 2, 3000) },
   ]
   const journalEntryRepository = {
     findAll: vi.fn(async () => entries),
@@ -212,17 +214,13 @@ function setup(
         {
           id: 1,
           name: 'ネット代',
-          debitAccountId: 4,
-          creditAccountId: 2,
-          amount: 5000,
+          bookkeeperHouseholdMemberId: 1,
+          lines: ruleLines(4, 2, 5000),
           frequency: 'monthly',
           dayOfWeek: null,
           dayOfMonth: 1,
           weekOfMonth: null,
           monthOfYear: null,
-          projectId: null,
-          householdMemberId: 1,
-          counterpartyId: null,
           maxOccurrences: null,
           startsOn: '2026-01-01',
           endsOn: null,
@@ -238,17 +236,13 @@ function setup(
           // 起票者が決まっていないルール(まとめて確定のとき、起票者を1人選ぶ必要がある)
           id: 2,
           name: 'ジム会費',
-          debitAccountId: 4,
-          creditAccountId: 2,
-          amount: 3000,
+          bookkeeperHouseholdMemberId: null,
+          lines: ruleLines(4, 2, 3000),
           frequency: 'monthly',
           dayOfWeek: null,
           dayOfMonth: 15,
           weekOfMonth: null,
           monthOfYear: null,
-          projectId: null,
-          householdMemberId: null,
-          counterpartyId: null,
           maxOccurrences: null,
           startsOn: '2026-01-01',
           endsOn: null,
@@ -261,10 +255,12 @@ function setup(
           updatedAt: '',
         },
       ]),
+      create: vi.fn(async (input: Record<string, unknown>) => ({ id: 99, ...input })),
     },
     onSplit: vi.fn(),
     onProposalsChanged: vi.fn(),
     initialFilter: overrides.initialFilter,
+    rulesPanel: overrides.rulesPanel,
   }
   render(
     <I18nextProvider i18n={i18n}>
@@ -275,6 +271,15 @@ function setup(
     </I18nextProvider>,
   )
   return props
+}
+
+/** 借方・貸方1行ずつ(同額)のルールの行(計画Issue #180) */
+function ruleLines(debitAccountId: number, creditAccountId: number, amount: number): RecurringTransactionRuleLine[] {
+  const base = { projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, amount }
+  return [
+    { ...base, lineNo: 1, side: 'debit', accountId: debitAccountId },
+    { ...base, lineNo: 2, side: 'credit', accountId: creditAccountId },
+  ]
 }
 
 const memoInput = () => within(detail()).getByLabelText('摘要(任意)')
@@ -295,6 +300,61 @@ describe('JournalScreen', () => {
     expect(await screen.findByText('家賃', { selector: '.journal-result-list__memo' })).toBeInTheDocument()
     expect(screen.queryByText('ランチ')).not.toBeInTheDocument()
     expect(screen.getByText('1件')).toBeInTheDocument()
+  })
+
+  it('「定期仕訳にする」を押すとダイアログが開き、登録すると仕訳の行を写したルールが作られる(元の仕訳は変えない、計画Issue #180)', async () => {
+    const props = setup()
+    await ready()
+
+    fireEvent.click(within(detail()).getByRole('button', { name: '定期仕訳にする' }))
+    const dialog = screen.getByRole('dialog', { name: '定期仕訳の作成' })
+    expect(within(dialog).getByLabelText('名称')).toHaveValue('ランチ')
+    fireEvent.click(within(dialog).getByRole('button', { name: '登録' }))
+
+    await waitFor(() => expect(props.recurringTransactionRuleRepository.create).toHaveBeenCalledTimes(1))
+    expect(props.recurringTransactionRuleRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'ランチ',
+        frequency: 'monthly',
+        dayOfMonth: 5,
+        startsOn: '2026-10-06',
+        lines: [
+          expect.objectContaining({ side: 'debit', accountId: 1, amount: 1200 }),
+          expect.objectContaining({ side: 'credit', accountId: 2, amount: 1200 }),
+        ],
+      }),
+    )
+    expect(await screen.findByText('定期仕訳を作成しました')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '定期仕訳の作成' })).not.toBeInTheDocument()
+    expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+  })
+
+  it('割勘の仕訳では「定期仕訳にする」を押せず、理由を表示する(繰り返すものではないため、計画Issue #180)', async () => {
+    setup()
+    await ready()
+
+    fireEvent.click(screen.getByRole('button', { name: /割勘の夕食/ }))
+
+    expect(within(detail()).getByRole('button', { name: '定期仕訳にする' })).toBeDisabled()
+    expect(within(detail()).getByText('割勘の仕訳は一回きりの精算のため、定期仕訳にできません')).toBeInTheDocument()
+  })
+
+  it('タブは「仕訳一覧・下書き・承認待ち・定期仕訳」の順で、定期仕訳のタブには rulesPanel の中身が出る(計画Issue #180)', async () => {
+    setup({ rulesPanel: <p>ルールの管理画面</p> })
+    await ready()
+
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['仕訳一覧', '下書き 1', '承認待ち 3', '定期仕訳'])
+    fireEvent.click(screen.getByRole('tab', { name: '定期仕訳' }))
+
+    expect(await screen.findByText('ルールの管理画面')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '仕訳の詳細' })).not.toBeInTheDocument()
+  })
+
+  it('rulesPanel を渡さないときは、定期仕訳のタブを出さない', async () => {
+    setup()
+    await ready()
+
+    expect(screen.queryByRole('tab', { name: '定期仕訳' })).not.toBeInTheDocument()
   })
 
   it('一覧と詳細が同じ画面に出て、行を選ぶと画面遷移なしで詳細が切り替わる', async () => {
@@ -686,18 +746,25 @@ describe('JournalScreen', () => {
     await waitFor(() => expect(props.journalEntryDraftRepository.delete).toHaveBeenCalledWith(100))
   })
 
-  it('定期の確認タブでは古い順に並び、先頭の提案を金額修正して確定できる', async () => {
+  it('承認待ちの定期仕訳タブでは古い順に並び、先頭の提案を金額修正して確定できる', async () => {
     const props = setup()
     await ready()
-    fireEvent.click(screen.getByRole('tab', { name: /定期の確認/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /^承認待ち/ }))
     const rows = await screen.findAllByRole('button', { name: /ネット代/ })
     expect(rows[0]).toHaveTextContent('2026')
     fireEvent.click(rows[0])
     fireEvent.change(within(detail()).getByLabelText('家賃の金額'), { target: { value: '5500' } })
-    fireEvent.click(within(detail()).getByRole('button', { name: '確定' }))
+    fireEvent.click(within(detail()).getByRole('button', { name: '承認して仕訳帳に反映' }))
     await waitFor(() =>
       expect(props.recurringTransactionProposalApi.confirm).toHaveBeenCalledWith(
-        expect.objectContaining({ ruleId: 1, dueDate: '2026-10-01', amount: 5500 }),
+        expect.objectContaining({
+          ruleId: 1,
+          dueDate: '2026-10-01',
+          lines: [
+            expect.objectContaining({ accountId: 4, side: 'debit', amount: 5500 }),
+            expect.objectContaining({ accountId: 2, side: 'credit', amount: 5500 }),
+          ],
+        }),
       ),
     )
   })
@@ -705,10 +772,10 @@ describe('JournalScreen', () => {
   it('同じルールの古い提案が残っていると確定も見送りもできず理由を表示する', async () => {
     const props = setup()
     await ready()
-    fireEvent.click(screen.getByRole('tab', { name: /定期の確認/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /^承認待ち/ }))
     const rows = await screen.findAllByRole('button', { name: /ネット代/ })
     fireEvent.click(rows[1])
-    expect(within(detail()).getByRole('button', { name: '確定' })).toBeDisabled()
+    expect(within(detail()).getByRole('button', { name: '承認して仕訳帳に反映' })).toBeDisabled()
     expect(within(detail()).getByRole('button', { name: '今回は見送る' })).toBeDisabled()
     expect(within(detail()).getByText('先に同じルールの古い提案を確定するか見送ってください')).toBeInTheDocument()
     expect(props.recurringTransactionProposalApi.skip).not.toHaveBeenCalled()
@@ -717,7 +784,7 @@ describe('JournalScreen', () => {
   it('提案を見送ると skip を呼ぶ', async () => {
     const props = setup()
     await ready()
-    fireEvent.click(screen.getByRole('tab', { name: /定期の確認/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /^承認待ち/ }))
     const rows = await screen.findAllByRole('button', { name: /ネット代/ })
     fireEvent.click(rows[0])
     fireEvent.click(within(detail()).getByRole('button', { name: '今回は見送る' }))
@@ -726,21 +793,21 @@ describe('JournalScreen', () => {
     )
   })
 
-  describe('定期の確認タブ(計画Issue #164)', () => {
+  describe('承認待ちの定期仕訳タブ(計画Issue #164)', () => {
     async function openProposals() {
       const props = setup()
       await ready()
-      fireEvent.click(screen.getByRole('tab', { name: /定期の確認/ }))
+      fireEvent.click(screen.getByRole('tab', { name: /^承認待ち/ }))
       await screen.findAllByRole('button', { name: /ネット代/ })
       return props
     }
     const checkbox = (name: RegExp) => screen.getAllByRole('checkbox', { name })
 
-    it('一覧には科目(借方→貸方)を表示しない', async () => {
+    it('一覧には科目(借方 / 貸方)を表示しない', async () => {
       await openProposals()
 
       for (const row of screen.getAllByRole('button', { name: /ネット代|ジム会費/ })) {
-        expect(row).not.toHaveTextContent('→')
+        expect(row).not.toHaveTextContent(' / ')
         expect(row).not.toHaveTextContent('家賃')
       }
     })
@@ -769,7 +836,7 @@ describe('JournalScreen', () => {
       fireEvent.click(screen.getAllByRole('button', { name: /ネット代/ })[0])
       fireEvent.change(within(detail()).getByLabelText('摘要(任意)'), { target: { value: 'ネット代 10月分' } })
       fireEvent.change(within(detail()).getByLabelText('コメント(任意)'), { target: { value: 'プラン変更あり' } })
-      fireEvent.click(within(detail()).getByRole('button', { name: '確定' }))
+      fireEvent.click(within(detail()).getByRole('button', { name: '承認して仕訳帳に反映' }))
 
       await waitFor(() =>
         expect(props.recurringTransactionProposalApi.confirm).toHaveBeenCalledWith(
@@ -783,14 +850,28 @@ describe('JournalScreen', () => {
       )
     })
 
-    it('詳細パネルの各行の2段目(取引先・プロジェクト・世帯メンバー)は読み取り専用', async () => {
+    it('確認パネルは仕訳の起票と同じ編集画面で、科目・金額の変更や行の追加・削除ができる(取引日と起票者は変えられない)', async () => {
       await openProposals()
 
       fireEvent.click(screen.getAllByRole('button', { name: /ネット代/ })[0])
 
       const debitColumn = within(within(detail()).getByRole('group', { name: '借方' }))
-      expect(debitColumn.getByRole('button', { name: /^プロジェクト/ })).toBeDisabled()
-      expect(debitColumn.getByRole('combobox', { name: '世帯メンバー' })).toBeDisabled()
+      expect(debitColumn.getByRole('button', { name: /^プロジェクト/ })).toBeEnabled()
+      expect(debitColumn.getByRole('combobox', { name: '世帯メンバー' })).toBeEnabled()
+      expect(debitColumn.getByRole('button', { name: '+ 借方の行を追加' })).toBeEnabled()
+      expect(within(detail()).getByLabelText('取引日')).toBeDisabled()
+    })
+
+    it('確認パネルで行を追加すると貸借の差額が出る(科目を選ぶまで、確定のRPCは呼ばれない)', async () => {
+      const props = await openProposals()
+
+      fireEvent.click(screen.getAllByRole('button', { name: /ネット代/ })[0])
+      fireEvent.click(within(detail()).getByRole('button', { name: '+ 借方の行を追加' }))
+      const amounts = within(within(detail()).getByRole('group', { name: '借方' })).getAllByLabelText(/金額/)
+      fireEvent.change(amounts[1], { target: { value: '300' } })
+
+      expect(within(detail()).getByRole('status')).toHaveTextContent('差額')
+      expect(props.recurringTransactionProposalApi.confirm).not.toHaveBeenCalled()
     })
 
     it('新しい提案にチェックを付けると、同じルールの古い提案にもチェックが付く(別のルールは付かない)', async () => {
@@ -836,17 +917,17 @@ describe('JournalScreen', () => {
       expect(screen.getByText('0件を選択中')).toBeInTheDocument()
     })
 
-    it('何もチェックしていないときは「選択した提案を確定」が押せない', async () => {
+    it('何もチェックしていないときは「選択した定期仕訳を承認して反映」が押せない', async () => {
       await openProposals()
 
-      expect(screen.getByRole('button', { name: '選択した提案を確定' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: '選択した定期仕訳を承認して反映' })).toBeDisabled()
     })
 
-    it('選択した提案を確定すると、選んだ提案をconfirmManyで確定する(金額は渡さず、初期値のまま)', async () => {
+    it('選択した定期仕訳を承認して反映すると、選んだ提案をconfirmManyで確定する(金額は渡さず、初期値のまま)', async () => {
       const props = await openProposals()
       fireEvent.click(checkbox(/ネット代/)[1])
 
-      fireEvent.click(screen.getByRole('button', { name: '選択した提案を確定' }))
+      fireEvent.click(screen.getByRole('button', { name: '選択した定期仕訳を承認して反映' }))
 
       await waitFor(() =>
         expect(props.recurringTransactionProposalApi.confirmMany).toHaveBeenCalledWith({
@@ -857,14 +938,14 @@ describe('JournalScreen', () => {
           householdMemberId: undefined,
         }),
       )
-      expect(await screen.findByText('2件の仕訳を確定しました')).toBeInTheDocument()
+      expect(await screen.findByText('2件の仕訳を仕訳帳に反映しました')).toBeInTheDocument()
     })
 
     it('起票者が決まっていないルールを選ぶと、まとめて起票者を選ぶまで確定できず、選ぶとその起票者で確定する', async () => {
       const props = await openProposals()
       fireEvent.click(checkbox(/ジム会費/)[0])
 
-      const confirmButton = screen.getByRole('button', { name: '選択した提案を確定' })
+      const confirmButton = screen.getByRole('button', { name: '選択した定期仕訳を承認して反映' })
       expect(confirmButton).toBeDisabled()
       expect(screen.getByText(/起票者が決まっていない提案\(ジム会費\)があります/)).toBeInTheDocument()
       fireEvent.change(screen.getByLabelText('まとめて確定の起票者'), { target: { value: '2' } })
@@ -892,10 +973,10 @@ describe('JournalScreen', () => {
       props.recurringTransactionProposalApi.confirmMany.mockRejectedValueOnce(new Error('boom'))
       fireEvent.click(checkbox(/ネット代/)[0])
 
-      fireEvent.click(screen.getByRole('button', { name: '選択した提案を確定' }))
+      fireEvent.click(screen.getByRole('button', { name: '選択した定期仕訳を承認して反映' }))
 
       expect(await screen.findByRole('alert')).toBeInTheDocument()
-      expect(screen.queryByText('1件の仕訳を確定しました')).not.toBeInTheDocument()
+      expect(screen.queryByText('1件の仕訳を仕訳帳に反映しました')).not.toBeInTheDocument()
     })
   })
 })

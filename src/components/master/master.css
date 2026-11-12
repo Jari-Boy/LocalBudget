@@ -280,7 +280,7 @@
   cursor: pointer;
 }
 
-/* 定期取引タブ(計画Issue #164)。一覧と右パネルの幅の比率は仕訳画面と同じ2:3にし、右パネルの借方・貸方の
+/* 定期仕訳タブ(計画Issue #164)。一覧と右パネルの幅の比率は仕訳画面と同じ2:3にし、右パネルの借方・貸方の
  * 行の部分は仕訳エディタ(JournalEntryEditor.css)のクラスをそのまま使う。 */
 .master-split--rule > .master-split__main {
   flex: 2 1 340px;

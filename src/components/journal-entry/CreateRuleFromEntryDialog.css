@@ -1,0 +1,22 @@
+/* 「定期仕訳にする」のダイアログ(計画Issue #180)。値はdesign/tokens.cssのトークンを使う。 */
+.rule-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  /* 取引先・プロジェクトの追加(QuickCreateDialog、z-index 20)をこのダイアログの上に出す */
+  z-index: 10;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+  background: rgba(23, 35, 31, 0.4);
+}
+
+.rule-dialog {
+  width: min(900px, 100%);
+  box-sizing: border-box;
+  padding: 16px 20px;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popup);
+}

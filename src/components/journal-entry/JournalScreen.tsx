@@ -33,7 +33,10 @@ import type {
 } from '../../infrastructure/rpc/createRecurringTransactionProposalApi'
 import type { JournalEntryDraftRpcApi } from '../../infrastructure/rpc/createRepositoryRegistry'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
-import type { RecurringTransactionRule } from '../../domain/recurring-transaction/RecurringTransactionRule'
+import type {
+  RecurringTransactionRule,
+  RecurringTransactionRuleLine,
+} from '../../domain/recurring-transaction/RecurringTransactionRule'
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
@@ -45,6 +48,9 @@ import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../ma
 import type { MaybeAsync } from '../master/maybeAsync'
 import { UnsavedChangesDialog } from '../common/unsaved-changes/UnsavedChangesDialog'
 import { useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
+import { canCreateRuleFromEntry } from '../../domain/recurring-transaction/canCreateRuleFromEntry'
+import { AccountCreateForm } from '../master/AccountCreateForm'
+import { CreateRuleFromEntryDialog } from './CreateRuleFromEntryDialog'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
 import { JournalEntryEditor, type JournalEditorLine, type JournalEditorMaster, type JournalEditorValue } from './JournalEntryEditor'
 import {
@@ -74,7 +80,7 @@ import {
 import { RelatedEntriesSection } from './RelatedEntriesSection'
 import './JournalScreen.css'
 
-export type JournalScreenTab = 'list' | 'drafts' | 'proposals'
+export type JournalScreenTab = 'list' | 'drafts' | 'proposals' | 'rules'
 
 export interface JournalScreenProps {
   journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'update' | 'delete'>>
@@ -93,21 +99,26 @@ export interface JournalScreenProps {
       | 'moveMember'
     >
   >
-  accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll'>>
+  accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll' | 'create'>>
   accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
   counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll' | 'create'>>
   counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll'>>
-  projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll'>>
+  projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll' | 'create'>>
   projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
   settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll' | 'create'>>
   recurringTransactionProposalApi: MaybeAsync<Pick<RecurringTransactionProposalRpcApi, 'listPending' | 'confirm' | 'confirmMany' | 'skip'>>
-  recurringTransactionRuleRepository: MaybeAsync<Pick<RecurringTransactionRuleRepository, 'findAll'>>
+  recurringTransactionRuleRepository: MaybeAsync<Pick<RecurringTransactionRuleRepository, 'findAll' | 'create'>>
   /** 「この仕訳を割勘」を押したときの移動(割勘の入力フォームへ) */
   onSplit: (entry: JournalEntry) => void
   /** 提案を確定・見送りしたとき(サイドナビのバッジの件数を取り直すため) */
   onProposalsChanged?: () => void
   initialTab?: JournalScreenTab
+  /**
+   * 「定期仕訳」タブ(定期仕訳のルールの管理、計画Issue #180)の中身。ルールの一覧・作成・編集は専用の画面部品が
+   * 受け持つため、呼び出し側(ルート)が組み立てて渡す。省略時はタブを出さない
+   */
+  rulesPanel?: React.ReactNode
   /** 最初に選ぶ仕訳(割勘の履歴などから開くとき) */
   initialEntryId?: number
   /** 最初の絞り込み条件(分析画面から、期間と選んだ条件を引き継いで開くとき。計画Issue #155) */
@@ -144,8 +155,10 @@ interface ProposalRow {
   dueDate: string
   /** 土日の調整後の日付(確定すると仕訳の取引日になる) */
   entryDate: string
-  /** 確認パネルの金額の初期値(固定ならルールの金額、前回確定額なら前回の金額) */
+  /** 一覧に出す金額(初期値の借方の合計) */
   defaultAmount: number
+  /** 確認パネルの行の初期値(固定ならルールの行、前回確定額なら前回の仕訳と対応づけた金額、計画Issue #180) */
+  defaultLines: RecurringTransactionRuleLine[]
   rule: RecurringTransactionRule
 }
 
@@ -165,8 +178,8 @@ function inactiveIds(items: ReadonlyArray<{ id: number; isActive: boolean }>): S
 
 /**
  * 仕訳画面(計画Issue #152)。絞り込み・結果一覧・詳細を1画面にまとめ、「仕訳一覧」「下書き」
- * 「定期の確認」の3つのタブが同じ詳細パネルを使う。確定済みの仕訳は編集・削除・割勘への移動、
- * 下書きは貸借が合わなくても保存でき完成すれば確定、定期取引の提案は金額を直して確定か「今回は見送る」
+ * 「承認待ちの定期仕訳」の3つのタブが同じ詳細パネルを使う。確定済みの仕訳は編集・削除・割勘への移動、
+ * 下書きは貸借が合わなくても保存でき完成すれば確定、定期仕訳の提案は金額を直して確定か「今回は見送る」
  * で処理する。保存時は精算バッチのタグとコメントを行に保持したまま更新する(計画Issue #144)。
  * 確定済みの仕訳の削除は物理削除で元に戻せない(docs/domain/journal.md 1.5)ため、2回押して確定し、
  * 確認中は影響を表示する。関連仕訳は詳細の最下部に常に出す。旧画面(一覧・詳細・入力フォーム・
@@ -200,6 +213,12 @@ export function JournalScreen(props: JournalScreenProps) {
   const [checkedProposalKeys, setCheckedProposalKeys] = useState<string[]>([])
   /** まとめて確定で、起票者が決まっていないルールの分に使う起票者 */
   const [bulkMemberId, setBulkMemberId] = useState<number | ''>('')
+  /** 「定期仕訳にする」のダイアログ(計画Issue #180)。元にする仕訳 */
+  const [ruleDialogEntry, setRuleDialogEntry] = useState<JournalEntry | null>(null)
+  /** プロジェクトの追加ダイアログ(行のプロジェクトの選択ツリーの「+ 新規追加」、計画Issue #180) */
+  const [projectDialog, setProjectDialog] = useState<{ apply: (id: number) => void } | null>(null)
+  /** 科目の登録ダイアログ(行の科目の選択ツリーの「+ 新規追加」、計画Issue #180) */
+  const [accountDialog, setAccountDialog] = useState<{ apply: (id: number) => void } | null>(null)
   const [counterpartyDialog, setCounterpartyDialog] = useState<{ apply: (id: number) => void } | null>(null)
   /** 詳細を開いた時点の編集内容。現在の内容と違えば、未保存の変更がある */
   const [baseline, setBaseline] = useState('')
@@ -284,7 +303,7 @@ export function JournalScreen(props: JournalScreenProps) {
       const rule = data.rules.find((r) => r.id === p.ruleId)
       return rule === undefined
         ? []
-        : [{ id: index + 1, ruleId: p.ruleId, dueDate: p.dueDate, entryDate: p.entryDate, defaultAmount: p.defaultAmount, rule }]
+        : [{ id: index + 1, ruleId: p.ruleId, dueDate: p.dueDate, entryDate: p.entryDate, defaultAmount: p.defaultAmount, defaultLines: p.defaultLines, rule }]
     })
     return { accountById, accountNameOf, filterContext, filterOptions, master, relatedIdsByEntryId, proposalRows }
   }, [data])
@@ -363,23 +382,26 @@ export function JournalScreen(props: JournalScreenProps) {
     if (rule === undefined) return null
     const proposal = d.proposals.find((p) => p.ruleId === sel.ruleId && p.dueDate === sel.dueDate)
     const accountById = new Map(d.accounts.map((a) => [a.id, a]))
-    const side = (accountId: number, s: 'debit' | 'credit'): JournalEntryFormLine => {
-      const account = accountById.get(accountId)
+    // 行の世帯メンバーは、行で決まっていればそれ、無ければ科目の既定メンバー、起票者、先頭のメンバーの順(計画Issue #169・#180)
+    const bookkeeper = rule.bookkeeperHouseholdMemberId
+    const formLines: JournalEntryFormLine[] = (proposal?.defaultLines ?? rule.lines).map((line) => {
+      const account = accountById.get(line.accountId)
       return {
-        accountId,
-        side: s,
-        amountInput: String(proposal?.defaultAmount ?? rule.amount),
-        projectId: rule.projectId,
-        householdMemberId: rule.householdMemberId ?? firstMember,
-        counterpartyId: account !== undefined && isCounterpartyEligibleCategory(account.category) ? rule.counterpartyId : null,
+        accountId: line.accountId,
+        side: line.side,
+        amountInput: String(line.amount),
+        projectId: line.projectId,
+        householdMemberId: line.householdMemberId ?? account?.householdMemberId ?? bookkeeper ?? firstMember,
+        counterpartyId: account !== undefined && isCounterpartyEligibleCategory(account.category) ? line.counterpartyId : null,
+        settlementBatchId: line.settlementBatchId,
       }
-    }
+    })
     return {
       entryDate: proposal?.entryDate ?? sel.dueDate,
       memo: rule.name,
       comment: '',
-      householdMemberId: rule.householdMemberId,
-      lines: withKeys([side(rule.debitAccountId, 'debit'), side(rule.creditAccountId, 'credit')]),
+      householdMemberId: bookkeeper,
+      lines: withKeys(formLines),
     }
   }
 
@@ -400,6 +422,7 @@ export function JournalScreen(props: JournalScreenProps) {
       const first = [...d.drafts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id - a.id)[0]
       return first ? { kind: 'draft', id: first.id } : null
     }
+    if (which === 'rules') return null
     const first = sortProposalsOldestFirst(d.proposals).find((p) => d.rules.some((r) => r.id === p.ruleId))
     return first ? { kind: 'proposal', ruleId: first.ruleId, dueDate: first.dueDate } : null
   }
@@ -423,7 +446,7 @@ export function JournalScreen(props: JournalScreenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 定期取引の提案は確定か見送りで処理するもので保存の対象ではないため、未保存の判定から外す
+  // 定期仕訳の提案は確定か見送りで処理するもので保存の対象ではないため、未保存の判定から外す
   const dirty =
     editor !== null && selection !== null && selection.kind !== 'proposal' && serializeEditor(editor) !== baseline
 
@@ -623,20 +646,20 @@ export function JournalScreen(props: JournalScreenProps) {
   const confirmProposal = () =>
     run(async () => {
       if (editor === null || selectedProposal === undefined) return
-      if (validatedLines() === null) return
-      const amount = Number(editor.lines.find((l) => l.line.side === 'debit')?.line.amountInput)
-      const memberId = selectedProposal.rule.householdMemberId === null ? proposalMemberId : ''
+      const lines = validatedLines()
+      if (lines === null) return
+      const memberId = selectedProposal.rule.bookkeeperHouseholdMemberId === null ? proposalMemberId : ''
       await Promise.resolve().then(() =>
         recurringTransactionProposalApi.confirm({
           ruleId: selectedProposal.ruleId,
           dueDate: selectedProposal.dueDate,
-          amount,
+          lines,
           householdMemberId: memberId === '' ? undefined : memberId,
           memo: editor.memo,
           comment: editor.comment,
         }),
       )
-      await afterProposal('仕訳を確定しました')
+      await afterProposal('仕訳帳に反映しました')
     }, t('confirmError'))
 
   const skipProposal = () =>
@@ -651,7 +674,7 @@ export function JournalScreen(props: JournalScreenProps) {
   // ---- 提案のまとめて確定(計画Issue #164) ----
   /** チェックされている提案(消えた提案のキーは捨てる)。古い順に並ぶ */
   const checkedRows = proposalRows.filter((p) => checkedProposalKeys.includes(proposalKey(p)))
-  const bulkNoMemberRows = checkedRows.filter((p) => p.rule.householdMemberId === null)
+  const bulkNoMemberRows = checkedRows.filter((p) => p.rule.bookkeeperHouseholdMemberId === null)
   const bulkNeedsMember = bulkNoMemberRows.length > 0
   const bulkNoMemberNames = [...new Set(bulkNoMemberRows.map((p) => p.rule.name))].join('、')
 
@@ -676,7 +699,7 @@ export function JournalScreen(props: JournalScreenProps) {
       await reloadAndOpen((d) => {
         const next = sortProposalsOldestFirst(d.proposals).find((p) => d.rules.some((r) => r.id === p.ruleId))
         return next ? { kind: 'proposal', ruleId: next.ruleId, dueDate: next.dueDate } : null
-      }, `${count}件の仕訳を確定しました`)
+      }, `${count}件の仕訳を仕訳帳に反映しました`)
       onProposalsChanged?.()
     }, t('confirmError'))
 
@@ -762,6 +785,13 @@ export function JournalScreen(props: JournalScreenProps) {
       open(firstOf(next, data, visibleEntries), data)
     })
 
+  /** 精算バッチをその場で作る(行の精算バッチの選択肢の「+ 新しいバッチ」) */
+  const createBatch = async (name: string) => {
+    const created = await settlementBatchRepository.create({ name, type: 'expense_splitting' })
+    setData((prev) => (prev === null ? prev : { ...prev, batches: [...prev.batches, created] }))
+    return created
+  }
+
   const cancelLeave = () => setLeaveRequest(null)
 
   const discardAndLeave = () => {
@@ -782,7 +812,8 @@ export function JournalScreen(props: JournalScreenProps) {
   const tabs: { key: JournalScreenTab; label: string }[] = [
     { key: 'list', label: '仕訳一覧' },
     { key: 'drafts', label: `下書き ${data.drafts.length}` },
-    { key: 'proposals', label: `定期の確認 ${proposalRows.length}` },
+    { key: 'proposals', label: `承認待ち ${proposalRows.length}` },
+    ...(props.rulesPanel === undefined ? [] : [{ key: 'rules' as const, label: '定期仕訳' }]),
   ]
 
   const selectedIds =
@@ -796,11 +827,13 @@ export function JournalScreen(props: JournalScreenProps) {
             : []
           : []
 
+  /** 「定期仕訳にする」を押せるか(割勘・初期残高・残高調整の仕訳は作れない、計画Issue #180) */
+  const ruleCheck = selectedEntry ? canCreateRuleFromEntry(selectedEntry) : ({ allowed: true } as const)
   const incompleteReason = editor === null ? null : findIncompleteReason(lineInputs())
   const stagedReason = (() => {
     if (selection?.kind === 'proposal') {
       if (proposalBlocked) return '先に同じルールの古い提案を確定するか見送ってください'
-      if (selectedProposal?.rule.householdMemberId === null && proposalMemberId === '') return '起票者を選んでください'
+      if (selectedProposal?.rule.bookkeeperHouseholdMemberId === null && proposalMemberId === '') return '起票者を選んでください'
     }
     return incompleteReason === null ? '' : describeIncompleteReason(incompleteReason)
   })()
@@ -839,14 +872,14 @@ export function JournalScreen(props: JournalScreenProps) {
       : selection?.kind === 'draft'
         ? '下書き'
         : selection?.kind === 'proposal'
-          ? `定期取引の提案: ${selectedProposal?.rule.name ?? ''}`
+          ? `承認待ちの定期仕訳: ${selectedProposal?.rule.name ?? ''}`
           : editor?.memo
             ? `仕訳の詳細: ${editor.memo}`
             : '仕訳の詳細'
 
   const note =
     tab === 'proposals'
-      ? '定期取引のルールから作られた提案です。確定すると仕訳になります。不要な回は見送れます。同じルールの提案は古い順に処理します。チェックを付けて、まとめて確定もできます。'
+      ? '起票時期がきた定期仕訳です。内容を編集して承認すると、仕訳帳に反映されます。不要な回は見送れます。同じ定期仕訳は古い順に処理します。チェックを付けて、まとめて承認もできます。'
       : tab === 'drafts'
         ? '保存前の仕訳です。貸借が合わなくても下書きとして残せます。'
         : ''
@@ -884,6 +917,10 @@ export function JournalScreen(props: JournalScreenProps) {
         ))}
       </div>
 
+      {tab === 'rules' && props.rulesPanel !== undefined ? (
+        <div className="journal-screen__rules">{props.rulesPanel}</div>
+      ) : (
+        <>
       {tab === 'list' && (
         <div className="journal-screen__filter">
           <JournalFilterPanel filter={filter} onChange={setFilter} options={filterOptions} resultCount={visibleEntries.length} />
@@ -934,7 +971,7 @@ export function JournalScreen(props: JournalScreenProps) {
                   disabled={busy || checkedRows.length === 0 || (bulkNeedsMember && bulkMemberId === '')}
                   onClick={() => void confirmChecked()}
                 >
-                  選択した提案を確定
+                  選択した定期仕訳を承認して反映
                 </button>
               </div>
               {bulkNeedsMember && bulkMemberId === '' && (
@@ -943,7 +980,7 @@ export function JournalScreen(props: JournalScreenProps) {
                 </p>
               )}
               <p className="journal-screen__note">
-                金額は初期値のまま確定します。金額を直す提案は、開いて1件ずつ確定してください。
+                内容は初期値のまま承認します。内容を直す定期仕訳は、開いて1件ずつ承認してください。
               </p>
             </div>
           )}
@@ -1002,13 +1039,11 @@ export function JournalScreen(props: JournalScreenProps) {
                 value={editor}
                 onChange={changeEditor}
                 master={master}
-                readOnlyLines={selection.kind === 'proposal'}
-                onCreateBatch={async (name) => {
-                  const created = await settlementBatchRepository.create({ name, type: 'expense_splitting' })
-                  setData((prev) => (prev === null ? prev : { ...prev, batches: [...prev.batches, created] }))
-                  return created
-                }}
+                lockEntryDate={selection.kind === 'proposal'}
+                onCreateBatch={createBatch}
                 onRequestCreateCounterparty={(apply) => setCounterpartyDialog({ apply })}
+                onRequestCreateProject={(apply) => setProjectDialog({ apply })}
+                onRequestCreateAccount={(apply) => setAccountDialog({ apply })}
               />
 
               {selection.kind === 'proposal' && selectedProposal !== undefined && selectedProposal.entryDate !== selectedProposal.dueDate && (
@@ -1017,7 +1052,7 @@ export function JournalScreen(props: JournalScreenProps) {
                 </p>
               )}
 
-              {selection.kind === 'proposal' && selectedProposal?.rule.householdMemberId === null && (
+              {selection.kind === 'proposal' && selectedProposal?.rule.bookkeeperHouseholdMemberId === null && (
                 <label className="journal-screen__inline-field">
                   起票者
                   <select
@@ -1052,6 +1087,22 @@ export function JournalScreen(props: JournalScreenProps) {
                   <button type="button" className="journal-screen__button" disabled={busy} onClick={() => void saveDraft('new')}>
                     下書きに保存
                   </button>
+                )}
+                {selection.kind === 'entry' && selectedEntry && (
+                  <>
+                    <button
+                      type="button"
+                      className="journal-screen__button"
+                      disabled={busy || !ruleCheck.allowed}
+                      aria-describedby="journal-rule-reason"
+                      onClick={() => guarded(() => setRuleDialogEntry(selectedEntry))}
+                    >
+                      定期仕訳にする
+                    </button>
+                    <span id="journal-rule-reason" className="journal-screen__note">
+                      {ruleCheck.allowed ? '' : ruleCheck.reason}
+                    </span>
+                  </>
                 )}
                 {selection.kind === 'entry' && split !== null && (
                   <>
@@ -1095,7 +1146,7 @@ export function JournalScreen(props: JournalScreenProps) {
                       disabled={busy || stagedReason !== ''}
                       onClick={() => void confirmProposal()}
                     >
-                      確定
+                      承認して仕訳帳に反映
                     </button>
                     <button type="button" className="journal-screen__button" disabled={busy || proposalBlocked} onClick={() => void skipProposal()}>
                       今回は見送る
@@ -1210,11 +1261,64 @@ export function JournalScreen(props: JournalScreenProps) {
           )}
         </section>
       </div>
+        </>
+      )}
 
       {leaveRequest !== null && (
         <UnsavedChangesDialog saving={busy} onCancel={cancelLeave} onDiscard={discardAndLeave} onSave={() => void saveAndLeave()} />
       )}
 
+      {ruleDialogEntry !== null && derived !== null && (
+        <CreateRuleFromEntryDialog
+          entry={ruleDialogEntry}
+          master={derived.master}
+          today={today()}
+          onCreate={async (input) => {
+            const created = await Promise.resolve(props.recurringTransactionRuleRepository.create(input))
+            setData((prev) => (prev === null ? prev : { ...prev, rules: [...prev.rules, created] }))
+            setRuleDialogEntry(null)
+            setFlash('定期仕訳を作成しました')
+            onProposalsChanged?.()
+          }}
+          onCancel={() => setRuleDialogEntry(null)}
+          onCreateBatch={createBatch}
+          onRequestCreateCounterparty={(apply) => setCounterpartyDialog({ apply })}
+          onRequestCreateProject={(apply) => setProjectDialog({ apply })}
+          onRequestCreateAccount={(apply) => setAccountDialog({ apply })}
+        />
+      )}
+      {accountDialog && data !== null && (
+        <div className="import-dialog__backdrop">
+          <div role="dialog" aria-modal="true" aria-label="科目を登録" className="import-dialog import-dialog--wide">
+            <AccountCreateForm
+              accountRepository={props.accountRepository}
+              journalEntryRepository={props.journalEntryRepository}
+              groups={data.accountGroups}
+              householdMembers={data.members}
+              initialCategory="expense"
+              onCreated={(created) => {
+                setData((prev) => (prev === null ? prev : { ...prev, accounts: [...prev.accounts, created] }))
+                accountDialog.apply(created.id)
+                setAccountDialog(null)
+              }}
+              onCancel={() => setAccountDialog(null)}
+            />
+          </div>
+        </div>
+      )}
+      {projectDialog && (
+        <QuickCreateDialog
+          title="プロジェクトを追加"
+          nameLabel="プロジェクト名"
+          onSubmit={async (name) => {
+            const created = await props.projectRepository.create({ name })
+            setData((prev) => (prev === null ? prev : { ...prev, projects: [...prev.projects, created] }))
+            projectDialog.apply(created.id)
+            setProjectDialog(null)
+          }}
+          onCancel={() => setProjectDialog(null)}
+        />
+      )}
       {counterpartyDialog && (
         <QuickCreateDialog
           title="取引先を追加"

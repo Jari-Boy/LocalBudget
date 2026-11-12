@@ -111,7 +111,7 @@
   color: var(--color-text-muted);
 }
 
-/* 定期の確認タブ(計画Issue #164): 行の左に、詳細の選択とは別のチェックボックスを置く */
+/* 承認待ちの定期仕訳タブ(計画Issue #164): 行の左に、詳細の選択とは別のチェックボックスを置く */
 .journal-result-list__item--checkable {
   display: flex;
   align-items: flex-start;

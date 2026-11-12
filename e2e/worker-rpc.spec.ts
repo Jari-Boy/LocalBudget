@@ -79,9 +79,10 @@ test.describe('Web Worker + RPC層', () => {
       const project = await client.project.create({ name: '旅行' })
       const recurringRule = await client.recurringTransactionRule.create({
         name: '家賃',
-        debitAccountId: expenseAccount.id,
-        creditAccountId: cashAccount.id,
-        amount: 50000,
+        lines: [
+          { side: 'debit', accountId: expenseAccount.id, amount: 50000 },
+          { side: 'credit', accountId: cashAccount.id, amount: 50000 },
+        ],
         frequency: 'monthly',
         dayOfMonth: 27,
       })
@@ -190,9 +191,10 @@ test.describe('Web Worker + RPC層', () => {
       try {
         await client.recurringTransactionRule.create({
           name: '不正なルール',
-          debitAccountId: expenseAccount.id,
-          creditAccountId: cashAccount.id,
-          amount: 1000,
+          lines: [
+            { side: 'debit', accountId: expenseAccount.id, amount: 1000 },
+            { side: 'credit', accountId: cashAccount.id, amount: 1000 },
+          ],
           frequency: 'weekly',
         })
       } catch (e) {

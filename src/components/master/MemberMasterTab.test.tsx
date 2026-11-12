@@ -3,7 +3,7 @@
  * MemberMasterTab(計画Issue #154)のコンポーネントテスト。
  * マスタ画面の「世帯メンバー」タブ: 名称・種類(個人/グループ)・状態の一覧、個人とグループの追加、
  * 右パネルでの名称の変更、グループの構成メンバーの追加・解除(現行の世帯メンバー管理画面から
- * 引き継ぐ)、有効/無効の切り替え、2回押しの削除と、仕訳・仕訳の起票者・科目の名義・定期取引ルールで
+ * 引き継ぐ)、有効/無効の切り替え、2回押しの削除と、仕訳・仕訳の起票者・科目の名義・定期仕訳ルールで
  * 使用中のときの削除不可の理由表示を、sql.jsのNode実装(createTestDatabase)を使って確認する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
@@ -20,6 +20,7 @@ import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHou
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../../infrastructure/db/SqlJsRecurringTransactionRuleRepository'
 import { MemberMasterTab } from './MemberMasterTab'
+import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
 let members: SqlJsHouseholdMemberRepository
@@ -164,25 +165,23 @@ describe('MemberMasterTab', () => {
     expect(panel().getByText(/仕訳の起票者1件で使用中のため削除できません/)).toBeInTheDocument()
   })
 
-  it('仕訳の明細・科目の名義・定期取引ルールで使用中の理由も表示される', async () => {
+  it('仕訳の明細・科目の名義・定期仕訳ルールで使用中の理由も表示される', async () => {
     const author = members.create({ name: '妻' })
     const husband = members.create({ name: '夫' })
     const { expense, cash } = postEntry(author.id, husband.id)
     accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true, householdMemberId: husband.id })
     new SqlJsRecurringTransactionRuleRepository(db).create({
       name: '家賃',
-      debitAccountId: expense.id,
-      creditAccountId: cash.id,
-      amount: 1000,
+      lines: twoLineRuleLines(expense.id, cash.id, 1000),
       frequency: 'monthly',
       dayOfMonth: 1,
-      householdMemberId: husband.id,
+      bookkeeperHouseholdMemberId: husband.id,
     })
     renderTab()
     await open('夫')
 
     expect(panel().getByText(/仕訳の明細1行/)).toBeInTheDocument()
     expect(panel().getByText(/科目の名義1件/)).toBeInTheDocument()
-    expect(panel().getByText(/定期取引ルール1件/)).toBeInTheDocument()
+    expect(panel().getByText(/定期仕訳ルール1件/)).toBeInTheDocument()
   })
 })

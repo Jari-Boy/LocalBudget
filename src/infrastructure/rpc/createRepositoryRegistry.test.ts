@@ -33,6 +33,7 @@ import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJour
 import type { StorageAdapter } from '../storage/StorageAdapter'
 import type { AutoSaveController } from '../storage/withAutoSave'
 import { createRepositoryRegistry, type RepositoryRegistry } from './createRepositoryRegistry'
+import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 function createStubAutoSaveController(): AutoSaveController {
   return {
@@ -130,12 +131,10 @@ describe('createRepositoryRegistry', () => {
       const memberId = registry.householdMember.create({ name: '自分' }).id
       const rule = registry.recurringTransactionRule.create({
         name: '家賃',
-        debitAccountId: expenseAccountId,
-        creditAccountId: liabilityAccountId,
-        amount: 80000,
+        lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
         frequency: 'monthly',
         dayOfMonth: 1,
-        householdMemberId: memberId,
+        bookkeeperHouseholdMemberId: memberId,
         startsOn: '2026-01-01',
       })
       db.run(

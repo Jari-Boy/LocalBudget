@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * RuleMasterTab(計画Issue #154)のコンポーネントテスト。
- * マスタ画面の「定期取引」タブ: 名称・繰り返し・金額・次回・状態の一覧(科目は出さない)、右パネルでの
+ * マスタ画面の「定期仕訳」タブ: 名称・繰り返し・金額・次回・状態の一覧(科目は出さない)、右パネルでの
  * ルールの作成と編集(科目などは選択ツリーで選ぶ、繰り返しに応じて入力欄が切り替わる)、
  * 無効化、2回押しの削除と、生成済みの仕訳があるルールの削除不可の理由表示を、sql.jsの
  * Node実装(createTestDatabase)を使って確認する。計画Issue #164で追加した、開始日・終了日・間隔・
@@ -30,6 +30,7 @@ import { SqlJsProjectGroupRepository } from '../../infrastructure/db/SqlJsProjec
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../../infrastructure/db/SqlJsRecurringTransactionRuleRepository'
 import { RuleMasterTab } from './RuleMasterTab'
+import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
 let rules: SqlJsRecurringTransactionRuleRepository
@@ -61,6 +62,7 @@ function renderTab(ruleRepository: ComponentProps<typeof RuleMasterTab>['recurri
         projectRepository={new SqlJsProjectRepository(db)}
         projectGroupRepository={new SqlJsProjectGroupRepository(db)}
         householdMemberRepository={new SqlJsHouseholdMemberRepository(db)}
+        journalEntryRepository={new SqlJsJournalEntryRepository(db)}
         today="2026-11-07"
       />
     </I18nextProvider>,
@@ -70,9 +72,7 @@ function renderTab(ruleRepository: ComponentProps<typeof RuleMasterTab>['recurri
 function makeRule(overrides: Partial<Parameters<typeof rules.create>[0]> = {}) {
   return rules.create({
     name: '家賃',
-    debitAccountId: expenseId,
-    creditAccountId: cashId,
-    amount: 98000,
+    lines: twoLineRuleLines(expenseId, cashId, 98000),
     frequency: 'monthly',
     dayOfMonth: 27,
     startsOn: '2026-01-01',
@@ -82,6 +82,17 @@ function makeRule(overrides: Partial<Parameters<typeof rules.create>[0]> = {}) {
 
 const panel = (name: string) => within(screen.getByRole('region', { name }))
 const open = async (name: string) => fireEvent.click(await screen.findByRole('button', { name }))
+
+/** 借方・貸方の列(行編集の共通部品) */
+const column = (form: ReturnType<typeof within>, side: '借方' | '貸方') => within(form.getByRole('group', { name: side }))
+
+/** 借方1行・貸方1行の科目と金額(同額)を入れる */
+function fillLines(form: ReturnType<typeof within>, debit: string, credit: string, amount: string) {
+  pick(column(form, '借方'), '科目', debit)
+  pick(column(form, '貸方'), '科目', credit)
+  fireEvent.change(column(form, '借方').getByLabelText(`${debit}の金額`), { target: { value: amount } })
+  fireEvent.change(column(form, '貸方').getByLabelText(`${credit}の金額`), { target: { value: amount } })
+}
 
 /** 選択ツリーを開いて項目を選ぶ */
 function pick(scope: ReturnType<typeof within>, label: string, item: string) {
@@ -114,25 +125,21 @@ describe('RuleMasterTab', () => {
     expect(within(row).getByText('-')).toBeInTheDocument()
   })
 
-  it('「定期取引を追加」で作成フォームが開き、必須項目を入れて登録するとルールが作られる', async () => {
+  it('「定期仕訳を追加」で作成フォームが開き、必須項目を入れて登録するとルールが作られる', async () => {
     renderTab()
-    fireEvent.click(await screen.findByRole('button', { name: '定期取引を追加' }))
-    const form = panel('定期取引の追加')
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
     expect(form.getByRole('button', { name: '登録' })).toBeDisabled()
 
     fireEvent.change(form.getByLabelText('名称'), { target: { value: '家賃' } })
-    pick(form, '借方の科目', '家賃')
-    pick(form, '貸方の科目', '楽天銀行')
-    fireEvent.change(form.getByLabelText('金額'), { target: { value: '98000' } })
+    fillLines(form, '家賃', '楽天銀行', '98000')
     fireEvent.change(form.getByLabelText('日'), { target: { value: '27' } })
     fireEvent.click(form.getByRole('button', { name: '登録' }))
 
     await waitFor(() => expect(rules.findAll()).toHaveLength(1))
     expect(rules.findAll()[0]).toMatchObject({
       name: '家賃',
-      debitAccountId: expenseId,
-      creditAccountId: cashId,
-      amount: 98000,
+      lines: twoLineRuleLines(expenseId, cashId, 98000),
       frequency: 'monthly',
       dayOfMonth: 27,
     })
@@ -140,8 +147,8 @@ describe('RuleMasterTab', () => {
 
   it('繰り返しを毎週にすると曜日の欄が出て、日の欄が消える', async () => {
     renderTab()
-    fireEvent.click(await screen.findByRole('button', { name: '定期取引を追加' }))
-    const form = panel('定期取引の追加')
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
     expect(form.getByLabelText('日')).toBeInTheDocument()
 
     fireEvent.change(form.getByLabelText('繰り返し'), { target: { value: 'weekly' } })
@@ -152,8 +159,8 @@ describe('RuleMasterTab', () => {
 
   it('毎月で指定方法を「第N曜日」にすると、週と曜日の欄が出る', async () => {
     renderTab()
-    fireEvent.click(await screen.findByRole('button', { name: '定期取引を追加' }))
-    const form = panel('定期取引の追加')
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
 
     fireEvent.change(form.getByLabelText('指定方法'), { target: { value: 'weekday' } })
 
@@ -164,11 +171,11 @@ describe('RuleMasterTab', () => {
 
   it('借方か貸方に費用・収益の科目を選んだときだけ、取引先の欄が出る', async () => {
     renderTab()
-    fireEvent.click(await screen.findByRole('button', { name: '定期取引を追加' }))
-    const form = panel('定期取引の追加')
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
     expect(form.queryByRole('button', { name: /^取引先/ })).not.toBeInTheDocument()
 
-    pick(form, '借方の科目', '家賃')
+    pick(column(form, '借方'), '科目', '家賃')
 
     expect(form.getByRole('button', { name: /^取引先/ })).toBeInTheDocument()
   })
@@ -178,12 +185,13 @@ describe('RuleMasterTab', () => {
     renderTab()
     await open('家賃')
 
-    const editor = panel('定期取引の編集')
-    expect(editor.getByLabelText('金額')).toHaveValue('98000')
-    fireEvent.change(editor.getByLabelText('金額'), { target: { value: '100000' } })
+    const editor = panel('定期仕訳の編集')
+    expect(column(editor, '借方').getByLabelText('家賃の金額')).toHaveValue('98000')
+    fireEvent.change(column(editor, '借方').getByLabelText('家賃の金額'), { target: { value: '100000' } })
+    fireEvent.change(column(editor, '貸方').getByLabelText('楽天銀行の金額'), { target: { value: '100000' } })
     fireEvent.click(editor.getByRole('button', { name: '保存' }))
 
-    await waitFor(() => expect(rules.findById(rule.id)!.amount).toBe(100000))
+    await waitFor(() => expect(rules.findById(rule.id)!.lines.map((l) => l.amount)).toEqual([100000, 100000]))
   })
 
   it('回数の上限と世帯メンバーを設定して保存できる', async () => {
@@ -191,13 +199,13 @@ describe('RuleMasterTab', () => {
     renderTab()
     await open('家賃')
 
-    const editor = panel('定期取引の編集')
+    const editor = panel('定期仕訳の編集')
     fireEvent.change(editor.getByLabelText('回数の上限'), { target: { value: '12' } })
     fireEvent.change(editor.getByLabelText('起票者'), { target: { value: String(memberId) } })
     fireEvent.click(editor.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(rules.findById(rule.id)!.maxOccurrences).toBe(12))
-    expect(rules.findById(rule.id)!.householdMemberId).toBe(memberId)
+    expect(rules.findById(rule.id)!.bookkeeperHouseholdMemberId).toBe(memberId)
   })
 
   it('「無効にする」と、ルールが無効になり、ボタンが「有効にする」に変わる', async () => {
@@ -205,13 +213,13 @@ describe('RuleMasterTab', () => {
     renderTab()
     await open('家賃')
 
-    fireEvent.click(panel('定期取引の編集').getByRole('button', { name: '無効にする' }))
+    fireEvent.click(panel('定期仕訳の編集').getByRole('button', { name: '無効にする' }))
 
     await waitFor(() => expect(rules.findById(rule.id)!.isActive).toBe(false))
     await waitFor(() =>
-      expect(panel('定期取引の編集').queryByRole('button', { name: '無効にする' })).not.toBeInTheDocument(),
+      expect(panel('定期仕訳の編集').queryByRole('button', { name: '無効にする' })).not.toBeInTheDocument(),
     )
-    expect(panel('定期取引の編集').getByRole('button', { name: '有効にする' })).toBeInTheDocument()
+    expect(panel('定期仕訳の編集').getByRole('button', { name: '有効にする' })).toBeInTheDocument()
   })
 
   it('生成済みの仕訳がないルールは、「削除」を2回押すと削除される', async () => {
@@ -219,9 +227,9 @@ describe('RuleMasterTab', () => {
     renderTab()
     await open('家賃')
 
-    fireEvent.click(panel('定期取引の編集').getByRole('button', { name: '削除' }))
+    fireEvent.click(panel('定期仕訳の編集').getByRole('button', { name: '削除' }))
     expect(rules.findById(rule.id)).not.toBeNull()
-    fireEvent.click(panel('定期取引の編集').getByRole('button', { name: '本当に削除する' }))
+    fireEvent.click(panel('定期仕訳の編集').getByRole('button', { name: '本当に削除する' }))
 
     await waitFor(() => expect(rules.findById(rule.id)).toBeNull())
   })
@@ -241,7 +249,7 @@ describe('RuleMasterTab', () => {
     renderTab()
     await open('家賃')
 
-    const editor = panel('定期取引の編集')
+    const editor = panel('定期仕訳の編集')
 
     expect(editor.getByRole('button', { name: '削除' })).toBeDisabled()
     expect(editor.getByText(/生成済みの仕訳1件で使用中のため削除できません/)).toBeInTheDocument()
@@ -310,8 +318,8 @@ describe('一覧の表示(計画Issue #164)', () => {
 describe('スケジュールの入力(計画Issue #164)', () => {
   async function openCreateForm() {
     renderTab()
-    fireEvent.click(await screen.findByRole('button', { name: '定期取引を追加' }))
-    return panel('定期取引の追加')
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    return panel('定期仕訳の追加')
   }
 
   it('開始日の既定は今日で、終了日は空、間隔は1、土日の調整は「調整しない」、金額の初期値は固定になる', async () => {
@@ -328,9 +336,7 @@ describe('スケジュールの入力(計画Issue #164)', () => {
     const form = await openCreateForm()
 
     fireEvent.change(form.getByLabelText('名称'), { target: { value: '電気代' } })
-    pick(form, '借方の科目', '家賃')
-    pick(form, '貸方の科目', '楽天銀行')
-    fireEvent.change(form.getByLabelText('金額'), { target: { value: '8000' } })
+    fillLines(form, '家賃', '楽天銀行', '8000')
     fireEvent.change(form.getByLabelText('日'), { target: { value: '10' } })
     fireEvent.change(form.getByLabelText('開始日'), { target: { value: '2026-01-15' } })
     fireEvent.change(form.getByLabelText('終了日(任意)'), { target: { value: '2027-12-31' } })
@@ -363,9 +369,7 @@ describe('スケジュールの入力(計画Issue #164)', () => {
   it('終了日が開始日より前だと、登録できない', async () => {
     const form = await openCreateForm()
     fireEvent.change(form.getByLabelText('名称'), { target: { value: '家賃' } })
-    pick(form, '借方の科目', '家賃')
-    pick(form, '貸方の科目', '楽天銀行')
-    fireEvent.change(form.getByLabelText('金額'), { target: { value: '98000' } })
+    fillLines(form, '家賃', '楽天銀行', '98000')
     fireEvent.change(form.getByLabelText('日'), { target: { value: '27' } })
     expect(form.getByRole('button', { name: '登録' })).toBeEnabled()
 
@@ -395,38 +399,123 @@ describe('スケジュールの入力(計画Issue #164)', () => {
 })
 
 describe('パネルの見た目(計画Issue #164、仕訳エディタと同じ借方・貸方の2列)', () => {
-  it('借方・貸方の2列があり、ルールの表で持てない項目(貸方の金額・行の追加・削除など)は無効で表示される', async () => {
-    renderTab()
-    fireEvent.click(await screen.findByRole('button', { name: '定期取引を追加' }))
-    const form = panel('定期取引の追加')
-
-    const debit = within(form.getByRole('group', { name: '借方' }))
-    const credit = within(form.getByRole('group', { name: '貸方' }))
-
-    expect(debit.getByLabelText('金額')).toBeEnabled()
-    expect(credit.getByLabelText('貸方の金額')).toBeDisabled()
-    expect(debit.getByRole('button', { name: '+ 借方の行を追加' })).toBeDisabled()
-    expect(credit.getByRole('button', { name: '+ 貸方の行を追加' })).toBeDisabled()
-    expect(debit.getByRole('button', { name: '行を削除' })).toBeDisabled()
-    expect(credit.getByLabelText('貸方のプロジェクト(借方と同じ)')).toBeDisabled()
-    expect(form.getByRole('status')).toHaveTextContent('貸借一致')
-  })
-
-  it('貸方の金額は借方の金額と同じ値で表示される', async () => {
+  it('借方・貸方の2列があり、貸借が一致していれば「貸借一致」を出す(仕訳の起票と同じ行編集の共通部品)', async () => {
     makeRule()
     renderTab()
     await open('家賃')
+    const form = panel('定期仕訳の編集')
 
-    const credit = within(panel('定期取引の編集').getByRole('group', { name: '貸方' }))
-
-    expect(credit.getByLabelText('貸方の金額')).toHaveValue('98000')
+    expect(within(form.getByRole('group', { name: '借方' })).getByLabelText('家賃の金額')).toBeEnabled()
+    expect(within(form.getByRole('group', { name: '貸方' })).getByLabelText('楽天銀行の金額')).toBeEnabled()
+    expect(form.getByRole('status')).toHaveTextContent('貸借一致')
   })
 
-  it('精算バッチの入力は出ない(計画Issue #180で対応)', async () => {
+  it('3行以上の複合仕訳を作成して保存できる(行の追加。貸借が一致するまで保存できない)', async () => {
     renderTab()
-    fireEvent.click(await screen.findByRole('button', { name: '定期取引を追加' }))
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
+    fireEvent.change(form.getByLabelText('名称'), { target: { value: '給与' } })
+    fireEvent.change(form.getByLabelText('日'), { target: { value: '25' } })
+    fillLines(form, '家賃', '楽天銀行', '300000')
+    fireEvent.click(column(form, '借方').getByRole('button', { name: '+ 借方の行を追加' }))
+    expect(form.getByRole('button', { name: '登録' })).toBeDisabled()
 
-    expect(panel('定期取引の追加').queryByLabelText('精算バッチ')).not.toBeInTheDocument()
+    fireEvent.click(column(form, '借方').getAllByRole('button', { name: /^科目/ })[1])
+    fireEvent.click(within(screen.getByRole('dialog', { name: '科目' })).getByRole('button', { name: '楽天銀行' }))
+    fireEvent.change(column(form, '借方').getAllByLabelText(/金額/)[1], { target: { value: '60000' } })
+    expect(form.getByRole('status')).toHaveTextContent('差額')
+    fireEvent.change(column(form, '貸方').getByLabelText('楽天銀行の金額'), { target: { value: '360000' } })
+    expect(form.getByRole('status')).toHaveTextContent('貸借一致')
+    fireEvent.click(form.getByRole('button', { name: '登録' }))
+
+    await waitFor(() => expect(rules.findAll()).toHaveLength(1))
+    expect(rules.findAll()[0].lines.map((l) => [l.side, l.amount])).toEqual([
+      ['debit', 300000],
+      ['credit', 360000],
+      ['debit', 60000],
+    ])
+  })
+
+  it('行の世帯メンバーは「起票者と同じ」が既定で、行ごとに選べる(起票者とは別に保存される)', async () => {
+    makeRule()
+    renderTab()
+    await open('家賃')
+    const form = panel('定期仕訳の編集')
+
+    const memberSelect = column(form, '借方').getByLabelText('世帯メンバー')
+    expect(memberSelect).toHaveValue('')
+    fireEvent.change(memberSelect, { target: { value: String(memberId) } })
+    fireEvent.click(form.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(rules.findAll()[0].lines[0].householdMemberId).toBe(memberId))
+    expect(rules.findAll()[0].bookkeeperHouseholdMemberId).toBeNull()
+  })
+
+  it('行のプロジェクトを、選択ツリーの「+ 新規追加」からその場で作って選べる(計画Issue #180)', async () => {
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
+
+    fireEvent.click(column(form, '借方').getByRole('button', { name: /^プロジェクト/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクト' })).getByRole('button', { name: /新規追加/ }))
+    const dialog = within(screen.getByRole('dialog', { name: 'プロジェクトを追加' }))
+    fireEvent.change(dialog.getByLabelText('プロジェクト名'), { target: { value: '沖縄旅行' } })
+    fireEvent.click(dialog.getByRole('button', { name: '追加' }))
+
+    await waitFor(() => expect(new SqlJsProjectRepository(db).findAll().map((p) => p.name)).toContain('沖縄旅行'))
+    expect(await column(form, '借方').findByRole('button', { name: /^プロジェクト.*沖縄旅行/ })).toBeInTheDocument()
+  })
+
+  it('費用・収益の行の取引先を、選択ツリーの「+ 新規追加」からその場で作って選べる(計画Issue #180)', async () => {
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
+    pick(column(form, '借方'), '科目', '家賃')
+
+    fireEvent.click(column(form, '借方').getByRole('button', { name: /^取引先/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '取引先' })).getByRole('button', { name: /新規追加/ }))
+    const dialog = within(screen.getByRole('dialog', { name: '取引先を追加' }))
+    fireEvent.change(dialog.getByLabelText('取引先名'), { target: { value: '不動産会社' } })
+    fireEvent.click(dialog.getByRole('button', { name: '追加' }))
+
+    await waitFor(() => expect(new SqlJsCounterpartyRepository(db).findAll().map((c) => c.name)).toContain('不動産会社'))
+    expect(await column(form, '借方').findByRole('button', { name: /^取引先.*不動産会社/ })).toBeInTheDocument()
+  })
+
+  it('行の科目を、選択ツリーの「+ 新規追加」からその場で登録して選べる(計画Issue #180)', async () => {
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
+
+    fireEvent.click(column(form, '借方').getByRole('button', { name: /^科目/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '科目' })).getByRole('button', { name: /新規追加/ }))
+    const dialog = within(screen.getByRole('dialog', { name: '科目を登録' }))
+    fireEvent.change(dialog.getByLabelText('区分'), { target: { value: 'expense' } })
+    fireEvent.change(dialog.getByLabelText('名称'), { target: { value: '光熱費' } })
+    fireEvent.click(dialog.getByRole('button', { name: '登録' }))
+
+    await waitFor(() => expect(new SqlJsAccountRepository(db).findAll().some((a) => a.name === '光熱費')).toBe(true))
+    expect(await column(form, '借方').findByLabelText('光熱費の金額')).toBeInTheDocument()
+  })
+
+  it('金額の初期値を「回ごとの金額表」にすると、金額表の編集欄と生成補助が出る', async () => {
+    makeRule()
+    renderTab()
+    await open('家賃')
+    const form = panel('定期仕訳の編集')
+    expect(form.queryByRole('table', { name: '回ごとの金額表' })).not.toBeInTheDocument()
+
+    fireEvent.click(form.getByRole('radio', { name: '回ごとの金額表' }))
+
+    expect(form.getByRole('region', { name: '回ごとの金額表の編集' })).toBeInTheDocument()
+    expect(form.getByRole('button', { name: '表を作成' })).toBeInTheDocument()
+  })
+
+  it('科目を選ぶ前は、精算バッチの入力は出ない(立替金・未払金の行にだけ出る)', async () => {
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+
+    expect(panel('定期仕訳の追加').queryByLabelText('精算バッチ')).not.toBeInTheDocument()
   })
 })
 
@@ -436,7 +525,7 @@ describe('再有効化(計画Issue #164)', () => {
     renderTab()
     await open('家賃')
 
-    const editor = panel('定期取引の編集')
+    const editor = panel('定期仕訳の編集')
 
     expect(editor.getByRole('button', { name: '有効にする' })).toBeInTheDocument()
     expect(editor.queryByRole('button', { name: '無効にする' })).not.toBeInTheDocument()
@@ -449,14 +538,14 @@ describe('再有効化(計画Issue #164)', () => {
     renderTab()
     await open('家賃')
 
-    fireEvent.click(panel('定期取引の編集').getByRole('button', { name: '有効にする' }))
+    fireEvent.click(panel('定期仕訳の編集').getByRole('button', { name: '有効にする' }))
     const resume = within(screen.getByRole('group', { name: '再開日の選択' }))
     expect(resume.getByLabelText('再開日')).toHaveValue('2026-11-07')
     fireEvent.click(resume.getByRole('button', { name: 'この日から再開' }))
 
     await waitFor(() => expect(rules.findById(rule.id)).toMatchObject({ isActive: true, resumedOn: '2026-11-07' }))
     await waitFor(() =>
-      expect(panel('定期取引の編集').getByRole('button', { name: '無効にする' })).toBeInTheDocument(),
+      expect(panel('定期仕訳の編集').getByRole('button', { name: '無効にする' })).toBeInTheDocument(),
     )
     expect(screen.queryByRole('group', { name: '再開日の選択' })).not.toBeInTheDocument()
   })
@@ -467,7 +556,7 @@ describe('再有効化(計画Issue #164)', () => {
     renderTab()
     await open('家賃')
 
-    fireEvent.click(panel('定期取引の編集').getByRole('button', { name: '有効にする' }))
+    fireEvent.click(panel('定期仕訳の編集').getByRole('button', { name: '有効にする' }))
     const resume = within(screen.getByRole('group', { name: '再開日の選択' }))
     fireEvent.change(resume.getByLabelText('再開日'), { target: { value: '2026-09-01' } })
     fireEvent.click(resume.getByRole('button', { name: 'この日から再開' }))
@@ -481,7 +570,7 @@ describe('再有効化(計画Issue #164)', () => {
     renderTab()
     await open('家賃')
 
-    fireEvent.click(panel('定期取引の編集').getByRole('button', { name: '有効にする' }))
+    fireEvent.click(panel('定期仕訳の編集').getByRole('button', { name: '有効にする' }))
     fireEvent.click(within(screen.getByRole('group', { name: '再開日の選択' })).getByRole('button', { name: 'やめる' }))
 
     expect(screen.queryByRole('group', { name: '再開日の選択' })).not.toBeInTheDocument()
@@ -493,7 +582,7 @@ describe('再有効化(計画Issue #164)', () => {
     renderTab()
     await open('家賃')
 
-    const editor = panel('定期取引の編集')
+    const editor = panel('定期仕訳の編集')
 
     expect(editor.getByRole('button', { name: '無効にする' })).toBeInTheDocument()
     expect(editor.queryByRole('button', { name: '有効にする' })).not.toBeInTheDocument()
@@ -504,7 +593,7 @@ describe('再有効化(計画Issue #164)', () => {
     renderTab()
     await open('家賃')
 
-    const editor = panel('定期取引の編集')
+    const editor = panel('定期仕訳の編集')
 
     expect(editor.queryByRole('button', { name: '有効にする' })).not.toBeInTheDocument()
     expect(editor.getByText('状態: 終了')).toBeInTheDocument()
@@ -519,7 +608,7 @@ describe('再有効化(計画Issue #164)', () => {
     renderTab()
     await open('家賃')
 
-    const editor = panel('定期取引の編集')
+    const editor = panel('定期仕訳の編集')
 
     expect(editor.queryByRole('button', { name: '有効にする' })).not.toBeInTheDocument()
     expect(editor.getByText(/回数の上限\(1回\)に達したため、提案は出ません/)).toBeInTheDocument()
@@ -530,13 +619,13 @@ describe('再有効化(計画Issue #164)', () => {
     renderTab()
     await open('家賃')
 
-    fireEvent.change(panel('定期取引の編集').getByLabelText('終了日(任意)'), { target: { value: '2027-03-31' } })
-    fireEvent.click(panel('定期取引の編集').getByRole('button', { name: '保存' }))
+    fireEvent.change(panel('定期仕訳の編集').getByLabelText('終了日(任意)'), { target: { value: '2027-03-31' } })
+    fireEvent.click(panel('定期仕訳の編集').getByRole('button', { name: '保存' }))
 
     await waitFor(() =>
-      expect(panel('定期取引の編集').getByRole('button', { name: '有効にする' })).toBeInTheDocument(),
+      expect(panel('定期仕訳の編集').getByRole('button', { name: '有効にする' })).toBeInTheDocument(),
     )
-    expect(panel('定期取引の編集').getByText('状態: 無効')).toBeInTheDocument()
+    expect(panel('定期仕訳の編集').getByText('状態: 無効')).toBeInTheDocument()
   })
 })
 
@@ -570,12 +659,10 @@ describe('操作に失敗したときのエラー表示(計画Issue #164)', () =
   })
 
   async function submitCreate() {
-    fireEvent.click(await screen.findByRole('button', { name: '定期取引を追加' }))
-    const form = panel('定期取引の追加')
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
     fireEvent.change(form.getByLabelText('名称'), { target: { value: '家賃' } })
-    pick(form, '借方の科目', '家賃')
-    pick(form, '貸方の科目', '楽天銀行')
-    fireEvent.change(form.getByLabelText('金額', { exact: true }), { target: { value: '98000' } })
+    fillLines(form, '家賃', '楽天銀行', '98000')
     fireEvent.change(form.getByLabelText('日', { exact: true }), { target: { value: '27' } })
     fireEvent.click(form.getByRole('button', { name: '登録' }))
     return form
@@ -608,7 +695,7 @@ describe('操作に失敗したときのエラー表示(計画Issue #164)', () =
     await form.findByRole('alert')
 
     fireEvent.click(form.getByRole('button', { name: 'キャンセル' }))
-    fireEvent.click(await screen.findByRole('button', { name: '定期取引を追加' }))
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })

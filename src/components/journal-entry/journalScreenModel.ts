@@ -10,7 +10,7 @@ import { calculateJournalLineTotals } from './journalLineTotals'
 /**
  * 仕訳画面(計画Issue #152)の表示ロジックを集めた純粋関数。DB・DOM非依存。
  * 貸借の合計と保存できない理由、割勘できない理由、削除の影響、削除後に選ぶ行、
- * 定期取引の提案の並びと処理順の制限、科目で絞り込んだときの一覧の行を扱う。
+ * 定期仕訳の提案の並びと処理順の制限、科目で絞り込んだときの一覧の行を扱う。
  */
 
 export interface BalanceSummary {
@@ -89,7 +89,7 @@ export function buildDeleteImpactNotes(input: {
     notes.push('取り込み済みの記録も消えます。同じCSVを取り込むと、もう一度取り込まれます。')
   }
   if (input.sourceType === 'recurring_generated') {
-    notes.push('定期取引の提案として、再び表示されることがあります。')
+    notes.push('定期仕訳の提案として、再び表示されることがあります。')
   }
   if (input.sourceType === 'expense_splitting') {
     notes.push('この割勘が取り消され、元の仕訳はまた割勘できるようになります。')

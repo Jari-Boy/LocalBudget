@@ -297,7 +297,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   async function buildSession(account: Account, fileName: string, match: MappingDefinitionCandidateMatch) {
     const existingRefs = await Promise.resolve(externalTransactionRefRepository.findByAccount(account.id))
-    // 手入力・定期取引生成など突合マスタを持たない仕訳も確定版候補に含める(計画Issue #145)
+    // 手入力・定期仕訳生成など突合マスタを持たない仕訳も確定版候補に含める(計画Issue #145)
     const all = await Promise.resolve(journalEntryRepository.findAll())
     const existingTransactions = [
       ...existingRefs.map((ref) => ({

@@ -1,6 +1,6 @@
 /**
- * 定期取引の提案の確認(計画Issue #39、計画Issue #152で仕訳画面の「定期の確認」タブに統合)のE2Eテスト。
- * 実ブラウザ(Chromium)でサイドナビの「仕訳」から「定期の確認」タブへ移り、
+ * 定期仕訳の提案の確認(計画Issue #39、計画Issue #152で仕訳画面の「承認待ちの定期仕訳」タブに統合)のE2Eテスト。
+ * 実ブラウザ(Chromium)でサイドナビの「仕訳」から「承認待ちの定期仕訳」タブへ移り、
  * #121が提供するlistPending/confirm/skip RPCを経由した
  * 保留中の提案一覧表示、「そのルールについて最も古い対象日のみ確認操作ができる」制約
  * (docs/domain/recurring-transactions.md 1.2節、confirmは昇順のみ許可)、レビュー時の
@@ -40,13 +40,13 @@ async function openProposalReviewScreen(page: Page) {
   const journalLink = page.getByRole('link', { name: /^仕訳 \d+$/ })
   await expect(journalLink).toBeVisible({ timeout: 10000 })
   await journalLink.click()
-  await page.getByRole('tab', { name: /^定期の確認/ }).click()
+  await page.getByRole('tab', { name: /^承認待ち/ }).click()
 }
 
 const detailPanel = (page: Page) => page.getByRole('region', { name: '仕訳の詳細' })
 const proposalRows = (page: Page) => page.locator('.journal-result-list__row')
 
-test.describe('定期取引の確認(仕訳画面のタブ)', () => {
+test.describe('承認待ちの定期仕訳(仕訳画面のタブ)', () => {
   test('保留中の提案が表示され、確認すると仕訳が生成されて一覧から消える', async ({ page }) => {
     await page.goto('/')
     const dayOfWeek = new Date().getUTCDay()
@@ -68,14 +68,15 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
         const [defaultMember] = await client.householdMember.findAll()
         const rule = await client.recurringTransactionRule.create({
           name: 'サブスクA',
-          debitAccountId: expenseAccount.id,
-          creditAccountId: liabilityAccount.id,
-          amount: 1000,
+          lines: [
+            { side: 'debit', accountId: expenseAccount.id, amount: 1000 },
+            { side: 'credit', accountId: liabilityAccount.id, amount: 1000 },
+          ],
           frequency: 'weekly',
           dayOfWeek,
           // 開始日を最初の生成済みの期日と同じ日にして、その次の対象日から提案させる(計画Issue #164)
           startsOn: seedEntryDate,
-          householdMemberId: defaultMember.id,
+          bookkeeperHouseholdMemberId: defaultMember.id,
         })
         await client.journalEntry.create({
           entryDate: seedEntryDate,
@@ -97,9 +98,9 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
     await openProposalReviewScreen(page)
     await expect(proposalRows(page).filter({ hasText: 'サブスクA' })).toBeVisible()
 
-    await detailPanel(page).getByRole('button', { name: '確定', exact: true }).click()
+    await detailPanel(page).getByRole('button', { name: '承認して仕訳帳に反映', exact: true }).click()
 
-    await expect(page.getByRole('tab', { name: '定期の確認 0' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: '承認待ち 0' })).toBeVisible()
   })
 
   test('同一ルールに複数の保留中対象日がある場合、最も古い対象日から順にしか確認できない', async ({ page }) => {
@@ -123,14 +124,15 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
         const [defaultMember] = await client.householdMember.findAll()
         const rule = await client.recurringTransactionRule.create({
           name: 'サブスクB',
-          debitAccountId: expenseAccount.id,
-          creditAccountId: liabilityAccount.id,
-          amount: 2000,
+          lines: [
+            { side: 'debit', accountId: expenseAccount.id, amount: 2000 },
+            { side: 'credit', accountId: liabilityAccount.id, amount: 2000 },
+          ],
           frequency: 'weekly',
           dayOfWeek,
           // 開始日を最初の生成済みの期日と同じ日にして、その次の対象日から提案させる(計画Issue #164)
           startsOn: seedEntryDate,
-          householdMemberId: defaultMember.id,
+          bookkeeperHouseholdMemberId: defaultMember.id,
         })
         await client.journalEntry.create({
           entryDate: seedEntryDate,
@@ -155,14 +157,14 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
     await expect(proposalRows(page)).toHaveCount(3)
     // 2件目以降(新しい提案)は、古い提案が残っている間は確定も見送りもできない
     await proposalRows(page).nth(1).click()
-    await expect(detailPanel(page).getByRole('button', { name: '確定', exact: true })).toBeDisabled()
+    await expect(detailPanel(page).getByRole('button', { name: '承認して仕訳帳に反映', exact: true })).toBeDisabled()
     await expect(detailPanel(page).getByRole('button', { name: '今回は見送る' })).toBeDisabled()
     await expect(detailPanel(page).getByText('先に同じルールの古い提案を確定するか見送ってください')).toBeVisible()
 
     await proposalRows(page).nth(0).click()
-    await detailPanel(page).getByRole('button', { name: '確定', exact: true }).click()
+    await detailPanel(page).getByRole('button', { name: '承認して仕訳帳に反映', exact: true }).click()
 
-    await expect(page.getByRole('tab', { name: '定期の確認 2' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: '承認待ち 2' })).toBeVisible()
   })
 
   test('ルールにhouseholdMemberIdが未設定の場合、世帯メンバーを選択するまで確認できず、金額も編集して確認できる', async ({
@@ -188,9 +190,10 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
         const [defaultMember] = await client.householdMember.findAll()
         const rule = await client.recurringTransactionRule.create({
           name: 'サブスクC',
-          debitAccountId: expenseAccount.id,
-          creditAccountId: liabilityAccount.id,
-          amount: 3000,
+          lines: [
+            { side: 'debit', accountId: expenseAccount.id, amount: 3000 },
+            { side: 'credit', accountId: liabilityAccount.id, amount: 3000 },
+          ],
           frequency: 'weekly',
           dayOfWeek,
           // 開始日を最初の生成済みの期日と同じ日にして、その次の対象日から提案させる(計画Issue #164)
@@ -216,7 +219,7 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
     await openProposalReviewScreen(page)
     await expect(proposalRows(page).filter({ hasText: 'サブスクC' })).toBeVisible()
 
-    const confirm = detailPanel(page).getByRole('button', { name: '確定', exact: true })
+    const confirm = detailPanel(page).getByRole('button', { name: '承認して仕訳帳に反映', exact: true })
     await expect(confirm).toBeDisabled()
 
     await detailPanel(page).getByLabel('通信費(提案テスト3)の金額').fill('3500')
@@ -228,7 +231,7 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
     await expect(confirm).toBeEnabled()
     await confirm.click()
 
-    await expect(page.getByRole('tab', { name: '定期の確認 0' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: '承認待ち 0' })).toBeVisible()
 
     // 生成済み仕訳の永続化はwithAutoSaveのtrailing debounce(2秒)を挟むため、新規clientから
     // 読み取って確認できるまでpollで待つ(project-management.spec.ts等と同様のパターン)。

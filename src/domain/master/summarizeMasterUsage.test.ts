@@ -1,8 +1,8 @@
 /**
  * summarizeMasterUsage / listDeletionBlocks(計画Issue #154)のテスト。
- * マスタ画面(科目・取引先・プロジェクト・世帯メンバー・定期取引)の「削除できるか」を判定する
- * 純粋関数を検証する。仕訳・予算・定期取引ルール・精算バッチ・科目の名義から、項目ごとの
- * 使用状況を集計し、Issueの削除条件の表(科目/取引先/プロジェクト/世帯メンバー/定期取引ルール)
+ * マスタ画面(科目・取引先・プロジェクト・世帯メンバー・定期仕訳)の「削除できるか」を判定する
+ * 純粋関数を検証する。仕訳・予算・定期仕訳ルール・精算バッチ・科目の名義から、項目ごとの
+ * 使用状況を集計し、Issueの削除条件の表(科目/取引先/プロジェクト/世帯メンバー/定期仕訳ルール)
  * どおりに「削除できない理由」を返すこと、初期残高の仕訳だけが紐づく口座は例外として
  * 仕訳と一緒に削除できることを確認する。DOM・sql.js非依存。
  */
@@ -48,6 +48,12 @@ function makeEntry(
   }
 }
 
+function ruleLine(
+  overrides: Partial<{ accountId: number; counterpartyId: number | null; projectId: number | null; householdMemberId: number | null }>,
+) {
+  return { accountId: 1, counterpartyId: null, projectId: null, householdMemberId: null, ...overrides }
+}
+
 const emptyInput = { entries: [], budgets: [], rules: [], settlementBatches: [], accounts: [] }
 
 describe('summarizeMasterUsage', () => {
@@ -66,15 +72,15 @@ describe('summarizeMasterUsage', () => {
     })
   })
 
-  it('科目は、仕訳の明細・予算・定期取引ルールの借方と貸方で使われた件数を数える', () => {
+  it('科目は、仕訳の明細・予算・定期仕訳ルールの行で使われた件数を数える(同じルールの複数の行は1件)', () => {
     const usage = summarizeMasterUsage({
       ...emptyInput,
       entries: [makeEntry(1, [makeLine({ accountId: 10 }), makeLine({ accountId: 11, side: 'credit' })])],
       budgets: [{ accountId: 10 }],
       rules: [
-        { debitAccountId: 10, creditAccountId: 12 },
-        { debitAccountId: 13, creditAccountId: 10 },
-      ] as never,
+        { bookkeeperHouseholdMemberId: null, lines: [ruleLine({ accountId: 10 }), ruleLine({ accountId: 12 })] },
+        { bookkeeperHouseholdMemberId: null, lines: [ruleLine({ accountId: 13 }), ruleLine({ accountId: 10 }), ruleLine({ accountId: 10 })] },
+      ],
     })
 
     const account = usage.get('account', 10)
@@ -100,11 +106,11 @@ describe('summarizeMasterUsage', () => {
     expect(account.initialBalanceEntryIds).toEqual([1])
   })
 
-  it('取引先は、仕訳の明細・定期取引ルール・精算バッチの相手で使われた件数を数える', () => {
+  it('取引先は、仕訳の明細・定期仕訳ルール・精算バッチの相手で使われた件数を数える', () => {
     const usage = summarizeMasterUsage({
       ...emptyInput,
       entries: [makeEntry(1, [makeLine({ accountId: 10, counterpartyId: 5 })])],
-      rules: [{ counterpartyId: 5 }] as never,
+      rules: [{ bookkeeperHouseholdMemberId: null, lines: [ruleLine({ counterpartyId: 5 })] }],
       settlementBatches: [{ counterpartyId: 5 }, { counterpartyId: null }],
     })
 
@@ -114,11 +120,11 @@ describe('summarizeMasterUsage', () => {
     expect(counterparty.settlementBatches).toBe(1)
   })
 
-  it('プロジェクトは、仕訳の明細と定期取引ルールで使われた件数を数える', () => {
+  it('プロジェクトは、仕訳の明細と定期仕訳ルールで使われた件数を数える', () => {
     const usage = summarizeMasterUsage({
       ...emptyInput,
       entries: [makeEntry(1, [makeLine({ accountId: 10, projectId: 7 })])],
-      rules: [{ projectId: 7 }] as never,
+      rules: [{ bookkeeperHouseholdMemberId: null, lines: [ruleLine({ projectId: 7 })] }],
     })
 
     const project = usage.get('project', 7)
@@ -126,14 +132,15 @@ describe('summarizeMasterUsage', () => {
     expect(project.recurringRules).toBe(1)
   })
 
-  it('世帯メンバーは、仕訳の明細・仕訳の起票者・科目の名義・定期取引ルールで使われた件数を数える', () => {
+  it('世帯メンバーは、仕訳の明細・仕訳の起票者・科目の名義・定期仕訳ルールで使われた件数を数える', () => {
     const usage = summarizeMasterUsage({
       ...emptyInput,
       entries: [
         makeEntry(1, [makeLine({ accountId: 10, householdMemberId: 3 })], { householdMemberId: 3 }),
       ],
       accounts: [{ householdMemberId: 3 }, { householdMemberId: null }],
-      rules: [{ householdMemberId: 3 }] as never,
+      // 起票者(ルール単位)と行の世帯メンバー(行単位)のどちらで使っていても、そのルールは1件と数える
+      rules: [{ bookkeeperHouseholdMemberId: 3, lines: [ruleLine({ householdMemberId: 3 })] }],
     })
 
     const member = usage.get('householdMember', 3)
@@ -143,7 +150,7 @@ describe('summarizeMasterUsage', () => {
     expect(member.recurringRules).toBe(1)
   })
 
-  it('定期取引ルールは、そのルールから生成された仕訳の件数を数える', () => {
+  it('定期仕訳ルールは、そのルールから生成された仕訳の件数を数える', () => {
     const usage = summarizeMasterUsage({
       ...emptyInput,
       entries: [
@@ -163,7 +170,7 @@ describe('listDeletionBlocks', () => {
     expect(listDeletionBlocks('account', unused)).toEqual([])
   })
 
-  it('科目は、仕訳・予算・定期取引ルールで使用中のとき、その理由を件数つきで返す', () => {
+  it('科目は、仕訳・予算・定期仕訳ルールで使用中のとき、その理由を件数つきで返す', () => {
     const blocks = listDeletionBlocks('account', {
       ...unused,
       journalLines: 2,
@@ -179,7 +186,7 @@ describe('listDeletionBlocks', () => {
     ])
   })
 
-  it('取引先は、仕訳・定期取引ルール・精算バッチの相手で使用中のとき、その理由を返す', () => {
+  it('取引先は、仕訳・定期仕訳ルール・精算バッチの相手で使用中のとき、その理由を返す', () => {
     const blocks = listDeletionBlocks('counterparty', {
       ...unused,
       journalLines: 1,
@@ -191,7 +198,7 @@ describe('listDeletionBlocks', () => {
     expect(blocks.map((b) => b.source)).toEqual(['journalLines', 'recurringRules', 'settlementBatches'])
   })
 
-  it('プロジェクトは、仕訳・定期取引ルールで使用中のときだけ理由を返す', () => {
+  it('プロジェクトは、仕訳・定期仕訳ルールで使用中のときだけ理由を返す', () => {
     const blocks = listDeletionBlocks('project', {
       ...unused,
       journalLines: 1,
@@ -202,7 +209,7 @@ describe('listDeletionBlocks', () => {
     expect(blocks.map((b) => b.source)).toEqual(['journalLines', 'recurringRules'])
   })
 
-  it('世帯メンバーは、仕訳・仕訳の起票者・科目の名義・定期取引ルールで使用中の理由を返す', () => {
+  it('世帯メンバーは、仕訳・仕訳の起票者・科目の名義・定期仕訳ルールで使用中の理由を返す', () => {
     const blocks = listDeletionBlocks('householdMember', {
       ...unused,
       journalLines: 1,
@@ -219,7 +226,7 @@ describe('listDeletionBlocks', () => {
     ])
   })
 
-  it('定期取引ルールは、生成済みの仕訳があるときだけ理由を返す', () => {
+  it('定期仕訳ルールは、生成済みの仕訳があるときだけ理由を返す', () => {
     expect(listDeletionBlocks('recurringRule', { ...unused, generatedEntries: 0 })).toEqual([])
     expect(listDeletionBlocks('recurringRule', { ...unused, generatedEntries: 3 })).toEqual([
       { source: 'generatedEntries', count: 3 },

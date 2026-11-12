@@ -1,9 +1,9 @@
 /**
  * collectUnreferencedTransactions のユニットテスト(計画Issue #145)。
- * 手入力・定期取引生成など、外部明細の突合マスタ(external_transaction_refs)を持たない仕訳を、
+ * 手入力・定期仕訳生成など、外部明細の突合マスタ(external_transaction_refs)を持たない仕訳を、
  * 確定版候補(docs/domain/statement-import.md 1.6)の探索対象(ExistingTransactionSummary)へ
  * 変換する純粋関数を検証する。符号はImportedRecord.amountと同じ(正 = 対象科目の残高が増える方向)。
- * 候補にするのは手入力(manual)と定期取引生成(recurring_generated)に限り、初期残高・残高調整・
+ * 候補にするのは手入力(manual)と定期仕訳生成(recurring_generated)に限り、初期残高・残高調整・
  * 割勘・外部明細取込の仕訳は含めないことも検証する。DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'

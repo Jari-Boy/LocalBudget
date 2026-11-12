@@ -1,8 +1,9 @@
 /**
  * サイドナビの5領域と、領域内のタブ(旧ハブ画面の入口)の定義(計画Issue #150)。
  * 各領域は「入口のパス」と、その領域に属するパスの接頭辞(prefixes)を持つ。
- * 定期取引のルールはマスタ領域のタブ(/master/recurring)に置き、提案の確認は仕訳画面内のタブに置く
- * (計画Issue #154で、ルールの画面を旧/journal/recurring/rulesからマスタ配下へ移した)。
+ * 定期仕訳のルールの管理と、提案の承認は、どちらも仕訳画面内のタブに置く(計画Issue #180。計画Issue #154で
+ * 一度マスタ配下の/master/recurringへ移したが、仕訳から定期仕訳を作る流れや承認待ちと同じ画面のほうが
+ * 自然なため、仕訳画面の「定期仕訳」タブに移した)。
  * 設定(計画Issue #173)は日々の記帳の領域ではないため、区切り線の後ろ(サイドナビの一番下)に置く。
  */
 export type AreaKey = 'journal' | 'master' | 'import' | 'split' | 'analysis' | 'settings'
@@ -24,7 +25,7 @@ export interface Area {
 
 /** サイドナビの並び順は、仕訳・マスタ・明細取込・割勘・精算・分析、区切って設定。 */
 export const AREAS: Area[] = [
-  // 仕訳領域の「仕訳一覧」「下書き」「定期の確認」は、画面内のタブにした(計画Issue #152)
+  // 仕訳領域の「仕訳一覧」「下書き」「承認待ち」「定期仕訳」は、画面内のタブにした(計画Issue #152・#180)
   { key: 'journal', to: '/journal/entries', prefixes: ['/journal/entries'], tabs: [] },
   {
     key: 'master',
@@ -35,7 +36,6 @@ export const AREAS: Area[] = [
       { labelKey: 'counterparties', to: '/master/counterparties' },
       { labelKey: 'householdMembers', to: '/master/household-members' },
       { labelKey: 'projects', to: '/master/projects' },
-      { labelKey: 'recurringRules', to: '/master/recurring' },
       { labelKey: 'mappings', to: '/master/mappings' },
     ],
   },

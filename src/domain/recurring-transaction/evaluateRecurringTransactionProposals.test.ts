@@ -1,5 +1,5 @@
 /**
- * evaluateRecurringTransactionProposals(定期取引ルールの提案評価)の純粋関数としての
+ * evaluateRecurringTransactionProposals(定期仕訳ルールの提案評価)の純粋関数としての
  * ユニットテスト。docs/domain/recurring-transactions.md 1.2節「前回チェック日から現在までの
  * 間で発生すべき対象日をまとめて遅延評価し、提案を生成する」を、専用のチェックポイントを
  * 永続化せず「このルールから生成済みの最新entry_date」を起点として使う設計(1.6節の
@@ -21,17 +21,17 @@ function makeRule(overrides: Partial<RecurringTransactionRule>): RecurringTransa
   return {
     id: 1,
     name: 'テストルール',
-    debitAccountId: 1,
-    creditAccountId: 2,
-    amount: 1000,
+    bookkeeperHouseholdMemberId: null,
+    lines: [
+      { lineNo: 1, side: 'debit', accountId: 1, amount: 1000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+      { lineNo: 2, side: 'credit', accountId: 2, amount: 1000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+    ],
+    schedule: [],
     frequency: 'monthly',
     dayOfWeek: null,
     dayOfMonth: 1,
     weekOfMonth: null,
     monthOfYear: null,
-    projectId: null,
-    householdMemberId: null,
-    counterpartyId: null,
     maxOccurrences: null,
     startsOn: '2026-06-01',
     endsOn: null,

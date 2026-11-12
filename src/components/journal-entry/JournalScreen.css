@@ -241,7 +241,7 @@
   font-weight: 600;
 }
 
-/* 定期の確認タブのまとめて確定(計画Issue #164) */
+/* 承認待ちの定期仕訳タブのまとめて確定(計画Issue #164) */
 .journal-screen__bulk {
   display: flex;
   flex-direction: column;

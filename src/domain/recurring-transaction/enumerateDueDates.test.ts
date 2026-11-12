@@ -16,17 +16,17 @@ function makeRule(overrides: Partial<RecurringTransactionRule>): RecurringTransa
   return {
     id: 1,
     name: 'テストルール',
-    debitAccountId: 1,
-    creditAccountId: 2,
-    amount: 1000,
+    bookkeeperHouseholdMemberId: null,
+    lines: [
+      { lineNo: 1, side: 'debit', accountId: 1, amount: 1000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+      { lineNo: 2, side: 'credit', accountId: 2, amount: 1000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+    ],
+    schedule: [],
     frequency: 'monthly',
     dayOfWeek: null,
     dayOfMonth: 1,
     weekOfMonth: null,
     monthOfYear: null,
-    projectId: null,
-    householdMemberId: null,
-    counterpartyId: null,
     maxOccurrences: null,
     startsOn: '2000-01-01',
     endsOn: null,
@@ -292,3 +292,17 @@ describe('開始日・終了日(計画Issue #164)', () => {
     ])
   })
 })
+
+describe('金額表のルール(計画Issue #180)', () => {
+  const round = (n: number) => ({ round: n, amounts: [] })
+
+  it('回数の上限は表の長さに自動で揃う(3回の表なら、生成済み0件で3件、2件で1件、3件で0件)', () => {
+    const rule = makeRule({ frequency: 'monthly', dayOfMonth: 1, amountMode: 'schedule', schedule: [round(1), round(2), round(3)] })
+    const range = { since: '2025-12-31', until: '2026-12-31' }
+
+    expect(enumerateDueDates(rule, range, 0)).toEqual(['2026-01-01', '2026-02-01', '2026-03-01'])
+    expect(enumerateDueDates(rule, range, 2)).toHaveLength(1)
+    expect(enumerateDueDates(rule, range, 3)).toEqual([])
+  })
+})
+

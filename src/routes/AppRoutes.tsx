@@ -41,7 +41,7 @@ import { sessionNoticeStorage } from '../components/settings/importNotice'
 import { downloadDatabaseBackup } from '../infrastructure/backup/downloadDatabaseBackup'
 
 /**
- * 確認待ちの定期取引提案の件数(サイドナビの「仕訳」のバッジ用、計画Issue #150)。
+ * 承認待ちの定期仕訳提案の件数(サイドナビの「仕訳」のバッジ用、計画Issue #150)。
  * 提案は永続化せず都度評価される(listPendingが毎回DBから再評価)ため、画面遷移のたびに
  * 取り直す。確認・見送りの直後に件数が古いまま残らないようにするため。取得に失敗しても
  * 画面操作は妨げず、バッジを出さない(0件扱い)。
@@ -163,6 +163,22 @@ export function AppRoutes() {
     proposalRefreshKey,
   )
 
+  /** 仕訳画面の「定期仕訳」タブ(定期仕訳のルールの管理)の中身(計画Issue #180) */
+  const rulesPanel = (
+    <RuleMasterTab
+      recurringTransactionRuleRepository={recurringTransactionRuleRepository}
+      accountRepository={accountRepository}
+      accountGroupRepository={accountGroupRepository}
+      counterpartyRepository={counterpartyRepository}
+      counterpartyGroupRepository={counterpartyGroupRepository}
+      projectRepository={projectRepository}
+      projectGroupRepository={projectGroupRepository}
+      householdMemberRepository={householdMemberRepository}
+      settlementBatchRepository={settlementBatchRepository}
+      journalEntryRepository={journalEntryRepository}
+    />
+  )
+
   return (
     <>
     {/* 別のタブが書き込みの権利を持つとき、このタブの変更が保存されないことを画面の上部に知らせる(計画Issue #174) */}
@@ -178,13 +194,15 @@ export function AppRoutes() {
       {/* 中継(ハブ)画面とホーム画面は廃止した。旧URLは各領域の入口画面へリダイレクトする */}
       <Route path="/" element={<Navigate to="/journal/entries" replace />} />
       <Route path="/master" element={<Navigate to="/master/accounts" replace />} />
-      {/* 科目の一覧・追加・グループ、定期取引ルールは、マスタ画面のタブに統合した(計画Issue #154) */}
+      {/* 科目の一覧・追加・グループは、マスタ画面のタブに統合した(計画Issue #154)。定期仕訳ルールは仕訳画面の「定期仕訳」タブへ(計画Issue #180) */}
       <Route path="/master/accounts/list" element={<Navigate to="/master/accounts" replace />} />
       <Route path="/master/accounts/new" element={<Navigate to="/master/accounts" replace />} />
       <Route path="/master/accounts/groups" element={<Navigate to="/master/accounts" replace />} />
-      <Route path="/journal/recurring/rules" element={<Navigate to="/master/recurring" replace />} />
+      <Route path="/journal/recurring/rules" element={<Navigate to="/journal/entries?tab=rules" replace />} />
+      {/* 定期仕訳のルールの管理は、マスタ画面のタブから仕訳画面の「定期仕訳」タブへ移した(計画Issue #180) */}
+      <Route path="/master/recurring" element={<Navigate to="/journal/entries?tab=rules" replace />} />
       <Route path="/journal" element={<Navigate to="/journal/entries" replace />} />
-      {/* 手入力・下書き・定期取引の確認は、仕訳画面のタブに統合した(計画Issue #152) */}
+      {/* 手入力・下書き・承認待ちの定期仕訳は、仕訳画面のタブに統合した(計画Issue #152) */}
       <Route path="/journal/recurring" element={<Navigate to="/journal/entries?tab=proposals" replace />} />
       <Route path="/journal/recurring/proposals" element={<Navigate to="/journal/entries?tab=proposals" replace />} />
       <Route path="/journal/create/manual" element={<Navigate to="/journal/entries?tab=drafts" replace />} />
@@ -246,21 +264,6 @@ export function AppRoutes() {
         }
       />
       <Route
-        path="/master/recurring"
-        element={
-          <RuleMasterTab
-            recurringTransactionRuleRepository={recurringTransactionRuleRepository}
-            accountRepository={accountRepository}
-            accountGroupRepository={accountGroupRepository}
-            counterpartyRepository={counterpartyRepository}
-            counterpartyGroupRepository={counterpartyGroupRepository}
-            projectRepository={projectRepository}
-            projectGroupRepository={projectGroupRepository}
-            householdMemberRepository={householdMemberRepository}
-          />
-        }
-      />
-      <Route
         path="/master/mappings"
         element={
           <MappingMasterTab
@@ -307,6 +310,7 @@ export function AppRoutes() {
             settlementBatchRepository={settlementBatchRepository}
             recurringTransactionProposalApi={recurringTransactionProposalApi}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
+            rulesPanel={rulesPanel}
             onProposalsChanged={() => setProposalRefreshKey((key) => key + 1)}
           />
         }
@@ -328,6 +332,7 @@ export function AppRoutes() {
             settlementBatchRepository={settlementBatchRepository}
             recurringTransactionProposalApi={recurringTransactionProposalApi}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
+            rulesPanel={rulesPanel}
             onProposalsChanged={() => setProposalRefreshKey((key) => key + 1)}
           />
         }
@@ -406,7 +411,7 @@ function JournalScreenRoute(props: JournalScreenRouteProps) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
-  const initialTab: JournalScreenTab = tabParam === 'drafts' || tabParam === 'proposals' ? tabParam : 'list'
+  const initialTab: JournalScreenTab = tabParam === 'drafts' || tabParam === 'proposals' || tabParam === 'rules' ? tabParam : 'list'
   const initialFilter = (useLocation().state as { filter?: JournalEntryFilter } | null)?.filter
   const entryId = id === undefined ? undefined : Number(id)
 

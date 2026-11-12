@@ -13,17 +13,17 @@ function makeRule(overrides: Partial<RecurringTransactionRule> = {}): RecurringT
   return {
     id: 0,
     name: 'テストルール',
-    debitAccountId: 1,
-    creditAccountId: 2,
-    amount: 1000,
+    bookkeeperHouseholdMemberId: null,
+    lines: [
+      { lineNo: 1, side: 'debit', accountId: 1, amount: 1000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+      { lineNo: 2, side: 'credit', accountId: 2, amount: 1000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+    ],
+    schedule: [],
     frequency: 'monthly',
     dayOfWeek: null,
     dayOfMonth: 25,
     weekOfMonth: null,
     monthOfYear: null,
-    projectId: null,
-    householdMemberId: null,
-    counterpartyId: null,
     maxOccurrences: null,
     startsOn: '2026-01-01',
     endsOn: null,
@@ -95,3 +95,19 @@ describe('previewUpcomingDueDates', () => {
     expect(previewUpcomingDueDates(makeRule(), '2026-11-01', 0)).toEqual([])
   })
 })
+
+describe('金額表のルール(計画Issue #180)', () => {
+  it('表の長さを超える期日はプレビューに出さない', () => {
+    const rule = makeRule({
+      amountMode: 'schedule',
+      schedule: [
+        { round: 1, amounts: [] },
+        { round: 2, amounts: [] },
+      ],
+    })
+
+    expect(previewUpcomingDueDates(rule, '2026-01-01', 5, 0)).toHaveLength(2)
+    expect(previewUpcomingDueDates(rule, '2026-01-01', 5, 1)).toHaveLength(1)
+  })
+})
+

@@ -3,7 +3,7 @@
  * CounterpartyMasterTab(計画Issue #154)のコンポーネントテスト。
  * マスタ画面の「取引先」タブ: 既定の科目の列とパターン件数の表示、右パネルでの既定の科目の変更、
  * 登録済みパターンの追加・編集・削除(現行の取引先管理画面から引き継ぐ)、チェックした取引先の
- * 統合(現行画面から引き継ぐ)、仕訳・定期取引ルール・精算バッチの相手で使用中のときの
+ * 統合(現行画面から引き継ぐ)、仕訳・定期仕訳ルール・精算バッチの相手で使用中のときの
  * 削除不可の理由表示を、sql.jsのNode実装(createTestDatabase)を使って確認する。
  * ツリー表・グループ操作の共通部分はProjectMasterTab.test.tsx側で検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
@@ -181,16 +181,16 @@ describe('CounterpartyMasterTab', () => {
     expect(editor.getByText(/仕訳の明細1行で使用中のため削除できません/)).toBeInTheDocument()
   })
 
-  it('定期取引ルールと精算バッチの相手で使用中の取引先も、その理由が表示される', async () => {
+  it('定期仕訳ルールと精算バッチの相手で使用中の取引先も、その理由が表示される', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
     new SqlJsRecurringTransactionRuleRepository(db).create({
       name: '食費',
-      debitAccountId: expenseId,
-      creditAccountId: cashId,
-      amount: 1000,
+      lines: [
+        { side: 'debit', accountId: expenseId, amount: 1000, counterpartyId: aeon.id },
+        { side: 'credit', accountId: cashId, amount: 1000 },
+      ],
       frequency: 'monthly',
       dayOfMonth: 1,
-      counterpartyId: aeon.id,
     })
     new SqlJsSettlementBatchRepository(db).create({
       name: '10月分',
@@ -202,7 +202,7 @@ describe('CounterpartyMasterTab', () => {
 
     const editor = panel('取引先の編集')
 
-    expect(editor.getByText(/定期取引ルール1件/)).toBeInTheDocument()
+    expect(editor.getByText(/定期仕訳ルール1件/)).toBeInTheDocument()
     expect(editor.getByText(/精算バッチの相手1件/)).toBeInTheDocument()
     expect(editor.getByRole('button', { name: '削除' })).toBeDisabled()
   })

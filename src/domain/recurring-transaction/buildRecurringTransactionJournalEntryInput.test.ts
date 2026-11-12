@@ -1,37 +1,57 @@
 /**
- * buildRecurringTransactionJournalEntryInput(定期取引ルールからのCreateJournalEntryInput組み立て)
- * の純粋関数としてのユニットテスト。docs/domain/recurring-transactions.md 1.4節「project_id・
- * household_member_idは両行に設定し、counterparty_idはPL区分(revenue/expense)側の行にのみ
- * 設定する」ルールと、2.1節「amountは生成時のレビューで編集可能」を検証する。
+ * buildRecurringTransactionJournalEntryInput(定期仕訳ルールからのCreateJournalEntryInput組み立て)
+ * の純粋関数としてのユニットテスト。ルールの行(2行でも3行以上でも同じ扱い、計画Issue #180)を
+ * 仕訳の明細行に写すこと、counterparty_idはPL区分(revenue/expense)の行にだけ設定すること、
+ * 精算バッチのタグを行に引き継ぐこと、確認パネルで編集した行(lines)で置き換えられること、
+ * 明細行の世帯メンバーが「科目の既定メンバー > 行の世帯メンバー > 起票者」の順で必ず確定することを検証する
+ * (計画Issue #169・#180)。計画Issue #164で追加した、土日の調整後の日付をentryDateにすること、調整前の
+ * 期日をrecurringDueDateに記録すること、摘要(既定はルール名)とコメントを仕訳に設定することも検証する。
  * 科目区分(AccountCategory)の解決は呼び出し側の責務(既存のbuildCounterpartyExpenseSplitting
  * JournalEntryInput等と同じパターン)のため、本関数はDB非依存・外部依存なし。
- * 明細行の世帯メンバーは、科目の既定メンバー > ルールの世帯メンバー > 起票者の順で必ず確定する
- * (計画Issue #169)。計画Issue #164で追加した、土日の調整後の日付をentryDateにすること、調整前の期日を
- * recurringDueDateに記録すること、摘要(既定はルール名)とコメントを仕訳に設定することも検証する。
  */
 import { describe, expect, it } from 'vitest'
+import type { AccountCategory } from '../account/Account'
 import { createLineHouseholdMemberResolver } from '../journal/resolveLineHouseholdMemberId'
-import type { RecurringTransactionRule } from './RecurringTransactionRule'
+import type { RecurringTransactionRule, RecurringTransactionRuleLine } from './RecurringTransactionRule'
 import { buildRecurringTransactionJournalEntryInput } from './buildRecurringTransactionJournalEntryInput'
 
 /** 科目に既定の世帯メンバーが無い前提で、起票者(1)を既定値にする */
 const resolveLineHouseholdMemberId = createLineHouseholdMemberResolver([], 1)
 
-function makeRule(overrides: Partial<RecurringTransactionRule>): RecurringTransactionRule {
+const CATEGORIES: ReadonlyMap<number, AccountCategory> = new Map<number, AccountCategory>([
+  [10, 'expense'],
+  [11, 'expense'],
+  [20, 'liability'],
+  [30, 'asset'],
+])
+
+function line(overrides: Partial<RecurringTransactionRuleLine>): RecurringTransactionRuleLine {
+  return {
+    lineNo: 1,
+    side: 'debit',
+    accountId: 10,
+    amount: 80000,
+    projectId: null,
+    householdMemberId: null,
+    counterpartyId: null,
+    settlementBatchId: null,
+    ...overrides,
+  }
+}
+
+/** 既定は借方10(費用)・貸方20(負債)の2行ルール */
+function makeRule(overrides: Partial<RecurringTransactionRule> = {}): RecurringTransactionRule {
   return {
     id: 1,
     name: '家賃',
-    debitAccountId: 10,
-    creditAccountId: 20,
-    amount: 80000,
+    bookkeeperHouseholdMemberId: null,
+    lines: [line({ lineNo: 1, side: 'debit', accountId: 10 }), line({ lineNo: 2, side: 'credit', accountId: 20 })],
+    schedule: [],
     frequency: 'monthly',
     dayOfWeek: null,
     dayOfMonth: 1,
     weekOfMonth: null,
     monthOfYear: null,
-    projectId: null,
-    householdMemberId: null,
-    counterpartyId: null,
     maxOccurrences: null,
     startsOn: '2026-06-01',
     endsOn: null,
@@ -46,45 +66,133 @@ function makeRule(overrides: Partial<RecurringTransactionRule>): RecurringTransa
   }
 }
 
-describe('buildRecurringTransactionJournalEntryInput', () => {
-  it('ルールに世帯メンバーが無ければ、両行とも起票者になる(明細行は常に世帯メンバーを持つ、計画Issue #169)', () => {
-    const input = buildRecurringTransactionJournalEntryInput({
-      rule: makeRule({ householdMemberId: null }),
-      dueDate: '2026-09-01',
-      bookkeeperHouseholdMemberId: 1,
-      debitAccountCategory: 'expense',
-      creditAccountCategory: 'liability',
-      resolveLineHouseholdMemberId,
-    })
-
-    expect(input.lines.map((l) => l.householdMemberId)).toEqual([1, 1])
+const build = (
+  rule: RecurringTransactionRule,
+  dueDate = '2026-09-01',
+  extra: Partial<Parameters<typeof buildRecurringTransactionJournalEntryInput>[0]> = {},
+) =>
+  buildRecurringTransactionJournalEntryInput({
+    rule,
+    dueDate,
+    bookkeeperHouseholdMemberId: 1,
+    accountCategoryById: CATEGORIES,
+    resolveLineHouseholdMemberId,
+    ...extra,
   })
 
-  it('科目に既定の世帯メンバーがあれば、その行はルールの世帯メンバーより既定値が優先される', () => {
-    const input = buildRecurringTransactionJournalEntryInput({
-      rule: makeRule({ householdMemberId: 3 }),
-      dueDate: '2026-09-01',
-      bookkeeperHouseholdMemberId: 1,
-      debitAccountCategory: 'expense',
-      creditAccountCategory: 'liability',
-      resolveLineHouseholdMemberId: createLineHouseholdMemberResolver([{ id: 20, householdMemberId: 9 }], 1),
+describe('buildRecurringTransactionJournalEntryInput', () => {
+  describe('行の写し方', () => {
+    it('ルールの行を、行番号の順に仕訳の明細行へ写す(3行以上の複合仕訳も同じ)', () => {
+      const rule = makeRule({
+        lines: [
+          line({ lineNo: 1, side: 'debit', accountId: 30, amount: 280000 }),
+          line({ lineNo: 2, side: 'debit', accountId: 11, amount: 80000 }),
+          line({ lineNo: 3, side: 'credit', accountId: 20, amount: 360000 }),
+        ],
+      })
+
+      const input = build(rule)
+
+      expect(input.lines.map((l) => [l.accountId, l.side, l.amount])).toEqual([
+        [30, 'debit', 280000],
+        [11, 'debit', 80000],
+        [20, 'credit', 360000],
+      ])
     })
 
-    expect(input.lines.find((l) => l.side === 'debit')?.householdMemberId).toBe(3)
-    expect(input.lines.find((l) => l.side === 'credit')?.householdMemberId).toBe(9)
+    it('行のプロジェクト・取引先(PL科目の行)・精算バッチをその行に設定する', () => {
+      const rule = makeRule({
+        lines: [
+          line({ lineNo: 1, side: 'debit', accountId: 10, projectId: 7, counterpartyId: 5 }),
+          line({ lineNo: 2, side: 'credit', accountId: 20, settlementBatchId: 9 }),
+        ],
+      })
+
+      const [debit, credit] = build(rule).lines
+
+      expect(debit).toMatchObject({ projectId: 7, counterpartyId: 5, settlementBatchId: null })
+      expect(credit).toMatchObject({ projectId: null, counterpartyId: null, settlementBatchId: 9 })
+    })
+
+    it('取引先はPL区分(収益・費用)でない科目の行には設定しない(防御。保存時にもDBが拒否する)', () => {
+      const rule = makeRule({
+        lines: [
+          line({ lineNo: 1, side: 'debit', accountId: 30, counterpartyId: 5 }),
+          line({ lineNo: 2, side: 'credit', accountId: 20, counterpartyId: 5 }),
+        ],
+      })
+
+      for (const l of build(rule).lines) expect(l.counterpartyId).toBeNull()
+    })
+
+    it('lineAmountsで行番号ごとに金額を上書きできる(前回確定額・金額表の初期値)', () => {
+      const input = build(makeRule(), '2026-09-01', {
+        lineAmounts: new Map([
+          [1, 85000],
+          [2, 85000],
+        ]),
+      })
+
+      expect(input.lines.map((l) => l.amount)).toEqual([85000, 85000])
+    })
+
+    it('linesを渡すと、ルールの行ではなく確認パネルで編集した行で置き換える(行の追加・削除・科目の変更)', () => {
+      const edited = [
+        { accountId: 30, side: 'debit' as const, amount: 100, householdMemberId: 4 },
+        { accountId: 20, side: 'credit' as const, amount: 60, householdMemberId: 4 },
+        { accountId: 11, side: 'credit' as const, amount: 40, householdMemberId: 4, counterpartyId: 3 },
+      ]
+
+      const input = build(makeRule(), '2026-09-01', { lines: edited })
+
+      expect(
+        input.lines.map((l) => [l.accountId, l.side, l.amount, l.householdMemberId, l.counterpartyId ?? null]),
+      ).toEqual([
+        [30, 'debit', 100, 4, null],
+        [20, 'credit', 60, 4, null],
+        [11, 'credit', 40, 4, 3],
+      ])
+    })
+  })
+
+  describe('明細行の世帯メンバー(計画Issue #169・#180)', () => {
+    it('行の世帯メンバーが無ければ、起票者になる(明細行は常に世帯メンバーを持つ)', () => {
+      expect(build(makeRule()).lines.map((l) => l.householdMemberId)).toEqual([1, 1])
+    })
+
+    it('行ごとの世帯メンバーは、その行にだけ使う', () => {
+      const rule = makeRule({
+        lines: [
+          line({ lineNo: 1, side: 'debit', accountId: 10, householdMemberId: 3 }),
+          line({ lineNo: 2, side: 'credit', accountId: 20 }),
+        ],
+      })
+
+      expect(build(rule).lines.map((l) => l.householdMemberId)).toEqual([3, 1])
+    })
+
+    it('科目に既定の世帯メンバーがあれば、その行は行の世帯メンバーより既定値が優先される', () => {
+      const rule = makeRule({
+        lines: [
+          line({ lineNo: 1, side: 'debit', accountId: 10, householdMemberId: 3 }),
+          line({ lineNo: 2, side: 'credit', accountId: 20, householdMemberId: 3 }),
+        ],
+      })
+
+      const input = build(rule, '2026-09-01', {
+        resolveLineHouseholdMemberId: createLineHouseholdMemberResolver([{ id: 20, householdMemberId: 9 }], 1),
+      })
+
+      expect(input.lines.map((l) => l.householdMemberId)).toEqual([3, 9])
+    })
+
+    it('起票者は引数の起票者(ルールの起票者の解決は呼び出し側)を仕訳に設定する', () => {
+      expect(build(makeRule(), '2026-09-01', { bookkeeperHouseholdMemberId: 2 }).householdMemberId).toBe(2)
+    })
   })
 
   it('sourceType=recurring_generated・generatedFromRuleId・entryDateを設定する', () => {
-    const rule = makeRule({ id: 42 })
-
-    const input = buildRecurringTransactionJournalEntryInput({
-      rule,
-      dueDate: '2026-09-01',
-      bookkeeperHouseholdMemberId: 1,
-      debitAccountCategory: 'expense',
-      creditAccountCategory: 'liability',
-      resolveLineHouseholdMemberId,
-    })
+    const input = build(makeRule({ id: 42 }))
 
     expect(input.sourceType).toBe('recurring_generated')
     expect(input.generatedFromRuleId).toBe(42)
@@ -92,102 +200,7 @@ describe('buildRecurringTransactionJournalEntryInput', () => {
     expect(input.householdMemberId).toBe(1)
   })
 
-  it('amountを省略した場合はルールのamountを両行に使う', () => {
-    const rule = makeRule({ amount: 80000 })
-
-    const input = buildRecurringTransactionJournalEntryInput({
-      rule,
-      dueDate: '2026-09-01',
-      bookkeeperHouseholdMemberId: 1,
-      debitAccountCategory: 'expense',
-      creditAccountCategory: 'liability',
-      resolveLineHouseholdMemberId,
-    })
-
-    expect(input.lines.map((l) => l.amount)).toEqual([80000, 80000])
-  })
-
-  it('amountを指定した場合はレビュー時の編集として両行に上書き反映する(2.1節)', () => {
-    const rule = makeRule({ amount: 80000 })
-
-    const input = buildRecurringTransactionJournalEntryInput({
-      rule,
-      dueDate: '2026-09-01',
-      bookkeeperHouseholdMemberId: 1,
-      debitAccountCategory: 'expense',
-      creditAccountCategory: 'liability',
-      resolveLineHouseholdMemberId,
-      amount: 85000,
-    })
-
-    expect(input.lines.map((l) => l.amount)).toEqual([85000, 85000])
-  })
-
-  it('project_id・household_member_id(ルール側)は両行に設定する(1.4節)', () => {
-    const rule = makeRule({ projectId: 7, householdMemberId: 3 })
-
-    const input = buildRecurringTransactionJournalEntryInput({
-      rule,
-      dueDate: '2026-09-01',
-      bookkeeperHouseholdMemberId: 1,
-      debitAccountCategory: 'expense',
-      creditAccountCategory: 'liability',
-      resolveLineHouseholdMemberId,
-    })
-
-    for (const line of input.lines) {
-      expect(line.projectId).toBe(7)
-      expect(line.householdMemberId).toBe(3)
-    }
-  })
-
-  it('counterparty_idはPL区分(expense)側の行にのみ設定する(1.4節)', () => {
-    const rule = makeRule({ counterpartyId: 5 })
-
-    const input = buildRecurringTransactionJournalEntryInput({
-      rule,
-      dueDate: '2026-09-01',
-      bookkeeperHouseholdMemberId: 1,
-      debitAccountCategory: 'expense',
-      creditAccountCategory: 'liability',
-      resolveLineHouseholdMemberId,
-    })
-
-    const debitLine = input.lines.find((l) => l.side === 'debit')!
-    const creditLine = input.lines.find((l) => l.side === 'credit')!
-    expect(debitLine.counterpartyId).toBe(5)
-    expect(creditLine.counterpartyId).toBeNull()
-  })
-
-  it('両行ともBS区分(asset/liability)の場合、counterparty_idはどちらにも設定しない(前払い型の支払いルール等)', () => {
-    const rule = makeRule({ counterpartyId: 5 })
-
-    const input = buildRecurringTransactionJournalEntryInput({
-      rule,
-      dueDate: '2026-09-01',
-      bookkeeperHouseholdMemberId: 1,
-      debitAccountCategory: 'asset',
-      creditAccountCategory: 'liability',
-      resolveLineHouseholdMemberId,
-    })
-
-    for (const line of input.lines) {
-      expect(line.counterpartyId).toBeNull()
-    }
-  })
-
   describe('土日の調整・期日の記録・摘要とコメント(計画Issue #164)', () => {
-    const build = (rule: RecurringTransactionRule, dueDate: string, extra: { memo?: string | null; comment?: string | null } = {}) =>
-      buildRecurringTransactionJournalEntryInput({
-        rule,
-        dueDate,
-        bookkeeperHouseholdMemberId: 1,
-        debitAccountCategory: 'expense',
-        creditAccountCategory: 'liability',
-        resolveLineHouseholdMemberId,
-        ...extra,
-      })
-
     it('調整後の日付がentryDateになり、調整前の期日がrecurringDueDateに記録される(2026-01-25は日曜日)', () => {
       const input = build(makeRule({ weekendAdjustment: 'previous' }), '2026-01-25')
 
@@ -207,7 +220,7 @@ describe('buildRecurringTransactionJournalEntryInput', () => {
     })
 
     it('摘要を省略するとルール名になる', () => {
-      expect(build(makeRule({ name: '家賃' }), '2026-09-01').memo).toBe('家賃')
+      expect(build(makeRule({ name: '家賃' })).memo).toBe('家賃')
     })
 
     it('摘要とコメントを指定すると、確認パネルで編集した値が仕訳に設定される', () => {

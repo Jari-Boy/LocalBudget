@@ -1,6 +1,6 @@
 /**
  * nextRuleDate(計画Issue #154)のテスト。
- * マスタ画面の定期取引の一覧に出す「次回」の日付を求める純粋関数を検証する。今日を含む
+ * マスタ画面の定期仕訳の一覧に出す「次回」の日付を求める純粋関数を検証する。今日を含む
  * 今日以降で最初にルールに合致する日、無効なルールと回数の上限に達したルールは次回なし(null)、
  * 月末への丸めなど日付の計算自体は enumerateDueDates 側の仕様に従うことを確認する。計画Issue #164で
  * 追加した、土日の調整後の日付で返すこと、開始日より前は開始日以降の日、終了日(当日を含む)を過ぎた
@@ -15,17 +15,17 @@ function rule(overrides: Partial<RecurringTransactionRule> = {}): RecurringTrans
   return {
     id: 1,
     name: '家賃',
-    debitAccountId: 1,
-    creditAccountId: 2,
-    amount: 98000,
+    bookkeeperHouseholdMemberId: null,
+    lines: [
+      { lineNo: 1, side: 'debit', accountId: 1, amount: 98000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+      { lineNo: 2, side: 'credit', accountId: 2, amount: 98000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+    ],
+    schedule: [],
     frequency: 'monthly',
     dayOfWeek: null,
     dayOfMonth: 27,
     weekOfMonth: null,
     monthOfYear: null,
-    projectId: null,
-    householdMemberId: null,
-    counterpartyId: null,
     maxOccurrences: null,
     startsOn: '2026-01-01',
     endsOn: null,

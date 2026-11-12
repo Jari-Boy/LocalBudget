@@ -44,7 +44,7 @@ const LEAF_LABEL = 'プロジェクト'
 
 /**
  * マスタ画面の「プロジェクト」タブ(計画Issue #154)。グループとプロジェクトをツリー表で表示し、
- * 右パネルで編集する(共通の画面はGroupedMasterTab)。仕訳または定期取引ルールで使用中の
+ * 右パネルで編集する(共通の画面はGroupedMasterTab)。仕訳または定期仕訳ルールで使用中の
  * プロジェクトは削除できず、理由を表示する。
  */
 export function ProjectMasterTab({

@@ -11,6 +11,8 @@ import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
 import { SqlJsAccountGroupRepository } from './SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
+import { SqlJsRecurringTransactionRuleRepository } from './SqlJsRecurringTransactionRuleRepository'
+import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
 let repository: SqlJsAccountRepository
@@ -208,12 +210,12 @@ describe('delete', () => {
       name: '楽天カード',
       isReconcilable: false,
     })
-    db.run(
-      `INSERT INTO recurring_transaction_rules
-        (name, debit_account_id, credit_account_id, amount, frequency, day_of_month)
-       VALUES (?, ?, ?, 80000, 'monthly', 27)`,
-      ['家賃引き落とし', debitAccount.id, creditAccount.id],
-    )
+    new SqlJsRecurringTransactionRuleRepository(db).create({
+      name: '家賃引き落とし',
+      lines: twoLineRuleLines(debitAccount.id, creditAccount.id, 80000),
+      frequency: 'monthly',
+      dayOfMonth: 27,
+    })
 
     expect(() => repository.delete(debitAccount.id)).toThrow()
   })

@@ -3,7 +3,7 @@
  * ProjectMasterTab(計画Issue #154)のコンポーネントテスト。
  * マスタ画面の「プロジェクト」タブ: グループと項目のツリー表示、右パネルでの名称・所属グループ・
  * 並び順の編集、グループ・プロジェクトの新設、有効/無効の切り替え、2回押しの削除と、
- * 仕訳・定期取引ルールで使用中のときの削除不可の理由表示を、sql.jsのNode実装
+ * 仕訳・定期仕訳ルールで使用中のときの削除不可の理由表示を、sql.jsのNode実装
  * (createTestDatabase)を使って確認する。ツリー表の共通部分(GroupedMasterTab)の挙動も
  * このタブ経由で検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
@@ -164,21 +164,21 @@ describe('ProjectMasterTab', () => {
     expect(editor.getByText(/仕訳の明細1行で使用中のため削除できません/)).toBeInTheDocument()
   })
 
-  it('定期取引ルールで使用中のプロジェクトも、削除できず理由が表示される', async () => {
+  it('定期仕訳ルールで使用中のプロジェクトも、削除できず理由が表示される', async () => {
     const project = projects.create({ name: '沖縄旅行' })
     new SqlJsRecurringTransactionRuleRepository(db).create({
       name: '積立',
-      debitAccountId: expenseId,
-      creditAccountId: cashId,
-      amount: 1000,
+      lines: [
+        { side: 'debit', accountId: expenseId, amount: 1000, projectId: project.id },
+        { side: 'credit', accountId: cashId, amount: 1000 },
+      ],
       frequency: 'monthly',
       dayOfMonth: 1,
-      projectId: project.id,
     })
     renderTab()
     await open('沖縄旅行')
 
-    expect(panel('プロジェクトの編集').getByText(/定期取引ルール1件で使用中/)).toBeInTheDocument()
+    expect(panel('プロジェクトの編集').getByText(/定期仕訳ルール1件で使用中/)).toBeInTheDocument()
   })
 
   it('右パネルに、プロジェクトに紐づく区分別の科目残高の内訳が表示される(旧画面の「内訳を表示」を引き継ぐ)', async () => {

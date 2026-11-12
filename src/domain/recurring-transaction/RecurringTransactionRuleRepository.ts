@@ -3,9 +3,10 @@ import type {
   RecurringTransactionRule,
   UpdateRecurringTransactionRuleInput,
 } from './RecurringTransactionRule'
+import type { LastConfirmedLine } from './resolveLastConfirmedLines'
 
 /**
- * 定期取引ルール(recurring_transaction_rules)の永続化を担うRepositoryのポート(インターフェース)。
+ * 定期仕訳ルール(recurring_transaction_rules)とその行(recurring_transaction_rule_lines、計画Issue #180)の永続化を担うRepositoryのポート(インターフェース)。
  * frequencyごとのカラム組み合わせ検証(assertValidRecurringSchedule)は実装(インフラ層)が
  * create/update時に書き込み前に必ず呼び出し、違反時はInvalidRecurringScheduleErrorを投げて
  * DBに一切書き込まない(docs/domain/recurring-transactions.md 1.3、
@@ -47,10 +48,11 @@ export interface RecurringTransactionRuleRepository {
   findLatestGeneratedDueDate(id: number): string | null
 
   /**
-   * 前回確定した金額(計画Issue #164、amount_mode = last_confirmed)。期日(recurring_due_date)が最も
-   * 新しい生成済みの仕訳の借方の合計。1件も生成されていなければnull(呼び出し側がルールの金額を使う)
+   * 前回確定した仕訳の行(計画Issue #164・#180、amount_mode = last_confirmed)。期日(recurring_due_date)が
+   * 最も新しい生成済みの仕訳の行(科目・借方/貸方・金額)。1件も生成されていなければ空配列
+   * (呼び出し側がルールの金額を使う)。ルールの行との対応づけは resolveLastConfirmedLines が行う
    */
-  findLastConfirmedAmount(id: number): number | null
+  findLastConfirmedLines(id: number): LastConfirmedLine[]
 
   /**
    * 提案を見送った対象日を記録する(計画Issue #145)。仕訳は作らない。同じルール・同じ対象日の

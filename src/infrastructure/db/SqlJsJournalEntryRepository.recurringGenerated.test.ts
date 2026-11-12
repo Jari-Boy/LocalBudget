@@ -1,6 +1,6 @@
 /**
  * SqlJsJournalEntryRepository.create()のgenerated_from_rule_id連携に関する統合テスト。
- * 定期取引(docs/domain/recurring-transactions.md 1.5節)から生成された仕訳は、生成元の
+ * 定期仕訳(docs/domain/recurring-transactions.md 1.5節)から生成された仕訳は、生成元の
  * recurring_transaction_rule_idを参照のみの目的で記録する。計画Issue #121着手前の調査時点では
  * CreateJournalEntryInput/JournalEntryにこのフィールドが存在せず、生成しても永続化されない
  * 状態だったため、その回帰を検証する。外部依存: sql.js(ネットワークアクセスなし)。
@@ -13,6 +13,7 @@ import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { SqlJsRecurringTransactionRuleRepository } from './SqlJsRecurringTransactionRuleRepository'
+import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
 let repository: SqlJsJournalEntryRepository
@@ -41,9 +42,7 @@ beforeEach(async () => {
 
   ruleId = new SqlJsRecurringTransactionRuleRepository(db).create({
     name: '家賃',
-    debitAccountId: rentExpenseAccountId,
-    creditAccountId: bankAccountId,
-    amount: 80000,
+    lines: twoLineRuleLines(rentExpenseAccountId, bankAccountId, 80000),
     frequency: 'monthly',
     dayOfMonth: 1,
   }).id
