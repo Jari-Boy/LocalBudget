@@ -1,0 +1,166 @@
+/* 仕訳一覧の「明細行単位」の表(計画Issue #182)。色・余白は既存の仕訳一覧と同じデザイントークンを使う */
+.journal-line-table {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  text-align: left;
+  color: var(--color-text);
+}
+
+.journal-line-table__table {
+  /* 列が増えても詰まらないよう、最小幅を持たせて枠の中で横スクロールさせる */
+  min-width: 1620px;
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--font-size-base);
+}
+
+.journal-line-table__col-date {
+  width: 104px;
+}
+
+.journal-line-table__col-source {
+  width: 84px;
+}
+
+.journal-line-table__col-memo {
+  width: 220px;
+}
+
+.journal-line-table__col-comment {
+  width: 170px;
+}
+
+.journal-line-table__col-attr {
+  width: 100px;
+}
+
+.journal-line-table__col-amount {
+  width: 96px;
+}
+
+.journal-line-table th {
+  padding: 8px 6px;
+  background: var(--color-hover);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-align: left;
+  color: var(--color-text-muted);
+}
+
+.journal-line-table__group-head th {
+  padding-bottom: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+}
+
+.journal-line-table__group-head td {
+  background: var(--color-hover);
+}
+
+.journal-line-table__cell {
+  padding: 7px 6px;
+  overflow: hidden;
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.journal-line-table__cell--account {
+  font-weight: 500;
+}
+
+.journal-line-table__cell--amount,
+.journal-line-table th.journal-line-table__cell--amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 借方と貸方の境目 */
+.journal-line-table__credit-start {
+  border-left: 1px solid var(--color-border);
+}
+
+.journal-line-table tbody tr:hover {
+  background: var(--color-hover);
+}
+
+.journal-line-table tbody tr {
+  cursor: pointer;
+}
+
+/* 仕訳の境目は太めの線、同じ仕訳の中の行は細い線 */
+.journal-line-table tbody td {
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.journal-line-table tbody tr:first-child > td {
+  border-top: 2px solid var(--color-border);
+}
+
+.journal-line-table tbody:first-of-type tr:first-child > td {
+  border-top: 0;
+}
+
+.journal-line-table__row--selected,
+.journal-line-table tbody tr.journal-line-table__row--selected:hover {
+  background: var(--color-accent-soft);
+}
+
+.journal-line-table__tag {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.journal-line-table__memo-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.journal-line-table__memo {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.journal-line-table__edit {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.journal-line-table__comment {
+  color: var(--color-text-muted);
+}
+
+.journal-line-table__empty {
+  margin: 0;
+  padding: 16px 12px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
