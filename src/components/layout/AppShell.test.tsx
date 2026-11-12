@@ -95,7 +95,7 @@ describe('AppShell', () => {
     expect(screen.queryByRole('navigation', { name: '領域内のタブ' })).not.toBeInTheDocument()
   })
 
-  it('マスタ領域のタブ帯に、勘定科目・取引先・世帯メンバー・プロジェクト・定期仕訳・明細マッピングの6つが並ぶ(計画Issue #154・#151)', () => {
+  it('マスタ領域のタブ帯に、勘定科目・取引先・世帯メンバー・プロジェクト・明細マッピングの5つが並ぶ(定期仕訳は仕訳画面のタブへ移した、計画Issue #180)', () => {
     renderShell('/master/accounts')
     const tabs = screen.getByRole('navigation', { name: '領域内のタブ' })
     expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual([
@@ -103,20 +103,14 @@ describe('AppShell', () => {
       '取引先',
       '世帯メンバー',
       'プロジェクト',
-      '定期仕訳',
       '明細マッピング',
     ])
     expect(within(tabs).getByRole('link', { name: '勘定科目' })).toHaveAttribute('aria-current', 'page')
   })
 
-  it('仕訳領域には領域タブ帯が無く(画面内のタブにした)、マスタ領域のタブ帯から定期仕訳のルールへ到達できる', () => {
+  it('仕訳領域には領域タブ帯が無い(仕訳・下書き・承認待ち・定期仕訳は画面内のタブにした)', () => {
     renderShell('/journal/entries')
     expect(screen.queryByRole('navigation', { name: '領域内のタブ' })).not.toBeInTheDocument()
-    cleanup()
-    renderShell('/master/recurring')
-    const masterTabs = screen.getByRole('navigation', { name: '領域内のタブ' })
-    expect(within(masterTabs).getByRole('link', { name: '定期仕訳' })).toHaveAttribute('aria-current', 'page')
-    expect(within(nav()).getByRole('link', { name: 'マスタ' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('子の画面が未保存の変更のガードを登録していると、サイドナビ・領域タブのクリックを止めて確認に回し、続行で移動する', () => {

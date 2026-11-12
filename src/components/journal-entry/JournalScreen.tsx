@@ -79,7 +79,7 @@ import {
 import { RelatedEntriesSection } from './RelatedEntriesSection'
 import './JournalScreen.css'
 
-export type JournalScreenTab = 'list' | 'drafts' | 'proposals'
+export type JournalScreenTab = 'list' | 'drafts' | 'proposals' | 'rules'
 
 export interface JournalScreenProps {
   journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'update' | 'delete'>>
@@ -113,6 +113,11 @@ export interface JournalScreenProps {
   /** 提案を確定・見送りしたとき(サイドナビのバッジの件数を取り直すため) */
   onProposalsChanged?: () => void
   initialTab?: JournalScreenTab
+  /**
+   * 「定期仕訳」タブ(定期仕訳のルールの管理、計画Issue #180)の中身。ルールの一覧・作成・編集は専用の画面部品が
+   * 受け持つため、呼び出し側(ルート)が組み立てて渡す。省略時はタブを出さない
+   */
+  rulesPanel?: React.ReactNode
   /** 最初に選ぶ仕訳(割勘の履歴などから開くとき) */
   initialEntryId?: number
   /** 最初の絞り込み条件(分析画面から、期間と選んだ条件を引き継いで開くとき。計画Issue #155) */
@@ -412,6 +417,7 @@ export function JournalScreen(props: JournalScreenProps) {
       const first = [...d.drafts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id - a.id)[0]
       return first ? { kind: 'draft', id: first.id } : null
     }
+    if (which === 'rules') return null
     const first = sortProposalsOldestFirst(d.proposals).find((p) => d.rules.some((r) => r.id === p.ruleId))
     return first ? { kind: 'proposal', ruleId: first.ruleId, dueDate: first.dueDate } : null
   }
@@ -794,7 +800,8 @@ export function JournalScreen(props: JournalScreenProps) {
   const tabs: { key: JournalScreenTab; label: string }[] = [
     { key: 'list', label: '仕訳一覧' },
     { key: 'drafts', label: `下書き ${data.drafts.length}` },
-    { key: 'proposals', label: `承認待ちの定期仕訳 ${proposalRows.length}` },
+    { key: 'proposals', label: `承認待ち ${proposalRows.length}` },
+    ...(props.rulesPanel === undefined ? [] : [{ key: 'rules' as const, label: '定期仕訳' }]),
   ]
 
   const selectedIds =
@@ -898,6 +905,10 @@ export function JournalScreen(props: JournalScreenProps) {
         ))}
       </div>
 
+      {tab === 'rules' && props.rulesPanel !== undefined ? (
+        <div className="journal-screen__rules">{props.rulesPanel}</div>
+      ) : (
+        <>
       {tab === 'list' && (
         <div className="journal-screen__filter">
           <JournalFilterPanel filter={filter} onChange={setFilter} options={filterOptions} resultCount={visibleEntries.length} />
@@ -1240,6 +1251,8 @@ export function JournalScreen(props: JournalScreenProps) {
           )}
         </section>
       </div>
+        </>
+      )}
 
       {leaveRequest !== null && (
         <UnsavedChangesDialog saving={busy} onCancel={cancelLeave} onDiscard={discardAndLeave} onSave={() => void saveAndLeave()} />

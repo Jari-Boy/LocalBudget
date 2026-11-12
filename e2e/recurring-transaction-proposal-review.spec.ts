@@ -40,7 +40,7 @@ async function openProposalReviewScreen(page: Page) {
   const journalLink = page.getByRole('link', { name: /^仕訳 \d+$/ })
   await expect(journalLink).toBeVisible({ timeout: 10000 })
   await journalLink.click()
-  await page.getByRole('tab', { name: /^承認待ちの定期仕訳/ }).click()
+  await page.getByRole('tab', { name: /^承認待ち/ }).click()
 }
 
 const detailPanel = (page: Page) => page.getByRole('region', { name: '仕訳の詳細' })
@@ -100,7 +100,7 @@ test.describe('承認待ちの定期仕訳(仕訳画面のタブ)', () => {
 
     await detailPanel(page).getByRole('button', { name: '承認して仕訳帳に反映', exact: true }).click()
 
-    await expect(page.getByRole('tab', { name: '承認待ちの定期仕訳 0' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: '承認待ち 0' })).toBeVisible()
   })
 
   test('同一ルールに複数の保留中対象日がある場合、最も古い対象日から順にしか確認できない', async ({ page }) => {
@@ -164,7 +164,7 @@ test.describe('承認待ちの定期仕訳(仕訳画面のタブ)', () => {
     await proposalRows(page).nth(0).click()
     await detailPanel(page).getByRole('button', { name: '承認して仕訳帳に反映', exact: true }).click()
 
-    await expect(page.getByRole('tab', { name: '承認待ちの定期仕訳 2' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: '承認待ち 2' })).toBeVisible()
   })
 
   test('ルールにhouseholdMemberIdが未設定の場合、世帯メンバーを選択するまで確認できず、金額も編集して確認できる', async ({
@@ -231,7 +231,7 @@ test.describe('承認待ちの定期仕訳(仕訳画面のタブ)', () => {
     await expect(confirm).toBeEnabled()
     await confirm.click()
 
-    await expect(page.getByRole('tab', { name: '承認待ちの定期仕訳 0' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: '承認待ち 0' })).toBeVisible()
 
     // 生成済み仕訳の永続化はwithAutoSaveのtrailing debounce(2秒)を挟むため、新規clientから
     // 読み取って確認できるまでpollで待つ(project-management.spec.ts等と同様のパターン)。

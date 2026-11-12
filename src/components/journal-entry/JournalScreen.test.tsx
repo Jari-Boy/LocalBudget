@@ -12,6 +12,7 @@
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import i18n from '../../infrastructure/i18n/i18n'
@@ -136,7 +137,7 @@ function balancedDraft(id: number, memo: string): JournalEntryDraft {
 }
 
 function setup(
-  overrides: Partial<{ entries: JournalEntry[]; drafts: JournalEntryDraft[]; initialFilter: JournalEntryFilter }> = {},
+  overrides: Partial<{ entries: JournalEntry[]; drafts: JournalEntryDraft[]; initialFilter: JournalEntryFilter; rulesPanel: ReactNode }> = {},
 ) {
   let entries = overrides.entries ?? makeEntries()
   let drafts = overrides.drafts ?? makeDrafts()
@@ -259,6 +260,7 @@ function setup(
     onSplit: vi.fn(),
     onProposalsChanged: vi.fn(),
     initialFilter: overrides.initialFilter,
+    rulesPanel: overrides.rulesPanel,
   }
   render(
     <I18nextProvider i18n={i18n}>
@@ -335,6 +337,24 @@ describe('JournalScreen', () => {
 
     expect(within(detail()).getByRole('button', { name: '定期仕訳にする' })).toBeDisabled()
     expect(within(detail()).getByText('割勘の仕訳は一回きりの精算のため、定期仕訳にできません')).toBeInTheDocument()
+  })
+
+  it('タブは「仕訳一覧・下書き・承認待ち・定期仕訳」の順で、定期仕訳のタブには rulesPanel の中身が出る(計画Issue #180)', async () => {
+    setup({ rulesPanel: <p>ルールの管理画面</p> })
+    await ready()
+
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['仕訳一覧', '下書き 1', '承認待ち 3', '定期仕訳'])
+    fireEvent.click(screen.getByRole('tab', { name: '定期仕訳' }))
+
+    expect(await screen.findByText('ルールの管理画面')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '仕訳の詳細' })).not.toBeInTheDocument()
+  })
+
+  it('rulesPanel を渡さないときは、定期仕訳のタブを出さない', async () => {
+    setup()
+    await ready()
+
+    expect(screen.queryByRole('tab', { name: '定期仕訳' })).not.toBeInTheDocument()
   })
 
   it('一覧と詳細が同じ画面に出て、行を選ぶと画面遷移なしで詳細が切り替わる', async () => {
@@ -729,7 +749,7 @@ describe('JournalScreen', () => {
   it('承認待ちの定期仕訳タブでは古い順に並び、先頭の提案を金額修正して確定できる', async () => {
     const props = setup()
     await ready()
-    fireEvent.click(screen.getByRole('tab', { name: /承認待ちの定期仕訳/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /^承認待ち/ }))
     const rows = await screen.findAllByRole('button', { name: /ネット代/ })
     expect(rows[0]).toHaveTextContent('2026')
     fireEvent.click(rows[0])
@@ -752,7 +772,7 @@ describe('JournalScreen', () => {
   it('同じルールの古い提案が残っていると確定も見送りもできず理由を表示する', async () => {
     const props = setup()
     await ready()
-    fireEvent.click(screen.getByRole('tab', { name: /承認待ちの定期仕訳/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /^承認待ち/ }))
     const rows = await screen.findAllByRole('button', { name: /ネット代/ })
     fireEvent.click(rows[1])
     expect(within(detail()).getByRole('button', { name: '承認して仕訳帳に反映' })).toBeDisabled()
@@ -764,7 +784,7 @@ describe('JournalScreen', () => {
   it('提案を見送ると skip を呼ぶ', async () => {
     const props = setup()
     await ready()
-    fireEvent.click(screen.getByRole('tab', { name: /承認待ちの定期仕訳/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /^承認待ち/ }))
     const rows = await screen.findAllByRole('button', { name: /ネット代/ })
     fireEvent.click(rows[0])
     fireEvent.click(within(detail()).getByRole('button', { name: '今回は見送る' }))
@@ -777,7 +797,7 @@ describe('JournalScreen', () => {
     async function openProposals() {
       const props = setup()
       await ready()
-      fireEvent.click(screen.getByRole('tab', { name: /承認待ちの定期仕訳/ }))
+      fireEvent.click(screen.getByRole('tab', { name: /^承認待ち/ }))
       await screen.findAllByRole('button', { name: /ネット代/ })
       return props
     }

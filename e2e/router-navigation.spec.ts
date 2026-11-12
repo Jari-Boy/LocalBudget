@@ -82,12 +82,16 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
     await page.goto('/#/master')
     await expect(page).toHaveURL(/#\/master\/accounts$/)
 
-    // 科目の一覧・追加・グループ、定期仕訳ルールの旧URLは、マスタ画面の該当タブへ(計画Issue #154)
+    // 科目の一覧・追加・グループの旧URLは、マスタ画面の該当タブへ(計画Issue #154)
     await page.goto('/#/master/accounts/list')
     await expect(page).toHaveURL(/#\/master\/accounts$/)
 
+    // 定期仕訳ルールの旧URLは、仕訳画面の「定期仕訳」タブへ(計画Issue #180)
     await page.goto('/#/journal/recurring/rules')
-    await expect(page).toHaveURL(/#\/master\/recurring$/)
+    await expect(page).toHaveURL(/#\/journal\/entries\?tab=rules$/)
+
+    await page.goto('/#/master/recurring')
+    await expect(page).toHaveURL(/#\/journal\/entries\?tab=rules$/)
 
     await page.goto('/#/journal/splitting/new')
     await expect(page).toHaveURL(/#\/journal\/splitting$/)
