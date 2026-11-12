@@ -255,6 +255,18 @@ describe('JournalLineTable(インライン編集)', () => {
     expect(screen.getByRole('status')).toHaveTextContent('貸借が一致しています')
   })
 
+  it('貸借の一致状況は、貸方合計の下(貸方の列)に出る。保存などのボタンとは別の行', () => {
+    render(<Harness />)
+    const status = screen.getByRole('status')
+    const creditTotal = screen.getByText(`貸方合計 ${yen(1280)}`, { exact: false })
+    // 貸方の列(境目の縦線のクラスが付いたセル)の中にあり、貸方合計より後ろ(下)にある
+    expect(status.closest('td')).toHaveClass('journal-line-table__credit-start')
+    expect(creditTotal.closest('td')).toHaveClass('journal-line-table__credit-start')
+    expect(creditTotal.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(status.closest('tr')).not.toBe(creditTotal.closest('tr'))
+    expect(status.closest('tr')).not.toBe(screen.getByRole('button', { name: '保存' }).closest('tr'))
+  })
+
   it('金額を変えて貸借が合わなくなると、差額を表示し、保存が押せなくなる', () => {
     render(<Harness />)
     fireEvent.change(screen.getByLabelText('借方の金額'), { target: { value: '1500' } })

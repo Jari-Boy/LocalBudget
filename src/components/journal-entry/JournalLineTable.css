@@ -177,7 +177,8 @@
  * 場所を取るため)。入力欄そのものの枠・角丸・背景は付けず、触れたときだけ背景と枠で示す
  */
 .journal-line-table__editing td.journal-line-table__cell:not(.journal-line-table__debit-start):not(.journal-line-table__credit-start) {
-  border-left: 1px solid var(--color-border-soft);
+  /* 各ブロック(セル)の境界が分かるよう、薄い罫線を引く */
+  border-left: 1px solid var(--color-border);
 }
 
 .journal-line-table__editing td.journal-line-table__cell {
@@ -320,10 +321,9 @@
   gap: 16px;
 }
 
-/* 横スクロールしても、状況は左端・ボタンは右端の見える位置に留める */
+/* 貸借の一致状況: 貸方合計の真下に、合計と同じ右端に揃えて出す */
 .journal-line-table__balance {
-  position: sticky;
-  left: 8px;
+  text-align: right;
   font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-accent);
@@ -332,6 +332,12 @@
 .journal-line-table__balance--off,
 .journal-line-table__error {
   color: var(--color-danger, #b42318);
+}
+
+/* 保存できない理由は、横スクロールしても左端の見える位置に留める */
+.journal-line-table__error-slot {
+  position: sticky;
+  left: 8px;
 }
 
 .journal-line-table__error {

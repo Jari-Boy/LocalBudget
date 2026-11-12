@@ -308,20 +308,29 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
             </div>
           </td>
         </tr>
+        {/* 貸借の一致状況は、貸方合計の真下(貸方の列)に出す */}
+        <tr className="journal-line-table__bar journal-line-table__bar--balance">
+          <td colSpan={4} />
+          <td colSpan={SIDE_COLUMNS.length} className="journal-line-table__debit-start" />
+          <td colSpan={SIDE_COLUMNS.length} className="journal-line-table__credit-start">
+            <div
+              role="status"
+              className={`journal-line-table__balance${balance.isBalanced ? '' : ' journal-line-table__balance--off'}`}
+            >
+              {balance.isBalanced ? '貸借が一致しています' : `貸借が合っていません(差額 ${formatCurrency(balance.difference, 'JPY')})`}
+            </div>
+          </td>
+        </tr>
         <tr className="journal-line-table__bar journal-line-table__bar--actions">
           <td colSpan={COLUMN_COUNT}>
             <div className="journal-line-table__actions">
-              <span
-                role="status"
-                className={`journal-line-table__balance${balance.isBalanced ? '' : ' journal-line-table__balance--off'}`}
-              >
-                {balance.isBalanced ? '貸借が一致しています' : `貸借が合っていません(差額 ${formatCurrency(balance.difference, 'JPY')})`}
+              <span className="journal-line-table__error-slot">
+                {e.error !== undefined && e.error !== '' && (
+                  <span role="alert" className="journal-line-table__error">
+                    {e.error}
+                  </span>
+                )}
               </span>
-              {e.error !== undefined && e.error !== '' && (
-                <span role="alert" className="journal-line-table__error">
-                  {e.error}
-                </span>
-              )}
               <span className="journal-line-table__buttons">
                 {e.deleteArmed ? (
                   <span role="alert" className="journal-line-table__delete-box">
