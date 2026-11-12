@@ -21,6 +21,11 @@ export interface JournalLinesEditorProps {
   bookkeeperId: number | null
   /** true のとき、科目・取引先・プロジェクト・世帯メンバーと行の追加・削除は編集できない(金額だけ編集できる) */
   readOnlyLines?: boolean
+  /**
+   * 渡すと、世帯メンバーの選択肢に「未指定」の項目をこの名前で常に出す(定期仕訳のルール。行で決めない
+   * ときは、確定時に 科目の既定メンバー > 起票者 の順で決まる)。省略時は、未指定の行にだけ「選択してください」を出す
+   */
+  memberNoneLabel?: string
   /** 渡すと、精算バッチの選択肢に「+ 新しいバッチ」を出す。名前を受けて作成したバッチを返す */
   onCreateBatch?: (name: string) => Promise<SettlementBatch>
   /** 渡すと、取引先の選択ツリーに「+ 新規追加」を出す。作成後に呼ぶ apply へ取引先のIDを渡す */
@@ -46,6 +51,7 @@ export function JournalLinesEditor({
   master,
   bookkeeperId,
   readOnlyLines = false,
+  memberNoneLabel,
   onCreateBatch,
   onRequestCreateCounterparty,
 }: JournalLinesEditorProps) {
@@ -222,7 +228,9 @@ export function JournalLinesEditor({
                             }))
                           }
                         >
-                          {line.householdMemberId === null && <option value="">選択してください</option>}
+                          {(line.householdMemberId === null || memberNoneLabel !== undefined) && (
+                            <option value="">{memberNoneLabel ?? '選択してください'}</option>
+                          )}
                           {defaultMember === undefined ? (
                             memberOptions(line.householdMemberId)
                           ) : (

@@ -16,11 +16,14 @@ import type { Project } from '../../domain/project/Project'
 import type { ProjectRepository } from '../../domain/project/ProjectRepository'
 import type { ProjectGroup } from '../../domain/project-group/ProjectGroup'
 import type { ProjectGroupRepository } from '../../domain/project-group/ProjectGroupRepository'
+import { scheduleAmountsForRound } from '../../domain/recurring-transaction/recurringAmountSchedule'
+import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
+import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
 import { isRecurringRuleEnded } from '../../domain/recurring-transaction/isRecurringRuleEnded'
 import { previewUpcomingDueDates } from '../../domain/recurring-transaction/previewUpcomingDueDates'
 import type { RecurringTransactionRule } from '../../domain/recurring-transaction/RecurringTransactionRule'
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
-import { TreeSelect } from '../common/tree-select/TreeSelect'
+import { JournalLinesEditor } from '../journal-entry/JournalLinesEditor'
 import {
   describeRecurringSchedule,
   describeRecurringScheduleNotes,
@@ -39,6 +42,7 @@ import {
   ruleFromForm,
   type RuleForm,
 } from './recurringRuleForm'
+import { RuleAmountSchedulePanel } from './RuleAmountSchedulePanel'
 import '../journal-entry/JournalEntryEditor.css'
 import './master.css'
 
@@ -62,6 +66,8 @@ export interface RuleMasterTabProps {
   projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll'>>
   projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
+  /** 行の精算バッチの選択肢(計画Issue #180)。省略時は選択肢なし */
+  settlementBatchRepository?: MaybeAsync<Pick<SettlementBatchRepository, 'findAll'>>
   /** 「次回」・終了の判定・再開日の既定・開始日の既定の基準日(YYYY-MM-DD)。省略時は今日 */
   today?: string
 }
@@ -76,6 +82,7 @@ interface LoadedData {
   projects: Project[]
   projectGroups: ProjectGroup[]
   members: HouseholdMember[]
+  batches: SettlementBatch[]
 }
 
 /** 'create'は作成フォーム、数値は該当ルールの編集フォーム */
@@ -95,6 +102,20 @@ const WEEK_VALUES: ReadonlyArray<{ value: number; key: string }> = [
 ]
 const WEEKDAY_KEYS = ['dayOfWeekSun', 'dayOfWeekMon', 'dayOfWeekTue', 'dayOfWeekWed', 'dayOfWeekThu', 'dayOfWeekFri', 'dayOfWeekSat']
 const INTERVAL_UNIT_KEYS = { weekly: 'ruleTab.unitWeekly', monthly: 'ruleTab.unitMonthly', yearly: 'ruleTab.unitYearly' } as const
+
+/**
+ * 一覧の金額の欄(計画Issue #180)。借方の合計。金額の初期値が金額表のルールは、次の回(生成済みの件数+1回目。
+ * 最後の回まで生成済みなら最後の回)の借方の合計
+ */
+function listAmountOf(rule: RecurringTransactionRule, generatedCount: number): number {
+  const amounts =
+    rule.amountMode === 'schedule'
+      ? scheduleAmountsForRound(rule.schedule, Math.min(generatedCount + 1, rule.schedule.length))
+      : null
+  return rule.lines
+    .filter((l) => l.side === 'debit')
+    .reduce((total, l) => total + (amounts?.get(l.lineNo) ?? l.amount), 0)
+}
 
 const yen = (amount: number) => `¥${amount.toLocaleString('ja-JP')}`
 const slashDate = (date: string) => date.replaceAll('-', '/')
@@ -138,11 +159,12 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
     projectRepository,
     projectGroupRepository,
     householdMemberRepository,
+    settlementBatchRepository,
   } = props
   const today = props.today ?? new Date().toISOString().slice(0, 10)
 
   const load = useCallback(async () => {
-    const [rules, accounts, accountGroups, counterparties, counterpartyGroups, projects, projectGroups, members] =
+    const [rules, accounts, accountGroups, counterparties, counterpartyGroups, projects, projectGroups, members, batches] =
       await Promise.all([
         ruleRepo.findAll(),
         accountRepository.findAll(),
@@ -152,6 +174,7 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
         projectRepository.findAll(),
         projectGroupRepository.findAll(),
         householdMemberRepository.findAll(),
+        settlementBatchRepository === undefined ? [] : settlementBatchRepository.findAll(),
       ])
     const counts = await Promise.all(rules.map((r) => ruleRepo.countGeneratedJournalEntries(r.id)))
     setData({
@@ -164,6 +187,7 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
       projects,
       projectGroups,
       members,
+      batches,
     })
   }, [
     ruleRepo,
@@ -174,6 +198,7 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
     projectRepository,
     projectGroupRepository,
     householdMemberRepository,
+    settlementBatchRepository,
   ])
 
   useEffect(() => {
@@ -203,13 +228,6 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const accountById = new Map(data.accounts.map((a) => [a.id, a]))
-  /** 取引先を置ける(費用・収益の)科目か。2行のフォームの保存で、取引先をPL科目の行にだけ設定するのに使う */
-  const isPlAccount = (id: number) => {
-    const category = accountById.get(id)?.category
-    return category === 'expense' || category === 'revenue'
-  }
-  const projectNameById = new Map(data.projects.map((p) => [p.id, p.name]))
   const run = async (action: () => unknown, errorMessage: string) => {
     setBusy(true)
     setError(null)
@@ -284,8 +302,16 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
                       ))}
                     </td>
                     <td className="master-table__nowrap">
-                      {yen(rule.lines.filter((l) => l.side === 'debit').reduce((total, l) => total + l.amount, 0))}
+                      {yen(listAmountOf(rule, data.generatedCounts.get(rule.id) ?? 0))}
                       {rule.amountMode === 'last_confirmed' && <p className="master-note">{t('ruleTab.lastConfirmed')}</p>}
+                      {rule.amountMode === 'schedule' && (
+                        <p className="master-note">
+                          {t('ruleTab.scheduleProgress', {
+                            n: Math.min((data.generatedCounts.get(rule.id) ?? 0) + 1, rule.schedule.length),
+                            total: rule.schedule.length,
+                          })}
+                        </p>
+                      )}
                     </td>
                     <td className="master-table__nowrap">{next === null ? '-' : slashDate(next)}</td>
                     <td className="master-table__nowrap">
@@ -318,8 +344,8 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           counterpartyCategories={pickers.counterparties}
           projectCategories={pickers.projects}
           members={data.members}
-          accountById={accountById}
-          projectNameById={projectNameById}
+          accounts={data.accounts}
+          batches={data.batches}
           error={error}
           busy={busy}
           armed={armed}
@@ -327,9 +353,9 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           onSubmit={(form) =>
             run(async () => {
               if (selectedRule) {
-                await ruleRepo.update(selectedRule.id, buildRuleInput(form, isPlAccount))
+                await ruleRepo.update(selectedRule.id, buildRuleInput(form))
               } else {
-                const created = await ruleRepo.create(buildRuleInput(form, isPlAccount))
+                const created = await ruleRepo.create(buildRuleInput(form))
                 setMode(created.id)
               }
             }, t(selectedRule ? 'accountTab.saveError' : 'ruleTab.registerError'))
@@ -370,8 +396,8 @@ interface RuleFormProps {
   counterpartyCategories: ReturnType<typeof buildTreeSelectCategories>
   projectCategories: ReturnType<typeof buildTreeSelectCategories>
   members: readonly HouseholdMember[]
-  accountById: ReadonlyMap<number, Account>
-  projectNameById: ReadonlyMap<number, string>
+  accounts: readonly Account[]
+  batches: readonly SettlementBatch[]
   /** 直前の操作の失敗。操作ボタンの直上に表示する */
   error: { message: string; reason: string } | null
   busy: boolean
@@ -385,10 +411,10 @@ interface RuleFormProps {
 }
 
 /**
- * 定期取引ルールの作成・編集フォーム(右パネル)。入力は下書きとして持ち、保存・登録で確定する。
- * 借方・貸方の行の部分は仕訳エディタと同じ見た目(journal-editorのCSS)で、今のルールの表で持てない項目
- * (行の追加・削除、貸方の金額、貸方のプロジェクト、行ごとの世帯メンバー)は無効の表示にする
- * (複数行への対応・共通部品化・精算バッチは計画Issue #180で扱う)。
+ * 定期仕訳ルールの作成・編集フォーム(右パネル)。入力は下書きとして持ち、保存・登録で確定する。
+ * 借方・貸方の行の部分は、仕訳の起票と同じ行編集の共通部品(JournalLinesEditor、計画Issue #180)で、
+ * 3行以上の複合仕訳・精算バッチ・行ごとの世帯メンバーも編集できる。金額の初期値が「回ごとの金額表」のときは、
+ * 行の金額ではなく金額表(RuleAmountSchedulePanel)で金額を決める。
  */
 function RuleForm(props: RuleFormProps) {
   const { t } = useTranslation('master')
@@ -398,22 +424,32 @@ function RuleForm(props: RuleFormProps) {
   const [resumedOn, setResumedOn] = useState(props.today)
   const set = <K extends keyof RuleForm>(key: K, value: RuleForm[K]) => setForm((f) => ({ ...f, [key]: value }))
   const num = (value: string): number | '' => (value === '' ? '' : Number(value))
-  const isPl = (id: number | '') => {
-    const category = id === '' ? undefined : props.accountById.get(id)?.category
-    return category === 'expense' || category === 'revenue'
-  }
-  // 取引先は、仕訳エディタと同じく費用・収益の科目の行にだけ出す(両方なら借方の行)
-  const debitHasCounterparty = isPl(form.debitAccountId)
-  const creditHasCounterparty = !debitHasCounterparty && isPl(form.creditAccountId)
   const title = t(props.isCreate ? 'ruleTab.createTitle' : 'ruleTab.editTitle')
   const valid = isRuleFormValid(form)
   const monthly = form.frequency === 'monthly'
   const byWeekday = monthly && form.monthlyMode === 'weekday'
   const showDay = form.frequency === 'yearly' || (monthly && !byWeekday)
   const showWeekday = form.frequency === 'weekly' || byWeekday
-  const amountNumber = Number(form.amount)
-  const total = Number.isFinite(amountNumber) ? amountNumber : 0
-  const projectName = form.projectId === '' ? t('ruleTab.none') : (props.projectNameById.get(form.projectId) ?? t('ruleTab.none'))
+  const master = useMemo(
+    () => ({
+      accounts: props.accounts,
+      accountCategories: props.accountCategories,
+      counterpartyCategories: props.counterpartyCategories,
+      projectCategories: props.projectCategories,
+      members: props.members,
+      batches: props.batches,
+    }),
+    [props.accounts, props.accountCategories, props.counterpartyCategories, props.projectCategories, props.members, props.batches],
+  )
+  const accountNameById = new Map(props.accounts.map((a) => [a.id, a.name]))
+  /** 金額表の各回の期日(土日の調整前)。開始日から数えた回の数だけ求める。入力が揃わないときは空 */
+  const scheduleDueDates = useMemo(
+    () =>
+      form.amountMode === 'schedule' && isScheduleFormValid(form)
+        ? previewUpcomingDueDates(ruleFromForm(form), form.startsOn, Math.max(form.schedule.length, 1), 0).map((d) => d.dueDate)
+        : [],
+    [form],
+  )
 
   const preview = useMemo(
     () => (isScheduleFormValid(form) ? previewUpcomingDueDates(ruleFromForm(form), props.today, 3, props.generatedCount) : null),
@@ -429,31 +465,6 @@ function RuleForm(props: RuleFormProps) {
         {options}
       </select>
     </div>
-  )
-
-  const counterpartyField = (
-    <div className="journal-editor__sub-field">
-      <TreeSelect
-        label={t('ruleTab.counterparty')}
-        categories={props.counterpartyCategories}
-        value={form.counterpartyId === '' ? '' : String(form.counterpartyId)}
-        onChange={(v) => set('counterpartyId', num(v))}
-        emptyLabel={t('ruleTab.none')}
-        placeholder={t('ruleTab.none')}
-      />
-    </div>
-  )
-
-  /** 今のルールの表では行ごとに持てない世帯メンバー(起票者に従う)。無効の表示にする */
-  const memberFollowsField = (
-    <select
-      disabled
-      className="journal-editor__control journal-editor__select"
-      aria-label={t('ruleTab.memberFollowsLabel')}
-      value="follows"
-    >
-      <option value="follows">{t('ruleTab.memberFollows')}</option>
-    </select>
   )
 
   return (
@@ -715,106 +726,38 @@ function RuleForm(props: RuleFormProps) {
           />
           {t('ruleTab.amountModeLast')}
         </label>
+        <label className="master-radio">
+          <input
+            type="radio"
+            name="rule-amount-mode"
+            checked={form.amountMode === 'schedule'}
+            onChange={() => set('amountMode', 'schedule')}
+          />
+          {t('ruleTab.amountModeSchedule')}
+        </label>
         <p className="master-note">{t('ruleTab.amountModeHint')}</p>
       </fieldset>
 
-      <div className="journal-editor__columns">
-        <section role="group" aria-label={t('ruleTab.debitColumn')} className="journal-editor__column">
-          <header className="journal-editor__column-head">
-            <span>{t('ruleTab.debitColumn')}</span>
-            <span className="journal-editor__amount-text">{yen(total)}</span>
-          </header>
-          <div className="journal-editor__line">
-            <div className="journal-editor__line-main">
-              <div className="journal-editor__grow">
-                <TreeSelect
-                  label={t('ruleTab.debit')}
-                  categories={props.accountCategories}
-                  value={form.debitAccountId === '' ? '' : String(form.debitAccountId)}
-                  onChange={(v) => set('debitAccountId', num(v))}
-                  placeholder={t('ruleTab.choose')}
-                />
-              </div>
-              <input
-                id="rule-amount"
-                className="journal-editor__control journal-editor__amount"
-                inputMode="numeric"
-                aria-label={t('ruleTab.amount')}
-                value={form.amount}
-                onChange={(e) => set('amount', e.target.value)}
-              />
-              <button type="button" className="journal-editor__icon-button" aria-label={t('ruleTab.deleteRow')} disabled>
-                ×
-              </button>
-            </div>
-            <div className="journal-editor__line-sub">
-              {debitHasCounterparty && counterpartyField}
-              <div className="journal-editor__sub-field">
-                <TreeSelect
-                  label={t('ruleTab.project')}
-                  categories={props.projectCategories}
-                  value={form.projectId === '' ? '' : String(form.projectId)}
-                  onChange={(v) => set('projectId', num(v))}
-                  emptyLabel={t('ruleTab.none')}
-                  placeholder={t('ruleTab.none')}
-                />
-              </div>
-              {memberFollowsField}
-            </div>
-          </div>
-          <button type="button" className="journal-editor__add" disabled>
-            {t('ruleTab.addDebitRow')}
-          </button>
-        </section>
+      <JournalLinesEditor
+        lines={form.lines}
+        onChange={(lines) => set('lines', lines)}
+        master={master}
+        bookkeeperId={null}
+        memberNoneLabel={t('ruleTab.memberFollows')}
+      />
 
-        <section role="group" aria-label={t('ruleTab.creditColumn')} className="journal-editor__column">
-          <header className="journal-editor__column-head">
-            <span>{t('ruleTab.creditColumn')}</span>
-            <span className="journal-editor__amount-text">{yen(total)}</span>
-          </header>
-          <div className="journal-editor__line">
-            <div className="journal-editor__line-main">
-              <div className="journal-editor__grow">
-                <TreeSelect
-                  label={t('ruleTab.credit')}
-                  categories={props.accountCategories}
-                  value={form.creditAccountId === '' ? '' : String(form.creditAccountId)}
-                  onChange={(v) => set('creditAccountId', num(v))}
-                  placeholder={t('ruleTab.choose')}
-                />
-              </div>
-              <input
-                disabled
-                className="journal-editor__control journal-editor__amount"
-                aria-label={t('ruleTab.creditAmount')}
-                value={form.amount}
-                readOnly
-              />
-              <button type="button" className="journal-editor__icon-button" aria-label={t('ruleTab.deleteRow')} disabled>
-                ×
-              </button>
-            </div>
-            <div className="journal-editor__line-sub">
-              {creditHasCounterparty && counterpartyField}
-              <select
-                disabled
-                className="journal-editor__control journal-editor__select"
-                aria-label={t('ruleTab.creditProject')}
-                value="same"
-              >
-                <option value="same">{projectName}</option>
-              </select>
-              {memberFollowsField}
-            </div>
-          </div>
-          <button type="button" className="journal-editor__add" disabled>
-            {t('ruleTab.addCreditRow')}
-          </button>
-        </section>
-      </div>
-      <div role="status" className="journal-editor__balance">
-        {t('ruleTab.balanced')}
-      </div>
+      {form.amountMode === 'schedule' && (
+        <RuleAmountSchedulePanel
+          lines={form.lines.map(({ line }) => ({
+            side: line.side ?? 'debit',
+            accountName: line.accountId === null ? '未選択' : (accountNameById.get(line.accountId) ?? '未選択'),
+          }))}
+          schedule={form.schedule}
+          onChange={(schedule) => set('schedule', schedule)}
+          confirmedRounds={props.generatedCount}
+          dueDates={scheduleDueDates}
+        />
+      )}
 
       {props.error && (
         <div role="alert" className="master-error">

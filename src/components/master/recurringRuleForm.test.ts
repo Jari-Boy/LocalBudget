@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { RecurringTransactionRule } from '../../domain/recurring-transaction/RecurringTransactionRule'
+import type { JournalEditorLine } from '../journal-entry/JournalEntryEditor'
 import {
   buildRuleInput,
   emptyRuleForm,
@@ -17,13 +18,24 @@ import {
   type RuleForm,
 } from './recurringRuleForm'
 
+const editorLine = (
+  key: number,
+  side: 'debit' | 'credit',
+  accountId: number | null,
+  amount: string,
+  extra: Partial<JournalEditorLine['line']> = {},
+): JournalEditorLine => ({
+  key,
+  line: { accountId, side, amountInput: amount, projectId: null, householdMemberId: null, counterpartyId: null, ...extra },
+})
+
+const twoLines = (amount = '98000') => [editorLine(1, 'debit', 1, amount), editorLine(2, 'credit', 2, amount)]
+
 function form(overrides: Partial<RuleForm> = {}): RuleForm {
   return {
     ...emptyRuleForm(),
     name: '家賃',
-    debitAccountId: 1,
-    creditAccountId: 2,
-    amount: '98000',
+    lines: twoLines(),
     frequency: 'monthly',
     monthlyMode: 'dayOfMonth',
     dayOfMonth: 27,
@@ -66,24 +78,47 @@ describe('buildRuleInput', () => {
     })
   })
 
-  it('名称・金額・科目・任意項目を、型を整えて渡す(空の任意項目はnull)', () => {
-    const input = buildRuleInput(form({ name: ' 家賃 ', projectId: 7, maxOccurrences: '12' }))
+  it('名称・行・任意項目を、型を整えて渡す(空の任意項目はnull)', () => {
+    const lines = [
+      editorLine(1, 'debit', 1, '98000', { projectId: 7, counterpartyId: 5 }),
+      editorLine(2, 'credit', 2, '98000', { projectId: 7 }),
+    ]
+
+    const input = buildRuleInput(form({ name: ' 家賃 ', lines, maxOccurrences: '12' }))
 
     expect(input).toMatchObject({ name: '家賃', bookkeeperHouseholdMemberId: null, maxOccurrences: 12 })
     expect(input.lines).toEqual([
-      { side: 'debit', accountId: 1, amount: 98000, projectId: 7, counterpartyId: null },
-      { side: 'credit', accountId: 2, amount: 98000, projectId: 7, counterpartyId: null },
+      { side: 'debit', accountId: 1, amount: 98000, projectId: 7, householdMemberId: null, counterpartyId: 5, settlementBatchId: null },
+      { side: 'credit', accountId: 2, amount: 98000, projectId: 7, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
     ])
     expect(buildRuleInput(form()).maxOccurrences).toBeNull()
   })
 
-  it('取引先は、PL区分(収益・費用)の行にだけ設定する(借方が先)。起票者はルール単位に渡す(計画Issue #180)', () => {
-    const input = buildRuleInput(form({ counterpartyId: 5, householdMemberId: 3 }), (id) => id === 2)
+  it('3行以上の複合仕訳は、全行を渡す。起票者はルール単位、行の世帯メンバーは行単位に渡す(計画Issue #180)', () => {
+    const lines = [
+      editorLine(1, 'debit', 1, '280000', { householdMemberId: 4 }),
+      editorLine(2, 'debit', 3, '80000'),
+      editorLine(3, 'credit', 2, '360000'),
+    ]
+
+    const input = buildRuleInput(form({ lines, householdMemberId: 3 }))
 
     expect(input.bookkeeperHouseholdMemberId).toBe(3)
-    expect(input.lines.map((l) => l.counterpartyId)).toEqual([null, 5])
-    expect(buildRuleInput(form({ counterpartyId: 5 }), () => true).lines.map((l) => l.counterpartyId)).toEqual([5, null])
-    expect(buildRuleInput(form({ counterpartyId: 5 }), () => false).lines.map((l) => l.counterpartyId)).toEqual([null, null])
+    expect(input.lines.map((l) => [l.accountId, l.amount, l.householdMemberId])).toEqual([
+      [1, 280000, 4],
+      [3, 80000, null],
+      [2, 360000, null],
+    ])
+  })
+
+  it('金額の初期値が金額表なら、金額表を渡す(行の金額は仮の1。保存時に1回目の金額になる)', () => {
+    const schedule = [{ round: 1, amounts: [{ lineNo: 1, amount: 100 }, { lineNo: 2, amount: 100 }] }]
+
+    const input = buildRuleInput(form({ amountMode: 'schedule', schedule }))
+
+    expect(input.schedule).toEqual(schedule)
+    expect(input.lines.map((l) => l.amount)).toEqual([1, 1])
+    expect(buildRuleInput(form()).schedule).toBeUndefined()
   })
 })
 
@@ -92,13 +127,32 @@ describe('isRuleFormValid', () => {
     expect(isRuleFormValid(form())).toBe(true)
   })
 
-  it('名称・借方・貸方・金額のどれかが欠けると無効である', () => {
+  it('名称・行の科目・行の金額のどれかが欠けると無効である', () => {
     expect(isRuleFormValid(form({ name: ' ' }))).toBe(false)
-    expect(isRuleFormValid(form({ debitAccountId: '' }))).toBe(false)
-    expect(isRuleFormValid(form({ creditAccountId: '' }))).toBe(false)
-    expect(isRuleFormValid(form({ amount: '' }))).toBe(false)
-    expect(isRuleFormValid(form({ amount: '0' }))).toBe(false)
-    expect(isRuleFormValid(form({ amount: 'abc' }))).toBe(false)
+    expect(isRuleFormValid(form({ lines: [editorLine(1, 'debit', null, '1'), editorLine(2, 'credit', 2, '1')] }))).toBe(false)
+    expect(isRuleFormValid(form({ lines: twoLines('') }))).toBe(false)
+    expect(isRuleFormValid(form({ lines: twoLines('0') }))).toBe(false)
+    expect(isRuleFormValid(form({ lines: twoLines('abc') }))).toBe(false)
+  })
+
+  it('貸借が一致しない行構成、2行未満は無効で、3行以上でも貸借が一致すれば有効である(計画Issue #180)', () => {
+    expect(isRuleFormValid(form({ lines: [editorLine(1, 'debit', 1, '100'), editorLine(2, 'credit', 2, '90')] }))).toBe(false)
+    expect(isRuleFormValid(form({ lines: [editorLine(1, 'debit', 1, '100')] }))).toBe(false)
+    expect(
+      isRuleFormValid(
+        form({ lines: [editorLine(1, 'debit', 1, '60'), editorLine(2, 'debit', 3, '40'), editorLine(3, 'credit', 2, '100')] }),
+      ),
+    ).toBe(true)
+  })
+
+  it('金額の初期値が金額表のときは、行の金額ではなく金額表の有効性で判定する(貸借が一致しない回があれば無効)', () => {
+    const lines = [editorLine(1, 'debit', 1, ''), editorLine(2, 'credit', 2, '')]
+    const ok = [{ round: 1, amounts: [{ lineNo: 1, amount: 5 }, { lineNo: 2, amount: 5 }] }]
+    const off = [{ round: 1, amounts: [{ lineNo: 1, amount: 5 }, { lineNo: 2, amount: 4 }] }]
+
+    expect(isRuleFormValid(form({ amountMode: 'schedule', lines, schedule: ok }))).toBe(true)
+    expect(isRuleFormValid(form({ amountMode: 'schedule', lines, schedule: off }))).toBe(false)
+    expect(isRuleFormValid(form({ amountMode: 'schedule', lines, schedule: [] }))).toBe(false)
   })
 
   it('繰り返しごとに必要な項目が欠けると無効である', () => {
@@ -142,10 +196,34 @@ describe('ruleFormFromRule', () => {
     updatedAt: '2026-01-01T00:00:00.000Z',
   }
 
+  it('行は3行以上も含めて全行(科目・金額・取引先・精算バッチ)を、金額表は表のまま復元する(計画Issue #180)', () => {
+    const complex: RecurringTransactionRule = {
+      ...rule,
+      amountMode: 'schedule',
+      lines: [
+        { lineNo: 1, side: 'debit', accountId: 1, amount: 100, projectId: 9, householdMemberId: 4, counterpartyId: 6, settlementBatchId: null },
+        { lineNo: 2, side: 'debit', accountId: 3, amount: 10, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: 8 },
+        { lineNo: 3, side: 'credit', accountId: 2, amount: 110, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+      ],
+      schedule: [{ round: 1, amounts: [{ lineNo: 1, amount: 100 }, { lineNo: 2, amount: 10 }, { lineNo: 3, amount: 110 }] }],
+    }
+
+    const restored = ruleFormFromRule(complex)
+
+    expect(restored.lines.map((l) => [l.key, l.line.side, l.line.accountId, l.line.amountInput])).toEqual([
+      [1, 'debit', 1, '100'],
+      [2, 'debit', 3, '10'],
+      [3, 'credit', 2, '110'],
+    ])
+    expect(restored.lines[0].line).toMatchObject({ projectId: 9, householdMemberId: 4, counterpartyId: 6 })
+    expect(restored.lines[1].line.settlementBatchId).toBe(8)
+    expect(restored.schedule).toEqual(complex.schedule)
+    expect(restored.amountMode).toBe('schedule')
+  })
+
   it('毎月の第N曜日のルールは、指定方法が曜日のフォームに復元される', () => {
     expect(ruleFormFromRule(rule)).toMatchObject({
       name: '燃えるごみ袋',
-      amount: '600',
       monthlyMode: 'weekday',
       weekOfMonth: 2,
       dayOfWeek: 6,

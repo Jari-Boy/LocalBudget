@@ -257,6 +257,7 @@ export function AppRoutes() {
             projectRepository={projectRepository}
             projectGroupRepository={projectGroupRepository}
             householdMemberRepository={householdMemberRepository}
+            settlementBatchRepository={settlementBatchRepository}
           />
         }
       />
