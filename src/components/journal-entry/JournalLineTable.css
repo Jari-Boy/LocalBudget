@@ -92,11 +92,12 @@
 }
 
 /*
- * 「日付〜コメント」「借方」「貸方」の3つの境目の縦線。仕訳の区切り線や行の線より濃くして、
- * 表を横に見渡したときにどこからどこまでが借方・貸方かすぐ分かるようにする
+ * 「日付〜コメント」「借方」「貸方」の3つの境目の縦線。仕訳の区切り線や行の線より一段濃くして、
+ * 表を横に見渡したときにどこからどこまでが借方・貸方かすぐ分かるようにする(濃すぎると重いため、
+ * 既存の強調用の線の色(--color-border-strong)に留める)
  */
 .journal-line-table {
-  --journal-line-table-divider: color-mix(in srgb, var(--color-text-muted) 65%, transparent);
+  --journal-line-table-divider: var(--color-border-strong);
 }
 
 .journal-line-table__debit-start,
@@ -171,23 +172,51 @@
   background: var(--color-accent-soft);
 }
 
+/*
+ * 編集中の入力欄は、枠つきのカードにせず、セルいっぱいに広げて罫線で区切る(カードだと余白が増えて
+ * 場所を取るため)。入力欄そのものの枠・角丸・背景は付けず、触れたときだけ背景と枠で示す
+ */
+.journal-line-table__editing td.journal-line-table__cell:not(.journal-line-table__debit-start):not(.journal-line-table__credit-start) {
+  border-left: 1px solid var(--color-border-soft);
+}
+
+.journal-line-table__editing td.journal-line-table__cell {
+  padding: 0;
+}
+
+.journal-line-table__editing tr + tr > td {
+  border-top-color: var(--color-border);
+}
+
+.journal-line-table__editing .journal-line-table__tag {
+  margin-left: 8px;
+}
+
 .journal-line-table__control {
+  display: block;
   width: 100%;
   min-width: 0;
-  min-height: 32px;
+  min-height: 34px;
   box-sizing: border-box;
-  padding: 4px 6px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background: var(--color-surface);
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--color-text);
   font: inherit;
   font-size: var(--font-size-xs);
 }
 
-.journal-line-table__control:focus-visible {
+.journal-line-table__control:hover,
+.journal-line-table .tree-select__trigger:hover {
+  background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+}
+
+.journal-line-table__control:focus-visible,
+.journal-line-table .tree-select__trigger:focus-visible {
+  background: var(--color-surface);
   outline: 2px solid var(--color-accent);
-  outline-offset: 0;
+  outline-offset: -2px;
 }
 
 /*
@@ -199,9 +228,11 @@
 }
 
 .journal-line-table .tree-select__trigger {
-  min-height: 32px;
-  padding: 0 6px;
-  border-color: var(--color-border);
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   font-size: var(--font-size-xs);
 }
 
@@ -214,7 +245,7 @@
 .journal-line-table__amount-edit {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
 }
 
 .journal-line-table__amount-input {
@@ -241,6 +272,8 @@
 }
 
 .journal-line-table__locked {
+  display: block;
+  padding: 0 8px;
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
 }
