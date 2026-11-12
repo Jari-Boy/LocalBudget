@@ -48,6 +48,7 @@ import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../ma
 import type { MaybeAsync } from '../master/maybeAsync'
 import { UnsavedChangesDialog } from '../common/unsaved-changes/UnsavedChangesDialog'
 import { useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
+import { canCreateRuleFromEntry } from '../../domain/recurring-transaction/canCreateRuleFromEntry'
 import { CreateRuleFromEntryDialog } from './CreateRuleFromEntryDialog'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
 import { JournalEntryEditor, type JournalEditorLine, type JournalEditorMaster, type JournalEditorValue } from './JournalEntryEditor'
@@ -807,6 +808,8 @@ export function JournalScreen(props: JournalScreenProps) {
             : []
           : []
 
+  /** 「定期仕訳にする」を押せるか(割勘・初期残高・残高調整の仕訳は作れない、計画Issue #180) */
+  const ruleCheck = selectedEntry ? canCreateRuleFromEntry(selectedEntry) : ({ allowed: true } as const)
   const incompleteReason = editor === null ? null : findIncompleteReason(lineInputs())
   const stagedReason = (() => {
     if (selection?.kind === 'proposal') {
@@ -1065,14 +1068,20 @@ export function JournalScreen(props: JournalScreenProps) {
                   </button>
                 )}
                 {selection.kind === 'entry' && selectedEntry && (
-                  <button
-                    type="button"
-                    className="journal-screen__button"
-                    disabled={busy}
-                    onClick={() => guarded(() => setRuleDialogEntry(selectedEntry))}
-                  >
-                    定期仕訳にする
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="journal-screen__button"
+                      disabled={busy || !ruleCheck.allowed}
+                      aria-describedby="journal-rule-reason"
+                      onClick={() => guarded(() => setRuleDialogEntry(selectedEntry))}
+                    >
+                      定期仕訳にする
+                    </button>
+                    <span id="journal-rule-reason" className="journal-screen__note">
+                      {ruleCheck.allowed ? '' : ruleCheck.reason}
+                    </span>
+                  </>
                 )}
                 {selection.kind === 'entry' && split !== null && (
                   <>

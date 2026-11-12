@@ -327,6 +327,16 @@ describe('JournalScreen', () => {
     expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
   })
 
+  it('割勘の仕訳では「定期仕訳にする」を押せず、理由を表示する(繰り返すものではないため、計画Issue #180)', async () => {
+    setup()
+    await ready()
+
+    fireEvent.click(screen.getByRole('button', { name: /割勘の夕食/ }))
+
+    expect(within(detail()).getByRole('button', { name: '定期仕訳にする' })).toBeDisabled()
+    expect(within(detail()).getByText('割勘の仕訳は一回きりの精算のため、定期仕訳にできません')).toBeInTheDocument()
+  })
+
   it('一覧と詳細が同じ画面に出て、行を選ぶと画面遷移なしで詳細が切り替わる', async () => {
     setup()
     await ready()
