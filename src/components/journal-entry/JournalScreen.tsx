@@ -1010,7 +1010,7 @@ export function JournalScreen(props: JournalScreenProps) {
                 value={editor}
                 onChange={changeEditor}
                 master={master}
-                readOnlyLines={selection.kind === 'proposal'}
+                lockEntryDate={selection.kind === 'proposal'}
                 onCreateBatch={async (name) => {
                   const created = await settlementBatchRepository.create({ name, type: 'expense_splitting' })
                   setData((prev) => (prev === null ? prev : { ...prev, batches: [...prev.batches, created] }))

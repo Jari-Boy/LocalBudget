@@ -65,9 +65,9 @@ const credit = (key: number, accountId: number | null, amount: string): JournalE
   line: { accountId, side: 'credit' as const, amountInput: amount, projectId: null, householdMemberId: 1, counterpartyId: null },
 })
 
-function Harness({ initial, readOnlyLines }: { initial: JournalEditorValue; readOnlyLines?: boolean }) {
+function Harness({ initial, readOnlyLines, lockEntryDate }: { initial: JournalEditorValue; readOnlyLines?: boolean; lockEntryDate?: boolean }) {
   const [v, setV] = useState(initial)
-  return <JournalEntryEditor value={v} onChange={setV} master={master} readOnlyLines={readOnlyLines} />
+  return <JournalEntryEditor value={v} onChange={setV} master={master} readOnlyLines={readOnlyLines} lockEntryDate={lockEntryDate} />
 }
 
 describe('JournalEntryEditor', () => {
@@ -185,9 +185,10 @@ describe('JournalEntryEditor', () => {
     expect(next.lines[next.lines.length - 1].line.householdMemberId).toBe(1)
   })
 
-  it('提案(readOnlyLines)では起票者を変えられない', () => {
-    render(<Harness initial={value([debit(1, 1, '1000'), credit(2, 2, '1000')])} readOnlyLines />)
+  it('提案(lockEntryDate)では起票者と取引日を変えられない', () => {
+    render(<Harness initial={value([debit(1, 1, '1000'), credit(2, 2, '1000')])} lockEntryDate />)
     expect(screen.getByRole('combobox', { name: '起票者' })).toBeDisabled()
+    expect(screen.getByLabelText('取引日')).toBeDisabled()
   })
 
   it('摘要・コメントを編集すると onChange に反映される', () => {
@@ -203,7 +204,7 @@ describe('JournalEntryEditor', () => {
     expect(screen.getByRole('button', { name: '+ 貸方の行を追加' })).toBeDisabled()
     for (const button of screen.getAllByRole('button', { name: /の行を削除|^行を削除$/ })) expect(button).toBeDisabled()
     expect(screen.getByLabelText('食費の金額')).not.toBeDisabled()
-    expect(screen.getByLabelText('取引日')).toBeDisabled()
+    expect(screen.getByLabelText('取引日')).not.toBeDisabled()
     expect(screen.getByLabelText('摘要(任意)')).not.toBeDisabled()
     expect(screen.getByLabelText('コメント(任意)')).not.toBeDisabled()
   })

@@ -792,14 +792,28 @@ describe('JournalScreen', () => {
       )
     })
 
-    it('詳細パネルの各行の2段目(取引先・プロジェクト・世帯メンバー)は読み取り専用', async () => {
+    it('確認パネルは仕訳の起票と同じ編集画面で、科目・金額の変更や行の追加・削除ができる(取引日と起票者は変えられない)', async () => {
       await openProposals()
 
       fireEvent.click(screen.getAllByRole('button', { name: /ネット代/ })[0])
 
       const debitColumn = within(within(detail()).getByRole('group', { name: '借方' }))
-      expect(debitColumn.getByRole('button', { name: /^プロジェクト/ })).toBeDisabled()
-      expect(debitColumn.getByRole('combobox', { name: '世帯メンバー' })).toBeDisabled()
+      expect(debitColumn.getByRole('button', { name: /^プロジェクト/ })).toBeEnabled()
+      expect(debitColumn.getByRole('combobox', { name: '世帯メンバー' })).toBeEnabled()
+      expect(debitColumn.getByRole('button', { name: '+ 借方の行を追加' })).toBeEnabled()
+      expect(within(detail()).getByLabelText('取引日')).toBeDisabled()
+    })
+
+    it('確認パネルで行を追加すると貸借の差額が出る(科目を選ぶまで、確定のRPCは呼ばれない)', async () => {
+      const props = await openProposals()
+
+      fireEvent.click(screen.getAllByRole('button', { name: /ネット代/ })[0])
+      fireEvent.click(within(detail()).getByRole('button', { name: '+ 借方の行を追加' }))
+      const amounts = within(within(detail()).getByRole('group', { name: '借方' })).getAllByLabelText(/金額/)
+      fireEvent.change(amounts[1], { target: { value: '300' } })
+
+      expect(within(detail()).getByRole('status')).toHaveTextContent('差額')
+      expect(props.recurringTransactionProposalApi.confirm).not.toHaveBeenCalled()
     })
 
     it('新しい提案にチェックを付けると、同じルールの古い提案にもチェックが付く(別のルールは付かない)', async () => {
