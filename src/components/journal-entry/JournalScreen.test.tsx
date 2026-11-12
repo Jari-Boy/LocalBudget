@@ -1209,4 +1209,182 @@ describe('JournalScreen(明細行単位)', () => {
       expect(screen.getByRole('table', { name: '仕訳の明細行' })).toBeInTheDocument()
     })
   })
+
+  /**
+   * 一括編集(計画Issue #182): 明細行単位の表で、明細の行を仕訳をまたいで選び、科目・プロジェクト・取引先・
+   * 精算バッチ・世帯メンバーをまとめて変える。選べない項目の先回りの無効化、適用の2回押し、1件の仕訳ずつの保存と
+   * 結果の報告(失敗した仕訳の行は選択したまま)、インライン編集・絞り込み・表示方式の切替との整合を検証する。
+   */
+  describe('一括編集', () => {
+    /** 摘要(ボタン)から、その仕訳の先頭行を得る */
+    const rowOf = (memo: string) => screen.getByRole('button', { name: memo }).closest('tr') as HTMLElement
+    const debitBox = (memo: string) => within(rowOf(memo)).getByRole('checkbox', { name: '借方の行を選択' })
+    const creditBox = (memo: string) => within(rowOf(memo)).getByRole('checkbox', { name: '貸方の行を選択' })
+    const bulkBar = () => screen.getByRole('region', { name: '一括編集' })
+    const chooseAccount = (option: string) => {
+      fireEvent.click(within(bulkBar()).getByRole('button', { name: '一括編集の科目: 変更しない' }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '一括編集の科目' })).getByRole('button', { name: option }))
+    }
+    const memberSelect = () => within(bulkBar()).getByLabelText('一括編集の世帯メンバー')
+    const apply = () => within(bulkBar()).getByRole('button', { name: /行に適用$/ })
+
+    it('明細行単位のときだけ、各行にチェックボックスが出る(仕訳単位には出ない)', async () => {
+      await setupLineView()
+      expect(screen.getAllByRole('checkbox', { name: '借方の行を選択' })).toHaveLength(4)
+      expect(screen.getAllByRole('checkbox', { name: '貸方の行を選択' })).toHaveLength(4)
+      switchTo('仕訳単位')
+      expect(screen.queryByRole('checkbox', { name: '借方の行を選択' })).not.toBeInTheDocument()
+    })
+
+    it('1行選ぶと一括編集バーが出て、選択件数を表示する。「選択を解除」でバーが消える', async () => {
+      await setupLineView()
+      expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+      fireEvent.click(debitBox('ランチ'))
+      expect(within(bulkBar()).getByText('1行を選択中(借方 1行・貸方 0行、1件の仕訳)')).toBeInTheDocument()
+      fireEvent.click(within(bulkBar()).getByRole('button', { name: '選択を解除' }))
+      expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+      expect(debitBox('ランチ')).not.toBeChecked()
+    })
+
+    it('行を押さずにチェックだけでは、その仕訳の編集は始まらない', async () => {
+      await setupLineView()
+      fireEvent.click(debitBox('ランチ'))
+      expect(screen.queryByLabelText('摘要')).not.toBeInTheDocument()
+    })
+
+    it('各側の見出しのチェックで、その側の表示中の行をすべて選べ、もう一度押すと外れる', async () => {
+      await setupLineView()
+      fireEvent.click(screen.getByRole('checkbox', { name: '借方の行をすべて選択' }))
+      expect(within(bulkBar()).getByText('4行を選択中(借方 4行・貸方 0行、4件の仕訳)')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('checkbox', { name: '借方の行をすべて選択' }))
+      expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+    })
+
+    describe('選べない項目の先回りの無効化', () => {
+      it('食費(費用)の行だけを選ぶと精算バッチは選べず、立替金の行だけを選ぶと精算バッチを選べる', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        expect(within(bulkBar()).getByLabelText('一括編集の精算バッチ')).toBeDisabled()
+        expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeEnabled()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(debitBox('旅行の立替'))
+        expect(within(bulkBar()).getByLabelText('一括編集の精算バッチ')).toBeEnabled()
+        expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
+      })
+
+      it('普通預金(資産)の行が混ざると取引先は選べない', async () => {
+        await setupLineView()
+        fireEvent.click(creditBox('ランチ'))
+        expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
+        expect(within(bulkBar()).getByText(/取引先は費用・収益の科目の行にだけ付けられます.*「普通預金」/)).toBeInTheDocument()
+      })
+    })
+
+    describe('適用', () => {
+      it('2回押して確定し、仕訳ごとに1件ずつ更新する。選択した行だけが変わり、保存後は選択が解除されて結果が出る', async () => {
+        const props = await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(debitBox('家賃'))
+        fireEvent.change(memberSelect(), { target: { value: '2' } })
+        expect(within(bulkBar()).getByText('世帯メンバー → 妻: 2行に適用')).toBeInTheDocument()
+
+        fireEvent.click(apply())
+        expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+        expect(within(bulkBar()).getByRole('alert')).toHaveTextContent('2行(2件の仕訳)を更新します。元に戻せません。')
+        fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
+
+        await waitFor(() => expect(props.journalEntryRepository.update).toHaveBeenCalledTimes(2))
+        const calls = props.journalEntryRepository.update.mock.calls as unknown as [number, { lines: { id?: number; householdMemberId: number }[] }][]
+        expect(calls.map(([id]) => id)).toEqual([1, 2])
+        // ランチの借方(行11)だけが妻(2)になり、貸方(行12)は夫(1)のまま
+        expect(calls[0][1].lines.map((l) => [l.id, l.householdMemberId])).toEqual([
+          [11, 2],
+          [12, 1],
+        ])
+        expect(await screen.findByText('2行(2件の仕訳)を更新しました')).toBeInTheDocument()
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+      })
+
+      it('1回目のあとに「やめる」を押すと何も更新されず、項目を選び直しても確認は取り消される', async () => {
+        const props = await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.change(memberSelect(), { target: { value: '2' } })
+        fireEvent.click(apply())
+        fireEvent.click(within(bulkBar()).getByRole('button', { name: 'やめる' }))
+        expect(within(bulkBar()).queryByRole('alert')).not.toBeInTheDocument()
+        fireEvent.click(apply())
+        fireEvent.change(memberSelect(), { target: { value: '1' } })
+        expect(within(bulkBar()).queryByRole('alert')).not.toBeInTheDocument()
+        expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+      })
+
+      it('科目を一括で変えると、選んだ行の科目が変わる', async () => {
+        const props = await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        chooseAccount('家賃')
+        fireEvent.click(apply())
+        fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
+        await waitFor(() => expect(props.journalEntryRepository.update).toHaveBeenCalledTimes(1))
+        const [id, input] = props.journalEntryRepository.update.mock.calls[0] as unknown as [number, { lines: { accountId: number }[] }]
+        expect(id).toBe(1)
+        expect(input.lines.map((l) => l.accountId)).toEqual([4, 2])
+      })
+
+      it('一部の仕訳で保存に失敗したら、成功した分を報告し、失敗した仕訳と理由を示して、その仕訳の行は選択したままにする', async () => {
+        const props = await setupLineView()
+        // ランチ(先)が失敗し、家賃(後)は成功する
+        props.journalEntryRepository.update.mockRejectedValueOnce(new Error('boom'))
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(debitBox('家賃'))
+        fireEvent.change(memberSelect(), { target: { value: '2' } })
+        fireEvent.click(apply())
+        fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
+
+        expect(await screen.findByText('1行(1件の仕訳)を更新しました')).toBeInTheDocument()
+        expect(screen.getByRole('alert')).toHaveTextContent(/更新できませんでした.*「ランチ」/)
+        // 失敗したランチの行は選択したまま。成功した家賃の行は外れる
+        expect(within(bulkBar()).getByText('1行を選択中(借方 1行・貸方 0行、1件の仕訳)')).toBeInTheDocument()
+        expect(debitBox('ランチ')).toBeChecked()
+        expect(debitBox('家賃')).not.toBeChecked()
+      })
+    })
+
+    describe('他の操作との整合', () => {
+      it('行を押してインライン編集を始めると、一括編集の選択は解除され、チェックは押せなくなる', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(screen.getByRole('button', { name: '家賃' }))
+        expect(screen.getByLabelText('摘要')).toHaveValue('家賃')
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+        for (const box of screen.getAllByRole('checkbox')) expect(box).toBeDisabled()
+      })
+
+      it('絞り込みで見えなくなった行は、選択に含まれない(表示中の行だけが対象)', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(debitBox('家賃'))
+        expect(within(bulkBar()).getByText(/^2行を選択中/)).toBeInTheDocument()
+        fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '家賃' } })
+        expect(within(bulkBar()).getByText('1行を選択中(借方 1行・貸方 0行、1件の仕訳)')).toBeInTheDocument()
+      })
+
+      it('表示方式を切り替えると、一括編集の選択は解除される', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        switchTo('仕訳単位')
+        switchTo('明細行単位')
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+        expect(debitBox('ランチ')).not.toBeChecked()
+      })
+
+      it('タブを切り替えると、一括編集の選択は解除される', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(screen.getByRole('tab', { name: /下書き/ }))
+        fireEvent.click(screen.getByRole('tab', { name: /仕訳一覧/ }))
+        await screen.findByRole('table', { name: '仕訳の明細行' })
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+      })
+    })
+  })
 })

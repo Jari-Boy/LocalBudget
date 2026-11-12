@@ -12,7 +12,7 @@ import { traceExpenseSplittingHistory } from '../../domain/expense-splitting/tra
 import { checkExpenseSplittability } from '../../domain/expense-splitting/checkExpenseSplittability'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { HouseholdMemberRepository } from '../../domain/household-member/HouseholdMemberRepository'
-import type { JournalEntry } from '../../domain/journal/JournalEntry'
+import type { JournalEntry, JournalLineSide } from '../../domain/journal/JournalEntry'
 import type { JournalEntryDraft } from '../../domain/journal/JournalEntryDraft'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
@@ -77,6 +77,15 @@ import {
   toggleProposalChecked,
   toMatchedResultItem,
 } from './journalScreenModel'
+import {
+  EMPTY_BULK_PICK,
+  bulkEditRules,
+  buildBulkUpdates,
+  sanitizeBulkPick,
+  type BulkPick,
+  type BulkSelectedLine,
+} from './journalBulkEditModel'
+import { JournalLineBulkBar } from './JournalLineBulkBar'
 import { JournalLineTable, type JournalLineTableEditing, type JournalLineTableLookup } from './JournalLineTable'
 import { loadJournalViewMode, saveJournalViewMode, type JournalViewMode } from './journalViewMode'
 import { RelatedEntriesSection } from './RelatedEntriesSection'
@@ -207,6 +216,10 @@ export function JournalScreen(props: JournalScreenProps) {
   const [viewMode, setViewMode] = useState<JournalViewMode>(loadJournalViewMode)
   /** 明細行単位の表で、選択中の仕訳をインライン編集しているか。仕訳を開き直す(open)たびに解除する */
   const [lineEditing, setLineEditing] = useState(false)
+  /** 明細行単位の一括編集(計画Issue #182): 選択中の明細行のid(仕訳をまたぐ)、変える項目の選択、適用の確認中か */
+  const [bulkLineIds, setBulkLineIds] = useState<number[]>([])
+  const [bulkPick, setBulkPick] = useState<BulkPick>(EMPTY_BULK_PICK)
+  const [bulkConfirming, setBulkConfirming] = useState(false)
   const [filter, setFilter] = useState<JournalEntryFilter>(props.initialFilter ?? {})
   const [selection, setSelection] = useState<Selection | null>(null)
   const [editor, setEditor] = useState<JournalEditorValue | null>(null)
@@ -786,8 +799,16 @@ export function JournalScreen(props: JournalScreenProps) {
     note: p.entryDate === p.dueDate ? undefined : `期日 ${slashDate(p.dueDate)}`,
   }))
 
+  /** 一括編集の選択と、変える項目の選択・確認をすべて解く(タブ・表示方式の切替、インライン編集の開始のとき) */
+  const resetBulk = () => {
+    setBulkLineIds([])
+    setBulkPick(EMPTY_BULK_PICK)
+    setBulkConfirming(false)
+  }
+
   const switchTab = (next: JournalScreenTab) =>
     guarded(() => {
+      resetBulk()
       setTab(next)
       open(firstOf(next, data, visibleEntries), data)
     })
@@ -873,6 +894,7 @@ export function JournalScreen(props: JournalScreenProps) {
   const changeViewMode = (mode: JournalViewMode) => {
     if (mode === (lineView ? 'line' : 'entry')) return
     guarded(() => {
+      resetBulk()
       setViewMode(mode)
       saveJournalViewMode(mode)
       open(selection?.kind === 'entry' ? selection : firstOf('list', data, visibleEntries), data)
@@ -885,6 +907,8 @@ export function JournalScreen(props: JournalScreenProps) {
    */
   const startLineEdit = (id: number) =>
     guarded(() => {
+      // 一括編集の選択は、インライン編集を始めるときに解く(同時には使わない)
+      resetBulk()
       open({ kind: 'entry', id }, data)
       setLineEditing(true)
     })
@@ -906,6 +930,63 @@ export function JournalScreen(props: JournalScreenProps) {
       memberName: (id) => members.get(id) ?? '',
     }
   })()
+
+  // ---- 一括編集(計画Issue #182) ----
+  /** 表示中の明細行(選べる行)。絞り込みで見えなくなった行は、選択に含めない */
+  const visibleLines: BulkSelectedLine[] = visibleEntries.flatMap((entry) => entry.lines.map((line) => ({ entry, line })))
+  const bulkSelected = visibleLines.filter((s) => bulkLineIds.includes(s.line.id))
+  const bulkSelectedIds = new Set(bulkSelected.map((s) => s.line.id))
+  /** 選択した行に合わせて、選べなくなった項目の選択を外した、変える項目の選択 */
+  const effectiveBulkPick = sanitizeBulkPick(bulkPick, bulkEditRules(bulkSelected, bulkPick, derived.accountById))
+
+  /** 選択する行を変える。選択が変わると、確認は取り消し、結果の表示は消す */
+  const changeBulkSelection = (ids: number[]) => {
+    setBulkLineIds(ids)
+    setBulkConfirming(false)
+    setFlash('')
+    setError('')
+  }
+
+  const toggleBulkLine = (lineId: number) =>
+    changeBulkSelection(bulkSelectedIds.has(lineId) ? [...bulkSelectedIds].filter((id) => id !== lineId) : [...bulkSelectedIds, lineId])
+
+  /** 見出しのチェック: その側の表示中の行をすべて選ぶ(すべて選択済みなら外す) */
+  const toggleBulkSide = (side: JournalLineSide) => {
+    const ids = visibleLines.filter((s) => s.line.side === side).map((s) => s.line.id)
+    const allOn = ids.length > 0 && ids.every((id) => bulkSelectedIds.has(id))
+    changeBulkSelection(allOn ? [...bulkSelectedIds].filter((id) => !ids.includes(id)) : [...new Set([...bulkSelectedIds, ...ids])])
+  }
+
+  /**
+   * 一括編集を適用する。仕訳ごとに1件ずつ保存し、結果を報告する。一部の仕訳で失敗したら、成功した分はそのまま
+   * 反映し、失敗した仕訳と理由を示して、その仕訳の行は選択したまま残す(変える項目の選択も残し、やり直せる)。
+   */
+  const applyBulk = () =>
+    run(async () => {
+      const updates = buildBulkUpdates(bulkSelected, effectiveBulkPick, derived.accountById)
+      const failed: { entry: JournalEntry; reason: string }[] = []
+      for (const update of updates) {
+        try {
+          await journalEntryRepository.update(update.entry.id, update.input)
+        } catch (err) {
+          failed.push({ entry: update.entry, reason: mapError(err, t('updateError')) })
+        }
+      }
+      setData(await fetchAll())
+      const failedIds = new Set(failed.map((f) => f.entry.id))
+      setBulkConfirming(false)
+      setBulkLineIds(bulkSelected.filter((s) => failedIds.has(s.entry.id)).map((s) => s.line.id))
+      if (failed.length === 0) setBulkPick(EMPTY_BULK_PICK)
+      else {
+        const detail = failed.map((f) => `「${f.entry.memo ?? '(摘要なし)'}」(${slashDate(f.entry.entryDate)})… ${f.reason}`).join(' / ')
+        setError(`${failed.length}件の仕訳は更新できませんでした: ${detail}。更新できなかった仕訳の行は、選択したままです`)
+      }
+      if (updates.length > failed.length) {
+        const doneLines = bulkSelected.filter((s) => !failedIds.has(s.entry.id)).length
+        setFlash(`${doneLines}行(${updates.length - failed.length}件の仕訳)を更新しました`)
+      }
+      return true
+    }, t('updateError'))
 
   const lineEditingProps: JournalLineTableEditing | undefined =
     lineView && lineEditing && selection?.kind === 'entry' && editor !== null
@@ -1085,12 +1166,41 @@ export function JournalScreen(props: JournalScreenProps) {
                   {flash}
                 </span>
               )}
+              {/* 編集中のエラーは、編集中の仕訳の操作バーに出る。それ以外(一括編集の一部失敗など)はここに出す */}
+              {error !== '' && lineEditingProps === undefined && (
+                <p role="alert" className="journal-screen__error">
+                  {error}
+                </p>
+              )}
+              {bulkSelected.length > 0 && (
+                <JournalLineBulkBar
+                  selected={bulkSelected}
+                  pick={effectiveBulkPick}
+                  onPickChange={(next) => {
+                    setBulkPick(next)
+                    setBulkConfirming(false)
+                  }}
+                  master={master}
+                  confirming={bulkConfirming}
+                  onAskConfirm={() => setBulkConfirming(true)}
+                  onCancelConfirm={() => setBulkConfirming(false)}
+                  onApply={() => void applyBulk()}
+                  onClearSelection={resetBulk}
+                  busy={busy}
+                />
+              )}
               <JournalLineTable
                 entries={visibleEntries}
                 lookup={lineLookup}
                 selectedId={selection?.kind === 'entry' ? selection.id : null}
                 onSelect={startLineEdit}
                 editing={lineEditingProps}
+                bulk={{
+                  selectedLineIds: bulkSelectedIds,
+                  disabled: lineEditing || busy,
+                  onToggleLine: toggleBulkLine,
+                  onToggleSide: toggleBulkSide,
+                }}
               />
             </>
           ) : (
