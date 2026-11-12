@@ -77,6 +77,8 @@ import {
   toggleProposalChecked,
   toMatchedResultItem,
 } from './journalScreenModel'
+import { JournalLineTable, type JournalLineTableEditing, type JournalLineTableLookup } from './JournalLineTable'
+import { loadJournalViewMode, saveJournalViewMode, type JournalViewMode } from './journalViewMode'
 import { RelatedEntriesSection } from './RelatedEntriesSection'
 import './JournalScreen.css'
 
@@ -201,6 +203,10 @@ export function JournalScreen(props: JournalScreenProps) {
 
   const [data, setData] = useState<LoadedData | null>(null)
   const [tab, setTab] = useState<JournalScreenTab>(props.initialTab ?? 'list')
+  /** 仕訳一覧タブの表示方式(計画Issue #182)。localStorageに保存し、再訪時に復元する。初期値は仕訳単位 */
+  const [viewMode, setViewMode] = useState<JournalViewMode>(loadJournalViewMode)
+  /** 明細行単位の表で、選択中の仕訳をインライン編集しているか。仕訳を開き直す(open)たびに解除する */
+  const [lineEditing, setLineEditing] = useState(false)
   const [filter, setFilter] = useState<JournalEntryFilter>(props.initialFilter ?? {})
   const [selection, setSelection] = useState<Selection | null>(null)
   const [editor, setEditor] = useState<JournalEditorValue | null>(null)
@@ -410,6 +416,7 @@ export function JournalScreen(props: JournalScreenProps) {
     setError('')
     setDeleteArmed(false)
     setProposalMemberId('')
+    setLineEditing(false)
     const value = sel === null ? null : buildValue(sel, d)
     setSelection(sel)
     setEditor(value)
@@ -855,6 +862,71 @@ export function JournalScreen(props: JournalScreenProps) {
           isRelated: relatedIds.size > 0 || data.memberships.some((m) => m.journalEntryId === selectedEntry.id),
         })
 
+  // ---- 明細行単位の表示(計画Issue #182) ----
+  /**
+   * 明細行単位の表を出しているか。「新規仕訳」の入力欄は詳細パネルにあるため、新規のときだけは
+   * 保存した表示方式にかかわらず仕訳単位の画面で開く(保存して仕訳が選ばれると表に戻る)
+   */
+  const lineView = tab === 'list' && viewMode === 'line' && selection?.kind !== 'new'
+
+  /** 表示方式を切り替える。未保存の変更があれば先に聞き、切り替えたら開いている仕訳を開き直して編集を解く */
+  const changeViewMode = (mode: JournalViewMode) => {
+    if (mode === (lineView ? 'line' : 'entry')) return
+    guarded(() => {
+      setViewMode(mode)
+      saveJournalViewMode(mode)
+      open(selection?.kind === 'entry' ? selection : firstOf('list', data, visibleEntries), data)
+    })
+  }
+
+  /** 表の「編集」: その仕訳の全行を入力欄にする(別の仕訳を編集中で未保存なら、先に聞く) */
+  const startLineEdit = (id: number) =>
+    guarded(() => {
+      open({ kind: 'entry', id }, data)
+      setLineEditing(true)
+    })
+
+  const selectInTable = (id: number) => guarded(() => open({ kind: 'entry', id }, data))
+
+  /** 編集をやめて、編集前の内容に戻す */
+  const cancelLineEdit = () => open(selection, data)
+
+  const lineLookup: JournalLineTableLookup = (() => {
+    const nameMap = (items: ReadonlyArray<{ id: number; name: string }>) => new Map(items.map((i) => [i.id, i.name]))
+    const projects = nameMap(data.projects)
+    const counterparties = nameMap(data.counterparties)
+    const batches = nameMap(data.batches)
+    const members = nameMap(data.members)
+    return {
+      accountName: accountNameOf,
+      projectName: (id) => projects.get(id) ?? '',
+      counterpartyName: (id) => counterparties.get(id) ?? '',
+      batchName: (id) => batches.get(id) ?? '',
+      memberName: (id) => members.get(id) ?? '',
+    }
+  })()
+
+  const lineEditingProps: JournalLineTableEditing | undefined =
+    lineView && lineEditing && selection?.kind === 'entry' && editor !== null
+      ? {
+          entryId: selection.id,
+          value: editor,
+          onChange: changeEditor,
+          master,
+          busy,
+          onSave: () => void saveEntry(false),
+          onCancel: cancelLineEdit,
+          onDelete: deleteEntry,
+          onDeleteCancel: () => setDeleteArmed(false),
+          deleteArmed,
+          deleteNotes,
+          error,
+          onRequestCreateCounterparty: (apply) => setCounterpartyDialog({ apply }),
+          onRequestCreateProject: (apply) => setProjectDialog({ apply }),
+          onRequestCreateAccount: (apply) => setAccountDialog({ apply }),
+        }
+      : undefined
+
   const sourceTag =
     selection?.kind === 'entry' && selectedEntry
       ? SOURCE_TAGS[selectedEntry.sourceType]
@@ -928,9 +1000,30 @@ export function JournalScreen(props: JournalScreenProps) {
       )}
       {note !== '' && <p className="journal-screen__note">{note}</p>}
 
+      {tab === 'list' && (
+        <div role="group" aria-label="表示方式" className="journal-screen__view-toggle">
+          {(
+            [
+              ['entry', '仕訳単位'],
+              ['line', '明細行単位'],
+            ] as const
+          ).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={(lineView ? 'line' : 'entry') === mode}
+              className="journal-screen__view-toggle-button"
+              onClick={() => changeViewMode(mode)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="journal-screen__body">
-        <div className="journal-screen__list">
-          {tab === 'list' && matchedIds !== undefined && (
+        <div className={lineView ? 'journal-screen__list journal-screen__list--wide' : 'journal-screen__list'}>
+          {tab === 'list' && matchedIds !== undefined && !lineView && (
             <p className="journal-screen__note">科目に一致した明細の金額を表示しています</p>
           )}
           {tab === 'proposals' && (
@@ -984,6 +1077,23 @@ export function JournalScreen(props: JournalScreenProps) {
               </p>
             </div>
           )}
+          {lineView ? (
+            <>
+              {flash !== '' && (
+                <span role="status" className="journal-screen__flash">
+                  {flash}
+                </span>
+              )}
+              <JournalLineTable
+                entries={visibleEntries}
+                lookup={lineLookup}
+                selectedId={selection?.kind === 'entry' ? selection.id : null}
+                onSelect={selectInTable}
+                onEdit={startLineEdit}
+                editing={lineEditingProps}
+              />
+            </>
+          ) : (
           <JournalResultList
             items={tab === 'list' ? listItems : tab === 'drafts' ? draftItems : proposalItems}
             hideAccounts={tab === 'proposals'}
@@ -1005,8 +1115,10 @@ export function JournalScreen(props: JournalScreenProps) {
               }
             }}
           />
+          )}
         </div>
 
+        {!lineView && (
         <section aria-label="仕訳の詳細" className="journal-screen__detail">
           {editor === null || selection === null ? (
             <p className="journal-screen__note">仕訳を選ぶか、「新規仕訳」を押してください</p>
@@ -1260,6 +1372,7 @@ export function JournalScreen(props: JournalScreenProps) {
             </>
           )}
         </section>
+        )}
       </div>
         </>
       )}

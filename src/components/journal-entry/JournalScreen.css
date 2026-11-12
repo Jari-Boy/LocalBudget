@@ -59,6 +59,37 @@
   color: var(--color-text-muted);
 }
 
+/* 仕訳一覧タブの表示方式の切替(計画Issue #182) */
+.journal-screen__view-toggle {
+  display: flex;
+  align-self: flex-end;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.journal-screen__view-toggle-button {
+  font: inherit;
+  font-size: var(--font-size-sm);
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.journal-screen__view-toggle-button[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: #ffffff;
+}
+
+/* 明細行単位: 一覧が画面幅いっぱいになる(詳細パネルは出さない) */
+.journal-screen__list--wide {
+  flex: 1 1 100%;
+}
+
 .journal-screen__body {
   display: flex;
   flex-wrap: wrap;
