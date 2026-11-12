@@ -56,6 +56,7 @@ function entry(id: number, lines: JournalLine[], sourceType: JournalEntry['sourc
     sourceType,
     householdMemberId: 1,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '2026-07-01T00:00:00.000Z',
     updatedAt: '2026-07-01T00:00:00.000Z',
     lines,

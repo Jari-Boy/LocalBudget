@@ -64,6 +64,7 @@ describe('toJournalResultItem', () => {
     sourceType: 'manual',
     householdMemberId: 1,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '2026-10-05T00:00:00Z',
     updatedAt: '2026-10-05T00:00:00Z',
     lines: [line(1, 1, 'debit', 800), line(2, 2, 'debit', 200), line(3, 3, 'credit', 1000)],

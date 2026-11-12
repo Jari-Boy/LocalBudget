@@ -5,6 +5,9 @@
  * 計画Issue #132)・削除(物理削除)、貸借バランス検証(不一致時は書き込まずUnbalancedJournalEntryErrorを投げる)、
  * is_reconcilable資産・負債への記帳がsource_typeによらず許可されること(docs/domain/reconciliation.md 1.2、
  * 計画Issue #145で直接記帳制限を廃止)、FK制約有効化によるDB側エラー時のロールバック保証を検証する。
+ * 計画Issue #164で追加した、定期取引から生成した仕訳の調整前の期日(recurring_due_date)の保存・
+ * 同じルール・同じ期日の二重生成を防ぐ一意制約・複数の仕訳を1つのトランザクションで作るcreateMany
+ * (全件成功か全件失敗)も検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -13,6 +16,7 @@ import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
+import { SqlJsRecurringTransactionRuleRepository } from './SqlJsRecurringTransactionRuleRepository'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 
@@ -1036,5 +1040,107 @@ describe('精算バッチタグは割勘の一時勘定(システム管理の立
       }),
     ).toThrow(SettlementBatchOnNonAdvanceAccountError)
     expect(repository.findById(created.id)?.memo).toBe('更新前')
+  })
+})
+
+describe('定期取引の期日(recurring_due_date)とcreateMany(計画Issue #164)', () => {
+  let ruleId: number
+
+  beforeEach(() => {
+    ruleId = new SqlJsRecurringTransactionRuleRepository(db).create({
+      name: '家賃',
+      debitAccountId: rentExpenseAccountId,
+      creditAccountId: payableAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 25,
+    }).id
+  })
+
+  function generated(dueDate: string, entryDate = dueDate, amount = 80000) {
+    return {
+      householdMemberId: memberId,
+      entryDate,
+      sourceType: 'recurring_generated' as const,
+      generatedFromRuleId: ruleId,
+      recurringDueDate: dueDate,
+      lines: [
+        { householdMemberId: memberId, accountId: rentExpenseAccountId, side: 'debit' as const, amount },
+        { householdMemberId: memberId, accountId: payableAccountId, side: 'credit' as const, amount },
+      ],
+    }
+  }
+
+  it('recurringDueDateを指定して作成すると、土日の調整後のentry_dateとは別に調整前の期日が保存される', () => {
+    const created = repository.create(generated('2026-01-25', '2026-01-23'))
+
+    expect(repository.findById(created.id)).toMatchObject({
+      entryDate: '2026-01-23',
+      recurringDueDate: '2026-01-25',
+    })
+  })
+
+  it('手入力の仕訳ではrecurringDueDateはnullになる', () => {
+    const created = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-07-01',
+      lines: [
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 100 },
+        { householdMemberId: memberId, accountId: cashAccountId, side: 'credit', amount: 100 },
+      ],
+    })
+
+    expect(created.recurringDueDate).toBeNull()
+  })
+
+  it('同じルール・同じ期日の仕訳は二重に作れず、何も書き込まれない', () => {
+    repository.create(generated('2026-01-25'))
+
+    expect(() => repository.create(generated('2026-01-25', '2026-01-24'))).toThrow()
+    expect(repository.findAll()).toHaveLength(1)
+  })
+
+  it('仕訳のentry_dateをupdateで編集しても、期日は変わらない', () => {
+    const created = repository.create(generated('2026-01-25', '2026-01-23'))
+
+    const updated = repository.update(created.id, {
+      entryDate: '2026-03-01',
+      lines: created.lines.map((l) => ({
+        id: l.id,
+        accountId: l.accountId,
+        householdMemberId: l.householdMemberId,
+        side: l.side,
+        amount: l.amount,
+      })),
+    })
+
+    expect(updated.recurringDueDate).toBe('2026-01-25')
+  })
+
+  it('createMany: 複数の仕訳を1つのトランザクションでまとめて作成し、入力と同じ順に返す', () => {
+    const created = repository.createMany([generated('2026-01-25'), generated('2026-02-25')])
+
+    expect(created.map((e) => e.recurringDueDate)).toEqual(['2026-01-25', '2026-02-25'])
+    expect(repository.findAll()).toHaveLength(2)
+  })
+
+  it('createMany: 途中の1件が失敗すると、1件も作成されない(全件成功か全件失敗)', () => {
+    repository.create(generated('2026-02-25'))
+
+    // 2件目が既存の期日と重複して一意制約に違反する → 1件目(2026-01-25)も作られない
+    expect(() => repository.createMany([generated('2026-01-25'), generated('2026-02-25')])).toThrow()
+    expect(repository.findAll().map((e) => e.recurringDueDate)).toEqual(['2026-02-25'])
+  })
+
+  it('createMany: 貸借が一致しない仕訳が1件でもあれば、1件も作成されない', () => {
+    const unbalanced = generated('2026-01-25')
+    unbalanced.lines[1] = { ...unbalanced.lines[1], amount: 1 }
+
+    expect(() => repository.createMany([generated('2026-02-25'), unbalanced])).toThrow(UnbalancedJournalEntryError)
+    expect(repository.findAll()).toEqual([])
+  })
+
+  it('createMany: 空配列は何もせず空配列を返す', () => {
+    expect(repository.createMany([])).toEqual([])
   })
 })

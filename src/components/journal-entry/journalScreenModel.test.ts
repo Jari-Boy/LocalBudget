@@ -55,6 +55,7 @@ function entry(lines: JournalLine[]): JournalEntry {
     sourceType: 'manual',
     householdMemberId: 1,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '',
     updatedAt: '',
     lines,

@@ -83,6 +83,7 @@ function entry(id: number, date: string, memo: string, lines: JournalLine[], sou
     sourceType,
     householdMemberId: 1,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '',
     updatedAt: '',
     lines,

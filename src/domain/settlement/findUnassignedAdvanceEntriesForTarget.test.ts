@@ -39,6 +39,7 @@ function entry(id: number, entryDate: string, lines: JournalLine[]): JournalEntr
     sourceType: 'manual',
     householdMemberId: 1,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '2026-08-01',
     updatedAt: '2026-08-01',
     lines,

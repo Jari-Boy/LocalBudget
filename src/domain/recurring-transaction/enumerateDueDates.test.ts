@@ -4,7 +4,9 @@
  * docs/domain/recurring-transactions.md 1.3の繰り返しルール(weekly/monthly(日付指定)/
  * monthly(曜日指定)/yearly)ごとの次回発生日計算、31日等その月に存在しない日付を指定した
  * 場合に月末へ丸める処理(#18コメントで確定した設計判断)、max_occurrencesに達した
- * ルールが以降の対象日を列挙しないことを検証する。DB非依存、外部依存なし。
+ * ルールが以降の対象日を列挙しないことを検証する。計画Issue #164で追加した間隔(N回ごと、周期の
+ * 基準は開始日)・開始日(当日を含む)・終了日(当日を含む、回数の上限との先着)も検証する。
+ * DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import type { RecurringTransactionRule } from './RecurringTransactionRule'
@@ -26,6 +28,12 @@ function makeRule(overrides: Partial<RecurringTransactionRule>): RecurringTransa
     householdMemberId: null,
     counterpartyId: null,
     maxOccurrences: null,
+    startsOn: '2000-01-01',
+    endsOn: null,
+    interval: 1,
+    weekendAdjustment: 'none',
+    amountMode: 'fixed',
+    resumedOn: null,
     isActive: true,
     createdAt: '2026-01-01 00:00:00',
     updatedAt: '2026-01-01 00:00:00',
@@ -183,5 +191,104 @@ describe('enumerateDueDates', () => {
     const dates = enumerateDueDates(rule, { since: '2026-01-01', until: '2026-12-01' }, 100)
 
     expect(dates).toHaveLength(11)
+  })
+})
+
+describe('間隔(計画Issue #164)', () => {
+  it('monthly: 3か月ごとは開始日の月を1回目として、1・4・7・10月に発生する', () => {
+    const rule = makeRule({ frequency: 'monthly', dayOfMonth: 1, interval: 3, startsOn: '2026-01-01' })
+
+    expect(enumerateDueDates(rule, { since: '2025-12-31', until: '2026-12-31' }, 0)).toEqual([
+      '2026-01-01',
+      '2026-04-01',
+      '2026-07-01',
+      '2026-10-01',
+    ])
+  })
+
+  it('monthly: 起点を途中にしても周期は開始日の月から数える(1月開始の3か月ごとは、2月以降でも4月・7月)', () => {
+    const rule = makeRule({ frequency: 'monthly', dayOfMonth: 1, interval: 3, startsOn: '2026-01-01' })
+
+    expect(enumerateDueDates(rule, { since: '2026-02-01', until: '2026-08-01' }, 1)).toEqual([
+      '2026-04-01',
+      '2026-07-01',
+    ])
+  })
+
+  it('weekly: 隔週は開始日を含む週(月曜始まり)を1回目として、2週おきの同じ曜日に発生する', () => {
+    // 2026-01-07は水曜日。開始日を含む週(1/5〜1/11)の金曜日=1/9が1回目
+    const rule = makeRule({ frequency: 'weekly', dayOfWeek: 5, dayOfMonth: null, interval: 2, startsOn: '2026-01-07' })
+
+    expect(enumerateDueDates(rule, { since: '2026-01-06', until: '2026-02-06' }, 0)).toEqual([
+      '2026-01-09',
+      '2026-01-23',
+      '2026-02-06',
+    ])
+  })
+
+  it('yearly: 2年ごとは開始日の年を1回目として発生する', () => {
+    const rule = makeRule({
+      frequency: 'yearly',
+      monthOfYear: 6,
+      dayOfMonth: 1,
+      interval: 2,
+      startsOn: '2026-01-01',
+    })
+
+    expect(enumerateDueDates(rule, { since: '2025-12-31', until: '2031-12-31' }, 0)).toEqual([
+      '2026-06-01',
+      '2028-06-01',
+      '2030-06-01',
+    ])
+  })
+
+  it('間隔が大きくても(10年ごと)次回発生日を見つけられる', () => {
+    const rule = makeRule({
+      frequency: 'yearly',
+      monthOfYear: 6,
+      dayOfMonth: 1,
+      interval: 10,
+      startsOn: '2026-01-01',
+    })
+
+    expect(nextOccurrenceDate(rule, '2026-06-01')).toBe('2036-06-01')
+  })
+})
+
+describe('開始日・終了日(計画Issue #164)', () => {
+  it('開始日より前の期日は列挙しない', () => {
+    const rule = makeRule({ frequency: 'monthly', dayOfMonth: 1, startsOn: '2026-03-15' })
+
+    expect(enumerateDueDates(rule, { since: '2026-01-01', until: '2026-05-31' }, 0)).toEqual([
+      '2026-04-01',
+      '2026-05-01',
+    ])
+  })
+
+  it('終了日の当日が期日なら列挙し、翌日以降の期日は列挙しない', () => {
+    const rule = makeRule({ frequency: 'monthly', dayOfMonth: 1, endsOn: '2026-03-01' })
+
+    expect(enumerateDueDates(rule, { since: '2026-01-01', until: '2026-12-31' }, 0)).toEqual([
+      '2026-02-01',
+      '2026-03-01',
+    ])
+  })
+
+  it('回数の上限と終了日の両方がある場合、先に来たほうで止まる(回数の上限が先)', () => {
+    const rule = makeRule({ frequency: 'monthly', dayOfMonth: 1, endsOn: '2026-12-01', maxOccurrences: 2 })
+
+    expect(enumerateDueDates(rule, { since: '2026-01-01', until: '2026-12-31' }, 0)).toEqual([
+      '2026-02-01',
+      '2026-03-01',
+    ])
+  })
+
+  it('回数の上限と終了日の両方がある場合、先に来たほうで止まる(終了日が先)', () => {
+    const rule = makeRule({ frequency: 'monthly', dayOfMonth: 1, endsOn: '2026-03-01', maxOccurrences: 10 })
+
+    expect(enumerateDueDates(rule, { since: '2026-01-01', until: '2026-12-31' }, 0)).toEqual([
+      '2026-02-01',
+      '2026-03-01',
+    ])
   })
 })

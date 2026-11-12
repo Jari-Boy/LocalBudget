@@ -33,44 +33,59 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
   }
 
   create(input: CreateJournalEntryInput): JournalEntry {
-    assertJournalBalance(input.lines)
-    const sourceType = input.sourceType ?? 'manual'
-    this.assertSettlementBatchOnlyOnAdvanceAccounts(input.lines)
+    return this.createMany([input])[0]
+  }
+
+  createMany(inputs: readonly CreateJournalEntryInput[]): JournalEntry[] {
+    if (inputs.length === 0) return []
+
+    for (const input of inputs) {
+      assertJournalBalance(input.lines)
+      this.assertSettlementBatchOnlyOnAdvanceAccounts(input.lines)
+    }
 
     this.db.run('BEGIN')
     try {
-      this.db.run(
-        `INSERT INTO journal_entries
-          (entry_date, memo, comment, currency, source_type, household_member_id, generated_from_rule_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          input.entryDate,
-          input.memo ?? null,
-          input.comment ?? null,
-          input.currency ?? 'JPY',
-          sourceType,
-          input.householdMemberId,
-          input.generatedFromRuleId ?? null,
-        ],
-      )
-      const entryId = lastInsertRowId(this.db)
-      insertLines(this.db, entryId, input.lines)
-
-      if (input.externalTransactionRef) {
-        // 単一INSERTのみでBEGIN/COMMITを持たないため、この既存トランザクションへ安全に合流する
-        // (docs/domain/statement-import.md 1.5 手順7の同一トランザクション書き込み要件)。
-        new SqlJsExternalTransactionRefRepository(this.db).create({
-          ...input.externalTransactionRef,
-          journalEntryId: entryId,
-        })
-      }
-
+      const entryIds = inputs.map((input) => this.insertEntry(input))
       this.db.run('COMMIT')
-      return this.findById(entryId)!
+      return entryIds.map((entryId) => this.findById(entryId)!)
     } catch (error) {
       this.db.run('ROLLBACK')
       throw error
     }
+  }
+
+  /** 仕訳1件と明細を書き込む。トランザクション(BEGIN/COMMIT)は呼び出し側が持つ */
+  private insertEntry(input: CreateJournalEntryInput): number {
+    const sourceType = input.sourceType ?? 'manual'
+    this.db.run(
+      `INSERT INTO journal_entries
+        (entry_date, memo, comment, currency, source_type, household_member_id, generated_from_rule_id,
+         recurring_due_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        input.entryDate,
+        input.memo ?? null,
+        input.comment ?? null,
+        input.currency ?? 'JPY',
+        sourceType,
+        input.householdMemberId,
+        input.generatedFromRuleId ?? null,
+        input.recurringDueDate ?? null,
+      ],
+    )
+    const entryId = lastInsertRowId(this.db)
+    insertLines(this.db, entryId, input.lines)
+
+    if (input.externalTransactionRef) {
+      // 単一INSERTのみでBEGIN/COMMITを持たないため、この既存トランザクションへ安全に合流する
+      // (docs/domain/statement-import.md 1.5 手順7の同一トランザクション書き込み要件)。
+      new SqlJsExternalTransactionRefRepository(this.db).create({
+        ...input.externalTransactionRef,
+        journalEntryId: entryId,
+      })
+    }
+    return entryId
   }
 
   findById(id: number): JournalEntry | null {
@@ -268,6 +283,7 @@ function mapRowToJournalEntry(columns: string[], values: unknown[]): JournalEntr
     sourceType: get<JournalEntrySourceType>('source_type'),
     householdMemberId: get<number>('household_member_id'),
     generatedFromRuleId: get<number | null>('generated_from_rule_id'),
+    recurringDueDate: get<string | null>('recurring_due_date'),
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),
     lines: [],

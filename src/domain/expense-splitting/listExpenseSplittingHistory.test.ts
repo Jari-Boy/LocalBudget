@@ -67,6 +67,7 @@ function buildEntry(id: number, lines: JournalLine[], entryDate = '2026-07-01'):
     sourceType: 'manual',
     householdMemberId: 999,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '2026-07-01T00:00:00.000Z',
     updatedAt: '2026-07-01T00:00:00.000Z',
     lines,

@@ -7,18 +7,32 @@ interface ScheduleColumns {
   dayOfMonth?: number | null
   weekOfMonth?: number | null
   monthOfYear?: number | null
+  interval?: number
+  startsOn?: string
+  endsOn?: string | null
 }
 
 /**
  * frequencyごとに使用すべきカラムの組み合わせ(docs/domain/recurring-transactions.md 1.3の
  * 対応表、docs/schema/recurring_transactions.sql のCHECK制約と同一のルール)を検証する
  * 純粋関数。組み合わせに反する場合はInvalidRecurringScheduleErrorをスローする。
+ * あわせて、間隔(1以上の整数)と開始日・終了日の前後関係(終了日は開始日以後、計画Issue #164)も検証する。
  */
 export function assertValidRecurringSchedule(input: ScheduleColumns): void {
   const dayOfWeek = input.dayOfWeek ?? null
   const dayOfMonth = input.dayOfMonth ?? null
   const weekOfMonth = input.weekOfMonth ?? null
   const monthOfYear = input.monthOfYear ?? null
+
+  const interval = input.interval ?? 1
+  if (!Number.isInteger(interval) || interval < 1) {
+    throw new InvalidRecurringScheduleError(`interval must be an integer of 1 or more: got ${interval}`)
+  }
+  if (input.startsOn != null && input.endsOn != null && input.endsOn < input.startsOn) {
+    throw new InvalidRecurringScheduleError(
+      `endsOn must not be before startsOn: got ${input.startsOn} / ${input.endsOn}`,
+    )
+  }
 
   switch (input.frequency) {
     case 'weekly':

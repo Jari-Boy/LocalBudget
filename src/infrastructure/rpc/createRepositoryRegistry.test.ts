@@ -136,10 +136,12 @@ describe('createRepositoryRegistry', () => {
         frequency: 'monthly',
         dayOfMonth: 1,
         householdMemberId: memberId,
+        startsOn: '2026-01-01',
       })
       db.run(
-        `INSERT INTO journal_entries (entry_date, source_type, generated_from_rule_id, household_member_id)
-         VALUES ('2026-08-01', 'recurring_generated', ?, ?)`,
+        `INSERT INTO journal_entries
+           (entry_date, source_type, generated_from_rule_id, recurring_due_date, household_member_id)
+         VALUES ('2026-08-01', 'recurring_generated', ?, '2026-08-01', ?)`,
         [rule.id, memberId],
       )
       vi.useFakeTimers()

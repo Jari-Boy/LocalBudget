@@ -52,6 +52,7 @@ function entry(id: number, entryDate: string, lines: [number, 'debit' | 'credit'
     sourceType: 'manual',
     householdMemberId,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '',
     updatedAt: '',
     lines: lines.map(

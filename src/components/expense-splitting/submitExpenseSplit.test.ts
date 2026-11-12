@@ -63,6 +63,7 @@ function original(id: number, amount: number): JournalEntry {
     sourceType: 'manual',
     householdMemberId: 1,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '2026-07-01T00:00:00.000Z',
     updatedAt: '2026-07-01T00:00:00.000Z',
     lines: [line(FOOD, 'debit', amount, id * 10), line(CASH, 'credit', amount, id * 10 + 1)],

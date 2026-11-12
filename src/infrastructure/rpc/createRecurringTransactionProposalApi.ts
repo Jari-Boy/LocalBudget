@@ -1,7 +1,8 @@
 import type { Database } from 'sql.js'
+import { adjustForWeekend } from '../../domain/recurring-transaction/adjustForWeekend'
 import { buildRecurringTransactionJournalEntryInput } from '../../domain/recurring-transaction/buildRecurringTransactionJournalEntryInput'
 import { evaluateRecurringTransactionProposals } from '../../domain/recurring-transaction/evaluateRecurringTransactionProposals'
-import type { JournalEntry } from '../../domain/journal/JournalEntry'
+import type { CreateJournalEntryInput, JournalEntry } from '../../domain/journal/JournalEntry'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
 import type { RecurringTransactionProposal } from '../../domain/recurring-transaction/RecurringTransactionProposal'
@@ -14,14 +15,39 @@ function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+/**
+ * 保留中の提案と、確認パネルに出す派生情報(計画Issue #164)。対象日(dueDate)は土日の調整前の期日で、
+ * 提案の識別(確定・見送り)に使う。
+ */
+export interface PendingRecurringTransactionProposal extends RecurringTransactionProposal {
+  /** 土日の調整後の日付。確定すると仕訳のentry_dateになる */
+  entryDate: string
+  /** 確認パネルの金額の初期値。固定ならルールの金額、前回確定額なら前回の金額(1件も無ければルールの金額) */
+  defaultAmount: number
+}
+
 export interface ConfirmRecurringTransactionProposalInput {
   ruleId: number
   /** このルールについて現時点で最も古い保留中の対象日と一致する必要がある(昇順のみ許可) */
   dueDate: string
   /** 省略時はrule.householdMemberIdを使う。両方未指定の場合はRecurringTransactionHouseholdMemberRequiredError */
   householdMemberId?: number
-  /** 省略時はrule.amountを使う(レビュー時の編集、docs/domain/recurring-transactions.md 2.1節) */
+  /** 省略時は金額の初期値(固定ならrule.amount、前回確定額なら前回の金額)を使う(レビュー時の編集、docs/domain/recurring-transactions.md 2.1節) */
   amount?: number
+  /** 摘要(計画Issue #164)。省略時はルール名。空(空白のみ)なら摘要なし */
+  memo?: string | null
+  /** コメント(計画Issue #164)。省略時はなし */
+  comment?: string | null
+}
+
+export interface ConfirmManyRecurringTransactionProposalsInput {
+  /**
+   * まとめて確定する提案。同じルールの提案は、古いほうから途切れずに選ばれている必要がある
+   * (保留中の提案のうち古いものから連続した先頭の部分でなければエラー)。重複も不可
+   */
+  items: ReadonlyArray<{ ruleId: number; dueDate: string }>
+  /** 起票者が決まっていないルールの分に使う起票者。起票者が決まっているルールには影響しない */
+  householdMemberId?: number
 }
 
 export interface SkipRecurringTransactionProposalInput {
@@ -31,11 +57,17 @@ export interface SkipRecurringTransactionProposalInput {
 }
 
 export interface RecurringTransactionProposalRpcApi {
-  listPending(): RecurringTransactionProposal[]
+  listPending(): PendingRecurringTransactionProposal[]
   confirm(input: ConfirmRecurringTransactionProposalInput): JournalEntry
   /**
+   * 複数の提案を、金額の初期値・摘要の既定(ルール名)のまま、単一のDBトランザクションでまとめて確定する
+   * (計画Issue #164)。全件確定するか、1件も確定しないかのどちらか。作成した仕訳を、ルールの出現順・
+   * ルール内は古い期日の順に返す。金額を直したい提案は、従来どおり1件ずつconfirmする
+   */
+  confirmMany(input: ConfirmManyRecurringTransactionProposalsInput): JournalEntry[]
+  /**
    * 提案を見送る(計画Issue #145、docs/domain/recurring-transactions.md 1.7)。仕訳は作らず、
-   * 見送った対象日だけを永続化する。見送りの取り消しは作らない(間違えて見送ったら手入力で起票する)。
+   * 見送った対象日(土日の調整前の期日)だけを永続化する。見送りの取り消しは作らない(間違えて見送ったら手入力で起票する)。
    */
   skip(input: SkipRecurringTransactionProposalInput): void
 }
@@ -48,13 +80,16 @@ export interface RecurringTransactionProposalRpcApi {
  *
  * confirmは、そのルールについて現時点で保留中の対象日一覧を再評価した上で、
  * 「最も古い保留中の対象日」と一致する場合にのみ仕訳生成を許可する(昇順のみ許可)。
- * 単純に「渡されたdueDateが最新生成entry_dateより後か」だけを見る実装では、より古い
- * 未確認の対象日を飛び越して後の対象日だけを確認できてしまい、次回以降の評価の起点
- * (最新生成entry_date)がその飛び越した対象日より後に進んでしまうことで、飛び越された
+ * 単純に「渡されたdueDateが最新生成の期日より後か」だけを見る実装では、より古い
+ * 未確認の対象日を飛び越えて後の対象日だけを確認できてしまい、次回以降の評価の起点
+ * (最新生成の期日)がその飛び越した対象日より後に進んでしまうことで、飛び越された
  * 対象日が仕訳化されないまま二度と提案されなくなる(evaluatorレビューAttempt 1で発見・
  * 再現された不具合、`docs/decisions.md`参照)。昇順のみ許可することで、この「実績からの
  * 逆算」方式でも取りこぼしが起こらないことを保証する。この検証はスケジュールに合致しない
  * dueDateの拒否も兼ねる(evaluateRecurringTransactionProposalsが返す候補にしか一致しない)。
+ *
+ * 起点は生成済みの仕訳の期日(recurring_due_date)で求めるため、土日の調整や仕訳の日付の編集で
+ * ずれない(計画Issue #164)。confirmManyは同じ検証を「古いものから連続した先頭の部分」に広げたもの。
  */
 export function createRecurringTransactionProposalApi(
   db: Database,
@@ -69,7 +104,7 @@ export function createRecurringTransactionProposalApi(
         {
           rule,
           generatedCount: ruleRepository.countGeneratedJournalEntries(rule.id),
-          latestGeneratedEntryDate: ruleRepository.findLatestGeneratedEntryDate(rule.id),
+          latestGeneratedDueDate: ruleRepository.findLatestGeneratedDueDate(rule.id),
           latestSkippedDueDate: ruleRepository.findLatestSkippedDueDate(rule.id),
         },
       ],
@@ -77,15 +112,28 @@ export function createRecurringTransactionProposalApi(
     )
   }
 
+  function findRule(ruleId: number): RecurringTransactionRule {
+    const rule = ruleRepository.findById(ruleId)
+    if (!rule) {
+      throw new Error(`recurring transaction rule not found: ${ruleId}`)
+    }
+    return rule
+  }
+
+  /** 金額の初期値。固定ならルールの金額、前回確定額なら前回の金額(1件も無ければルールの金額) */
+  function defaultAmountOf(rule: RecurringTransactionRule): number {
+    if (rule.amountMode === 'last_confirmed') {
+      return ruleRepository.findLastConfirmedAmount(rule.id) ?? rule.amount
+    }
+    return rule.amount
+  }
+
   /**
    * 確定・見送りで共通の検証。そのルールの「最も古い保留中の対象日」と一致する場合にのみ許可する
    * (昇順のみ許可)。ルールを返す。
    */
   function assertNextPendingDueDate(ruleId: number, dueDate: string): RecurringTransactionRule {
-    const rule = ruleRepository.findById(ruleId)
-    if (!rule) {
-      throw new Error(`recurring transaction rule not found: ${ruleId}`)
-    }
+    const rule = findRule(ruleId)
 
     const [nextPending] = evaluatePendingForRule(rule)
     if (!nextPending || nextPending.dueDate !== dueDate) {
@@ -98,40 +146,103 @@ export function createRecurringTransactionProposalApi(
     return rule
   }
 
+  /** 確定・まとめて確定で共通の、提案1件分の仕訳の入力を組み立てる(検証済みのルール・期日を前提とする) */
+  function buildJournalEntryInput(
+    rule: RecurringTransactionRule,
+    dueDate: string,
+    options: {
+      householdMemberId?: number
+      amount: number
+      memo?: string | null
+      comment?: string | null
+    },
+  ): CreateJournalEntryInput {
+    const bookkeeperHouseholdMemberId = rule.householdMemberId ?? options.householdMemberId
+    if (bookkeeperHouseholdMemberId == null) {
+      throw new RecurringTransactionHouseholdMemberRequiredError(rule.id)
+    }
+
+    const debitAccount = accountRepository.findById(rule.debitAccountId)
+    const creditAccount = accountRepository.findById(rule.creditAccountId)
+    if (!debitAccount || !creditAccount) {
+      throw new Error(`recurring transaction rule ${rule.id} references a missing account`)
+    }
+
+    return buildRecurringTransactionJournalEntryInput({
+      rule,
+      dueDate,
+      bookkeeperHouseholdMemberId,
+      debitAccountCategory: debitAccount.category,
+      creditAccountCategory: creditAccount.category,
+      amount: options.amount,
+      memo: options.memo,
+      comment: options.comment,
+      // 明細行の世帯メンバー: 科目の既定メンバー > ルールの世帯メンバー > 起票者(計画Issue #169)
+      resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(
+        [debitAccount, creditAccount],
+        bookkeeperHouseholdMemberId,
+      ),
+    })
+  }
+
   return {
-    listPending(): RecurringTransactionProposal[] {
-      return ruleRepository.findAll().flatMap((rule) => evaluatePendingForRule(rule))
+    listPending(): PendingRecurringTransactionProposal[] {
+      return ruleRepository.findAll().flatMap((rule) => {
+        const proposals = evaluatePendingForRule(rule)
+        if (proposals.length === 0) return []
+        const defaultAmount = defaultAmountOf(rule)
+        return proposals.map((proposal) => ({
+          ...proposal,
+          entryDate: adjustForWeekend(proposal.dueDate, rule.weekendAdjustment),
+          defaultAmount,
+        }))
+      })
     },
 
     confirm(input: ConfirmRecurringTransactionProposalInput): JournalEntry {
       const rule = assertNextPendingDueDate(input.ruleId, input.dueDate)
 
-      const bookkeeperHouseholdMemberId = rule.householdMemberId ?? input.householdMemberId
-      if (bookkeeperHouseholdMemberId == null) {
-        throw new RecurringTransactionHouseholdMemberRequiredError(rule.id)
-      }
-
-      const debitAccount = accountRepository.findById(rule.debitAccountId)
-      const creditAccount = accountRepository.findById(rule.creditAccountId)
-      if (!debitAccount || !creditAccount) {
-        throw new Error(`recurring transaction rule ${rule.id} references a missing account`)
-      }
-
       return journalEntryRepository.create(
-        buildRecurringTransactionJournalEntryInput({
-          rule,
-          dueDate: input.dueDate,
-          bookkeeperHouseholdMemberId,
-          debitAccountCategory: debitAccount.category,
-          creditAccountCategory: creditAccount.category,
-          amount: input.amount,
-          // 明細行の世帯メンバー: 科目の既定メンバー > ルールの世帯メンバー > 起票者(計画Issue #169)
-          resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(
-            [debitAccount, creditAccount],
-            bookkeeperHouseholdMemberId,
-          ),
+        buildJournalEntryInput(rule, input.dueDate, {
+          householdMemberId: input.householdMemberId,
+          amount: input.amount ?? defaultAmountOf(rule),
+          memo: input.memo,
+          comment: input.comment,
         }),
       )
+    },
+
+    confirmMany(input: ConfirmManyRecurringTransactionProposalsInput): JournalEntry[] {
+      const selectedByRule = new Map<number, string[]>()
+      for (const { ruleId, dueDate } of input.items) {
+        const dueDates = selectedByRule.get(ruleId) ?? []
+        if (dueDates.includes(dueDate)) {
+          throw new Error(`duplicate proposal selected: rule ${ruleId}, due date ${dueDate}`)
+        }
+        dueDates.push(dueDate)
+        selectedByRule.set(ruleId, dueDates)
+      }
+
+      // 先に全件を検証し、仕訳の入力を組み立てる(1件でも不正なら、何も書き込まない)
+      const inputs: CreateJournalEntryInput[] = []
+      for (const [ruleId, dueDates] of selectedByRule) {
+        const rule = findRule(ruleId)
+        const pending = evaluatePendingForRule(rule).map((p) => p.dueDate)
+        const selected = [...dueDates].sort()
+        if (selected.some((dueDate, index) => dueDate !== pending[index])) {
+          throw new Error(
+            `selected due dates for recurring transaction rule ${rule.id} must be the oldest pending occurrences without gaps: pending ${JSON.stringify(pending)}, selected ${JSON.stringify(selected)}`,
+          )
+        }
+
+        // 初期値は選択時点のもの。2件目以降を直前の確定額に追従させない
+        const amount = defaultAmountOf(rule)
+        for (const dueDate of selected) {
+          inputs.push(buildJournalEntryInput(rule, dueDate, { householdMemberId: input.householdMemberId, amount }))
+        }
+      }
+
+      return journalEntryRepository.createMany(inputs)
     },
 
     skip(input: SkipRecurringTransactionProposalInput): void {

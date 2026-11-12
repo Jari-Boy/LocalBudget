@@ -66,6 +66,7 @@ function entry(id: number, entryDate: string, memo: string, lines: JournalLine[]
     sourceType: 'manual',
     householdMemberId,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '',
     updatedAt: '',
     lines: lines.map((l) => ({ ...l, journalEntryId: id, householdMemberId: l.householdMemberId === 0 ? householdMemberId : l.householdMemberId })),

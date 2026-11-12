@@ -74,6 +74,7 @@ function entry(id: number, date: string, memo: string, sourceType: JournalEntry[
     sourceType,
     householdMemberId: 1,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '',
     updatedAt: '',
     lines,
