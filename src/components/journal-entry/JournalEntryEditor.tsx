@@ -44,7 +44,11 @@ export interface JournalEntryEditorProps {
   value: JournalEditorValue
   onChange: (value: JournalEditorValue) => void
   master: JournalEditorMaster
-  /** true のとき、金額以外は編集できない(定期取引の提案) */
+  /**
+   * true のとき、金額・摘要・コメント以外は編集できない(定期取引の提案)。取引日・起票者・科目・
+   * 各行の2段目(取引先・プロジェクト・世帯メンバー)は読み取り専用で表示し、行の追加・削除ボタンは
+   * 無効で表示する(計画Issue #164)
+   */
   readOnlyLines?: boolean
   /** 渡すと、精算バッチの選択肢に「+ 新しいバッチ」を出す。名前を受けて作成したバッチを返す */
   onCreateBatch?: (name: string) => Promise<SettlementBatch>
@@ -163,7 +167,6 @@ export function JournalEntryEditor({
             id="journal-editor-memo"
             className="journal-editor__control"
             value={value.memo}
-            disabled={readOnlyLines}
             onChange={(e) => update({ memo: e.target.value })}
           />
         </div>
@@ -233,106 +236,106 @@ export function JournalEntryEditor({
                         value={line.amountInput}
                         onChange={(e) => updateLine(key, (l) => ({ ...l, amountInput: e.target.value }))}
                       />
-                      {!readOnlyLines && (
-                        <button
-                          type="button"
-                          className="journal-editor__icon-button"
-                          aria-label={accountName ? `${accountName}の行を削除` : '行を削除'}
-                          disabled={rows.length <= 1}
-                          onClick={() => update({ lines: value.lines.filter((l) => l.key !== key) })}
-                        >
-                          ×
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="journal-editor__icon-button"
+                        aria-label={accountName ? `${accountName}の行を削除` : '行を削除'}
+                        disabled={readOnlyLines || rows.length <= 1}
+                        onClick={() => update({ lines: value.lines.filter((l) => l.key !== key) })}
+                      >
+                        ×
+                      </button>
                     </div>
-                    {!readOnlyLines && (
-                      <div className="journal-editor__line-sub">
-                        {account !== undefined && isCounterpartyEligibleCategory(account.category) && (
-                          <div className="journal-editor__sub-field">
-                            <TreeSelect
-                              label="取引先"
-                              categories={master.counterpartyCategories}
-                              value={line.counterpartyId === null ? '' : String(line.counterpartyId)}
-                              emptyLabel="取引先なし"
-                              placeholder="取引先なし"
-                              onChange={(v) => updateLine(key, (l) => ({ ...l, counterpartyId: v === '' ? null : Number(v) }))}
-                              onCreate={
-                                onRequestCreateCounterparty === undefined
-                                  ? undefined
-                                  : () =>
-                                      onRequestCreateCounterparty((id) =>
-                                        updateLine(key, (l) => ({ ...l, counterpartyId: id })),
-                                      )
-                              }
-                            />
-                          </div>
-                        )}
-                        {account !== undefined && isSettlementBatchTaggableAccount(account) && (
-                          <select
-                            className="journal-editor__control journal-editor__select"
-                            aria-label="精算バッチ"
-                            value={line.settlementBatchId == null ? '' : String(line.settlementBatchId)}
-                            onChange={(e) => {
-                              if (e.target.value === 'new') {
-                                setCreatingBatchKey(key)
-                                return
-                              }
-                              updateLine(key, (l) => ({
-                                ...l,
-                                settlementBatchId: e.target.value === '' ? null : Number(e.target.value),
-                              }))
-                            }}
-                          >
-                            <option value="">精算バッチなし</option>
-                            {master.batches.map((b) => (
-                              <option key={b.id} value={b.id}>
-                                {b.name}
-                              </option>
-                            ))}
-                            {onCreateBatch !== undefined && <option value="new">+ 新しいバッチ</option>}
-                          </select>
-                        )}
+                    <div className="journal-editor__line-sub">
+                      {account !== undefined && isCounterpartyEligibleCategory(account.category) && (
                         <div className="journal-editor__sub-field">
                           <TreeSelect
-                            label="プロジェクト"
-                            categories={master.projectCategories}
-                            value={line.projectId === null ? '' : String(line.projectId)}
-                            emptyLabel="プロジェクトなし"
-                            placeholder="プロジェクトなし"
-                            onChange={(v) => updateLine(key, (l) => ({ ...l, projectId: v === '' ? null : Number(v) }))}
+                            label="取引先"
+                            categories={master.counterpartyCategories}
+                            value={line.counterpartyId === null ? '' : String(line.counterpartyId)}
+                            emptyLabel="取引先なし"
+                            placeholder="取引先なし"
+                            disabled={readOnlyLines}
+                            onChange={(v) => updateLine(key, (l) => ({ ...l, counterpartyId: v === '' ? null : Number(v) }))}
+                            onCreate={
+                              onRequestCreateCounterparty === undefined
+                                ? undefined
+                                : () =>
+                                    onRequestCreateCounterparty((id) =>
+                                      updateLine(key, (l) => ({ ...l, counterpartyId: id })),
+                                    )
+                            }
                           />
                         </div>
-                        {defaultMember !== undefined && line.householdMemberId === defaultMember.id ? (
-                          <span className="journal-editor__locked">{defaultMember.name}(科目の既定)</span>
-                        ) : (
-                          <select
-                            className="journal-editor__control journal-editor__select"
-                            aria-label="世帯メンバー"
-                            value={line.householdMemberId === null ? '' : String(line.householdMemberId)}
-                            onChange={(e) =>
-                              updateLine(key, (l) => ({
-                                ...l,
-                                householdMemberId: e.target.value === '' ? null : Number(e.target.value),
-                              }))
+                      )}
+                      {account !== undefined && isSettlementBatchTaggableAccount(account) && (
+                        <select
+                          className="journal-editor__control journal-editor__select"
+                          aria-label="精算バッチ"
+                          disabled={readOnlyLines}
+                          value={line.settlementBatchId == null ? '' : String(line.settlementBatchId)}
+                          onChange={(e) => {
+                            if (e.target.value === 'new') {
+                              setCreatingBatchKey(key)
+                              return
                             }
-                          >
-                            {line.householdMemberId === null && <option value="">選択してください</option>}
-                            {defaultMember === undefined ? (
-                              memberOptions(line.householdMemberId)
-                            ) : (
-                              // 科目の既定メンバーを後から変えて、旧メンバーのまま残した行。旧メンバーのまま保存するか、既定値にだけ変えられる
-                              [line.householdMemberId, defaultMember.id].map((id) => (
-                                <option key={id} value={id ?? ''}>
-                                  {id === defaultMember.id
-                                    ? `${defaultMember.name}(科目の既定)`
-                                    : (memberById.get(id ?? -1)?.name ?? '')}
-                                </option>
-                              ))
-                            )}
-                          </select>
-                        )}
+                            updateLine(key, (l) => ({
+                              ...l,
+                              settlementBatchId: e.target.value === '' ? null : Number(e.target.value),
+                            }))
+                          }}
+                        >
+                          <option value="">精算バッチなし</option>
+                          {master.batches.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.name}
+                            </option>
+                          ))}
+                          {onCreateBatch !== undefined && <option value="new">+ 新しいバッチ</option>}
+                        </select>
+                      )}
+                      <div className="journal-editor__sub-field">
+                        <TreeSelect
+                          label="プロジェクト"
+                          categories={master.projectCategories}
+                          value={line.projectId === null ? '' : String(line.projectId)}
+                          emptyLabel="プロジェクトなし"
+                          placeholder="プロジェクトなし"
+                          disabled={readOnlyLines}
+                          onChange={(v) => updateLine(key, (l) => ({ ...l, projectId: v === '' ? null : Number(v) }))}
+                        />
                       </div>
-                    )}
+                      {defaultMember !== undefined && line.householdMemberId === defaultMember.id ? (
+                        <span className="journal-editor__locked">{defaultMember.name}(科目の既定)</span>
+                      ) : (
+                        <select
+                          className="journal-editor__control journal-editor__select"
+                          aria-label="世帯メンバー"
+                          disabled={readOnlyLines}
+                          value={line.householdMemberId === null ? '' : String(line.householdMemberId)}
+                          onChange={(e) =>
+                            updateLine(key, (l) => ({
+                              ...l,
+                              householdMemberId: e.target.value === '' ? null : Number(e.target.value),
+                            }))
+                          }
+                        >
+                          {line.householdMemberId === null && <option value="">選択してください</option>}
+                          {defaultMember === undefined ? (
+                            memberOptions(line.householdMemberId)
+                          ) : (
+                            // 科目の既定メンバーを後から変えて、旧メンバーのまま残した行。旧メンバーのまま保存するか、既定値にだけ変えられる
+                            [line.householdMemberId, defaultMember.id].map((id) => (
+                              <option key={id} value={id ?? ''}>
+                                {id === defaultMember.id
+                                  ? `${defaultMember.name}(科目の既定)`
+                                  : (memberById.get(id ?? -1)?.name ?? '')}
+                              </option>
+                            ))
+                          )}
+                        </select>
+                      )}
+                    </div>
                     {creatingBatchKey === key && (
                       <div className="journal-editor__line-sub">
                         <input
@@ -358,11 +361,9 @@ export function JournalEntryEditor({
                   </div>
                 )
               })}
-              {!readOnlyLines && (
-                <button type="button" className="journal-editor__add" onClick={() => addLine(side)}>
-                  {`+ ${label}の行を追加`}
-                </button>
-              )}
+              <button type="button" className="journal-editor__add" disabled={readOnlyLines} onClick={() => addLine(side)}>
+                {`+ ${label}の行を追加`}
+              </button>
             </section>
           )
         })}

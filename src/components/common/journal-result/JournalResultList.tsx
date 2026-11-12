@@ -11,6 +11,14 @@ export interface JournalResultListProps {
   selectionMode: SelectionMode
   selectedIds: readonly number[]
   onSelectionChange: (ids: readonly number[]) => void
+  /** trueのとき、科目(借方→貸方)を出さない(定期の確認タブ、計画Issue #164) */
+  hideAccounts?: boolean
+  /**
+   * 渡すと、各行に詳細の選択(selectionMode)とは別のチェックボックスを付ける(まとめて確定用、計画Issue #164)。
+   * チェックボックスを押すとonToggle(その行のid)だけを通知し、選択は変えない。チェックの連動などの
+   * 規則は呼び出し側が持つ
+   */
+  checkable?: { checkedIds: readonly number[]; onToggle: (id: number) => void }
 }
 
 function toDate(entryDate: string): Date {
@@ -29,6 +37,8 @@ export function JournalResultList({
   selectionMode,
   selectedIds,
   onSelectionChange,
+  hideAccounts = false,
+  checkable,
 }: JournalResultListProps) {
   const listRef = useRef<HTMLDivElement>(null)
   // キー操作で選択を移したときだけ、再描画後にその行へフォーカスを移す
@@ -84,11 +94,21 @@ export function JournalResultList({
       ) : (
         <ul className="journal-result-list__items">
           {items.map((item) => (
-            <li key={item.id}>
+            <li key={item.id} className={checkable ? 'journal-result-list__item--checkable' : undefined}>
+              {checkable && (
+                <input
+                  type="checkbox"
+                  className="journal-result-list__check"
+                  aria-label={`${item.memo} ${formatDate(toDate(item.entryDate))}を選択`}
+                  checked={checkable.checkedIds.includes(item.id)}
+                  onChange={() => checkable.onToggle(item.id)}
+                />
+              )}
               <Row
                 item={item}
                 mode={selectionMode}
                 selected={selectedIds.includes(item.id)}
+                hideAccounts={hideAccounts}
                 onPick={() => (selectionMode === 'single' ? onSelectionChange([item.id]) : toggle(item.id))}
               />
             </li>
@@ -103,11 +123,13 @@ function Row({
   item,
   mode,
   selected,
+  hideAccounts,
   onPick,
 }: {
   item: JournalResultItem
   mode: SelectionMode
   selected: boolean
+  hideAccounts: boolean
   onPick: () => void
 }) {
   const tag = item.sourceType === 'draft' ? DRAFT_TAG : SOURCE_TAGS[item.sourceType]
@@ -123,7 +145,9 @@ function Row({
         <span className="journal-result-list__amount">{formatCurrency(item.amount, item.currency)}</span>
       </span>
       <span className="journal-result-list__sub">
-        {formatDate(toDate(item.entryDate))} ・ {item.debitSummary} → {item.creditSummary}
+        {formatDate(toDate(item.entryDate))}
+        {item.note ? ` ・ ${item.note}` : ''}
+        {hideAccounts ? '' : ` ・ ${item.debitSummary} → ${item.creditSummary}`}
       </span>
     </>
   )

@@ -110,3 +110,24 @@
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
 }
+
+/* 定期の確認タブ(計画Issue #164): 行の左に、詳細の選択とは別のチェックボックスを置く */
+.journal-result-list__item--checkable {
+  display: flex;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.journal-result-list__item--checkable > .journal-result-list__row {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-bottom: 0;
+}
+
+.journal-result-list__check {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 12px 0 0 12px;
+  accent-color: var(--color-accent);
+}

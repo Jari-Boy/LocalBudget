@@ -183,3 +183,35 @@ export function toMatchedResultItem(
     creditSummary: summarizeSide(entry.lines, 'credit', accountNameOf, matchAccountIds),
   }
 }
+
+/** 提案を一意に表すキー(チェックの保持に使う。一覧の行のidは並び替えや再読み込みで変わるため使わない) */
+export function proposalKey(proposal: ProposalKey): string {
+  return `${proposal.ruleId}|${proposal.dueDate}`
+}
+
+/**
+ * まとめて確定のチェックを切り替える(計画Issue #164)。同じルールの提案は、古い順に途切れず選ばれた
+ * 状態を常に保つ。新しい提案にチェックを付けると同じルールのそれより古い提案にもチェックが付き、
+ * 古い提案のチェックを外すと同じルールのそれより新しい提案のチェックも外れる(別のルールには影響しない)。
+ * 確定の側(提案API)も同じ条件を検証するが、画面ではエラーを出さずに済むよう、ここで連動させる。
+ */
+export function toggleProposalChecked(
+  rows: readonly ProposalKey[],
+  checkedKeys: readonly string[],
+  target: ProposalKey,
+): string[] {
+  const checked = new Set(checkedKeys)
+  const sameRule = rows.filter((row) => row.ruleId === target.ruleId)
+  if (checked.has(proposalKey(target))) {
+    for (const row of sameRule) if (row.dueDate >= target.dueDate) checked.delete(proposalKey(row))
+  } else {
+    for (const row of sameRule) if (row.dueDate <= target.dueDate) checked.add(proposalKey(row))
+  }
+  return [...checked]
+}
+
+/** 「すべて選択」: 全件チェック済みなら全部外し、そうでなければ全件にチェックを付ける */
+export function toggleAllProposals(rows: readonly ProposalKey[], checkedKeys: readonly string[]): string[] {
+  const checked = new Set(checkedKeys)
+  return rows.every((row) => checked.has(proposalKey(row))) ? [] : rows.map(proposalKey)
+}

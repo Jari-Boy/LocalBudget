@@ -23,6 +23,12 @@
   cursor: pointer;
 }
 
+.tree-select__trigger:disabled {
+  background: var(--color-field-subtle);
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
 .tree-select__trigger--empty {
   color: var(--color-text-muted);
 }

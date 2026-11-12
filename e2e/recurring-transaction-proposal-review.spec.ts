@@ -10,7 +10,7 @@
  * 画面遷移・確認順序制約・金額編集・起票者未設定という操作フローに絞る。
  *
  * 対象日はテスト実行時の実際の日付を起点に算出する(recurringTransactionProposalの
- * 評価は「前回チェック日(生成済み仕訳の最新entry_date)」を起点にした実時刻ベースの
+ * 評価は「前回チェック日(生成済み仕訳の最新の期日recurring_due_date、開始日の前日など)」を起点にした実時刻ベースの
  * 計算のため、Playwrightのブラウザ内時刻を固定する仕組みは導入していない)。
  * 生成済み仕訳の永続化はwithAutoSaveのtrailing debounce(2秒)を挟むため、
  * listPendingの結果に反映されるまでpollで待ってからreloadする。
@@ -73,6 +73,8 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
           amount: 1000,
           frequency: 'weekly',
           dayOfWeek,
+          // 開始日を最初の生成済みの期日と同じ日にして、その次の対象日から提案させる(計画Issue #164)
+          startsOn: seedEntryDate,
           householdMemberId: defaultMember.id,
         })
         await client.journalEntry.create({
@@ -80,6 +82,7 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
           memo: null,
           householdMemberId: defaultMember.id,
           generatedFromRuleId: rule.id,
+          recurringDueDate: seedEntryDate,
           lines: [
             { householdMemberId: defaultMember.id, accountId: expenseAccount.id, side: 'debit', amount: 1000 },
             { householdMemberId: defaultMember.id, accountId: liabilityAccount.id, side: 'credit', amount: 1000 },
@@ -125,6 +128,8 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
           amount: 2000,
           frequency: 'weekly',
           dayOfWeek,
+          // 開始日を最初の生成済みの期日と同じ日にして、その次の対象日から提案させる(計画Issue #164)
+          startsOn: seedEntryDate,
           householdMemberId: defaultMember.id,
         })
         await client.journalEntry.create({
@@ -132,6 +137,7 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
           memo: null,
           householdMemberId: defaultMember.id,
           generatedFromRuleId: rule.id,
+          recurringDueDate: seedEntryDate,
           lines: [
             { householdMemberId: defaultMember.id, accountId: expenseAccount.id, side: 'debit', amount: 2000 },
             { householdMemberId: defaultMember.id, accountId: liabilityAccount.id, side: 'credit', amount: 2000 },
@@ -187,12 +193,15 @@ test.describe('定期取引の確認(仕訳画面のタブ)', () => {
           amount: 3000,
           frequency: 'weekly',
           dayOfWeek,
+          // 開始日を最初の生成済みの期日と同じ日にして、その次の対象日から提案させる(計画Issue #164)
+          startsOn: seedEntryDate,
         })
         await client.journalEntry.create({
           entryDate: seedEntryDate,
           memo: null,
           householdMemberId: defaultMember.id,
           generatedFromRuleId: rule.id,
+          recurringDueDate: seedEntryDate,
           lines: [
             { householdMemberId: defaultMember.id, accountId: expenseAccount.id, side: 'debit', amount: 3000 },
             { householdMemberId: defaultMember.id, accountId: liabilityAccount.id, side: 'credit', amount: 3000 },

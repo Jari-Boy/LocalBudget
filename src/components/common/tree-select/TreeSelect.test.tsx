@@ -3,7 +3,8 @@
  * 選択ツリー(TreeSelect)のコンポーネントテスト(計画Issue #150)。
  * 科目・取引先・プロジェクトで共通に使うドロップダウン。ボタンの直下に開き、検索欄・区分の見出し・
  * 入れ子のグループ・折りたたみを持つ。グループごとの選択は任意で許可でき、外側のクリックと
- * Escで閉じ、キーボードだけで操作できることを検証する。
+ * Escで閉じ、キーボードだけで操作できることを検証する。無効(disabled)のときは、現在の値を表示したまま
+ * 押せず開かないこと(定期取引の確認パネルで、行の2段目を読み取り専用で見せるために使う、計画Issue #164)も検証する。
  * 外部依存なし(DB・Repositoryに依存せず、汎用のノード型だけを受け取る)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -224,5 +225,16 @@ describe('TreeSelect', () => {
   it('ボタンはlistboxのポップアップを持つことをaria-haspopupで示す', () => {
     renderSelect()
     expect(trigger()).toHaveAttribute('aria-haspopup', 'dialog')
+  })
+})
+
+describe('TreeSelect(無効、計画Issue #164)', () => {
+  it('disabled のとき、現在の値は表示されるが、ボタンは押せず、ポップアップも開かない', () => {
+    renderSelect({ disabled: true, value: '雑費' })
+
+    expect(trigger()).toHaveTextContent('雑費')
+    expect(trigger()).toBeDisabled()
+    fireEvent.click(trigger())
+    expect(screen.queryByRole('dialog', { name: '科目' })).not.toBeInTheDocument()
   })
 })

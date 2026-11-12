@@ -198,7 +198,12 @@
   cursor: pointer;
 }
 
-.journal-editor__add:hover {
+.journal-editor__add:disabled {
+  color: var(--color-border-strong);
+  cursor: default;
+}
+
+.journal-editor__add:hover:not(:disabled) {
   background: var(--color-hover);
 }
 

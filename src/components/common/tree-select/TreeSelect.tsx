@@ -25,6 +25,8 @@ export interface TreeSelectProps {
   onCreate?: () => void
   /** 新規追加ボタンの文言(「+ 」は自動で付く)。省略時は「新規追加」 */
   createLabel?: string
+  /** trueのとき、現在の値は表示したまま押せなくする(読み取り専用の表示、計画Issue #164) */
+  disabled?: boolean
 }
 
 function findGroupName(nodes: readonly TreeSelectNode[], id: string): string | undefined {
@@ -65,6 +67,7 @@ export function TreeSelect({
   placeholder = '指定なし',
   onCreate,
   createLabel = '新規追加',
+  disabled = false,
 }: TreeSelectProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -185,6 +188,7 @@ export function TreeSelect({
         aria-expanded={isOpen}
         aria-controls={isOpen ? popupId : undefined}
         aria-label={`${label}: ${selectedText}`}
+        disabled={disabled}
         onClick={() => (isOpen ? close() : open())}
       >
         <span className="tree-select__trigger-text">{selectedText}</span>
