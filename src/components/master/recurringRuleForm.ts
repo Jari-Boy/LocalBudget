@@ -1,7 +1,9 @@
 import type {
   CreateRecurringTransactionRuleInput,
+  RecurringAmountMode,
   RecurringTransactionFrequency,
   RecurringTransactionRule,
+  WeekendAdjustment,
 } from '../../domain/recurring-transaction/RecurringTransactionRule'
 
 /**
@@ -26,9 +28,18 @@ export interface RuleForm {
   householdMemberId: number | ''
   counterpartyId: number | ''
   maxOccurrences: string
+  /** 開始日(YYYY-MM-DD)。必須。周期の基準を兼ねる(計画Issue #164) */
+  startsOn: string
+  /** 終了日(YYYY-MM-DD)。空は終了なし */
+  endsOn: string
+  /** N回ごと。1以上の整数 */
+  interval: string
+  weekendAdjustment: WeekendAdjustment
+  amountMode: RecurringAmountMode
 }
 
-export function emptyRuleForm(): RuleForm {
+/** 空のフォーム。開始日の既定は今日(過去日も指定できる) */
+export function emptyRuleForm(today: string = new Date().toISOString().slice(0, 10)): RuleForm {
   return {
     name: '',
     debitAccountId: '',
@@ -44,6 +55,11 @@ export function emptyRuleForm(): RuleForm {
     householdMemberId: '',
     counterpartyId: '',
     maxOccurrences: '',
+    startsOn: today,
+    endsOn: '',
+    interval: '1',
+    weekendAdjustment: 'none',
+    amountMode: 'fixed',
   }
 }
 
@@ -63,6 +79,11 @@ export function ruleFormFromRule(rule: RecurringTransactionRule): RuleForm {
     householdMemberId: rule.householdMemberId ?? '',
     counterpartyId: rule.counterpartyId ?? '',
     maxOccurrences: rule.maxOccurrences === null ? '' : String(rule.maxOccurrences),
+    startsOn: rule.startsOn,
+    endsOn: rule.endsOn ?? '',
+    interval: String(rule.interval),
+    weekendAdjustment: rule.weekendAdjustment,
+    amountMode: rule.amountMode,
   }
 }
 
@@ -104,17 +125,26 @@ export function buildRuleInput(form: RuleForm): CreateRecurringTransactionRuleIn
     householdMemberId: orNull(form.householdMemberId),
     counterpartyId: orNull(form.counterpartyId),
     maxOccurrences: parseMaxOccurrences(form.maxOccurrences),
+    startsOn: form.startsOn,
+    endsOn: form.endsOn === '' ? null : form.endsOn,
+    interval: Number(form.interval),
+    weekendAdjustment: form.weekendAdjustment,
+    amountMode: form.amountMode,
   }
 }
 
-/** 必須項目と、繰り返しごとに必要な項目、回数の上限(空か正の整数)が揃っているか */
-export function isRuleFormValid(form: RuleForm): boolean {
-  if (form.name.trim() === '' || form.debitAccountId === '' || form.creditAccountId === '') return false
-  const amount = Number(form.amount)
-  if (form.amount === '' || !Number.isFinite(amount) || amount <= 0) return false
-
+/**
+ * スケジュールの入力が揃っているか(計画Issue #164)。繰り返しごとに必要な項目、回数の上限(空か正の整数)、
+ * 開始日(必須)、終了日(空か開始日以後)、間隔(1以上の整数)。期日のプレビューを出せる条件でもある
+ */
+export function isScheduleFormValid(form: RuleForm): boolean {
   const max = parseMaxOccurrences(form.maxOccurrences)
   if (max !== null && (!Number.isInteger(max) || max <= 0)) return false
+
+  const interval = Number(form.interval)
+  if (form.interval.trim() === '' || !Number.isInteger(interval) || interval < 1) return false
+  if (form.startsOn === '') return false
+  if (form.endsOn !== '' && form.endsOn < form.startsOn) return false
 
   const schedule = scheduleColumns(form)
   switch (form.frequency) {
@@ -126,5 +156,46 @@ export function isRuleFormValid(form: RuleForm): boolean {
         : schedule.dayOfWeek !== null && schedule.weekOfMonth !== null
     case 'yearly':
       return schedule.dayOfMonth !== null && schedule.monthOfYear !== null
+  }
+}
+
+/** 必須項目(名称・科目・金額)と、スケジュールの入力(isScheduleFormValid)が揃っているか */
+export function isRuleFormValid(form: RuleForm): boolean {
+  if (form.name.trim() === '' || form.debitAccountId === '' || form.creditAccountId === '') return false
+  const amount = Number(form.amount)
+  if (form.amount === '' || !Number.isFinite(amount) || amount <= 0) return false
+  return isScheduleFormValid(form)
+}
+
+/**
+ * フォームの入力から、期日のプレビュー(previewUpcomingDueDates)に渡すためのルールを作る。保存はしない
+ * (idは0、作成日時などは空)。呼び出し前にisScheduleFormValidで確認する
+ */
+export function ruleFromForm(form: RuleForm): RecurringTransactionRule {
+  const input = buildRuleInput(form)
+  return {
+    id: 0,
+    name: input.name,
+    debitAccountId: input.debitAccountId,
+    creditAccountId: input.creditAccountId,
+    amount: input.amount,
+    frequency: input.frequency,
+    dayOfWeek: input.dayOfWeek ?? null,
+    dayOfMonth: input.dayOfMonth ?? null,
+    weekOfMonth: input.weekOfMonth ?? null,
+    monthOfYear: input.monthOfYear ?? null,
+    projectId: input.projectId ?? null,
+    householdMemberId: input.householdMemberId ?? null,
+    counterpartyId: input.counterpartyId ?? null,
+    maxOccurrences: input.maxOccurrences ?? null,
+    startsOn: input.startsOn!,
+    endsOn: input.endsOn ?? null,
+    interval: input.interval!,
+    weekendAdjustment: input.weekendAdjustment!,
+    amountMode: input.amountMode!,
+    resumedOn: null,
+    isActive: true,
+    createdAt: '',
+    updatedAt: '',
   }
 }
