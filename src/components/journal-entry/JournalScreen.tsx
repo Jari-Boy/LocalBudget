@@ -33,7 +33,10 @@ import type {
 } from '../../infrastructure/rpc/createRecurringTransactionProposalApi'
 import type { JournalEntryDraftRpcApi } from '../../infrastructure/rpc/createRepositoryRegistry'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
-import type { RecurringTransactionRule } from '../../domain/recurring-transaction/RecurringTransactionRule'
+import type {
+  RecurringTransactionRule,
+  RecurringTransactionRuleLine,
+} from '../../domain/recurring-transaction/RecurringTransactionRule'
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
@@ -144,8 +147,10 @@ interface ProposalRow {
   dueDate: string
   /** 土日の調整後の日付(確定すると仕訳の取引日になる) */
   entryDate: string
-  /** 確認パネルの金額の初期値(固定ならルールの金額、前回確定額なら前回の金額) */
+  /** 一覧に出す金額(初期値の借方の合計) */
   defaultAmount: number
+  /** 確認パネルの行の初期値(固定ならルールの行、前回確定額なら前回の仕訳と対応づけた金額、計画Issue #180) */
+  defaultLines: RecurringTransactionRuleLine[]
   rule: RecurringTransactionRule
 }
 
@@ -284,7 +289,7 @@ export function JournalScreen(props: JournalScreenProps) {
       const rule = data.rules.find((r) => r.id === p.ruleId)
       return rule === undefined
         ? []
-        : [{ id: index + 1, ruleId: p.ruleId, dueDate: p.dueDate, entryDate: p.entryDate, defaultAmount: p.defaultAmount, rule }]
+        : [{ id: index + 1, ruleId: p.ruleId, dueDate: p.dueDate, entryDate: p.entryDate, defaultAmount: p.defaultAmount, defaultLines: p.defaultLines, rule }]
     })
     return { accountById, accountNameOf, filterContext, filterOptions, master, relatedIdsByEntryId, proposalRows }
   }, [data])
@@ -363,23 +368,26 @@ export function JournalScreen(props: JournalScreenProps) {
     if (rule === undefined) return null
     const proposal = d.proposals.find((p) => p.ruleId === sel.ruleId && p.dueDate === sel.dueDate)
     const accountById = new Map(d.accounts.map((a) => [a.id, a]))
-    const side = (accountId: number, s: 'debit' | 'credit'): JournalEntryFormLine => {
-      const account = accountById.get(accountId)
+    // 行の世帯メンバーは、行で決まっていればそれ、無ければ科目の既定メンバー、起票者、先頭のメンバーの順(計画Issue #169・#180)
+    const bookkeeper = rule.bookkeeperHouseholdMemberId
+    const formLines: JournalEntryFormLine[] = (proposal?.defaultLines ?? rule.lines).map((line) => {
+      const account = accountById.get(line.accountId)
       return {
-        accountId,
-        side: s,
-        amountInput: String(proposal?.defaultAmount ?? rule.amount),
-        projectId: rule.projectId,
-        householdMemberId: rule.householdMemberId ?? firstMember,
-        counterpartyId: account !== undefined && isCounterpartyEligibleCategory(account.category) ? rule.counterpartyId : null,
+        accountId: line.accountId,
+        side: line.side,
+        amountInput: String(line.amount),
+        projectId: line.projectId,
+        householdMemberId: line.householdMemberId ?? account?.householdMemberId ?? bookkeeper ?? firstMember,
+        counterpartyId: account !== undefined && isCounterpartyEligibleCategory(account.category) ? line.counterpartyId : null,
+        settlementBatchId: line.settlementBatchId,
       }
-    }
+    })
     return {
       entryDate: proposal?.entryDate ?? sel.dueDate,
       memo: rule.name,
       comment: '',
-      householdMemberId: rule.householdMemberId,
-      lines: withKeys([side(rule.debitAccountId, 'debit'), side(rule.creditAccountId, 'credit')]),
+      householdMemberId: bookkeeper,
+      lines: withKeys(formLines),
     }
   }
 
@@ -623,14 +631,14 @@ export function JournalScreen(props: JournalScreenProps) {
   const confirmProposal = () =>
     run(async () => {
       if (editor === null || selectedProposal === undefined) return
-      if (validatedLines() === null) return
-      const amount = Number(editor.lines.find((l) => l.line.side === 'debit')?.line.amountInput)
-      const memberId = selectedProposal.rule.householdMemberId === null ? proposalMemberId : ''
+      const lines = validatedLines()
+      if (lines === null) return
+      const memberId = selectedProposal.rule.bookkeeperHouseholdMemberId === null ? proposalMemberId : ''
       await Promise.resolve().then(() =>
         recurringTransactionProposalApi.confirm({
           ruleId: selectedProposal.ruleId,
           dueDate: selectedProposal.dueDate,
-          amount,
+          lines,
           householdMemberId: memberId === '' ? undefined : memberId,
           memo: editor.memo,
           comment: editor.comment,
@@ -651,7 +659,7 @@ export function JournalScreen(props: JournalScreenProps) {
   // ---- 提案のまとめて確定(計画Issue #164) ----
   /** チェックされている提案(消えた提案のキーは捨てる)。古い順に並ぶ */
   const checkedRows = proposalRows.filter((p) => checkedProposalKeys.includes(proposalKey(p)))
-  const bulkNoMemberRows = checkedRows.filter((p) => p.rule.householdMemberId === null)
+  const bulkNoMemberRows = checkedRows.filter((p) => p.rule.bookkeeperHouseholdMemberId === null)
   const bulkNeedsMember = bulkNoMemberRows.length > 0
   const bulkNoMemberNames = [...new Set(bulkNoMemberRows.map((p) => p.rule.name))].join('、')
 
@@ -800,7 +808,7 @@ export function JournalScreen(props: JournalScreenProps) {
   const stagedReason = (() => {
     if (selection?.kind === 'proposal') {
       if (proposalBlocked) return '先に同じルールの古い提案を確定するか見送ってください'
-      if (selectedProposal?.rule.householdMemberId === null && proposalMemberId === '') return '起票者を選んでください'
+      if (selectedProposal?.rule.bookkeeperHouseholdMemberId === null && proposalMemberId === '') return '起票者を選んでください'
     }
     return incompleteReason === null ? '' : describeIncompleteReason(incompleteReason)
   })()
@@ -1017,7 +1025,7 @@ export function JournalScreen(props: JournalScreenProps) {
                 </p>
               )}
 
-              {selection.kind === 'proposal' && selectedProposal?.rule.householdMemberId === null && (
+              {selection.kind === 'proposal' && selectedProposal?.rule.bookkeeperHouseholdMemberId === null && (
                 <label className="journal-screen__inline-field">
                   起票者
                   <select

@@ -63,21 +63,29 @@ export function emptyRuleForm(today: string = new Date().toISOString().slice(0, 
   }
 }
 
+/**
+ * ルールからフォームを復元する。このフォームは「借方1・貸方1」の2行のルールを編集する形で、
+ * 3行以上のルールの編集は行編集の共通部品に置き換える際に扱う(計画Issue #180)。
+ * 借方・貸方の科目と金額は最初の借方・貸方の行から、プロジェクト・取引先は行の最初の設定値から取り出す。
+ * フォームの「起票者」はルール単位の起票者(bookkeeperHouseholdMemberId)
+ */
 export function ruleFormFromRule(rule: RecurringTransactionRule): RuleForm {
+  const debit = rule.lines.find((l) => l.side === 'debit')
+  const credit = rule.lines.find((l) => l.side === 'credit')
   return {
     name: rule.name,
-    debitAccountId: rule.debitAccountId,
-    creditAccountId: rule.creditAccountId,
-    amount: String(rule.amount),
+    debitAccountId: debit?.accountId ?? '',
+    creditAccountId: credit?.accountId ?? '',
+    amount: String(debit?.amount ?? ''),
     frequency: rule.frequency,
     monthlyMode: rule.dayOfMonth !== null && rule.frequency === 'monthly' ? 'dayOfMonth' : 'weekday',
     dayOfWeek: rule.dayOfWeek ?? '',
     dayOfMonth: rule.dayOfMonth ?? '',
     weekOfMonth: rule.weekOfMonth ?? '',
     monthOfYear: rule.monthOfYear ?? '',
-    projectId: rule.projectId ?? '',
-    householdMemberId: rule.householdMemberId ?? '',
-    counterpartyId: rule.counterpartyId ?? '',
+    projectId: rule.lines.find((l) => l.projectId !== null)?.projectId ?? '',
+    householdMemberId: rule.bookkeeperHouseholdMemberId ?? '',
+    counterpartyId: rule.lines.find((l) => l.counterpartyId !== null)?.counterpartyId ?? '',
     maxOccurrences: rule.maxOccurrences === null ? '' : String(rule.maxOccurrences),
     startsOn: rule.startsOn,
     endsOn: rule.endsOn ?? '',
@@ -112,18 +120,32 @@ function parseMaxOccurrences(value: string): number | null {
   return value.trim() === '' ? null : Number(value)
 }
 
-/** フォーム入力からRepository送信用の入力を組み立てる。呼び出し前にisRuleFormValidで確認する */
-export function buildRuleInput(form: RuleForm): CreateRecurringTransactionRuleInput {
+/**
+ * フォーム入力からRepository送信用の入力を組み立てる。呼び出し前にisRuleFormValidで確認する。
+ * 借方・貸方の2行を作り、プロジェクトは両行に、取引先はPL区分(収益・費用)の行にだけ設定する
+ * (isPlAccountで判定。借方が先。DBが取引先をPL科目以外の行に置くことを拒否するため)。
+ * 行の世帯メンバーは指定せず(科目の既定 > 起票者で決まる)、起票者はルール単位に保存する
+ */
+export function buildRuleInput(
+  form: RuleForm,
+  isPlAccount: (accountId: number) => boolean = () => false,
+): CreateRecurringTransactionRuleInput {
+  const debitAccountId = form.debitAccountId as number
+  const creditAccountId = form.creditAccountId as number
+  const counterpartyId = orNull(form.counterpartyId)
+  const counterpartyOnDebit = isPlAccount(debitAccountId)
+  const counterpartyOnCredit = !counterpartyOnDebit && isPlAccount(creditAccountId)
+  const amount = Number(form.amount)
+  const projectId = orNull(form.projectId)
   return {
     name: form.name.trim(),
-    debitAccountId: form.debitAccountId as number,
-    creditAccountId: form.creditAccountId as number,
-    amount: Number(form.amount),
+    bookkeeperHouseholdMemberId: orNull(form.householdMemberId),
+    lines: [
+      { side: 'debit', accountId: debitAccountId, amount, projectId, counterpartyId: counterpartyOnDebit ? counterpartyId : null },
+      { side: 'credit', accountId: creditAccountId, amount, projectId, counterpartyId: counterpartyOnCredit ? counterpartyId : null },
+    ],
     frequency: form.frequency,
     ...scheduleColumns(form),
-    projectId: orNull(form.projectId),
-    householdMemberId: orNull(form.householdMemberId),
-    counterpartyId: orNull(form.counterpartyId),
     maxOccurrences: parseMaxOccurrences(form.maxOccurrences),
     startsOn: form.startsOn,
     endsOn: form.endsOn === '' ? null : form.endsOn,
@@ -176,17 +198,22 @@ export function ruleFromForm(form: RuleForm): RecurringTransactionRule {
   return {
     id: 0,
     name: input.name,
-    debitAccountId: input.debitAccountId,
-    creditAccountId: input.creditAccountId,
-    amount: input.amount,
+    bookkeeperHouseholdMemberId: input.bookkeeperHouseholdMemberId ?? null,
+    lines: input.lines.map((l, index) => ({
+      lineNo: index + 1,
+      side: l.side,
+      accountId: l.accountId,
+      amount: l.amount,
+      projectId: l.projectId ?? null,
+      householdMemberId: l.householdMemberId ?? null,
+      counterpartyId: l.counterpartyId ?? null,
+      settlementBatchId: l.settlementBatchId ?? null,
+    })),
     frequency: input.frequency,
     dayOfWeek: input.dayOfWeek ?? null,
     dayOfMonth: input.dayOfMonth ?? null,
     weekOfMonth: input.weekOfMonth ?? null,
     monthOfYear: input.monthOfYear ?? null,
-    projectId: input.projectId ?? null,
-    householdMemberId: input.householdMemberId ?? null,
-    counterpartyId: input.counterpartyId ?? null,
     maxOccurrences: input.maxOccurrences ?? null,
     startsOn: input.startsOn!,
     endsOn: input.endsOn ?? null,

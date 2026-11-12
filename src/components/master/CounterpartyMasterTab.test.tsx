@@ -185,12 +185,12 @@ describe('CounterpartyMasterTab', () => {
     const aeon = counterparties.create({ name: 'イオン' })
     new SqlJsRecurringTransactionRuleRepository(db).create({
       name: '食費',
-      debitAccountId: expenseId,
-      creditAccountId: cashId,
-      amount: 1000,
+      lines: [
+        { side: 'debit', accountId: expenseId, amount: 1000, counterpartyId: aeon.id },
+        { side: 'credit', accountId: cashId, amount: 1000 },
+      ],
       frequency: 'monthly',
       dayOfMonth: 1,
-      counterpartyId: aeon.id,
     })
     new SqlJsSettlementBatchRepository(db).create({
       name: '10月分',

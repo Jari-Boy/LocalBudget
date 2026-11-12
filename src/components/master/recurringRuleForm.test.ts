@@ -67,17 +67,23 @@ describe('buildRuleInput', () => {
   })
 
   it('名称・金額・科目・任意項目を、型を整えて渡す(空の任意項目はnull)', () => {
-    expect(buildRuleInput(form({ name: ' 家賃 ', projectId: 7, maxOccurrences: '12' }))).toMatchObject({
-      name: '家賃',
-      debitAccountId: 1,
-      creditAccountId: 2,
-      amount: 98000,
-      projectId: 7,
-      householdMemberId: null,
-      counterpartyId: null,
-      maxOccurrences: 12,
-    })
+    const input = buildRuleInput(form({ name: ' 家賃 ', projectId: 7, maxOccurrences: '12' }))
+
+    expect(input).toMatchObject({ name: '家賃', bookkeeperHouseholdMemberId: null, maxOccurrences: 12 })
+    expect(input.lines).toEqual([
+      { side: 'debit', accountId: 1, amount: 98000, projectId: 7, counterpartyId: null },
+      { side: 'credit', accountId: 2, amount: 98000, projectId: 7, counterpartyId: null },
+    ])
     expect(buildRuleInput(form()).maxOccurrences).toBeNull()
+  })
+
+  it('取引先は、PL区分(収益・費用)の行にだけ設定する(借方が先)。起票者はルール単位に渡す(計画Issue #180)', () => {
+    const input = buildRuleInput(form({ counterpartyId: 5, householdMemberId: 3 }), (id) => id === 2)
+
+    expect(input.bookkeeperHouseholdMemberId).toBe(3)
+    expect(input.lines.map((l) => l.counterpartyId)).toEqual([null, 5])
+    expect(buildRuleInput(form({ counterpartyId: 5 }), () => true).lines.map((l) => l.counterpartyId)).toEqual([5, null])
+    expect(buildRuleInput(form({ counterpartyId: 5 }), () => false).lines.map((l) => l.counterpartyId)).toEqual([null, null])
   })
 })
 
@@ -113,17 +119,16 @@ describe('ruleFormFromRule', () => {
   const rule: RecurringTransactionRule = {
     id: 1,
     name: '燃えるごみ袋',
-    debitAccountId: 1,
-    creditAccountId: 2,
-    amount: 600,
+    bookkeeperHouseholdMemberId: 5,
+    lines: [
+      { lineNo: 1, side: 'debit', accountId: 1, amount: 600, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+      { lineNo: 2, side: 'credit', accountId: 2, amount: 600, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+    ],
     frequency: 'monthly',
     dayOfWeek: 6,
     dayOfMonth: null,
     weekOfMonth: 2,
     monthOfYear: null,
-    projectId: null,
-    householdMemberId: 5,
-    counterpartyId: null,
     maxOccurrences: null,
     startsOn: '2026-01-01',
     endsOn: null,
@@ -153,7 +158,7 @@ describe('ruleFormFromRule', () => {
       dayOfMonth: null,
       weekOfMonth: 2,
       dayOfWeek: 6,
-      householdMemberId: 5,
+      bookkeeperHouseholdMemberId: 5,
     })
   })
 })
@@ -211,17 +216,16 @@ describe('スケジュールの拡張(計画Issue #164)', () => {
     const base: RecurringTransactionRule = {
       id: 1,
       name: '電気代',
-      debitAccountId: 1,
-      creditAccountId: 2,
-      amount: 8000,
+      bookkeeperHouseholdMemberId: null,
+      lines: [
+        { lineNo: 1, side: 'debit', accountId: 1, amount: 8000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+        { lineNo: 2, side: 'credit', accountId: 2, amount: 8000, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+      ],
       frequency: 'monthly',
       dayOfWeek: null,
       dayOfMonth: 10,
       weekOfMonth: null,
       monthOfYear: null,
-      projectId: null,
-      householdMemberId: null,
-      counterpartyId: null,
       maxOccurrences: null,
       startsOn: '2026-02-01',
       endsOn: null,

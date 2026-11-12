@@ -22,6 +22,7 @@ import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { UnsavedChangesGuardProvider, useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
 import { JournalScreen, type JournalScreenProps } from './JournalScreen'
+import type { RecurringTransactionRuleLine } from '../../domain/recurring-transaction/RecurringTransactionRule'
 
 afterEach(cleanup)
 
@@ -141,9 +142,9 @@ function setup(
   let drafts = overrides.drafts ?? makeDrafts()
   const proposals = [
     // 2026-11-01は日曜日。翌平日調整で、仕訳の日付(entryDate)は11/2になる
-    { ruleId: 1, dueDate: '2026-11-01', entryDate: '2026-11-02', defaultAmount: 5200 },
-    { ruleId: 1, dueDate: '2026-10-01', entryDate: '2026-10-01', defaultAmount: 5000 },
-    { ruleId: 2, dueDate: '2026-10-15', entryDate: '2026-10-15', defaultAmount: 3000 },
+    { ruleId: 1, dueDate: '2026-11-01', entryDate: '2026-11-02', defaultAmount: 5200, defaultLines: ruleLines(4, 2, 5200) },
+    { ruleId: 1, dueDate: '2026-10-01', entryDate: '2026-10-01', defaultAmount: 5000, defaultLines: ruleLines(4, 2, 5000) },
+    { ruleId: 2, dueDate: '2026-10-15', entryDate: '2026-10-15', defaultAmount: 3000, defaultLines: ruleLines(4, 2, 3000) },
   ]
   const journalEntryRepository = {
     findAll: vi.fn(async () => entries),
@@ -212,17 +213,13 @@ function setup(
         {
           id: 1,
           name: 'ネット代',
-          debitAccountId: 4,
-          creditAccountId: 2,
-          amount: 5000,
+          bookkeeperHouseholdMemberId: 1,
+          lines: ruleLines(4, 2, 5000),
           frequency: 'monthly',
           dayOfWeek: null,
           dayOfMonth: 1,
           weekOfMonth: null,
           monthOfYear: null,
-          projectId: null,
-          householdMemberId: 1,
-          counterpartyId: null,
           maxOccurrences: null,
           startsOn: '2026-01-01',
           endsOn: null,
@@ -238,17 +235,13 @@ function setup(
           // 起票者が決まっていないルール(まとめて確定のとき、起票者を1人選ぶ必要がある)
           id: 2,
           name: 'ジム会費',
-          debitAccountId: 4,
-          creditAccountId: 2,
-          amount: 3000,
+          bookkeeperHouseholdMemberId: null,
+          lines: ruleLines(4, 2, 3000),
           frequency: 'monthly',
           dayOfWeek: null,
           dayOfMonth: 15,
           weekOfMonth: null,
           monthOfYear: null,
-          projectId: null,
-          householdMemberId: null,
-          counterpartyId: null,
           maxOccurrences: null,
           startsOn: '2026-01-01',
           endsOn: null,
@@ -275,6 +268,15 @@ function setup(
     </I18nextProvider>,
   )
   return props
+}
+
+/** 借方・貸方1行ずつ(同額)のルールの行(計画Issue #180) */
+function ruleLines(debitAccountId: number, creditAccountId: number, amount: number): RecurringTransactionRuleLine[] {
+  const base = { projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null, amount }
+  return [
+    { ...base, lineNo: 1, side: 'debit', accountId: debitAccountId },
+    { ...base, lineNo: 2, side: 'credit', accountId: creditAccountId },
+  ]
 }
 
 const memoInput = () => within(detail()).getByLabelText('摘要(任意)')
@@ -697,7 +699,14 @@ describe('JournalScreen', () => {
     fireEvent.click(within(detail()).getByRole('button', { name: '確定' }))
     await waitFor(() =>
       expect(props.recurringTransactionProposalApi.confirm).toHaveBeenCalledWith(
-        expect.objectContaining({ ruleId: 1, dueDate: '2026-10-01', amount: 5500 }),
+        expect.objectContaining({
+          ruleId: 1,
+          dueDate: '2026-10-01',
+          lines: [
+            expect.objectContaining({ accountId: 4, side: 'debit', amount: 5500 }),
+            expect.objectContaining({ accountId: 2, side: 'credit', amount: 5500 }),
+          ],
+        }),
       ),
     )
   })

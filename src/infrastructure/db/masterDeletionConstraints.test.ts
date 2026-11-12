@@ -34,19 +34,38 @@ beforeEach(async () => {
   memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '夫' }).id
 })
 
-function createRule(overrides: Record<string, unknown> = {}) {
+/** 行(借方の費用・貸方の現金)や起票者に、削除を確かめたいマスタを設定したルールを作る(計画Issue #180) */
+function createRule(
+  options: { counterpartyId?: number; projectId?: number; lineHouseholdMemberId?: number; bookkeeperId?: number } = {},
+) {
   return new SqlJsRecurringTransactionRuleRepository(db).create({
     name: '毎月の食費',
-    debitAccountId: expenseId,
-    creditAccountId: cashId,
-    amount: 1000,
+    bookkeeperHouseholdMemberId: options.bookkeeperId ?? null,
+    lines: [
+      {
+        side: 'debit',
+        accountId: expenseId,
+        amount: 1000,
+        counterpartyId: options.counterpartyId,
+        projectId: options.projectId,
+        householdMemberId: options.lineHouseholdMemberId,
+      },
+      { side: 'credit', accountId: cashId, amount: 1000 },
+    ],
     frequency: 'monthly',
     dayOfMonth: 1,
-    ...overrides,
   })
 }
 
 describe('マスタの削除条件のDB制約(仕訳以外の参照)', () => {
+  it('定期取引ルールの起票者になっている世帯メンバーは、物理削除できない(計画Issue #180)', () => {
+    const members = new SqlJsHouseholdMemberRepository(db)
+    createRule({ bookkeeperId: memberId })
+
+    expect(() => members.delete(memberId)).toThrow()
+    expect(members.findById(memberId)).not.toBeNull()
+  })
+
   it('定期取引ルールで使われている取引先は、物理削除できない', () => {
     const counterparties = new SqlJsCounterpartyRepository(db)
     const counterparty = counterparties.create({ name: 'イオン' })
@@ -80,7 +99,7 @@ describe('マスタの削除条件のDB制約(仕訳以外の参照)', () => {
 
   it('定期取引ルールで使われている世帯メンバーは、物理削除できない', () => {
     const members = new SqlJsHouseholdMemberRepository(db)
-    createRule({ householdMemberId: memberId })
+    createRule({ lineHouseholdMemberId: memberId })
 
     expect(() => members.delete(memberId)).toThrow()
     expect(members.findById(memberId)).not.toBeNull()

@@ -48,6 +48,12 @@ function makeEntry(
   }
 }
 
+function ruleLine(
+  overrides: Partial<{ accountId: number; counterpartyId: number | null; projectId: number | null; householdMemberId: number | null }>,
+) {
+  return { accountId: 1, counterpartyId: null, projectId: null, householdMemberId: null, ...overrides }
+}
+
 const emptyInput = { entries: [], budgets: [], rules: [], settlementBatches: [], accounts: [] }
 
 describe('summarizeMasterUsage', () => {
@@ -66,15 +72,15 @@ describe('summarizeMasterUsage', () => {
     })
   })
 
-  it('科目は、仕訳の明細・予算・定期取引ルールの借方と貸方で使われた件数を数える', () => {
+  it('科目は、仕訳の明細・予算・定期取引ルールの行で使われた件数を数える(同じルールの複数の行は1件)', () => {
     const usage = summarizeMasterUsage({
       ...emptyInput,
       entries: [makeEntry(1, [makeLine({ accountId: 10 }), makeLine({ accountId: 11, side: 'credit' })])],
       budgets: [{ accountId: 10 }],
       rules: [
-        { debitAccountId: 10, creditAccountId: 12 },
-        { debitAccountId: 13, creditAccountId: 10 },
-      ] as never,
+        { bookkeeperHouseholdMemberId: null, lines: [ruleLine({ accountId: 10 }), ruleLine({ accountId: 12 })] },
+        { bookkeeperHouseholdMemberId: null, lines: [ruleLine({ accountId: 13 }), ruleLine({ accountId: 10 }), ruleLine({ accountId: 10 })] },
+      ],
     })
 
     const account = usage.get('account', 10)
@@ -104,7 +110,7 @@ describe('summarizeMasterUsage', () => {
     const usage = summarizeMasterUsage({
       ...emptyInput,
       entries: [makeEntry(1, [makeLine({ accountId: 10, counterpartyId: 5 })])],
-      rules: [{ counterpartyId: 5 }] as never,
+      rules: [{ bookkeeperHouseholdMemberId: null, lines: [ruleLine({ counterpartyId: 5 })] }],
       settlementBatches: [{ counterpartyId: 5 }, { counterpartyId: null }],
     })
 
@@ -118,7 +124,7 @@ describe('summarizeMasterUsage', () => {
     const usage = summarizeMasterUsage({
       ...emptyInput,
       entries: [makeEntry(1, [makeLine({ accountId: 10, projectId: 7 })])],
-      rules: [{ projectId: 7 }] as never,
+      rules: [{ bookkeeperHouseholdMemberId: null, lines: [ruleLine({ projectId: 7 })] }],
     })
 
     const project = usage.get('project', 7)
@@ -133,7 +139,8 @@ describe('summarizeMasterUsage', () => {
         makeEntry(1, [makeLine({ accountId: 10, householdMemberId: 3 })], { householdMemberId: 3 }),
       ],
       accounts: [{ householdMemberId: 3 }, { householdMemberId: null }],
-      rules: [{ householdMemberId: 3 }] as never,
+      // 起票者(ルール単位)と行の世帯メンバー(行単位)のどちらで使っていても、そのルールは1件と数える
+      rules: [{ bookkeeperHouseholdMemberId: 3, lines: [ruleLine({ householdMemberId: 3 })] }],
     })
 
     const member = usage.get('householdMember', 3)

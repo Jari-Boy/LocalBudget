@@ -168,12 +168,12 @@ describe('ProjectMasterTab', () => {
     const project = projects.create({ name: '沖縄旅行' })
     new SqlJsRecurringTransactionRuleRepository(db).create({
       name: '積立',
-      debitAccountId: expenseId,
-      creditAccountId: cashId,
-      amount: 1000,
+      lines: [
+        { side: 'debit', accountId: expenseId, amount: 1000, projectId: project.id },
+        { side: 'credit', accountId: cashId, amount: 1000 },
+      ],
       frequency: 'monthly',
       dayOfMonth: 1,
-      projectId: project.id,
     })
     renderTab()
     await open('沖縄旅行')

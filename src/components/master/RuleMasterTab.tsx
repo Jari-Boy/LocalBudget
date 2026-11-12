@@ -204,6 +204,11 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
   }
 
   const accountById = new Map(data.accounts.map((a) => [a.id, a]))
+  /** 取引先を置ける(費用・収益の)科目か。2行のフォームの保存で、取引先をPL科目の行にだけ設定するのに使う */
+  const isPlAccount = (id: number) => {
+    const category = accountById.get(id)?.category
+    return category === 'expense' || category === 'revenue'
+  }
   const projectNameById = new Map(data.projects.map((p) => [p.id, p.name]))
   const run = async (action: () => unknown, errorMessage: string) => {
     setBusy(true)
@@ -279,7 +284,7 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
                       ))}
                     </td>
                     <td className="master-table__nowrap">
-                      {yen(rule.amount)}
+                      {yen(rule.lines.filter((l) => l.side === 'debit').reduce((total, l) => total + l.amount, 0))}
                       {rule.amountMode === 'last_confirmed' && <p className="master-note">{t('ruleTab.lastConfirmed')}</p>}
                     </td>
                     <td className="master-table__nowrap">{next === null ? '-' : slashDate(next)}</td>
@@ -322,9 +327,9 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           onSubmit={(form) =>
             run(async () => {
               if (selectedRule) {
-                await ruleRepo.update(selectedRule.id, buildRuleInput(form))
+                await ruleRepo.update(selectedRule.id, buildRuleInput(form, isPlAccount))
               } else {
-                const created = await ruleRepo.create(buildRuleInput(form))
+                const created = await ruleRepo.create(buildRuleInput(form, isPlAccount))
                 setMode(created.id)
               }
             }, t(selectedRule ? 'accountTab.saveError' : 'ruleTab.registerError'))

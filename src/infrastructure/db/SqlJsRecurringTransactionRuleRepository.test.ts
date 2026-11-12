@@ -17,6 +17,7 @@ import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
 import { SqlJsRecurringTransactionRuleRepository } from './SqlJsRecurringTransactionRuleRepository'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
+import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
 let repository: SqlJsRecurringTransactionRuleRepository
@@ -37,9 +38,7 @@ describe('create / findById', () => {
   it('monthly(日付指定)のルールを作成する', () => {
     const created = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
@@ -49,9 +48,7 @@ describe('create / findById', () => {
     expect(found).toMatchObject({
       id: created.id,
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
       dayOfWeek: null,
@@ -65,9 +62,7 @@ describe('create / findById', () => {
   it('weeklyのルールを作成する', () => {
     const created = repository.create({
       name: 'お小遣い',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 1000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 1000),
       frequency: 'weekly',
       dayOfWeek: 1,
     })
@@ -83,9 +78,7 @@ describe('create / findById', () => {
     expect(() =>
       repository.create({
         name: '不正なルール',
-        debitAccountId: expenseAccountId,
-        creditAccountId: liabilityAccountId,
-        amount: 1000,
+        lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 1000),
         frequency: 'weekly',
         dayOfWeek: 1,
         dayOfMonth: 15,
@@ -96,49 +89,41 @@ describe('create / findById', () => {
   it('is_reconcilable=trueの科目を借方に指定してもルールを作成できる(計画Issue #145でトリガーを廃止)', () => {
     const created = repository.create({
       name: '口座への入金',
-      debitAccountId: reconcilableAssetAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 1000,
+      lines: twoLineRuleLines(reconcilableAssetAccountId, liabilityAccountId, 1000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
 
-    expect(repository.findById(created.id)?.debitAccountId).toBe(reconcilableAssetAccountId)
+    expect(repository.findById(created.id)?.lines[0].accountId).toBe(reconcilableAssetAccountId)
   })
 
   it('is_reconcilable=trueの科目を貸方に指定してもルールを作成できる(計画Issue #145でトリガーを廃止)', () => {
     const created = repository.create({
       name: '口座からの引き落とし',
-      debitAccountId: expenseAccountId,
-      creditAccountId: reconcilableAssetAccountId,
-      amount: 1000,
+      lines: twoLineRuleLines(expenseAccountId, reconcilableAssetAccountId, 1000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
 
-    expect(repository.findById(created.id)?.creditAccountId).toBe(reconcilableAssetAccountId)
+    expect(repository.findById(created.id)?.lines[1].accountId).toBe(reconcilableAssetAccountId)
   })
 
   it('既存のルールの科目をis_reconcilable=trueの科目へ更新できる(計画Issue #145でトリガーを廃止)', () => {
     const created = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
 
     const updated = repository.update(created.id, {
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: reconcilableAssetAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, reconcilableAssetAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
 
-    expect(updated.creditAccountId).toBe(reconcilableAssetAccountId)
+    expect(updated.lines[1].accountId).toBe(reconcilableAssetAccountId)
   })
 })
 
@@ -146,17 +131,13 @@ describe('findAll', () => {
   it('登録済みの全ルールをid順に返す', () => {
     const first = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
     const second = repository.create({
       name: '給与',
-      debitAccountId: liabilityAccountId,
-      creditAccountId: expenseAccountId,
-      amount: 300000,
+      lines: twoLineRuleLines(liabilityAccountId, expenseAccountId, 300000),
       frequency: 'monthly',
       dayOfMonth: 25,
     })
@@ -173,32 +154,27 @@ describe('update', () => {
   it('金額・スケジュールを変更する', () => {
     const created = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
 
     const updated = repository.update(created.id, {
       name: '家賃(更新後)',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 85000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 85000),
       frequency: 'monthly',
       dayOfMonth: 5,
     })
 
-    expect(updated).toMatchObject({ name: '家賃(更新後)', amount: 85000, dayOfMonth: 5 })
+    expect(updated).toMatchObject({ name: '家賃(更新後)', dayOfMonth: 5 })
+    expect(updated.lines.map((l) => l.amount)).toEqual([85000, 85000])
   })
 
   it('存在しないidに対してはエラーをスローする', () => {
     expect(() =>
       repository.update(9999, {
         name: '存在しない',
-        debitAccountId: expenseAccountId,
-        creditAccountId: liabilityAccountId,
-        amount: 1000,
+        lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 1000),
         frequency: 'monthly',
         dayOfMonth: 1,
       }),
@@ -208,9 +184,7 @@ describe('update', () => {
   it('frequencyごとのカラム組み合わせに反する更新はassertValidRecurringScheduleにより拒否される', () => {
     const created = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
@@ -218,9 +192,7 @@ describe('update', () => {
     expect(() =>
       repository.update(created.id, {
         name: '家賃',
-        debitAccountId: expenseAccountId,
-        creditAccountId: liabilityAccountId,
-        amount: 80000,
+        lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
         frequency: 'yearly',
         dayOfMonth: 1,
         // monthOfYearが無いため yearly として不正
@@ -233,9 +205,7 @@ describe('delete', () => {
   it('生成済みの仕訳が無いルールは物理削除できる', () => {
     const created = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
@@ -248,9 +218,7 @@ describe('delete', () => {
   it('生成済みの仕訳があるルールの物理削除はトリガーにより拒否される', () => {
     const created = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
@@ -264,9 +232,7 @@ describe('deactivate', () => {
   it('is_activeをfalseにする(過去生成分には影響しない)', () => {
     const created = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
@@ -281,9 +247,7 @@ describe('countGeneratedJournalEntries', () => {
   it('生成済みの仕訳が無ければ0を返す', () => {
     const created = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
@@ -294,9 +258,7 @@ describe('countGeneratedJournalEntries', () => {
   it('generated_from_rule_idが一致する仕訳の件数を返す', () => {
     const created = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
@@ -311,9 +273,7 @@ describe('findLatestGeneratedDueDate', () => {
   it('生成済みの仕訳が無ければnullを返す', () => {
     const created = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
@@ -324,9 +284,7 @@ describe('findLatestGeneratedDueDate', () => {
   it('generated_from_rule_idが一致する仕訳のうち最新の期日(recurring_due_date)を返す', () => {
     const created = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
@@ -340,17 +298,13 @@ describe('findLatestGeneratedDueDate', () => {
   it('他ルールから生成された仕訳は対象外', () => {
     const created = repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
     const otherRule = repository.create({
       name: '給与',
-      debitAccountId: liabilityAccountId,
-      creditAccountId: expenseAccountId,
-      amount: 300000,
+      lines: twoLineRuleLines(liabilityAccountId, expenseAccountId, 300000),
       frequency: 'monthly',
       dayOfMonth: 25,
     })
@@ -364,9 +318,7 @@ describe('提案の見送り(recordSkip / findLatestSkippedDueDate、計画Issue
   function createRule() {
     return repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
@@ -468,34 +420,10 @@ function insertGeneratedJournalEntry(
   return database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
 }
 
-/** 借方・貸方1行ずつ(同額)の明細を、生成済みの仕訳に足す */
-function insertEntryLines(
-  database: Database,
-  entryId: number,
-  amount: number,
-  debit: number,
-  credit: number,
-): void {
-  const memberId = database.exec('SELECT household_member_id FROM journal_entries WHERE id = ?', [entryId])[0]
-    .values[0][0] as number
-  for (const [accountId, side] of [
-    [debit, 'debit'],
-    [credit, 'credit'],
-  ] as const) {
-    database.run(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, side, amount, household_member_id)
-       VALUES (?, ?, ?, ?, ?)`,
-      [entryId, accountId, side, amount, memberId],
-    )
-  }
-}
-
 describe('スケジュールの拡張(計画Issue #164)', () => {
   const base = () => ({
     name: '家賃',
-    debitAccountId: expenseAccountId,
-    creditAccountId: liabilityAccountId,
-    amount: 80000,
+    lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
     frequency: 'monthly' as const,
     dayOfMonth: 25,
   })
@@ -570,9 +498,7 @@ describe('activate(再有効化、計画Issue #164)', () => {
   const create = (overrides: Partial<Parameters<typeof repository.create>[0]> = {}) =>
     repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 25,
       startsOn: '2026-01-01',
@@ -636,9 +562,7 @@ describe('findLatestGeneratedDueDate(期日の記録、計画Issue #164)', () =>
   const createRule = () =>
     repository.create({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 25,
     })
@@ -657,32 +581,5 @@ describe('findLatestGeneratedDueDate(期日の記録、計画Issue #164)', () =>
     insertGeneratedJournalEntry(db, created.id, '2026-01-25')
 
     expect(() => insertGeneratedJournalEntry(db, created.id, '2026-01-25', '2026-01-24')).toThrow()
-  })
-})
-
-describe('findLastConfirmedAmount(前回確定額、計画Issue #164)', () => {
-  const createRule = () =>
-    repository.create({
-      name: '電気代',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 8000,
-      frequency: 'monthly',
-      dayOfMonth: 10,
-      amountMode: 'last_confirmed',
-    })
-
-  it('生成済みの仕訳が1件も無ければnullを返す(呼び出し側がルールの金額を使う)', () => {
-    expect(repository.findLastConfirmedAmount(createRule().id)).toBeNull()
-  })
-
-  it('期日が最も新しい生成済みの仕訳の金額(借方の合計)を返す。entry_dateの新旧には依存しない', () => {
-    const rule = createRule()
-    const older = insertGeneratedJournalEntry(db, rule.id, '2026-07-10', '2026-12-31')
-    const newer = insertGeneratedJournalEntry(db, rule.id, '2026-08-10', '2026-08-10')
-    insertEntryLines(db, older, 7000, expenseAccountId, liabilityAccountId)
-    insertEntryLines(db, newer, 9100, expenseAccountId, liabilityAccountId)
-
-    expect(repository.findLastConfirmedAmount(rule.id)).toBe(9100)
   })
 })

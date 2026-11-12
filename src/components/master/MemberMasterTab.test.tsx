@@ -20,6 +20,7 @@ import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHou
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../../infrastructure/db/SqlJsRecurringTransactionRuleRepository'
 import { MemberMasterTab } from './MemberMasterTab'
+import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
 let members: SqlJsHouseholdMemberRepository
@@ -171,12 +172,10 @@ describe('MemberMasterTab', () => {
     accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true, householdMemberId: husband.id })
     new SqlJsRecurringTransactionRuleRepository(db).create({
       name: '家賃',
-      debitAccountId: expense.id,
-      creditAccountId: cash.id,
-      amount: 1000,
+      lines: twoLineRuleLines(expense.id, cash.id, 1000),
       frequency: 'monthly',
       dayOfMonth: 1,
-      householdMemberId: husband.id,
+      bookkeeperHouseholdMemberId: husband.id,
     })
     renderTab()
     await open('夫')

@@ -30,6 +30,7 @@ import { SqlJsProjectGroupRepository } from '../../infrastructure/db/SqlJsProjec
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../../infrastructure/db/SqlJsRecurringTransactionRuleRepository'
 import { RuleMasterTab } from './RuleMasterTab'
+import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
 let rules: SqlJsRecurringTransactionRuleRepository
@@ -70,9 +71,7 @@ function renderTab(ruleRepository: ComponentProps<typeof RuleMasterTab>['recurri
 function makeRule(overrides: Partial<Parameters<typeof rules.create>[0]> = {}) {
   return rules.create({
     name: '家賃',
-    debitAccountId: expenseId,
-    creditAccountId: cashId,
-    amount: 98000,
+    lines: twoLineRuleLines(expenseId, cashId, 98000),
     frequency: 'monthly',
     dayOfMonth: 27,
     startsOn: '2026-01-01',
@@ -130,9 +129,7 @@ describe('RuleMasterTab', () => {
     await waitFor(() => expect(rules.findAll()).toHaveLength(1))
     expect(rules.findAll()[0]).toMatchObject({
       name: '家賃',
-      debitAccountId: expenseId,
-      creditAccountId: cashId,
-      amount: 98000,
+      lines: twoLineRuleLines(expenseId, cashId, 98000),
       frequency: 'monthly',
       dayOfMonth: 27,
     })
@@ -183,7 +180,7 @@ describe('RuleMasterTab', () => {
     fireEvent.change(editor.getByLabelText('金額'), { target: { value: '100000' } })
     fireEvent.click(editor.getByRole('button', { name: '保存' }))
 
-    await waitFor(() => expect(rules.findById(rule.id)!.amount).toBe(100000))
+    await waitFor(() => expect(rules.findById(rule.id)!.lines.map((l) => l.amount)).toEqual([100000, 100000]))
   })
 
   it('回数の上限と世帯メンバーを設定して保存できる', async () => {
@@ -197,7 +194,7 @@ describe('RuleMasterTab', () => {
     fireEvent.click(editor.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(rules.findById(rule.id)!.maxOccurrences).toBe(12))
-    expect(rules.findById(rule.id)!.householdMemberId).toBe(memberId)
+    expect(rules.findById(rule.id)!.bookkeeperHouseholdMemberId).toBe(memberId)
   })
 
   it('「無効にする」と、ルールが無効になり、ボタンが「有効にする」に変わる', async () => {

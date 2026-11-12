@@ -1,13 +1,21 @@
 import type { Database } from 'sql.js'
 import { adjustForWeekend } from '../../domain/recurring-transaction/adjustForWeekend'
-import { buildRecurringTransactionJournalEntryInput } from '../../domain/recurring-transaction/buildRecurringTransactionJournalEntryInput'
+import {
+  buildRecurringTransactionJournalEntryInput,
+  type EditedRecurringJournalLine,
+} from '../../domain/recurring-transaction/buildRecurringTransactionJournalEntryInput'
+import { resolveLastConfirmedLines } from '../../domain/recurring-transaction/resolveLastConfirmedLines'
 import { evaluateRecurringTransactionProposals } from '../../domain/recurring-transaction/evaluateRecurringTransactionProposals'
 import type { CreateJournalEntryInput, JournalEntry } from '../../domain/journal/JournalEntry'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
 import type { RecurringTransactionProposal } from '../../domain/recurring-transaction/RecurringTransactionProposal'
 import { createLineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
-import type { RecurringTransactionRule } from '../../domain/recurring-transaction/RecurringTransactionRule'
+import type { AccountCategory } from '../../domain/account/Account'
+import type {
+  RecurringTransactionRule,
+  RecurringTransactionRuleLine,
+} from '../../domain/recurring-transaction/RecurringTransactionRule'
 import { SqlJsAccountRepository } from '../db/SqlJsAccountRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
 
@@ -22,7 +30,12 @@ function today(): string {
 export interface PendingRecurringTransactionProposal extends RecurringTransactionProposal {
   /** 土日の調整後の日付。確定すると仕訳のentry_dateになる */
   entryDate: string
-  /** 確認パネルの金額の初期値。固定ならルールの金額、前回確定額なら前回の金額(1件も無ければルールの金額) */
+  /**
+   * 確認パネルの行の初期値(計画Issue #180)。金額の初期値が固定ならルールの行のまま、前回確定額なら
+   * 前回の仕訳と科目・借方/貸方が一致する行だけ前回の金額に置き換えた行(一致しない行はルールの金額)
+   */
+  defaultLines: RecurringTransactionRuleLine[]
+  /** 一覧に出す金額(初期値の借方の合計) */
   defaultAmount: number
 }
 
@@ -30,10 +43,13 @@ export interface ConfirmRecurringTransactionProposalInput {
   ruleId: number
   /** このルールについて現時点で最も古い保留中の対象日と一致する必要がある(昇順のみ許可) */
   dueDate: string
-  /** 省略時はrule.householdMemberIdを使う。両方未指定の場合はRecurringTransactionHouseholdMemberRequiredError */
+  /** 省略時はrule.bookkeeperHouseholdMemberIdを使う。両方未指定の場合はRecurringTransactionHouseholdMemberRequiredError */
   householdMemberId?: number
-  /** 省略時は金額の初期値(固定ならrule.amount、前回確定額なら前回の金額)を使う(レビュー時の編集、docs/domain/recurring-transactions.md 2.1節) */
-  amount?: number
+  /**
+   * 確認パネルで編集した行(計画Issue #180、科目・金額の変更、行の追加・削除)。省略時は行の初期値
+   * (defaultLines)のまま確定する。貸借の検証は仕訳のRepositoryが行う
+   */
+  lines?: EditedRecurringJournalLine[]
   /** 摘要(計画Issue #164)。省略時はルール名。空(空白のみ)なら摘要なし */
   memo?: string | null
   /** コメント(計画Issue #164)。省略時はなし */
@@ -120,12 +136,16 @@ export function createRecurringTransactionProposalApi(
     return rule
   }
 
-  /** 金額の初期値。固定ならルールの金額、前回確定額なら前回の金額(1件も無ければルールの金額) */
-  function defaultAmountOf(rule: RecurringTransactionRule): number {
+  /** 行の初期値。固定ならルールの行のまま、前回確定額なら前回の仕訳と対応づけた金額に置き換える(計画Issue #180) */
+  function defaultLinesOf(rule: RecurringTransactionRule): RecurringTransactionRuleLine[] {
     if (rule.amountMode === 'last_confirmed') {
-      return ruleRepository.findLastConfirmedAmount(rule.id) ?? rule.amount
+      return resolveLastConfirmedLines(rule.lines, ruleRepository.findLastConfirmedLines(rule.id))
     }
-    return rule.amount
+    return rule.lines
+  }
+
+  function debitTotalOf(lines: readonly RecurringTransactionRuleLine[]): number {
+    return lines.filter((l) => l.side === 'debit').reduce((total, l) => total + l.amount, 0)
   }
 
   /**
@@ -152,36 +172,39 @@ export function createRecurringTransactionProposalApi(
     dueDate: string,
     options: {
       householdMemberId?: number
-      amount: number
+      defaultLines: readonly RecurringTransactionRuleLine[]
+      lines?: readonly EditedRecurringJournalLine[]
       memo?: string | null
       comment?: string | null
     },
   ): CreateJournalEntryInput {
-    const bookkeeperHouseholdMemberId = rule.householdMemberId ?? options.householdMemberId
+    const bookkeeperHouseholdMemberId = rule.bookkeeperHouseholdMemberId ?? options.householdMemberId
     if (bookkeeperHouseholdMemberId == null) {
       throw new RecurringTransactionHouseholdMemberRequiredError(rule.id)
     }
 
-    const debitAccount = accountRepository.findById(rule.debitAccountId)
-    const creditAccount = accountRepository.findById(rule.creditAccountId)
-    if (!debitAccount || !creditAccount) {
-      throw new Error(`recurring transaction rule ${rule.id} references a missing account`)
-    }
+    // 行で使う科目(ルールの行と、編集した行)を読み、区分(取引先の設置判定)と既定メンバーを解決する
+    const accountIds = new Set([...rule.lines, ...(options.lines ?? [])].map((l) => l.accountId))
+    const accounts = [...accountIds].map((accountId) => {
+      const account = accountRepository.findById(accountId)
+      if (!account) {
+        throw new Error(`recurring transaction rule ${rule.id} references a missing account`)
+      }
+      return account
+    })
+    const accountCategoryById = new Map<number, AccountCategory>(accounts.map((a) => [a.id, a.category]))
 
     return buildRecurringTransactionJournalEntryInput({
       rule,
       dueDate,
       bookkeeperHouseholdMemberId,
-      debitAccountCategory: debitAccount.category,
-      creditAccountCategory: creditAccount.category,
-      amount: options.amount,
+      accountCategoryById,
+      lineAmounts: new Map(options.defaultLines.map((l) => [l.lineNo, l.amount])),
+      lines: options.lines,
       memo: options.memo,
       comment: options.comment,
-      // 明細行の世帯メンバー: 科目の既定メンバー > ルールの世帯メンバー > 起票者(計画Issue #169)
-      resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(
-        [debitAccount, creditAccount],
-        bookkeeperHouseholdMemberId,
-      ),
+      // 明細行の世帯メンバー: 科目の既定メンバー > 行の世帯メンバー > 起票者(計画Issue #169・#180)
+      resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(accounts, bookkeeperHouseholdMemberId),
     })
   }
 
@@ -190,10 +213,12 @@ export function createRecurringTransactionProposalApi(
       return ruleRepository.findAll().flatMap((rule) => {
         const proposals = evaluatePendingForRule(rule)
         if (proposals.length === 0) return []
-        const defaultAmount = defaultAmountOf(rule)
+        const defaultLines = defaultLinesOf(rule)
+        const defaultAmount = debitTotalOf(defaultLines)
         return proposals.map((proposal) => ({
           ...proposal,
           entryDate: adjustForWeekend(proposal.dueDate, rule.weekendAdjustment),
+          defaultLines,
           defaultAmount,
         }))
       })
@@ -205,7 +230,8 @@ export function createRecurringTransactionProposalApi(
       return journalEntryRepository.create(
         buildJournalEntryInput(rule, input.dueDate, {
           householdMemberId: input.householdMemberId,
-          amount: input.amount ?? defaultAmountOf(rule),
+          defaultLines: defaultLinesOf(rule),
+          lines: input.lines,
           memo: input.memo,
           comment: input.comment,
         }),
@@ -236,9 +262,9 @@ export function createRecurringTransactionProposalApi(
         }
 
         // 初期値は選択時点のもの。2件目以降を直前の確定額に追従させない
-        const amount = defaultAmountOf(rule)
+        const defaultLines = defaultLinesOf(rule)
         for (const dueDate of selected) {
-          inputs.push(buildJournalEntryInput(rule, dueDate, { householdMemberId: input.householdMemberId, amount }))
+          inputs.push(buildJournalEntryInput(rule, dueDate, { householdMemberId: input.householdMemberId, defaultLines }))
         }
       }
 

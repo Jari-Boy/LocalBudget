@@ -24,6 +24,7 @@ import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJourna
 import { SqlJsRecurringTransactionRuleRepository } from '../../infrastructure/db/SqlJsRecurringTransactionRuleRepository'
 import { seedInitialBalanceAccount } from '../../infrastructure/db/seedInitialBalanceAccount'
 import { AccountMasterTab } from './AccountMasterTab'
+import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
 let accounts: SqlJsAccountRepository
@@ -310,9 +311,7 @@ describe('AccountMasterTab', () => {
     new SqlJsBudgetRepository(db).create({ accountId: food.id, yearMonth: '2026-11', amount: 50000 })
     new SqlJsRecurringTransactionRuleRepository(db).create({
       name: '毎月の食費',
-      debitAccountId: food.id,
-      creditAccountId: cash.id,
-      amount: 1000,
+      lines: twoLineRuleLines(food.id, cash.id, 1000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })

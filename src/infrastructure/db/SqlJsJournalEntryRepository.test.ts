@@ -19,6 +19,7 @@ import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { SqlJsRecurringTransactionRuleRepository } from './SqlJsRecurringTransactionRuleRepository'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
+import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
 let repository: SqlJsJournalEntryRepository
@@ -1049,9 +1050,7 @@ describe('定期取引の期日(recurring_due_date)とcreateMany(計画Issue #16
   beforeEach(() => {
     ruleId = new SqlJsRecurringTransactionRuleRepository(db).create({
       name: '家賃',
-      debitAccountId: rentExpenseAccountId,
-      creditAccountId: payableAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(rentExpenseAccountId, payableAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 25,
     }).id

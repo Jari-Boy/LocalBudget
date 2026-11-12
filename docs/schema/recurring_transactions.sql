@@ -4,17 +4,13 @@
 CREATE TABLE recurring_transaction_rules (
   id                    INTEGER PRIMARY KEY,
   name                  TEXT NOT NULL,
-  debit_account_id      INTEGER NOT NULL REFERENCES accounts(id),
-  credit_account_id     INTEGER NOT NULL REFERENCES accounts(id),
-  amount                INTEGER NOT NULL CHECK (amount > 0),
+  -- 起票者(ルール単位、計画Issue #180)。NULLなら確定時に選ぶ。行の世帯メンバー(rule_lines側)とは別の概念
+  bookkeeper_household_member_id INTEGER REFERENCES household_members(id),
   frequency             TEXT NOT NULL CHECK (frequency IN ('weekly', 'monthly', 'yearly')),
   day_of_week           INTEGER CHECK (day_of_week BETWEEN 0 AND 6),
   day_of_month          INTEGER CHECK (day_of_month BETWEEN 1 AND 31),
   week_of_month         INTEGER CHECK (week_of_month BETWEEN -1 AND 5 AND week_of_month != 0),
   month_of_year         INTEGER CHECK (month_of_year BETWEEN 1 AND 12),
-  project_id            INTEGER REFERENCES projects(id),
-  household_member_id   INTEGER REFERENCES household_members(id),
-  counterparty_id       INTEGER REFERENCES counterparties(id),
   max_occurrences       INTEGER CHECK (max_occurrences IS NULL OR max_occurrences > 0),
   -- スケジュールの拡張(計画Issue #164、recurring-transactions.md 1.2・1.3・1.6・2.1)
   starts_on             TEXT NOT NULL DEFAULT (date('now')),   -- 開始日(当日を含む)。周期の基準を兼ねる
@@ -46,6 +42,44 @@ CREATE TABLE recurring_transaction_rules (
   )
 );
 
+-- ルールの行(計画Issue #180、recurring-transactions.md 1.4・2.1)。仕訳の明細行のひな形で、
+-- 2行のルールも3行以上のルールも同じ表で表す。貸借の一致(借方合計=貸方合計・2行以上)はDBで強制せず、
+-- 仕訳と同じ検証(assertJournalBalance)をRepositoryが書き込み前に行う(journal.md 1.3と同じ使い分け)。
+-- 世帯メンバーはNULLなら「行では決めない」で、確定時に 科目の既定メンバー > 起票者 の順で決まる。
+-- 精算バッチは、システム管理の立替金・未払金の科目の行にだけ設定できる(Repositoryが検証、journal_linesと同じ)
+CREATE TABLE recurring_transaction_rule_lines (
+  id                   INTEGER PRIMARY KEY,
+  rule_id              INTEGER NOT NULL REFERENCES recurring_transaction_rules(id) ON DELETE CASCADE,
+  line_no              INTEGER NOT NULL CHECK (line_no >= 1),
+  side                 TEXT NOT NULL CHECK (side IN ('debit', 'credit')),
+  account_id           INTEGER NOT NULL REFERENCES accounts(id),
+  amount               INTEGER NOT NULL CHECK (amount > 0),
+  project_id           INTEGER REFERENCES projects(id),
+  household_member_id  INTEGER REFERENCES household_members(id),
+  counterparty_id      INTEGER REFERENCES counterparties(id),
+  settlement_batch_id  INTEGER REFERENCES settlement_batches(id),
+  UNIQUE (rule_id, line_no)
+);
+
+CREATE INDEX idx_recurring_transaction_rule_lines_rule ON recurring_transaction_rule_lines(rule_id);
+
+-- counterparty_id は revenue/expense の行にのみ設定可能(journal_linesと同じTRIGGER、counterparties.md 1.2参照)
+CREATE TRIGGER prevent_counterparty_on_non_pl_rule_line_insert
+BEFORE INSERT ON recurring_transaction_rule_lines
+WHEN NEW.counterparty_id IS NOT NULL
+  AND (SELECT category FROM accounts WHERE id = NEW.account_id) NOT IN ('revenue', 'expense')
+BEGIN
+  SELECT RAISE(ABORT, 'counterparty_id can only be set on revenue/expense lines');
+END;
+
+CREATE TRIGGER prevent_counterparty_on_non_pl_rule_line_update
+BEFORE UPDATE ON recurring_transaction_rule_lines
+WHEN NEW.counterparty_id IS NOT NULL
+  AND (SELECT category FROM accounts WHERE id = NEW.account_id) NOT IN ('revenue', 'expense')
+BEGIN
+  SELECT RAISE(ABORT, 'counterparty_id can only be set on revenue/expense lines');
+END;
+
 -- 見送った提案(計画Issue #145、recurring-transactions.md 1.2・1.7参照)。
 -- 提案は生成済みの仕訳の最新の期日(recurring_due_date)から都度導出しており、見送りは仕訳を作らないため、
 -- この導出だけでは進捗を表現できない。見送った対象日(土日の調整前の期日)だけを記録し、導出の起点に加える
@@ -59,7 +93,7 @@ CREATE TABLE recurring_transaction_skips (
   PRIMARY KEY (rule_id, due_date)
 );
 
--- debit_account_id / credit_account_id には is_reconcilable = true の科目も指定できる
+-- ルールの行の科目には is_reconcilable = true の科目も指定できる
 -- (計画Issue #145で、reconciliation.md 1.2の直接記帳制限とともに指定禁止のTRIGGERを廃止した)
 
 -- 仕訳が紐づくルールの物理削除を禁止

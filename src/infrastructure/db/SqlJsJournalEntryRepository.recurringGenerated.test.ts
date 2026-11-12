@@ -13,6 +13,7 @@ import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { SqlJsRecurringTransactionRuleRepository } from './SqlJsRecurringTransactionRuleRepository'
+import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
 let repository: SqlJsJournalEntryRepository
@@ -41,9 +42,7 @@ beforeEach(async () => {
 
   ruleId = new SqlJsRecurringTransactionRuleRepository(db).create({
     name: '家賃',
-    debitAccountId: rentExpenseAccountId,
-    creditAccountId: bankAccountId,
-    amount: 80000,
+    lines: twoLineRuleLines(rentExpenseAccountId, bankAccountId, 80000),
     frequency: 'monthly',
     dayOfMonth: 1,
   }).id

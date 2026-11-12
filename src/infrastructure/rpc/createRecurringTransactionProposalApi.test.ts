@@ -20,6 +20,7 @@ import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
 import { createRecurringTransactionProposalApi } from './createRecurringTransactionProposalApi'
+import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
 let api: ReturnType<typeof createRecurringTransactionProposalApi>
@@ -70,12 +71,10 @@ describe('listPending', () => {
   it('前回生成済みの期日より後、現在日までの対象日を提案する', () => {
     const rule = createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
-      householdMemberId: memberId,
+      bookkeeperHouseholdMemberId: memberId,
     })
     insertGeneratedEntry(rule.id, '2026-07-01')
 
@@ -91,12 +90,10 @@ describe('listPending', () => {
   it('非アクティブなルールは対象外(1.6節)', () => {
     const rule = createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
-      householdMemberId: memberId,
+      bookkeeperHouseholdMemberId: memberId,
     })
     insertGeneratedEntry(rule.id, '2026-07-01')
     ruleRepository.deactivate(rule.id)
@@ -112,12 +109,10 @@ describe('confirm', () => {
   it('仕訳を生成し、source_type/generated_from_rule_id/entryDateを設定する', () => {
     const rule = createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
-      householdMemberId: memberId,
+      bookkeeperHouseholdMemberId: memberId,
     })
     insertGeneratedEntry(rule.id, '2026-08-01')
     vi.useFakeTimers()
@@ -131,36 +126,121 @@ describe('confirm', () => {
     expect(entry.lines.map((l) => l.amount)).toEqual([80000, 80000])
   })
 
-  it('amountを指定すると、レビュー時の編集として上書きされる(2.1節)', () => {
+  it('編集した行(linesを指定)で確定でき、科目・金額の変更、行の追加・削除ができる(計画Issue #180)', () => {
     const rule = createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
-      householdMemberId: memberId,
+      bookkeeperHouseholdMemberId: memberId,
     })
     insertGeneratedEntry(rule.id, '2026-08-01')
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-01T00:00:00Z'))
 
-    const entry = api.confirm({ ruleId: rule.id, dueDate: '2026-09-01', amount: 85000 })
+    const entry = api.confirm({
+      ruleId: rule.id,
+      dueDate: '2026-09-01',
+      lines: [
+        { accountId: expenseAccountId, side: 'debit', amount: 85000 },
+        { accountId: expenseAccountId, side: 'debit', amount: 5000 },
+        { accountId: liabilityAccountId, side: 'credit', amount: 90000 },
+      ],
+    })
 
-    expect(entry.lines.map((l) => l.amount)).toEqual([85000, 85000])
+    expect(entry.lines.map((l) => [l.accountId, l.side, l.amount])).toEqual([
+      [expenseAccountId, 'debit', 85000],
+      [expenseAccountId, 'debit', 5000],
+      [liabilityAccountId, 'credit', 90000],
+    ])
+    expect(entry.generatedFromRuleId).toBe(rule.id)
+    expect(entry.recurringDueDate).toBe('2026-09-01')
+  })
+
+  it('3行以上のルールを確定すると、ルールの全行を持つ仕訳ができる(計画Issue #180)', () => {
+    const rule = createRule({
+      name: '給与',
+      lines: [
+        { side: 'debit', accountId: liabilityAccountId, amount: 280000 },
+        { side: 'debit', accountId: expenseAccountId, amount: 80000 },
+        { side: 'credit', accountId: liabilityAccountId, amount: 360000 },
+      ],
+      frequency: 'monthly',
+      dayOfMonth: 1,
+      bookkeeperHouseholdMemberId: memberId,
+    })
+    insertGeneratedEntry(rule.id, '2026-08-01')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-01T00:00:00Z'))
+
+    const entry = api.confirm({ ruleId: rule.id, dueDate: '2026-09-01' })
+
+    expect(entry.lines.map((l) => [l.side, l.amount])).toEqual([
+      ['debit', 280000],
+      ['debit', 80000],
+      ['credit', 360000],
+    ])
+  })
+
+  it('行ごとの世帯メンバーは行に、起票者はルールに保存され、行で決まらない行は起票者になる(計画Issue #180)', () => {
+    const otherMemberId = new SqlJsHouseholdMemberRepository(db).create({ name: '配偶者' }).id
+    const rule = createRule({
+      name: '家賃',
+      bookkeeperHouseholdMemberId: memberId,
+      lines: [
+        { side: 'debit', accountId: expenseAccountId, amount: 80000, householdMemberId: otherMemberId },
+        { side: 'credit', accountId: liabilityAccountId, amount: 80000 },
+      ],
+      frequency: 'monthly',
+      dayOfMonth: 1,
+    })
+    insertGeneratedEntry(rule.id, '2026-08-01')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-01T00:00:00Z'))
+
+    const entry = api.confirm({ ruleId: rule.id, dueDate: '2026-09-01' })
+
+    expect(entry.householdMemberId).toBe(memberId)
+    expect(entry.lines.map((l) => l.householdMemberId)).toEqual([otherMemberId, memberId])
+  })
+
+  it('ルールの行の精算バッチのタグが、生成した仕訳の行に付く(計画Issue #180)', () => {
+    db.run(
+      `INSERT INTO accounts (category, name, is_reconcilable, is_system_managed) VALUES ('asset', '立替金テスト', 0, 1)`,
+    )
+    const advanceId = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number
+    db.run(`INSERT INTO settlement_batches (name, type) VALUES ('旅行2026', 'expense_splitting')`)
+    const batchId = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number
+    const rule = createRule({
+      name: '立替',
+      bookkeeperHouseholdMemberId: memberId,
+      lines: [
+        { side: 'debit', accountId: advanceId, amount: 1000, settlementBatchId: batchId },
+        { side: 'credit', accountId: liabilityAccountId, amount: 1000 },
+      ],
+      frequency: 'monthly',
+      dayOfMonth: 1,
+    })
+    insertGeneratedEntry(rule.id, '2026-08-01')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-01T00:00:00Z'))
+
+    const entry = api.confirm({ ruleId: rule.id, dueDate: '2026-09-01' })
+
+    expect(entry.lines.map((l) => l.settlementBatchId)).toEqual([batchId, null])
   })
 
   it('counterparty_idはPL区分(expense)側の行にのみ設定される(1.4節、科目区分解決の結線を検証)', () => {
     const counterpartyId = new SqlJsCounterpartyRepository(db).create({ name: '不動産会社' }).id
     const rule = createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: [
+        { side: 'debit', accountId: expenseAccountId, amount: 80000, counterpartyId },
+        { side: 'credit', accountId: liabilityAccountId, amount: 80000 },
+      ],
       frequency: 'monthly',
       dayOfMonth: 1,
-      householdMemberId: memberId,
-      counterpartyId,
+      bookkeeperHouseholdMemberId: memberId,
     })
     insertGeneratedEntry(rule.id, '2026-08-01')
     vi.useFakeTimers()
@@ -177,9 +257,7 @@ describe('confirm', () => {
   it('ルールにhouseholdMemberIdが無く、呼び出し側も指定しない場合はRecurringTransactionHouseholdMemberRequiredError', () => {
     const rule = createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
@@ -195,9 +273,7 @@ describe('confirm', () => {
   it('ルール側が未設定の場合、呼び出し側が指定したhouseholdMemberIdを起票者として使う', () => {
     const rule = createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
     })
@@ -217,12 +293,10 @@ describe('confirm', () => {
   it('既に処理済み(最新生成日以前)のdueDateを確認しようとするとエラーになる', () => {
     const rule = createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
-      householdMemberId: memberId,
+      bookkeeperHouseholdMemberId: memberId,
     })
     insertGeneratedEntry(rule.id, '2026-09-01')
 
@@ -236,12 +310,10 @@ describe('confirm', () => {
   it('スケジュールに合致しない日付を指定するとエラーになる(RPC境界の入力を無検証で信用しない)', () => {
     const rule = createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
-      householdMemberId: memberId,
+      bookkeeperHouseholdMemberId: memberId,
     })
 
     expect(() => api.confirm({ ruleId: rule.id, dueDate: '2026-09-15' })).toThrow()
@@ -250,12 +322,10 @@ describe('confirm', () => {
   it('未確認の対象日を飛び越えて後の対象日だけを確認すると、飛び越えた対象日が消失せずエラーになる(Review Attempt 1で再現・修正)', () => {
     const rule = createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
-      householdMemberId: memberId,
+      bookkeeperHouseholdMemberId: memberId,
     })
     insertGeneratedEntry(rule.id, '2026-01-01')
 
@@ -290,12 +360,10 @@ describe('skip(提案の見送り、計画Issue #145)', () => {
   function createMonthlyRule(overrides: { maxOccurrences?: number } = {}) {
     return createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
-      householdMemberId: memberId,
+      bookkeeperHouseholdMemberId: memberId,
       ...overrides,
     })
   }
@@ -383,12 +451,10 @@ describe('確認パネルの摘要・コメント(計画Issue #164)', () => {
   function setup() {
     const rule = createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
-      householdMemberId: memberId,
+      bookkeeperHouseholdMemberId: memberId,
     })
     insertGeneratedEntry(rule.id, '2026-08-01')
     vi.useFakeTimers()
@@ -419,14 +485,12 @@ describe('土日の調整と期日の記録(計画Issue #164)', () => {
   function setup() {
     const rule = createRule({
       name: '家賃',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 80000),
       frequency: 'monthly',
       dayOfMonth: 25,
       weekendAdjustment: 'previous',
       startsOn: '2026-01-01',
-      householdMemberId: memberId,
+      bookkeeperHouseholdMemberId: memberId,
     })
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-02-25T00:00:00Z'))
@@ -436,7 +500,7 @@ describe('土日の調整と期日の記録(計画Issue #164)', () => {
   it('提案は調整前の期日を持ち、調整後の日付(entryDate)も返す', () => {
     const rule = setup()
 
-    expect(api.listPending()).toEqual([
+    expect(api.listPending()).toMatchObject([
       { ruleId: rule.id, dueDate: '2026-01-25', entryDate: '2026-01-23', defaultAmount: 80000 },
       { ruleId: rule.id, dueDate: '2026-02-25', entryDate: '2026-02-25', defaultAmount: 80000 },
     ])
@@ -482,17 +546,20 @@ describe('土日の調整と期日の記録(計画Issue #164)', () => {
   })
 })
 
-describe('金額の初期値(amount_mode、計画Issue #164)', () => {
+describe('金額の初期値(amount_mode、計画Issue #164・#180)', () => {
+  const lines = (amount: number) => [
+    { accountId: expenseAccountId, side: 'debit' as const, amount },
+    { accountId: liabilityAccountId, side: 'credit' as const, amount },
+  ]
+
   function setup(amountMode: 'fixed' | 'last_confirmed') {
     const rule = createRule({
       name: '電気代',
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: 8000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, 8000),
       frequency: 'monthly',
       dayOfMonth: 10,
       amountMode,
-      householdMemberId: memberId,
+      bookkeeperHouseholdMemberId: memberId,
     })
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-10T00:00:00Z'))
@@ -501,7 +568,7 @@ describe('金額の初期値(amount_mode、計画Issue #164)', () => {
 
   it('fixed: 初期値は常にルールの金額', () => {
     const rule = setup('fixed')
-    api.confirm({ ruleId: rule.id, dueDate: '2026-01-10', amount: 9100 })
+    api.confirm({ ruleId: rule.id, dueDate: '2026-01-10', lines: lines(9100) })
 
     expect(api.listPending()[0].defaultAmount).toBe(8000)
   })
@@ -514,11 +581,44 @@ describe('金額の初期値(amount_mode、計画Issue #164)', () => {
 
   it('last_confirmed: 前回確定した金額が次の提案の初期値になり、金額を省略した確定にも使われる', () => {
     const rule = setup('last_confirmed')
-    api.confirm({ ruleId: rule.id, dueDate: '2026-01-10', amount: 9100 })
+    api.confirm({ ruleId: rule.id, dueDate: '2026-01-10', lines: lines(9100) })
 
     expect(api.listPending()[0]).toMatchObject({ dueDate: '2026-02-10', defaultAmount: 9100 })
     const next = api.confirm({ ruleId: rule.id, dueDate: '2026-02-10' })
     expect(next.lines.map((l) => l.amount)).toEqual([9100, 9100])
+  })
+
+  it('last_confirmed: 科目と借方/貸方が一致する行だけ前回額を引き継ぎ、一致しない行はルールの金額を使う(計画Issue #180)', () => {
+    const rule = createRule({
+      name: '電気代',
+      lines: [
+        { side: 'debit', accountId: expenseAccountId, amount: 8000 },
+        { side: 'credit', accountId: liabilityAccountId, amount: 8000 },
+      ],
+      frequency: 'monthly',
+      dayOfMonth: 10,
+      amountMode: 'last_confirmed',
+      bookkeeperHouseholdMemberId: memberId,
+    })
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-10T00:00:00Z'))
+    // 前回は1回だけ手で行を足し、金額も変えて確定した(足した行は次回に紛れ込まない)
+    api.confirm({
+      ruleId: rule.id,
+      dueDate: '2026-01-10',
+      lines: [
+        { accountId: expenseAccountId, side: 'debit', amount: 9100 },
+        { accountId: expenseAccountId, side: 'debit', amount: 300 },
+        { accountId: liabilityAccountId, side: 'credit', amount: 9400 },
+      ],
+    })
+
+    const [pending] = api.listPending()
+
+    expect(pending.defaultLines.map((l) => [l.lineNo, l.side, l.amount])).toEqual([
+      [1, 'debit', 9100],
+      [2, 'credit', 9400],
+    ])
   })
 })
 
@@ -526,13 +626,11 @@ describe('confirmMany(まとめて確定、計画Issue #164)', () => {
   function createMonthlyRule(name: string, overrides: { householdMemberId?: number | null; amountMode?: 'fixed' | 'last_confirmed'; amount?: number } = {}) {
     return createRule({
       name,
-      debitAccountId: expenseAccountId,
-      creditAccountId: liabilityAccountId,
-      amount: overrides.amount ?? 80000,
+      lines: twoLineRuleLines(expenseAccountId, liabilityAccountId, overrides.amount ?? 80000),
       frequency: 'monthly',
       dayOfMonth: 1,
       startsOn: '2026-07-01',
-      householdMemberId: overrides.householdMemberId === undefined ? memberId : overrides.householdMemberId,
+      bookkeeperHouseholdMemberId: overrides.householdMemberId === undefined ? memberId : overrides.householdMemberId,
       amountMode: overrides.amountMode,
     })
   }
@@ -584,7 +682,14 @@ describe('confirmMany(まとめて確定、計画Issue #164)', () => {
   it('last_confirmedのルールは、前回確定額ではなく選択時点の初期値で確定する(2件目以降は直前の確定額に追従しない)', () => {
     const rule = createMonthlyRule('電気代', { amountMode: 'last_confirmed', amount: 8000 })
     setNow('2026-09-01T00:00:00Z')
-    api.confirm({ ruleId: rule.id, dueDate: '2026-07-01', amount: 9100 })
+    api.confirm({
+      ruleId: rule.id,
+      dueDate: '2026-07-01',
+      lines: [
+        { accountId: expenseAccountId, side: 'debit', amount: 9100 },
+        { accountId: liabilityAccountId, side: 'credit', amount: 9100 },
+      ],
+    })
 
     const entries = api.confirmMany({
       items: [
