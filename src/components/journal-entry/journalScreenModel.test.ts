@@ -1,7 +1,9 @@
 /**
  * 仕訳画面(計画Issue #152)の表示ロジックを担う純粋関数 journalScreenModel のユニットテスト。
  * 対象: 貸借の合計と差額・保存できない理由、割勘できない理由の文言、削除の影響の組み立て、
- * 削除後に選ぶ行、定期取引の提案の並びと処理順の制限、科目で絞り込んだときの代表科目と金額。
+ * 削除後に選ぶ行、定期取引の提案の並びと処理順の制限、科目で絞り込んだときの代表科目と金額、
+ * 定期取引の提案のまとめて確定のチェック(新しい提案にチェックを付けると同じルールの古い提案にも付き、
+ * 古い提案のチェックを外すと新しい提案も外れる、計画Issue #164)。
  * 外部依存なし(DB・DOM非依存、ドメインの型だけを使う)。
  */
 import { describe, expect, it } from 'vitest'
@@ -15,8 +17,11 @@ import {
   isProposalBlocked,
   matchedAccountIdsOf,
   pickSelectionAfterDelete,
+  proposalKey,
   sortProposalsOldestFirst,
   summarizeBalance,
+  toggleAllProposals,
+  toggleProposalChecked,
   toMatchedResultItem,
 } from './journalScreenModel'
 import type { JournalEntryFormLine } from './journalEntryFormLine'
@@ -55,6 +60,7 @@ function entry(lines: JournalLine[]): JournalEntry {
     sourceType: 'manual',
     householdMemberId: 1,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '',
     updatedAt: '',
     lines,
@@ -217,5 +223,53 @@ describe('科目で絞り込んだときの一覧の行', () => {
   it('指定が無ければ借方合計を表示する', () => {
     const e = entry([line(1, 'debit', 1, 300), line(2, 'debit', 2, 700), line(3, 'credit', 3, 1000)])
     expect(toMatchedResultItem(e, nameOf, undefined).amount).toBe(1000)
+  })
+})
+
+describe('提案のまとめて確定のチェック(計画Issue #164)', () => {
+  const rows = [
+    { ruleId: 1, dueDate: '2026-08-01' },
+    { ruleId: 1, dueDate: '2026-09-01' },
+    { ruleId: 1, dueDate: '2026-10-01' },
+    { ruleId: 2, dueDate: '2026-09-01' },
+    { ruleId: 2, dueDate: '2026-10-01' },
+  ]
+  const key = (ruleId: number, dueDate: string) => proposalKey({ ruleId, dueDate })
+
+  it('新しい提案にチェックを付けると、同じルールのそれより古い提案にもチェックが付く(他のルールには影響しない)', () => {
+    const next = toggleProposalChecked(rows, [], rows[2])
+
+    expect([...next].sort()).toEqual([key(1, '2026-08-01'), key(1, '2026-09-01'), key(1, '2026-10-01')].sort())
+  })
+
+  it('最も古い提案にチェックを付けても、他の提案は変わらない', () => {
+    expect(toggleProposalChecked(rows, [], rows[0])).toEqual([key(1, '2026-08-01')])
+  })
+
+  it('古い提案のチェックを外すと、同じルールのそれより新しい提案のチェックも外れる(他のルールには影響しない)', () => {
+    const checked = [key(1, '2026-08-01'), key(1, '2026-09-01'), key(1, '2026-10-01'), key(2, '2026-09-01')]
+
+    const next = toggleProposalChecked(rows, checked, rows[1])
+
+    expect(next).toEqual([key(1, '2026-08-01'), key(2, '2026-09-01')])
+  })
+
+  it('最も新しい提案のチェックを外しても、他の提案は変わらない', () => {
+    const checked = [key(1, '2026-08-01'), key(1, '2026-09-01'), key(1, '2026-10-01')]
+
+    expect(toggleProposalChecked(rows, checked, rows[2])).toEqual([key(1, '2026-08-01'), key(1, '2026-09-01')])
+  })
+
+  it('チェックは、同じルールで古い順に途切れない状態が保たれる(中間のチェックを付けると手前も付く)', () => {
+    const next = toggleProposalChecked(rows, [key(1, '2026-08-01')], rows[2])
+
+    expect(next).toContain(key(1, '2026-09-01'))
+  })
+
+  it('すべて選択: すべてチェック済みでなければ全件にチェックを付け、全件チェック済みなら全部外す', () => {
+    const all = rows.map((r) => key(r.ruleId, r.dueDate))
+
+    expect([...toggleAllProposals(rows, [key(1, '2026-08-01')])].sort()).toEqual([...all].sort())
+    expect(toggleAllProposals(rows, all)).toEqual([])
   })
 })

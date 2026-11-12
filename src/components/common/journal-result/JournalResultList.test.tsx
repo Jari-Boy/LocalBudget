@@ -3,6 +3,8 @@
  * 仕訳の結果一覧(JournalResultList)のコンポーネントテスト(計画Issue #150)。
  * 1仕訳1行の要約(出どころタグ・摘要・金額・日付・借方→貸方の代表科目)を表示し、
  * 選択なし・単一・複数を切り替えられること、↑↓キーで移動できることを検証する。
+ * 計画Issue #164で、定期の確認タブ向けに、科目を出さない(hideAccounts)・日付のあとに補足(note)を出す・
+ * 詳細の選択とは別のチェックボックス(checkable)を付けられることも検証する。
  * 外部依存なし(表示用に整形済みの行データ JournalResultItem だけを受け取る)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -160,5 +162,88 @@ describe('JournalResultList(複数選択)', () => {
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' })
     expect(first).toHaveFocus()
     expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('JournalResultList(定期の確認で使う拡張、計画Issue #164)', () => {
+  it('hideAccounts のとき、科目(借方→貸方)は表示せず、日付は表示する。指定しなければ従来どおり表示する', () => {
+    const { rerender } = render(
+      <JournalResultList items={items} selectionMode="single" selectedIds={[]} onSelectionChange={() => {}} hideAccounts />,
+    )
+    const first = within(list()).getAllByRole('listitem')[0]
+    expect(first).toHaveTextContent('2026/10/5')
+    expect(first).not.toHaveTextContent('食費 ほか1件')
+    expect(first).not.toHaveTextContent('→')
+
+    rerender(<JournalResultList items={items} selectionMode="single" selectedIds={[]} onSelectionChange={() => {}} />)
+    expect(within(list()).getAllByRole('listitem')[0]).toHaveTextContent('食費 ほか1件 → 楽天カード')
+  })
+
+  it('note があれば、日付のあとに表示する', () => {
+    render(
+      <JournalResultList
+        items={[{ ...items[0], note: '期日10/25(日)を前の平日に' }]}
+        selectionMode="single"
+        selectedIds={[]}
+        onSelectionChange={() => {}}
+        hideAccounts
+      />,
+    )
+
+    expect(within(list()).getAllByRole('listitem')[0]).toHaveTextContent('2026/10/5 ・ 期日10/25(日)を前の平日に')
+  })
+
+  it('checkable のとき、各行に選択とは別のチェックボックスが付き、チェック済みの行はオンになる', () => {
+    render(
+      <JournalResultList
+        items={items}
+        selectionMode="single"
+        selectedIds={[]}
+        onSelectionChange={() => {}}
+        checkable={{ checkedIds: [2], onToggle: () => {} }}
+      />,
+    )
+
+    expect(screen.getAllByRole('checkbox')).toHaveLength(3)
+    expect(screen.getByRole('checkbox', { name: /家賃/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /セブンイレブン/ })).not.toBeChecked()
+  })
+
+  it('checkable のとき、チェックボックスを押すと、選択(詳細表示)は変えずに、そのチェックの切り替えだけを通知する', () => {
+    const onToggle = vi.fn()
+    const onSelectionChange = vi.fn()
+    render(
+      <JournalResultList
+        items={items}
+        selectionMode="single"
+        selectedIds={[]}
+        onSelectionChange={onSelectionChange}
+        checkable={{ checkedIds: [], onToggle }}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /夕食/ }))
+
+    expect(onToggle).toHaveBeenCalledWith(3)
+    expect(onSelectionChange).not.toHaveBeenCalled()
+  })
+
+  it('checkable のとき、行を押すと従来どおり選択だけが変わり、チェックの切り替えは通知しない', () => {
+    const onToggle = vi.fn()
+    const onSelectionChange = vi.fn()
+    render(
+      <JournalResultList
+        items={items}
+        selectionMode="single"
+        selectedIds={[]}
+        onSelectionChange={onSelectionChange}
+        checkable={{ checkedIds: [], onToggle }}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /家賃/ }))
+
+    expect(onSelectionChange).toHaveBeenCalledWith([2])
+    expect(onToggle).not.toHaveBeenCalled()
   })
 })

@@ -6,7 +6,9 @@
  * 直接指定禁止トリガーは計画Issue #145で廃止し、指定できることも検証する)・frequencyごとのカラム組み合わせCHECK制約が
  * 期待通り機能することを検証する。generated_from_rule_idのCOUNTで生成済み件数を
  * 算出するcountGeneratedJournalEntriesも検証する。提案の見送りの永続化・削除時の扱い(計画Issue #145)も
- * 検証する。
+ * 検証する。計画Issue #164で追加した、開始日・終了日・間隔・土日の調整・金額の初期値の保存と既定値、
+ * 再有効化(activate、再開日の記録、終了したルールの拒否)、生成済みの最新の期日(recurring_due_date、
+ * entry_dateが編集されても動かない)、前回確定額、同じ期日の二重生成を防ぐ一意制約も検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -298,14 +300,14 @@ describe('countGeneratedJournalEntries', () => {
       frequency: 'monthly',
       dayOfMonth: 1,
     })
-    insertGeneratedJournalEntry(db, created.id)
-    insertGeneratedJournalEntry(db, created.id)
+    insertGeneratedJournalEntry(db, created.id, '2026-08-01')
+    insertGeneratedJournalEntry(db, created.id, '2026-09-01')
 
     expect(repository.countGeneratedJournalEntries(created.id)).toBe(2)
   })
 })
 
-describe('findLatestGeneratedEntryDate', () => {
+describe('findLatestGeneratedDueDate', () => {
   it('生成済みの仕訳が無ければnullを返す', () => {
     const created = repository.create({
       name: '家賃',
@@ -316,10 +318,10 @@ describe('findLatestGeneratedEntryDate', () => {
       dayOfMonth: 1,
     })
 
-    expect(repository.findLatestGeneratedEntryDate(created.id)).toBeNull()
+    expect(repository.findLatestGeneratedDueDate(created.id)).toBeNull()
   })
 
-  it('generated_from_rule_idが一致する仕訳のうち最新のentry_dateを返す', () => {
+  it('generated_from_rule_idが一致する仕訳のうち最新の期日(recurring_due_date)を返す', () => {
     const created = repository.create({
       name: '家賃',
       debitAccountId: expenseAccountId,
@@ -332,7 +334,7 @@ describe('findLatestGeneratedEntryDate', () => {
     insertGeneratedJournalEntry(db, created.id, '2026-09-01')
     insertGeneratedJournalEntry(db, created.id, '2026-08-01')
 
-    expect(repository.findLatestGeneratedEntryDate(created.id)).toBe('2026-09-01')
+    expect(repository.findLatestGeneratedDueDate(created.id)).toBe('2026-09-01')
   })
 
   it('他ルールから生成された仕訳は対象外', () => {
@@ -354,7 +356,7 @@ describe('findLatestGeneratedEntryDate', () => {
     })
     insertGeneratedJournalEntry(db, otherRule.id, '2026-09-25')
 
-    expect(repository.findLatestGeneratedEntryDate(created.id)).toBeNull()
+    expect(repository.findLatestGeneratedDueDate(created.id)).toBeNull()
   })
 })
 
@@ -411,7 +413,7 @@ describe('提案の見送り(recordSkip / findLatestSkippedDueDate、計画Issue
     repository.recordSkip(rule.id, '2026-07-01')
 
     expect(repository.countGeneratedJournalEntries(rule.id)).toBe(0)
-    expect(repository.findLatestGeneratedEntryDate(rule.id)).toBeNull()
+    expect(repository.findLatestGeneratedDueDate(rule.id)).toBeNull()
   })
 
   it('見送りだけがあるルールは物理削除でき、見送りの記録も一緒に削除される', () => {
@@ -448,16 +450,239 @@ function insertAccount(
   return database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
 }
 
+/** 生成済みの仕訳を1件挿入する。dueDateは土日の調整前の期日(recurring_due_date)、entryDateは省略時dueDateと同じ */
 function insertGeneratedJournalEntry(
   database: Database,
   ruleId: number,
-  entryDate = '2026-08-01',
-): void {
+  dueDate = '2026-08-01',
+  entryDate = dueDate,
+): number {
   database.run(`INSERT INTO household_members (name) VALUES ('自分')`)
   const memberId = database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
   database.run(
-    `INSERT INTO journal_entries (entry_date, source_type, generated_from_rule_id, household_member_id)
-     VALUES (?, 'recurring_generated', ?, ?)`,
-    [entryDate, ruleId, memberId],
+    `INSERT INTO journal_entries
+       (entry_date, source_type, generated_from_rule_id, recurring_due_date, household_member_id)
+     VALUES (?, 'recurring_generated', ?, ?, ?)`,
+    [entryDate, ruleId, dueDate, memberId],
   )
+  return database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
 }
+
+/** 借方・貸方1行ずつ(同額)の明細を、生成済みの仕訳に足す */
+function insertEntryLines(
+  database: Database,
+  entryId: number,
+  amount: number,
+  debit: number,
+  credit: number,
+): void {
+  const memberId = database.exec('SELECT household_member_id FROM journal_entries WHERE id = ?', [entryId])[0]
+    .values[0][0] as number
+  for (const [accountId, side] of [
+    [debit, 'debit'],
+    [credit, 'credit'],
+  ] as const) {
+    database.run(
+      `INSERT INTO journal_lines (journal_entry_id, account_id, side, amount, household_member_id)
+       VALUES (?, ?, ?, ?, ?)`,
+      [entryId, accountId, side, amount, memberId],
+    )
+  }
+}
+
+describe('スケジュールの拡張(計画Issue #164)', () => {
+  const base = () => ({
+    name: '家賃',
+    debitAccountId: expenseAccountId,
+    creditAccountId: liabilityAccountId,
+    amount: 80000,
+    frequency: 'monthly' as const,
+    dayOfMonth: 25,
+  })
+
+  it('開始日・終了日・間隔・土日の調整・金額の初期値を省略すると、今日開始・終了なし・1回ごと・調整なし・固定になる', () => {
+    const created = repository.create(base())
+
+    expect(created).toMatchObject({
+      endsOn: null,
+      interval: 1,
+      weekendAdjustment: 'none',
+      amountMode: 'fixed',
+      resumedOn: null,
+    })
+    expect(created.startsOn).toBe(new Date().toISOString().slice(0, 10))
+  })
+
+  it('開始日(過去日も可)・終了日・間隔・土日の調整・金額の初期値を指定して作成でき、更新もできる', () => {
+    const created = repository.create({
+      ...base(),
+      startsOn: '2026-01-15',
+      endsOn: '2026-12-31',
+      interval: 3,
+      weekendAdjustment: 'previous',
+      amountMode: 'last_confirmed',
+    })
+    expect(created).toMatchObject({
+      startsOn: '2026-01-15',
+      endsOn: '2026-12-31',
+      interval: 3,
+      weekendAdjustment: 'previous',
+      amountMode: 'last_confirmed',
+    })
+
+    const updated = repository.update(created.id, {
+      ...base(),
+      startsOn: '2026-02-01',
+      endsOn: null,
+      interval: 2,
+      weekendAdjustment: 'next',
+      amountMode: 'fixed',
+    })
+    expect(updated).toMatchObject({
+      startsOn: '2026-02-01',
+      endsOn: null,
+      interval: 2,
+      weekendAdjustment: 'next',
+      amountMode: 'fixed',
+    })
+  })
+
+  it('間隔が0以下・終了日が開始日より前の指定は拒否され、何も書き込まれない', () => {
+    expect(() => repository.create({ ...base(), interval: 0 })).toThrow(InvalidRecurringScheduleError)
+    expect(() => repository.create({ ...base(), startsOn: '2026-05-01', endsOn: '2026-04-30' })).toThrow(
+      InvalidRecurringScheduleError,
+    )
+    expect(repository.findAll()).toEqual([])
+  })
+
+  it('更新しても再開日は変わらない(再開日は再有効化の操作でだけ決まる)', () => {
+    const created = repository.create(base())
+    repository.deactivate(created.id)
+    repository.activate(created.id, '2026-03-01')
+
+    const updated = repository.update(created.id, { ...base(), name: '家賃(改)' })
+
+    expect(updated.resumedOn).toBe('2026-03-01')
+  })
+})
+
+describe('activate(再有効化、計画Issue #164)', () => {
+  const create = (overrides: Partial<Parameters<typeof repository.create>[0]> = {}) =>
+    repository.create({
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 25,
+      startsOn: '2026-01-01',
+      ...overrides,
+    })
+
+  it('無効なルールを有効に戻し、再開日を記録する(過去日も指定できる)', () => {
+    const created = create()
+    repository.deactivate(created.id)
+
+    const activated = repository.activate(created.id, '2026-02-10')
+
+    expect(activated.isActive).toBe(true)
+    expect(activated.resumedOn).toBe('2026-02-10')
+  })
+
+  it('無効化と再有効化を繰り返すと、再開日は最後に選んだ日になる', () => {
+    const created = create()
+    repository.deactivate(created.id)
+    repository.activate(created.id, '2026-02-10')
+    repository.deactivate(created.id)
+
+    const activated = repository.activate(created.id, '2026-05-20')
+
+    expect(activated.resumedOn).toBe('2026-05-20')
+  })
+
+  it('生成済みの仕訳は変わらず、開始日も変わらない', () => {
+    const created = create()
+    insertGeneratedJournalEntry(db, created.id, '2026-01-25')
+    repository.deactivate(created.id)
+
+    const activated = repository.activate(created.id, '2026-02-10')
+
+    expect(activated.startsOn).toBe('2026-01-01')
+    expect(repository.countGeneratedJournalEntries(created.id)).toBe(1)
+  })
+
+  it('終了日を過ぎたルールは再有効化できない(終了日を編集して延ばす)', () => {
+    const created = create({ endsOn: '2026-03-31' })
+    repository.deactivate(created.id)
+
+    expect(() => repository.activate(created.id, '2026-02-10', '2026-04-01')).toThrow()
+    expect(repository.findById(created.id)!.isActive).toBe(false)
+  })
+
+  it('回数の上限に達したルールは再有効化できない', () => {
+    const created = create({ maxOccurrences: 1 })
+    insertGeneratedJournalEntry(db, created.id, '2026-01-25')
+    repository.deactivate(created.id)
+
+    expect(() => repository.activate(created.id, '2026-02-10')).toThrow()
+  })
+
+  it('存在しないルールの再有効化はエラーになる', () => {
+    expect(() => repository.activate(9999, '2026-02-10')).toThrow()
+  })
+})
+
+describe('findLatestGeneratedDueDate(期日の記録、計画Issue #164)', () => {
+  const createRule = () =>
+    repository.create({
+      name: '家賃',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 80000,
+      frequency: 'monthly',
+      dayOfMonth: 25,
+    })
+
+  it('仕訳のentry_dateが編集されても(土日の調整や手動の編集)、期日の最新は動かない', () => {
+    const created = createRule()
+    // 2026-01-25は日曜日。前平日調整で仕訳は1/23になるが、期日は1/25のまま
+    const entryId = insertGeneratedJournalEntry(db, created.id, '2026-01-25', '2026-01-23')
+    db.run('UPDATE journal_entries SET entry_date = ? WHERE id = ?', ['2025-12-01', entryId])
+
+    expect(repository.findLatestGeneratedDueDate(created.id)).toBe('2026-01-25')
+  })
+
+  it('同じルール・同じ期日の仕訳は二重に作れない(DBの一意制約)', () => {
+    const created = createRule()
+    insertGeneratedJournalEntry(db, created.id, '2026-01-25')
+
+    expect(() => insertGeneratedJournalEntry(db, created.id, '2026-01-25', '2026-01-24')).toThrow()
+  })
+})
+
+describe('findLastConfirmedAmount(前回確定額、計画Issue #164)', () => {
+  const createRule = () =>
+    repository.create({
+      name: '電気代',
+      debitAccountId: expenseAccountId,
+      creditAccountId: liabilityAccountId,
+      amount: 8000,
+      frequency: 'monthly',
+      dayOfMonth: 10,
+      amountMode: 'last_confirmed',
+    })
+
+  it('生成済みの仕訳が1件も無ければnullを返す(呼び出し側がルールの金額を使う)', () => {
+    expect(repository.findLastConfirmedAmount(createRule().id)).toBeNull()
+  })
+
+  it('期日が最も新しい生成済みの仕訳の金額(借方の合計)を返す。entry_dateの新旧には依存しない', () => {
+    const rule = createRule()
+    const older = insertGeneratedJournalEntry(db, rule.id, '2026-07-10', '2026-12-31')
+    const newer = insertGeneratedJournalEntry(db, rule.id, '2026-08-10', '2026-08-10')
+    insertEntryLines(db, older, 7000, expenseAccountId, liabilityAccountId)
+    insertEntryLines(db, newer, 9100, expenseAccountId, liabilityAccountId)
+
+    expect(repository.findLastConfirmedAmount(rule.id)).toBe(9100)
+  })
+})

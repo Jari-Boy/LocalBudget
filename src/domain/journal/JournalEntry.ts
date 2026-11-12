@@ -43,6 +43,12 @@ export interface JournalEntry {
    * 整合性検証には関与しない。sourceType = 'recurring_generated'の仕訳でのみ非null
    */
   generatedFromRuleId: number | null
+  /**
+   * 生成元の定期取引ルールでの期日(土日の調整でずらす前、YYYY-MM-DD)。生成した仕訳にだけ設定する
+   * (docs/domain/journal.md 2.1、計画Issue #164)。entry_dateは編集や土日の調整で動くため、提案の起点は
+   * この値で求める。(generatedFromRuleId, recurringDueDate)はDBの一意制約で二重生成を防ぐ
+   */
+  recurringDueDate: string | null
   createdAt: string
   updatedAt: string
   lines: JournalLine[]
@@ -82,6 +88,8 @@ export interface CreateJournalEntryInput {
   externalTransactionRef?: CreateExternalTransactionRefTarget
   /** 生成元の定期取引ルール(docs/domain/recurring-transactions.md 1.5)。参照のみ、任意 */
   generatedFromRuleId?: number | null
+  /** 生成元の定期取引ルールでの調整前の期日(計画Issue #164)。generatedFromRuleIdとセットで指定する */
+  recurringDueDate?: string | null
 }
 
 export interface CreateExternalTransactionRefTarget {

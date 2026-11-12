@@ -5,7 +5,9 @@
  * 保持されること、貸借が合わないと保存されないこと、精算バッチを付けられない科目で拒否されたときの
  * 表示(計画Issue #167)、確定済みの仕訳の削除(2回押し・影響の表示・
  * 次の行の選択)、割勘できない理由の表示、下書き(保存・確定・削除)、定期取引の提案
- * (金額修正して確定・見送り・古い提案が残っていると処理できない)、関連仕訳の表示を検証する。
+ * (金額修正して確定・見送り・古い提案が残っていると処理できない)、関連仕訳の表示を検証する。計画Issue #164で追加した、
+ * 定期の確認タブの摘要・コメントの編集と保存、土日の調整後の日付と金額の初期値の表示、一覧に科目を出さないこと、
+ * 複数の提案のまとめて確定(チェックの連動・すべて選択・起票者の一括指定・confirmManyの呼び出し)も検証する。
  * 外部依存はインメモリの偽Repository(vi.fn)で置き換える。
  */
 import '@testing-library/jest-dom/vitest'
@@ -82,6 +84,7 @@ function entry(id: number, date: string, memo: string, sourceType: JournalEntry[
     sourceType,
     householdMemberId: 1,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '',
     updatedAt: '',
     lines,
@@ -137,8 +140,10 @@ function setup(
   let entries = overrides.entries ?? makeEntries()
   let drafts = overrides.drafts ?? makeDrafts()
   const proposals = [
-    { ruleId: 1, dueDate: '2026-11-01' },
-    { ruleId: 1, dueDate: '2026-10-01' },
+    // 2026-11-01は日曜日。翌平日調整で、仕訳の日付(entryDate)は11/2になる
+    { ruleId: 1, dueDate: '2026-11-01', entryDate: '2026-11-02', defaultAmount: 5200 },
+    { ruleId: 1, dueDate: '2026-10-01', entryDate: '2026-10-01', defaultAmount: 5000 },
+    { ruleId: 2, dueDate: '2026-10-15', entryDate: '2026-10-15', defaultAmount: 3000 },
   ]
   const journalEntryRepository = {
     findAll: vi.fn(async () => entries),
@@ -167,6 +172,7 @@ function setup(
   const recurringTransactionProposalApi = {
     listPending: vi.fn(async () => proposals),
     confirm: vi.fn(async () => entries[0]),
+    confirmMany: vi.fn(async (input: { items: readonly unknown[] }) => input.items.map(() => entries[0])),
     skip: vi.fn(async () => undefined),
   }
   const props = {
@@ -218,6 +224,38 @@ function setup(
           householdMemberId: 1,
           counterpartyId: null,
           maxOccurrences: null,
+          startsOn: '2026-01-01',
+          endsOn: null,
+          interval: 1,
+          weekendAdjustment: 'next',
+          amountMode: 'last_confirmed',
+          resumedOn: null,
+          isActive: true,
+          createdAt: '',
+          updatedAt: '',
+        },
+        {
+          // 起票者が決まっていないルール(まとめて確定のとき、起票者を1人選ぶ必要がある)
+          id: 2,
+          name: 'ジム会費',
+          debitAccountId: 4,
+          creditAccountId: 2,
+          amount: 3000,
+          frequency: 'monthly',
+          dayOfWeek: null,
+          dayOfMonth: 15,
+          weekOfMonth: null,
+          monthOfYear: null,
+          projectId: null,
+          householdMemberId: null,
+          counterpartyId: null,
+          maxOccurrences: null,
+          startsOn: '2026-01-01',
+          endsOn: null,
+          interval: 1,
+          weekendAdjustment: 'none',
+          amountMode: 'fixed',
+          resumedOn: null,
           isActive: true,
           createdAt: '',
           updatedAt: '',
@@ -686,5 +724,178 @@ describe('JournalScreen', () => {
     await waitFor(() =>
       expect(props.recurringTransactionProposalApi.skip).toHaveBeenCalledWith({ ruleId: 1, dueDate: '2026-10-01' }),
     )
+  })
+
+  describe('定期の確認タブ(計画Issue #164)', () => {
+    async function openProposals() {
+      const props = setup()
+      await ready()
+      fireEvent.click(screen.getByRole('tab', { name: /定期の確認/ }))
+      await screen.findAllByRole('button', { name: /ネット代/ })
+      return props
+    }
+    const checkbox = (name: RegExp) => screen.getAllByRole('checkbox', { name })
+
+    it('一覧には科目(借方→貸方)を表示しない', async () => {
+      await openProposals()
+
+      for (const row of screen.getAllByRole('button', { name: /ネット代|ジム会費/ })) {
+        expect(row).not.toHaveTextContent('→')
+        expect(row).not.toHaveTextContent('家賃')
+      }
+    })
+
+    it('一覧の日付は土日の調整後の日付で、ずらした提案には期日を添える', async () => {
+      await openProposals()
+
+      const adjusted = screen.getAllByRole('button', { name: /ネット代/ })[1]
+      expect(adjusted).toHaveTextContent('2026/11/2')
+      expect(adjusted).toHaveTextContent('期日 2026/11/1')
+    })
+
+    it('詳細パネルの摘要の初期値はルール名で、金額の初期値と土日の調整後の日付が出る', async () => {
+      await openProposals()
+
+      fireEvent.click(screen.getAllByRole('button', { name: /ネット代/ })[1])
+
+      expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('ネット代')
+      expect(within(detail()).getByLabelText('家賃の金額')).toHaveValue('5200')
+      expect(within(detail()).getByLabelText('取引日')).toHaveValue('2026-11-02')
+    })
+
+    it('摘要とコメントを直して確定すると、その摘要とコメントを渡す', async () => {
+      const props = await openProposals()
+
+      fireEvent.click(screen.getAllByRole('button', { name: /ネット代/ })[0])
+      fireEvent.change(within(detail()).getByLabelText('摘要(任意)'), { target: { value: 'ネット代 10月分' } })
+      fireEvent.change(within(detail()).getByLabelText('コメント(任意)'), { target: { value: 'プラン変更あり' } })
+      fireEvent.click(within(detail()).getByRole('button', { name: '確定' }))
+
+      await waitFor(() =>
+        expect(props.recurringTransactionProposalApi.confirm).toHaveBeenCalledWith(
+          expect.objectContaining({
+            ruleId: 1,
+            dueDate: '2026-10-01',
+            memo: 'ネット代 10月分',
+            comment: 'プラン変更あり',
+          }),
+        ),
+      )
+    })
+
+    it('詳細パネルの各行の2段目(取引先・プロジェクト・世帯メンバー)は読み取り専用', async () => {
+      await openProposals()
+
+      fireEvent.click(screen.getAllByRole('button', { name: /ネット代/ })[0])
+
+      const debitColumn = within(within(detail()).getByRole('group', { name: '借方' }))
+      expect(debitColumn.getByRole('button', { name: /^プロジェクト/ })).toBeDisabled()
+      expect(debitColumn.getByRole('combobox', { name: '世帯メンバー' })).toBeDisabled()
+    })
+
+    it('新しい提案にチェックを付けると、同じルールの古い提案にもチェックが付く(別のルールは付かない)', async () => {
+      await openProposals()
+
+      fireEvent.click(checkbox(/ネット代/)[1])
+
+      expect(checkbox(/ネット代/)[0]).toBeChecked()
+      expect(checkbox(/ネット代/)[1]).toBeChecked()
+      expect(checkbox(/ジム会費/)[0]).not.toBeChecked()
+      expect(screen.getByText('2件を選択中')).toBeInTheDocument()
+    })
+
+    it('古い提案のチェックを外すと、同じルールの新しい提案のチェックも外れる', async () => {
+      await openProposals()
+      fireEvent.click(checkbox(/ネット代/)[1])
+
+      fireEvent.click(checkbox(/ネット代/)[0])
+
+      expect(checkbox(/ネット代/)[0]).not.toBeChecked()
+      expect(checkbox(/ネット代/)[1]).not.toBeChecked()
+    })
+
+    it('チェックを付けても詳細の選択は変わらず、行を押しても(詳細は開くが)チェックは変わらない', async () => {
+      await openProposals()
+
+      fireEvent.click(checkbox(/ネット代/)[0])
+      expect(screen.queryByRole('checkbox', { name: /ネット代/, checked: true })).toBeInTheDocument()
+      fireEvent.click(screen.getAllByRole('button', { name: /ジム会費/ })[0])
+
+      expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('ジム会費')
+      expect(checkbox(/ジム会費/)[0]).not.toBeChecked()
+      expect(checkbox(/ネット代/)[0]).toBeChecked()
+    })
+
+    it('すべて選択でチェックが全件に付き、もう一度押すと全部外れる', async () => {
+      await openProposals()
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'すべて選択' }))
+      expect(screen.getByText('3件を選択中')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('checkbox', { name: 'すべて選択' }))
+
+      expect(screen.getByText('0件を選択中')).toBeInTheDocument()
+    })
+
+    it('何もチェックしていないときは「選択した提案を確定」が押せない', async () => {
+      await openProposals()
+
+      expect(screen.getByRole('button', { name: '選択した提案を確定' })).toBeDisabled()
+    })
+
+    it('選択した提案を確定すると、選んだ提案をconfirmManyで確定する(金額は渡さず、初期値のまま)', async () => {
+      const props = await openProposals()
+      fireEvent.click(checkbox(/ネット代/)[1])
+
+      fireEvent.click(screen.getByRole('button', { name: '選択した提案を確定' }))
+
+      await waitFor(() =>
+        expect(props.recurringTransactionProposalApi.confirmMany).toHaveBeenCalledWith({
+          items: [
+            { ruleId: 1, dueDate: '2026-10-01' },
+            { ruleId: 1, dueDate: '2026-11-01' },
+          ],
+          householdMemberId: undefined,
+        }),
+      )
+      expect(await screen.findByText('2件の仕訳を確定しました')).toBeInTheDocument()
+    })
+
+    it('起票者が決まっていないルールを選ぶと、まとめて起票者を選ぶまで確定できず、選ぶとその起票者で確定する', async () => {
+      const props = await openProposals()
+      fireEvent.click(checkbox(/ジム会費/)[0])
+
+      const confirmButton = screen.getByRole('button', { name: '選択した提案を確定' })
+      expect(confirmButton).toBeDisabled()
+      expect(screen.getByText(/起票者が決まっていない提案\(ジム会費\)があります/)).toBeInTheDocument()
+      fireEvent.change(screen.getByLabelText('まとめて確定の起票者'), { target: { value: '2' } })
+      expect(confirmButton).toBeEnabled()
+      fireEvent.click(confirmButton)
+
+      await waitFor(() =>
+        expect(props.recurringTransactionProposalApi.confirmMany).toHaveBeenCalledWith({
+          items: [{ ruleId: 2, dueDate: '2026-10-15' }],
+          householdMemberId: 2,
+        }),
+      )
+    })
+
+    it('起票者が決まっているルールだけを選んだときは、起票者の選択は出ない', async () => {
+      await openProposals()
+
+      fireEvent.click(checkbox(/ネット代/)[0])
+
+      expect(screen.queryByLabelText('まとめて確定の起票者')).not.toBeInTheDocument()
+    })
+
+    it('まとめて確定に失敗したら、エラーを表示する(確定したことにならない)', async () => {
+      const props = await openProposals()
+      props.recurringTransactionProposalApi.confirmMany.mockRejectedValueOnce(new Error('boom'))
+      fireEvent.click(checkbox(/ネット代/)[0])
+
+      fireEvent.click(screen.getByRole('button', { name: '選択した提案を確定' }))
+
+      expect(await screen.findByRole('alert')).toBeInTheDocument()
+      expect(screen.queryByText('1件の仕訳を確定しました')).not.toBeInTheDocument()
+    })
   })
 })

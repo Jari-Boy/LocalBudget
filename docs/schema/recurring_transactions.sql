@@ -16,9 +16,17 @@ CREATE TABLE recurring_transaction_rules (
   household_member_id   INTEGER REFERENCES household_members(id),
   counterparty_id       INTEGER REFERENCES counterparties(id),
   max_occurrences       INTEGER CHECK (max_occurrences IS NULL OR max_occurrences > 0),
+  -- スケジュールの拡張(計画Issue #164、recurring-transactions.md 1.2・1.3・1.6・2.1)
+  starts_on             TEXT NOT NULL DEFAULT (date('now')),   -- 開始日(当日を含む)。周期の基準を兼ねる
+  ends_on               TEXT,                                  -- 終了日(当日を含む)。任意
+  interval              INTEGER NOT NULL DEFAULT 1 CHECK (interval >= 1), -- N回ごと
+  weekend_adjustment    TEXT NOT NULL DEFAULT 'none' CHECK (weekend_adjustment IN ('none', 'next', 'previous')),
+  amount_mode           TEXT NOT NULL DEFAULT 'fixed' CHECK (amount_mode IN ('fixed', 'last_confirmed')),
+  resumed_on            TEXT,                                  -- 再有効化の再開日(当日を含む)。開始日とは別の列
   is_active             BOOLEAN NOT NULL DEFAULT TRUE,
   created_at            TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK (ends_on IS NULL OR ends_on >= starts_on),
   -- frequencyごとに使用するカラムの組み合わせを強制する(recurring-transactions.md 1.3の対応表参照)
   CHECK (
     (frequency = 'weekly'
@@ -39,8 +47,8 @@ CREATE TABLE recurring_transaction_rules (
 );
 
 -- 見送った提案(計画Issue #145、recurring-transactions.md 1.2・1.7参照)。
--- 提案は生成済みの仕訳の最新entry_dateから都度導出しており、見送りは仕訳を作らないため、
--- この導出だけでは進捗を表現できない。見送った対象日だけを記録し、導出の起点に加える
+-- 提案は生成済みの仕訳の最新の期日(recurring_due_date)から都度導出しており、見送りは仕訳を作らないため、
+-- この導出だけでは進捗を表現できない。見送った対象日(土日の調整前の期日)だけを記録し、導出の起点に加える
 -- (見送りの取り消しは作らない。max_occurrencesの回数にも数えない)。
 -- ルールを削除するときは見送りの記録も一緒に削除する(帳簿データではなく進捗の印にすぎないため。
 -- 生成済みの仕訳があるルールは従来どおり下のTRIGGERで物理削除できない)。
@@ -76,3 +84,12 @@ END;
 ALTER TABLE journal_entries
   ADD COLUMN generated_from_rule_id INTEGER
     REFERENCES recurring_transaction_rules(id);
+
+-- 土日の調整でずらす前の期日(計画Issue #164、recurring-transactions.md 1.2・2.1、journal.md 2.1)。
+-- 生成した仕訳にだけ設定する。提案の起点はこの列の最新値で求め、entry_dateは使わない
+-- (仕訳の日付の編集や土日の調整で起点がずれないため)。
+ALTER TABLE journal_entries ADD COLUMN recurring_due_date TEXT;
+
+-- 同じルール・同じ期日の仕訳の二重生成をDB側でも防ぐ(NULLは重複扱いにならないため、手入力等の仕訳は対象外)
+CREATE UNIQUE INDEX idx_journal_entries_rule_due_date
+  ON journal_entries(generated_from_rule_id, recurring_due_date);

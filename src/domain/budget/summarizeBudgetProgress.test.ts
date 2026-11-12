@@ -41,6 +41,7 @@ function entry(id: number, entryDate: string, accountId: number, side: 'debit' |
     sourceType: 'manual',
     householdMemberId: 1,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '',
     updatedAt: '',
     lines: [

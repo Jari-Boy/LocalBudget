@@ -279,3 +279,114 @@
   color: var(--color-text-muted);
   cursor: pointer;
 }
+
+/* 定期取引タブ(計画Issue #164)。一覧と右パネルの幅の比率は仕訳画面と同じ2:3にし、右パネルの借方・貸方の
+ * 行の部分は仕訳エディタ(JournalEntryEditor.css)のクラスをそのまま使う。 */
+.master-split--rule > .master-split__main {
+  flex: 2 1 340px;
+}
+
+.master-split--rule > .master-panel {
+  flex: 3 1 620px;
+}
+
+.master-panel__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.master-tag {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--color-tag-purple-bg);
+  color: var(--color-tag-purple-text);
+}
+
+.master-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-field-subtle);
+  font-size: var(--font-size-base);
+}
+
+.master-state--ended {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--color-tag-neutral-bg);
+  color: var(--color-tag-neutral-text);
+  font-size: var(--font-size-xs);
+}
+
+.master-resume {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  background: var(--color-accent-soft);
+}
+
+.master-resume__title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+.master-schedule {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.master-schedule__body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.master-schedule__wide {
+  grid-column: 1 / -1;
+}
+
+.master-interval {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.master-interval > .master-field__control {
+  width: 64px;
+}
+
+.master-preview {
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-field-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--color-text);
+}
+
+.master-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-base);
+}
+
+.master-table__nowrap {
+  white-space: nowrap;
+}
+
+.master-error__message {
+  margin: 0;
+}

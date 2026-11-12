@@ -27,7 +27,10 @@ import type { Project } from '../../domain/project/Project'
 import type { ProjectRepository } from '../../domain/project/ProjectRepository'
 import type { ProjectGroup } from '../../domain/project-group/ProjectGroup'
 import type { ProjectGroupRepository } from '../../domain/project-group/ProjectGroupRepository'
-import type { RecurringTransactionProposalRpcApi } from '../../infrastructure/rpc/createRecurringTransactionProposalApi'
+import type {
+  PendingRecurringTransactionProposal,
+  RecurringTransactionProposalRpcApi,
+} from '../../infrastructure/rpc/createRecurringTransactionProposalApi'
 import type { JournalEntryDraftRpcApi } from '../../infrastructure/rpc/createRepositoryRegistry'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
 import type { RecurringTransactionRule } from '../../domain/recurring-transaction/RecurringTransactionRule'
@@ -60,9 +63,12 @@ import {
   describeSplitBlock,
   findIncompleteReason,
   isProposalBlocked,
+  proposalKey,
   matchedAccountIdsOf,
   pickSelectionAfterDelete,
   sortProposalsOldestFirst,
+  toggleAllProposals,
+  toggleProposalChecked,
   toMatchedResultItem,
 } from './journalScreenModel'
 import { RelatedEntriesSection } from './RelatedEntriesSection'
@@ -95,7 +101,7 @@ export interface JournalScreenProps {
   projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
   settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll' | 'create'>>
-  recurringTransactionProposalApi: MaybeAsync<Pick<RecurringTransactionProposalRpcApi, 'listPending' | 'confirm' | 'skip'>>
+  recurringTransactionProposalApi: MaybeAsync<Pick<RecurringTransactionProposalRpcApi, 'listPending' | 'confirm' | 'confirmMany' | 'skip'>>
   recurringTransactionRuleRepository: MaybeAsync<Pick<RecurringTransactionRuleRepository, 'findAll'>>
   /** 「この仕訳を割勘」を押したときの移動(割勘の入力フォームへ) */
   onSplit: (entry: JournalEntry) => void
@@ -121,7 +127,7 @@ interface LoadedData {
   batches: SettlementBatch[]
   memberships: JournalEntryLinkGroupMembership[]
   groups: JournalEntryLinkGroup[]
-  proposals: { ruleId: number; dueDate: string }[]
+  proposals: PendingRecurringTransactionProposal[]
   rules: RecurringTransactionRule[]
 }
 
@@ -134,9 +140,17 @@ type Selection =
 interface ProposalRow {
   id: number
   ruleId: number
+  /** 土日の調整前の期日 */
   dueDate: string
+  /** 土日の調整後の日付(確定すると仕訳の取引日になる) */
+  entryDate: string
+  /** 確認パネルの金額の初期値(固定ならルールの金額、前回確定額なら前回の金額) */
+  defaultAmount: number
   rule: RecurringTransactionRule
 }
+
+/** YYYY-MM-DDを「2026/11/1」の形に(一覧の日付表示と同じ、ゼロ埋めなし) */
+const slashDate = (date: string) => date.split('-').map(Number).join('/')
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -182,6 +196,10 @@ export function JournalScreen(props: JournalScreenProps) {
   const [deleteArmed, setDeleteArmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [proposalMemberId, setProposalMemberId] = useState<number | ''>('')
+  /** まとめて確定のチェック(提案のキー、計画Issue #164)。詳細の選択とは別に持つ */
+  const [checkedProposalKeys, setCheckedProposalKeys] = useState<string[]>([])
+  /** まとめて確定で、起票者が決まっていないルールの分に使う起票者 */
+  const [bulkMemberId, setBulkMemberId] = useState<number | ''>('')
   const [counterpartyDialog, setCounterpartyDialog] = useState<{ apply: (id: number) => void } | null>(null)
   /** 詳細を開いた時点の編集内容。現在の内容と違えば、未保存の変更がある */
   const [baseline, setBaseline] = useState('')
@@ -264,7 +282,9 @@ export function JournalScreen(props: JournalScreenProps) {
     const relatedIdsByEntryId = buildRelatedEntryIdsByEntryId(data.memberships)
     const proposalRows: ProposalRow[] = sortProposalsOldestFirst(data.proposals).flatMap((p, index) => {
       const rule = data.rules.find((r) => r.id === p.ruleId)
-      return rule === undefined ? [] : [{ id: index + 1, ruleId: p.ruleId, dueDate: p.dueDate, rule }]
+      return rule === undefined
+        ? []
+        : [{ id: index + 1, ruleId: p.ruleId, dueDate: p.dueDate, entryDate: p.entryDate, defaultAmount: p.defaultAmount, rule }]
     })
     return { accountById, accountNameOf, filterContext, filterOptions, master, relatedIdsByEntryId, proposalRows }
   }, [data])
@@ -341,20 +361,21 @@ export function JournalScreen(props: JournalScreenProps) {
     }
     const rule = d.rules.find((r) => r.id === sel.ruleId)
     if (rule === undefined) return null
+    const proposal = d.proposals.find((p) => p.ruleId === sel.ruleId && p.dueDate === sel.dueDate)
     const accountById = new Map(d.accounts.map((a) => [a.id, a]))
     const side = (accountId: number, s: 'debit' | 'credit'): JournalEntryFormLine => {
       const account = accountById.get(accountId)
       return {
         accountId,
         side: s,
-        amountInput: String(rule.amount),
+        amountInput: String(proposal?.defaultAmount ?? rule.amount),
         projectId: rule.projectId,
         householdMemberId: rule.householdMemberId ?? firstMember,
         counterpartyId: account !== undefined && isCounterpartyEligibleCategory(account.category) ? rule.counterpartyId : null,
       }
     }
     return {
-      entryDate: sel.dueDate,
+      entryDate: proposal?.entryDate ?? sel.dueDate,
       memo: rule.name,
       comment: '',
       householdMemberId: rule.householdMemberId,
@@ -611,6 +632,8 @@ export function JournalScreen(props: JournalScreenProps) {
           dueDate: selectedProposal.dueDate,
           amount,
           householdMemberId: memberId === '' ? undefined : memberId,
+          memo: editor.memo,
+          comment: editor.comment,
         }),
       )
       await afterProposal('仕訳を確定しました')
@@ -624,6 +647,38 @@ export function JournalScreen(props: JournalScreenProps) {
       )
       await afterProposal('この回を見送りました。仕訳は作られません')
     }, t('updateError'))
+
+  // ---- 提案のまとめて確定(計画Issue #164) ----
+  /** チェックされている提案(消えた提案のキーは捨てる)。古い順に並ぶ */
+  const checkedRows = proposalRows.filter((p) => checkedProposalKeys.includes(proposalKey(p)))
+  const bulkNoMemberRows = checkedRows.filter((p) => p.rule.householdMemberId === null)
+  const bulkNeedsMember = bulkNoMemberRows.length > 0
+  const bulkNoMemberNames = [...new Set(bulkNoMemberRows.map((p) => p.rule.name))].join('、')
+
+  const toggleProposal = (id: number) => {
+    const row = proposalRows.find((p) => p.id === id)
+    if (row) setCheckedProposalKeys(toggleProposalChecked(proposalRows, checkedProposalKeys, row))
+  }
+
+  const confirmChecked = () =>
+    run(async () => {
+      if (checkedRows.length === 0) return
+      const count = checkedRows.length
+      const householdMemberId = bulkNeedsMember && bulkMemberId !== '' ? bulkMemberId : undefined
+      await Promise.resolve().then(() =>
+        recurringTransactionProposalApi.confirmMany({
+          items: checkedRows.map(({ ruleId, dueDate }) => ({ ruleId, dueDate })),
+          householdMemberId,
+        }),
+      )
+      setCheckedProposalKeys([])
+      setBulkMemberId('')
+      await reloadAndOpen((d) => {
+        const next = sortProposalsOldestFirst(d.proposals).find((p) => d.rules.some((r) => r.id === p.ruleId))
+        return next ? { kind: 'proposal', ruleId: next.ruleId, dueDate: next.dueDate } : null
+      }, `${count}件の仕訳を確定しました`)
+      onProposalsChanged?.()
+    }, t('confirmError'))
 
   /** 提案は1借方・1貸方で同額のため、片方の金額を直したらもう片方も合わせる */
   const changeEditor = (next: JournalEditorValue) => {
@@ -692,11 +747,13 @@ export function JournalScreen(props: JournalScreenProps) {
     id: p.id,
     sourceType: 'recurring_generated',
     memo: p.rule.name,
-    amount: p.rule.amount,
+    amount: p.defaultAmount,
     currency: 'JPY',
-    entryDate: p.dueDate,
-    debitSummary: accountNameOf(p.rule.debitAccountId),
-    creditSummary: accountNameOf(p.rule.creditAccountId),
+    entryDate: p.entryDate,
+    // 一覧には科目を出さない(hideAccounts)。土日の調整でずらした提案には、調整前の期日を添える
+    debitSummary: '',
+    creditSummary: '',
+    note: p.entryDate === p.dueDate ? undefined : `期日 ${slashDate(p.dueDate)}`,
   }))
 
   const switchTab = (next: JournalScreenTab) =>
@@ -789,7 +846,7 @@ export function JournalScreen(props: JournalScreenProps) {
 
   const note =
     tab === 'proposals'
-      ? '定期取引のルールから作られた提案です。確定すると仕訳になります。不要な回は見送れます。同じルールの提案は古い順に処理します。'
+      ? '定期取引のルールから作られた提案です。確定すると仕訳になります。不要な回は見送れます。同じルールの提案は古い順に処理します。チェックを付けて、まとめて確定もできます。'
       : tab === 'drafts'
         ? '保存前の仕訳です。貸借が合わなくても下書きとして残せます。'
         : ''
@@ -839,8 +896,65 @@ export function JournalScreen(props: JournalScreenProps) {
           {tab === 'list' && matchedIds !== undefined && (
             <p className="journal-screen__note">科目に一致した明細の金額を表示しています</p>
           )}
+          {tab === 'proposals' && (
+            <div role="group" aria-label="まとめて確定" className="journal-screen__bulk">
+              <div className="journal-screen__bulk-row">
+                <label className="journal-screen__bulk-all">
+                  <input
+                    type="checkbox"
+                    checked={proposalRows.length > 0 && checkedRows.length === proposalRows.length}
+                    onChange={() => setCheckedProposalKeys(toggleAllProposals(proposalRows, checkedProposalKeys))}
+                  />
+                  すべて選択
+                </label>
+                <span className="journal-screen__note">{checkedRows.length}件を選択中</span>
+              </div>
+              {bulkNeedsMember && (
+                <label className="journal-screen__inline-field">
+                  起票者(未定のルール用)
+                  <select
+                    className="journal-screen__select"
+                    aria-label="まとめて確定の起票者"
+                    value={bulkMemberId}
+                    onChange={(e) => setBulkMemberId(e.target.value === '' ? '' : Number(e.target.value))}
+                  >
+                    <option value="">選択してください</option>
+                    {data.members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <div className="journal-screen__bulk-row">
+                <button
+                  type="button"
+                  className="journal-screen__button journal-screen__button--primary"
+                  disabled={busy || checkedRows.length === 0 || (bulkNeedsMember && bulkMemberId === '')}
+                  onClick={() => void confirmChecked()}
+                >
+                  選択した提案を確定
+                </button>
+              </div>
+              {bulkNeedsMember && bulkMemberId === '' && (
+                <p className="journal-screen__note">
+                  起票者が決まっていない提案({bulkNoMemberNames})があります。まとめて起票者を選んでください。
+                </p>
+              )}
+              <p className="journal-screen__note">
+                金額は初期値のまま確定します。金額を直す提案は、開いて1件ずつ確定してください。
+              </p>
+            </div>
+          )}
           <JournalResultList
             items={tab === 'list' ? listItems : tab === 'drafts' ? draftItems : proposalItems}
+            hideAccounts={tab === 'proposals'}
+            checkable={
+              tab === 'proposals'
+                ? { checkedIds: checkedRows.map((p) => p.id), onToggle: toggleProposal }
+                : undefined
+            }
             selectionMode="single"
             selectedIds={selectedIds}
             onSelectionChange={(ids) => {
@@ -896,6 +1010,12 @@ export function JournalScreen(props: JournalScreenProps) {
                 }}
                 onRequestCreateCounterparty={(apply) => setCounterpartyDialog({ apply })}
               />
+
+              {selection.kind === 'proposal' && selectedProposal !== undefined && selectedProposal.entryDate !== selectedProposal.dueDate && (
+                <p className="journal-screen__note">
+                  期日 {slashDate(selectedProposal.dueDate)} を土日の調整でずらしています
+                </p>
+              )}
 
               {selection.kind === 'proposal' && selectedProposal?.rule.householdMemberId === null && (
                 <label className="journal-screen__inline-field">

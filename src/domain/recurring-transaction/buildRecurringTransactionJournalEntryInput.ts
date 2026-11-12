@@ -1,14 +1,22 @@
 import type { AccountCategory } from '../account/Account'
 import type { CreateJournalEntryInput } from '../journal/JournalEntry'
 import type { LineHouseholdMemberResolver } from '../journal/resolveLineHouseholdMemberId'
+import { adjustForWeekend } from './adjustForWeekend'
 import type { RecurringTransactionRule } from './RecurringTransactionRule'
 
 const PL_CATEGORIES: readonly AccountCategory[] = ['revenue', 'expense']
 
 export interface BuildRecurringTransactionJournalEntryInputParams {
   rule: RecurringTransactionRule
-  /** レビュー確認された対象日(docs/domain/recurring-transactions.md 1.2節)。仕訳のentryDateになる */
+  /**
+   * レビュー確認された対象日(土日の調整前の期日、docs/domain/recurring-transactions.md 1.2節)。
+   * recurringDueDateに記録し、土日の調整後の日付が仕訳のentryDateになる(計画Issue #164)
+   */
   dueDate: string
+  /** 摘要(計画Issue #164)。省略時はルール名。空(空白のみ)ならnull */
+  memo?: string | null
+  /** コメント(計画Issue #164)。省略時はnull */
+  comment?: string | null
   /** 起票者(journal_entries.household_member_id相当)。解決は呼び出し側の責務 */
   bookkeeperHouseholdMemberId: number
   /** 借方科目の区分。counterparty_idの設置判定に使う。解決は呼び出し側の責務 */
@@ -46,7 +54,10 @@ export function buildRecurringTransactionJournalEntryInput(
   const amount = params.amount ?? rule.amount
 
   return {
-    entryDate: dueDate,
+    entryDate: adjustForWeekend(dueDate, rule.weekendAdjustment),
+    memo: normalizeText(params.memo === undefined ? rule.name : params.memo),
+    comment: normalizeText(params.comment),
+    recurringDueDate: dueDate,
     sourceType: 'recurring_generated',
     generatedFromRuleId: rule.id,
     householdMemberId: bookkeeperHouseholdMemberId,
@@ -69,4 +80,9 @@ export function buildRecurringTransactionJournalEntryInput(
       },
     ],
   }
+}
+
+function normalizeText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? ''
+  return trimmed === '' ? null : trimmed
 }

@@ -6,7 +6,8 @@
  * 科目区分(AccountCategory)の解決は呼び出し側の責務(既存のbuildCounterpartyExpenseSplitting
  * JournalEntryInput等と同じパターン)のため、本関数はDB非依存・外部依存なし。
  * 明細行の世帯メンバーは、科目の既定メンバー > ルールの世帯メンバー > 起票者の順で必ず確定する
- * (計画Issue #169)。
+ * (計画Issue #169)。計画Issue #164で追加した、土日の調整後の日付をentryDateにすること、調整前の期日を
+ * recurringDueDateに記録すること、摘要(既定はルール名)とコメントを仕訳に設定することも検証する。
  */
 import { describe, expect, it } from 'vitest'
 import { createLineHouseholdMemberResolver } from '../journal/resolveLineHouseholdMemberId'
@@ -32,6 +33,12 @@ function makeRule(overrides: Partial<RecurringTransactionRule>): RecurringTransa
     householdMemberId: null,
     counterpartyId: null,
     maxOccurrences: null,
+    startsOn: '2026-06-01',
+    endsOn: null,
+    interval: 1,
+    weekendAdjustment: 'none',
+    amountMode: 'fixed',
+    resumedOn: null,
     isActive: true,
     createdAt: '2026-06-01 00:00:00',
     updatedAt: '2026-06-01 00:00:00',
@@ -167,5 +174,54 @@ describe('buildRecurringTransactionJournalEntryInput', () => {
     for (const line of input.lines) {
       expect(line.counterpartyId).toBeNull()
     }
+  })
+
+  describe('土日の調整・期日の記録・摘要とコメント(計画Issue #164)', () => {
+    const build = (rule: RecurringTransactionRule, dueDate: string, extra: { memo?: string | null; comment?: string | null } = {}) =>
+      buildRecurringTransactionJournalEntryInput({
+        rule,
+        dueDate,
+        bookkeeperHouseholdMemberId: 1,
+        debitAccountCategory: 'expense',
+        creditAccountCategory: 'liability',
+        resolveLineHouseholdMemberId,
+        ...extra,
+      })
+
+    it('調整後の日付がentryDateになり、調整前の期日がrecurringDueDateに記録される(2026-01-25は日曜日)', () => {
+      const input = build(makeRule({ weekendAdjustment: 'previous' }), '2026-01-25')
+
+      expect(input.entryDate).toBe('2026-01-23')
+      expect(input.recurringDueDate).toBe('2026-01-25')
+    })
+
+    it('翌平日の調整では、土日の期日が翌月曜日のentryDateになる', () => {
+      expect(build(makeRule({ weekendAdjustment: 'next' }), '2026-01-24').entryDate).toBe('2026-01-26')
+    })
+
+    it('調整なし・平日の期日は、期日がそのままentryDateにもrecurringDueDateにもなる', () => {
+      const input = build(makeRule({ weekendAdjustment: 'previous' }), '2026-01-23')
+
+      expect(input.entryDate).toBe('2026-01-23')
+      expect(input.recurringDueDate).toBe('2026-01-23')
+    })
+
+    it('摘要を省略するとルール名になる', () => {
+      expect(build(makeRule({ name: '家賃' }), '2026-09-01').memo).toBe('家賃')
+    })
+
+    it('摘要とコメントを指定すると、確認パネルで編集した値が仕訳に設定される', () => {
+      const input = build(makeRule({ name: '家賃' }), '2026-09-01', { memo: '家賃 9月分', comment: '更新料は別途' })
+
+      expect(input.memo).toBe('家賃 9月分')
+      expect(input.comment).toBe('更新料は別途')
+    })
+
+    it('摘要を空にすると摘要なし(null)になり、コメントを省略するとnullになる', () => {
+      const input = build(makeRule({ name: '家賃' }), '2026-09-01', { memo: '  ' })
+
+      expect(input.memo).toBeNull()
+      expect(input.comment).toBeNull()
+    })
   })
 })

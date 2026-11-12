@@ -54,6 +54,7 @@ function buildEntry(overrides: {
     sourceType: overrides.sourceType ?? 'manual',
     householdMemberId: overrides.householdMemberId ?? 1,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-01T00:00:00.000Z',
     lines: (overrides.lines ?? [{ accountId: 10 }]).map((line, index) => ({

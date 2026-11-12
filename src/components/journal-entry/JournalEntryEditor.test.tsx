@@ -3,7 +3,8 @@
  * 仕訳の詳細パネル(JournalEntryEditor)のコンポーネントテスト(計画Issue #152)。
  * 借方・貸方の2列、列ごとの合計、貸借一致/差額の表示、行の追加・削除、
  * 科目の区分に応じた取引先・精算バッチ・世帯メンバー欄の出し分け、
- * 提案用の「金額だけ編集できる」モードを検証する。計画Issue #169で、起票者を選べるようにし、
+ * 提案用の「金額・摘要・コメントだけ編集できる」モード(計画Issue #164で、行の2段目の取引先・プロジェクト・
+ * 世帯メンバーを読み取り専用で表示し、行の追加・削除ボタンを無効で表示するようにした)を検証する。計画Issue #169で、起票者を選べるようにし、
  * 明細行の世帯メンバーは常に1人を選ぶ(既定値は起票者、科目に既定メンバーがあれば固定)ことも検証する。
  * 外部依存なし(マスタは props で渡す。科目の選択ツリーは開閉せず、トリガーの表示だけを見る)。
  */
@@ -196,10 +197,43 @@ describe('JournalEntryEditor', () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ comment: 'メモ' }))
   })
 
-  it('readOnlyLines では科目の追加・削除ができず、金額だけ編集できる', () => {
+  it('readOnlyLines では行の追加・削除ボタンが無効で、金額・摘要・コメントだけ編集できる', () => {
     render(<Harness initial={value([debit(1, 1, '1000'), credit(2, 2, '1000')])} readOnlyLines />)
-    expect(screen.queryByRole('button', { name: '+ 借方の行を追加' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '+ 借方の行を追加' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '+ 貸方の行を追加' })).toBeDisabled()
+    for (const button of screen.getAllByRole('button', { name: /の行を削除|^行を削除$/ })) expect(button).toBeDisabled()
     expect(screen.getByLabelText('食費の金額')).not.toBeDisabled()
     expect(screen.getByLabelText('取引日')).toBeDisabled()
+    expect(screen.getByLabelText('摘要(任意)')).not.toBeDisabled()
+    expect(screen.getByLabelText('コメント(任意)')).not.toBeDisabled()
+  })
+
+  it('readOnlyLines では摘要を編集すると onChange に反映される(確認パネルで摘要を直して確定できる)', () => {
+    const onChange = vi.fn()
+    render(
+      <JournalEntryEditor
+        value={value([debit(1, 1, '1000'), credit(2, 2, '1000')])}
+        onChange={onChange}
+        master={master}
+        readOnlyLines
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText('摘要(任意)'), { target: { value: '家賃 10月分' } })
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ memo: '家賃 10月分' }))
+  })
+
+  it('readOnlyLines でも各行の2段目(取引先・プロジェクト・世帯メンバー)を、読み取り専用で表示する', () => {
+    render(<Harness initial={value([debit(1, 1, '1000'), credit(2, 2, '1000')])} readOnlyLines />)
+
+    const debitColumn = within(screen.getByRole('group', { name: '借方' }))
+    const creditColumn = within(screen.getByRole('group', { name: '貸方' }))
+    expect(debitColumn.getByRole('button', { name: /^取引先/ })).toBeDisabled()
+    expect(debitColumn.getByRole('button', { name: /^プロジェクト/ })).toBeDisabled()
+    expect(debitColumn.getByRole('combobox', { name: '世帯メンバー' })).toBeDisabled()
+    expect(creditColumn.getByRole('button', { name: /^プロジェクト/ })).toBeDisabled()
+    // 費用・収益ではない科目の行には、取引先は出ない
+    expect(creditColumn.queryByRole('button', { name: /^取引先/ })).not.toBeInTheDocument()
   })
 })

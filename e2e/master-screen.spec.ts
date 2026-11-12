@@ -122,7 +122,8 @@ test.describe('マスタ画面', () => {
     await page.getByRole('dialog', { name: '借方の科目' }).getByRole('button', { name: '娯楽費', exact: true }).click()
     await form.getByRole('button', { name: /^貸方の科目/ }).click()
     await page.getByRole('dialog', { name: '貸方の科目' }).getByRole('button', { name: '現金', exact: true }).click()
-    await form.getByLabel('金額').fill('1590')
+    // 部分一致だと「下の金額(固定)」「貸方の金額」なども拾うため、厳密一致にする(計画Issue #164)
+    await form.getByLabel('金額', { exact: true }).fill('1590')
     await form.getByLabel('日', { exact: true }).selectOption('19')
     await form.getByRole('button', { name: '登録' }).click()
 

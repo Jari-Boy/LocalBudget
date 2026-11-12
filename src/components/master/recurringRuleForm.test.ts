@@ -3,7 +3,9 @@
  * マスタ画面の定期取引ルールのフォーム入力を、Repository送信用の入力に変換する純粋関数を検証する。
  * 繰り返し(毎週・毎月の日付・毎月の第N曜日・毎年)ごとに使うカラムの組み合わせ
  * (docs/domain/recurring-transactions.md 1.3、使わないカラムは必ずnull)、入力が揃ったかの判定、
- * 既存ルールからフォームへの復元を確認する。DOM・sql.js非依存。
+ * 既存ルールからフォームへの復元を確認する。計画Issue #164で追加した、開始日(既定は今日)・終了日・
+ * 間隔(1以上の整数)・土日の調整・金額の初期値の変換と、その妥当性(終了日は開始日以後)も確認する。
+ * DOM・sql.js非依存。
  */
 import { describe, expect, it } from 'vitest'
 import type { RecurringTransactionRule } from '../../domain/recurring-transaction/RecurringTransactionRule'
@@ -123,6 +125,12 @@ describe('ruleFormFromRule', () => {
     householdMemberId: 5,
     counterpartyId: null,
     maxOccurrences: null,
+    startsOn: '2026-01-01',
+    endsOn: null,
+    interval: 1,
+    weekendAdjustment: 'none',
+    amountMode: 'fixed',
+    resumedOn: null,
     isActive: true,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
@@ -147,5 +155,92 @@ describe('ruleFormFromRule', () => {
       dayOfWeek: 6,
       householdMemberId: 5,
     })
+  })
+})
+
+describe('スケジュールの拡張(計画Issue #164)', () => {
+  it('空のフォームは、開始日が今日・終了日なし・1回ごと・土日の調整なし・金額は固定になる', () => {
+    expect(emptyRuleForm('2026-11-12')).toMatchObject({
+      startsOn: '2026-11-12',
+      endsOn: '',
+      interval: '1',
+      weekendAdjustment: 'none',
+      amountMode: 'fixed',
+    })
+  })
+
+  it('フォームの開始日・終了日・間隔・土日の調整・金額の初期値が、送信用の入力に変換される', () => {
+    expect(
+      buildRuleInput(
+        form({
+          startsOn: '2026-01-15',
+          endsOn: '2026-12-31',
+          interval: '3',
+          weekendAdjustment: 'previous',
+          amountMode: 'last_confirmed',
+        }),
+      ),
+    ).toMatchObject({
+      startsOn: '2026-01-15',
+      endsOn: '2026-12-31',
+      interval: 3,
+      weekendAdjustment: 'previous',
+      amountMode: 'last_confirmed',
+    })
+  })
+
+  it('終了日が空なら、送信用の入力ではnull(終了なし)になる', () => {
+    expect(buildRuleInput(form({ endsOn: '' }))).toMatchObject({ endsOn: null })
+  })
+
+  it('間隔は、1以上の整数のときだけ有効である', () => {
+    expect(isRuleFormValid(form({ interval: '2' }))).toBe(true)
+    expect(isRuleFormValid(form({ interval: '0' }))).toBe(false)
+    expect(isRuleFormValid(form({ interval: '1.5' }))).toBe(false)
+    expect(isRuleFormValid(form({ interval: '' }))).toBe(false)
+  })
+
+  it('開始日は必須で、終了日は空か開始日以後のときだけ有効である(同じ日は有効)', () => {
+    expect(isRuleFormValid(form({ startsOn: '' }))).toBe(false)
+    expect(isRuleFormValid(form({ startsOn: '2026-05-01', endsOn: '2026-05-01' }))).toBe(true)
+    expect(isRuleFormValid(form({ startsOn: '2026-05-01', endsOn: '2026-04-30' }))).toBe(false)
+    expect(isRuleFormValid(form({ startsOn: '2026-05-01', endsOn: '' }))).toBe(true)
+  })
+
+  it('既存ルールのスケジュールの項目が、フォームに復元される(終了日なしは空文字)', () => {
+    const base: RecurringTransactionRule = {
+      id: 1,
+      name: '電気代',
+      debitAccountId: 1,
+      creditAccountId: 2,
+      amount: 8000,
+      frequency: 'monthly',
+      dayOfWeek: null,
+      dayOfMonth: 10,
+      weekOfMonth: null,
+      monthOfYear: null,
+      projectId: null,
+      householdMemberId: null,
+      counterpartyId: null,
+      maxOccurrences: null,
+      startsOn: '2026-02-01',
+      endsOn: null,
+      interval: 3,
+      weekendAdjustment: 'next',
+      amountMode: 'last_confirmed',
+      resumedOn: null,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+
+    expect(ruleFormFromRule(base)).toMatchObject({
+      startsOn: '2026-02-01',
+      endsOn: '',
+      interval: '3',
+      weekendAdjustment: 'next',
+      amountMode: 'last_confirmed',
+    })
+    expect(ruleFormFromRule({ ...base, endsOn: '2026-12-31' }).endsOn).toBe('2026-12-31')
   })
 })

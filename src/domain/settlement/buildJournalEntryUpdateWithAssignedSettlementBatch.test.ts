@@ -18,6 +18,7 @@ function makeEntry(): JournalEntry {
     sourceType: 'manual',
     householdMemberId: 1,
     generatedFromRuleId: null,
+    recurringDueDate: null,
     createdAt: '2026-10-05',
     updatedAt: '2026-10-05',
     lines: [

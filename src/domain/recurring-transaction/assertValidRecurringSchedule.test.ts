@@ -3,7 +3,8 @@
  * ユニットテスト。docs/domain/recurring-transactions.md 1.3の対応表(weekly→day_of_week、
  * monthly(日付指定)→day_of_month、monthly(曜日指定)→week_of_month+day_of_week、
  * yearly→month_of_year+day_of_month)通りの組み合わせのみを許可し、それ以外は
- * InvalidRecurringScheduleErrorをスローすることを検証する。DB非依存、外部依存なし。
+ * InvalidRecurringScheduleErrorをスローすることを検証する。計画Issue #164で追加した間隔(1以上の整数)と
+ * 開始日・終了日の前後関係の検証も含む。DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import { assertValidRecurringSchedule } from './assertValidRecurringSchedule'
@@ -110,5 +111,29 @@ describe('yearly', () => {
         dayOfWeek: 1,
       }),
     ).toThrow(InvalidRecurringScheduleError)
+  })
+})
+
+describe('間隔・開始日・終了日(計画Issue #164)', () => {
+  const monthly = { frequency: 'monthly', dayOfMonth: 25 } as const
+
+  it('間隔が1以上の整数なら許可する(省略時は1として扱う)', () => {
+    expect(() => assertValidRecurringSchedule(monthly)).not.toThrow()
+    expect(() => assertValidRecurringSchedule({ ...monthly, interval: 3 })).not.toThrow()
+  })
+
+  it('間隔が0以下・小数の場合はInvalidRecurringScheduleErrorを投げる', () => {
+    expect(() => assertValidRecurringSchedule({ ...monthly, interval: 0 })).toThrow(InvalidRecurringScheduleError)
+    expect(() => assertValidRecurringSchedule({ ...monthly, interval: -1 })).toThrow(InvalidRecurringScheduleError)
+    expect(() => assertValidRecurringSchedule({ ...monthly, interval: 1.5 })).toThrow(InvalidRecurringScheduleError)
+  })
+
+  it('終了日が開始日より前の場合はInvalidRecurringScheduleErrorを投げる(同じ日は許可する)', () => {
+    expect(() =>
+      assertValidRecurringSchedule({ ...monthly, startsOn: '2026-05-01', endsOn: '2026-04-30' }),
+    ).toThrow(InvalidRecurringScheduleError)
+    expect(() =>
+      assertValidRecurringSchedule({ ...monthly, startsOn: '2026-05-01', endsOn: '2026-05-01' }),
+    ).not.toThrow()
   })
 })

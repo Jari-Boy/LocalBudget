@@ -240,3 +240,34 @@
   font-size: var(--font-size-base);
   font-weight: 600;
 }
+
+/* 定期の確認タブのまとめて確定(計画Issue #164) */
+.journal-screen__bulk {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.journal-screen__bulk-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.journal-screen__bulk-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-base);
+}
+
+.journal-screen__bulk-all > input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-accent);
+}

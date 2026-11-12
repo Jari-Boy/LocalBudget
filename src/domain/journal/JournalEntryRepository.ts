@@ -23,6 +23,12 @@ import type {
  */
 export interface JournalEntryRepository {
   create(input: CreateJournalEntryInput): JournalEntry
+  /**
+   * 複数の仕訳を単一のDBトランザクションでまとめて作成する(all-or-nothing、計画Issue #164の
+   * 定期取引の提案のまとめて確定)。1件でも検証・書き込みに失敗すれば、1件も作成しない。
+   * 入力と同じ順に、作成した仕訳を返す。空配列は何もせず空配列を返す
+   */
+  createMany(inputs: readonly CreateJournalEntryInput[]): JournalEntry[]
   findById(id: number): JournalEntry | null
   findAll(): JournalEntry[]
   update(id: number, input: UpdateJournalEntryInput): JournalEntry

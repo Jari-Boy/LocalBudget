@@ -124,6 +124,7 @@ describe('buildSplitHistoryRows', () => {
       sourceType,
       householdMemberId: 1,
       generatedFromRuleId: null,
+      recurringDueDate: null,
       createdAt: '',
       updatedAt: '',
       lines,
