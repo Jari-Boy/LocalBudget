@@ -38,6 +38,7 @@ describe('create / findById', () => {
       category: 'asset',
       name: '三菱UFJ銀行',
       isReconcilable: true,
+      hasExternalStatement: true,
       isActive: true,
       isSystemManaged: false,
     })
@@ -45,6 +46,57 @@ describe('create / findById', () => {
 
   it('存在しないidに対してはnullを返す', () => {
     expect(repository.findById(9999)).toBeNull()
+  })
+})
+
+describe('create: 外部明細の有無(has_external_statement、計画Issue #189)', () => {
+  it('登録時の回答として渡した外部明細の有無を保存する(CSVあり・残高なしのカード未払金)', () => {
+    const created = repository.create({
+      category: 'liability',
+      name: 'カード未払金',
+      isReconcilable: false,
+      hasExternalStatement: true,
+    })
+
+    expect(repository.findById(created.id)?.hasExternalStatement).toBe(true)
+  })
+
+  it('省略した資産・負債は、照合可否から決まる(照合する科目は外部明細あり、しない科目はなし)', () => {
+    const bank = repository.create({ category: 'asset', name: '銀行', isReconcilable: true })
+    const cash = repository.create({ category: 'asset', name: '現金', isReconcilable: false })
+
+    expect(bank.hasExternalStatement).toBe(true)
+    expect(cash.hasExternalStatement).toBe(false)
+  })
+
+  it('収益・費用は外部明細の有無を持たない(null)', () => {
+    const food = repository.create({ category: 'expense', name: '食費', isReconcilable: null })
+
+    expect(food.hasExternalStatement).toBeNull()
+  })
+
+  it('照合する科目なのに外部明細なしの組み合わせは、DDLのCHECK制約で拒否される', () => {
+    expect(() =>
+      repository.create({
+        category: 'asset',
+        name: '矛盾した科目',
+        isReconcilable: true,
+        hasExternalStatement: false,
+      }),
+    ).toThrow()
+  })
+
+  it('外部明細の有無は、科目の更新(名称など)では変わらない', () => {
+    const created = repository.create({
+      category: 'liability',
+      name: 'カード未払金',
+      isReconcilable: false,
+      hasExternalStatement: true,
+    })
+
+    repository.update(created.id, { name: 'カード未払金2' })
+
+    expect(repository.findById(created.id)?.hasExternalStatement).toBe(true)
   })
 })
 

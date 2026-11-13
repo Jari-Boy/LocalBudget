@@ -30,6 +30,7 @@ function account(id: number, name: string, category: Account['category'], isSyst
     category,
     name,
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged,
     householdMemberId: null,

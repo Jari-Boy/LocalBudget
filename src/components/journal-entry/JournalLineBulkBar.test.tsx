@@ -20,7 +20,7 @@ import { JournalLineBulkBar } from './JournalLineBulkBar'
 afterEach(cleanup)
 
 function account(id: number, name: string, category: Account['category'], extra: Partial<Account> = {}): Account {
-  return { id, category, name, isReconcilable: null, isActive: true, isSystemManaged: false, householdMemberId: null, accountGroupId: null, sortOrder: id, createdAt: '', updatedAt: '', ...extra }
+  return { id, category, name, isReconcilable: null, hasExternalStatement: null, isActive: true, isSystemManaged: false, householdMemberId: null, accountGroupId: null, sortOrder: id, createdAt: '', updatedAt: '', ...extra }
 }
 
 const accounts = [

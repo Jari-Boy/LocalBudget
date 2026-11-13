@@ -18,6 +18,7 @@ function buildAccount(overrides: Partial<Account> = {}): Account {
     category: 'asset',
     name: 'テスト科目',
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,

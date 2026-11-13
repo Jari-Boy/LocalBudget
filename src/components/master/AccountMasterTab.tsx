@@ -13,6 +13,12 @@ import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRe
 import { listDeletionBlocks, summarizeMasterUsage } from '../../domain/master/summarizeMasterUsage'
 import type { RecurringTransactionRule } from '../../domain/recurring-transaction/RecurringTransactionRule'
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
+import {
+  summarizeAccountRegistration,
+  type AccountRegistrationSummary,
+} from '../../domain/account/summarizeAccountRegistration'
+import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
+import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
 import { computeTreeNodeUpdates } from '../common/tree-table/computeTreeNodeUpdates'
 import { TreeTable } from '../common/tree-table/TreeTable'
 import {
@@ -21,6 +27,7 @@ import {
   type TreeTableNode,
 } from '../common/tree-table/treeTableModel'
 import { AccountCreateForm } from './AccountCreateForm'
+import { AccountMappingSection, AccountRegistrationInfo } from './AccountRegistrationSections'
 import { DefaultMemberChangeDialog } from './DefaultMemberChangeDialog'
 import { buildAccountTree, groupNodeId, leafNodeId, parseNodeId } from './masterTreeNodes'
 import type { MaybeAsync } from './maybeAsync'
@@ -35,6 +42,10 @@ export interface AccountMasterTabProps {
   journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'delete'>>
   budgetRepository: MaybeAsync<Pick<BudgetRepository, 'findAll'>>
   recurringTransactionRuleRepository: MaybeAsync<Pick<RecurringTransactionRuleRepository, 'findAll'>>
+  /** 資産・負債科目の明細マッピングの紐づけ・解除(計画Issue #189) */
+  importMappingDefinitionRepository: MaybeAsync<
+    Pick<ImportMappingDefinitionRepository, 'findAll' | 'linkAccount' | 'unlinkAccount'>
+  >
   /** 初期残高の仕訳の日付(YYYY-MM-DD)。省略時は今日 */
   today?: string
 }
@@ -46,6 +57,7 @@ interface LoadedData {
   entries: JournalEntry[]
   budgets: Budget[]
   rules: RecurringTransactionRule[]
+  definitions: ImportMappingDefinition[]
 }
 
 /** 親グループの選択肢。区分の最上位は`cat:区分`、グループは`g:id`(resolveTreeMoveのtarget.idと同じ) */
@@ -83,6 +95,7 @@ export function AccountMasterTab({
   journalEntryRepository,
   budgetRepository,
   recurringTransactionRuleRepository,
+  importMappingDefinitionRepository,
   today,
 }: AccountMasterTabProps) {
   const { t } = useTranslation('master')
@@ -99,15 +112,16 @@ export function AccountMasterTab({
   const [memberChange, setMemberChange] = useState<MemberChangePlan | null>(null)
 
   const load = useCallback(async () => {
-    const [accounts, groups, members, entries, budgets, rules] = await Promise.all([
+    const [accounts, groups, members, entries, budgets, rules, definitions] = await Promise.all([
       accountRepository.findAll(),
       accountGroupRepository.findAll(),
       householdMemberRepository.findAll(),
       journalEntryRepository.findAll(),
       budgetRepository.findAll(),
       recurringTransactionRuleRepository.findAll(),
+      importMappingDefinitionRepository.findAll(),
     ])
-    setData({ accounts, groups, members, entries, budgets, rules })
+    setData({ accounts, groups, members, entries, budgets, rules, definitions })
   }, [
     accountRepository,
     accountGroupRepository,
@@ -115,6 +129,7 @@ export function AccountMasterTab({
     journalEntryRepository,
     budgetRepository,
     recurringTransactionRuleRepository,
+    importMappingDefinitionRepository,
   ])
 
   useEffect(() => {
@@ -216,6 +231,8 @@ export function AccountMasterTab({
     }, t('accountTab.createError'))
 
   const selected = selectedId ? tree.nodes.find((n) => n.id === selectedId) : undefined
+  const selectedAccount =
+    selected?.kind === 'leaf' ? data.accounts.find((a) => a.id === parseNodeId(selected.id).id) : undefined
   const categoryName = (key: string) => tree.categories.find((c) => c.key === key)?.name ?? key
 
   return (
@@ -278,6 +295,7 @@ export function AccountMasterTab({
           householdMembers={data.members}
           initialCategory={creating}
           today={today}
+          mappingLinking={{ definitions: data.definitions, repository: importMappingDefinitionRepository }}
           onCreated={(account) => {
             void load().then(() => select(leafNodeId(account.id)))
           }}
@@ -300,6 +318,30 @@ export function AccountMasterTab({
           hasInitialBalanceEntries={
             selected.kind === 'leaf' &&
             usage.get('account', parseNodeId(selected.id).id).initialBalanceEntryIds.length > 0
+          }
+          registration={
+            selected.kind === 'leaf' && selectedAccount
+              ? summarizeAccountRegistration(selectedAccount, data.entries)
+              : null
+          }
+          definitions={data.definitions}
+          onLinkDefinition={(definitionId) =>
+            run(
+              async () => {
+                await importMappingDefinitionRepository.linkAccount(definitionId, selectedAccount!.id)
+              },
+              t('accountTab.mappingError'),
+              t('accountTab.mappingLinked'),
+            )
+          }
+          onUnlinkDefinition={(definitionId) =>
+            run(
+              async () => {
+                await importMappingDefinitionRepository.unlinkAccount(definitionId, selectedAccount!.id)
+              },
+              t('accountTab.mappingError'),
+              t('accountTab.mappingUnlinked'),
+            )
           }
           onMoveInto={(targetId) => moveInto(selected.id, targetId)}
           onShift={(delta) => shift(selected, delta)}
@@ -460,6 +502,11 @@ interface EditPanelProps {
   armed: boolean
   deleteBlockedText: string
   hasInitialBalanceEntries: boolean
+  /** 資産・負債科目の登録時の設定。それ以外(収益・費用・資本・グループ)はnull */
+  registration: AccountRegistrationSummary | null
+  definitions: readonly ImportMappingDefinition[]
+  onLinkDefinition: (definitionId: number) => void
+  onUnlinkDefinition: (definitionId: number) => void
   onMoveInto: (targetId: string) => void
   onShift: (delta: -1 | 1) => void
   onSave: (patch: { name: string; householdMemberId?: number | null }) => void
@@ -575,6 +622,22 @@ function EditPanel(props: EditPanelProps) {
             </button>
           )}
         </div>
+      )}
+
+      {account && props.registration && (
+        <>
+          <AccountRegistrationInfo summary={props.registration} />
+          {/* 取込先になれるのは外部明細がある科目だけなので、紐づけも外部明細ありの科目にだけ出す */}
+          {props.registration.hasExternalStatement && (
+            <AccountMappingSection
+              accountId={account.id}
+              definitions={props.definitions}
+              busy={busy}
+              onLink={props.onLinkDefinition}
+              onUnlink={props.onUnlinkDefinition}
+            />
+          )}
+        </>
       )}
 
       <div className="master-actions">

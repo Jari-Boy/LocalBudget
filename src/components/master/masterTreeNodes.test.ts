@@ -27,6 +27,7 @@ const stamp = { createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00
 function account(overrides: Partial<Account> & Pick<Account, 'id' | 'name' | 'category'>): Account {
   return {
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,

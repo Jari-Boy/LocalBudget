@@ -23,6 +23,7 @@ function account(id: number, name: string, category: Account['category'], extra:
     category,
     name,
     isReconcilable: category === 'expense' ? null : true,
+    hasExternalStatement: category === 'expense' ? null : true,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,

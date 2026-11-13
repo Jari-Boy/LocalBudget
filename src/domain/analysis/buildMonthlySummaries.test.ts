@@ -17,6 +17,7 @@ function account(id: number, category: AccountCategory, name: string, accountGro
     category,
     name,
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,

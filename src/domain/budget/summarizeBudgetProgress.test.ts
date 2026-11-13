@@ -17,6 +17,7 @@ function account(id: number, name: string, isActive = true): Account {
     category: 'expense',
     name,
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive,
     isSystemManaged: false,
     householdMemberId: null,

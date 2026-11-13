@@ -26,6 +26,7 @@ function account(id: number, name: string, category: Account['category'], extra:
     category,
     name,
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,

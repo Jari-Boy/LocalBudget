@@ -327,7 +327,7 @@ describe('StatementImportScreen', () => {
   })
 
   it('定義に紐づく科目が複数あるときは先頭が初期値で、別の科目に変更して取り込める', async () => {
-    const card = accounts.create({ category: 'liability', name: '楽天VISA', isReconcilable: false })
+    const card = accounts.create({ category: 'liability', name: '楽天VISA', isReconcilable: false, hasExternalStatement: true })
     makeMapping({ accountIds: [bank.id, card.id] })
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
@@ -363,6 +363,33 @@ describe('StatementImportScreen', () => {
 
     await screen.findByText(/確定しました/)
     expect(mappings.findById(only.id)?.accountIds).toEqual([bank.id])
+  })
+
+  it('取込先の「+ 科目を新規追加」では、いま取り込んでいる定義が最初から選ばれ、登録すると紐づく(計画Issue #189)', async () => {
+    const current = makeMapping({ accountIds: [] })
+    // CSVには一致しない定義(取込先の選択は current だけで決まる)
+    const other = makeMapping({ formatGroupId: '別の銀行', label: '別の定義', dateColumn: '存在しない列', accountIds: [] })
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+    await screen.findByLabelText(/^取込先/)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ 科目を新規追加' }))
+
+    const dialog = within(screen.getByRole('dialog', { name: '科目を登録' }))
+    // いま取り込んでいる定義は、最初から選ばれた状態(チップ)で出る。ほかの定義はチップに出ない
+    const chips = within(dialog.getByRole('list'))
+    expect(chips.getByText('マイ銀行')).toBeInTheDocument()
+    expect(chips.queryByText('別の定義')).not.toBeInTheDocument()
+
+    fireEvent.change(dialog.getByLabelText('名称'), { target: { value: '新しい口座' } })
+    fireEvent.click(dialog.getByRole('button', { name: '登録' }))
+
+    await waitFor(() => {
+      const created = accounts.findAll().find((a) => a.name === '新しい口座')
+      expect(created).toBeDefined()
+      expect(mappings.findById(current.id)?.accountIds).toEqual([created!.id])
+      expect(mappings.findById(other.id)?.accountIds).toEqual([])
+    })
   })
 
   it('マッピング作成ダイアログの金融機関名には、既存の定義の金融機関名が候補として並ぶ(計画Issue #183)', async () => {

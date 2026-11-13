@@ -141,6 +141,13 @@ export class SqlJsImportMappingDefinitionRepository implements ImportMappingDefi
     )
   }
 
+  unlinkAccount(definitionId: number, accountId: number): void {
+    this.db.run('DELETE FROM import_mapping_definition_accounts WHERE definition_id = ? AND account_id = ?', [
+      definitionId,
+      accountId,
+    ])
+  }
+
   private replaceAccountLinks(definitionId: number, accountIds: readonly number[]): void {
     this.db.run('DELETE FROM import_mapping_definition_accounts WHERE definition_id = ?', [definitionId])
     for (const accountId of new Set(accountIds)) this.linkAccount(definitionId, accountId)

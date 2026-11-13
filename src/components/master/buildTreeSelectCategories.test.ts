@@ -19,11 +19,11 @@ const groups: AccountGroup[] = [
 ]
 const accounts: Account[] = [
   {
-    id: 10, category: 'liability', name: '楽天VISA', isReconcilable: false, isActive: true,
+    id: 10, category: 'liability', name: '楽天VISA', isReconcilable: false, hasExternalStatement: false, isActive: true,
     isSystemManaged: false, householdMemberId: null, accountGroupId: 2, sortOrder: 0, ...stamp,
   },
   {
-    id: 11, category: 'expense', name: '食費', isReconcilable: null, isActive: false,
+    id: 11, category: 'expense', name: '食費', isReconcilable: null, hasExternalStatement: null, isActive: false,
     isSystemManaged: false, householdMemberId: null, accountGroupId: null, sortOrder: 0, ...stamp,
   },
 ]

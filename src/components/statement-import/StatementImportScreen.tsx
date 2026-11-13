@@ -163,6 +163,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [noMatch, setNoMatch] = useState(false)
   const [showMappingDialog, setShowMappingDialog] = useState(false)
   const [institutionNames, setInstitutionNames] = useState<string[]>([])
+  /** 科目の新規追加フォームで紐づけ先に選べる、全マッピング定義(計画Issue #189) */
+  const [allDefinitions, setAllDefinitions] = useState<ImportMappingDefinition[]>([])
   const [targetAccountId, setTargetAccountId] = useState<number | null>(null)
   const [session, setSession] = useState<ImportSession | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -355,6 +357,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       // 取込先は定義から決まるので、まず全定義に実際のパースを試して絞り込む
       const definitions = await Promise.resolve(importMappingDefinitionRepository.findAll())
       setInstitutionNames(collectFinancialInstitutionNames(definitions.map((d) => d.formatGroupId)))
+      setAllDefinitions(definitions)
       const matches = resolveMappingDefinitionCandidates(bytes, definitions)
       if (matches.length === 0) {
         setNoMatch(true)
@@ -1141,6 +1144,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               groups={data.accountGroups}
               householdMembers={data.members}
               initialCategory="asset"
+              mappingLinking={{
+                definitions: allDefinitions,
+                repository: importMappingDefinitionRepository,
+                // 取込先の追加では、いま取り込んでいる定義を最初からチェックする。相手科目の追加では付けない
+                defaultDefinitionIds:
+                  createTarget.kind === 'targetAccount' && match ? [match.definition.id] : undefined,
+              }}
               onCreated={(created) => {
                 setData((prev) => (prev ? { ...prev, accounts: [...prev.accounts, created] } : prev))
                 createTarget.apply(created.id)

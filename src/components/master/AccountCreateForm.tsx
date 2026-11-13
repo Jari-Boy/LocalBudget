@@ -3,15 +3,29 @@ import { useTranslation } from 'react-i18next'
 import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
+import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
+import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
 import { reconciliationAnswerToIsReconcilable } from '../account-registration/reconciliationQuestion'
 import { registerAccount, type AccountCreator, type JournalEntryCreator } from '../account-registration/registerAccount'
 import { registerRevenueOrExpenseAccount } from '../account-registration/registerRevenueOrExpenseAccount'
 import { resolveDefaultAccountGroupId } from '../account-registration/resolveDefaultAccountGroupId'
+import { DefinitionLinkPicker } from './DefinitionLinkPicker'
 import './master.css'
 
 export type CreatableAccountCategory = 'asset' | 'liability' | 'revenue' | 'expense'
 
 const CATEGORIES: readonly CreatableAccountCategory[] = ['asset', 'liability', 'revenue', 'expense']
+
+/**
+ * 資産・負債の登録時に、明細マッピングを任意で紐づける設定(計画Issue #189)。渡さない使い方では
+ * 「明細マッピング」の欄を出さない。紐づけは制限ではなく優先順位なので、選ばなくても登録できる。
+ */
+export interface AccountMappingLinking {
+  definitions: readonly ImportMappingDefinition[]
+  repository: Pick<ImportMappingDefinitionRepository, 'linkAccount'>
+  /** 最初からチェックしておく定義(取込画面では、いま取り込んでいる定義) */
+  defaultDefinitionIds?: readonly number[]
+}
 
 export interface AccountCreateFormProps {
   accountRepository: AccountCreator
@@ -22,6 +36,7 @@ export interface AccountCreateFormProps {
   initialCategory: AccountCategory
   /** 初期仕訳の日付(YYYY-MM-DD)。省略時は今日 */
   today?: string
+  mappingLinking?: AccountMappingLinking
   onCreated: (account: Account) => void
   onCancel: () => void
 }
@@ -42,6 +57,7 @@ export function AccountCreateForm({
   householdMembers,
   initialCategory,
   today,
+  mappingLinking,
   onCreated,
   onCancel,
 }: AccountCreateFormProps) {
@@ -59,9 +75,16 @@ export function AccountCreateForm({
   const [opening, setOpening] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(false)
+  const [checkedDefinitionIds, setCheckedDefinitionIds] = useState<ReadonlySet<number>>(
+    () => new Set(mappingLinking?.defaultDefinitionIds ?? []),
+  )
+  /** 科目は登録できたが、明細マッピングの紐づけに失敗したときの、登録済みの科目 */
+  const [linkFailedAccount, setLinkFailedAccount] = useState<Account | null>(null)
 
   const isBalanceSheet = category === 'asset' || category === 'liability'
   const csvExists = hasCsv === 'yes'
+  // 明細マッピングの紐づけ先は外部明細(CSV)がある資産・負債だけ(計画Issue #189)
+  const showMappingLinking = isBalanceSheet && csvExists
   const members = householdMembers.filter((m) => m.isActive)
   const showMember = isBalanceSheet && members.length > 0
   // 外部明細ありのときは名義が必須。「全員」は選べないので、未選択は先頭のメンバーとみなす
@@ -82,15 +105,17 @@ export function AccountCreateForm({
     if (name.trim() === '' || submitting) return
     setSubmitting(true)
     setError(false)
+    let account: Account
     try {
       const accountGroupId = groupValue === '' ? null : Number(groupValue)
-      const account = isBalanceSheet
+      account = isBalanceSheet
         ? await registerAccount(accountRepository, journalEntryRepository, {
             category: category as 'asset' | 'liability',
             isReconcilable: reconciliationAnswerToIsReconcilable({
               hasExternalStatement: csvExists,
               hasBalanceInStatement: csvExists ? hasBalance === 'yes' : null,
             }),
+            hasExternalStatement: csvExists,
             name: name.trim(),
             householdMemberId: memberId,
             accountGroupId,
@@ -103,11 +128,26 @@ export function AccountCreateForm({
             name: name.trim(),
             accountGroupId,
           })
-      onCreated(account)
     } catch {
       setError(true)
       setSubmitting(false)
+      return
     }
+
+    // 登録できた科目に、チェックした明細マッピングを紐づける。失敗しても科目は残るので、再送信で
+    // 二重登録にならないよう、登録済みであることを伝えて閉じてもらう
+    if (showMappingLinking && mappingLinking && checkedDefinitionIds.size > 0) {
+      try {
+        for (const definitionId of checkedDefinitionIds) {
+          await Promise.resolve(mappingLinking.repository.linkAccount(definitionId, account.id))
+        }
+      } catch {
+        setLinkFailedAccount(account)
+        setSubmitting(false)
+        return
+      }
+    }
+    onCreated(account)
   }
 
   const reconcileText = `${csvExists && hasBalance === 'yes' ? t('createForm.reconcileOn') : t('createForm.reconcileOff')}${
@@ -241,19 +281,60 @@ export function AccountCreateForm({
       )}
 
       {isBalanceSheet && <p className="master-note">{reconcileText}</p>}
+
+      {showMappingLinking && mappingLinking && mappingLinking.definitions.length > 0 && (
+        <fieldset className="master-checklist" aria-label={t('createForm.mappingTitle')} disabled={linkFailedAccount !== null}>
+          <legend className="master-checklist__legend">
+            {t('createForm.mappingTitle')}
+            <span className="master-note">{t('createForm.mappingOptional')}</span>
+          </legend>
+          <DefinitionLinkPicker
+            definitions={mappingLinking.definitions}
+            selectedIds={checkedDefinitionIds}
+            disabled={linkFailedAccount !== null}
+            onAdd={(id) => setCheckedDefinitionIds((prev) => new Set(prev).add(id))}
+            onRemove={(id) =>
+              setCheckedDefinitionIds((prev) => {
+                const next = new Set(prev)
+                next.delete(id)
+                return next
+              })
+            }
+          />
+          <p className="master-note">{t('createForm.mappingNote')}</p>
+        </fieldset>
+      )}
+
       {error && (
         <p role="alert" className="master-error">
           {t('createForm.error')}
         </p>
       )}
+      {linkFailedAccount && (
+        <p role="alert" className="master-error">
+          {t('createForm.linkFailed')}
+        </p>
+      )}
 
       <div className="master-actions">
-        <button type="submit" className="master-btn master-btn--primary" disabled={name.trim() === '' || submitting}>
-          {t('createForm.submit')}
-        </button>
-        <button type="button" className="master-btn" onClick={onCancel}>
-          {t('createForm.cancel')}
-        </button>
+        {linkFailedAccount ? (
+          <button type="button" className="master-btn master-btn--primary" onClick={() => onCreated(linkFailedAccount)}>
+            {t('createForm.close')}
+          </button>
+        ) : (
+          <>
+            <button
+              type="submit"
+              className="master-btn master-btn--primary"
+              disabled={name.trim() === '' || submitting}
+            >
+              {t('createForm.submit')}
+            </button>
+            <button type="button" className="master-btn" onClick={onCancel}>
+              {t('createForm.cancel')}
+            </button>
+          </>
+        )}
       </div>
     </form>
   )

@@ -14,6 +14,8 @@ function account(overrides: Partial<Parameters<typeof isStatementImportEligibleA
     category: 'asset' as const,
     isActive: true,
     isSystemManaged: false,
+    isReconcilable: true as boolean | null,
+    hasExternalStatement: true as boolean | null,
     ...overrides,
   }
 }
@@ -39,6 +41,29 @@ describe('isStatementImportEligibleAccount', () => {
 
   it('システム管理科目(初期残高科目・残高調整科目等)は候補にならない', () => {
     expect(isStatementImportEligibleAccount(account({ isSystemManaged: true }))).toBe(false)
+  })
+
+  it('外部明細なしの科目(現金など)は候補にならない(計画Issue #189)', () => {
+    expect(
+      isStatementImportEligibleAccount(account({ isReconcilable: false, hasExternalStatement: false })),
+    ).toBe(false)
+  })
+
+  it('外部明細あり・残高情報なしの科目(カード未払金)は候補になる(計画Issue #189)', () => {
+    expect(
+      isStatementImportEligibleAccount(
+        account({ category: 'liability', isReconcilable: false, hasExternalStatement: true }),
+      ),
+    ).toBe(true)
+  })
+
+  it('外部明細の回答が未記録(null)の科目は、照合する科目だけ候補になる(計画Issue #189)', () => {
+    expect(
+      isStatementImportEligibleAccount(account({ isReconcilable: true, hasExternalStatement: null })),
+    ).toBe(true)
+    expect(
+      isStatementImportEligibleAccount(account({ isReconcilable: false, hasExternalStatement: null })),
+    ).toBe(false)
   })
 })
 

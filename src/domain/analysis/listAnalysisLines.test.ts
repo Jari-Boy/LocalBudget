@@ -20,6 +20,7 @@ function account(id: number, category: AccountCategory, name: string): Account {
     category,
     name,
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,

@@ -5,6 +5,13 @@ export interface Account {
   category: AccountCategory
   name: string
   isReconcilable: boolean | null
+  /**
+   * 登録時の「外部明細(CSV)はありますか?」の回答(計画Issue #189)。資産・負債はtrue/false、
+   * それ以外はnull。isReconcilableがfalseでは「外部明細あり・残高なし」と「なし」を区別できないため、
+   * 回答そのものを保存する。作成後は変更しない。資産・負債でnullなのは回答を保存する前に作られた行
+   * (未記録)だけで、その場合はisReconcilableから推定する(resolveHasExternalStatement)
+   */
+  hasExternalStatement: boolean | null
   isActive: boolean
   isSystemManaged: boolean
   householdMemberId: number | null
@@ -19,6 +26,11 @@ export interface CreateAccountInput {
   category: AccountCategory
   name: string
   isReconcilable: boolean | null
+  /**
+   * 外部明細の有無(登録時の回答)。省略した資産・負債は、isReconcilableがtrueなら外部明細あり、
+   * それ以外はなしとみなす(CSVあり・残高なしの科目は明示して渡す)。収益・費用等はnull
+   */
+  hasExternalStatement?: boolean | null
   isSystemManaged?: boolean
   householdMemberId?: number | null
   accountGroupId?: number | null

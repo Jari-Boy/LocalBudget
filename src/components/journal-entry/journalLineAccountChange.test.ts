@@ -16,6 +16,7 @@ function account(id: number, category: Account['category'], extra: Partial<Accou
     category,
     name: `科目${id}`,
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,

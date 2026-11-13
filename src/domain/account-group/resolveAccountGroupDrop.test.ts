@@ -25,6 +25,7 @@ function makeAccount(overrides: Partial<Account> & Pick<Account, 'id' | 'name'>)
   return {
     category: 'asset',
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,

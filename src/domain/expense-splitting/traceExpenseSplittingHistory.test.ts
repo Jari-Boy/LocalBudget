@@ -22,6 +22,7 @@ function account(overrides: Partial<Account>): Account {
     category: 'expense',
     name: '',
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,

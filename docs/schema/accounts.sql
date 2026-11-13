@@ -7,7 +7,11 @@ CREATE TABLE accounts (
     CHECK (category IN ('asset','liability','equity','revenue','expense')),
   name                 TEXT NOT NULL,
   is_reconcilable      BOOLEAN,
-  is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+  -- 登録時の「外部明細(CSV)はありますか?」の回答(計画Issue #189)。is_reconcilableは
+  -- 「外部明細あり・残高なし」と「外部明細なし」を区別できないため、回答そのものを保存する。
+  -- 作成時に決まり、以後変更しない(UIに変更手段がない)。資産・負債はtrue/false、他区分はNULL
+  has_external_statement BOOLEAN,
+  is_active           BOOLEAN NOT NULL DEFAULT TRUE,
   is_system_managed    BOOLEAN NOT NULL DEFAULT FALSE,
   household_member_id  INTEGER REFERENCES household_members(id),
   account_group_id     INTEGER REFERENCES account_groups(id),
@@ -17,7 +21,12 @@ CREATE TABLE accounts (
   CHECK (
     (category IN ('asset','liability') AND is_reconcilable IS NOT NULL) OR
     (category NOT IN ('asset','liability') AND is_reconcilable IS NULL)
-  )
+  ),
+  -- 資産・負債以外は持たない。資産・負債でNULLなのは、回答を保存する前に作られた行(未記録)だけで、
+  -- その場合はis_reconcilableから推定する(照合する科目は外部明細あり、それ以外はなし)
+  CHECK (category IN ('asset','liability') OR has_external_statement IS NULL),
+  -- 外部明細の残高で照合する科目は、外部明細があることが前提
+  CHECK (NOT (is_reconcilable = TRUE AND has_external_statement = FALSE))
 );
 
 CREATE INDEX idx_accounts_group ON accounts(account_group_id);

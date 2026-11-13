@@ -160,6 +160,32 @@ label.master-btn {
   font-weight: 600;
 }
 
+/* 読み取り専用の項目(外部明細・残高情報・初期残高)を、見出しと値のまとまりで横に並べる(計画Issue #189) */
+.master-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin: 0;
+}
+
+.master-facts__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.master-facts__label {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.master-facts__value {
+  margin: 0;
+  font-size: var(--font-size-base);
+}
+
 .master-list {
   margin: 0;
   padding: 0;
@@ -250,14 +276,15 @@ label.master-btn {
 /* 明細マッピングタブ(計画Issue #151)の一覧と、対応する科目のチップ */
 .master-list__button {
   font: inherit;
+  font-size: var(--font-size-base);
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 2px;
   align-items: flex-start;
-  padding: 8px 12px;
+  padding: 9px 12px;
   border: 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border-soft);
   background: var(--color-surface);
   color: var(--color-text);
   text-align: left;
@@ -265,7 +292,7 @@ label.master-btn {
 }
 
 .master-list__button--selected {
-  background: var(--color-accent-subtle, var(--color-field-subtle));
+  background: var(--color-accent-soft);
 }
 
 .master-chip {
@@ -399,14 +426,44 @@ label.master-btn {
   margin: 0;
 }
 
+/* 明細マッピングの紐づけ先の定義(計画Issue #189)。マッピングタブの「対応する科目」と同じく、選択済みの項目を
+   小さなチップで横に並べ、入りきらなければ折り返す(縦並びの一覧用スタイルの上書き) */
+.master-list--chips {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 科目の新規登録フォームの「明細マッピング」欄(計画Issue #189)。上に区切り線を引き、見出しと選択部品を並べる */
+.master-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.master-checklist__legend {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 0 4px;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
 /* 明細マッピングタブの一覧を金融機関名でグループ化した見出しと、グループ内の行(計画Issue #183) */
 .master-list__group-title {
   margin: 0;
-  padding: 6px 12px;
-  font-size: var(--font-size-xs);
+  padding: 7px 12px;
+  font-size: var(--font-size-base);
   font-weight: 700;
-  color: var(--color-text-muted);
-  background: var(--color-field-subtle);
+  color: var(--color-text);
+  background: var(--color-hover);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
 }

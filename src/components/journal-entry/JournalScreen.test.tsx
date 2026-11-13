@@ -44,6 +44,7 @@ function account(id: number, name: string, category: Account['category'], isReco
     category,
     name,
     isReconcilable,
+    hasExternalStatement: isReconcilable,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,
