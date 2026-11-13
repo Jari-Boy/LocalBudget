@@ -241,7 +241,8 @@ test.describe('明細取込画面', () => {
     const dialog = page.getByRole('dialog', { name: 'マッピングを新規作成' })
     await expect(dialog.getByText('列を推測しました。内容を確認してください')).toBeVisible()
     await dialog.getByLabel('表示名').fill('新しい銀行')
-    await dialog.getByLabel('金融機関の識別子').fill('new-bank')
+    await dialog.getByLabel('金融機関名').selectOption('__new__')
+    await dialog.getByLabel('新しい金融機関名').fill('new-bank')
     await expect(dialog.getByRole('table', { name: '元のCSV' })).toBeVisible()
     await dialog.getByRole('button', { name: '保存して取り込む' }).click()
 

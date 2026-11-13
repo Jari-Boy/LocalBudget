@@ -50,7 +50,7 @@ function renderTab() {
 
 function makeMapping(overrides: Partial<Parameters<typeof mappings.create>[0]> = {}) {
   return mappings.create({
-    formatGroupId: 'rakuten-card',
+    formatGroupId: '楽天カード',
     label: '楽天カード(確定)',
     isSettled: true,
     dateColumn: '利用日',
@@ -80,7 +80,7 @@ function loadCsv(content: string) {
 describe('MappingMasterTab', () => {
   it('一覧に、表示名・対応する科目・明細の種類が表示される', async () => {
     makeMapping()
-    makeMapping({ label: '楽天銀行', formatGroupId: 'rakuten-bank', isSettled: null, accountIds: [] })
+    makeMapping({ label: '楽天銀行', formatGroupId: '楽天銀行', isSettled: null, accountIds: [] })
 
     renderTab()
 
@@ -96,13 +96,27 @@ describe('MappingMasterTab', () => {
     await openMapping('楽天カード')
 
     expect(panel().getByLabelText('表示名')).toHaveValue('楽天カード(確定)')
-    expect(panel().getByLabelText('金融機関の識別子')).toHaveValue('rakuten-card')
+    expect(panel().getByLabelText('金融機関名')).toHaveValue('楽天カード')
     expect(panel().getByLabelText('明細の種類')).toHaveValue('settled')
     expect(panel().getByLabelText('文字コード')).toHaveValue('utf-8')
     expect(panel().getByLabelText('日付の書式')).toHaveValue('YYYY/MM/DD')
     expect(panel().getByLabelText('金額の形式')).toHaveValue('single_signed')
     expect(panel().getByRole('button', { name: '楽天VISAを外す' })).toBeInTheDocument()
     expect(panel().getByRole('button', { name: '楽天銀行を外す' })).toBeInTheDocument()
+  })
+
+  it('金融機関名は既存の定義の金融機関名から選べ、候補にない名前は新規入力で保存できる(計画Issue #183)', async () => {
+    makeMapping()
+    makeMapping({ label: '楽天銀行', formatGroupId: '楽天銀行', isSettled: null, accountIds: [] })
+    renderTab()
+    await openMapping('楽天カード')
+
+    expect(panel().getByRole('option', { name: '楽天銀行' })).toBeInTheDocument()
+    fireEvent.change(panel().getByLabelText('金融機関名'), { target: { value: '__new__' } })
+    fireEvent.change(panel().getByLabelText('新しい金融機関名'), { target: { value: ' 三井住友 カード ' } })
+    fireEvent.click(panel().getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(mappings.findAll().some((d) => d.formatGroupId === '三井住友カード')).toBe(true))
   })
 
   it('CSVを選ぶと元のCSVと取り込み結果が並び、全行が読み取れれば件数を表示する', async () => {
@@ -253,7 +267,8 @@ describe('MappingMasterTab', () => {
     expect(panel().getByRole('button', { name: '保存' })).toBeDisabled()
 
     fireEvent.change(panel().getByLabelText('表示名'), { target: { value: '新しい形式' } })
-    fireEvent.change(panel().getByLabelText('金融機関の識別子'), { target: { value: 'new-bank' } })
+    fireEvent.change(panel().getByLabelText('金融機関名'), { target: { value: '__new__' } })
+    fireEvent.change(panel().getByLabelText('新しい金融機関名'), { target: { value: 'new-bank' } })
     fireEvent.click(panel().getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(mappings.findAll()).toHaveLength(1))
