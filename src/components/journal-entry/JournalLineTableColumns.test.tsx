@@ -4,7 +4,7 @@
  * 列の境目のつまみ(separator)が日付・出どころ・摘要・コメントと借方・貸方の各列(計14本)にあること、
  * キーボード(←→で増減、Homeで初期値)・ドラッグ・ダブルクリックで列幅が変わること、幅の下限、
  * 借方と貸方の同じ種類の列が連動すること、表の最小幅が列幅の合計に追従すること、
- * 調整した列幅の保存と復元、「列幅を初期値に戻す」ボタンを検証する。
+ * 調整した列幅の保存と復元、表の外に置いた「列幅を初期値に戻す」ボタン(列幅の状態は useJournalLineTableColumns で共有)を検証する。
  * 外部依存なし(localStorage は jsdom のものを使い、テストごとに空にする)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -12,6 +12,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import { JournalLineTable } from './JournalLineTable'
+import { useJournalLineTableColumns } from './useJournalLineTableColumns'
 import { DEFAULT_COLUMN_WIDTHS, MIN_COLUMN_WIDTH, totalTableWidth } from './journalLineTableColumns'
 
 const STORAGE_KEY = 'localbudget:journal-line-table-column-widths'
@@ -48,8 +49,21 @@ const lookup = {
   memberName: () => '太郎',
 }
 
+/** 画面と同じく、列幅の状態を表の外(画面)で持ち、「列幅を初期値に戻す」ボタンも表の外に置く */
+function Harness() {
+  const columns = useJournalLineTableColumns()
+  return (
+    <>
+      <button type="button" disabled={columns.isDefault} onClick={columns.resetAll}>
+        列幅を初期値に戻す
+      </button>
+      <JournalLineTable entries={[entry]} lookup={lookup} selectedId={null} onSelect={vi.fn()} columns={columns} />
+    </>
+  )
+}
+
 function renderTable() {
-  return render(<JournalLineTable entries={[entry]} lookup={lookup} selectedId={null} onSelect={vi.fn()} />)
+  return render(<Harness />)
 }
 
 /** colgroup の col(日付・出どころ・摘要・コメント、借方の5列、貸方の5列の順)の幅 */
@@ -183,7 +197,13 @@ describe('JournalLineTable(列幅の調整)', () => {
     })
   })
 
-  describe('「列幅を初期値に戻す」ボタン', () => {
+  it('列幅の状態を渡さなければ、表自身が持つ(表の中には「列幅を初期値に戻す」ボタンはない)', () => {
+    render(<JournalLineTable entries={[entry]} lookup={lookup} selectedId={null} onSelect={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: '列幅を初期値に戻す' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('separator')).toHaveLength(14)
+  })
+
+  describe('「列幅を初期値に戻す」ボタン(表の外から操作する)', () => {
     it('初期の列幅のままのときは押せない', () => {
       renderTable()
       expect(resetButton()).toBeDisabled()

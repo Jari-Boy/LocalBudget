@@ -1025,6 +1025,21 @@ describe('JournalScreen(明細行単位)', () => {
       expect(detail()).toBeInTheDocument()
     })
 
+    it('明細行単位のときだけ「列幅を初期値に戻す」が表示方式の切替の左隣に出て、列幅を変えると押せる', async () => {
+      setup()
+      await ready()
+      expect(screen.queryByRole('button', { name: '列幅を初期値に戻す' })).not.toBeInTheDocument()
+      switchTo('明細行単位')
+      const reset = screen.getByRole('button', { name: '列幅を初期値に戻す' })
+      expect(reset).toBeDisabled()
+      expect(reset.compareDocumentPosition(viewToggle()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(reset.parentElement).toBe(viewToggle().parentElement)
+      fireEvent.keyDown(within(lineTable()).getByRole('separator', { name: '日付の列幅' }), { key: 'ArrowRight' })
+      expect(reset).toBeEnabled()
+      fireEvent.click(reset)
+      expect(reset).toBeDisabled()
+    })
+
     it('選んだ表示方式をlocalStorageに保存し、再訪時に明細行単位で開く', async () => {
       setup()
       await ready()
@@ -1276,7 +1291,7 @@ describe('JournalScreen(明細行単位)', () => {
         await setupLineView()
         fireEvent.click(creditBox('ランチ'))
         expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
-        expect(within(bulkBar()).getByText(/取引先は費用・収益の科目の行にだけ付けられます.*「普通預金」/)).toBeInTheDocument()
+        expect(within(bulkBar()).getByText('費用・収益の行のみ')).toBeInTheDocument()
       })
     })
 
@@ -1286,7 +1301,6 @@ describe('JournalScreen(明細行単位)', () => {
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('家賃'))
         fireEvent.change(memberSelect(), { target: { value: '2' } })
-        expect(within(bulkBar()).getByText('世帯メンバー → 妻: 2行に適用')).toBeInTheDocument()
 
         fireEvent.click(apply())
         expect(props.journalEntryRepository.update).not.toHaveBeenCalled()

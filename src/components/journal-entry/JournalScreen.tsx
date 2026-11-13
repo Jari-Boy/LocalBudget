@@ -87,6 +87,7 @@ import {
 } from './journalBulkEditModel'
 import { JournalLineBulkBar } from './JournalLineBulkBar'
 import { JournalLineTable, type JournalLineTableEditing, type JournalLineTableLookup } from './JournalLineTable'
+import { useJournalLineTableColumns } from './useJournalLineTableColumns'
 import { loadJournalViewMode, saveJournalViewMode, type JournalViewMode } from './journalViewMode'
 import { RelatedEntriesSection } from './RelatedEntriesSection'
 import './JournalScreen.css'
@@ -220,6 +221,8 @@ export function JournalScreen(props: JournalScreenProps) {
   const [bulkLineIds, setBulkLineIds] = useState<number[]>([])
   const [bulkPick, setBulkPick] = useState<BulkPick>(EMPTY_BULK_PICK)
   const [bulkConfirming, setBulkConfirming] = useState(false)
+  /** 明細行単位の表の列幅(「列幅を初期値に戻す」ボタンと表で共有する) */
+  const lineColumns = useJournalLineTableColumns()
   const [filter, setFilter] = useState<JournalEntryFilter>(props.initialFilter ?? {})
   const [selection, setSelection] = useState<Selection | null>(null)
   const [editor, setEditor] = useState<JournalEditorValue | null>(null)
@@ -1083,6 +1086,12 @@ export function JournalScreen(props: JournalScreenProps) {
       {note !== '' && <p className="journal-screen__note">{note}</p>}
 
       {tab === 'list' && (
+        <div className="journal-screen__view-bar">
+          {lineView && (
+            <button type="button" className="journal-screen__reset-columns" disabled={lineColumns.isDefault} onClick={lineColumns.resetAll}>
+              列幅を初期値に戻す
+            </button>
+          )}
         <div role="group" aria-label="表示方式" className="journal-screen__view-toggle">
           {(
             [
@@ -1100,6 +1109,7 @@ export function JournalScreen(props: JournalScreenProps) {
               {label}
             </button>
           ))}
+        </div>
         </div>
       )}
 
@@ -1190,6 +1200,7 @@ export function JournalScreen(props: JournalScreenProps) {
                 />
               )}
               <JournalLineTable
+                columns={lineColumns}
                 entries={visibleEntries}
                 lookup={lineLookup}
                 selectedId={selection?.kind === 'entry' ? selection.id : null}

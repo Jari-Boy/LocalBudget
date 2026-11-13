@@ -15,11 +15,6 @@
   min-width: 0;
 }
 
-.journal-line-table__toolbar {
-  display: flex;
-  justify-content: flex-end;
-}
-
 .journal-line-table__table {
   /*
    * 列幅(colgroup の col)と、列幅の合計の最小幅(min-width)は、ユーザーが調整した値でJournalLineTableが
@@ -328,9 +323,11 @@
 }
 
 /* 操作バー: 上段は借方・貸方それぞれの列の下に行の追加と合計、下段は左に貸借の状況、右に操作ボタン */
+/* 操作バーの行の高さは、明細の行(入力欄 var(--control-height) + 罫線)と同じにそろえる。上下の余白は持たず、中のボタンの高さで決める */
 .journal-line-table__bar > td {
   border-top: 0;
-  padding: 6px;
+  padding: 0 6px;
+  height: calc(var(--control-height) + 1px);
 }
 
 .journal-line-table tbody.journal-line-table__editing tr.journal-line-table__bar:last-child > td {
@@ -350,7 +347,7 @@
 }
 
 .journal-line-table__small-button {
-  min-height: 30px;
+  min-height: var(--control-height-sm);
   padding: 0 10px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
@@ -419,7 +416,7 @@
 }
 
 .journal-line-table__button {
-  min-height: 36px;
+  min-height: var(--control-height-sm);
   padding: 0 14px;
   border: 1px solid var(--color-border);
   border-radius: 6px;

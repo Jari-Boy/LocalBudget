@@ -156,6 +156,55 @@ describe('JournalLineTable(一括編集の行選択)', () => {
     expect(within(rowsOf(container, 2)[0]).getAllByRole('checkbox')).toHaveLength(2)
   })
 
+  it('編集中の行では、選択の列の分の空白を作らず、科目の選択欄がその分まで広がる(科目のセルが2列分)', () => {
+    const { container } = renderTable(makeBulk(), {
+      editing: {
+        entryId: 1,
+        value: {
+          entryDate: '2026-11-10',
+          memo: 'コンビニ',
+          comment: '',
+          householdMemberId: 1,
+          lines: [
+            { key: 1, line: { side: 'debit', accountId: 1, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, amountInput: '1280' } },
+            { key: 2, line: { side: 'credit', accountId: 2, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, amountInput: '1280' } },
+          ],
+        },
+        onChange: vi.fn(),
+        master: { accounts: [], accountCategories: [], counterpartyCategories: [], projectCategories: [], members: [], batches: [] },
+        busy: false,
+        onSave: vi.fn(),
+        onCancel: vi.fn(),
+        onDelete: vi.fn(),
+        onDeleteCancel: vi.fn(),
+        deleteArmed: false,
+      },
+    })
+    const row = rowsOf(container, 1)[0]
+    expect(row.querySelectorAll('td.journal-line-table__cell--check')).toHaveLength(0)
+    expect(within(row).getByRole('button', { name: /^借方の科目/ }).closest('td')).toHaveAttribute('colspan', '2')
+    expect(within(row).getByRole('button', { name: /^貸方の科目/ }).closest('td')).toHaveAttribute('colspan', '2')
+  })
+
+  it('編集中の取引日の入力欄の幅は、日付と出どころの列の幅の合計で、摘要の入力欄が閲覧の行の摘要と同じ位置から始まる', () => {
+    const { container } = renderTable(undefined, {
+      editing: {
+        entryId: 1,
+        value: { entryDate: '2026-11-10', memo: 'コンビニ', comment: '', householdMemberId: 1, lines: [] },
+        onChange: vi.fn(),
+        master: { accounts: [], accountCategories: [], counterpartyCategories: [], projectCategories: [], members: [], batches: [] },
+        busy: false,
+        onSave: vi.fn(),
+        onCancel: vi.fn(),
+        onDelete: vi.fn(),
+        onDeleteCancel: vi.fn(),
+        deleteArmed: false,
+      },
+    })
+    const date = container.querySelector('.journal-line-table__edit-date') as HTMLElement
+    expect(date.style.flexBasis).toBe(`${DEFAULT_COLUMN_WIDTHS.date + DEFAULT_COLUMN_WIDTHS.source}px`)
+  })
+
   it('選択の列には列幅のつまみがなく、表の最小幅には選択の列(借方・貸方の2列、各32px)が加わる', () => {
     const { container } = renderTable(makeBulk())
     expect(screen.getAllByRole('separator')).toHaveLength(14)

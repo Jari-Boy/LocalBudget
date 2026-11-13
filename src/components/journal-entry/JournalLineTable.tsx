@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import type { JournalEntry, JournalLine, JournalLineSide } from '../../domain/journal/JournalEntry'
 import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
@@ -8,17 +8,8 @@ import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { createEmptyJournalEntryFormLine, isCounterpartyEligibleCategory, type JournalEntryFormLine } from './journalEntryFormLine'
 import type { JournalEditorLine, JournalEditorMaster, JournalEditorValue } from './JournalEntryEditor'
 import { applyAccountChange } from './journalLineAccountChange'
-import {
-  DEFAULT_COLUMN_WIDTHS,
-  LEFT_COLUMN_KEYS,
-  SIDE_COLUMN_KEYS,
-  isDefaultColumnWidths,
-  loadColumnWidths,
-  resizeColumn,
-  saveColumnWidths,
-  totalTableWidth,
-  type ColumnKey,
-} from './journalLineTableColumns'
+import { LEFT_COLUMN_KEYS, SIDE_COLUMN_KEYS, totalTableWidth, type ColumnKey } from './journalLineTableColumns'
+import { useJournalLineTableColumns, type JournalLineTableColumns } from './useJournalLineTableColumns'
 import { JournalLineTableResizeHandle } from './JournalLineTableResizeHandle'
 import { pairLinesBySide } from './journalLineTableModel'
 import { summarizeBalance } from './journalScreenModel'
@@ -79,6 +70,8 @@ export interface JournalLineTableProps {
   lookup: JournalLineTableLookup
   /** 渡すと、一括編集のための行の選択の列を出す */
   bulk?: JournalLineTableBulk
+  /** 列幅の状態。画面が持って「列幅を初期値に戻す」ボタンと共有するときに渡す。渡さなければ表自身が持つ */
+  columns?: JournalLineTableColumns
   /** 選択中の仕訳。その仕訳のすべての行を強調する */
   selectedId: number | null
   /**
@@ -170,26 +163,11 @@ function BulkCheckbox({
  * すべての列を初期の幅に戻せる。
  * 表示用の名前解決(lookup)と編集内容(値と変更通知)だけを受け取り、DB・Repositoryには依存しない。
  */
-export function JournalLineTable({ entries, lookup, selectedId, onSelect, editing, bulk }: JournalLineTableProps) {
+export function JournalLineTable({ entries, lookup, selectedId, onSelect, editing, bulk, columns }: JournalLineTableProps) {
   // ---- 列幅の調整(フックは、仕訳がないときの早期returnより前に置く) ----
-  const [widths, setWidths] = useState(loadColumnWidths)
-  /** 最新の列幅。ドラッグ・キー操作の途中で、再描画を待たずに次の幅を求めるため */
-  const widthsRef = useRef(widths)
+  const ownColumns = useJournalLineTableColumns()
+  const { widths, widthsRef, resizeTo, commit, resetColumn } = columns ?? ownColumns
   const tableRef = useRef<HTMLTableElement>(null)
-
-  const applyWidths = (next: typeof widths) => {
-    widthsRef.current = next
-    setWidths(next)
-  }
-  const resizeTo = (key: ColumnKey, width: number) => applyWidths(resizeColumn(widthsRef.current, key, width))
-  const resetColumn = (key: ColumnKey) => {
-    applyWidths({ ...widthsRef.current, [key]: DEFAULT_COLUMN_WIDTHS[key] })
-    saveColumnWidths(widthsRef.current)
-  }
-  const resetAllColumns = () => {
-    applyWidths({ ...DEFAULT_COLUMN_WIDTHS })
-    saveColumnWidths(widthsRef.current)
-  }
   /** 一括編集の選択の列(借方・貸方の2列)の分の幅 */
   const checkColumnsWidth = bulk === undefined ? 0 : 2 * CHECK_COLUMN_WIDTH
   /** 画面に出ている表の幅 ÷ 列幅の合計(枠が広くて余った幅が各列に配られているとき、1より大きくなる) */
@@ -204,7 +182,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
       value={widths[key]}
       getScale={getScale}
       onResize={(width) => resizeTo(key, width)}
-      onCommit={() => saveColumnWidths(widthsRef.current)}
+      onCommit={commit}
       onReset={() => resetColumn(key)}
     />
   )
@@ -325,10 +303,13 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
       ))
 
   const editSideCells = (item: (JournalEditorLine & { side: JournalLineSide | null }) | null, side: JournalLineSide, sideCount: number): ReactNode[] => {
-    /** 編集中の行には選択のチェックボックスは出さず、空の列にする */
-    const emptyCheck = hasCheck ? [<td key="check" className={`journal-line-table__cell journal-line-table__cell--check ${sideStartClass(side)}`} />] : []
+    /** 編集中の行には選択のチェックボックスは出さない。選択の列は空白にせず、科目のセルを2列分にして埋める */
+    const accountSpan = hasCheck ? 2 : undefined
+    const accountClass = cellClass(0, side, false)
     if (editing === undefined || item === null) {
-      return [...emptyCheck, ...SIDE_COLUMNS.map((name, i) => <td key={name} className={cellClass(i, side, hasCheck)} />)]
+      return SIDE_COLUMNS.map((name, i) => (
+        <td key={name} colSpan={i === 0 ? accountSpan : undefined} className={i === 0 ? accountClass : cellClass(i, side, hasCheck)} />
+      ))
     }
     const { key, line } = item
     const sideName = SIDE_LABEL[side]
@@ -431,14 +412,11 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
         </button>
       </span>,
     ]
-    return [
-      ...emptyCheck,
-      ...cells.map((cell, i) => (
-        <td key={SIDE_COLUMNS[i]} className={cellClass(i, side, hasCheck)}>
-          {cell}
-        </td>
-      )),
-    ]
+    return cells.map((cell, i) => (
+      <td key={SIDE_COLUMNS[i]} colSpan={i === 0 ? accountSpan : undefined} className={i === 0 ? accountClass : cellClass(i, side, hasCheck)}>
+        {cell}
+      </td>
+    ))
   }
 
   const renderEditBar = (e: JournalLineTableEditing) => {
@@ -533,16 +511,6 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
 
   return (
     <div className="journal-line-table-wrap">
-      <div className="journal-line-table__toolbar">
-        <button
-          type="button"
-          className="journal-line-table__small-button"
-          disabled={isDefaultColumnWidths(widths)}
-          onClick={resetAllColumns}
-        >
-          列幅を初期値に戻す
-        </button>
-      </div>
       <div className="journal-line-table">
       <table
         ref={tableRef}
@@ -625,6 +593,8 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
                           <input
                             type="date"
                             className="journal-line-table__control journal-line-table__edit-date"
+                            // 摘要の入力欄が、閲覧の行の摘要の列と同じ位置から始まるよう、日付と出どころの列の幅に合わせる
+                            style={{ flexBasis: widths.date + widths.source, width: widths.date + widths.source }}
                             aria-label="取引日"
                             value={e.value.entryDate}
                             onChange={(ev) => update({ entryDate: ev.target.value })}

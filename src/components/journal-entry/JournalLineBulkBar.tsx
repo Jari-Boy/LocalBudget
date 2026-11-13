@@ -70,8 +70,6 @@ function valueToChange(value: string): BulkChange<number> {
   return value === '' ? { kind: 'keep' } : value === CLEAR_VALUE ? { kind: 'clear' } : { kind: 'set', value: Number(value) }
 }
 
-const quote = (names: readonly string[]) => names.map((n) => `「${n}」`).join('')
-
 /**
  * 一括編集バー(計画Issue #182)。明細行単位の表で明細の行を1行以上選ぶと、表の上に出る。変える項目
  * (科目・プロジェクト・取引先・精算バッチ・世帯メンバー)だけを選び、「変更しない」の項目はそのまま。
@@ -100,7 +98,8 @@ export function JournalLineBulkBar({
     batch: (id) => master.batches.find((b) => b.id === id)?.name ?? String(id),
     member: (id) => master.members.find((m) => m.id === id)?.name ?? String(id),
   }
-  const summary = summarizeBulkEdit(selected, pick, accountById, labels)
+  /** 科目を変えて取引先・精算バッチが外れる行があるときの警告。確認のときだけ出す */
+  const warnings = summarizeBulkEdit(selected, pick, accountById, labels).filter((s) => s.warn)
   const empty = isBulkPickEmpty(pick)
 
   /** 選び直したとき、選べなくなった項目の選択を外してから親へ伝える */
@@ -121,7 +120,7 @@ export function JournalLineBulkBar({
           選択を解除
         </button>
         <span className="journal-line-bulk__hint">
-          変える項目だけ選びます。「{KEEP_LABEL}」の項目はそのままです。選べない項目は、選択した行の科目に合わせて先に無効になります。
+          変える項目だけ選びます。「{KEEP_LABEL}」の項目はそのままです。
         </span>
       </div>
 
@@ -159,10 +158,7 @@ export function JournalLineBulkBar({
             disabled={!rules.counterpartyAllowed}
             onChange={(v) => change({ counterparty: valueToChange(v) })}
           />
-          {note(
-            rules.counterpartyAllowed,
-            `取引先は費用・収益の科目の行にだけ付けられます(選択中: ${quote(rules.counterpartyBlockedBy)})。科目を費用・収益に変えると選べます`,
-          )}
+          {note(rules.counterpartyAllowed, '費用・収益の行のみ')}
         </div>
         <div className="journal-line-bulk__field">
           <span className="journal-line-bulk__label">精算バッチ</span>
@@ -181,10 +177,7 @@ export function JournalLineBulkBar({
               </option>
             ))}
           </select>
-          {note(
-            rules.batchAllowed,
-            `精算バッチは立替金・未払金の行にだけ付けられます(選択中: ${quote(rules.batchBlockedBy)})。科目を立替金・未払金に変えると選べます`,
-          )}
+          {note(rules.batchAllowed, '立替金・未払金の行のみ')}
         </div>
         <div className="journal-line-bulk__field">
           <span className="journal-line-bulk__label">世帯メンバー</span>
@@ -204,21 +197,18 @@ export function JournalLineBulkBar({
                 </option>
               ))}
           </select>
-          {note(rules.memberAllowed, `既定の世帯メンバーがある科目の行は、世帯メンバーを変えられません(${quote(rules.memberBlockedBy)})`)}
+          {note(rules.memberAllowed, '既定メンバーのある科目は不可')}
         </div>
       </div>
-
-      <ul className="journal-line-bulk__summary">
-        {summary.map((s) => (
-          <li key={s.text} className={s.warn ? 'journal-line-bulk__summary--warn' : undefined}>
-            {s.text}
-          </li>
-        ))}
-      </ul>
 
       {confirming ? (
         <div role="alert" className="journal-line-bulk__confirm">
           <strong className="journal-line-bulk__confirm-title">{`${stats.lineCount}行(${stats.entryCount}件の仕訳)を更新します。元に戻せません。`}</strong>
+          {warnings.map((w) => (
+            <span key={w.text} className="journal-line-bulk__note">
+              {w.text}
+            </span>
+          ))}
           <button type="button" className="journal-line-bulk__button" onClick={onCancelConfirm}>
             やめる
           </button>

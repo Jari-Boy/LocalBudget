@@ -24,7 +24,7 @@
 }
 
 .journal-line-bulk__hint {
-  color: var(--color-text-muted);
+  color: var(--color-text);
 }
 
 .journal-line-bulk__fields {
@@ -42,43 +42,33 @@
 }
 
 .journal-line-bulk__label {
-  color: var(--color-text-muted);
+  color: var(--color-text);
 }
 
 .journal-line-bulk__select {
-  min-height: 34px;
+  /* 選択ツリー(TreeSelect)の入力欄と高さ・枠・文字・無効時の色をそろえる */
+  width: 100%;
+  min-height: var(--control-height);
   box-sizing: border-box;
-  padding: 0 6px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
 }
 
 .journal-line-bulk__select:disabled {
-  background: var(--color-field-subtle, var(--color-hover));
+  background: var(--color-field-subtle);
   color: var(--color-text-muted);
-  cursor: not-allowed;
+  cursor: default;
 }
 
 /* 選べない理由(幅が狭い項目の下に出るので、折り返して全文を読めるようにする) */
 .journal-line-bulk__note {
   color: #8a4b00;
   line-height: 1.4;
-}
-
-.journal-line-bulk__summary {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding-left: 18px;
-}
-
-.journal-line-bulk__summary--warn {
-  color: #8a4b00;
 }
 
 .journal-line-bulk__actions,

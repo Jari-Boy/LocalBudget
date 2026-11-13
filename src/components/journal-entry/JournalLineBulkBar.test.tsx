@@ -4,7 +4,7 @@
  * 選択件数(行・借方・貸方・仕訳)と「選択を解除」、変える項目(科目・プロジェクト・取引先・精算バッチ・
  * 世帯メンバー)の選択、選べない項目の先回りの無効化と理由の表示(取引先は費用・収益の科目だけ、精算バッチは
  * 立替金・未払金だけ、世帯メンバーは既定メンバーのない科目だけ。科目を一括で変えるときは変更後の科目で判断)、
- * 選べなくなった項目の選択が外れること、変更内容の表示、「適用」の2回押しの確認を検証する。
+ * 選べなくなった項目の選択が外れること、外れる値の警告(確認時のみ)、「適用」の2回押しの確認を検証する。
  * 外部依存なし(選択した行と編集内容(pick)は親が持つ値として Harness の state で模す)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -147,18 +147,18 @@ describe('JournalLineBulkBar', () => {
   it('初期はすべて「変更しない」で、適用は押せない。変える項目を選ぶよう促す', () => {
     render(<Harness selected={[sel(e1, 11)]} />)
     expect(applyButton()).toBeDisabled()
-    expect(screen.getByText('変える項目を選ぶと、ここに変更の内容が出ます')).toBeInTheDocument()
+    expect(screen.queryByText(/ここに変更の内容が出ます/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '一括編集の科目: 変更しない' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '一括編集のプロジェクト: 変更しない' })).toBeInTheDocument()
   })
 
   describe('項目の選択', () => {
-    it('科目を選ぶと pick に反映され、変更の内容と「N行に適用」が出る', () => {
+    it('科目を選ぶと pick に反映され、「N行に適用」が出る(変更内容の一覧は出さない)', () => {
       const onPick = vi.fn()
       render(<Harness selected={[sel(e1, 11), sel(e1, 12)]} onPick={onPick} />)
       chooseTree('一括編集の科目', '変更しない', '食費')
       expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ accountId: 1 }))
-      expect(screen.getByText(/^科目 → 食費: 2行に適用/)).toBeInTheDocument()
+      expect(screen.queryByText(/科目 → 食費/)).not.toBeInTheDocument()
       expect(applyButton()).toHaveTextContent('2行に適用')
       expect(applyButton()).toBeEnabled()
     })
@@ -170,7 +170,6 @@ describe('JournalLineBulkBar', () => {
       expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ project: { kind: 'set', value: 30 } }))
       chooseTree('一括編集のプロジェクト', '自宅', 'なし(外す)')
       expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ project: { kind: 'clear' } }))
-      expect(screen.getByText('プロジェクト → なし: 1行に適用')).toBeInTheDocument()
       chooseTree('一括編集のプロジェクト', 'なし(外す)', '変更しない')
       expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ project: { kind: 'keep' } }))
     })
@@ -180,7 +179,6 @@ describe('JournalLineBulkBar', () => {
       render(<Harness selected={[sel(e1, 11)]} onPick={onPick} />)
       fireEvent.change(screen.getByLabelText('一括編集の世帯メンバー'), { target: { value: '2' } })
       expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ memberId: 2 }))
-      expect(screen.getByText('世帯メンバー → 妻: 1行に適用')).toBeInTheDocument()
     })
   })
 
@@ -191,13 +189,13 @@ describe('JournalLineBulkBar', () => {
       expect(screen.getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeEnabled()
       chooseTree('一括編集の取引先', '変更しない', 'セブンイレブン')
       expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ counterparty: { kind: 'set', value: 8 } }))
-      expect(screen.queryByText(/取引先は費用・収益の科目の行にだけ/)).not.toBeInTheDocument()
+      expect(screen.queryByText('費用・収益の行のみ')).not.toBeInTheDocument()
     })
 
-    it('資産の科目(普通預金)の行が混ざると、取引先は選べず、理由に科目名を出す', () => {
+    it('資産の科目(普通預金)の行が混ざると、取引先は選べず、短い理由を出す', () => {
       render(<Harness selected={[sel(e1, 11), sel(e1, 12)]} />)
       expect(screen.getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
-      expect(screen.getByText(/取引先は費用・収益の科目の行にだけ付けられます.*「普通預金」/)).toBeInTheDocument()
+      expect(screen.getByText('費用・収益の行のみ')).toBeInTheDocument()
     })
 
     it('立替金の行だけなら精算バッチを選べる。食費の行が混ざると選べず、理由を出す', () => {
@@ -206,13 +204,13 @@ describe('JournalLineBulkBar', () => {
       unmount()
       render(<Harness selected={[sel(e2, 21), sel(e2, 22)]} />)
       expect(screen.getByLabelText('一括編集の精算バッチ')).toBeDisabled()
-      expect(screen.getByText(/精算バッチは立替金・未払金の行にだけ付けられます.*「食費」/)).toBeInTheDocument()
+      expect(screen.getByText('立替金・未払金の行のみ')).toBeInTheDocument()
     })
 
     it('既定の世帯メンバーがある科目に変えようとしているとき、世帯メンバーは選べない', () => {
       render(<Harness selected={[sel(e1, 11)]} initialPick={{ ...EMPTY_BULK_PICK, accountId: 5 }} />)
       expect(screen.getByLabelText('一括編集の世帯メンバー')).toBeDisabled()
-      expect(screen.getByText(/既定の世帯メンバーがある科目の行は、世帯メンバーを変えられません.*「携帯代\(妻\)」/)).toBeInTheDocument()
+      expect(screen.getByText('既定メンバーのある科目は不可')).toBeInTheDocument()
     })
 
     it('科目を費用の科目に一括で変えようとすると、資産の行が混ざっていても取引先を選べるようになる', () => {
@@ -246,9 +244,13 @@ describe('JournalLineBulkBar', () => {
     })
   })
 
-  it('科目を変えて取引先・精算バッチが外れる行があるときは、その件数を変更の内容に出す', () => {
-    render(<Harness selected={[sel(e1, 11)]} initialPick={{ ...EMPTY_BULK_PICK, accountId: 3 }} />)
-    expect(screen.getByText('科目 → 普通預金: 1行に適用(取引先が付いている1行は、取引先が外れます)')).toBeInTheDocument()
+  it('科目を変えて取引先・精算バッチが外れる行があるときは、確認の中でだけその旨を出す(確認前は出さない)', () => {
+    const pick = { ...EMPTY_BULK_PICK, accountId: 3 }
+    const { unmount } = render(<Harness selected={[sel(e1, 11)]} initialPick={pick} />)
+    expect(screen.queryByText(/取引先が外れます/)).not.toBeInTheDocument()
+    unmount()
+    render(<Harness selected={[sel(e1, 11)]} initialPick={pick} initialConfirming />)
+    expect(within(screen.getByRole('alert')).getByText(/取引先が付いている1行は、取引先が外れます/)).toBeInTheDocument()
   })
 
   describe('適用の2回押しの確認', () => {
