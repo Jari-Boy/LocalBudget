@@ -1,4 +1,5 @@
 import type { AccountCategory } from '../../domain/account/Account'
+import { resolveHasExternalStatement } from '../../domain/account/resolveHasExternalStatement'
 import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 
 /**
@@ -7,15 +8,18 @@ import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/
  * クレカ専用未払金、docs/domain/accounts.md 5章参照)。isSystemManagedな科目
  * (初期残高科目・残高調整科目等)は、journalEntryFormLine.isManualEntryEligibleAccountと
  * 同じ理由でUI側の選択肢から除外する(この制約はRepository層・DDL側のいずれにも存在せず、
- * UI側の絞り込みが事実上唯一の防御手段)。
+ * UI側の絞り込みが事実上唯一の防御手段)。外部明細(CSV)がない科目(現金など)は、取込先にも
+ * 明細マッピングの紐づけ先にもできない(計画Issue #189)。
  */
 export function isStatementImportEligibleAccount(account: {
   category: AccountCategory
   isActive: boolean
   isSystemManaged: boolean
+  isReconcilable: boolean | null
+  hasExternalStatement: boolean | null
 }): boolean {
   const isAssetOrLiability = account.category === 'asset' || account.category === 'liability'
-  return isAssetOrLiability && account.isActive && !account.isSystemManaged
+  return isAssetOrLiability && account.isActive && !account.isSystemManaged && resolveHasExternalStatement(account)
 }
 
 /**

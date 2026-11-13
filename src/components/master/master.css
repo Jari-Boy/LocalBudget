@@ -160,6 +160,32 @@ label.master-btn {
   font-weight: 600;
 }
 
+/* 読み取り専用の項目(外部明細・残高情報・初期残高)を、見出しと値のまとまりで横に並べる(計画Issue #189) */
+.master-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin: 0;
+}
+
+.master-facts__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.master-facts__label {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.master-facts__value {
+  margin: 0;
+  font-size: var(--font-size-base);
+}
+
 .master-list {
   margin: 0;
   padding: 0;

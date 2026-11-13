@@ -83,6 +83,8 @@ export function AccountCreateForm({
 
   const isBalanceSheet = category === 'asset' || category === 'liability'
   const csvExists = hasCsv === 'yes'
+  // 明細マッピングの紐づけ先は外部明細(CSV)がある資産・負債だけ(計画Issue #189)
+  const showMappingLinking = isBalanceSheet && csvExists
   const members = householdMembers.filter((m) => m.isActive)
   const showMember = isBalanceSheet && members.length > 0
   // 外部明細ありのときは名義が必須。「全員」は選べないので、未選択は先頭のメンバーとみなす
@@ -134,7 +136,7 @@ export function AccountCreateForm({
 
     // 登録できた科目に、チェックした明細マッピングを紐づける。失敗しても科目は残るので、再送信で
     // 二重登録にならないよう、登録済みであることを伝えて閉じてもらう
-    if (isBalanceSheet && mappingLinking && checkedDefinitionIds.size > 0) {
+    if (showMappingLinking && mappingLinking && checkedDefinitionIds.size > 0) {
       try {
         for (const definitionId of checkedDefinitionIds) {
           await Promise.resolve(mappingLinking.repository.linkAccount(definitionId, account.id))
@@ -288,7 +290,7 @@ export function AccountCreateForm({
 
       {isBalanceSheet && <p className="master-note">{reconcileText}</p>}
 
-      {isBalanceSheet && mappingLinking && mappingLinking.definitions.length > 0 && (
+      {showMappingLinking && mappingLinking && mappingLinking.definitions.length > 0 && (
         <fieldset className="master-field" aria-label={t('createForm.mappingTitle')} disabled={linkFailedAccount !== null}>
           <legend className="master-field__label">
             {t('createForm.mappingTitle')}

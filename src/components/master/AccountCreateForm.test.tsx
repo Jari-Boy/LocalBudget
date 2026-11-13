@@ -260,6 +260,28 @@ describe('AccountCreateForm の明細マッピング(計画Issue #189)', () => {
     expect(screen.queryByRole('group', { name: '明細マッピング' })).not.toBeInTheDocument()
   })
 
+  it('外部明細がないと答えると欄が消え、あると答えると出る(紐づけ先は外部明細ありの科目だけ、計画Issue #189)', () => {
+    renderLinkForm('asset')
+    expect(screen.getByRole('group', { name: '明細マッピング' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('外部明細(CSV)はありますか?'), { target: { value: 'no' } })
+    expect(screen.queryByRole('group', { name: '明細マッピング' })).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('外部明細(CSV)はありますか?'), { target: { value: 'yes' } })
+    expect(screen.getByRole('group', { name: '明細マッピング' })).toBeInTheDocument()
+  })
+
+  it('外部明細なしで登録するときは、チェックしていた定義があっても紐づけない', async () => {
+    const { onCreated } = renderLinkForm('asset', { defaultDefinitionIds: [rakuten] })
+
+    fireEvent.change(screen.getByLabelText('外部明細(CSV)はありますか?'), { target: { value: 'no' } })
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '現金' } })
+    fireEvent.click(screen.getByRole('button', { name: '登録' }))
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalled())
+    expect(mappings.findById(rakuten)!.accountIds).toEqual([])
+  })
+
   it('定義は金融機関名の見出しでまとめて表示され、初期状態では何もチェックされない', () => {
     renderLinkForm('asset')
 

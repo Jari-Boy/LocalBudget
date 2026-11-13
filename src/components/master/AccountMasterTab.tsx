@@ -627,13 +627,16 @@ function EditPanel(props: EditPanelProps) {
       {account && props.registration && (
         <>
           <AccountRegistrationInfo summary={props.registration} />
-          <AccountMappingSection
-            accountId={account.id}
-            definitions={props.definitions}
-            busy={busy}
-            onLink={props.onLinkDefinition}
-            onUnlink={props.onUnlinkDefinition}
-          />
+          {/* 取込先になれるのは外部明細がある科目だけなので、紐づけも外部明細ありの科目にだけ出す */}
+          {props.registration.hasExternalStatement && (
+            <AccountMappingSection
+              accountId={account.id}
+              definitions={props.definitions}
+              busy={busy}
+              onLink={props.onLinkDefinition}
+              onUnlink={props.onUnlinkDefinition}
+            />
+          )}
         </>
       )}
 

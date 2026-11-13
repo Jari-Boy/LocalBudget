@@ -415,52 +415,78 @@ describe('AccountMasterTab', () => {
     const definition = (label: string, accountIds: number[] = []) =>
       mappings.create({ ...SAMPLE, formatGroupId: '楽天銀行', label, accountIds })
 
-    it('残高情報ありの資産科目は、登録時の設定に残高情報ありと初期残高が表示される', async () => {
+    /** 「外部明細の情報」の1項目(見出しと値のまとまり) */
+    const item = (info: ReturnType<typeof panel>, label: string) => within(info.getByText(label).closest('div')!)
+
+    it('外部明細ありで残高情報ありの資産科目は、外部明細・残高情報・初期残高が表示される', async () => {
       const bank = accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
       postEntry(bank.id, accounts.findAll().find((a) => a.isSystemManaged)!.id, 'initial_balance')
       renderTab()
 
       await open('楽天銀行')
 
-      const info = panel('登録時の設定')
-      expect(info.getByText(/CSVの残高と突き合わせて/)).toBeInTheDocument()
-      expect(info.getByText(/¥1,000/)).toBeInTheDocument()
+      const info = panel('外部明細の情報')
+      expect(item(info, '外部明細').getByText('あり')).toBeInTheDocument()
+      expect(item(info, '残高情報').getByText('あり')).toBeInTheDocument()
+      expect(item(info, '初期残高').getByText(/¥1,000/)).toBeInTheDocument()
     })
 
-    it('残高情報なしの科目は、残高情報なしと表示され、外部明細の有無は断定しない', async () => {
-      accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false })
+    it('外部明細あり・残高情報なし(カード未払金)は、外部明細あり・残高情報なしと区別して表示される', async () => {
+      accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false, hasExternalStatement: true })
       renderTab()
 
       await open('カード未払金')
 
-      const info = panel('登録時の設定')
-      expect(info.getByText(/残高の突き合わせは行いません/)).toBeInTheDocument()
-      expect(info.getByText(/保存されていない/)).toBeInTheDocument()
+      const info = panel('外部明細の情報')
+      expect(item(info, '外部明細').getByText('あり')).toBeInTheDocument()
+      expect(item(info, '残高情報').getByText('なし')).toBeInTheDocument()
+      expect(item(info, '初期残高').getByText('なし')).toBeInTheDocument()
     })
 
-    it('登録時の設定は表示のみで、入力・選択・ボタンを持たない', async () => {
+    it('外部明細なし(現金)は、外部明細なしと表示され、補足の長い文言は出ない', async () => {
+      accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
+      renderTab()
+
+      await open('現金')
+
+      const info = panel('外部明細の情報')
+      expect(item(info, '外部明細').getByText('なし')).toBeInTheDocument()
+      expect(info.queryByText(/突き合わせ/)).toBeNull()
+      expect(info.queryByText(/保存されていない/)).toBeNull()
+    })
+
+    it('外部明細の情報は表示のみで、入力・選択・ボタンを持たない', async () => {
       accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
       renderTab()
 
       await open('楽天銀行')
 
-      const info = panel('登録時の設定')
+      const info = panel('外部明細の情報')
       expect(info.queryByRole('textbox')).toBeNull()
       expect(info.queryByRole('combobox')).toBeNull()
       expect(info.queryByRole('button')).toBeNull()
     })
 
-    it('収益・費用の科目とグループでは、登録時の設定も明細マッピングも表示されない', async () => {
+    it('外部明細なしの科目には、明細マッピングの欄が出ない', async () => {
+      accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
+      renderTab()
+
+      await open('現金')
+
+      expect(screen.queryByRole('region', { name: '明細マッピング' })).toBeNull()
+    })
+
+    it('収益・費用の科目とグループでは、外部明細の情報も明細マッピングも表示されない', async () => {
       groups.create({ name: '食費グループ', category: 'expense' })
       accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
       renderTab()
 
       await open('食費')
-      expect(screen.queryByRole('region', { name: '登録時の設定' })).toBeNull()
+      expect(screen.queryByRole('region', { name: '外部明細の情報' })).toBeNull()
       expect(screen.queryByRole('region', { name: '明細マッピング' })).toBeNull()
 
       await open('食費グループ')
-      expect(screen.queryByRole('region', { name: '登録時の設定' })).toBeNull()
+      expect(screen.queryByRole('region', { name: '外部明細の情報' })).toBeNull()
       expect(screen.queryByRole('region', { name: '明細マッピング' })).toBeNull()
     })
 
@@ -520,8 +546,13 @@ describe('AccountMasterTab', () => {
       expect(accounts.findById(bank.id)).not.toBeNull()
     })
 
-    it('残高情報なしの科目にも、紐づけの操作が出る', async () => {
-      const card = accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false })
+    it('外部明細ありで残高情報なしの科目にも、紐づけの操作が出る', async () => {
+      const card = accounts.create({
+        category: 'liability',
+        name: 'カード未払金',
+        isReconcilable: false,
+        hasExternalStatement: true,
+      })
       const target = definition('カード明細')
       renderTab()
       await open('カード未払金')

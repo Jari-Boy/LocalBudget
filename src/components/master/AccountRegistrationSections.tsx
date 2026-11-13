@@ -8,35 +8,34 @@ import './master.css'
 const yen = (amount: number) => `¥${amount.toLocaleString('ja-JP')}`
 
 /**
- * 資産・負債科目の右パネルに出す「登録時の設定」(計画Issue #189)。表示のみで、変更手段は持たない。
- * 外部明細(CSV)の有無は、is_reconcilable=falseでは「あり・残高なし」と「なし」を区別できないため
- * 断定せず、trueのときだけ「あり」と表示する(docs/domain/accounts.md 4.2)。
+ * 資産・負債科目の右パネルに出す「外部明細の情報」(計画Issue #189)。登録時の回答(外部明細の有無・
+ * 残高情報の有無)と初期残高を、外部明細・残高情報・初期残高の順で横に並べる。表示のみで、変更手段は持たない。
  */
 export function AccountRegistrationInfo({ summary }: { summary: AccountRegistrationSummary }) {
   const { t } = useTranslation('master')
+  const yesNo = (value: boolean) => t(value ? 'accountTab.registrationYes' : 'accountTab.registrationNo')
+  const items = [
+    { label: t('accountTab.registrationCsv'), value: yesNo(summary.hasExternalStatement) },
+    { label: t('accountTab.registrationBalance'), value: yesNo(summary.hasBalanceInfo) },
+    {
+      label: t('accountTab.registrationInitialBalance'),
+      value:
+        summary.initialBalance === null
+          ? t('accountTab.registrationNo')
+          : `${yen(summary.initialBalance.amount)}(${summary.initialBalance.date})`,
+    },
+  ]
   return (
     <section className="master-subsection" aria-label={t('accountTab.registrationTitle')}>
-      <h3 className="master-subsection__title">
-        {t('accountTab.registrationTitle')}
-        <span className="master-note">{t('accountTab.registrationFixed')}</span>
-      </h3>
-      <dl className="master-field">
-        {summary.hasBalanceInfo && (
-          <>
-            <dt className="master-field__label">{t('accountTab.registrationCsv')}</dt>
-            <dd>{t('accountTab.registrationCsvOn')}</dd>
-          </>
-        )}
-        <dt className="master-field__label">{t('accountTab.registrationBalance')}</dt>
-        <dd>{t(summary.hasBalanceInfo ? 'accountTab.registrationBalanceOn' : 'accountTab.registrationBalanceOff')}</dd>
-        <dt className="master-field__label">{t('accountTab.registrationInitialBalance')}</dt>
-        <dd>
-          {summary.initialBalance === null
-            ? t('accountTab.registrationInitialBalanceNone')
-            : `${yen(summary.initialBalance.amount)}(${summary.initialBalance.date})`}
-        </dd>
+      <h3 className="master-subsection__title">{t('accountTab.registrationTitle')}</h3>
+      <dl className="master-facts">
+        {items.map((item) => (
+          <div key={item.label} className="master-facts__item">
+            <dt className="master-facts__label">{item.label}</dt>
+            <dd className="master-facts__value">{item.value}</dd>
+          </div>
+        ))}
       </dl>
-      {!summary.hasBalanceInfo && <p className="master-note">{t('accountTab.registrationCsvUnknown')}</p>}
     </section>
   )
 }

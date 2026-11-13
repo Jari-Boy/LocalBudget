@@ -1,5 +1,6 @@
 import type { JournalEntry } from '../journal/JournalEntry'
 import type { Account } from './Account'
+import { resolveHasExternalStatement } from './resolveHasExternalStatement'
 
 /** 資産・負債科目の「登録時の設定」(計画Issue #189)。画面には表示のみで、あとから変更しない */
 export interface AccountRegistrationSummary {
@@ -41,7 +42,7 @@ export function summarizeAccountRegistration(
   }
 
   return {
-    hasExternalStatement: account.hasExternalStatement ?? account.isReconcilable === true,
+    hasExternalStatement: resolveHasExternalStatement(account),
     hasBalanceInfo: account.isReconcilable === true,
     initialBalance: date === null ? null : { amount: total, date },
   }

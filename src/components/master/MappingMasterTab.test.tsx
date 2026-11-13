@@ -30,8 +30,15 @@ beforeEach(async () => {
   runMigrations(db)
   mappings = new SqlJsImportMappingDefinitionRepository(db)
   const accounts = new SqlJsAccountRepository(db)
-  cardId = accounts.create({ category: 'liability', name: '楽天VISA', isReconcilable: false }).id
+  cardId = accounts.create({
+    category: 'liability',
+    name: '楽天VISA',
+    isReconcilable: false,
+    hasExternalStatement: true,
+  }).id
   bankId = accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true }).id
+  // 外部明細なしの科目(明細マッピングの対応する科目には選べない、計画Issue #189)
+  accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
 })
 
 afterEach(cleanup)
@@ -272,6 +279,18 @@ describe('MappingMasterTab', () => {
     fireEvent.click(panel().getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(mappings.findById(created.id)?.accountIds).toEqual([bankId]))
+  })
+
+  it('対応する科目の選択肢には、外部明細がある科目だけが並び、外部明細なしの科目(現金)は出ない(計画Issue #189)', async () => {
+    makeMapping({ accountIds: [cardId] })
+    renderTab()
+    await openMapping('楽天カード')
+
+    fireEvent.click(panel().getByRole('button', { name: /^対応する科目/ }))
+
+    const dialog = within(screen.getByRole('dialog', { name: '対応する科目' }))
+    expect(dialog.getByRole('button', { name: '楽天銀行' })).toBeInTheDocument()
+    expect(dialog.queryByRole('button', { name: '現金' })).not.toBeInTheDocument()
   })
 
   it('「CSVから新規作成」でCSVを選ぶと、文字コードと列を推測した下書きが開き、名前を付けて保存すると作られる', async () => {

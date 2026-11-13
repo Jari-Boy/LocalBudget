@@ -327,7 +327,7 @@ describe('StatementImportScreen', () => {
   })
 
   it('定義に紐づく科目が複数あるときは先頭が初期値で、別の科目に変更して取り込める', async () => {
-    const card = accounts.create({ category: 'liability', name: '楽天VISA', isReconcilable: false })
+    const card = accounts.create({ category: 'liability', name: '楽天VISA', isReconcilable: false, hasExternalStatement: true })
     makeMapping({ accountIds: [bank.id, card.id] })
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
