@@ -589,7 +589,7 @@ describe('AccountMasterTab', () => {
 
       await open('楽天銀行')
 
-      expect(panel('明細マッピング').getByText(/紐づけていない定義も、取込のときに選べます/)).toBeInTheDocument()
+      expect(panel('明細マッピング').getByText(/紐づけていない定義も選べます/)).toBeInTheDocument()
     })
   })
 })

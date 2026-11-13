@@ -425,6 +425,55 @@ label.master-btn {
   margin: 0;
 }
 
+/* 科目の右パネルの「明細マッピング」(計画Issue #189)。紐づけ済みの定義は、チェック欄と同じカード状の行に
+   金融機関名(小さく薄い文字)と定義名を並べ、右端に「解除」を置く。下に選択欄と「紐づける」を1行で並べる */
+.master-list--tight {
+  gap: 4px;
+}
+
+.master-link-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  padding: 0 8px 0 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.master-link-row__text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.master-link-row__institution {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.master-link-row__label {
+  font-size: var(--font-size-base);
+  overflow-wrap: anywhere;
+}
+
+.master-link-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.master-link-add__select {
+  flex: 1;
+  min-width: 0;
+}
+
 /* 科目の新規登録フォームの「明細マッピング」チェック欄(計画Issue #189)。枠線のない欄に、金融機関名の小見出しと、
    行ごとに押しやすいチェック行を並べる。チェックした行は薄いアクセント色で示す */
 .master-checklist {

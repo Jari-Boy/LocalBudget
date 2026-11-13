@@ -68,11 +68,12 @@ export function AccountMappingSection({ accountId, definitions, busy, onLink, on
       {linked.length === 0 ? (
         <p className="master-note">{t('accountTab.mappingNone')}</p>
       ) : (
-        <ul className="master-list">
+        <ul className="master-list master-list--tight">
           {linked.map((d) => (
-            <li key={d.id} className="master-actions">
-              <span>
-                <strong>{d.formatGroupId}</strong> ・ {d.label}
+            <li key={d.id} className="master-link-row">
+              <span className="master-link-row__text">
+                <span className="master-link-row__institution">{d.formatGroupId}</span>
+                <span className="master-link-row__label">{d.label}</span>
               </span>
               <button
                 type="button"
@@ -89,10 +90,10 @@ export function AccountMappingSection({ accountId, definitions, busy, onLink, on
       )}
 
       {hasCandidates ? (
-        <div className="master-actions">
+        <div className="master-link-add">
           <select
             aria-label={t('accountTab.mappingSelect')}
-            className="master-field__control"
+            className="master-field__control master-link-add__select"
             value={choice}
             disabled={busy}
             onChange={(event) => setChoice(event.target.value)}
@@ -123,7 +124,6 @@ export function AccountMappingSection({ accountId, definitions, busy, onLink, on
       ) : (
         <p className="master-note">{t('accountTab.mappingNoCandidates')}</p>
       )}
-      <p className="master-note">{t('accountTab.mappingImmediate')}</p>
     </section>
   )
 }
