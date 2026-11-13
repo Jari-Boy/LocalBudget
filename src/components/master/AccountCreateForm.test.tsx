@@ -5,7 +5,9 @@
  * 同じ内容を1つのフォームで登録できることを検証する。区分に応じて設問(外部明細・残高情報・
  * 名義・初期残高)が出し分けられること、所属グループの初期選択(標準グループ)、
  * 登録処理(registerAccount / registerRevenueOrExpenseAccount)への入力、失敗時のエラー表示を
- * sql.jsのNode実装(createTestDatabase)を使って確認する。外部依存: sql.js(ネットワークなし)。
+ * sql.jsのNode実装(createTestDatabase)を使って確認する。あわせて、資産・負債で任意に選べる
+ * 「明細マッピング」の紐づけ(計画Issue #189: 欄の出し分け・既定のチェック・登録後の紐づけ・
+ * 紐づけ失敗時の扱い)を検証する。外部依存: sql.js(ネットワークなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -18,6 +20,7 @@ import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountGroupRepository } from '../../infrastructure/db/SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
+import { SqlJsImportMappingDefinitionRepository } from '../../infrastructure/db/SqlJsImportMappingDefinitionRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { seedInitialBalanceAccount } from '../../infrastructure/db/seedInitialBalanceAccount'
 import { seedStandardAccountGroups } from '../../infrastructure/db/seedStandardAccountGroups'
@@ -172,5 +175,135 @@ describe('AccountCreateForm', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('登録に失敗しました')
     expect(onCreated).not.toHaveBeenCalled()
+  })
+})
+
+describe('AccountCreateForm の明細マッピング(計画Issue #189)', () => {
+  let mappings: SqlJsImportMappingDefinitionRepository
+  let rakuten: number
+  let smbc: number
+
+  beforeEach(() => {
+    mappings = new SqlJsImportMappingDefinitionRepository(db)
+    const base = {
+      dateColumn: '0',
+      dateFormat: 'YYYY/MM/DD',
+      descriptionColumn: '1',
+      amountMode: 'single_signed' as const,
+      amountColumn: '2',
+    }
+    rakuten = mappings.create({ ...base, formatGroupId: '楽天銀行', label: '入出金明細' }).id
+    smbc = mappings.create({ ...base, formatGroupId: '三井住友銀行', label: '入出金明細(1列金額)' }).id
+  })
+
+  function renderLinkForm(
+    initialCategory: AccountCategory = 'asset',
+    options: {
+      defaultDefinitionIds?: number[]
+      repository?: Pick<SqlJsImportMappingDefinitionRepository, 'linkAccount'>
+      onCreated?: () => void
+    } = {},
+  ) {
+    const onCreated = options.onCreated ?? vi.fn()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AccountCreateForm
+          accountRepository={accounts}
+          journalEntryRepository={entries}
+          groups={new SqlJsAccountGroupRepository(db).findAll()}
+          householdMembers={new SqlJsHouseholdMemberRepository(db).findAll()}
+          initialCategory={initialCategory}
+          today="2026-11-07"
+          mappingLinking={{
+            definitions: mappings.findAll(),
+            repository: options.repository ?? mappings,
+            defaultDefinitionIds: options.defaultDefinitionIds,
+          }}
+          onCreated={onCreated}
+          onCancel={vi.fn()}
+        />
+      </I18nextProvider>,
+    )
+    return { onCreated }
+  }
+
+  it('紐づけの設定を渡さない既存の使い方では、明細マッピングの欄は出ない', () => {
+    renderForm('asset')
+
+    expect(screen.queryByText('明細マッピング')).not.toBeInTheDocument()
+  })
+
+  it('資産・負債では欄が出て、収益・費用に切り替えると消える', () => {
+    renderLinkForm('asset')
+    expect(screen.getByRole('group', { name: '明細マッピング' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('区分'), { target: { value: 'expense' } })
+
+    expect(screen.queryByRole('group', { name: '明細マッピング' })).not.toBeInTheDocument()
+  })
+
+  it('定義は金融機関名の見出しでまとめて表示され、初期状態では何もチェックされない', () => {
+    renderLinkForm('asset')
+
+    expect(screen.getByText('楽天銀行')).toBeInTheDocument()
+    expect(screen.getByText('三井住友銀行')).toBeInTheDocument()
+    expect(screen.getByLabelText('入出金明細')).not.toBeChecked()
+  })
+
+  it('既定の定義を渡すと、最初からチェックされている', () => {
+    renderLinkForm('asset', { defaultDefinitionIds: [rakuten] })
+
+    expect(screen.getByLabelText('入出金明細')).toBeChecked()
+    expect(screen.getByLabelText('入出金明細(1列金額)')).not.toBeChecked()
+  })
+
+  it('チェックして登録すると、作成した科目にその定義が紐づく', async () => {
+    const { onCreated } = renderLinkForm('asset')
+
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '楽天銀行' } })
+    fireEvent.click(screen.getByLabelText('入出金明細'))
+    fireEvent.click(screen.getByRole('button', { name: '登録' }))
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalled())
+    const created = registered()[0]
+    expect(mappings.findById(rakuten)!.accountIds).toEqual([created.id])
+    expect(mappings.findById(smbc)!.accountIds).toEqual([])
+  })
+
+  it('何もチェックせずに登録すると、紐づけは作られない', async () => {
+    const { onCreated } = renderLinkForm('asset')
+
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '楽天銀行' } })
+    fireEvent.click(screen.getByRole('button', { name: '登録' }))
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalled())
+    expect(mappings.findAll().every((d) => d.accountIds.length === 0)).toBe(true)
+  })
+
+  it('紐づけが任意で、制限ではなく優先順位であることを文言で伝える', () => {
+    renderLinkForm('asset')
+
+    expect(screen.getByText(/選ばなくても、取込のときにどの定義でも使えます/)).toBeInTheDocument()
+  })
+
+  it('紐づけに失敗したときは、科目は登録済みであることを伝え、閉じるまで完了にしない', async () => {
+    const failing = {
+      linkAccount: () => {
+        throw new Error('link failed')
+      },
+    }
+    const { onCreated } = renderLinkForm('asset', { repository: failing })
+
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '楽天銀行' } })
+    fireEvent.click(screen.getByLabelText('入出金明細'))
+    fireEvent.click(screen.getByRole('button', { name: '登録' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('科目は登録しましたが')
+    expect(registered()).toHaveLength(1)
+    expect(onCreated).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '閉じる' }))
+
+    expect(onCreated).toHaveBeenCalledTimes(1)
   })
 })

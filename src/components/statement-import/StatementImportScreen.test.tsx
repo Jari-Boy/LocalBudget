@@ -365,6 +365,31 @@ describe('StatementImportScreen', () => {
     expect(mappings.findById(only.id)?.accountIds).toEqual([bank.id])
   })
 
+  it('取込先の「+ 科目を新規追加」では、いま取り込んでいる定義が最初からチェックされ、登録すると紐づく(計画Issue #189)', async () => {
+    const current = makeMapping({ accountIds: [] })
+    // CSVには一致しない定義(取込先の選択は current だけで決まる)
+    const other = makeMapping({ formatGroupId: '別の銀行', label: '別の定義', dateColumn: '存在しない列', accountIds: [] })
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+    await screen.findByLabelText(/^取込先/)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ 科目を新規追加' }))
+
+    const dialog = within(screen.getByRole('dialog', { name: '科目を登録' }))
+    expect(dialog.getByLabelText('マイ銀行')).toBeChecked()
+    expect(dialog.getByLabelText('別の定義')).not.toBeChecked()
+
+    fireEvent.change(dialog.getByLabelText('名称'), { target: { value: '新しい口座' } })
+    fireEvent.click(dialog.getByRole('button', { name: '登録' }))
+
+    await waitFor(() => {
+      const created = accounts.findAll().find((a) => a.name === '新しい口座')
+      expect(created).toBeDefined()
+      expect(mappings.findById(current.id)?.accountIds).toEqual([created!.id])
+      expect(mappings.findById(other.id)?.accountIds).toEqual([])
+    })
+  })
+
   it('マッピング作成ダイアログの金融機関名には、既存の定義の金融機関名が候補として並ぶ(計画Issue #183)', async () => {
     // 列が合わない定義にして、CSVとは一致しない(=新規作成に進む)ようにする
     makeMapping({ formatGroupId: '楽天カード', label: '楽天カード', dateColumn: '存在しない列', accountIds: [] })

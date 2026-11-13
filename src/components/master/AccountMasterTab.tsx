@@ -295,6 +295,7 @@ export function AccountMasterTab({
           householdMembers={data.members}
           initialCategory={creating}
           today={today}
+          mappingLinking={{ definitions: data.definitions, repository: importMappingDefinitionRepository }}
           onCreated={(account) => {
             void load().then(() => select(leafNodeId(account.id)))
           }}

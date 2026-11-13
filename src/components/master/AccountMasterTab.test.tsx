@@ -534,6 +534,24 @@ describe('AccountMasterTab', () => {
       await waitFor(() => expect(mappings.findById(target.id)!.accountIds).toEqual([card.id]))
     })
 
+    it('新規登録フォームで定義をチェックして登録すると、作成した科目に紐づく', async () => {
+      const target = definition('入出金明細')
+      accounts.create({ category: 'asset', name: '既存の口座', isReconcilable: true })
+      renderTab()
+
+      fireEvent.click(await screen.findByRole('button', { name: '資産に科目を追加' }))
+      const form = within(screen.getByRole('form', { name: '科目を登録' }))
+      fireEvent.change(form.getByLabelText('名称'), { target: { value: '新しい口座' } })
+      fireEvent.click(form.getByLabelText('入出金明細'))
+      fireEvent.click(form.getByRole('button', { name: '登録' }))
+
+      await waitFor(() => {
+        const created = accounts.findAll().find((a) => a.name === '新しい口座')
+        expect(created).toBeDefined()
+        expect(mappings.findById(target.id)!.accountIds).toEqual([created!.id])
+      })
+    })
+
     it('明細マッピングの文言は、紐づけが制限ではなく優先順位であることを伝える', async () => {
       accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
       renderTab()
