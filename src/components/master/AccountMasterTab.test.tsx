@@ -4,7 +4,9 @@
  * マスタ画面の「勘定科目」タブ: 区分の見出し・グループ・科目のツリー表示、右パネルでの
  * 名称・所属グループ・名義・並び順の編集、グループの新設、科目の新規登録(右パネルのフォーム)、
  * 2回押しの削除と、使用中・中に項目があるときの削除不可の理由表示、初期残高の仕訳だけが
- * 紐づく口座の一緒に削除、システム管理科目の制限(区分変更・削除不可)、有効/無効の切り替えを、
+ * 紐づく口座の一緒に削除、システム管理科目の制限(区分変更・削除不可)、有効/無効の切り替え、
+ * 資産・負債科目の右パネルの「登録時の設定」(表示のみ)と「明細マッピング」の紐づけ・解除
+ * (計画Issue #189)を、
  * sql.jsのNode実装(createTestDatabase)を使って確認する。ドラッグ移動の判定はTreeTableの
  * テストで扱う。外部依存: sql.js(ネットワークアクセスなし)。
  */
@@ -20,6 +22,7 @@ import { SqlJsAccountGroupRepository } from '../../infrastructure/db/SqlJsAccoun
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsBudgetRepository } from '../../infrastructure/db/SqlJsBudgetRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
+import { SqlJsImportMappingDefinitionRepository } from '../../infrastructure/db/SqlJsImportMappingDefinitionRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../../infrastructure/db/SqlJsRecurringTransactionRuleRepository'
 import { seedInitialBalanceAccount } from '../../infrastructure/db/seedInitialBalanceAccount'
@@ -30,6 +33,7 @@ let db: Database
 let accounts: SqlJsAccountRepository
 let groups: SqlJsAccountGroupRepository
 let entries: SqlJsJournalEntryRepository
+let mappings: SqlJsImportMappingDefinitionRepository
 let memberId: number
 
 beforeEach(async () => {
@@ -39,6 +43,7 @@ beforeEach(async () => {
   accounts = new SqlJsAccountRepository(db)
   groups = new SqlJsAccountGroupRepository(db)
   entries = new SqlJsJournalEntryRepository(db)
+  mappings = new SqlJsImportMappingDefinitionRepository(db)
   memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '夫' }).id
 })
 
@@ -54,6 +59,7 @@ function renderTab() {
         journalEntryRepository={entries}
         budgetRepository={new SqlJsBudgetRepository(db)}
         recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
+        importMappingDefinitionRepository={mappings}
         today="2026-11-07"
       />
     </I18nextProvider>,
@@ -396,5 +402,145 @@ describe('AccountMasterTab', () => {
     fireEvent.click(panel('グループの編集').getByRole('button', { name: '本当に削除する' }))
 
     await waitFor(() => expect(groups.findById(group.id)).toBeNull())
+  })
+
+  describe('登録時の設定と明細マッピング(計画Issue #189)', () => {
+    const SAMPLE = {
+      dateColumn: '0',
+      dateFormat: 'YYYY/MM/DD',
+      descriptionColumn: '1',
+      amountMode: 'single_signed' as const,
+      amountColumn: '2',
+    }
+    const definition = (label: string, accountIds: number[] = []) =>
+      mappings.create({ ...SAMPLE, formatGroupId: '楽天銀行', label, accountIds })
+
+    it('残高情報ありの資産科目は、登録時の設定に残高情報ありと初期残高が表示される', async () => {
+      const bank = accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
+      postEntry(bank.id, accounts.findAll().find((a) => a.isSystemManaged)!.id, 'initial_balance')
+      renderTab()
+
+      await open('楽天銀行')
+
+      const info = panel('登録時の設定')
+      expect(info.getByText(/CSVの残高と突き合わせて/)).toBeInTheDocument()
+      expect(info.getByText(/¥1,000/)).toBeInTheDocument()
+    })
+
+    it('残高情報なしの科目は、残高情報なしと表示され、外部明細の有無は断定しない', async () => {
+      accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false })
+      renderTab()
+
+      await open('カード未払金')
+
+      const info = panel('登録時の設定')
+      expect(info.getByText(/残高の突き合わせは行いません/)).toBeInTheDocument()
+      expect(info.getByText(/保存されていない/)).toBeInTheDocument()
+    })
+
+    it('登録時の設定は表示のみで、入力・選択・ボタンを持たない', async () => {
+      accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
+      renderTab()
+
+      await open('楽天銀行')
+
+      const info = panel('登録時の設定')
+      expect(info.queryByRole('textbox')).toBeNull()
+      expect(info.queryByRole('combobox')).toBeNull()
+      expect(info.queryByRole('button')).toBeNull()
+    })
+
+    it('収益・費用の科目とグループでは、登録時の設定も明細マッピングも表示されない', async () => {
+      groups.create({ name: '食費グループ', category: 'expense' })
+      accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+      renderTab()
+
+      await open('食費')
+      expect(screen.queryByRole('region', { name: '登録時の設定' })).toBeNull()
+      expect(screen.queryByRole('region', { name: '明細マッピング' })).toBeNull()
+
+      await open('食費グループ')
+      expect(screen.queryByRole('region', { name: '登録時の設定' })).toBeNull()
+      expect(screen.queryByRole('region', { name: '明細マッピング' })).toBeNull()
+    })
+
+    it('紐づいている明細マッピングが一覧で表示され、紐づいていない定義は含まれない', async () => {
+      const bank = accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
+      definition('入出金明細', [bank.id])
+      definition('別の定義')
+      renderTab()
+
+      await open('楽天銀行')
+
+      const list = panel('明細マッピング').getByRole('list')
+      expect(list).toHaveTextContent('入出金明細')
+      expect(list).not.toHaveTextContent('別の定義')
+    })
+
+    it('未紐づけの定義を選んで紐づけると、すぐ中間テーブルに反映され一覧に出る', async () => {
+      const bank = accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
+      const target = definition('入出金明細')
+      renderTab()
+      await open('楽天銀行')
+
+      fireEvent.change(panel('明細マッピング').getByLabelText('紐づける定義'), {
+        target: { value: String(target.id) },
+      })
+      fireEvent.click(panel('明細マッピング').getByRole('button', { name: '紐づける' }))
+
+      await waitFor(() => expect(mappings.findById(target.id)!.accountIds).toEqual([bank.id]))
+      expect(await panel('明細マッピング').findByRole('list')).toHaveTextContent('入出金明細')
+    })
+
+    it('紐づけると、他の科目との紐づけは影響を受けない', async () => {
+      const bank = accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
+      const card = accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false })
+      const target = definition('共有の定義', [card.id])
+      renderTab()
+      await open('楽天銀行')
+
+      fireEvent.change(panel('明細マッピング').getByLabelText('紐づける定義'), {
+        target: { value: String(target.id) },
+      })
+      fireEvent.click(panel('明細マッピング').getByRole('button', { name: '紐づける' }))
+
+      await waitFor(() => expect(mappings.findById(target.id)!.accountIds).toEqual([bank.id, card.id]))
+    })
+
+    it('紐づけ済みの定義を解除でき、定義・科目そのものと他の科目の紐づけは残る', async () => {
+      const bank = accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
+      const card = accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false })
+      const target = definition('共有の定義', [bank.id, card.id])
+      renderTab()
+      await open('楽天銀行')
+
+      fireEvent.click(panel('明細マッピング').getByRole('button', { name: '共有の定義の紐づけを解除' }))
+
+      await waitFor(() => expect(mappings.findById(target.id)!.accountIds).toEqual([card.id]))
+      expect(accounts.findById(bank.id)).not.toBeNull()
+    })
+
+    it('残高情報なしの科目にも、紐づけの操作が出る', async () => {
+      const card = accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false })
+      const target = definition('カード明細')
+      renderTab()
+      await open('カード未払金')
+
+      fireEvent.change(panel('明細マッピング').getByLabelText('紐づける定義'), {
+        target: { value: String(target.id) },
+      })
+      fireEvent.click(panel('明細マッピング').getByRole('button', { name: '紐づける' }))
+
+      await waitFor(() => expect(mappings.findById(target.id)!.accountIds).toEqual([card.id]))
+    })
+
+    it('明細マッピングの文言は、紐づけが制限ではなく優先順位であることを伝える', async () => {
+      accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
+      renderTab()
+
+      await open('楽天銀行')
+
+      expect(panel('明細マッピング').getByText(/紐づけていない定義も、取込のときに選べます/)).toBeInTheDocument()
+    })
   })
 })

@@ -224,6 +224,7 @@ export function AppRoutes() {
             journalEntryRepository={journalEntryRepository}
             budgetRepository={budgetRepository}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
+            importMappingDefinitionRepository={importMappingDefinitionRepository}
           />
         }
       />
