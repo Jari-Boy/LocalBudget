@@ -417,4 +417,6 @@ label.master-btn {
 
 .master-list__button--grouped {
   padding-left: 24px;
+  border-left: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
 }
