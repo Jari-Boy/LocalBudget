@@ -583,15 +583,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
             const debitCount = items.filter((l) => l.side === 'debit').length
             const creditCount = items.filter((l) => l.side === 'credit').length
             return (
-              <tbody
-                key={entry.id}
-                data-entry-id={entry.id}
-                className="journal-line-table__editing"
-                // Esc で編集をキャンセルする(選択ツリーが開いているときの Esc は、ツリー側が止めるので閉じるだけ)
-                onKeyDown={(ev) => {
-                  if (ev.key === 'Escape' && !e.busy) e.onCancel()
-                }}
-              >
+              <tbody key={entry.id} data-entry-id={entry.id} className="journal-line-table__editing">
                 {pairLinesBySide(items).map((pair, index) => (
                   <tr key={index} className="journal-line-table__row--editing">
                     {/* 編集中は出どころのタグを出さず、その列の幅を取引日と摘要の入力欄に回す(日付・出どころ・摘要の3列分を1つのセルにする) */}
