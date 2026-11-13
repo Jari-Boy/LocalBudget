@@ -19,6 +19,7 @@ function account(id: number, name: string, accountGroupId: number | null, sortOr
     category: 'expense',
     name,
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,

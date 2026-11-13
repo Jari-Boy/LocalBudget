@@ -15,6 +15,7 @@ const account = (overrides: Partial<Account>): Account => ({
   category: 'asset',
   name: '銀行',
   isReconcilable: true,
+  hasExternalStatement: true,
   isActive: true,
   isSystemManaged: false,
   householdMemberId: null,

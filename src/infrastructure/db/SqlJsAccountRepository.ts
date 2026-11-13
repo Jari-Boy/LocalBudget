@@ -24,13 +24,14 @@ export class SqlJsAccountRepository implements AccountRepository {
   create(input: CreateAccountInput): Account {
     this.db.run(
       `INSERT INTO accounts
-        (category, name, is_reconcilable, is_system_managed,
+        (category, name, is_reconcilable, has_external_statement, is_system_managed,
          household_member_id, account_group_id, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.category,
         input.name,
         boolToSql(input.isReconcilable),
+        boolToSql(resolveHasExternalStatement(input)),
         boolToSql(input.isSystemManaged ?? false),
         input.householdMemberId ?? null,
         input.accountGroupId ?? null,
@@ -102,6 +103,12 @@ export class SqlJsAccountRepository implements AccountRepository {
   }
 }
 
+/** 資産・負債は、省略時に照合可否から決める(照合する科目は外部明細あり)。それ以外はnull */
+function resolveHasExternalStatement(input: CreateAccountInput): boolean | null {
+  if (input.category !== 'asset' && input.category !== 'liability') return null
+  return input.hasExternalStatement ?? input.isReconcilable === true
+}
+
 function boolToSql(value: boolean | null | undefined): number | null {
   if (value === null || value === undefined) return null
   return value ? 1 : 0
@@ -123,6 +130,7 @@ function mapRowToAccount(columns: string[], values: unknown[]): Account {
     category: get<AccountCategory>('category'),
     name: get<string>('name'),
     isReconcilable: sqlToBool(get<number | null>('is_reconcilable')),
+    hasExternalStatement: sqlToBool(get<number | null>('has_external_statement')),
     isActive: sqlToBool(get<number>('is_active')) as boolean,
     isSystemManaged: sqlToBool(get<number>('is_system_managed')) as boolean,
     householdMemberId: get<number | null>('household_member_id'),

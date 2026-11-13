@@ -21,6 +21,7 @@ function account(id: number, category: Account['category'], isSystemManaged = fa
     category,
     name: `科目${id}`,
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged,
     householdMemberId: null,

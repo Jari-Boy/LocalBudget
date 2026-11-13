@@ -23,6 +23,7 @@ function account(id: number, name: string, category: Account['category']): Accou
     category,
     name,
     isReconcilable: category === 'expense' ? null : false,
+    hasExternalStatement: category === 'expense' ? null : false,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,

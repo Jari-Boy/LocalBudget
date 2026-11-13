@@ -18,6 +18,7 @@ function buildAccount(id: number, overrides?: Partial<Account>): Account {
     category: 'expense',
     name: `科目${id}`,
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,

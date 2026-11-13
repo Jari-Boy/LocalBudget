@@ -15,6 +15,7 @@ function account(id: number, category: Account['category']): Account {
     category,
     name: `科目${id}`,
     isReconcilable: null,
+    hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
     householdMemberId: null,
