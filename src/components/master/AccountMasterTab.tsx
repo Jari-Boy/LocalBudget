@@ -27,6 +27,7 @@ import {
   type TreeTableNode,
 } from '../common/tree-table/treeTableModel'
 import { AccountCreateForm } from './AccountCreateForm'
+import { AccountMergePanel } from './AccountMergePanel'
 import { AccountMappingSection, AccountRegistrationInfo } from './AccountRegistrationSections'
 import { DefaultMemberChangeDialog } from './DefaultMemberChangeDialog'
 import { buildAccountTree, groupNodeId, leafNodeId, parseNodeId } from './masterTreeNodes'
@@ -35,7 +36,7 @@ import './master.css'
 
 export interface AccountMasterTabProps {
   accountRepository: MaybeAsync<
-    Pick<AccountRepository, 'findAll' | 'create' | 'update' | 'delete' | 'deactivate' | 'activate'>
+    Pick<AccountRepository, 'findAll' | 'create' | 'update' | 'delete' | 'deactivate' | 'activate' | 'merge'>
   >
   accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll' | 'create' | 'update' | 'delete'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
@@ -106,6 +107,7 @@ export function AccountMasterTab({
   const [creating, setCreating] = useState<AccountCategory | null>(null)
   const [armedId, setArmedId] = useState<string | null>(null)
   const [flash, setFlash] = useState('')
+  const [mergeResult, setMergeResult] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   /** 既定の世帯メンバーを変えるときの、過去の明細行の扱いの確認待ち(計画Issue #169) */
@@ -187,6 +189,7 @@ export function AccountMasterTab({
     setArmedId(null)
     setFlash('')
     setError('')
+    setMergeResult('')
   }
 
   /** ツリー表で組み立てた移動後のノード配列を、DBの親グループと並び順に書き戻す */
@@ -278,6 +281,23 @@ export function AccountMasterTab({
           )}
         />
         <p className="master-note">{t('accountTab.dragHint')}</p>
+        {mergeResult !== '' && (
+          <p role="status" className="master-flash">
+            {mergeResult}
+          </p>
+        )}
+        <AccountMergePanel
+          accounts={data.accounts.filter((a) => checkedIds.includes(leafNodeId(a.id)))}
+          lineCountOf={(accountId) =>
+            data.entries.flatMap((e) => e.lines).filter((l) => l.accountId === accountId).length
+          }
+          repository={accountRepository}
+          onMerged={async (message) => {
+            setMergeResult(message)
+            setCheckedIds([])
+            await load()
+          }}
+        />
       </div>
 
       {error && (

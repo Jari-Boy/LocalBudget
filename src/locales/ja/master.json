@@ -58,7 +58,20 @@
     "mappingSelectPlaceholder": "+ 定義を追加",
     "mappingLinked": "紐づけました",
     "mappingUnlinked": "紐づけを解除しました",
-    "mappingError": "紐づけの変更に失敗しました。もう一度お試しください。"
+    "mappingError": "紐づけの変更に失敗しました。もう一度お試しください。",
+    "mergeRegion": "科目の統合",
+    "mergeTitle": "{{count}}件を統合",
+    "mergeTarget": "統合先",
+    "mergeChoose": "選択してください",
+    "mergeStart": "統合する",
+    "mergeRun": "統合を実行",
+    "mergeCancel": "やめる",
+    "mergeConfirm": "「{{sources}}」を「{{target}}」に統合します。仕訳の明細{{count}}行を付け替えます。元に戻せません。よろしいですか?",
+    "mergeDone": "「{{sources}}」を「{{target}}」に統合しました。統合元は仕訳が0件になったので、削除または無効にできます。",
+    "mergeError": "統合に失敗しました。もう一度お試しください。",
+    "mergeBlockSystemManaged": "システム管理の科目は統合できません。",
+    "mergeBlockDifferentCategory": "区分が異なる科目は統合できません。",
+    "mergeBlockDifferentReconcilability": "照合できる科目とできない科目は統合できません。"
   },
   "createForm": {
     "title": "科目を登録",
