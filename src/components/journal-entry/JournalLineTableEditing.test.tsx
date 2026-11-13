@@ -4,7 +4,7 @@
  * 編集中の仕訳だけが入力欄になり他の仕訳は閲覧のままであること、摘要・コメント・取引日・金額・世帯メンバーの編集、
  * 取引先と精算バッチが科目に応じてどちらか一方だけ「取引先・精算バッチ」の列に出ること、
  * 「+ 借方の行」「+ 貸方の行」と行の削除、借方合計・貸方合計と貸借の一致状況の表示、貸借が合わない間と
- * 保存中は保存できないこと、キャンセル、仕訳の削除(2回押して確定する確認の表示)を検証する。
+ * 保存中は保存できないこと、キャンセル(ボタンと Esc キー)、仕訳の削除(2回押して確定する確認の表示)を検証する。
  * 外部依存なし(編集内容は親が持つ値として Harness の state で模す。保存・削除の実処理は親の責務)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -304,6 +304,28 @@ describe('JournalLineTable(インライン編集)', () => {
     render(<Harness onCancel={onCancel} />)
     fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
     expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('編集中の入力欄で Esc キーを押すと、キャンセルになる(onCancel)', () => {
+    const onCancel = vi.fn()
+    render(<Harness onCancel={onCancel} />)
+    fireEvent.keyDown(screen.getByLabelText('摘要'), { key: 'Escape' })
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('選択ツリーが開いているときの Esc は、ツリーを閉じるだけで編集はキャンセルしない', () => {
+    const onCancel = vi.fn()
+    render(<Harness onCancel={onCancel} />)
+    fireEvent.click(screen.getByRole('button', { name: /^借方の科目/ }))
+    fireEvent.keyDown(screen.getByRole('dialog', { name: '借方の科目' }), { key: 'Escape' })
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  it('保存中(busy)は Esc でキャンセルしない', () => {
+    const onCancel = vi.fn()
+    render(<Harness busy onCancel={onCancel} />)
+    fireEvent.keyDown(screen.getByLabelText('摘要'), { key: 'Escape' })
+    expect(onCancel).not.toHaveBeenCalled()
   })
 
   it('「仕訳を削除」を押すと onDelete が呼ばれる(2回押しの確定は親が持つ)', () => {
