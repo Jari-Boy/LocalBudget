@@ -620,17 +620,15 @@ describe('JournalScreen', () => {
       expect(leaveDialog()).not.toBeInTheDocument()
     })
 
-    it('「保存して移動」で保存できなかったとき(科目が未選択など)は、移動せず編集中の内容と理由を残す', async () => {
+    it('「保存して移動」で保存できなかったとき(確定済みの仕訳の保存が失敗)は、移動せず編集中の内容と理由を残す', async () => {
       const props = setup()
+      props.journalEntryRepository.update.mockRejectedValueOnce(new Error('failed'))
       await ready()
-      fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
-      editMemo('書きかけ')
+      editMemo('ランチ(修正中)')
       fireEvent.click(screen.getByRole('button', { name: /家賃/ }))
       fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
-      expect(await screen.findByRole('alert')).toHaveTextContent('保存できません')
-      expect(props.journalEntryRepository.create).not.toHaveBeenCalled()
-      expect(within(detail()).getByRole('heading', { name: '新しい仕訳' })).toBeInTheDocument()
-      expect(memoInput()).toHaveValue('書きかけ')
+      expect(await screen.findByRole('alert')).toHaveTextContent('更新に失敗しました')
+      expect(memoInput()).toHaveValue('ランチ(修正中)')
     })
 
     it('編集してタブを切り替えるときも確認する', async () => {
@@ -735,6 +733,56 @@ describe('JournalScreen', () => {
     expect(within(detail()).getByRole('button', { name: '確定して仕訳にする' })).toBeDisabled()
     fireEvent.click(within(detail()).getByRole('button', { name: '下書きを保存' }))
     await waitFor(() => expect(props.journalEntryDraftRepository.update).toHaveBeenCalledWith(100, expect.anything()))
+  })
+
+  describe('新規仕訳の「下書きに保存」(計画Issue #183)', () => {
+    /** 新規仕訳を開き、「下書きに保存」を押す */
+    async function saveNewAsDraft(prepare: () => void = () => {}) {
+      const props = setup()
+      await ready()
+      fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+      prepare()
+      fireEvent.click(within(detail()).getByRole('button', { name: '下書きに保存' }))
+      return props
+    }
+
+    it('何も入力していなくても(科目・金額・世帯メンバー・摘要が未入力)、下書きとして保存できる', async () => {
+      const props = await saveNewAsDraft()
+
+      await waitFor(() => expect(props.journalEntryDraftRepository.create).toHaveBeenCalledTimes(1))
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('取引日を消した状態でも、日付なし(null)の下書きとして保存できる', async () => {
+      const props = await saveNewAsDraft(() => {
+        fireEvent.change(within(detail()).getByLabelText('取引日'), { target: { value: '' } })
+      })
+
+      await waitFor(() => expect(props.journalEntryDraftRepository.create).toHaveBeenCalledWith(expect.objectContaining({ entryDate: null })))
+    })
+
+    it('摘要だけ入力した状態でも保存でき、入力した摘要が渡る', async () => {
+      const props = await saveNewAsDraft(() => editMemo('途中のメモ'))
+
+      await waitFor(() =>
+        expect(props.journalEntryDraftRepository.create).toHaveBeenCalledWith(expect.objectContaining({ memo: '途中のメモ' })),
+      )
+    })
+  })
+
+  it('未入力が多い新規仕訳を編集して移動するときは、「保存して移動」で下書きとして保存し、検証エラーで移動が止まらない(計画Issue #183)', async () => {
+    const props = setup()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+    editMemo('書きかけの新規')
+    fireEvent.click(screen.getByRole('tab', { name: '下書き 1' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+
+    await waitFor(() =>
+      expect(props.journalEntryDraftRepository.create).toHaveBeenCalledWith(expect.objectContaining({ memo: '書きかけの新規' })),
+    )
+    expect(props.journalEntryRepository.create).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByRole('tab', { name: /下書き/ })).toHaveAttribute('aria-selected', 'true'))
   })
 
   it('下書きを削除できる', async () => {
