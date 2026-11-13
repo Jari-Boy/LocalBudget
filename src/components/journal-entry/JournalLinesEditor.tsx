@@ -5,7 +5,7 @@ import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBa
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { createEmptyJournalEntryFormLine, isCounterpartyEligibleCategory, type JournalEntryFormLine } from './journalEntryFormLine'
-import { memberAfterAccountChange } from './journalEditorMember'
+import { applyAccountChange } from './journalLineAccountChange'
 import { summarizeBalance } from './journalScreenModel'
 import type { JournalEditorLine, JournalEditorMaster } from './JournalEntryEditor'
 import './JournalEntryEditor.css'
@@ -77,21 +77,7 @@ export function JournalLinesEditor({
 
   /** 科目を変えたとき、その科目では持てない取引先・精算バッチ・メンバーの指定を外す */
   const changeAccount = (key: number, accountId: number | null) =>
-    updateLine(key, (line) => {
-      const account = accountId === null ? undefined : accountById.get(accountId)
-      return {
-        ...line,
-        accountId,
-        counterpartyId: account !== undefined && isCounterpartyEligibleCategory(account.category) ? line.counterpartyId : null,
-        settlementBatchId: account !== undefined && isSettlementBatchTaggableAccount(account) ? line.settlementBatchId : null,
-        householdMemberId: memberAfterAccountChange({
-          line,
-          newAccountDefault: account?.householdMemberId ?? null,
-          previousAccountDefault: line.accountId === null ? null : (accountById.get(line.accountId)?.householdMemberId ?? null),
-          entryMemberId: bookkeeperId,
-        }),
-      }
-    })
+    updateLine(key, (line) => applyAccountChange({ line, accountId, accountById, bookkeeperId }))
 
   /** 選べる世帯メンバー。無効なメンバーは、いま選ばれている場合だけ残す */
   const memberOptions = (selectedId: number | null) =>

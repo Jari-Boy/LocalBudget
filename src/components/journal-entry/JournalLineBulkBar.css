@@ -1,0 +1,122 @@
+/* 一括編集バー(計画Issue #182)。表の上に出る。色・余白は既存のデザイントークンを使い、文字は表と同じ12pxに揃える */
+.journal-line-bulk {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+}
+
+.journal-line-bulk__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+
+.journal-line-bulk__count {
+  color: var(--color-accent);
+}
+
+.journal-line-bulk__hint {
+  color: var(--color-text);
+}
+
+.journal-line-bulk__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.journal-line-bulk__field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 150px;
+}
+
+.journal-line-bulk__label {
+  color: var(--color-text);
+}
+
+.journal-line-bulk__select {
+  /* 選択ツリー(TreeSelect)の入力欄と高さ・枠・文字・無効時の色をそろえる */
+  width: 100%;
+  min-height: var(--control-height);
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-base);
+}
+
+.journal-line-bulk__select:disabled {
+  background: var(--color-field-subtle);
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+/* 選べない理由(幅が狭い項目の下に出るので、折り返して全文を読めるようにする) */
+.journal-line-bulk__note {
+  color: #8a4b00;
+  line-height: 1.4;
+}
+
+.journal-line-bulk__actions,
+.journal-line-bulk__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.journal-line-bulk__confirm {
+  padding: 8px 10px;
+  border: 1px solid var(--color-danger, #b3261e);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-danger, #b3261e) 6%, var(--color-surface));
+}
+
+.journal-line-bulk__confirm-title {
+  color: var(--color-danger, #b3261e);
+}
+
+.journal-line-bulk__button {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.journal-line-bulk__button--primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.journal-line-bulk__button--danger {
+  border-color: var(--color-danger, #b3261e);
+  background: var(--color-danger, #b3261e);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.journal-line-bulk__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
