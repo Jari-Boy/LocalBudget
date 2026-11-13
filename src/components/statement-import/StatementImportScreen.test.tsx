@@ -365,7 +365,7 @@ describe('StatementImportScreen', () => {
     expect(mappings.findById(only.id)?.accountIds).toEqual([bank.id])
   })
 
-  it('取込先の「+ 科目を新規追加」では、いま取り込んでいる定義が最初からチェックされ、登録すると紐づく(計画Issue #189)', async () => {
+  it('取込先の「+ 科目を新規追加」では、いま取り込んでいる定義が最初から選ばれ、登録すると紐づく(計画Issue #189)', async () => {
     const current = makeMapping({ accountIds: [] })
     // CSVには一致しない定義(取込先の選択は current だけで決まる)
     const other = makeMapping({ formatGroupId: '別の銀行', label: '別の定義', dateColumn: '存在しない列', accountIds: [] })
@@ -376,8 +376,10 @@ describe('StatementImportScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: '+ 科目を新規追加' }))
 
     const dialog = within(screen.getByRole('dialog', { name: '科目を登録' }))
-    expect(dialog.getByLabelText(/^マイ銀行いま取り込んでいる定義$/)).toBeChecked()
-    expect(dialog.getByLabelText('別の定義')).not.toBeChecked()
+    // いま取り込んでいる定義は、最初から選ばれた状態(チップ)で出る。ほかの定義はチップに出ない
+    const chips = within(dialog.getByRole('list'))
+    expect(chips.getByText('マイ銀行')).toBeInTheDocument()
+    expect(chips.queryByText('別の定義')).not.toBeInTheDocument()
 
     fireEvent.change(dialog.getByLabelText('名称'), { target: { value: '新しい口座' } })
     fireEvent.click(dialog.getByRole('button', { name: '登録' }))

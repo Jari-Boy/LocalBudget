@@ -415,6 +415,12 @@ describe('AccountMasterTab', () => {
     const definition = (label: string, accountIds: number[] = []) =>
       mappings.create({ ...SAMPLE, formatGroupId: '楽天銀行', label, accountIds })
 
+    /** 「紐づける定義」の選択ツリーを開き、定義を選ぶ(選んだ時点で紐づく。マッピングタブの「対応する科目」と同じ操作) */
+    const linkDefinition = (label: string) => {
+      fireEvent.click(panel('明細マッピング').getByRole('button', { name: /^紐づける定義/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '紐づける定義' })).getByRole('button', { name: label }))
+    }
+
     /** 「外部明細の情報」の1項目(見出しと値のまとまり) */
     const item = (info: ReturnType<typeof panel>, label: string) => within(info.getByText(label).closest('div')!)
 
@@ -509,10 +515,7 @@ describe('AccountMasterTab', () => {
       renderTab()
       await open('楽天銀行')
 
-      fireEvent.change(panel('明細マッピング').getByLabelText('紐づける定義'), {
-        target: { value: String(target.id) },
-      })
-      fireEvent.click(panel('明細マッピング').getByRole('button', { name: '紐づける' }))
+      linkDefinition(target.label)
 
       await waitFor(() => expect(mappings.findById(target.id)!.accountIds).toEqual([bank.id]))
       expect(await panel('明細マッピング').findByRole('list')).toHaveTextContent('入出金明細')
@@ -525,10 +528,7 @@ describe('AccountMasterTab', () => {
       renderTab()
       await open('楽天銀行')
 
-      fireEvent.change(panel('明細マッピング').getByLabelText('紐づける定義'), {
-        target: { value: String(target.id) },
-      })
-      fireEvent.click(panel('明細マッピング').getByRole('button', { name: '紐づける' }))
+      linkDefinition(target.label)
 
       await waitFor(() => expect(mappings.findById(target.id)!.accountIds).toEqual([bank.id, card.id]))
     })
@@ -557,15 +557,12 @@ describe('AccountMasterTab', () => {
       renderTab()
       await open('カード未払金')
 
-      fireEvent.change(panel('明細マッピング').getByLabelText('紐づける定義'), {
-        target: { value: String(target.id) },
-      })
-      fireEvent.click(panel('明細マッピング').getByRole('button', { name: '紐づける' }))
+      linkDefinition(target.label)
 
       await waitFor(() => expect(mappings.findById(target.id)!.accountIds).toEqual([card.id]))
     })
 
-    it('新規登録フォームで定義をチェックして登録すると、作成した科目に紐づく', async () => {
+    it('新規登録フォームで定義を選んで登録すると、作成した科目に紐づく', async () => {
       const target = definition('入出金明細')
       accounts.create({ category: 'asset', name: '既存の口座', isReconcilable: true })
       renderTab()
@@ -573,7 +570,8 @@ describe('AccountMasterTab', () => {
       fireEvent.click(await screen.findByRole('button', { name: '資産に科目を追加' }))
       const form = within(screen.getByRole('form', { name: '科目を登録' }))
       fireEvent.change(form.getByLabelText('名称'), { target: { value: '新しい口座' } })
-      fireEvent.click(form.getByLabelText('入出金明細'))
+      fireEvent.click(form.getByRole('button', { name: /^紐づける定義/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '紐づける定義' })).getByRole('button', { name: '入出金明細' }))
       fireEvent.click(form.getByRole('button', { name: '登録' }))
 
       await waitFor(() => {

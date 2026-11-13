@@ -10,7 +10,7 @@
  * 紐づけ失敗時の扱い)を検証する。外部依存: sql.js(ネットワークなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -282,26 +282,44 @@ describe('AccountCreateForm の明細マッピング(計画Issue #189)', () => {
     expect(mappings.findById(rakuten)!.accountIds).toEqual([])
   })
 
-  it('定義は金融機関名の見出しでまとめて表示され、初期状態では何もチェックされない', () => {
+  /** 「紐づける定義」の選択ツリーを開いて定義を選ぶ(科目の右パネルの「明細マッピング」と同じ部品・操作) */
+  const pickDefinition = (label: string) => {
+    fireEvent.click(screen.getByRole('button', { name: /^紐づける定義/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '紐づける定義' })).getByRole('button', { name: label }))
+  }
+
+  it('定義は金融機関名の見出しでまとめて選べ、初期状態では何も選ばれていない', () => {
     renderLinkForm('asset')
 
-    expect(screen.getByText('楽天銀行')).toBeInTheDocument()
-    expect(screen.getByText('三井住友銀行')).toBeInTheDocument()
-    expect(screen.getByLabelText('入出金明細')).not.toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: /^紐づける定義/ }))
+
+    const dialog = within(screen.getByRole('dialog', { name: '紐づける定義' }))
+    expect(dialog.getByText('楽天銀行')).toBeInTheDocument()
+    expect(dialog.getByText('三井住友銀行')).toBeInTheDocument()
+    expect(screen.queryByRole('list')).not.toBeInTheDocument()
   })
 
-  it('既定の定義を渡すと、最初からチェックされている', () => {
+  it('既定の定義を渡すと、最初から選ばれた状態(チップ)で表示される', () => {
     renderLinkForm('asset', { defaultDefinitionIds: [rakuten] })
 
-    expect(screen.getByLabelText(/^入出金明細いま取り込んでいる定義$/)).toBeChecked()
-    expect(screen.getByLabelText('入出金明細(1列金額)')).not.toBeChecked()
+    const chips = within(screen.getByRole('list'))
+    expect(chips.getByText('入出金明細')).toBeInTheDocument()
+    expect(chips.queryByText('入出金明細(1列金額)')).not.toBeInTheDocument()
   })
 
-  it('チェックして登録すると、作成した科目にその定義が紐づく', async () => {
+  it('選んだ定義は×で外せる', () => {
+    renderLinkForm('asset', { defaultDefinitionIds: [rakuten] })
+
+    fireEvent.click(screen.getByRole('button', { name: '入出金明細の紐づけを解除' }))
+
+    expect(screen.queryByRole('list')).not.toBeInTheDocument()
+  })
+
+  it('定義を選んで登録すると、作成した科目にその定義が紐づく', async () => {
     const { onCreated } = renderLinkForm('asset')
 
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '楽天銀行' } })
-    fireEvent.click(screen.getByLabelText('入出金明細'))
+    pickDefinition('入出金明細')
     fireEvent.click(screen.getByRole('button', { name: '登録' }))
 
     await waitFor(() => expect(onCreated).toHaveBeenCalled())
@@ -323,7 +341,7 @@ describe('AccountCreateForm の明細マッピング(計画Issue #189)', () => {
   it('紐づけが任意で、制限ではなく優先順位であることを文言で伝える', () => {
     renderLinkForm('asset')
 
-    expect(screen.getByText(/選ばなくても、取込のときにどの定義でも使えます/)).toBeInTheDocument()
+    expect(screen.getByText(/選ばなくても、どの定義も取込のときに選べます/)).toBeInTheDocument()
   })
 
   it('紐づけに失敗したときは、科目は登録済みであることを伝え、閉じるまで完了にしない', async () => {
@@ -335,7 +353,7 @@ describe('AccountCreateForm の明細マッピング(計画Issue #189)', () => {
     const { onCreated } = renderLinkForm('asset', { repository: failing })
 
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '楽天銀行' } })
-    fireEvent.click(screen.getByLabelText('入出金明細'))
+    pickDefinition('入出金明細')
     fireEvent.click(screen.getByRole('button', { name: '登録' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('科目は登録しましたが')

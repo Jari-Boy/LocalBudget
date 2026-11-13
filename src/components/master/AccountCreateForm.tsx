@@ -5,11 +5,11 @@ import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
 import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
-import { groupMappingDefinitionsByInstitution } from '../../domain/statement-import/groupMappingDefinitionsByInstitution'
 import { reconciliationAnswerToIsReconcilable } from '../account-registration/reconciliationQuestion'
 import { registerAccount, type AccountCreator, type JournalEntryCreator } from '../account-registration/registerAccount'
 import { registerRevenueOrExpenseAccount } from '../account-registration/registerRevenueOrExpenseAccount'
 import { resolveDefaultAccountGroupId } from '../account-registration/resolveDefaultAccountGroupId'
+import { DefinitionLinkPicker } from './DefinitionLinkPicker'
 import './master.css'
 
 export type CreatableAccountCategory = 'asset' | 'liability' | 'revenue' | 'expense'
@@ -150,14 +150,6 @@ export function AccountCreateForm({
     onCreated(account)
   }
 
-  const toggleDefinition = (id: number) =>
-    setCheckedDefinitionIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-
   const reconcileText = `${csvExists && hasBalance === 'yes' ? t('createForm.reconcileOn') : t('createForm.reconcileOff')}${
     openingAmount !== null && openingAmount > 0 ? t('createForm.initialBalanceNote') : ''
   }`
@@ -296,25 +288,20 @@ export function AccountCreateForm({
             {t('createForm.mappingTitle')}
             <span className="master-note">{t('createForm.mappingOptional')}</span>
           </legend>
+          <DefinitionLinkPicker
+            definitions={mappingLinking.definitions}
+            selectedIds={checkedDefinitionIds}
+            disabled={linkFailedAccount !== null}
+            onAdd={(id) => setCheckedDefinitionIds((prev) => new Set(prev).add(id))}
+            onRemove={(id) =>
+              setCheckedDefinitionIds((prev) => {
+                const next = new Set(prev)
+                next.delete(id)
+                return next
+              })
+            }
+          />
           <p className="master-note">{t('createForm.mappingNote')}</p>
-          {groupMappingDefinitionsByInstitution(mappingLinking.definitions).map((group) => (
-            <div key={group.name} className="master-checklist__group">
-              <h3 className="master-checklist__group-title">{group.name}</h3>
-              {group.definitions.map((d) => (
-                <label key={d.id} className="master-checklist__item">
-                  <input
-                    type="checkbox"
-                    checked={checkedDefinitionIds.has(d.id)}
-                    onChange={() => toggleDefinition(d.id)}
-                  />
-                  <span className="master-checklist__label">{d.label}</span>
-                  {mappingLinking.defaultDefinitionIds?.includes(d.id) && (
-                    <span className="master-checklist__badge">{t('createForm.mappingCurrent')}</span>
-                  )}
-                </label>
-              ))}
-            </div>
-          ))}
         </fieldset>
       )}
 

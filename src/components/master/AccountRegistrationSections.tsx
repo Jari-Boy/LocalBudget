@@ -1,8 +1,7 @@
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AccountRegistrationSummary } from '../../domain/account/summarizeAccountRegistration'
 import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
-import { groupMappingDefinitionsByInstitution } from '../../domain/statement-import/groupMappingDefinitionsByInstitution'
+import { DefinitionLinkPicker } from './DefinitionLinkPicker'
 import './master.css'
 
 const yen = (amount: number) => `¥${amount.toLocaleString('ja-JP')}`
@@ -55,75 +54,21 @@ export interface AccountMappingSectionProps {
  */
 export function AccountMappingSection({ accountId, definitions, busy, onLink, onUnlink }: AccountMappingSectionProps) {
   const { t } = useTranslation('master')
-  const [choice, setChoice] = useState('')
-  const linked = definitions.filter((d) => d.accountIds.includes(accountId))
-  const candidates = groupMappingDefinitionsByInstitution(definitions.filter((d) => !d.accountIds.includes(accountId)))
-  const hasCandidates = candidates.length > 0
+  const linkedIds = new Set(definitions.filter((d) => d.accountIds.includes(accountId)).map((d) => d.id))
 
   return (
     <section className="master-subsection" aria-label={t('accountTab.mappingTitle')}>
       <h3 className="master-subsection__title">{t('accountTab.mappingTitle')}</h3>
-      <p className="master-note">{t('accountTab.mappingNote')}</p>
-
-      {linked.length === 0 ? (
-        <p className="master-note">{t('accountTab.mappingNone')}</p>
-      ) : (
-        <ul className="master-list master-list--tight">
-          {linked.map((d) => (
-            <li key={d.id} className="master-link-row">
-              <span className="master-link-row__text">
-                <span className="master-link-row__institution">{d.formatGroupId}</span>
-                <span className="master-link-row__label">{d.label}</span>
-              </span>
-              <button
-                type="button"
-                className="master-btn master-btn--small"
-                aria-label={t('accountTab.mappingUnlinkLabel', { label: d.label })}
-                disabled={busy}
-                onClick={() => onUnlink(d.id)}
-              >
-                {t('accountTab.mappingUnlink')}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {hasCandidates ? (
-        <div className="master-link-add">
-          <select
-            aria-label={t('accountTab.mappingSelect')}
-            className="master-field__control master-link-add__select"
-            value={choice}
-            disabled={busy}
-            onChange={(event) => setChoice(event.target.value)}
-          >
-            <option value="">{t('accountTab.mappingSelectPlaceholder')}</option>
-            {candidates.map((group) => (
-              <optgroup key={group.name} label={group.name}>
-                {group.definitions.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.label}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="master-btn master-btn--primary"
-            disabled={busy || choice === ''}
-            onClick={() => {
-              onLink(Number(choice))
-              setChoice('')
-            }}
-          >
-            {t('accountTab.mappingLink')}
-          </button>
-        </div>
-      ) : (
-        <p className="master-note">{t('accountTab.mappingNoCandidates')}</p>
-      )}
+      <div className="master-field">
+        <DefinitionLinkPicker
+          definitions={definitions}
+          selectedIds={linkedIds}
+          disabled={busy}
+          onAdd={onLink}
+          onRemove={onUnlink}
+        />
+        <p className="master-note">{t('accountTab.mappingNote')}</p>
+      </div>
     </section>
   )
 }
