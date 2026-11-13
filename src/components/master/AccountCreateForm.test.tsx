@@ -113,6 +113,24 @@ describe('AccountCreateForm', () => {
     expect(registered()[0]).toMatchObject({ name: '現金', isReconcilable: false, householdMemberId: null })
   })
 
+  it('登録時の回答として、外部明細の有無を科目に保存する(CSVあり・残高なしと、CSVなしを区別できる、計画Issue #189)', async () => {
+    renderForm('liability')
+    fireEvent.change(screen.getByLabelText('外部明細(CSV)はありますか?'), { target: { value: 'yes' } })
+    fireEvent.change(screen.getByLabelText('残高情報は明細にありますか?'), { target: { value: 'no' } })
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: 'カード未払金' } })
+    fireEvent.click(screen.getByRole('button', { name: '登録' }))
+    await waitFor(() => expect(registered()).toHaveLength(1))
+    expect(registered()[0]).toMatchObject({ isReconcilable: false, hasExternalStatement: true })
+
+    cleanup()
+    renderForm('asset')
+    fireEvent.change(screen.getByLabelText('外部明細(CSV)はありますか?'), { target: { value: 'no' } })
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '現金' } })
+    fireEvent.click(screen.getByRole('button', { name: '登録' }))
+    await waitFor(() => expect(registered()).toHaveLength(2))
+    expect(registered()[1]).toMatchObject({ isReconcilable: false, hasExternalStatement: false })
+  })
+
   it('外部明細があるときは、名義に「全員」の選択肢がない', () => {
     renderForm('asset')
 

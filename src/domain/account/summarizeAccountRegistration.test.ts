@@ -65,6 +65,28 @@ describe('summarizeAccountRegistration', () => {
     expect(summarizeAccountRegistration(account({ isReconcilable: false }), [])?.hasBalanceInfo).toBe(false)
   })
 
+  it('外部明細の有無は、登録時の回答(hasExternalStatement)をそのまま返す(CSVあり・残高なしも区別できる)', () => {
+    expect(
+      summarizeAccountRegistration(account({ isReconcilable: false, hasExternalStatement: true }), [])
+        ?.hasExternalStatement,
+    ).toBe(true)
+    expect(
+      summarizeAccountRegistration(account({ isReconcilable: false, hasExternalStatement: false }), [])
+        ?.hasExternalStatement,
+    ).toBe(false)
+  })
+
+  it('回答が未記録(null)の行は、照合可否から推定する(照合する科目は外部明細あり)', () => {
+    expect(
+      summarizeAccountRegistration(account({ isReconcilable: true, hasExternalStatement: null }), [])
+        ?.hasExternalStatement,
+    ).toBe(true)
+    expect(
+      summarizeAccountRegistration(account({ isReconcilable: false, hasExternalStatement: null }), [])
+        ?.hasExternalStatement,
+    ).toBe(false)
+  })
+
   it('資産・負債以外の科目は対象外としてnullを返す', () => {
     expect(summarizeAccountRegistration(account({ category: 'expense', isReconcilable: null }), [])).toBeNull()
     expect(summarizeAccountRegistration(account({ category: 'equity', isReconcilable: null }), [])).toBeNull()

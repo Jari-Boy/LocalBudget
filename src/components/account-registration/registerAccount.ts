@@ -24,6 +24,12 @@ export interface RegisterAccountInput {
    * (reconciliationQuestion.ts、docs/domain/accounts.md 4.2節)から呼び出し側が計算して渡す。
    */
   isReconcilable: boolean
+  /**
+   * 「外部明細(CSV)はありますか?」の回答(計画Issue #189)。isReconcilableはfalseの1値に
+   * 「外部明細あり・残高なし」と「外部明細なし」が畳み込まれるため、回答そのものを保存する。
+   * 省略時は照合可否から決まる(照合する科目は外部明細あり)
+   */
+  hasExternalStatement?: boolean
   name: string
   householdMemberId: number | null
   /** 所属グループ(計画Issue #154)。未指定・nullならグループなしで登録する */
@@ -94,6 +100,7 @@ export async function registerAccount(
     category: input.category,
     name: input.name,
     isReconcilable: input.isReconcilable,
+    hasExternalStatement: input.hasExternalStatement,
     householdMemberId: input.householdMemberId,
     accountGroupId: input.accountGroupId ?? null,
   })

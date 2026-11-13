@@ -46,6 +46,41 @@ function findRegisteredAccounts() {
   return accountRepository.findAll().filter((a) => a.name !== '初期残高')
 }
 
+describe('registerAccount: 外部明細の有無(計画Issue #189)', () => {
+  const base = {
+    category: 'liability' as const,
+    name: 'カード未払金',
+    householdMemberId: null,
+    initialBalanceLines: [],
+    entryDate: '2026-11-07',
+  }
+
+  it('外部明細ありの回答を保存する(CSVあり・残高なしは照合可否がfalseでも外部明細あり)', async () => {
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
+      ...base,
+      isReconcilable: false,
+      hasExternalStatement: true,
+      journalEntryHouseholdMemberId: creatorId,
+    })
+
+    expect(account.hasExternalStatement).toBe(true)
+    expect(account.isReconcilable).toBe(false)
+  })
+
+  it('外部明細なしの回答を保存する', async () => {
+    const account = await registerAccount(accountRepository, journalEntryRepository, {
+      ...base,
+      category: 'asset',
+      name: '現金',
+      isReconcilable: false,
+      hasExternalStatement: false,
+      journalEntryHouseholdMemberId: creatorId,
+    })
+
+    expect(account.hasExternalStatement).toBe(false)
+  })
+})
+
 describe('registerAccount', () => {
   it('初期残高を入力しない場合、資産科目のみが作成される', async () => {
     const account = await registerAccount(accountRepository, journalEntryRepository, {

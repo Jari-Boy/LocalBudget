@@ -4,9 +4,13 @@ import type { Account } from './Account'
 /** 資産・負債科目の「登録時の設定」(計画Issue #189)。画面には表示のみで、あとから変更しない */
 export interface AccountRegistrationSummary {
   /**
-   * 残高情報の有無。is_reconcilableがtrue(外部明細あり かつ 残高情報あり)のときだけtrue。
-   * falseは「外部明細あり・残高情報なし」と「外部明細なし」を区別できないため、外部明細の
-   * 有無はここでは断定しない(docs/domain/accounts.md 4.2)
+   * 外部明細(CSV)の有無。登録時の回答(has_external_statement)を返す。回答を保存する前に
+   * 作られた行(null)は、照合可否から推定する(照合する科目は外部明細あり、それ以外はなし)
+   */
+  hasExternalStatement: boolean
+  /**
+   * 残高情報の有無。is_reconcilableがtrue(外部明細あり かつ 残高情報あり)のときだけtrue
+   * (docs/domain/accounts.md 4.2)
    */
   hasBalanceInfo: boolean
   /** 初期残高(source_type='initial_balance'の仕訳から求める)。登録時に入力しなかった科目はnull */
@@ -37,6 +41,7 @@ export function summarizeAccountRegistration(
   }
 
   return {
+    hasExternalStatement: account.hasExternalStatement ?? account.isReconcilable === true,
     hasBalanceInfo: account.isReconcilable === true,
     initialBalance: date === null ? null : { amount: total, date },
   }

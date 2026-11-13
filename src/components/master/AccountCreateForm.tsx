@@ -113,6 +113,7 @@ export function AccountCreateForm({
               hasExternalStatement: csvExists,
               hasBalanceInStatement: csvExists ? hasBalance === 'yes' : null,
             }),
+            hasExternalStatement: csvExists,
             name: name.trim(),
             householdMemberId: memberId,
             accountGroupId,
