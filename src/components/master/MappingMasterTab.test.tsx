@@ -89,6 +89,23 @@ describe('MappingMasterTab', () => {
     expect(screen.getByRole('button', { name: /^楽天銀行/ })).toHaveTextContent('科目の指定なし ・ 区別なし')
   })
 
+  it('一覧は金融機関名の見出しでグループ化され、同じ金融機関の定義が見出しの下に確定→速報の順で並ぶ(計画Issue #183)', async () => {
+    makeMapping({ label: '楽天カード(速報)', isSettled: false })
+    makeMapping({ label: '楽天銀行', formatGroupId: '楽天銀行', isSettled: null, accountIds: [] })
+    makeMapping({ label: '楽天カード(確定)', isSettled: true })
+
+    renderTab()
+
+    await screen.findByRole('button', { name: /楽天カード\(確定\)/ })
+    const groups = screen.getAllByRole('group')
+    expect(groups.map((g) => within(g).getByRole('heading').textContent)).toEqual(['楽天カード', '楽天銀行'])
+    expect(within(groups[0]).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      expect.stringContaining('楽天カード(確定)'),
+      expect.stringContaining('楽天カード(速報)'),
+    ])
+    expect(within(groups[1]).getAllByRole('button')).toHaveLength(1)
+  })
+
   it('定義を選ぶと、右パネルに保存済みの値が入る', async () => {
     makeMapping({ accountIds: [cardId, bankId] })
 

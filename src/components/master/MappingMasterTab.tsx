@@ -27,6 +27,7 @@ import {
 } from './mappingForm'
 import './master.css'
 import { collectFinancialInstitutionNames } from '../../domain/statement-import/financialInstitution'
+import { groupMappingDefinitionsByInstitution } from '../../domain/statement-import/groupMappingDefinitionsByInstitution'
 
 export interface MappingMasterTabProps {
   importMappingDefinitionRepository: MaybeAsync<
@@ -177,28 +178,37 @@ export function MappingMasterTab({
           </label>
         </div>
         <ul className="master-list">
-          {data.definitions.map((d) => (
-            <li key={d.id}>
-              <button
-                type="button"
-                className={`master-list__button${d.id === mode ? ' master-list__button--selected' : ''}`}
-                aria-current={d.id === mode ? 'true' : undefined}
-                onClick={() => {
-                  setMode(d.id)
-                  setArmed(false)
-                  setError('')
-                  setFlash('')
-                }}
-              >
-                <span>{d.label}</span>
-                <span className="master-note">
-                  {d.accountIds.length > 0
-                    ? d.accountIds.map((id) => accountNameById.get(id) ?? '').join('、')
-                    : t('mappingTab.noAccounts')}
-                  {' ・ '}
-                  {settledText(d)}
-                </span>
-              </button>
+          {groupMappingDefinitionsByInstitution(data.definitions).map((group) => (
+            <li key={group.name} role="group" aria-labelledby={`map-group-${group.name}`} className="master-list__group">
+              <h3 id={`map-group-${group.name}`} className="master-list__group-title">
+                {group.name}
+              </h3>
+              <ul className="master-list">
+                {group.definitions.map((d) => (
+                  <li key={d.id}>
+                    <button
+                      type="button"
+                      className={`master-list__button master-list__button--grouped${d.id === mode ? ' master-list__button--selected' : ''}`}
+                      aria-current={d.id === mode ? 'true' : undefined}
+                      onClick={() => {
+                        setMode(d.id)
+                        setArmed(false)
+                        setError('')
+                        setFlash('')
+                      }}
+                    >
+                      <span>{d.label}</span>
+                      <span className="master-note">
+                        {d.accountIds.length > 0
+                          ? d.accountIds.map((id) => accountNameById.get(id) ?? '').join('、')
+                          : t('mappingTab.noAccounts')}
+                        {' ・ '}
+                        {settledText(d)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>
