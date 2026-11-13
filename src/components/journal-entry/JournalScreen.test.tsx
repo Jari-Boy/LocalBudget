@@ -14,7 +14,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '../../infrastructure/i18n/i18n'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
@@ -977,6 +977,428 @@ describe('JournalScreen', () => {
 
       expect(await screen.findByRole('alert')).toBeInTheDocument()
       expect(screen.queryByText('1件の仕訳を仕訳帳に反映しました')).not.toBeInTheDocument()
+    })
+  })
+})
+
+/**
+ * 仕訳画面の「明細行単位」の表示方式(計画Issue #182)。仕訳一覧タブに「仕訳単位 / 明細行単位」の切替があり、
+ * 切り替えても選択・フィルタは仕訳単位で動くこと、明細行単位では詳細パネルを出さず表でインライン編集できること
+ * (保存・キャンセル・削除の2回押し・貸借が合わない間は保存不可・既存の未保存ガード)、下書き・承認待ちタブには
+ * 切替が出ないこと、選んだ表示方式がlocalStorageに保存され再訪時に復元されること(初期値は仕訳単位)を検証する。
+ */
+describe('JournalScreen(明細行単位)', () => {
+  const VIEW_KEY = 'localbudget:journal-view-mode'
+  const viewToggle = () => screen.getByRole('group', { name: '表示方式' })
+  const switchTo = (name: '仕訳単位' | '明細行単位') => fireEvent.click(within(viewToggle()).getByRole('button', { name }))
+  const lineTable = () => screen.getByRole('table', { name: '仕訳の明細行' })
+
+  beforeEach(() => localStorage.clear())
+  afterEach(() => localStorage.clear())
+
+  /** 明細行単位で開いた状態にする(保存済みの表示方式を復元させる) */
+  async function setupLineView(overrides: Parameters<typeof setup>[0] = {}) {
+    localStorage.setItem(VIEW_KEY, 'line')
+    const props = setup(overrides)
+    await ready()
+    return props
+  }
+
+  describe('表示方式の切替と保持', () => {
+    it('仕訳一覧タブに「仕訳単位 / 明細行単位」の切替があり、初期値は仕訳単位(従来の一覧と詳細パネル)', async () => {
+      setup()
+      await ready()
+      expect(within(viewToggle()).getByRole('button', { name: '仕訳単位' })).toHaveAttribute('aria-pressed', 'true')
+      expect(within(viewToggle()).getByRole('button', { name: '明細行単位' })).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.queryByRole('table', { name: '仕訳の明細行' })).not.toBeInTheDocument()
+      expect(detail()).toBeInTheDocument()
+    })
+
+    it('明細行単位に切り替えると表になり、詳細パネルと従来の一覧は出ない。仕訳単位に戻すと元に戻る', async () => {
+      setup()
+      await ready()
+      switchTo('明細行単位')
+      expect(lineTable()).toBeInTheDocument()
+      expect(screen.queryByRole('region', { name: '仕訳の詳細' })).not.toBeInTheDocument()
+      switchTo('仕訳単位')
+      expect(screen.queryByRole('table', { name: '仕訳の明細行' })).not.toBeInTheDocument()
+      expect(detail()).toBeInTheDocument()
+    })
+
+    it('明細行単位のときだけ「列幅を初期値に戻す」が表示方式の切替の左隣に出て、列幅を変えると押せる', async () => {
+      setup()
+      await ready()
+      expect(screen.queryByRole('button', { name: '列幅を初期値に戻す' })).not.toBeInTheDocument()
+      switchTo('明細行単位')
+      const reset = screen.getByRole('button', { name: '列幅を初期値に戻す' })
+      expect(reset).toBeDisabled()
+      expect(reset.compareDocumentPosition(viewToggle()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(reset.parentElement).toBe(viewToggle().parentElement)
+      fireEvent.keyDown(within(lineTable()).getByRole('separator', { name: '日付の列幅' }), { key: 'ArrowRight' })
+      expect(reset).toBeEnabled()
+      fireEvent.click(reset)
+      expect(reset).toBeDisabled()
+    })
+
+    it('選んだ表示方式をlocalStorageに保存し、再訪時に明細行単位で開く', async () => {
+      setup()
+      await ready()
+      switchTo('明細行単位')
+      expect(localStorage.getItem(VIEW_KEY)).toBe('line')
+      cleanup()
+
+      setup()
+      await ready()
+      expect(lineTable()).toBeInTheDocument()
+      switchTo('仕訳単位')
+      expect(localStorage.getItem(VIEW_KEY)).toBe('entry')
+    })
+
+    it('下書き・承認待ちのタブには切替が出ず、従来の一覧のまま(明細行単位を選んでいても)', async () => {
+      await setupLineView()
+      fireEvent.click(screen.getByRole('tab', { name: /下書き/ }))
+      expect(await screen.findByText('書きかけ')).toBeInTheDocument()
+      expect(screen.queryByRole('group', { name: '表示方式' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('table', { name: '仕訳の明細行' })).not.toBeInTheDocument()
+      expect(detail()).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('tab', { name: /仕訳一覧/ }))
+      expect(await screen.findByRole('table', { name: '仕訳の明細行' })).toBeInTheDocument()
+    })
+  })
+
+  describe('表示と選択・絞り込み(仕訳単位のまま動く)', () => {
+    it('表に全仕訳の明細行が並び、複合でない仕訳は借方と貸方が同じ行に出る', async () => {
+      await setupLineView()
+      const row = screen.getByRole('button', { name: 'ランチ' }).closest('tr') as HTMLElement
+      expect(within(row).getByText('食費')).toBeInTheDocument()
+      expect(within(row).getByText('普通預金')).toBeInTheDocument()
+    })
+
+    it('摘要で絞り込むと、明細行単位でも表が絞られ、件数が出る', async () => {
+      await setupLineView()
+      fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '家賃' } })
+      expect(screen.queryByRole('button', { name: 'ランチ' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '家賃' })).toBeInTheDocument()
+      expect(screen.getByText('1件')).toBeInTheDocument()
+    })
+
+    it('開いた直後は、先頭の仕訳が選択状態で強調されるだけで、編集は始まっていない', async () => {
+      await setupLineView()
+      expect(screen.getByRole('button', { name: 'ランチ' }).closest('tr')).toHaveAttribute('aria-current', 'true')
+      expect(screen.queryByLabelText('摘要')).not.toBeInTheDocument()
+    })
+
+    it('表の行を押すと、その仕訳が選ばれて編集できる状態になり、仕訳単位に切り替えるとその仕訳の詳細が開く', async () => {
+      await setupLineView()
+      fireEvent.click(screen.getByRole('button', { name: '家賃' }))
+      expect(screen.getByLabelText('摘要')).toHaveValue('家賃')
+      switchTo('仕訳単位')
+      expect(memoInput()).toHaveValue('家賃')
+    })
+
+    it('「新規仕訳」を押すと、入力欄のある仕訳単位の画面で開く。保存した表示方式は変わらない', async () => {
+      await setupLineView()
+      fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+      expect(screen.getByRole('heading', { name: '新しい仕訳' })).toBeInTheDocument()
+      expect(screen.queryByRole('table', { name: '仕訳の明細行' })).not.toBeInTheDocument()
+      expect(localStorage.getItem(VIEW_KEY)).toBe('line')
+    })
+  })
+
+  describe('インライン編集', () => {
+    it('行を押すと(編集ボタンはない)、その仕訳の全行が入力欄になる。他の仕訳は閲覧のまま', async () => {
+      await setupLineView()
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+      expect(screen.getByLabelText('摘要')).toHaveValue('ランチ')
+      expect(screen.getByLabelText('借方の金額')).toHaveValue('1200')
+      expect(screen.getByLabelText('貸方の金額')).toHaveValue('1200')
+      expect(screen.getAllByLabelText('摘要')).toHaveLength(1)
+      expect(screen.getByRole('button', { name: '家賃' })).toBeInTheDocument()
+    })
+
+    it('金額を直して貸借が合っていれば保存でき、保存すると表の閲覧に戻る', async () => {
+      const props = await setupLineView()
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+      fireEvent.change(screen.getByLabelText('借方の金額'), { target: { value: '1500' } })
+      fireEvent.change(screen.getByLabelText('貸方の金額'), { target: { value: '1500' } })
+      fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+      await waitFor(() => expect(props.journalEntryRepository.update).toHaveBeenCalledTimes(1))
+      const [id, input] = props.journalEntryRepository.update.mock.calls[0] as unknown as [number, { lines: { amount: number }[] }]
+      expect(id).toBe(1)
+      expect(input.lines.map((l) => l.amount)).toEqual([1500, 1500])
+      await waitFor(() => expect(screen.queryByLabelText('摘要')).not.toBeInTheDocument())
+      expect(screen.getByRole('button', { name: 'ランチ' })).toBeInTheDocument()
+    })
+
+    it('貸借が合わない間は、差額を表示して保存できず、Repositoryも呼ばれない', async () => {
+      const props = await setupLineView()
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+      fireEvent.change(screen.getByLabelText('借方の金額'), { target: { value: '1500' } })
+      expect(within(lineTable()).getByRole('status')).toHaveTextContent('貸借が合っていません')
+      expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
+      expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+    })
+
+    it('科目が未選択の行があるなど、保存できない理由は操作バーに表示し、保存しない', async () => {
+      const props = await setupLineView()
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+      fireEvent.click(screen.getByRole('button', { name: '+ 借方の行' }))
+      fireEvent.change(screen.getAllByLabelText('借方の金額')[1], { target: { value: '300' } })
+      fireEvent.change(screen.getByLabelText('貸方の金額'), { target: { value: '1500' } })
+      fireEvent.click(screen.getByRole('button', { name: '保存' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('保存できません')
+      expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+    })
+
+    it('「キャンセル」で編集前の内容に戻り、保存しない', async () => {
+      const props = await setupLineView()
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+      fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチ(修正中)' } })
+      fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+      expect(screen.queryByLabelText('摘要')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'ランチ' })).toBeInTheDocument()
+      expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+      // もう一度開くと、修正中の内容は残っていない
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+      expect(screen.getByLabelText('摘要')).toHaveValue('ランチ')
+    })
+
+    it('削除は2回押して確定する(確認中は元に戻せない旨を表示し、「やめる」で何も消えない)', async () => {
+      const props = await setupLineView()
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+      fireEvent.click(screen.getByRole('button', { name: '仕訳を削除' }))
+      expect(props.journalEntryRepository.delete).not.toHaveBeenCalled()
+      expect(screen.getByRole('alert')).toHaveTextContent('この仕訳を削除します。元に戻せません。')
+
+      fireEvent.click(screen.getByRole('button', { name: 'やめる' }))
+      expect(screen.queryByRole('button', { name: '本当に削除する' })).not.toBeInTheDocument()
+      expect(props.journalEntryRepository.delete).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: '仕訳を削除' }))
+      fireEvent.click(screen.getByRole('button', { name: '本当に削除する' }))
+      await waitFor(() => expect(props.journalEntryRepository.delete).toHaveBeenCalledWith(1))
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'ランチ' })).not.toBeInTheDocument())
+    })
+  })
+
+  describe('未保存の変更があるまま移動しようとしたとき(既存の未保存ガード)', () => {
+    it('編集中に別の仕訳の行を押すと、保存か破棄かを聞き、キャンセルすれば編集中の内容が残る', async () => {
+      const props = await setupLineView()
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+      fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチ(修正中)' } })
+      fireEvent.click(screen.getByRole('button', { name: '家賃' }))
+      expect(leaveDialog()).toBeInTheDocument()
+      // 表の操作バーにも「キャンセル」があるため、未保存ガードのダイアログの中で選ぶ
+      fireEvent.click(within(leaveDialog() as HTMLElement).getByRole('button', { name: 'キャンセル' }))
+      expect(leaveDialog()).not.toBeInTheDocument()
+      expect(screen.getByLabelText('摘要')).toHaveValue('ランチ(修正中)')
+      expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+    })
+
+    it('「破棄して移動」を選ぶと、保存せずに選んだ仕訳の編集に移る', async () => {
+      const props = await setupLineView()
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+      fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチ(修正中)' } })
+      fireEvent.click(screen.getByRole('button', { name: '家賃' }))
+      fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+      expect(leaveDialog()).not.toBeInTheDocument()
+      expect(screen.getByLabelText('摘要')).toHaveValue('家賃')
+      expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+    })
+
+    it('変更がなければ、別の仕訳の行を押して編集に移ってもダイアログを出さない', async () => {
+      await setupLineView()
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+      fireEvent.click(screen.getByRole('button', { name: '家賃' }))
+      expect(leaveDialog()).not.toBeInTheDocument()
+      expect(screen.getByLabelText('摘要')).toHaveValue('家賃')
+    })
+
+    it('編集中に仕訳単位へ切り替えようとしても、保存か破棄かを聞く', async () => {
+      await setupLineView()
+      fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+      fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチ(修正中)' } })
+      switchTo('仕訳単位')
+      expect(leaveDialog()).toBeInTheDocument()
+      expect(screen.getByRole('table', { name: '仕訳の明細行' })).toBeInTheDocument()
+    })
+  })
+
+  /**
+   * 一括編集(計画Issue #182): 明細行単位の表で、明細の行を仕訳をまたいで選び、科目・プロジェクト・取引先・
+   * 精算バッチ・世帯メンバーをまとめて変える。選べない項目の先回りの無効化、適用の2回押し、1件の仕訳ずつの保存と
+   * 結果の報告(失敗した仕訳の行は選択したまま)、インライン編集・絞り込み・表示方式の切替との整合を検証する。
+   */
+  describe('一括編集', () => {
+    /** 摘要(ボタン)から、その仕訳の先頭行を得る */
+    const rowOf = (memo: string) => screen.getByRole('button', { name: memo }).closest('tr') as HTMLElement
+    const debitBox = (memo: string) => within(rowOf(memo)).getByRole('checkbox', { name: '借方の行を選択' })
+    const creditBox = (memo: string) => within(rowOf(memo)).getByRole('checkbox', { name: '貸方の行を選択' })
+    const bulkBar = () => screen.getByRole('region', { name: '一括編集' })
+    const chooseAccount = (option: string) => {
+      fireEvent.click(within(bulkBar()).getByRole('button', { name: '一括編集の科目: 変更しない' }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '一括編集の科目' })).getByRole('button', { name: option }))
+    }
+    const memberSelect = () => within(bulkBar()).getByLabelText('一括編集の世帯メンバー')
+    const apply = () => within(bulkBar()).getByRole('button', { name: /行に適用$/ })
+
+    it('明細行単位のときだけ、各行にチェックボックスが出る(仕訳単位には出ない)', async () => {
+      await setupLineView()
+      expect(screen.getAllByRole('checkbox', { name: '借方の行を選択' })).toHaveLength(4)
+      expect(screen.getAllByRole('checkbox', { name: '貸方の行を選択' })).toHaveLength(4)
+      switchTo('仕訳単位')
+      expect(screen.queryByRole('checkbox', { name: '借方の行を選択' })).not.toBeInTheDocument()
+    })
+
+    it('1行選ぶと一括編集バーが出て、選択件数を表示する。「選択を解除」でバーが消える', async () => {
+      await setupLineView()
+      expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+      fireEvent.click(debitBox('ランチ'))
+      expect(within(bulkBar()).getByText('1行を選択中(借方 1行・貸方 0行、1件の仕訳)')).toBeInTheDocument()
+      fireEvent.click(within(bulkBar()).getByRole('button', { name: '選択を解除' }))
+      expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+      expect(debitBox('ランチ')).not.toBeChecked()
+    })
+
+    it('行を押さずにチェックだけでは、その仕訳の編集は始まらない', async () => {
+      await setupLineView()
+      fireEvent.click(debitBox('ランチ'))
+      expect(screen.queryByLabelText('摘要')).not.toBeInTheDocument()
+    })
+
+    it('各側の見出しのチェックで、その側の表示中の行をすべて選べ、もう一度押すと外れる', async () => {
+      await setupLineView()
+      fireEvent.click(screen.getByRole('checkbox', { name: '借方の行をすべて選択' }))
+      expect(within(bulkBar()).getByText('4行を選択中(借方 4行・貸方 0行、4件の仕訳)')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('checkbox', { name: '借方の行をすべて選択' }))
+      expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+    })
+
+    describe('選べない項目の先回りの無効化', () => {
+      it('食費(費用)の行だけを選ぶと精算バッチは選べず、立替金の行だけを選ぶと精算バッチを選べる', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        expect(within(bulkBar()).getByLabelText('一括編集の精算バッチ')).toBeDisabled()
+        expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeEnabled()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(debitBox('旅行の立替'))
+        expect(within(bulkBar()).getByLabelText('一括編集の精算バッチ')).toBeEnabled()
+        expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
+      })
+
+      it('普通預金(資産)の行が混ざると取引先は選べない', async () => {
+        await setupLineView()
+        fireEvent.click(creditBox('ランチ'))
+        expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
+        expect(within(bulkBar()).getByText('費用・収益の行のみ')).toBeInTheDocument()
+      })
+    })
+
+    describe('適用', () => {
+      it('2回押して確定し、仕訳ごとに1件ずつ更新する。選択した行だけが変わり、保存後は選択が解除されて結果が出る', async () => {
+        const props = await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(debitBox('家賃'))
+        fireEvent.change(memberSelect(), { target: { value: '2' } })
+
+        fireEvent.click(apply())
+        expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+        expect(within(bulkBar()).getByRole('alert')).toHaveTextContent('2行(2件の仕訳)を更新します。元に戻せません。')
+        fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
+
+        await waitFor(() => expect(props.journalEntryRepository.update).toHaveBeenCalledTimes(2))
+        const calls = props.journalEntryRepository.update.mock.calls as unknown as [number, { lines: { id?: number; householdMemberId: number }[] }][]
+        expect(calls.map(([id]) => id)).toEqual([1, 2])
+        // ランチの借方(行11)だけが妻(2)になり、貸方(行12)は夫(1)のまま
+        expect(calls[0][1].lines.map((l) => [l.id, l.householdMemberId])).toEqual([
+          [11, 2],
+          [12, 1],
+        ])
+        expect(await screen.findByText('2行(2件の仕訳)を更新しました')).toBeInTheDocument()
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+      })
+
+      it('1回目のあとに「やめる」を押すと何も更新されず、項目を選び直しても確認は取り消される', async () => {
+        const props = await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.change(memberSelect(), { target: { value: '2' } })
+        fireEvent.click(apply())
+        fireEvent.click(within(bulkBar()).getByRole('button', { name: 'やめる' }))
+        expect(within(bulkBar()).queryByRole('alert')).not.toBeInTheDocument()
+        fireEvent.click(apply())
+        fireEvent.change(memberSelect(), { target: { value: '1' } })
+        expect(within(bulkBar()).queryByRole('alert')).not.toBeInTheDocument()
+        expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+      })
+
+      it('科目を一括で変えると、選んだ行の科目が変わる', async () => {
+        const props = await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        chooseAccount('家賃')
+        fireEvent.click(apply())
+        fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
+        await waitFor(() => expect(props.journalEntryRepository.update).toHaveBeenCalledTimes(1))
+        const [id, input] = props.journalEntryRepository.update.mock.calls[0] as unknown as [number, { lines: { accountId: number }[] }]
+        expect(id).toBe(1)
+        expect(input.lines.map((l) => l.accountId)).toEqual([4, 2])
+      })
+
+      it('一部の仕訳で保存に失敗したら、成功した分を報告し、失敗した仕訳と理由を示して、その仕訳の行は選択したままにする', async () => {
+        const props = await setupLineView()
+        // ランチ(先)が失敗し、家賃(後)は成功する
+        props.journalEntryRepository.update.mockRejectedValueOnce(new Error('boom'))
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(debitBox('家賃'))
+        fireEvent.change(memberSelect(), { target: { value: '2' } })
+        fireEvent.click(apply())
+        fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
+
+        expect(await screen.findByText('1行(1件の仕訳)を更新しました')).toBeInTheDocument()
+        expect(screen.getByRole('alert')).toHaveTextContent(/更新できませんでした.*「ランチ」/)
+        // 失敗したランチの行は選択したまま。成功した家賃の行は外れる
+        expect(within(bulkBar()).getByText('1行を選択中(借方 1行・貸方 0行、1件の仕訳)')).toBeInTheDocument()
+        expect(debitBox('ランチ')).toBeChecked()
+        expect(debitBox('家賃')).not.toBeChecked()
+      })
+    })
+
+    describe('他の操作との整合', () => {
+      it('行を押してインライン編集を始めると、一括編集の選択は解除され、チェックは押せなくなる', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(screen.getByRole('button', { name: '家賃' }))
+        expect(screen.getByLabelText('摘要')).toHaveValue('家賃')
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+        for (const box of screen.getAllByRole('checkbox')) expect(box).toBeDisabled()
+      })
+
+      it('絞り込みで見えなくなった行は、選択に含まれない(表示中の行だけが対象)', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(debitBox('家賃'))
+        expect(within(bulkBar()).getByText(/^2行を選択中/)).toBeInTheDocument()
+        fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '家賃' } })
+        expect(within(bulkBar()).getByText('1行を選択中(借方 1行・貸方 0行、1件の仕訳)')).toBeInTheDocument()
+      })
+
+      it('表示方式を切り替えると、一括編集の選択は解除される', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        switchTo('仕訳単位')
+        switchTo('明細行単位')
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+        expect(debitBox('ランチ')).not.toBeChecked()
+      })
+
+      it('タブを切り替えると、一括編集の選択は解除される', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(screen.getByRole('tab', { name: /下書き/ }))
+        fireEvent.click(screen.getByRole('tab', { name: /仕訳一覧/ }))
+        await screen.findByRole('table', { name: '仕訳の明細行' })
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+      })
     })
   })
 })

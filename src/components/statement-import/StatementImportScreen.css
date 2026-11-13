@@ -53,10 +53,8 @@
   color: var(--color-text);
 }
 
+/* 表の中の選択欄。高さ・文字・余白は科目などの選択ツリー(TreeSelect)と同じ(.import-control のまま)にし、幅だけ詰められるようにする */
 .import-control--small {
-  min-height: 30px;
-  font-size: 13px;
-  padding: 0 8px;
   min-width: 0;
   max-width: 100%;
 }

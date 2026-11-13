@@ -1,0 +1,471 @@
+/* 仕訳一覧の「明細行単位」の表(計画Issue #182)。色・余白は既存の仕訳一覧と同じデザイントークンを使う */
+.journal-line-table {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  text-align: left;
+  color: var(--color-text);
+}
+
+.journal-line-table-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.journal-line-table__table {
+  /*
+   * 列幅(colgroup の col)と、列幅の合計の最小幅(min-width)は、ユーザーが調整した値でJournalLineTableが
+   * インラインで指定する。列が増えても詰まらないよう、枠の中で横スクロールさせる
+   */
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--font-size-xs);
+}
+
+.journal-line-table th {
+  position: relative;
+  padding: 8px 6px;
+  background: var(--color-hover);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-align: left;
+  color: var(--color-text-muted);
+}
+
+/*
+ * 列の境目のつまみ(列幅を変える)。見出しの右端に重ねて、触れる幅(7px)を確保する。普段は薄い線、
+ * 触れる・フォーカス・ドラッグ中は緑で示す。touch-action: none は、タッチ操作でドラッグできるようにするため
+ */
+.journal-line-table__resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  z-index: 2;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.journal-line-table__resizer::after {
+  content: '';
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  left: 3px;
+  width: 1px;
+  background: var(--color-border-strong);
+}
+
+.journal-line-table__resizer:hover::after,
+.journal-line-table__resizer:focus-visible::after,
+.journal-line-table__resizer[data-dragging='true']::after {
+  left: 2px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-accent);
+}
+
+.journal-line-table__resizer:focus-visible {
+  outline: none;
+}
+
+.journal-line-table__group-head th {
+  padding-bottom: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-accent);
+}
+
+.journal-line-table__group-head td {
+  background: var(--color-hover);
+}
+
+.journal-line-table__cell {
+  padding: 7px 6px;
+  overflow: hidden;
+  /* 閲覧の行と編集中の入力欄(.journal-line-table__control)で文字の大きさを揃える */
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.journal-line-table__cell--account {
+  font-weight: 500;
+}
+
+/* 一括編集の行の選択の列(計画Issue #182)。借方・貸方それぞれの先頭に置く固定幅の列 */
+.journal-line-table__cell--check {
+  padding-right: 0;
+  padding-left: 8px;
+}
+
+.journal-line-table__checkbox {
+  display: block;
+  margin: 0;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.journal-line-table__checkbox:disabled {
+  cursor: not-allowed;
+}
+
+/* 一括編集で選んだ行のセルを強調する */
+.journal-line-table td.journal-line-table__cell--bulk-selected {
+  background: var(--color-accent-soft);
+}
+
+.journal-line-table__cell--amount,
+.journal-line-table th.journal-line-table__cell--amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 「日付〜コメント」「借方」「貸方」の3つの境目の縦線。仕訳の区切り線や行の線より一段濃くして、
+ * 表を横に見渡したときにどこからどこまでが借方・貸方かすぐ分かるようにする(濃すぎると重いため、
+ * 既存の強調用の線の色(--color-border-strong)に留める)
+ */
+.journal-line-table {
+  --journal-line-table-divider: var(--color-border-strong);
+}
+
+.journal-line-table__debit-start,
+.journal-line-table__credit-start {
+  border-left: 2px solid var(--journal-line-table-divider);
+}
+
+.journal-line-table tbody tr:hover {
+  background: var(--color-hover);
+}
+
+.journal-line-table tbody tr {
+  cursor: pointer;
+}
+
+/* 仕訳の境目は太めの線、同じ仕訳の中の行は細い線 */
+.journal-line-table tbody td {
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.journal-line-table tbody tr:first-child > td {
+  border-top: 2px solid var(--color-border);
+}
+
+.journal-line-table tbody:first-of-type tr:first-child > td {
+  border-top: 0;
+}
+
+.journal-line-table__row--selected,
+.journal-line-table tbody tr.journal-line-table__row--selected:hover {
+  background: var(--color-accent-soft);
+}
+
+.journal-line-table__tag {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* 摘要は行を選ぶためのボタン(行のどこを押しても選べる。キーボードで選ぶ入口) */
+.journal-line-table__memo {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.journal-line-table__comment {
+  color: var(--color-text-muted);
+}
+
+/* ---- インライン編集(計画Issue #182)。既存の仕訳一覧と同じ緑系のトーンに合わせる ---- */
+/* 編集中の行は、背景色を変えない(入力欄の罫線と操作バーで、編集中だと見た目で分かるため) */
+.journal-line-table tbody.journal-line-table__editing tr,
+.journal-line-table tbody.journal-line-table__editing tr:hover {
+  background: transparent;
+  cursor: default;
+}
+
+/*
+ * 編集中の入力欄は、枠つきのカードにせず、セルいっぱいに広げて罫線で区切る(カードだと余白が増えて
+ * 場所を取るため)。入力欄そのものの枠・角丸・背景は付けず、触れたときだけ背景と枠で示す
+ */
+.journal-line-table__editing td.journal-line-table__cell:not(.journal-line-table__debit-start):not(.journal-line-table__credit-start) {
+  /* 各ブロック(セル)の境界が分かるよう、薄い罫線を引く */
+  border-left: 1px solid var(--color-border);
+}
+
+.journal-line-table__editing td.journal-line-table__cell {
+  padding: 0;
+}
+
+.journal-line-table__editing tr + tr > td {
+  border-top-color: var(--color-border);
+}
+
+/* 取引日と摘要の入力欄を横に並べる(日付は固定の幅、摘要は残りの幅いっぱい)。境目に薄い罫線 */
+.journal-line-table__edit-head {
+  display: flex;
+}
+
+.journal-line-table__edit-head > .journal-line-table__edit-date {
+  flex: 0 0 150px;
+  width: 150px;
+}
+
+.journal-line-table__edit-head > * + * {
+  flex: 1 1 auto;
+  border-left: 1px solid var(--color-border);
+}
+
+.journal-line-table__control {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-xs);
+}
+
+.journal-line-table__control:hover,
+.journal-line-table .tree-select__trigger:hover {
+  background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+}
+
+.journal-line-table__control:focus-visible,
+.journal-line-table .tree-select__trigger:focus-visible {
+  background: var(--color-surface);
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/*
+ * 編集中のセルは狭いため、プルダウンを示す矢印(▾)は出さない。矢印の分だけ入力欄が削られて、
+ * 科目名などが見切れてしまうため。選択ツリーのボタンと、世帯メンバー・精算バッチの選択のどちらも同じにする
+ */
+.journal-line-table .tree-select__caret {
+  display: none;
+}
+
+.journal-line-table .tree-select__trigger {
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: var(--font-size-xs);
+}
+
+.journal-line-table select.journal-line-table__control {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: none;
+}
+
+.journal-line-table__amount-edit {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.journal-line-table__amount-input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.journal-line-table__remove {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.journal-line-table__remove:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.journal-line-table__locked {
+  display: block;
+  padding: 0 8px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* 操作バー: 上段は借方・貸方それぞれの列の下に行の追加と合計、下段は左に貸借の状況、右に操作ボタン */
+/* 操作バーの行の高さは、明細の行(入力欄 var(--control-height) + 罫線)と同じにそろえる。上下の余白は持たず、中のボタンの高さで決める */
+.journal-line-table__bar > td {
+  border-top: 0;
+  padding: 0 6px;
+  height: calc(var(--control-height) + 1px);
+}
+
+.journal-line-table tbody.journal-line-table__editing tr.journal-line-table__bar:last-child > td {
+  border-bottom: 2px solid var(--color-accent);
+}
+
+/* 編集中の仕訳の上側にも、下側と同じ緑の枠線を引く(編集中の範囲が上下の線で分かる) */
+.journal-line-table tbody.journal-line-table__editing tr:first-child > td {
+  border-top: 2px solid var(--color-accent);
+}
+
+.journal-line-table__bar-side {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.journal-line-table__small-button {
+  min-height: var(--control-height-sm);
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.journal-line-table__small-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.journal-line-table__total {
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.journal-line-table__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* 貸借の一致状況: 貸方合計の左隣に出す(合計とともに貸方の列の右端に寄せる) */
+.journal-line-table__balance-total {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.journal-line-table__balance {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--color-accent);
+  white-space: nowrap;
+}
+
+.journal-line-table__balance--off,
+.journal-line-table__error {
+  color: var(--color-danger, #b42318);
+}
+
+/* 保存できない理由は、横スクロールしても左端の見える位置に留める */
+.journal-line-table__error-slot {
+  position: sticky;
+  left: 8px;
+}
+
+.journal-line-table__error {
+  font-size: var(--font-size-xs);
+}
+
+.journal-line-table__buttons {
+  position: sticky;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.journal-line-table__button {
+  min-height: var(--control-height-sm);
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.journal-line-table__button--primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.journal-line-table__button--danger {
+  border-color: var(--color-danger, #b42318);
+  color: var(--color-danger, #b42318);
+}
+
+.journal-line-table__button--danger-solid {
+  border-color: var(--color-danger, #b42318);
+  background: var(--color-danger, #b42318);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.journal-line-table__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.journal-line-table__delete-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-xs);
+}
+
+.journal-line-table__delete-title {
+  font-weight: 700;
+  color: var(--color-danger, #b42318);
+}
+
+.journal-line-table__empty {
+  margin: 0;
+  padding: 16px 12px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
