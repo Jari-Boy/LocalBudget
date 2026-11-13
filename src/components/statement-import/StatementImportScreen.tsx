@@ -53,6 +53,7 @@ import {
   type ImportRowState,
 } from './importRowModel'
 import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFormLine'
+import { collectFinancialInstitutionNames } from '../../domain/statement-import/financialInstitution'
 import { MappingCreateDialog } from './MappingCreateDialog'
 import { mappingFormToInput } from '../master/mappingForm'
 import { QuickCreateDialog } from './QuickCreateDialog'
@@ -161,6 +162,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [match, setMatch] = useState<MappingDefinitionCandidateMatch | null>(null)
   const [noMatch, setNoMatch] = useState(false)
   const [showMappingDialog, setShowMappingDialog] = useState(false)
+  const [institutionNames, setInstitutionNames] = useState<string[]>([])
   const [targetAccountId, setTargetAccountId] = useState<number | null>(null)
   const [session, setSession] = useState<ImportSession | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -352,6 +354,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       setCsv({ fileName: file.name, bytes })
       // 取込先は定義から決まるので、まず全定義に実際のパースを試して絞り込む
       const definitions = await Promise.resolve(importMappingDefinitionRepository.findAll())
+      setInstitutionNames(collectFinancialInstitutionNames(definitions.map((d) => d.formatGroupId)))
       const matches = resolveMappingDefinitionCandidates(bytes, definitions)
       if (matches.length === 0) {
         setNoMatch(true)
@@ -1127,7 +1130,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         />
       )}
       {showMappingDialog && csv && (
-        <MappingCreateDialog bytes={csv.bytes} onSave={saveMappingAndContinue} onCancel={() => setShowMappingDialog(false)} />
+        <MappingCreateDialog bytes={csv.bytes} institutionNames={institutionNames} onSave={saveMappingAndContinue} onCancel={() => setShowMappingDialog(false)} />
       )}
       {(createTarget?.kind === 'counterAccount' || createTarget?.kind === 'targetAccount') && (
         <div className="import-dialog__backdrop">

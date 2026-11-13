@@ -12,6 +12,7 @@ import { previewMappingRows, type MappingPreviewRow } from '../../domain/stateme
 import { readCsv } from '../../domain/statement-import/readCsv'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { isStatementImportEligibleAccount } from '../statement-import/statementImportEligibility'
+import { FinancialInstitutionSelect } from './FinancialInstitutionSelect'
 import { buildTreeSelectCategories } from './buildTreeSelectCategories'
 import { buildAccountTree } from './masterTreeNodes'
 import type { MaybeAsync } from './maybeAsync'
@@ -25,6 +26,8 @@ import {
   type MappingForm,
 } from './mappingForm'
 import './master.css'
+import { collectFinancialInstitutionNames } from '../../domain/statement-import/financialInstitution'
+import { groupMappingDefinitionsByInstitution } from '../../domain/statement-import/groupMappingDefinitionsByInstitution'
 
 export interface MappingMasterTabProps {
   importMappingDefinitionRepository: MaybeAsync<
@@ -115,6 +118,7 @@ export function MappingMasterTab({
   }
 
   const accountNameById = new Map(data.accounts.map((a) => [a.id, a.name]))
+  const institutionNames = collectFinancialInstitutionNames(data.definitions.map((d) => d.formatGroupId))
   const selected = typeof mode === 'number' ? data.definitions.find((d) => d.id === mode) : undefined
 
   const run = async (action: () => unknown, errorMessage: string) => {
@@ -174,28 +178,37 @@ export function MappingMasterTab({
           </label>
         </div>
         <ul className="master-list">
-          {data.definitions.map((d) => (
-            <li key={d.id}>
-              <button
-                type="button"
-                className={`master-list__button${d.id === mode ? ' master-list__button--selected' : ''}`}
-                aria-current={d.id === mode ? 'true' : undefined}
-                onClick={() => {
-                  setMode(d.id)
-                  setArmed(false)
-                  setError('')
-                  setFlash('')
-                }}
-              >
-                <span>{d.label}</span>
-                <span className="master-note">
-                  {d.accountIds.length > 0
-                    ? d.accountIds.map((id) => accountNameById.get(id) ?? '').join('、')
-                    : t('mappingTab.noAccounts')}
-                  {' ・ '}
-                  {settledText(d)}
-                </span>
-              </button>
+          {groupMappingDefinitionsByInstitution(data.definitions).map((group) => (
+            <li key={group.name} role="group" aria-labelledby={`map-group-${group.name}`} className="master-list__group">
+              <h3 id={`map-group-${group.name}`} className="master-list__group-title">
+                {group.name}
+              </h3>
+              <ul className="master-list">
+                {group.definitions.map((d) => (
+                  <li key={d.id}>
+                    <button
+                      type="button"
+                      className={`master-list__button master-list__button--grouped${d.id === mode ? ' master-list__button--selected' : ''}`}
+                      aria-current={d.id === mode ? 'true' : undefined}
+                      onClick={() => {
+                        setMode(d.id)
+                        setArmed(false)
+                        setError('')
+                        setFlash('')
+                      }}
+                    >
+                      <span>{d.label}</span>
+                      <span className="master-note">
+                        {d.accountIds.length > 0
+                          ? d.accountIds.map((id) => accountNameById.get(id) ?? '').join('、')
+                          : t('mappingTab.noAccounts')}
+                        {' ・ '}
+                        {settledText(d)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>
@@ -216,6 +229,7 @@ export function MappingMasterTab({
           isCreate={mode === 'create'}
           accountCategories={accountCategories}
           accountNameById={accountNameById}
+          institutionNames={institutionNames}
           busy={busy}
           armed={armed}
           flash={flash}
@@ -263,6 +277,8 @@ interface MappingPanelProps {
   isCreate: boolean
   accountCategories: ReturnType<typeof buildTreeSelectCategories>
   accountNameById: ReadonlyMap<number, string>
+  /** 金融機関名の選択候補(既存の定義にある金融機関名) */
+  institutionNames: readonly string[]
   busy: boolean
   armed: boolean
   flash: string
@@ -372,11 +388,12 @@ function MappingPanel(props: MappingPanelProps) {
         <label className="master-field__label" htmlFor="map-group">
           {t('mappingTab.formatGroup')}
         </label>
-        <input
+        <FinancialInstitutionSelect
           id="map-group"
           className="master-field__control"
           value={form.formatGroupId}
-          onChange={(e) => set('formatGroupId', e.target.value)}
+          candidates={props.institutionNames}
+          onChange={(name) => set('formatGroupId', name)}
         />
       </div>
       <div className="master-field">

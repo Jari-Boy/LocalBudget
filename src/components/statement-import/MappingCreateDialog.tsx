@@ -10,10 +10,13 @@ import {
   validateMappingForm,
   type MappingForm,
 } from '../master/mappingForm'
+import { FinancialInstitutionSelect } from '../master/FinancialInstitutionSelect'
 
 export interface MappingCreateDialogProps {
   /** 取込画面で選んだCSVの元のバイト列。文字コードを変えると、これを読み直してプレビューを更新する */
   bytes: Uint8Array
+  /** 金融機関名の選択候補(既存の定義にある金融機関名) */
+  institutionNames: readonly string[]
   /** 保存して、そのまま取り込みに進む。失敗したら例外を投げる(ダイアログは開いたまま) */
   onSave: (form: MappingForm) => Promise<void>
   onCancel: () => void
@@ -34,11 +37,11 @@ function readRows(bytes: Uint8Array, encoding: string, delimiter: MappingForm['d
 /**
  * 明細取込画面で、一致するマッピングが無いときにその場で定義を作るダイアログ(計画Issue #151)。
  * 選んだCSVから文字コード(inferEncoding)と列(inferMappingDefinitionDraft)を推測した下書きを出し、
- * 主要な項目(表示名・識別子・明細の種類・文字コード・日付の書式・金額と日付と摘要の列)だけを編集できる。
+ * 主要な項目(表示名・金融機関名・明細の種類・文字コード・日付の書式・金額と日付と摘要の列)だけを編集できる。
  * 区切り文字・見出しまでの行数・残高や外部IDの列などの細かい設定は、マスタの「明細マッピング」タブで変える。
  * プレビューは実際の取込と同じ変換(previewMappingRows)を使い、保存できない定義はその理由を示す。
  */
-export function MappingCreateDialog({ bytes, onSave, onCancel }: MappingCreateDialogProps) {
+export function MappingCreateDialog({ bytes, institutionNames, onSave, onCancel }: MappingCreateDialogProps) {
   const { t } = useTranslation('statementImport')
   const { t: tMaster } = useTranslation('master')
   const [form, setForm] = useState<MappingForm>(() => {
@@ -142,7 +145,7 @@ export function MappingCreateDialog({ bytes, onSave, onCancel }: MappingCreateDi
 
         <div className="import-dialog__row">
           {field('dlg-label', tMaster('mappingTab.label'), <input id="dlg-label" className="import-control" value={form.label} onChange={(e) => set('label', e.target.value)} />)}
-          {field('dlg-group', tMaster('mappingTab.formatGroup'), <input id="dlg-group" className="import-control" value={form.formatGroupId} onChange={(e) => set('formatGroupId', e.target.value)} />)}
+          {field('dlg-group', tMaster('mappingTab.formatGroup'), <FinancialInstitutionSelect id="dlg-group" className="import-control" value={form.formatGroupId} candidates={institutionNames} onChange={(name) => set('formatGroupId', name)} />)}
           {field(
             'dlg-kind',
             tMaster('mappingTab.kind'),

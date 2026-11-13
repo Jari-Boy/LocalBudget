@@ -113,6 +113,12 @@ const pick = (scope: ReturnType<typeof within>, label: string, item: string) => 
   fireEvent.click(within(screen.getByRole('dialog', { name: label })).getByRole('button', { name: item }))
 }
 
+/** ダイアログの金融機関名欄で「新しい金融機関名を入力…」を選び、名前を入力する */
+function enterInstitution(dialog: ReturnType<typeof within>, name: string) {
+  fireEvent.change(dialog.getByLabelText('金融機関名'), { target: { value: '__new__' } })
+  fireEvent.change(dialog.getByLabelText('新しい金融機関名'), { target: { value: name } })
+}
+
 describe('StatementImportScreen', () => {
   it('CSVを選ぶと、定義に紐づく取込先が初期値になり、同じ画面に1件1行で日付・摘要・金額・状態が表示され、件数が要約される', async () => {
     makeMapping()
@@ -359,6 +365,20 @@ describe('StatementImportScreen', () => {
     expect(mappings.findById(only.id)?.accountIds).toEqual([bank.id])
   })
 
+  it('マッピング作成ダイアログの金融機関名には、既存の定義の金融機関名が候補として並ぶ(計画Issue #183)', async () => {
+    // 列が合わない定義にして、CSVとは一致しない(=新規作成に進む)ようにする
+    makeMapping({ formatGroupId: '楽天カード', label: '楽天カード', dateColumn: '存在しない列', accountIds: [] })
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`, false)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'このCSVでマッピングを新規作成' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'マッピングを新規作成' }))
+
+    expect(dialog.getByRole('option', { name: '楽天カード' })).toBeInTheDocument()
+    expect(dialog.getByRole('option', { name: '新しい金融機関名を入力…' })).toBeInTheDocument()
+  })
+
   it('一致する定義が無いときは、CSVを元に画面内でマッピングを作って続けて取り込める', async () => {
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
@@ -368,7 +388,7 @@ describe('StatementImportScreen', () => {
     expect(dialog.getByText('列を推測しました。内容を確認してください')).toBeInTheDocument()
     expect(dialog.getByRole('button', { name: '保存して取り込む' })).toBeDisabled()
     fireEvent.change(dialog.getByLabelText('表示名'), { target: { value: '新しい銀行' } })
-    fireEvent.change(dialog.getByLabelText('金融機関の識別子'), { target: { value: 'new-bank' } })
+    enterInstitution(dialog, 'new-bank')
     expect(dialog.queryByText(/取り込み結果のプレビュー/)).not.toBeInTheDocument()
     fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
 
@@ -448,7 +468,7 @@ describe('StatementImportScreen', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'このCSVでマッピングを新規作成' }))
     const dialog = within(await screen.findByRole('dialog', { name: 'マッピングを新規作成' }))
     fireEvent.change(dialog.getByLabelText('表示名'), { target: { value: '補足行が多い' } })
-    fireEvent.change(dialog.getByLabelText('金融機関の識別子'), { target: { value: 'many-notes' } })
+    enterInstitution(dialog, 'many-notes')
 
     expect(dialog.getByText(/読み取れない行の方が多いです/)).toBeInTheDocument()
     expect(dialog.getByRole('button', { name: '保存して取り込む' })).toBeEnabled()
@@ -467,7 +487,7 @@ describe('StatementImportScreen', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'このCSVでマッピングを新規作成' }))
     const dialog = within(await screen.findByRole('dialog', { name: 'マッピングを新規作成' }))
     fireEvent.change(dialog.getByLabelText('表示名'), { target: { value: '書式違い' } })
-    fireEvent.change(dialog.getByLabelText('金融機関の識別子'), { target: { value: 'bad-format' } })
+    enterInstitution(dialog, 'bad-format')
     fireEvent.change(dialog.getByLabelText('日付の書式'), { target: { value: 'YYYY-MM-DD' } })
 
     expect(dialog.getByRole('button', { name: '保存して取り込む' })).toBeDisabled()
@@ -481,7 +501,7 @@ describe('StatementImportScreen', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'このCSVでマッピングを新規作成' }))
     const dialog = within(await screen.findByRole('dialog', { name: 'マッピングを新規作成' }))
     fireEvent.change(dialog.getByLabelText('表示名'), { target: { value: '補足行つき' } })
-    fireEvent.change(dialog.getByLabelText('金融機関の識別子'), { target: { value: 'with-notes' } })
+    enterInstitution(dialog, 'with-notes')
 
     // 取り込み結果のプレビューは出さない。読み取れない行があっても、その旨の注記だけで保存できる
     expect(dialog.getByText(/読み取れない行は取り込まれません/)).toBeInTheDocument()

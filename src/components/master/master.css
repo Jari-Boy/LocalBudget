@@ -80,6 +80,14 @@
   cursor: pointer;
 }
 
+/* ファイル選択を<label>で作ったボタン(明細マッピングの「CSVから新規作成」)は、<button>と違って
+   中の文字が上に寄るため、文字を縦横中央にそろえる */
+label.master-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .master-btn:hover:not(:disabled) {
   background: var(--color-hover);
 }
@@ -389,4 +397,26 @@
 
 .master-error__message {
   margin: 0;
+}
+
+/* 明細マッピングタブの一覧を金融機関名でグループ化した見出しと、グループ内の行(計画Issue #183) */
+.master-list__group-title {
+  margin: 0;
+  padding: 6px 12px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--color-text-muted);
+  background: var(--color-field-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.master-list__group > .master-list {
+  gap: 0;
+}
+
+.master-list__button--grouped {
+  padding-left: 24px;
+  border-left: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
 }

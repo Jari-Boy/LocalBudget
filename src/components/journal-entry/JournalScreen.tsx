@@ -831,12 +831,17 @@ export function JournalScreen(props: JournalScreenProps) {
     next?.()
   }
 
-  /** 編集中の内容を保存し、保存できたときだけ移動する(保存できなければ理由を出して編集に残る) */
+  /**
+   * 編集中の内容を保存し、保存できたときだけ移動する(保存できなければ理由を出して編集に残る)。
+   * 下書きと新規仕訳は下書きとして保存する(未入力があっても検証で止めない。新規仕訳を仕訳として保存するのは
+   * 「保存」ボタンの明示的な操作のみ。計画Issue #183)。確定済みの仕訳の編集は、従来どおり検証つきで保存する。
+   */
   const saveAndLeave = async () => {
     const next = leaveRequest
     if (next === null) return
     setLeaveRequest(null)
-    const saved = selection?.kind === 'draft' ? await saveDraft('stay') : await saveEntry(false)
+    const asDraft = selection?.kind === 'draft' || selection?.kind === 'new'
+    const saved = asDraft ? await saveDraft('stay') : await saveEntry(false)
     if (saved) next()
   }
 

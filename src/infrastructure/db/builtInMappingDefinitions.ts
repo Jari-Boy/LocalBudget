@@ -14,7 +14,7 @@ import type { CreateImportMappingDefinitionInput } from '../../domain/statement-
  */
 export const BUILT_IN_MAPPING_DEFINITIONS: readonly CreateImportMappingDefinitionInput[] = [
   {
-    formatGroupId: 'rakuten-card',
+    formatGroupId: '楽天カード',
     isSettled: true,
     label: '楽天カード(確定明細)',
     encoding: 'utf-8',
@@ -27,7 +27,7 @@ export const BUILT_IN_MAPPING_DEFINITIONS: readonly CreateImportMappingDefinitio
     amountColumn: '利用金額',
   },
   {
-    formatGroupId: 'rakuten-card',
+    formatGroupId: '楽天カード',
     isSettled: false,
     label: '楽天カード(速報明細)',
     encoding: 'utf-8',
@@ -40,7 +40,7 @@ export const BUILT_IN_MAPPING_DEFINITIONS: readonly CreateImportMappingDefinitio
     amountColumn: '利用金額',
   },
   {
-    formatGroupId: 'rakuten-bank',
+    formatGroupId: '楽天銀行',
     isSettled: null,
     label: '楽天銀行',
     encoding: 'shift-jis',
@@ -54,7 +54,7 @@ export const BUILT_IN_MAPPING_DEFINITIONS: readonly CreateImportMappingDefinitio
     balanceColumn: '取引後残高(円)',
   },
   {
-    formatGroupId: 'paypay-card',
+    formatGroupId: 'PayPayカード',
     isSettled: true,
     label: 'PayPayカード(確定明細)',
     encoding: 'utf-8',

@@ -20,7 +20,7 @@ import {
 const DEFINITION: ImportMappingDefinition = {
   id: 7,
   accountIds: [3, 5],
-  formatGroupId: 'rakuten-card',
+  formatGroupId: '楽天カード',
   isSettled: false,
   label: '楽天カード(速報)',
   encoding: 'utf-8',
@@ -54,12 +54,18 @@ describe('mappingFormFromDefinition / mappingFormToInput', () => {
     expect(mappingFormFromDefinition({ ...DEFINITION, isSettled: null }).settled).toBe('')
   })
 
+  it('保存用の入力では金融機関名の表記ゆれ(全角半角・空白)がそろえられる(計画Issue #183)', () => {
+    const input = mappingFormToInput({ ...mappingFormFromDefinition(DEFINITION), formatGroupId: ' ＰａｙＰａｙ カード ' })
+
+    expect(input.formatGroupId).toBe('PayPayカード')
+  })
+
   it('フォームから保存用の入力に戻すと、元の定義と同じ値になる', () => {
     const input = mappingFormToInput(mappingFormFromDefinition(DEFINITION))
 
     expect(input).toMatchObject({
       accountIds: [3, 5],
-      formatGroupId: 'rakuten-card',
+      formatGroupId: '楽天カード',
       isSettled: false,
       label: '楽天カード(速報)',
       delimiter: '\t',
@@ -107,7 +113,7 @@ describe('validateMappingForm', () => {
     expect(validateMappingForm(validForm())).toEqual([])
   })
 
-  it('表示名・金融機関の識別子・日付・摘要の列が空だと、それぞれ理由を返す', () => {
+  it('表示名・金融機関名・日付・摘要の列が空だと、それぞれ理由を返す', () => {
     const reasons = validateMappingForm(validForm({ label: ' ', formatGroupId: '', dateColumn: '', descriptionColumn: '' }))
 
     expect(reasons).toEqual(['labelRequired', 'formatGroupRequired', 'dateColumnRequired', 'descriptionColumnRequired'])
