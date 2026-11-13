@@ -291,29 +291,27 @@ export function AccountCreateForm({
       {isBalanceSheet && <p className="master-note">{reconcileText}</p>}
 
       {showMappingLinking && mappingLinking && mappingLinking.definitions.length > 0 && (
-        <fieldset className="master-field" aria-label={t('createForm.mappingTitle')} disabled={linkFailedAccount !== null}>
-          <legend className="master-field__label">
+        <fieldset className="master-checklist" aria-label={t('createForm.mappingTitle')} disabled={linkFailedAccount !== null}>
+          <legend className="master-checklist__legend">
             {t('createForm.mappingTitle')}
             <span className="master-note">{t('createForm.mappingOptional')}</span>
           </legend>
           <p className="master-note">{t('createForm.mappingNote')}</p>
           {groupMappingDefinitionsByInstitution(mappingLinking.definitions).map((group) => (
-            <div key={group.name}>
-              <h3 className="master-list__group-title">{group.name}</h3>
+            <div key={group.name} className="master-checklist__group">
+              <h3 className="master-checklist__group-title">{group.name}</h3>
               {group.definitions.map((d) => (
-                <div key={d.id} className="master-actions">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={checkedDefinitionIds.has(d.id)}
-                      onChange={() => toggleDefinition(d.id)}
-                    />{' '}
-                    {d.label}
-                  </label>
+                <label key={d.id} className="master-checklist__item">
+                  <input
+                    type="checkbox"
+                    checked={checkedDefinitionIds.has(d.id)}
+                    onChange={() => toggleDefinition(d.id)}
+                  />
+                  <span className="master-checklist__label">{d.label}</span>
                   {mappingLinking.defaultDefinitionIds?.includes(d.id) && (
-                    <span className="master-note">{t('createForm.mappingCurrent')}</span>
+                    <span className="master-checklist__badge">{t('createForm.mappingCurrent')}</span>
                   )}
-                </div>
+                </label>
               ))}
             </div>
           ))}

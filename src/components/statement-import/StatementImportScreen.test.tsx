@@ -376,7 +376,7 @@ describe('StatementImportScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: '+ 科目を新規追加' }))
 
     const dialog = within(screen.getByRole('dialog', { name: '科目を登録' }))
-    expect(dialog.getByLabelText('マイ銀行')).toBeChecked()
+    expect(dialog.getByLabelText(/^マイ銀行いま取り込んでいる定義$/)).toBeChecked()
     expect(dialog.getByLabelText('別の定義')).not.toBeChecked()
 
     fireEvent.change(dialog.getByLabelText('名称'), { target: { value: '新しい口座' } })

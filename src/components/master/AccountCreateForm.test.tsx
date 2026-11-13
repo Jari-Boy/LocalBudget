@@ -293,7 +293,7 @@ describe('AccountCreateForm の明細マッピング(計画Issue #189)', () => {
   it('既定の定義を渡すと、最初からチェックされている', () => {
     renderLinkForm('asset', { defaultDefinitionIds: [rakuten] })
 
-    expect(screen.getByLabelText('入出金明細')).toBeChecked()
+    expect(screen.getByLabelText(/^入出金明細いま取り込んでいる定義$/)).toBeChecked()
     expect(screen.getByLabelText('入出金明細(1列金額)')).not.toBeChecked()
   })
 
