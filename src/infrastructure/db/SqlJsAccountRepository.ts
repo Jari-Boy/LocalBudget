@@ -101,6 +101,57 @@ export class SqlJsAccountRepository implements AccountRepository {
     this.db.run('UPDATE accounts SET is_active = 1 WHERE id = ?', [id])
     return this.findById(id)!
   }
+
+  merge(targetId: number, sourceIds: number[]): void {
+    this.db.run('BEGIN')
+    try {
+      if (sourceIds.length === 0) {
+        throw new Error('merge requires at least one source account')
+      }
+      const target = this.findById(targetId)
+      if (!target) {
+        throw new Error(`account not found: ${targetId}`)
+      }
+      if (target.isSystemManaged) {
+        throw new Error(`system-managed account cannot be merged: ${targetId}`)
+      }
+      if (!target.isActive) {
+        throw new Error(`inactive account cannot be a merge target: ${targetId}`)
+      }
+
+      for (const sourceId of sourceIds) {
+        const source = this.findById(sourceId)
+        if (!source) {
+          throw new Error(`account not found: ${sourceId}`)
+        }
+        if (sourceId === targetId) {
+          throw new Error(`merge source must differ from target: ${sourceId}`)
+        }
+        if (source.isSystemManaged) {
+          throw new Error(`system-managed account cannot be merged: ${sourceId}`)
+        }
+        if (source.category !== target.category || source.isReconcilable !== target.isReconcilable) {
+          throw new Error(`accounts of different category or reconcilability cannot be merged: ${sourceId}`)
+        }
+
+        const [result] = this.db.exec('SELECT COUNT(*) FROM journal_lines WHERE account_id = ?', [sourceId])
+        const lineCount = result.values[0][0] as number
+
+        this.db.run('UPDATE journal_lines SET account_id = ? WHERE account_id = ?', [targetId, sourceId])
+        this.db.run(
+          `INSERT INTO account_merge_log
+             (target_account_id, target_account_name, source_account_id, source_account_name, line_count)
+           VALUES (?, ?, ?, ?, ?)`,
+          [targetId, target.name, sourceId, source.name, lineCount],
+        )
+      }
+
+      this.db.run('COMMIT')
+    } catch (error) {
+      this.db.run('ROLLBACK')
+      throw error
+    }
+  }
 }
 
 /** 資産・負債は、省略時に照合可否から決める(照合する科目は外部明細あり)。それ以外はnull */
