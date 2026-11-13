@@ -27,4 +27,11 @@ export interface ImportMappingDefinitionRepository {
 
   /** 定義と科目の紐づけを追加する。すでに紐づいていれば何もしない(冪等)。 */
   linkAccount(definitionId: number, accountId: number): void
+
+  /**
+   * 定義と科目の紐づけを解除する。指定した1組だけを削除し、定義・科目そのもの、他の科目や
+   * 他の定義との紐づけは変えない。紐づいていなければ何もしない(冪等)。
+   * 科目マスタから、他の科目の紐づけを巻き込まずに解除するために使う(計画Issue #189)。
+   */
+  unlinkAccount(definitionId: number, accountId: number): void
 }

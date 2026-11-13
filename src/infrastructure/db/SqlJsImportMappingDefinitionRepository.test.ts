@@ -4,7 +4,7 @@
  * docs/schema/statement_import.sql に定義されたマッピング定義(import_mapping_definitions)の
  * 作成・参照・更新・削除、amount_modeに応じた列指定の整合性を強制するDDL側CHECK制約との連携、
  * 定義と科目の多対多の紐づけ(import_mapping_definition_accounts、accountIds)、紐づいた科目の定義を先頭に
- * 並べつつ全定義を返すfindAvailableForAccount、紐づけを追加するlinkAccount、科目・定義の削除時の
+ * 並べつつ全定義を返すfindAvailableForAccount、紐づけを追加するlinkAccount、科目単位で紐づけを解除するunlinkAccount、科目・定義の削除時の
  * 紐づけの連鎖削除を検証する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
@@ -254,6 +254,44 @@ describe('linkAccount', () => {
     repository.linkAccount(created.id, bankAccountId)
 
     expect(repository.findById(created.id)?.accountIds).toEqual([bankAccountId])
+  })
+})
+
+describe('unlinkAccount', () => {
+  it('指定した科目との紐づけだけを解除し、他の科目との紐づけは残す', () => {
+    const accounts = new SqlJsAccountRepository(db)
+    const cardId = accounts.create({ category: 'liability', name: 'カード未払金', isReconcilable: false }).id
+    const created = repository.create({ ...SAMPLE, label: '定義', accountIds: [bankAccountId, cardId] })
+
+    repository.unlinkAccount(created.id, bankAccountId)
+
+    expect(repository.findById(created.id)?.accountIds).toEqual([cardId])
+  })
+
+  it('解除しても定義そのものと、他の定義の紐づけは削除されない', () => {
+    const a = repository.create({ ...SAMPLE, label: 'A', accountIds: [bankAccountId] })
+    const b = repository.create({ ...SAMPLE, label: 'B', accountIds: [bankAccountId] })
+
+    repository.unlinkAccount(a.id, bankAccountId)
+
+    expect(repository.findById(a.id)).not.toBeNull()
+    expect(repository.findById(b.id)?.accountIds).toEqual([bankAccountId])
+  })
+
+  it('紐づいていない組み合わせを解除しても何も起きない(冪等)', () => {
+    const created = repository.create({ ...SAMPLE, label: '定義' })
+
+    expect(() => repository.unlinkAccount(created.id, bankAccountId)).not.toThrow()
+    expect(repository.findById(created.id)?.accountIds).toEqual([])
+  })
+
+  it('解除すると、その科目の取込候補で定義が先頭から外れる', () => {
+    const first = repository.create({ ...SAMPLE, label: '先' })
+    const linked = repository.create({ ...SAMPLE, label: '紐づく', accountIds: [bankAccountId] })
+
+    repository.unlinkAccount(linked.id, bankAccountId)
+
+    expect(repository.findAvailableForAccount(bankAccountId).map((d) => d.id)).toEqual([first.id, linked.id])
   })
 })
 
