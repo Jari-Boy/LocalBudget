@@ -34,7 +34,7 @@ describe('seedBuiltInMappingDefinitions', () => {
   it('楽天カードの確定/速報明細が別定義として投入され、列構成が正しい', () => {
     seedBuiltInMappingDefinitions(db)
 
-    const definitions = repository.findAll().filter((definition) => definition.formatGroupId === 'rakuten-card')
+    const definitions = repository.findAll().filter((definition) => definition.formatGroupId === '楽天カード')
     expect(definitions).toHaveLength(2)
 
     const settled = definitions.find((definition) => definition.isSettled === true)
@@ -50,7 +50,7 @@ describe('seedBuiltInMappingDefinitions', () => {
   it('楽天銀行の定義はshift-jisエンコーディング・YYYYMMDD形式・残高列を持つ', () => {
     seedBuiltInMappingDefinitions(db)
 
-    const definition = repository.findAll().find((d) => d.formatGroupId === 'rakuten-bank')
+    const definition = repository.findAll().find((d) => d.formatGroupId === '楽天銀行')
     expect(definition?.encoding).toBe('shift-jis')
     expect(definition?.dateColumn).toBe('取引日')
     expect(definition?.dateFormat).toBe('YYYYMMDD')
@@ -62,7 +62,7 @@ describe('seedBuiltInMappingDefinitions', () => {
   it('PayPayカードの確定明細の定義が投入される', () => {
     seedBuiltInMappingDefinitions(db)
 
-    const definition = repository.findAll().find((d) => d.formatGroupId === 'paypay-card')
+    const definition = repository.findAll().find((d) => d.formatGroupId === 'PayPayカード')
     expect(definition?.isSettled).toBe(true)
     expect(definition?.dateColumn).toBe('利用日/キャンセル日')
     expect(definition?.amountColumn).toBe('利用金額')
@@ -77,7 +77,7 @@ describe('seedBuiltInMappingDefinitions', () => {
 
   it('既に同じformat_group_id・is_settledの組み込み定義が存在する場合はスキップし、それ以外の科目専用定義には影響しない', () => {
     const userDefinition = repository.create({
-      formatGroupId: 'rakuten-card',
+      formatGroupId: '楽天カード',
       isSettled: true,
       label: 'ユーザーが独自にカスタマイズした楽天カード定義',
       dateColumn: '0',
@@ -91,7 +91,7 @@ describe('seedBuiltInMappingDefinitions', () => {
 
     const rakutenCardSettled = repository
       .findAll()
-      .filter((d) => d.formatGroupId === 'rakuten-card' && d.isSettled === true)
+      .filter((d) => d.formatGroupId === '楽天カード' && d.isSettled === true)
     expect(rakutenCardSettled).toHaveLength(1)
     expect(rakutenCardSettled[0].id).toBe(userDefinition.id)
     expect(rakutenCardSettled[0].label).toBe('ユーザーが独自にカスタマイズした楽天カード定義')

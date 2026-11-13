@@ -3,6 +3,7 @@ import type {
   CreateImportMappingDefinitionInput,
   ImportMappingDefinition,
 } from '../../domain/statement-import/ImportMappingDefinition'
+import { normalizeFinancialInstitutionName } from '../../domain/statement-import/financialInstitution'
 import type { ColumnCandidate, ImportMappingDefinitionDraft } from '../../domain/statement-import/inferMappingDefinitionDraft'
 
 /**
@@ -110,7 +111,7 @@ export function mappingFormToInput(form: MappingForm): CreateImportMappingDefini
   const split = form.amountMode === 'debit_credit_split'
   return {
     accountIds: form.accountIds,
-    formatGroupId: form.formatGroupId.trim(),
+    formatGroupId: normalizeFinancialInstitutionName(form.formatGroupId),
     isSettled: form.settled === '' ? null : form.settled === 'settled',
     label: form.label.trim(),
     encoding: form.encoding,
@@ -158,7 +159,7 @@ export function mappingFormToDefinition(form: MappingForm): ImportMappingDefinit
 export function validateMappingForm(form: MappingForm): MappingFormReason[] {
   const reasons: MappingFormReason[] = []
   if (form.label.trim() === '') reasons.push('labelRequired')
-  if (form.formatGroupId.trim() === '') reasons.push('formatGroupRequired')
+  if (normalizeFinancialInstitutionName(form.formatGroupId) === '') reasons.push('formatGroupRequired')
   if (form.dateColumn.trim() === '') reasons.push('dateColumnRequired')
   if (form.descriptionColumn.trim() === '') reasons.push('descriptionColumnRequired')
   if (form.amountMode === 'single_signed') {
