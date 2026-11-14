@@ -31,9 +31,55 @@ function baseDefinition(overrides: Partial<ImportMappingDefinition> = {}): Impor
     externalIdColumn: null,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
+    invertAmountSign: false,
     ...overrides,
   }
 }
+
+describe('金額の符号反転(計画Issue #192)', () => {
+  const rows = [
+    ['2026/07/20', 'セブンイレブン', '-150', '9850'],
+    ['2026/07/21', '給与振込', '250000', '259850'],
+  ]
+
+  it('invertAmountSign=falseなら、符号付き金額をそのまま読む', () => {
+    const records = mapRowsToImportedRecords(rows, baseDefinition({ invertAmountSign: false }))
+
+    expect(records.map((r) => r.amount)).toEqual([-150, 250000])
+  })
+
+  it('invertAmountSign=trueなら、同じCSVでも金額の符号が逆になる', () => {
+    const records = mapRowsToImportedRecords(rows, baseDefinition({ invertAmountSign: true }))
+
+    expect(records.map((r) => r.amount)).toEqual([150, -250000])
+  })
+
+  it('金額0は反転しても-0ではなく0のまま', () => {
+    const records = mapRowsToImportedRecords([['2026/07/20', '手数料無料', '0']], baseDefinition({ invertAmountSign: true }))
+
+    expect(Object.is(records[0].amount, 0)).toBe(true)
+  })
+
+  it('残高列は反転の対象外', () => {
+    const records = mapRowsToImportedRecords(rows, baseDefinition({ invertAmountSign: true, balanceColumn: '3' }))
+
+    expect(records.map((r) => r.balanceAfter)).toEqual([9850, 259850])
+  })
+
+  it('入金・出金の2列(debit_credit_split)では、invertAmountSignが立っていても反転しない', () => {
+    const split = baseDefinition({
+      amountMode: 'debit_credit_split',
+      amountColumn: null,
+      debitColumn: '2',
+      creditColumn: '3',
+      invertAmountSign: true,
+    })
+
+    const records = mapRowsToImportedRecords([['2026/07/20', '引出', '1000', '']], split)
+
+    expect(records[0].amount).toBe(-1000)
+  })
+})
 
 describe('列インデックス指定', () => {
   it('ヘッダー行なし・列インデックス指定でImportedRecord[]へ変換する', () => {

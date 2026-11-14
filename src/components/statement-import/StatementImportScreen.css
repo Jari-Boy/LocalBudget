@@ -233,6 +233,11 @@
   align-items: center;
 }
 
+/* マッピング作成ダイアログの「金額の符号を反転する」(計画Issue #192): 他の入力項目と同じ文字の大きさにそろえる */
+.import-dialog__cell .import-check {
+  font-size: var(--font-size-base);
+}
+
 .import-footer {
   display: flex;
   flex-wrap: wrap;

@@ -19,6 +19,8 @@ export interface ImportMappingDefinition {
   creditColumn: string | null
   balanceColumn: string | null
   externalIdColumn: string | null
+  /** 金額の符号を反転して読む。amountMode が single_signed のときだけ有効(計画Issue #192) */
+  invertAmountSign: boolean
   createdAt: string
   updatedAt: string
 }
@@ -40,6 +42,7 @@ export interface CreateImportMappingDefinitionInput {
   creditColumn?: string | null
   balanceColumn?: string | null
   externalIdColumn?: string | null
+  invertAmountSign?: boolean
 }
 
 export interface UpdateImportMappingDefinitionInput {
@@ -59,4 +62,5 @@ export interface UpdateImportMappingDefinitionInput {
   creditColumn?: string | null
   balanceColumn?: string | null
   externalIdColumn?: string | null
+  invertAmountSign?: boolean
 }

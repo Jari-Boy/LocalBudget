@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
-import type { Account } from '../../domain/account/Account'
+import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { AccountGroupRepository } from '../../domain/account-group/AccountGroupRepository'
@@ -11,6 +11,7 @@ import { inferEncoding } from '../../domain/statement-import/inferEncoding'
 import { inferMappingDefinitionDraft } from '../../domain/statement-import/inferMappingDefinitionDraft'
 import { previewMappingRows, type MappingPreviewRow } from '../../domain/statement-import/previewMappingRows'
 import { readCsv } from '../../domain/statement-import/readCsv'
+import { previewJournalCells } from './previewJournalCells'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { isStatementImportEligibleAccount } from '../statement-import/statementImportEligibility'
 import { FinancialInstitutionSelect } from './FinancialInstitutionSelect'
@@ -55,6 +56,9 @@ interface Draft {
   sample: SampleCsv | null
   notice: string
 }
+
+/** プレビュー(仕訳形式)で想定する、取込先の科目の種類 */
+type PreviewKind = Extract<AccountCategory, 'asset' | 'liability'>
 
 const yen = (amount: number) => `¥${amount.toLocaleString('ja-JP')}`
 
@@ -123,6 +127,7 @@ export function MappingMasterTab({
   const accountNameById = new Map(data.accounts.map((a) => [a.id, a.name]))
   const institutionNames = collectFinancialInstitutionNames(data.definitions.map((d) => d.formatGroupId))
   const selected = typeof mode === 'number' ? data.definitions.find((d) => d.id === mode) : undefined
+  const accountCategoryById = new Map(data.accounts.map((a) => [a.id, a.category]))
 
   /** 操作を実行する。成功したらtrue、失敗してエラー文言を出したらfalse */
   const run = async (action: () => unknown, errorMessage: string): Promise<boolean> => {
@@ -241,6 +246,7 @@ export function MappingMasterTab({
           isCreate={mode === 'create'}
           accountCategories={accountCategories}
           accountNameById={accountNameById}
+          accountCategoryById={accountCategoryById}
           institutionNames={institutionNames}
           busy={busy}
           armed={armed}
@@ -289,6 +295,8 @@ interface MappingPanelProps {
   isCreate: boolean
   accountCategories: ReturnType<typeof buildTreeSelectCategories>
   accountNameById: ReadonlyMap<number, string>
+  /** 科目IDから科目の種別を引く(プレビューする科目の種類の既定を、紐づけ済みの先頭の科目から決める) */
+  accountCategoryById: ReadonlyMap<number, AccountCategory>
   /** 金融機関名の選択候補(既存の定義にある金融機関名) */
   institutionNames: readonly string[]
   busy: boolean
@@ -308,6 +316,18 @@ function MappingPanel(props: MappingPanelProps) {
   const set = <K extends keyof MappingForm>(key: K, value: MappingForm[K]) => {
     setNotice('')
     setForm((f) => ({ ...f, [key]: value }))
+  }
+
+  /**
+   * プレビューする科目の種類(資産の科目か負債の科目か)。個別の科目は選ばない(計画Issue #192)。
+   * 選ぶまでは、紐づけ済みの先頭の科目の種類(負債なら負債、それ以外と紐づけなしは資産)。
+   */
+  const [previewKindChoice, setPreviewKindChoice] = useState<PreviewKind | undefined>(undefined)
+  const previewKind: PreviewKind =
+    previewKindChoice ?? (props.accountCategoryById.get(form.accountIds[0]) === 'liability' ? 'liability' : 'asset')
+  const previewAccount = {
+    name: previewKind === 'liability' ? t('mappingTab.previewKindLiability') : t('mappingTab.previewKindAsset'),
+    category: previewKind,
   }
 
   const rows = useMemo(() => tryReadCsv(sample, form), [sample, form.encoding, form.delimiter]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -359,17 +379,17 @@ function MappingPanel(props: MappingPanelProps) {
     setSample({ bytes: new Uint8Array(await file.arrayBuffer()) })
   }
 
-  const signedYen = (n: number) => `${n < 0 ? '-' : '+'}${yen(Math.abs(n))}`
-  const errorText = (row: MappingPreviewRow): string => {
+  /** 読み取れない行・摘要が無い行の理由。問題が無ければnull(表には何も出さない) */
+  const errorText = (row: MappingPreviewRow): string | null => {
     if (row.error === 'invalidDate') return t('mappingTab.errorInvalidDate')
     if (row.error === 'invalidAmount') return t('mappingTab.errorInvalidAmount')
     if (row.error === 'unknown') return t('mappingTab.errorUnknown')
-    return row.record && row.record.description === '' ? t('mappingTab.errorNoDescription') : t('mappingTab.rowOk')
+    return row.record && row.record.description === '' ? t('mappingTab.errorNoDescription') : null
   }
   const errorCount = preview ? preview.rows.filter((r) => r.error !== null).length : 0
 
   const statusText = (() => {
-    if (preview === null) return t('mappingTab.previewEmpty')
+    if (preview === null) return ''
     if (preview.columnError) {
       return t('mappingTab.columnNotFound', {
         field: columnDefs.find((c) => c.key === preview.columnError!.fieldName)?.label ?? preview.columnError.fieldName,
@@ -529,24 +549,39 @@ function MappingPanel(props: MappingPanelProps) {
         const value = form[c.key] as string
         const id = `map-col-${c.key}`
         return (
-          <div className="master-field" key={c.key}>
-            <label className="master-field__label" htmlFor={id}>
-              {c.label}
-            </label>
-            {rows !== null ? (
-              <select id={id} className="master-field__control" value={value} onChange={(e) => set(c.key, e.target.value as never)}>
-                <option value="">{c.optional ? t('mappingTab.columnNone') : t('mappingTab.columnChoose')}</option>
-                {value !== '' && !columnOptions.some((o) => o.value === value) && <option value={value}>{value}</option>}
-                {columnOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input id={id} className="master-field__control" value={value} onChange={(e) => set(c.key, e.target.value as never)} />
+          <Fragment key={c.key}>
+            <div className="master-field">
+              <label className="master-field__label" htmlFor={id}>
+                {c.label}
+              </label>
+              {rows !== null ? (
+                <select id={id} className="master-field__control" value={value} onChange={(e) => set(c.key, e.target.value as never)}>
+                  <option value="">{c.optional ? t('mappingTab.columnNone') : t('mappingTab.columnChoose')}</option>
+                  {value !== '' && !columnOptions.some((o) => o.value === value) && <option value={value}>{value}</option>}
+                  {columnOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input id={id} className="master-field__control" value={value} onChange={(e) => set(c.key, e.target.value as never)} />
+              )}
+            </div>
+            {/* 反転は符号付き1列のときだけ。入金・出金の2列は列の割り当てを入れ替えれば足りる(計画Issue #192) */}
+            {c.key === 'amountColumn' && (
+              <div className="master-field">
+                <label className="master-check">
+                  <input
+                    type="checkbox"
+                    checked={form.invertAmountSign}
+                    onChange={(e) => set('invertAmountSign', e.target.checked)}
+                  />
+                  {t('mappingTab.invertAmountSign')}
+                </label>
+              </div>
             )}
-          </div>
+          </Fragment>
         )
       })}
 
@@ -589,15 +624,34 @@ function MappingPanel(props: MappingPanelProps) {
         </div>
       )}
 
-      <h3 className="master-subsection__title">{t('mappingTab.previewSection')}</h3>
-      <p role="status" className={statusIsError ? 'master-error' : 'master-note'}>
-        {statusText}
-      </p>
-      {preview !== null && !preview.columnError && errorCount > preview.rows.length - errorCount && (
-        <p className="master-error">{t('mappingTab.majorityWarning')}</p>
-      )}
-      {errorCount > 0 && preview !== null && !preview.columnError && (
-        <p className="master-note">{t('mappingTab.skipNote')}</p>
+      {/* 取り込み結果のプレビューは、CSVを選んでから出す(計画Issue #192、実機確認での指摘) */}
+      {preview !== null && (
+        <>
+          <h3 className="master-subsection__title">{t('mappingTab.previewSection')}</h3>
+          {!preview.columnError && (
+            <div className="master-field">
+              <label className="master-field__label" htmlFor="map-preview-account">
+                {t('mappingTab.previewKind')}
+              </label>
+              <select
+                id="map-preview-account"
+                className="master-field__control"
+                value={previewKind}
+                onChange={(e) => setPreviewKindChoice(e.target.value as PreviewKind)}
+              >
+                <option value="asset">{t('mappingTab.previewKindAssetOption')}</option>
+                <option value="liability">{t('mappingTab.previewKindLiabilityOption')}</option>
+              </select>
+            </div>
+          )}
+          <p role="status" className={statusIsError ? 'master-error' : 'master-note'}>
+            {statusText}
+          </p>
+          {!preview.columnError && errorCount > preview.rows.length - errorCount && (
+            <p className="master-error">{t('mappingTab.majorityWarning')}</p>
+          )}
+          {errorCount > 0 && !preview.columnError && <p className="master-note">{t('mappingTab.skipNote')}</p>}
+        </>
       )}
       {preview !== null && !preview.columnError && (
         <div className="master-table-wrap">
@@ -606,28 +660,41 @@ function MappingPanel(props: MappingPanelProps) {
               <tr>
                 <th>{t('mappingTab.colDate')}</th>
                 <th>{t('mappingTab.colDescription')}</th>
-                <th>{t('mappingTab.colAmount')}</th>
+                <th>{t('mappingTab.colDebit')}</th>
+                <th>{t('mappingTab.colCredit')}</th>
                 <th>{t('mappingTab.colBalance')}</th>
-                <th>{t('mappingTab.colExternalId')}</th>
-                <th>{t('mappingTab.colState')}</th>
               </tr>
             </thead>
             <tbody>
               {preview.rows.map((row) => (
                 <tr key={row.rowNumber}>
                   <td>{row.record?.entryDate ?? '-'}</td>
-                  <td>{row.record?.description || '-'}</td>
-                  <td>{row.record ? signedYen(row.record.amount) : '-'}</td>
+                  <td>
+                    {errorText(row) ? (
+                      <span className="master-error">{errorText(row)}</span>
+                    ) : (
+                      row.record?.description || '-'
+                    )}
+                  </td>
+                  {(() => {
+                    const cells = row.record
+                      ? previewJournalCells(row.record.amount, previewAccount, t('mappingTab.anyAccount'))
+                      : null
+                    return (
+                      <>
+                        <td>{cells?.debit ?? '-'}</td>
+                        <td>{cells?.credit ?? '-'}</td>
+                      </>
+                    )
+                  })()}
                   <td>{row.record?.balanceAfter != null ? yen(row.record.balanceAfter) : '-'}</td>
-                  <td>{row.record ? (row.record.externalId ?? t('mappingTab.externalIdHash')) : '-'}</td>
-                  <td className={row.error ? 'master-error' : undefined}>{errorText(row)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      <p className="master-note">{t('mappingTab.amountNote')}</p>
+      {preview !== null && !preview.columnError && <p className="master-note">{t('mappingTab.amountNote')}</p>}
 
       {reasons.length > 0 && (
         <ul className="master-error">

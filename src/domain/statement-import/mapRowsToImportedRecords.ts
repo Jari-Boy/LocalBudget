@@ -61,12 +61,21 @@ export function mapRowToImportedRecord(
     description: row[columns.description]?.trim() ?? '',
     amount:
       columns.amount !== null
-        ? parseAmountCell(row[columns.amount])
+        ? signedAmount(parseAmountCell(row[columns.amount]), definition.invertAmountSign)
         : parseAmountCell(row[columns.credit!]) - parseAmountCell(row[columns.debit!]),
     balanceAfter: columns.balance === null ? null : parseAmountCell(row[columns.balance]),
     externalId: columns.externalId === null ? null : (row[columns.externalId]?.trim() || null),
     isSettled: definition.isSettled,
   }
+}
+
+/**
+ * 符号付き1列の金額に、定義の「符号を反転する」(計画Issue #192)を適用する。金額の符号を変える
+ * 唯一の箇所で、仕訳変換層・レビュー層では反転しない。入金・出金の2列(debit_credit_split)は
+ * 列の割り当てを入れ替えれば足りるため、反転の対象外。0は-0にしない。
+ */
+function signedAmount(value: number, invert: boolean): number {
+  return invert && value !== 0 ? -value : value
 }
 
 /** 日付・金額のセルが読み取れないことを表すエラー。kindで原因を区別する。 */

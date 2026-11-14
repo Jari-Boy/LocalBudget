@@ -671,6 +671,33 @@ describe('StatementImportScreen', () => {
     expect(await screen.findByText(/statement\.csv を読み込み済み/)).toBeInTheDocument()
   })
 
+  it('定義の作成ダイアログで「金額の符号を反転する」にチェックして保存すると、反転する定義が作られる(計画Issue #192)', async () => {
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'このCSVでマッピングを新規作成' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'マッピングを新規作成' }))
+    expect(dialog.getByLabelText('金額の符号を反転する')).not.toBeChecked()
+    fireEvent.change(dialog.getByLabelText('表示名'), { target: { value: '反転する銀行' } })
+    enterInstitution(dialog, 'invert-bank')
+    fireEvent.click(dialog.getByLabelText('金額の符号を反転する'))
+    fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
+
+    await waitFor(() => expect(mappings.findAll()).toHaveLength(1))
+    expect(mappings.findAll()[0].invertAmountSign).toBe(true)
+  })
+
+  it('定義の作成ダイアログで金額の形式を入金・出金の2列にすると、反転のチェックは出ない(計画Issue #192)', async () => {
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'このCSVでマッピングを新規作成' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'マッピングを新規作成' }))
+    fireEvent.change(dialog.getByLabelText('金額の形式'), { target: { value: 'debit_credit_split' } })
+
+    expect(dialog.queryByLabelText('金額の符号を反転する')).not.toBeInTheDocument()
+  })
+
   it('定義の作成ダイアログには、取り込み前の元のCSVが表示され、割り当てた列の見出しに役割が出る', async () => {
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
