@@ -43,6 +43,7 @@ import {
   createInitialRowState,
   defaultMemberIdOf,
   isLearnPatternValid,
+  isRowEdited,
   isTaggableAccountId,
   resolveEligibleCounterpartyId,
   rowStatus,
@@ -57,6 +58,7 @@ import { collectFinancialInstitutionNames } from '../../domain/statement-import/
 import { MappingCreateDialog } from './MappingCreateDialog'
 import { mappingFormToInput } from '../master/mappingForm'
 import { QuickCreateDialog } from './QuickCreateDialog'
+import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import './StatementImportScreen.css'
 
 /**
@@ -109,6 +111,8 @@ interface ImportSession {
   definition: ImportMappingDefinition
   review: StatementImportReviewResult
   rows: ImportRowState[]
+  /** 取り込んだ直後の行の状態。編集したか(未保存の警告)の判定に使う */
+  initialRows: ImportRowState[]
   /** 確定済みで一覧から外した行 */
   done: Set<number>
 }
@@ -167,6 +171,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [allDefinitions, setAllDefinitions] = useState<ImportMappingDefinition[]>([])
   const [targetAccountId, setTargetAccountId] = useState<number | null>(null)
   const [session, setSession] = useState<ImportSession | null>(null)
+  /** 名義の無い科目で選んだ「誰の明細か」。どの科目で選んだかを持ち、科目が変わったら無効になる */
+  const [ownerChoice, setOwnerChoice] = useState<{ accountId: number; memberId: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [bulkMessage, setBulkMessage] = useState('')
@@ -207,6 +213,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   ])
 
   const targetAccount = data?.accounts.find((a) => a.id === targetAccountId) ?? null
+  /**
+   * 誰の明細か(計画Issue #193)。科目に名義があればそれが絶対(変更不可)。無ければ利用者が選んだ人で、
+   * 未選択なら null のまま(先頭メンバーへ黙ってフォールバックしない)。科目を変えると選び直しになる
+   */
+  const statementOwnerId = targetAccount
+    ? (targetAccount.householdMemberId ?? (ownerChoice?.accountId === targetAccount.id ? ownerChoice.memberId : null))
+    : null
   const externalBalance = session?.review.latestExternalBalance ?? null
 
   // 残高照合に使う、取込先の確定済み(過去分)の明細行
@@ -224,6 +237,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       ),
     )
   }, [session?.targetAccount.id, session?.targetAccount.isReconcilable, externalBalance, journalEntryRepository]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 未保存の警告(計画Issue #193)。取り込んだ行の入力を初期状態から変えて、まだ確定していないとき。
+  // 「保存して移動」は、確定できる行を確定する(確定できない行が残るときは移動しない)
+  const hasUnsavedEdits =
+    session !== null &&
+    session.rows.some((state, index) => !session.done.has(index) && isRowEdited(state, session.initialRows[index]))
+  const unsavedDialog = useUnsavedEditGuard({ dirty: hasUnsavedEdits, save: () => handleConfirm() })
+  const guarded = useGuardedAction()
 
   const categories = useMemo(() => {
     if (!data) return null
@@ -320,7 +341,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       approximateDuplicateOptions: approximateDuplicateOptions ?? DEFAULT_APPROXIMATE_DUPLICATE_OPTIONS,
     })
     const rows = await computeInitialRows(review, data!.counterparties, data!.accounts)
-    setSession({ fileName, targetAccount: account, definition: match.definition, review, rows, done: new Set() })
+    setSession({ fileName, targetAccount: account, definition: match.definition, review, rows, initialRows: rows, done: new Set() })
     setSelected(new Set())
     setBulkMessage('')
     setEditingLearn(new Set())
@@ -464,8 +485,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   /** 確定(docs/domain/statement-import.md 1.5手順7)。1件が失敗しても残りの確定を続ける(継続処理方式) */
-  async function handleConfirm() {
-    if (!session) return
+  async function handleConfirm(): Promise<boolean> {
+    if (!session || statementOwnerId === null) return false
     setBusy(true)
     setDoneMessage('')
     const account = session.targetAccount
@@ -489,8 +510,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             deleted.add(candidate.journalEntryId)
           }
         }
-        // 起票者: 相手科目の行の世帯メンバー、無ければ取込先の既定の名義、無ければ先頭のメンバー
-        const entryHouseholdMemberId = (state.householdMemberId ?? account.householdMemberId ?? data!.members[0]?.id) as number
+        // 起票者: 「誰の明細か」(科目の名義、無ければ利用者が選んだ人。計画Issue #193)
+        const entryHouseholdMemberId = statementOwnerId
         await Promise.resolve(
           journalEntryRepository.create(
             buildConfirmedJournalEntryInput({
@@ -546,6 +567,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         : t('confirmResultSummary', { successCount: succeeded.size, failureCount: failed.length }),
     )
     setBusy(false)
+    return failed.length === 0
   }
 
   // 残高照合(docs/domain/reconciliation.md 1.5)。確定版として置き換える旧仕訳と、取り込まない行は除く
@@ -575,22 +597,35 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const toId = (value: string) => (value === '' ? null : Number(value))
   const activeMembers = data.members
 
+  /** CSVの選択ボタン。編集中は確認を通してからファイル選択を開く(計画Issue #193) */
+  const chooseCsvButton = (className: string) => (
+    <button type="button" className={className} disabled={busy} onClick={() => guarded(() => fileInputRef.current?.click())}>
+      {t('chooseCsv')}
+    </button>
+  )
+
   return (
     <div className="import-screen">
+      {unsavedDialog}
       <div className="import-screen__head">
         <h1 className="import-screen__title">{t('screenTitle')}</h1>
         <div className="import-screen__controls">
-          <label className="import-btn">
-            {t('chooseCsv')}
-            <input ref={fileInputRef} type="file" accept=".csv" hidden aria-label={t('chooseCsv')} disabled={busy} onChange={(e) => void handleFile(e)} />
-          </label>
-          <button type="button" className="import-btn" onClick={onEditMappings}>
+          {csv && chooseCsvButton('import-btn')}
+          <button type="button" className="import-btn" onClick={() => guarded(onEditMappings)}>
             {t('editMappings')}
           </button>
         </div>
       </div>
 
       {error && <p role="alert" className="import-error">{error}</p>}
+
+      <input ref={fileInputRef} type="file" accept=".csv" hidden aria-label={t('chooseCsv')} disabled={busy} onChange={(e) => void handleFile(e)} />
+      {!csv && (
+        <section aria-label={t('csvStartLabel')} className="import-start">
+          {chooseCsvButton('import-btn import-btn--primary import-btn--large')}
+          <p className="import-note">{t('csvStartNote')}</p>
+        </section>
+      )}
 
       {csv && noMatch && (
         <section role="alert" aria-label={t('noMatchTitle', { fileName: csv.fileName })} className="import-panel">
@@ -674,6 +709,41 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 </select>
               </div>
             )}
+            {match && targetAccount && (
+              <div className="import-field">
+                {targetAccount.householdMemberId !== null ? (
+                  <>
+                    <span className="import-field__label">{t('statementOwnerReadOnlyLabel')}</span>
+                    <span className="import-panel__value">
+                      {t('statementOwnerFromAccount', {
+                        name: data.members.find((m) => m.id === targetAccount.householdMemberId)?.name ?? '',
+                      })}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <label className="import-field__label" htmlFor="import-owner">
+                      {t('statementOwnerLabel')}
+                    </label>
+                    <select
+                      id="import-owner"
+                      className={`import-control${statementOwnerId === null ? ' import-control--attention' : ''}`}
+                      value={statementOwnerId ?? ''}
+                      onChange={(e) =>
+                        setOwnerChoice(e.target.value === '' ? null : { accountId: targetAccount.id, memberId: Number(e.target.value) })
+                      }
+                    >
+                      <option value="">{t('statementOwnerPlaceholder')}</option>
+                      {data.members.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
+              </div>
+            )}
             {match && match.definition.accountIds.length === 0 && (
               <button
                 type="button"
@@ -684,6 +754,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               </button>
             )}
           </div>
+          {match && targetAccount && (
+            <p className={`import-note${targetAccount.householdMemberId === null && statementOwnerId === null ? ' import-error' : ''}`}>
+              {targetAccount.householdMemberId !== null
+                ? t('statementOwnerHintFixed', { name: data.members.find((m) => m.id === targetAccount.householdMemberId)?.name ?? '' })
+                : t('statementOwnerHintRequired')}
+            </p>
+          )}
           {match && (
             <p className="import-note">
               {match.definition.accountIds.length > 0
@@ -1109,9 +1186,17 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         <div className="import-footer">
           {doneMessage && <span role="status" className="import-summary">{doneMessage}</span>}
           {session && importable.length > 0 && (
-            <button type="button" className="import-btn import-btn--primary" disabled={busy} onClick={() => void handleConfirm()}>
+            <button
+              type="button"
+              className="import-btn import-btn--primary"
+              disabled={busy || statementOwnerId === null}
+              onClick={() => void handleConfirm()}
+            >
               {t('confirmCount', { count: importable.length, account: session.targetAccount.name })}
             </button>
+          )}
+          {session && importable.length > 0 && statementOwnerId === null && (
+            <span className="import-summary">{t('confirmBlockedNoOwner')}</span>
           )}
         </div>
       )}

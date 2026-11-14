@@ -158,8 +158,15 @@ async function startImport(page: Page, accountName: string | null, csv: string) 
   await page.getByRole('link', { name: '明細取込', exact: true }).click()
   await page.getByLabel('CSVを選択').setInputFiles(csvFile(csv))
   if (accountName !== null) {
-    await expect(page.getByLabel(/^取込先/).locator('option:checked')).toHaveText(accountName)
+    await expect(page.getByLabel('科目', { exact: true }).locator('option:checked')).toHaveText(accountName)
+    await chooseOwner(page)
   }
+}
+
+/** 科目に名義が無いときは「誰の明細か」を選ばないと確定できない(計画Issue #193)ので、先頭の世帯メンバーを選ぶ */
+async function chooseOwner(page: Page) {
+  const owner = page.getByLabel('誰の明細か(必須)')
+  if ((await owner.count()) > 0) await owner.selectOption({ index: 1 })
 }
 
 /** 行の中の選択ツリーを開き、検索して項目を選ぶ */
@@ -225,7 +232,7 @@ test.describe('明細取込画面', () => {
     await startImport(page, null, '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n')
 
     await page.getByLabel('マッピング定義').selectOption({ label: 'テスト銀行 別形式' })
-    await expect(page.getByLabel(/^取込先/).locator('option:checked')).toHaveText('普通預金')
+    await expect(page.getByLabel('科目', { exact: true }).locator('option:checked')).toHaveText('普通預金')
     await expect(page.getByRole('table', { name: '明細の一覧' })).toBeVisible()
     await expect(rowOf(page, /スーパー/)).toBeVisible()
   })
@@ -247,7 +254,7 @@ test.describe('明細取込画面', () => {
     await dialog.getByRole('button', { name: '保存して取り込む' }).click()
 
     // 作った定義はどの科目にも紐づいていないので、取込先を選ぶと一覧が出る
-    await page.getByLabel(/^取込先/).selectOption({ label: '普通預金' })
+    await page.getByLabel('科目', { exact: true }).selectOption({ label: '普通預金' })
     await expect(page.getByText(/statement\.csv を読み込み済み/)).toBeVisible()
     await expect(rowOf(page, /スーパー/)).toBeVisible()
   })

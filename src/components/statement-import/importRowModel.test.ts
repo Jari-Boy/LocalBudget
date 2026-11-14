@@ -3,6 +3,7 @@
  * 行の状態(新規・重複・要確認)の判定、選択した行への一括設定(対象外の行の件数を返す。取引先は
  * 費用・収益の行だけ、精算バッチは一時勘定の行だけ、既定の世帯メンバーを持つ科目の行は世帯メンバーを
  * 変えない)、パターン登録の提案と有効性(摘要に含まれる文字列だけ登録できる)を検証する。
+ * 初期状態からの編集の有無(isRowEdited、未保存警告の判定、計画Issue #193)も検証する。
  * DB・DOM非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
@@ -10,6 +11,7 @@ import type { Account } from '../../domain/account/Account'
 import {
   applyBulkSetting,
   createInitialRowState,
+  isRowEdited,
   isLearnPatternValid,
   rowStatus,
   shouldOfferLearn,
@@ -154,5 +156,40 @@ describe('パターン登録の提案', () => {
   it('取引先の候補が複数あって決まらなかった行は、パターン登録を既定でオフにする', () => {
     expect(createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [1, 2] }).learnOn).toBe(false)
     expect(createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [] }).learnOn).toBe(true)
+  })
+})
+
+describe('isRowEdited', () => {
+  const initial = createInitialRowState({ counterpartyId: 1, counterAccountId: 2, candidateCounterpartyIds: [] })
+
+  it('初期状態のままなら、編集していないとみなす', () => {
+    expect(isRowEdited({ ...initial }, initial)).toBe(false)
+  })
+
+  it('相手科目・取引先・プロジェクト・世帯メンバー・精算バッチ・コメントのどれかを変えたら、編集したとみなす', () => {
+    const changes: Array<Partial<ImportRowState>> = [
+      { counterAccountId: 3 },
+      { counterpartyId: null },
+      { projectId: 5 },
+      { householdMemberId: 6 },
+      { settlementBatchId: 7 },
+      { comment: 'メモ' },
+    ]
+    for (const change of changes) expect(isRowEdited({ ...initial, ...change }, initial)).toBe(true)
+  })
+
+  it('重複を取り込む・確定版の判断・パターン登録の設定を変えたら、編集したとみなす', () => {
+    const changes: Array<Partial<ImportRowState>> = [
+      { includeDuplicate: true },
+      { approximateDecision: 'confirmed_replacement' },
+      { learnOn: !initial.learnOn },
+      { learnPattern: 'スーパー' },
+      { useAsDefaultAccount: true },
+    ]
+    for (const change of changes) expect(isRowEdited({ ...initial, ...change }, initial)).toBe(true)
+  })
+
+  it('入力の記録(相手科目を手で選んだか)だけが違っても、値が同じなら編集とみなさない', () => {
+    expect(isRowEdited({ ...initial, counterAccountTouched: true }, initial)).toBe(false)
   })
 })

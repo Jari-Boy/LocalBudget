@@ -7,6 +7,8 @@
  * 相手科目のサジェスト、重複の行(入力・選択なし、「取り込む」で戻せる)、選択した行への一括設定
  * (対象外の件数)、確定版の候補の置き換え、残高照合、確定とパターン登録、確定後に続けて次のCSVを
  * 取り込めることを、sql.jsのNode実装(createTestDatabase)を使って確認する。
+ * CSVを選ぶ前の画面中央の「CSVを選択」ボタンと、編集中に新しいCSVを選ぼうとしたときの警告(計画Issue #193)、
+ * 編集中に他の画面へ移ろうとしたときの未保存の警告(保存して移動・破棄して移動・キャンセル・設定オフ、計画Issue #193)も確認する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -28,6 +30,7 @@ import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJourna
 import { SqlJsProjectGroupRepository } from '../../infrastructure/db/SqlJsProjectGroupRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
+import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
 import { StatementImportScreen } from './StatementImportScreen'
 
 let db: Database
@@ -43,6 +46,7 @@ let food: ReturnType<SqlJsAccountRepository['create']>
 let onEditMappings: () => void
 
 beforeEach(async () => {
+  localStorage.clear()
   db = await createTestDatabase()
   runMigrations(db)
   accounts = new SqlJsAccountRepository(db)
@@ -60,9 +64,10 @@ beforeEach(async () => {
 
 afterEach(cleanup)
 
-function renderScreen() {
+function renderScreen(householdMemberRepository: Pick<SqlJsHouseholdMemberRepository, 'findAll'> = new SqlJsHouseholdMemberRepository(db)) {
   render(
     <I18nextProvider i18n={i18n}>
+      <UnsavedGuardHarness>
       <StatementImportScreen
         accountRepository={accounts}
         accountGroupRepository={new SqlJsAccountGroupRepository(db)}
@@ -73,10 +78,11 @@ function renderScreen() {
         counterpartyGroupRepository={new SqlJsCounterpartyGroupRepository(db)}
         projectRepository={projects}
         projectGroupRepository={new SqlJsProjectGroupRepository(db)}
-        householdMemberRepository={new SqlJsHouseholdMemberRepository(db)}
+        householdMemberRepository={householdMemberRepository}
         settlementBatchRepository={batches}
         onEditMappings={onEditMappings}
       />
+      </UnsavedGuardHarness>
     </I18nextProvider>,
   )
 }
@@ -103,7 +109,12 @@ const csvFile = (content: string, name = 'statement.csv') => new File([content],
 /** CSVを選ぶ(取込先は定義に紐づく科目が初期値になる)。waitLoadedがtrue(既定)なら、一覧が表示されるまで待つ */
 async function chooseCsv(content: string, waitLoaded = true) {
   fireEvent.change(await screen.findByLabelText('CSVを選択'), { target: { files: [csvFile(content)] } })
-  if (waitLoaded) await screen.findByText(/statement\.csv を読み込み済み/)
+  if (waitLoaded) {
+    await screen.findByText(/statement\.csv を読み込み済み/)
+    // 科目に名義が無いときは「誰の明細か」を選ばないと確定できない(計画Issue #193)ので、既定では memberId の人を選んでおく
+    const owner = screen.queryByLabelText('誰の明細か(必須)')
+    if (owner) fireEvent.change(owner, { target: { value: String(memberId) } })
+  }
 }
 
 /** 補助行(確定版の確認・パターン登録)にも同じ摘要の文字列が入るため、先頭の行(明細の行)を使う */
@@ -235,6 +246,237 @@ describe('StatementImportScreen', () => {
     expect(await screen.findByText(/next\.csv を読み込み済み/)).toBeInTheDocument()
   })
 
+  it('科目に名義があるときは、名義を表示のみで出し(選択欄は出さない)、その人の明細として確定する(計画Issue #193)', async () => {
+    const hanako = new SqlJsHouseholdMemberRepository(db).create({ name: '花子' })
+    const card = accounts.create({ category: 'asset', name: '花子の口座', isReconcilable: true, householdMemberId: hanako.id })
+    makeMapping({ accountIds: [card.id] })
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+
+    expect(screen.getByText('花子(科目の名義)')).toBeInTheDocument()
+    expect(screen.queryByLabelText('誰の明細か(必須)')).not.toBeInTheDocument()
+    pick(rowOf(/スーパー/), '相手科目', '食費')
+    fireEvent.click(screen.getByRole('button', { name: /^1 件を「花子の口座」に確定$/ }))
+
+    await screen.findByText(/確定しました/)
+    expect(entries.findAll()[0]).toMatchObject({ householdMemberId: hanako.id })
+  })
+
+  it('科目に名義が無いときは「誰の明細か」を選ばせ、未選択のままでは確定できず、選んだ人が起票者と全行に入る(計画Issue #193)', async () => {
+    const hanako = new SqlJsHouseholdMemberRepository(db).create({ name: '花子' })
+    makeMapping()
+    renderScreen()
+    fireEvent.change(await screen.findByLabelText('CSVを選択'), {
+      target: { files: [csvFile(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)] },
+    })
+    await screen.findByText(/statement\.csv を読み込み済み/)
+    pick(rowOf(/スーパー/), '相手科目', '食費')
+
+    const confirm = screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ })
+    expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue('')
+    expect(confirm).toBeDisabled()
+    expect(screen.getByText('誰の明細かを選ぶと確定できます')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(hanako.id) } })
+    expect(confirm).toBeEnabled()
+    fireEvent.click(confirm)
+
+    await screen.findByText(/確定しました/)
+    const created = entries.findAll()[0]
+    expect(created.householdMemberId).toBe(hanako.id)
+    expect(created.lines.map((l) => l.householdMemberId)).toEqual([hanako.id, hanako.id])
+  })
+
+  it('名義の無い科目で世帯メンバーが0件のときは、選択肢が空で、確定できず理由を表示する(計画Issue #193)', async () => {
+    makeMapping()
+    renderScreen({ findAll: () => [] })
+    fireEvent.change(await screen.findByLabelText('CSVを選択'), {
+      target: { files: [csvFile(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)] },
+    })
+    await screen.findByText(/statement\.csv を読み込み済み/)
+    pick(rowOf(/スーパー/), '相手科目', '食費')
+
+    const owner = screen.getByLabelText('誰の明細か(必須)')
+    expect(within(owner).getAllByRole('option')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ })).toBeDisabled()
+    expect(screen.getByText('誰の明細かを選ぶと確定できます')).toBeInTheDocument()
+    expect(entries.findAll()).toHaveLength(0)
+  })
+
+  it('取込先の科目を変えると、選んだ「誰の明細か」は選び直しになる(計画Issue #193)', async () => {
+    const other = accounts.create({ category: 'asset', name: '別の預金', isReconcilable: true })
+    makeMapping({ accountIds: [bank.id, other.id] })
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+    expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue(String(memberId))
+
+    fireEvent.change(screen.getByLabelText('科目'), { target: { value: String(other.id) } })
+
+    await screen.findByText(/statement\.csv を読み込み済み/)
+    expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue('')
+  })
+
+  it('CSVを選ぶ前は画面の中央に「CSVを選択」ボタンと案内を出し、CSVを選ぶと上部のボタンに移る(計画Issue #193)', async () => {
+    makeMapping()
+    renderScreen()
+
+    const start = await screen.findByRole('region', { name: 'CSVの選択' })
+    expect(within(start).getByRole('button', { name: 'CSVを選択' })).toBeInTheDocument()
+    expect(within(start).getByText(/明細CSVを選ぶと、同じ画面に一覧が表示されます/)).toBeInTheDocument()
+
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+
+    expect(screen.queryByRole('region', { name: 'CSVの選択' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'CSVを選択' })).toHaveLength(1)
+  })
+
+  describe('編集中に新しいCSVを選ぼうとしたときの警告(計画Issue #193)', () => {
+    let openPicker: ReturnType<typeof vi.spyOn>
+
+    beforeEach(() => {
+      openPicker = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {})
+    })
+    afterEach(() => openPicker.mockRestore())
+
+    const clickChoose = () => fireEvent.click(screen.getAllByRole('button', { name: 'CSVを選択' })[0])
+
+    it('編集していなければ、確認なしでファイル選択を開く', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+
+      clickChoose()
+
+      expect(openPicker).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('dialog', { name: '未保存の変更があります' })).not.toBeInTheDocument()
+    })
+
+    it('編集中は確認が出て、「キャンセル」ではファイル選択を開かず、「破棄して移動」で開く', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+
+      clickChoose()
+      expect(screen.getByRole('dialog', { name: '未保存の変更があります' })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+      expect(openPicker).not.toHaveBeenCalled()
+
+      clickChoose()
+      fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+      expect(openPicker).toHaveBeenCalledTimes(1)
+      expect(entries.findAll()).toHaveLength(0)
+    })
+
+    it('「保存して移動」では、行を確定してからファイル選択を開く', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+
+      clickChoose()
+      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+
+      await waitFor(() => expect(openPicker).toHaveBeenCalledTimes(1))
+      expect(entries.findAll()).toHaveLength(1)
+    })
+  })
+
+  describe('編集中に他の画面へ移ろうとしたときの警告(計画Issue #193)', () => {
+    const leave = () => fireEvent.click(screen.getByRole('link', { name: '他の画面へ' }))
+
+    it('編集していなければ、確認なしで移動する', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+
+      leave()
+
+      expect(screen.getByTestId('where')).toHaveTextContent('/other')
+      expect(screen.queryByRole('dialog', { name: '未保存の変更があります' })).not.toBeInTheDocument()
+    })
+
+    it('行を編集していると確認が出て、「キャンセル」で画面に残り、「破棄して移動」で何も確定せず移動する', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+
+      leave()
+      expect(screen.getByRole('dialog', { name: '未保存の変更があります' })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+      expect(screen.getByTestId('where')).toHaveTextContent('/master/here')
+
+      leave()
+      fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+      expect(screen.getByTestId('where')).toHaveTextContent('/other')
+      expect(entries.findAll()).toHaveLength(0)
+    })
+
+    it('「保存して移動」では、行を確定してから移動する', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+
+      leave()
+      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+
+      await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/other'))
+      expect(entries.findAll()).toHaveLength(1)
+    })
+
+    it('確定できない行(相手科目が未選択)が残るときは、「保存して移動」でも移動しない', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+2026/10/06,カフェ,-500,96500
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+
+      leave()
+      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+
+      expect(await screen.findByText(/相手科目が未選択です/)).toBeInTheDocument()
+      expect(screen.getByTestId('where')).toHaveTextContent('/master/here')
+    })
+
+    it('「マッピングを編集」も、編集中は確認を通してから移る', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+
+      fireEvent.click(screen.getByRole('button', { name: 'マッピングを編集' }))
+      expect(onEditMappings).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+
+      expect(onEditMappings).toHaveBeenCalledTimes(1)
+    })
+
+    it('警告の設定が「出さない」のときは、編集中でも確認なしで移動する', async () => {
+      localStorage.setItem('localbudget:unsaved-warning', 'off')
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+
+      leave()
+
+      expect(screen.getByTestId('where')).toHaveTextContent('/other')
+    })
+  })
+
   it('相手科目が未選択の行は確定に失敗し、理由を表示する', async () => {
     makeMapping()
     renderScreen()
@@ -323,7 +565,7 @@ describe('StatementImportScreen', () => {
     expect(Array.from(select.querySelectorAll('option')).map((o) => o.textContent)).toEqual(['選択してください', '汎用の定義', '普通預金用'])
     fireEvent.change(select, { target: { value: String(linked.id) } })
     await screen.findByText(/statement\.csv を読み込み済み/)
-    expect(screen.getByLabelText(/^取込先/)).toHaveValue(String(bank.id))
+    expect(screen.getByLabelText('科目')).toHaveValue(String(bank.id))
   })
 
   it('定義に紐づく科目が複数あるときは先頭が初期値で、別の科目に変更して取り込める', async () => {
@@ -332,10 +574,11 @@ describe('StatementImportScreen', () => {
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
 
-    const target = screen.getByLabelText(/^取込先/)
+    const target = screen.getByLabelText('科目')
     expect(target).toHaveValue(String(bank.id))
     fireEvent.change(target, { target: { value: String(card.id) } })
     await screen.findByRole('button', { name: /^1 件を「楽天VISA」に確定$/ })
+    fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.click(screen.getByRole('button', { name: /^1 件を「楽天VISA」に確定$/ }))
 
@@ -351,13 +594,14 @@ describe('StatementImportScreen', () => {
 
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
 
-    const target = await screen.findByLabelText(/^取込先/)
+    const target = await screen.findByLabelText('科目')
     expect(target).toHaveValue('')
-    expect(screen.getByText('取込先を選ぶと、明細の一覧を表示します。')).toBeInTheDocument()
+    expect(screen.getByText('科目を選ぶと、明細の一覧を表示します。')).toBeInTheDocument()
     expect(screen.queryByRole('table', { name: '明細の一覧' })).not.toBeInTheDocument()
 
     fireEvent.change(target, { target: { value: String(bank.id) } })
     await screen.findByText(/statement\.csv を読み込み済み/)
+    fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
 
@@ -371,7 +615,7 @@ describe('StatementImportScreen', () => {
     const other = makeMapping({ formatGroupId: '別の銀行', label: '別の定義', dateColumn: '存在しない列', accountIds: [] })
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
-    await screen.findByLabelText(/^取込先/)
+    await screen.findByLabelText('科目')
 
     fireEvent.click(screen.getByRole('button', { name: '+ 科目を新規追加' }))
 
@@ -420,7 +664,7 @@ describe('StatementImportScreen', () => {
     fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
 
     // 作った定義はどの科目にも紐づいていないので、取込先を選ぶ
-    const target = await screen.findByLabelText(/^取込先/)
+    const target = await screen.findByLabelText('科目')
     await waitFor(() => expect(mappings.findAll()).toHaveLength(1))
     expect(mappings.findAll()[0]).toMatchObject({ label: '新しい銀行', formatGroupId: 'new-bank', dateColumn: '日付' })
     fireEvent.change(target, { target: { value: String(bank.id) } })
@@ -502,7 +746,7 @@ describe('StatementImportScreen', () => {
     fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
 
     // 保存した定義が、そのまま取り込みに進める(一致しないと「保存できませんでした」になる)
-    await screen.findByLabelText(/^取込先/)
+    await screen.findByLabelText('科目')
     expect(screen.queryByText('保存できませんでした。もう一度お試しください。')).not.toBeInTheDocument()
     await waitFor(() => expect(mappings.findAll()).toHaveLength(1))
   })
@@ -535,7 +779,7 @@ describe('StatementImportScreen', () => {
     expect(dialog.getByRole('button', { name: '保存して取り込む' })).toBeEnabled()
     fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
 
-    await screen.findByLabelText(/^取込先/)
+    await screen.findByLabelText('科目')
     await waitFor(() => expect(mappings.findAll()).toHaveLength(1))
   })
 
