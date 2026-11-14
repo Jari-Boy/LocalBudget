@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { InvalidBackupFileError } from '../../infrastructure/backup/InvalidBackupFileError'
 import { fromDatabaseFile } from '../../infrastructure/storage/databaseFileCodec'
 import '../common/unsaved-changes/UnsavedChangesDialog.css'
+import { loadUnsavedWarningEnabled, saveUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
 import { backupFileName } from './backupFileName'
 import { formatDateTime, formatFileSize } from './fileInfoFormat'
 import { markImportCompleted, takeImportNotice, type NoticeStorage } from './importNotice'
@@ -63,6 +64,7 @@ export function SettingsScreen({
   const [importState, setImportState] = useState<ImportState>({ kind: 'idle' })
   const [exportFailed, setExportFailed] = useState(false)
   const [importedFileName, setImportedFileName] = useState<string | null>(null)
+  const [unsavedWarning, setUnsavedWarning] = useState(loadUnsavedWarningEnabled)
 
   useEffect(() => {
     // StrictModeで2回呼ばれても、2回目は印が消えていてnullになるため上書きしない
@@ -129,6 +131,34 @@ export function SettingsScreen({
         exportCurrent={() => void handleExport()}
         reload={reload}
       />
+
+      <section className="settings__card" aria-labelledby="settings-unsaved-heading">
+        <h2 id="settings-unsaved-heading" className="settings__card-title">
+          {t('unsavedWarning.heading')}
+        </h2>
+        <div className="settings__row">
+          <div className="settings__row-text">
+            <label htmlFor="settings-unsaved-warning" className="settings__strong">
+              {t('unsavedWarning.label')}
+            </label>
+            <div className="settings__hint">{t('unsavedWarning.description')}</div>
+            <div className="settings__hint">
+              <b className="settings__warning">{t('unsavedWarning.warning')}</b>
+            </div>
+          </div>
+          <input
+            id="settings-unsaved-warning"
+            type="checkbox"
+            className="settings__checkbox"
+            checked={unsavedWarning}
+            onChange={(event) => {
+              setUnsavedWarning(event.target.checked)
+              saveUnsavedWarningEnabled(event.target.checked)
+            }}
+          />
+        </div>
+        <div className="settings__hint">{t('unsavedWarning.scope')}</div>
+      </section>
 
       <section className="settings__card" aria-labelledby="settings-backup-heading">
         <h2 id="settings-backup-heading" className="settings__card-title">
