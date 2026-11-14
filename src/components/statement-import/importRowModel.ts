@@ -65,6 +65,27 @@ export function createInitialRowState(params: {
 
 type RowRecord = Pick<StatementImportReviewRecord, 'isExactDuplicate' | 'approximateCandidates'>
 
+/**
+ * 初期状態から利用者が入力を変えたか(未保存の警告の判定、計画Issue #193)。推定した初期値のままなら
+ * 失うものは無いので編集とみなさない。相手科目を手で選んだかの記録(counterAccountTouched)など、
+ * 値が変わらないものは比較しない。
+ */
+export function isRowEdited(state: ImportRowState, initial: ImportRowState): boolean {
+  return (
+    state.counterpartyId !== initial.counterpartyId ||
+    state.counterAccountId !== initial.counterAccountId ||
+    state.projectId !== initial.projectId ||
+    state.householdMemberId !== initial.householdMemberId ||
+    state.settlementBatchId !== initial.settlementBatchId ||
+    state.comment !== initial.comment ||
+    state.includeDuplicate !== initial.includeDuplicate ||
+    state.approximateDecision !== initial.approximateDecision ||
+    state.learnOn !== initial.learnOn ||
+    state.learnPattern !== initial.learnPattern ||
+    state.useAsDefaultAccount !== initial.useAsDefaultAccount
+  )
+}
+
 export function rowStatus(record: RowRecord, state: ImportRowState): RowStatus {
   if (record.isExactDuplicate && !state.includeDuplicate) return 'duplicate'
   if (record.approximateCandidates.length > 0 && state.approximateDecision === 'unresolved') return 'check'
