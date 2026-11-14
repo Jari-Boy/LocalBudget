@@ -48,6 +48,7 @@ import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../ma
 import type { MaybeAsync } from '../master/maybeAsync'
 import { UnsavedChangesDialog } from '../common/unsaved-changes/UnsavedChangesDialog'
 import { useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
+import { loadUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
 import { canCreateRuleFromEntry } from '../../domain/recurring-transaction/canCreateRuleFromEntry'
 import { AccountCreateForm } from '../master/AccountCreateForm'
 import { CreateRuleFromEntryDialog } from './CreateRuleFromEntryDialog'
@@ -473,9 +474,12 @@ export function JournalScreen(props: JournalScreenProps) {
   const dirty =
     editor !== null && selection !== null && selection.kind !== 'proposal' && serializeEditor(editor) !== baseline
 
+  // 設定が「出さない」のときは、未保存でも確認(画面内・画面外)とリロードの警告を出さない(計画Issue #190)
+  const warnOnLeave = dirty && loadUnsavedWarningEnabled()
+
   // 画面の外(サイドナビなど)への移動と、リロード・タブを閉じる操作の前に確認を挟む
   useEffect(() => {
-    if (!dirty) return
+    if (!warnOnLeave) return
     guard.register((proceed) => {
       setLeaveRequest(() => proceed)
       return true
@@ -489,7 +493,7 @@ export function JournalScreen(props: JournalScreenProps) {
       guard.register(null)
       window.removeEventListener('beforeunload', warnBeforeUnload)
     }
-  }, [dirty, guard])
+  }, [warnOnLeave, guard])
 
   if (data === null || derived === null) {
     return <p role="status">{tCommon('loading')}</p>
@@ -499,7 +503,7 @@ export function JournalScreen(props: JournalScreenProps) {
 
   /** 画面内の移動。未保存の変更があれば、保存か破棄かを聞いてから実行する */
   const guarded = (action: () => void) => {
-    if (dirty) setLeaveRequest(() => action)
+    if (warnOnLeave) setLeaveRequest(() => action)
     else action()
   }
 
