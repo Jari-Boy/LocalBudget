@@ -162,6 +162,21 @@ describe('CounterpartyMasterTab', () => {
     expect(await screen.findByText(/「イオンモール」を「イオン」に統合しました/)).toBeInTheDocument()
   })
 
+  it('2件以上チェックすると、右側の一括操作パネルに移動と統合の欄が並ぶ', async () => {
+    counterparties.create({ name: 'イオン' })
+    counterparties.create({ name: 'イオンモール' })
+    renderTab()
+    await screen.findByRole('button', { name: 'イオン' })
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'イオンを選択' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'イオンモールを選択' }))
+
+    const bulk = within(await screen.findByRole('region', { name: '一括操作' }))
+    expect(bulk.getByText('2件を選択中')).toBeInTheDocument()
+    expect(bulk.getByLabelText('移動先')).toBeInTheDocument()
+    expect(bulk.getByRole('region', { name: '取引先の統合' })).toBeInTheDocument()
+  })
+
   it('仕訳で使用中の取引先は、削除できず理由が表示される', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
     new SqlJsJournalEntryRepository(db).create({

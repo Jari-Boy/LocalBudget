@@ -207,22 +207,16 @@ export function CounterpartyMasterTab({
           />
         )
       }}
+      notice={mergeResult}
       renderSelection={(checkedIds, { reload }) => (
-        <>
-          {mergeResult !== '' && (
-            <p role="status" className="master-flash">
-              {mergeResult}
-            </p>
-          )}
-          <MergePanel
-            counterparties={data.counterparties.filter((c) => checkedIds.includes(c.id))}
-            repository={counterpartyRepository}
-            onMerged={async (message) => {
-              setMergeResult(message)
-              await reload()
-            }}
-          />
-        </>
+        <MergePanel
+          counterparties={data.counterparties.filter((c) => checkedIds.includes(c.id))}
+          repository={counterpartyRepository}
+          onMerged={async (message) => {
+            setMergeResult(message)
+            await reload()
+          }}
+        />
       )}
     />
   )
@@ -424,8 +418,8 @@ function MergePanel({ counterparties, repository, onMerged }: MergePanelProps) {
   }
 
   return (
-    <section className="master-panel" aria-label={t('counterpartyTab.mergeRegion')}>
-      <h2 className="master-panel__title">{t('counterpartyTab.mergeTitle', { count: counterparties.length })}</h2>
+    <section className="master-subsection" aria-label={t('counterpartyTab.mergeRegion')}>
+      <h3 className="master-subsection__title">{t('bulk.mergeTitle')}</h3>
       <div className="master-field">
         <label className="master-field__label" htmlFor="counterparty-merge-target">
           {t('counterpartyTab.mergeTarget')}

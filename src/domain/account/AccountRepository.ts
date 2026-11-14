@@ -15,4 +15,13 @@ export interface AccountRepository {
   delete(id: number): void
   deactivate(id: number): Account
   activate(id: number): Account
+  /**
+   * 複数の科目(統合元)を1科目(統合先)に統合する(docs/domain/accounts.md 2.2、計画Issue #97)。
+   * 統合元の`journal_lines.account_id`を統合先へ一括で付け替え(反対仕訳は作らない)、統合元ごとに
+   * `account_merge_log`へ1行(名称のスナップショット・付け替え件数)を記録する。全体で1トランザクション。
+   * 統合元は残る(仕訳は0件になるので、呼び出し側が削除または非アクティブ化できる)。
+   * 統合できるのは、同じ区分・同じ照合可否の、システム管理でない科目同士で、統合先は有効な科目に限る。
+   * 条件を満たさないときは例外を投げ、何も変更しない。
+   */
+  merge(targetId: number, sourceIds: number[]): void
 }

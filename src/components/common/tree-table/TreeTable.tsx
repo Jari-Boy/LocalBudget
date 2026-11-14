@@ -3,7 +3,6 @@ import {
   buildTreeTableRows,
   CATEGORY_ID_PREFIX,
   dropZoneFor,
-  listMoveDestinations,
   resolveTreeMove,
   type DropZone,
   type TreeTableCategory,
@@ -46,8 +45,8 @@ interface DragOver {
  * ドラッグ移動を持つ。ドラッグ移動は、行の上端・下端で並び替え、グループの中央で中へ、
  * 区分の見出しで最上位へ移す。チェック済みの行をドラッグするとチェック済みの全行を、
  * そうでなければその1行だけを移す。移動の可否は純粋関数(resolveTreeMove)で判定する。
- * ドラッグを使えない場合に備え、チェックした行は「移動先を選ぶ」欄(キーボードで操作できる)でも
- * 同じ判定で移動できる。表示用の汎用ノード型だけを受け取り、DB・Repositoryには依存しない。
+ * ドラッグを使えない場合の移動先選択は、2件以上チェックしたときの右パネル(BulkSelectionPanel)が
+ * 同じ判定で担う。表示用の汎用ノード型だけを受け取り、DB・Repositoryには依存しない。
  */
 export function TreeTable({
   categories,
@@ -119,41 +118,10 @@ export function TreeTable({
     onMove(result.nodes, { ids, targetId, zone: over.zone, expandId: result.expandId })
   }
 
-  // ドラッグができなくても、チェックした行をキーボードで移動先を選んで動かせる
-  const destinations = checkedIds.length > 0 ? listMoveDestinations(nodes, categories, checkedIds) : []
-
-  const handleMoveTo = (targetId: string) => {
-    if (targetId === '') return
-    const result = resolveTreeMove(nodes, checkedIds, { id: targetId, zone: 'inside' })
-    if (!result.ok) {
-      onMoveRejected?.(result.reason)
-      return
-    }
-    onMove(result.nodes, { ids: checkedIds, targetId, zone: 'inside', expandId: result.expandId })
-  }
-
   const colSpan = columns.length + 2
 
   return (
     <div className="tree-table">
-      {destinations.length > 0 && (
-        <div className="tree-table__bulk" role="group" aria-label="選択した行の移動">
-          <span className="tree-table__bulk-count">{checkedIds.length}件を移動</span>
-          <select
-            className="tree-table__bulk-select"
-            aria-label="選択した行の移動先"
-            value=""
-            onChange={(event) => handleMoveTo(event.target.value)}
-          >
-            <option value="">移動先を選ぶ</option>
-            {destinations.map((destination) => (
-              <option key={destination.id} value={destination.id}>
-                {destination.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
       <table className="tree-table__table">
         <thead>
           <tr>
