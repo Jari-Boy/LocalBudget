@@ -389,7 +389,7 @@ function MappingPanel(props: MappingPanelProps) {
   const errorCount = preview ? preview.rows.filter((r) => r.error !== null).length : 0
 
   const statusText = (() => {
-    if (preview === null) return t('mappingTab.previewEmpty')
+    if (preview === null) return ''
     if (preview.columnError) {
       return t('mappingTab.columnNotFound', {
         field: columnDefs.find((c) => c.key === preview.columnError!.fieldName)?.label ?? preview.columnError.fieldName,
@@ -624,29 +624,34 @@ function MappingPanel(props: MappingPanelProps) {
         </div>
       )}
 
-      <h3 className="master-subsection__title">{t('mappingTab.previewSection')}</h3>
-      <div className="master-field">
-        <label className="master-field__label" htmlFor="map-preview-account">
-          {t('mappingTab.previewKind')}
-        </label>
-        <select
-          id="map-preview-account"
-          className="master-field__control"
-          value={previewKind}
-          onChange={(e) => setPreviewKindChoice(e.target.value as PreviewKind)}
-        >
-          <option value="asset">{t('mappingTab.previewKindAssetOption')}</option>
-          <option value="liability">{t('mappingTab.previewKindLiabilityOption')}</option>
-        </select>
-      </div>
-      <p role="status" className={statusIsError ? 'master-error' : 'master-note'}>
-        {statusText}
-      </p>
-      {preview !== null && !preview.columnError && errorCount > preview.rows.length - errorCount && (
-        <p className="master-error">{t('mappingTab.majorityWarning')}</p>
-      )}
-      {errorCount > 0 && preview !== null && !preview.columnError && (
-        <p className="master-note">{t('mappingTab.skipNote')}</p>
+      {/* 取り込み結果のプレビューは、CSVを選んでから出す(計画Issue #192、実機確認での指摘) */}
+      {preview !== null && (
+        <>
+          <h3 className="master-subsection__title">{t('mappingTab.previewSection')}</h3>
+          {!preview.columnError && (
+            <div className="master-field">
+              <label className="master-field__label" htmlFor="map-preview-account">
+                {t('mappingTab.previewKind')}
+              </label>
+              <select
+                id="map-preview-account"
+                className="master-field__control"
+                value={previewKind}
+                onChange={(e) => setPreviewKindChoice(e.target.value as PreviewKind)}
+              >
+                <option value="asset">{t('mappingTab.previewKindAssetOption')}</option>
+                <option value="liability">{t('mappingTab.previewKindLiabilityOption')}</option>
+              </select>
+            </div>
+          )}
+          <p role="status" className={statusIsError ? 'master-error' : 'master-note'}>
+            {statusText}
+          </p>
+          {!preview.columnError && errorCount > preview.rows.length - errorCount && (
+            <p className="master-error">{t('mappingTab.majorityWarning')}</p>
+          )}
+          {errorCount > 0 && !preview.columnError && <p className="master-note">{t('mappingTab.skipNote')}</p>}
+        </>
       )}
       {preview !== null && !preview.columnError && (
         <div className="master-table-wrap">
@@ -689,7 +694,7 @@ function MappingPanel(props: MappingPanelProps) {
           </table>
         </div>
       )}
-      <p className="master-note">{t('mappingTab.amountNote')}</p>
+      {preview !== null && !preview.columnError && <p className="master-note">{t('mappingTab.amountNote')}</p>}
 
       {reasons.length > 0 && (
         <ul className="master-error">

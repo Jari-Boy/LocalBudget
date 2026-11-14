@@ -197,6 +197,22 @@ describe('MappingMasterTab', () => {
     expect(badRow.getAllByRole('cell')[1]).toHaveTextContent('日付を読み取れません')
   })
 
+  it('CSVを選ぶまでは、取り込み結果のプレビュー(見出し・科目の種類・注記)を出さない(計画Issue #192、実機確認での指摘)', async () => {
+    makeMapping()
+    renderTab()
+    await openMapping('楽天カード')
+
+    expect(panel().queryByText('取り込み結果のプレビュー')).not.toBeInTheDocument()
+    expect(panel().queryByLabelText('プレビューする科目の種類')).not.toBeInTheDocument()
+    expect(panel().queryByText(/CSVを選ぶと、取り込み結果を確認できます/)).not.toBeInTheDocument()
+    expect(panel().queryByText(/仕訳の借方・貸方のどちらに入るか/)).not.toBeInTheDocument()
+
+    loadCsv(SIGNED_CSV)
+
+    expect(await panel().findByText('取り込み結果のプレビュー')).toBeInTheDocument()
+    expect(panel().getByLabelText('プレビューする科目の種類')).toBeInTheDocument()
+  })
+
   it('プレビューする科目の種類を資産に変えると、同じ金額でも借方・貸方が入れ替わる(計画Issue #192)', async () => {
     makeMapping()
     renderTab()
@@ -215,8 +231,9 @@ describe('MappingMasterTab', () => {
     makeMapping()
     renderTab()
     await openMapping('楽天カード')
+    loadCsv(SIGNED_CSV)
 
-    const select = panel().getByLabelText('プレビューする科目の種類')
+    const select = await panel().findByLabelText('プレビューする科目の種類')
     expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
       '資産の科目(預金など)',
       '負債の科目(クレジットカードなど)',
@@ -239,8 +256,9 @@ describe('MappingMasterTab', () => {
     makeMapping({ accountIds: [cardId] })
     renderTab()
     await openMapping('楽天カード')
+    loadCsv(SIGNED_CSV)
 
-    expect(panel().getByLabelText('プレビューする科目の種類')).toHaveValue('liability')
+    expect(await panel().findByLabelText('プレビューする科目の種類')).toHaveValue('liability')
   })
   it('「金額の符号を反転する」にチェックすると、プレビューの借方・貸方が入れ替わる(計画Issue #192)', async () => {
     makeMapping()
@@ -308,8 +326,9 @@ describe('MappingMasterTab', () => {
     makeMapping()
     renderTab()
     await openMapping('楽天カード')
+    loadCsv(SIGNED_CSV)
 
-    expect(panel().getByText(/選んだ種類の科目が仕訳の借方・貸方のどちらに入るか/)).toBeInTheDocument()
+    expect(await panel().findByText(/選んだ種類の科目が仕訳の借方・貸方のどちらに入るか/)).toBeInTheDocument()
     expect(panel().queryByText(/残高が増える方向/)).not.toBeInTheDocument()
   })
 
