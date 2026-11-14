@@ -171,7 +171,6 @@ export function AccountMasterTab({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  /** 操作を実行し、成功したら再読み込みする。失敗時はエラー文言を出す */
   /** 操作を実行する。成功したらtrue、失敗してエラー文言を出したらfalse */
   const run = async (action: () => Promise<void>, errorMessage: string, successMessage = ''): Promise<boolean> => {
     setBusy(true)
