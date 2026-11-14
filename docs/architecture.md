@@ -185,6 +185,7 @@ interface StorageAdapter {
 - `AutoSaveController`に`stop()`を追加した。`importDatabaseBackup`は検証が成功した後に`flush()` → `stop()` → `save()`の順で処理する。読み込み後の再読み込みで`pagehide`から呼ばれる`flush()`が、古いDBでバックアップを上書きする競合への備えである。`stop()`を外してもChromiumのE2Eでは上書きは再現しなかったため、確認済みの不具合の修正ではなく、起こりうる競合への予防措置である。
 - 幅768px以上では、サイドナビを`position: sticky`で画面の高さ（`100vh`/`100dvh`）に固定し、収まらないときはサイドナビ内だけをスクロールする（縦に長い画面で「設定」が見切れていたため）。
 - 右に詳細パネルが開く画面（マスタ・仕訳一覧・割勘精算）では、幅1240px以上で右パネルを`position: sticky`で画面の上端に追従させ、画面より縦に長いときはパネル内だけをスクロールする（計画Issue #194）。指定は`src/components/layout/sticky-side-panel.css`に集約している。
+- マスタ画面の一覧と右の詳細パネルの幅の比は1:1とした（`src/components/master/master.css`の`.master-split__main`・`.master-split > .master-panel`、計画Issue #192の実機確認での要望）。仕訳画面の「定期仕訳」タブは`.master-split--rule`で右パネルを広く取る従来どおりの配分（計画Issue #164）。
 - 未保存の編集の警告を、マスタの各タブ（勘定科目・取引先・プロジェクト・世帯メンバー・明細マッピング）と仕訳画面で統一した（計画Issue #190）。共通部品は`src/components/common/unsaved-changes/`に置く。`useUnsavedEditGuard`は編集パネルが「未保存か」と「保存」を渡すと、確認の登録・リロード時の警告（`beforeunload`）・ダイアログを引き受け、`useGuardedAction`は行の選択・新規作成などの画面内の操作を確認に通してから実行する。画面外への移動は、#169で導入した`GuardedLink`とコンテキストのガードを再利用する。明細取込画面(`StatementImportScreen`)にも同じ部品で警告を出す(計画Issue #193。取り込んだ行の入力が初期値から変わっているときのみ、サイドナビ・「マッピングを編集」・新しいCSVの選択・リロードで確認する)。設定画面に「編集内容の保護」（出す/出さない）を置き、値は`localStorage`（`localbudget:unsaved-warning`、`unsavedWarningSetting.ts`）に保存する。既定は「出す」で、DB・バックアップには含めない。判断の詳細は`docs/decisions.md` 2026-11-14（計画Issue #190）を参照。
 詳細は`docs/decisions.md`の2026-11-10の項を参照。
 

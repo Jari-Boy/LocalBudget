@@ -20,7 +20,7 @@ CREATE TABLE import_mapping_definitions (
   external_id_column    TEXT,
   -- 金額の符号を反転して読む(single_signed のみ有効。docs/domain/statement-import.md 1.2・2.1)
   invert_amount_sign    BOOLEAN NOT NULL DEFAULT 0,
-  created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK (
     (amount_mode = 'single_signed'
