@@ -1,0 +1,25 @@
+/*
+ * 右に詳細パネルが開く画面の共通レイアウト(計画Issue #194)。左の一覧が縦に長くなってスクロールしても、
+ * 右パネルが画面外に見切れないよう、パネルを画面の上端に固定(position: sticky)する。パネルが画面の高さより
+ * 縦に長いときは、パネルの中だけをスクロールさせて最下部まで操作できるようにする。
+ *
+ * 追従の指定はこのファイルに集約する。右パネル型の画面を増やすときは、下の対象セレクタに足す
+ * (マスタ画面は`.master-split > .master-panel`なので、タブや一括操作パネルが増えても自動で対象になる)。
+ *
+ * 一覧とパネルが横に並ぶ幅でのみ有効にする。幅が狭くパネルが一覧の下へ折り返す(flex-wrap)状態で
+ * 追従させると、折り返したパネルの高さまで制限されるため、従来どおりの縦積みのままにする。
+ * 横並びになる最大の幅は仕訳画面(サイドナビ200px + mainの余白56px + 一覧340px + パネル620px + 隙間16px = 1232px)。
+ */
+@media (min-width: 1240px) {
+  .master-split > .master-panel,
+  .journal-screen__body > .journal-screen__detail,
+  .split-settle__body > .split-settle__side,
+  .split-settle__body > .split-settle__panel {
+    --sticky-side-panel-top: 16px;
+    position: sticky;
+    top: var(--sticky-side-panel-top);
+    max-height: calc(100vh - 2 * var(--sticky-side-panel-top));
+    max-height: calc(100dvh - 2 * var(--sticky-side-panel-top));
+    overflow-y: auto;
+  }
+}

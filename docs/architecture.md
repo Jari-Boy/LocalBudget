@@ -184,6 +184,7 @@ interface StorageAdapter {
 - 読み込み: ファイル名・サイズ・更新日時を示す確認ダイアログ（ここから今のデータを先に書き出せる） → 読み込み中の表示 → 成功したら`importNotice`でsessionStorageにファイル名（お知らせの印）を残して`window.location.reload()` → 再読み込み後に1回だけお知らせを出す（sessionStorageが例外を投げても処理は止めない）。`InvalidBackupFileError`ならデータを変えていないことを示すダイアログを出し、それ以外の失敗は読み込み直しを促す。文言は`settings`名前空間。
 - `AutoSaveController`に`stop()`を追加した。`importDatabaseBackup`は検証が成功した後に`flush()` → `stop()` → `save()`の順で処理する。読み込み後の再読み込みで`pagehide`から呼ばれる`flush()`が、古いDBでバックアップを上書きする競合への備えである。`stop()`を外してもChromiumのE2Eでは上書きは再現しなかったため、確認済みの不具合の修正ではなく、起こりうる競合への予防措置である。
 - 幅768px以上では、サイドナビを`position: sticky`で画面の高さ（`100vh`/`100dvh`）に固定し、収まらないときはサイドナビ内だけをスクロールする（縦に長い画面で「設定」が見切れていたため）。
+- 右に詳細パネルが開く画面（マスタ・仕訳一覧・割勘精算）では、幅1240px以上で右パネルを`position: sticky`で画面の上端に追従させ、画面より縦に長いときはパネル内だけをスクロールする（計画Issue #194）。指定は`src/components/layout/sticky-side-panel.css`に集約している。
 詳細は`docs/decisions.md`の2026-11-10の項を参照。
 
 **旧バックアップの取込は対象外とする場合がある(計画Issue #169)**: `journal_lines.household_member_id`をNOT NULLにした際、開発用DBは作り直す前提のため、データ移行用のマイグレーション(バージョン2以降・テーブル再作成)は作らなかった。したがって、NULL行を含む、または`journal_lines.household_member_id`がNULL許容の旧スキーマのバックアップは取込の対象外で、取込時のスキーマ検証(`assertValidDatabaseSchema`)が`InvalidBackupFileError`で拒否する。スキーマを破壊的に変える際は、この前提(作り直し・旧バックアップ非対応)で進めるか、マイグレーションを書くかをその都度決める(判断は`docs/decisions.md` 2026-11-09、計画Issue #169)。
