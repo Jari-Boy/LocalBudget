@@ -68,6 +68,12 @@
   align-items: center;
 }
 
+/* 一括操作パネルの「選択を解除」など、直前の操作欄と区切って押し間違いを防ぐ */
+.master-actions--divided {
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
 .master-btn {
   font: inherit;
   font-size: var(--font-size-base);

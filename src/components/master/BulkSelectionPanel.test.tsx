@@ -109,4 +109,11 @@ describe('BulkSelectionPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '選択を解除' }))
     expect(onClear).toHaveBeenCalledTimes(1)
   })
+
+  it('「選択を解除」は固有の操作(統合など)と区切り線で分けた領域に置かれ、誤って近くの操作を押しにくい', () => {
+    renderPanel(['misc', 'other'], <button type="button">統合する</button>)
+    const clear = screen.getByRole('button', { name: '選択を解除' })
+    expect(clear.parentElement).toHaveClass('master-actions--divided')
+    expect(screen.getByRole('button', { name: '統合する' }).parentElement).not.toBe(clear.parentElement)
+  })
 })

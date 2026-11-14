@@ -87,7 +87,7 @@ export function BulkSelectionPanel({
 
       {children}
 
-      <div className="master-actions">
+      <div className="master-actions master-actions--divided">
         <button type="button" className="master-btn" onClick={onClear}>
           {t('bulk.clear')}
         </button>
