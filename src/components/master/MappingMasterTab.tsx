@@ -561,12 +561,12 @@ function MappingPanel(props: MappingPanelProps) {
             {/* 反転は符号付き1列のときだけ。入金・出金の2列は列の割り当てを入れ替えれば足りる(計画Issue #192) */}
             {c.key === 'amountColumn' && (
               <div className="master-field">
-                <label>
+                <label className="master-check">
                   <input
                     type="checkbox"
                     checked={form.invertAmountSign}
                     onChange={(e) => set('invertAmountSign', e.target.checked)}
-                  />{' '}
+                  />
                   {t('mappingTab.invertAmountSign')}
                 </label>
               </div>
