@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
-import type { Account } from '../../domain/account/Account'
+import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { AccountGroupRepository } from '../../domain/account-group/AccountGroupRepository'
@@ -56,6 +56,9 @@ interface Draft {
   sample: SampleCsv | null
   notice: string
 }
+
+/** プレビュー(仕訳形式)で想定する、取込先の科目の種類 */
+type PreviewKind = Extract<AccountCategory, 'asset' | 'liability'>
 
 const yen = (amount: number) => `¥${amount.toLocaleString('ja-JP')}`
 
@@ -124,7 +127,7 @@ export function MappingMasterTab({
   const accountNameById = new Map(data.accounts.map((a) => [a.id, a.name]))
   const institutionNames = collectFinancialInstitutionNames(data.definitions.map((d) => d.formatGroupId))
   const selected = typeof mode === 'number' ? data.definitions.find((d) => d.id === mode) : undefined
-  const previewAccounts = data.accounts.filter(isStatementImportEligibleAccount)
+  const accountCategoryById = new Map(data.accounts.map((a) => [a.id, a.category]))
 
   /** 操作を実行する。成功したらtrue、失敗してエラー文言を出したらfalse */
   const run = async (action: () => unknown, errorMessage: string): Promise<boolean> => {
@@ -243,7 +246,7 @@ export function MappingMasterTab({
           isCreate={mode === 'create'}
           accountCategories={accountCategories}
           accountNameById={accountNameById}
-          previewAccounts={previewAccounts}
+          accountCategoryById={accountCategoryById}
           institutionNames={institutionNames}
           busy={busy}
           armed={armed}
@@ -292,8 +295,8 @@ interface MappingPanelProps {
   isCreate: boolean
   accountCategories: ReturnType<typeof buildTreeSelectCategories>
   accountNameById: ReadonlyMap<number, string>
-  /** プレビュー(仕訳形式)に使う科目の選択肢(明細の取込先にできる科目) */
-  previewAccounts: readonly Account[]
+  /** 科目IDから科目の種別を引く(プレビューする科目の種類の既定を、紐づけ済みの先頭の科目から決める) */
+  accountCategoryById: ReadonlyMap<number, AccountCategory>
   /** 金融機関名の選択候補(既存の定義にある金融機関名) */
   institutionNames: readonly string[]
   busy: boolean
@@ -315,10 +318,17 @@ function MappingPanel(props: MappingPanelProps) {
     setForm((f) => ({ ...f, [key]: value }))
   }
 
-  /** プレビューする科目。選ぶまでは、紐づけ済みの先頭の科目。null は未選択(借方・貸方を出さない)(計画Issue #192) */
-  const [previewAccountChoice, setPreviewAccountChoice] = useState<number | null | undefined>(undefined)
-  const previewAccountId = previewAccountChoice === undefined ? (form.accountIds[0] ?? null) : previewAccountChoice
-  const previewAccount = props.previewAccounts.find((a) => a.id === previewAccountId) ?? null
+  /**
+   * プレビューする科目の種類(資産の科目か負債の科目か)。個別の科目は選ばない(計画Issue #192)。
+   * 選ぶまでは、紐づけ済みの先頭の科目の種類(負債なら負債、それ以外と紐づけなしは資産)。
+   */
+  const [previewKindChoice, setPreviewKindChoice] = useState<PreviewKind | undefined>(undefined)
+  const previewKind: PreviewKind =
+    previewKindChoice ?? (props.accountCategoryById.get(form.accountIds[0]) === 'liability' ? 'liability' : 'asset')
+  const previewAccount = {
+    name: previewKind === 'liability' ? t('mappingTab.previewKindLiability') : t('mappingTab.previewKindAsset'),
+    category: previewKind,
+  }
 
   const rows = useMemo(() => tryReadCsv(sample, form), [sample, form.encoding, form.delimiter]) // eslint-disable-line react-hooks/exhaustive-deps
   const preview = useMemo(
@@ -369,7 +379,6 @@ function MappingPanel(props: MappingPanelProps) {
     setSample({ bytes: new Uint8Array(await file.arrayBuffer()) })
   }
 
-  const signedYen = (n: number) => `${n < 0 ? '-' : '+'}${yen(Math.abs(n))}`
   /** 読み取れない行・摘要が無い行の理由。問題が無ければnull(表には何も出さない) */
   const errorText = (row: MappingPreviewRow): string | null => {
     if (row.error === 'invalidDate') return t('mappingTab.errorInvalidDate')
@@ -618,20 +627,16 @@ function MappingPanel(props: MappingPanelProps) {
       <h3 className="master-subsection__title">{t('mappingTab.previewSection')}</h3>
       <div className="master-field">
         <label className="master-field__label" htmlFor="map-preview-account">
-          {t('mappingTab.previewAccount')}
+          {t('mappingTab.previewKind')}
         </label>
         <select
           id="map-preview-account"
           className="master-field__control"
-          value={previewAccount?.id ?? ''}
-          onChange={(e) => setPreviewAccountChoice(e.target.value === '' ? null : Number(e.target.value))}
+          value={previewKind}
+          onChange={(e) => setPreviewKindChoice(e.target.value as PreviewKind)}
         >
-          <option value="">{t('mappingTab.previewAccountNone')}</option>
-          {props.previewAccounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
+          <option value="asset">{t('mappingTab.previewKindAssetOption')}</option>
+          <option value="liability">{t('mappingTab.previewKindLiabilityOption')}</option>
         </select>
       </div>
       <p role="status" className={statusIsError ? 'master-error' : 'master-note'}>
@@ -650,14 +655,8 @@ function MappingPanel(props: MappingPanelProps) {
               <tr>
                 <th>{t('mappingTab.colDate')}</th>
                 <th>{t('mappingTab.colDescription')}</th>
-                {previewAccount ? (
-                  <>
-                    <th>{t('mappingTab.colDebit')}</th>
-                    <th>{t('mappingTab.colCredit')}</th>
-                  </>
-                ) : (
-                  <th>{t('mappingTab.colAmount')}</th>
-                )}
+                <th>{t('mappingTab.colDebit')}</th>
+                <th>{t('mappingTab.colCredit')}</th>
                 <th>{t('mappingTab.colBalance')}</th>
               </tr>
             </thead>
@@ -672,21 +671,17 @@ function MappingPanel(props: MappingPanelProps) {
                       row.record?.description || '-'
                     )}
                   </td>
-                  {previewAccount ? (
-                    (() => {
-                      const cells = row.record
-                        ? previewJournalCells(row.record.amount, previewAccount, t('mappingTab.anyAccount'))
-                        : null
-                      return (
-                        <>
-                          <td>{cells?.debit ?? '-'}</td>
-                          <td>{cells?.credit ?? '-'}</td>
-                        </>
-                      )
-                    })()
-                  ) : (
-                    <td>{row.record ? signedYen(row.record.amount) : '-'}</td>
-                  )}
+                  {(() => {
+                    const cells = row.record
+                      ? previewJournalCells(row.record.amount, previewAccount, t('mappingTab.anyAccount'))
+                      : null
+                    return (
+                      <>
+                        <td>{cells?.debit ?? '-'}</td>
+                        <td>{cells?.credit ?? '-'}</td>
+                      </>
+                    )
+                  })()}
                   <td>{row.record?.balanceAfter != null ? yen(row.record.balanceAfter) : '-'}</td>
                 </tr>
               ))}

@@ -161,9 +161,9 @@ describe('MappingMasterTab', () => {
     expect(await panel().findByText('✓ 全2行を読み取れます')).toBeInTheDocument()
     const preview = within(panel().getByRole('table', { name: '取り込み結果のプレビュー' }))
     expect(preview.getByText('2026-10-05')).toBeInTheDocument()
-    // 紐づけ済みの先頭の科目(楽天VISA=負債)が既定のプレビュー科目。マイナスは借方、プラスは貸方(計画Issue #192)
-    expect(preview.getByText('楽天VISA ¥300')).toBeInTheDocument()
-    expect(preview.getByText('楽天VISA ¥250,000')).toBeInTheDocument()
+    // 紐づけ済みの先頭の科目(楽天VISA=負債)の種類が既定。マイナスは借方、プラスは貸方(計画Issue #192)
+    expect(preview.getByText('負債の科目 ¥300')).toBeInTheDocument()
+    expect(preview.getByText('負債の科目 ¥250,000')).toBeInTheDocument()
   })
 
   it('プレビューは仕訳形式(借方・貸方)で、相手科目は「任意の科目」と表示する(計画Issue #192)', async () => {
@@ -197,46 +197,51 @@ describe('MappingMasterTab', () => {
     expect(badRow.getAllByRole('cell')[1]).toHaveTextContent('日付を読み取れません')
   })
 
-  it('プレビューする科目を資産に変えると、同じ金額でも借方・貸方が入れ替わる(計画Issue #192)', async () => {
+  it('プレビューする科目の種類を資産に変えると、同じ金額でも借方・貸方が入れ替わる(計画Issue #192)', async () => {
     makeMapping()
     renderTab()
     await openMapping('楽天カード')
     loadCsv(SIGNED_CSV)
     await panel().findByText('✓ 全2行を読み取れます')
 
-    fireEvent.change(panel().getByLabelText('プレビューする科目'), { target: { value: String(bankId) } })
+    fireEvent.change(panel().getByLabelText('プレビューする科目の種類'), { target: { value: 'asset' } })
 
     const preview = within(panel().getByRole('table', { name: '取り込み結果のプレビュー' }))
-    expect(await preview.findByText('楽天銀行 ¥250,000')).toBeInTheDocument()
+    expect(await preview.findByText('資産の科目 ¥250,000')).toBeInTheDocument()
     expect(preview.getByText('任意の科目 ¥300')).toBeInTheDocument()
   })
 
-  it('プレビューする科目を選ばないときは、借方・貸方を出さず符号付きの金額だけを表示する(計画Issue #192)', async () => {
+  it('プレビューする科目の種類は、資産の科目と負債の科目の2つから選ぶ(個別の科目は選ばない、計画Issue #192)', async () => {
     makeMapping()
     renderTab()
     await openMapping('楽天カード')
-    loadCsv(SIGNED_CSV)
-    await panel().findByText('✓ 全2行を読み取れます')
 
-    fireEvent.change(panel().getByLabelText('プレビューする科目'), { target: { value: '' } })
-
-    const preview = within(panel().getByRole('table', { name: '取り込み結果のプレビュー' }))
-    expect(await preview.findByText('-¥300')).toBeInTheDocument()
-    expect(preview.getByText('+¥250,000')).toBeInTheDocument()
-    expect(preview.queryByRole('columnheader', { name: '借方' })).not.toBeInTheDocument()
+    const select = panel().getByLabelText('プレビューする科目の種類')
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      '資産の科目(預金など)',
+      '負債の科目(クレジットカードなど)',
+    ])
   })
 
-  it('紐づけた科目がない定義は、プレビューする科目が未選択で、金額だけを表示する(計画Issue #192)', async () => {
+  it('紐づけた科目がない定義は、資産の科目を既定にして、借方・貸方で表示する(計画Issue #192)', async () => {
     makeMapping({ accountIds: [] })
     renderTab()
     await openMapping('楽天カード')
     loadCsv(SIGNED_CSV)
 
     const preview = within(await panel().findByRole('table', { name: '取り込み結果のプレビュー' }))
-    expect(panel().getByLabelText('プレビューする科目')).toHaveValue('')
-    expect(preview.getByText('-¥300')).toBeInTheDocument()
+    expect(panel().getByLabelText('プレビューする科目の種類')).toHaveValue('asset')
+    expect(preview.getByText('資産の科目 ¥250,000')).toBeInTheDocument()
+    expect(preview.getByText('任意の科目 ¥300')).toBeInTheDocument()
   })
 
+  it('紐づけた先頭の科目が負債なら、負債の科目を既定にする(計画Issue #192)', async () => {
+    makeMapping({ accountIds: [cardId] })
+    renderTab()
+    await openMapping('楽天カード')
+
+    expect(panel().getByLabelText('プレビューする科目の種類')).toHaveValue('liability')
+  })
   it('「金額の符号を反転する」にチェックすると、プレビューの借方・貸方が入れ替わる(計画Issue #192)', async () => {
     makeMapping()
     renderTab()
@@ -251,14 +256,14 @@ describe('MappingMasterTab', () => {
       return [cells[2].textContent, cells[3].textContent]
     }
     // 反転前: -300は負債の借方、+250,000は負債の貸方
-    expect(sidesOf('コンビニ')).toEqual(['楽天VISA ¥300', '任意の科目 ¥300'])
-    expect(sidesOf('給与')).toEqual(['任意の科目 ¥250,000', '楽天VISA ¥250,000'])
+    expect(sidesOf('コンビニ')).toEqual(['負債の科目 ¥300', '任意の科目 ¥300'])
+    expect(sidesOf('給与')).toEqual(['任意の科目 ¥250,000', '負債の科目 ¥250,000'])
 
     fireEvent.click(panel().getByLabelText('金額の符号を反転する'))
 
     // 反転後は符号が逆になり、借方・貸方が入れ替わる
-    await waitFor(() => expect(sidesOf('コンビニ')).toEqual(['任意の科目 ¥300', '楽天VISA ¥300']))
-    expect(sidesOf('給与')).toEqual(['楽天VISA ¥250,000', '任意の科目 ¥250,000'])
+    await waitFor(() => expect(sidesOf('コンビニ')).toEqual(['任意の科目 ¥300', '負債の科目 ¥300']))
+    expect(sidesOf('給与')).toEqual(['負債の科目 ¥250,000', '任意の科目 ¥250,000'])
   })
 
   it('反転のチェックを保存でき、開き直すと反映されている(計画Issue #192)', async () => {
@@ -304,7 +309,7 @@ describe('MappingMasterTab', () => {
     renderTab()
     await openMapping('楽天カード')
 
-    expect(panel().getByText(/選んだ科目が仕訳の借方・貸方のどちらに入るか/)).toBeInTheDocument()
+    expect(panel().getByText(/選んだ種類の科目が仕訳の借方・貸方のどちらに入るか/)).toBeInTheDocument()
     expect(panel().queryByText(/残高が増える方向/)).not.toBeInTheDocument()
   })
 
@@ -321,8 +326,8 @@ describe('MappingMasterTab', () => {
 
     const preview = within(panel().getByRole('table', { name: '取り込み結果のプレビュー' }))
     // 出金5,000は-5,000、入金250,000は+250,000。負債(楽天VISA)なので、それぞれ借方・貸方に入る
-    expect(await preview.findByText('楽天VISA ¥5,000')).toBeInTheDocument()
-    expect(preview.getByText('楽天VISA ¥250,000')).toBeInTheDocument()
+    expect(await preview.findByText('負債の科目 ¥5,000')).toBeInTheDocument()
+    expect(preview.getByText('負債の科目 ¥250,000')).toBeInTheDocument()
   })
 
   it('読み取れない行は、行ごとに理由を表示し、件数を伝える', async () => {
