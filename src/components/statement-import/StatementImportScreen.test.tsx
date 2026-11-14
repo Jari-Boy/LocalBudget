@@ -7,6 +7,7 @@
  * 相手科目のサジェスト、重複の行(入力・選択なし、「取り込む」で戻せる)、選択した行への一括設定
  * (対象外の件数)、確定版の候補の置き換え、残高照合、確定とパターン登録、確定後に続けて次のCSVを
  * 取り込めることを、sql.jsのNode実装(createTestDatabase)を使って確認する。
+ * CSVを選ぶ前の画面中央の「CSVを選択」ボタンと、編集中に新しいCSVを選ぼうとしたときの警告(計画Issue #193)、
  * 編集中に他の画面へ移ろうとしたときの未保存の警告(保存して移動・破棄して移動・キャンセル・設定オフ、計画Issue #193)も確認する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
@@ -314,6 +315,76 @@ describe('StatementImportScreen', () => {
 
     await screen.findByText(/statement\.csv を読み込み済み/)
     expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue('')
+  })
+
+  it('CSVを選ぶ前は画面の中央に「CSVを選択」ボタンと案内を出し、CSVを選ぶと上部のボタンに移る(計画Issue #193)', async () => {
+    makeMapping()
+    renderScreen()
+
+    const start = await screen.findByRole('region', { name: 'CSVの選択' })
+    expect(within(start).getByRole('button', { name: 'CSVを選択' })).toBeInTheDocument()
+    expect(within(start).getByText(/明細CSVを選ぶと、同じ画面に一覧が表示されます/)).toBeInTheDocument()
+
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+
+    expect(screen.queryByRole('region', { name: 'CSVの選択' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'CSVを選択' })).toHaveLength(1)
+  })
+
+  describe('編集中に新しいCSVを選ぼうとしたときの警告(計画Issue #193)', () => {
+    let openPicker: ReturnType<typeof vi.spyOn>
+
+    beforeEach(() => {
+      openPicker = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {})
+    })
+    afterEach(() => openPicker.mockRestore())
+
+    const clickChoose = () => fireEvent.click(screen.getAllByRole('button', { name: 'CSVを選択' })[0])
+
+    it('編集していなければ、確認なしでファイル選択を開く', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+
+      clickChoose()
+
+      expect(openPicker).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('dialog', { name: '未保存の変更があります' })).not.toBeInTheDocument()
+    })
+
+    it('編集中は確認が出て、「キャンセル」ではファイル選択を開かず、「破棄して移動」で開く', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+
+      clickChoose()
+      expect(screen.getByRole('dialog', { name: '未保存の変更があります' })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+      expect(openPicker).not.toHaveBeenCalled()
+
+      clickChoose()
+      fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+      expect(openPicker).toHaveBeenCalledTimes(1)
+      expect(entries.findAll()).toHaveLength(0)
+    })
+
+    it('「保存して移動」では、行を確定してからファイル選択を開く', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+
+      clickChoose()
+      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+
+      await waitFor(() => expect(openPicker).toHaveBeenCalledTimes(1))
+      expect(entries.findAll()).toHaveLength(1)
+    })
   })
 
   describe('編集中に他の画面へ移ろうとしたときの警告(計画Issue #193)', () => {

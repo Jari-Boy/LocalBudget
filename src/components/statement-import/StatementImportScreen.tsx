@@ -597,16 +597,20 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const toId = (value: string) => (value === '' ? null : Number(value))
   const activeMembers = data.members
 
+  /** CSVの選択ボタン。編集中は確認を通してからファイル選択を開く(計画Issue #193) */
+  const chooseCsvButton = (className: string) => (
+    <button type="button" className={className} disabled={busy} onClick={() => guarded(() => fileInputRef.current?.click())}>
+      {t('chooseCsv')}
+    </button>
+  )
+
   return (
     <div className="import-screen">
       {unsavedDialog}
       <div className="import-screen__head">
         <h1 className="import-screen__title">{t('screenTitle')}</h1>
         <div className="import-screen__controls">
-          <label className="import-btn">
-            {t('chooseCsv')}
-            <input ref={fileInputRef} type="file" accept=".csv" hidden aria-label={t('chooseCsv')} disabled={busy} onChange={(e) => void handleFile(e)} />
-          </label>
+          {csv && chooseCsvButton('import-btn')}
           <button type="button" className="import-btn" onClick={() => guarded(onEditMappings)}>
             {t('editMappings')}
           </button>
@@ -614,6 +618,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       </div>
 
       {error && <p role="alert" className="import-error">{error}</p>}
+
+      <input ref={fileInputRef} type="file" accept=".csv" hidden aria-label={t('chooseCsv')} disabled={busy} onChange={(e) => void handleFile(e)} />
+      {!csv && (
+        <section aria-label={t('csvStartLabel')} className="import-start">
+          {chooseCsvButton('import-btn import-btn--primary import-btn--large')}
+          <p className="import-note">{t('csvStartNote')}</p>
+        </section>
+      )}
 
       {csv && noMatch && (
         <section role="alert" aria-label={t('noMatchTitle', { fileName: csv.fileName })} className="import-panel">

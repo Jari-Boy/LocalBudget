@@ -21,6 +21,8 @@
   "screenTitle": "明細取込",
   "targetAccount": "取込先",
   "chooseCsv": "CSVを選択",
+  "csvStartLabel": "CSVの選択",
+  "csvStartNote": "銀行・カードの明細CSVを選ぶと、同じ画面に一覧が表示されます。",
   "editMappings": "マッピングを編集",
   "chooseDefinition": "選択してください",
   "definitionLabel": "マッピング定義",
