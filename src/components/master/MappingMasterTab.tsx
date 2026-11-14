@@ -370,11 +370,12 @@ function MappingPanel(props: MappingPanelProps) {
   }
 
   const signedYen = (n: number) => `${n < 0 ? '-' : '+'}${yen(Math.abs(n))}`
-  const errorText = (row: MappingPreviewRow): string => {
+  /** 読み取れない行・摘要が無い行の理由。問題が無ければnull(表には何も出さない) */
+  const errorText = (row: MappingPreviewRow): string | null => {
     if (row.error === 'invalidDate') return t('mappingTab.errorInvalidDate')
     if (row.error === 'invalidAmount') return t('mappingTab.errorInvalidAmount')
     if (row.error === 'unknown') return t('mappingTab.errorUnknown')
-    return row.record && row.record.description === '' ? t('mappingTab.errorNoDescription') : t('mappingTab.rowOk')
+    return row.record && row.record.description === '' ? t('mappingTab.errorNoDescription') : null
   }
   const errorCount = preview ? preview.rows.filter((r) => r.error !== null).length : 0
 
@@ -658,15 +659,19 @@ function MappingPanel(props: MappingPanelProps) {
                   <th>{t('mappingTab.colAmount')}</th>
                 )}
                 <th>{t('mappingTab.colBalance')}</th>
-                <th>{t('mappingTab.colExternalId')}</th>
-                <th>{t('mappingTab.colState')}</th>
               </tr>
             </thead>
             <tbody>
               {preview.rows.map((row) => (
                 <tr key={row.rowNumber}>
                   <td>{row.record?.entryDate ?? '-'}</td>
-                  <td>{row.record?.description || '-'}</td>
+                  <td>
+                    {errorText(row) ? (
+                      <span className="master-error">{errorText(row)}</span>
+                    ) : (
+                      row.record?.description || '-'
+                    )}
+                  </td>
                   {previewAccount ? (
                     (() => {
                       const cells = row.record
@@ -683,8 +688,6 @@ function MappingPanel(props: MappingPanelProps) {
                     <td>{row.record ? signedYen(row.record.amount) : '-'}</td>
                   )}
                   <td>{row.record?.balanceAfter != null ? yen(row.record.balanceAfter) : '-'}</td>
-                  <td>{row.record ? (row.record.externalId ?? t('mappingTab.externalIdHash')) : '-'}</td>
-                  <td className={row.error ? 'master-error' : undefined}>{errorText(row)}</td>
                 </tr>
               ))}
             </tbody>

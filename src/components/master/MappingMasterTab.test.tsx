@@ -181,6 +181,22 @@ describe('MappingMasterTab', () => {
     expect(preview.getByText('任意の科目 ¥250,000')).toBeInTheDocument()
   })
 
+  it('プレビューの表に外部IDと状態の列は出さず、読み取れない行の理由は摘要の欄に出す(計画Issue #192、実機確認での指摘)', async () => {
+    makeMapping()
+    renderTab()
+    await openMapping('楽天カード')
+
+    loadCsv('利用日,利用店名,利用金額\n2026/10/05,A,-300\n不正,B,100\n')
+
+    const preview = within(await panel().findByRole('table', { name: '取り込み結果のプレビュー' }))
+    expect(preview.queryByRole('columnheader', { name: '外部ID' })).not.toBeInTheDocument()
+    expect(preview.queryByRole('columnheader', { name: '状態' })).not.toBeInTheDocument()
+    expect(preview.queryByText('OK')).not.toBeInTheDocument()
+    expect(preview.queryByText('ハッシュで代替')).not.toBeInTheDocument()
+    const badRow = within(preview.getByText('日付を読み取れません').closest('tr')!)
+    expect(badRow.getAllByRole('cell')[1]).toHaveTextContent('日付を読み取れません')
+  })
+
   it('プレビューする科目を資産に変えると、同じ金額でも借方・貸方が入れ替わる(計画Issue #192)', async () => {
     makeMapping()
     renderTab()
