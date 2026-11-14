@@ -185,6 +185,7 @@ interface StorageAdapter {
 - `AutoSaveController`に`stop()`を追加した。`importDatabaseBackup`は検証が成功した後に`flush()` → `stop()` → `save()`の順で処理する。読み込み後の再読み込みで`pagehide`から呼ばれる`flush()`が、古いDBでバックアップを上書きする競合への備えである。`stop()`を外してもChromiumのE2Eでは上書きは再現しなかったため、確認済みの不具合の修正ではなく、起こりうる競合への予防措置である。
 - 幅768px以上では、サイドナビを`position: sticky`で画面の高さ（`100vh`/`100dvh`）に固定し、収まらないときはサイドナビ内だけをスクロールする（縦に長い画面で「設定」が見切れていたため）。
 - 右に詳細パネルが開く画面（マスタ・仕訳一覧・割勘精算）では、幅1240px以上で右パネルを`position: sticky`で画面の上端に追従させ、画面より縦に長いときはパネル内だけをスクロールする（計画Issue #194）。指定は`src/components/layout/sticky-side-panel.css`に集約している。
+- 未保存の編集の警告を、マスタの各タブ（勘定科目・取引先・プロジェクト・世帯メンバー・明細マッピング）と仕訳画面で統一した（計画Issue #190）。共通部品は`src/components/common/unsaved-changes/`に置く。`useUnsavedEditGuard`は編集パネルが「未保存か」と「保存」を渡すと、確認の登録・リロード時の警告（`beforeunload`）・ダイアログを引き受け、`useGuardedAction`は行の選択・新規作成などの画面内の操作を確認に通してから実行する。画面外への移動は、#169で導入した`GuardedLink`とコンテキストのガードを再利用する。設定画面に「編集内容の保護」（出す/出さない）を置き、値は`localStorage`（`localbudget:unsaved-warning`、`unsavedWarningSetting.ts`）に保存する。既定は「出す」で、DB・バックアップには含めない。判断の詳細は`docs/decisions.md` 2026-11-14（計画Issue #190）を参照。
 詳細は`docs/decisions.md`の2026-11-10の項を参照。
 
 **旧バックアップの取込は対象外とする場合がある(計画Issue #169)**: `journal_lines.household_member_id`をNOT NULLにした際、開発用DBは作り直す前提のため、データ移行用のマイグレーション(バージョン2以降・テーブル再作成)は作らなかった。したがって、NULL行を含む、または`journal_lines.household_member_id`がNULL許容の旧スキーマのバックアップは取込の対象外で、取込時のスキーマ検証(`assertValidDatabaseSchema`)が`InvalidBackupFileError`で拒否する。スキーマを破壊的に変える際は、この前提(作り直し・旧バックアップ非対応)で進めるか、マイグレーションを書くかをその都度決める(判断は`docs/decisions.md` 2026-11-09、計画Issue #169)。
