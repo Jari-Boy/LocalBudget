@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import type { Account } from '../../domain/account/Account'
@@ -11,6 +11,7 @@ import { inferEncoding } from '../../domain/statement-import/inferEncoding'
 import { inferMappingDefinitionDraft } from '../../domain/statement-import/inferMappingDefinitionDraft'
 import { previewMappingRows, type MappingPreviewRow } from '../../domain/statement-import/previewMappingRows'
 import { readCsv } from '../../domain/statement-import/readCsv'
+import { previewJournalCells } from './previewJournalCells'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { isStatementImportEligibleAccount } from '../statement-import/statementImportEligibility'
 import { FinancialInstitutionSelect } from './FinancialInstitutionSelect'
@@ -123,6 +124,7 @@ export function MappingMasterTab({
   const accountNameById = new Map(data.accounts.map((a) => [a.id, a.name]))
   const institutionNames = collectFinancialInstitutionNames(data.definitions.map((d) => d.formatGroupId))
   const selected = typeof mode === 'number' ? data.definitions.find((d) => d.id === mode) : undefined
+  const previewAccounts = data.accounts.filter(isStatementImportEligibleAccount)
 
   /** 操作を実行する。成功したらtrue、失敗してエラー文言を出したらfalse */
   const run = async (action: () => unknown, errorMessage: string): Promise<boolean> => {
@@ -241,6 +243,7 @@ export function MappingMasterTab({
           isCreate={mode === 'create'}
           accountCategories={accountCategories}
           accountNameById={accountNameById}
+          previewAccounts={previewAccounts}
           institutionNames={institutionNames}
           busy={busy}
           armed={armed}
@@ -289,6 +292,8 @@ interface MappingPanelProps {
   isCreate: boolean
   accountCategories: ReturnType<typeof buildTreeSelectCategories>
   accountNameById: ReadonlyMap<number, string>
+  /** プレビュー(仕訳形式)に使う科目の選択肢(明細の取込先にできる科目) */
+  previewAccounts: readonly Account[]
   /** 金融機関名の選択候補(既存の定義にある金融機関名) */
   institutionNames: readonly string[]
   busy: boolean
@@ -309,6 +314,11 @@ function MappingPanel(props: MappingPanelProps) {
     setNotice('')
     setForm((f) => ({ ...f, [key]: value }))
   }
+
+  /** プレビューする科目。選ぶまでは、紐づけ済みの先頭の科目。null は未選択(借方・貸方を出さない)(計画Issue #192) */
+  const [previewAccountChoice, setPreviewAccountChoice] = useState<number | null | undefined>(undefined)
+  const previewAccountId = previewAccountChoice === undefined ? (form.accountIds[0] ?? null) : previewAccountChoice
+  const previewAccount = props.previewAccounts.find((a) => a.id === previewAccountId) ?? null
 
   const rows = useMemo(() => tryReadCsv(sample, form), [sample, form.encoding, form.delimiter]) // eslint-disable-line react-hooks/exhaustive-deps
   const preview = useMemo(
@@ -529,24 +539,39 @@ function MappingPanel(props: MappingPanelProps) {
         const value = form[c.key] as string
         const id = `map-col-${c.key}`
         return (
-          <div className="master-field" key={c.key}>
-            <label className="master-field__label" htmlFor={id}>
-              {c.label}
-            </label>
-            {rows !== null ? (
-              <select id={id} className="master-field__control" value={value} onChange={(e) => set(c.key, e.target.value as never)}>
-                <option value="">{c.optional ? t('mappingTab.columnNone') : t('mappingTab.columnChoose')}</option>
-                {value !== '' && !columnOptions.some((o) => o.value === value) && <option value={value}>{value}</option>}
-                {columnOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input id={id} className="master-field__control" value={value} onChange={(e) => set(c.key, e.target.value as never)} />
+          <Fragment key={c.key}>
+            <div className="master-field">
+              <label className="master-field__label" htmlFor={id}>
+                {c.label}
+              </label>
+              {rows !== null ? (
+                <select id={id} className="master-field__control" value={value} onChange={(e) => set(c.key, e.target.value as never)}>
+                  <option value="">{c.optional ? t('mappingTab.columnNone') : t('mappingTab.columnChoose')}</option>
+                  {value !== '' && !columnOptions.some((o) => o.value === value) && <option value={value}>{value}</option>}
+                  {columnOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input id={id} className="master-field__control" value={value} onChange={(e) => set(c.key, e.target.value as never)} />
+              )}
+            </div>
+            {/* 反転は符号付き1列のときだけ。入金・出金の2列は列の割り当てを入れ替えれば足りる(計画Issue #192) */}
+            {c.key === 'amountColumn' && (
+              <div className="master-field">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={form.invertAmountSign}
+                    onChange={(e) => set('invertAmountSign', e.target.checked)}
+                  />{' '}
+                  {t('mappingTab.invertAmountSign')}
+                </label>
+              </div>
             )}
-          </div>
+          </Fragment>
         )
       })}
 
@@ -590,6 +615,24 @@ function MappingPanel(props: MappingPanelProps) {
       )}
 
       <h3 className="master-subsection__title">{t('mappingTab.previewSection')}</h3>
+      <div className="master-field">
+        <label className="master-field__label" htmlFor="map-preview-account">
+          {t('mappingTab.previewAccount')}
+        </label>
+        <select
+          id="map-preview-account"
+          className="master-field__control"
+          value={previewAccount?.id ?? ''}
+          onChange={(e) => setPreviewAccountChoice(e.target.value === '' ? null : Number(e.target.value))}
+        >
+          <option value="">{t('mappingTab.previewAccountNone')}</option>
+          {props.previewAccounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      </div>
       <p role="status" className={statusIsError ? 'master-error' : 'master-note'}>
         {statusText}
       </p>
@@ -606,7 +649,14 @@ function MappingPanel(props: MappingPanelProps) {
               <tr>
                 <th>{t('mappingTab.colDate')}</th>
                 <th>{t('mappingTab.colDescription')}</th>
-                <th>{t('mappingTab.colAmount')}</th>
+                {previewAccount ? (
+                  <>
+                    <th>{t('mappingTab.colDebit')}</th>
+                    <th>{t('mappingTab.colCredit')}</th>
+                  </>
+                ) : (
+                  <th>{t('mappingTab.colAmount')}</th>
+                )}
                 <th>{t('mappingTab.colBalance')}</th>
                 <th>{t('mappingTab.colExternalId')}</th>
                 <th>{t('mappingTab.colState')}</th>
@@ -617,7 +667,21 @@ function MappingPanel(props: MappingPanelProps) {
                 <tr key={row.rowNumber}>
                   <td>{row.record?.entryDate ?? '-'}</td>
                   <td>{row.record?.description || '-'}</td>
-                  <td>{row.record ? signedYen(row.record.amount) : '-'}</td>
+                  {previewAccount ? (
+                    (() => {
+                      const cells = row.record
+                        ? previewJournalCells(row.record.amount, previewAccount, t('mappingTab.anyAccount'))
+                        : null
+                      return (
+                        <>
+                          <td>{cells?.debit ?? '-'}</td>
+                          <td>{cells?.credit ?? '-'}</td>
+                        </>
+                      )
+                    })()
+                  ) : (
+                    <td>{row.record ? signedYen(row.record.amount) : '-'}</td>
+                  )}
                   <td>{row.record?.balanceAfter != null ? yen(row.record.balanceAfter) : '-'}</td>
                   <td>{row.record ? (row.record.externalId ?? t('mappingTab.externalIdHash')) : '-'}</td>
                   <td className={row.error ? 'master-error' : undefined}>{errorText(row)}</td>
