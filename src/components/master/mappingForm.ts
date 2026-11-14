@@ -28,6 +28,8 @@ export interface MappingForm {
   creditColumn: string
   balanceColumn: string
   externalIdColumn: string
+  /** 金額の符号を反転する(符号付き1列のときだけ有効。入金・出金の2列では保存時にfalseに固定する、計画Issue #192) */
+  invertAmountSign: boolean
 }
 
 /** 保存できない理由(翻訳キー)。 */
@@ -59,6 +61,7 @@ export function emptyMappingForm(): MappingForm {
     creditColumn: '',
     balanceColumn: '',
     externalIdColumn: '',
+    invertAmountSign: false,
   }
 }
 
@@ -80,6 +83,7 @@ export function mappingFormFromDefinition(definition: ImportMappingDefinition): 
     creditColumn: definition.creditColumn ?? '',
     balanceColumn: definition.balanceColumn ?? '',
     externalIdColumn: definition.externalIdColumn ?? '',
+    invertAmountSign: definition.invertAmountSign,
   }
 }
 
@@ -126,6 +130,7 @@ export function mappingFormToInput(form: MappingForm): CreateImportMappingDefini
     creditColumn: split ? orNull(form.creditColumn) : null,
     balanceColumn: orNull(form.balanceColumn),
     externalIdColumn: orNull(form.externalIdColumn),
+    invertAmountSign: !split && form.invertAmountSign,
   }
 }
 
@@ -150,6 +155,7 @@ export function mappingFormToDefinition(form: MappingForm): ImportMappingDefinit
     creditColumn: input.creditColumn ?? null,
     balanceColumn: input.balanceColumn ?? null,
     externalIdColumn: input.externalIdColumn ?? null,
+    invertAmountSign: input.invertAmountSign ?? false,
     createdAt: '',
     updatedAt: '',
   }

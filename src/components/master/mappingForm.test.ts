@@ -35,6 +35,7 @@ const DEFINITION: ImportMappingDefinition = {
   creditColumn: null,
   balanceColumn: null,
   externalIdColumn: null,
+  invertAmountSign: false,
   createdAt: '',
   updatedAt: '',
 }
@@ -88,6 +89,22 @@ describe('mappingFormFromDefinition / mappingFormToInput', () => {
 
     const single = mappingFormToInput(validForm({ debitColumn: '出金', creditColumn: '入金' }))
     expect(single).toMatchObject({ amountColumn: '利用金額', debitColumn: null, creditColumn: null })
+  })
+
+  it('金額の符号反転は、定義とフォームと保存用の入力・プレビュー用の定義の間で保たれる(計画Issue #192)', () => {
+    const form = mappingFormFromDefinition({ ...DEFINITION, invertAmountSign: true })
+
+    expect(form.invertAmountSign).toBe(true)
+    expect(mappingFormToInput(form).invertAmountSign).toBe(true)
+    expect(mappingFormToDefinition(form).invertAmountSign).toBe(true)
+    expect(emptyMappingForm().invertAmountSign).toBe(false)
+  })
+
+  it('入金・出金の2列では、フォームに反転が残っていても保存・プレビューではfalseに固定する(計画Issue #192)', () => {
+    const form = validForm({ amountMode: 'debit_credit_split', debitColumn: '出金', creditColumn: '入金', invertAmountSign: true })
+
+    expect(mappingFormToInput(form).invertAmountSign).toBe(false)
+    expect(mappingFormToDefinition(form).invertAmountSign).toBe(false)
   })
 
   it('任意の列が空文字なら未指定(null)で保存する', () => {

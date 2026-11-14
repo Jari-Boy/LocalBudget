@@ -136,6 +136,41 @@ describe('findAll', () => {
   })
 })
 
+describe('invertAmountSign(金額の符号反転、計画Issue #192)', () => {
+  const base = {
+    formatGroupId: 'my-bank',
+    label: 'マイ銀行',
+    dateColumn: '0',
+    dateFormat: 'YYYY/MM/DD',
+    descriptionColumn: '1',
+    amountMode: 'single_signed' as const,
+    amountColumn: '2',
+  }
+
+  it('指定しなければfalseで保存される', () => {
+    const created = repository.create(base)
+
+    expect(created.invertAmountSign).toBe(false)
+  })
+
+  it('trueで作成すると保存・参照できる', () => {
+    const created = repository.create({ ...base, invertAmountSign: true })
+
+    expect(repository.findById(created.id)?.invertAmountSign).toBe(true)
+  })
+
+  it('updateで切り替えられ、指定しない更新では値が変わらない', () => {
+    const created = repository.create(base)
+
+    const inverted = repository.update(created.id, { invertAmountSign: true })
+    const renamed = repository.update(created.id, { label: '改名' })
+
+    expect(inverted.invertAmountSign).toBe(true)
+    expect(renamed.invertAmountSign).toBe(true)
+    expect(repository.update(created.id, { invertAmountSign: false }).invertAmountSign).toBe(false)
+  })
+})
+
 describe('update', () => {
   it('labelとaccountIdsを更新できる', () => {
     const created = repository.create({

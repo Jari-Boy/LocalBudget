@@ -24,8 +24,9 @@ export class SqlJsImportMappingDefinitionRepository implements ImportMappingDefi
       `INSERT INTO import_mapping_definitions
          (format_group_id, is_settled, label, encoding, delimiter, header_row_count,
           date_column, date_format, description_column, amount_mode,
-          amount_column, debit_column, credit_column, balance_column, external_id_column)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          amount_column, debit_column, credit_column, balance_column, external_id_column,
+          invert_amount_sign)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.formatGroupId,
         boolToSql(input.isSettled ?? null),
@@ -42,6 +43,7 @@ export class SqlJsImportMappingDefinitionRepository implements ImportMappingDefi
         input.creditColumn ?? null,
         input.balanceColumn ?? null,
         input.externalIdColumn ?? null,
+        input.invertAmountSign ? 1 : 0,
       ],
     )
     const id = lastInsertRowId(this.db)
@@ -85,6 +87,7 @@ export class SqlJsImportMappingDefinitionRepository implements ImportMappingDefi
       balanceColumn: input.balanceColumn === undefined ? current.balanceColumn : input.balanceColumn,
       externalIdColumn:
         input.externalIdColumn === undefined ? current.externalIdColumn : input.externalIdColumn,
+      invertAmountSign: input.invertAmountSign ?? current.invertAmountSign,
     }
 
     this.db.run(
@@ -92,7 +95,7 @@ export class SqlJsImportMappingDefinitionRepository implements ImportMappingDefi
        SET format_group_id = ?, is_settled = ?, label = ?, encoding = ?,
            delimiter = ?, header_row_count = ?, date_column = ?, date_format = ?,
            description_column = ?, amount_mode = ?, amount_column = ?, debit_column = ?,
-           credit_column = ?, balance_column = ?, external_id_column = ?
+           credit_column = ?, balance_column = ?, external_id_column = ?, invert_amount_sign = ?
        WHERE id = ?`,
       [
         next.formatGroupId,
@@ -110,6 +113,7 @@ export class SqlJsImportMappingDefinitionRepository implements ImportMappingDefi
         next.creditColumn,
         next.balanceColumn,
         next.externalIdColumn,
+        next.invertAmountSign ? 1 : 0,
         id,
       ],
     )
@@ -206,6 +210,7 @@ function mapRowToImportMappingDefinition(
     creditColumn: get<string | null>('credit_column'),
     balanceColumn: get<string | null>('balance_column'),
     externalIdColumn: get<string | null>('external_id_column'),
+    invertAmountSign: get<number>('invert_amount_sign') !== 0,
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),
   }

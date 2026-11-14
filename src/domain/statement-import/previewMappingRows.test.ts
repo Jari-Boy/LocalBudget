@@ -29,6 +29,7 @@ function definition(overrides: Partial<ImportMappingDefinition> = {}): ImportMap
     creditColumn: null,
     balanceColumn: null,
     externalIdColumn: null,
+    invertAmountSign: false,
     createdAt: '',
     updatedAt: '',
     ...overrides,
