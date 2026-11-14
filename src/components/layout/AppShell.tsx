@@ -4,6 +4,7 @@ import { Outlet, useLocation } from 'react-router'
 import { GuardedLink, UnsavedChangesGuardProvider } from '../common/unsaved-changes/unsavedChangesGuard'
 import { AREAS, findActiveTab, findArea } from './areas'
 import './AppShell.css'
+import './sticky-side-panel.css'
 
 export interface AppShellProps {
   /** 承認待ちの定期仕訳提案の件数。1件以上のとき「仕訳」に表示する。 */
