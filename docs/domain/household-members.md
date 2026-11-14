@@ -43,7 +43,7 @@
 |---|---|---|
 | 1 | 科目の既定メンバー(`accounts.household_member_id`) | 口座・科目自体の既定の名義。例:「三菱UFJ銀行」口座は夫名義。設定されている場合は**明示的に保存され、上書きできない** |
 | 2 | 指定されたメンバー | 画面で選んだ、または入力に含まれる値。科目に既定メンバーが無い場合のみ有効 |
-| 3 | 起票者(`journal_entries.household_member_id`、NOT NULL) | 上記のどちらも無いときの既定値([journal.md 1.1](./journal.md#11-仕訳journalentryと仕訳明細journalline)参照) |
+| 3 | 起票者(`journal_entries.household_member_id`、NOT NULL) | 上記のどちらも無いときの既定値([journal.md 1.1](./journal.md#11-仕訳journalentryと仕訳明細journalline)参照)。明細取込では、取込先の科目に名義が無いとき、先頭メンバーへ黙って決めず「誰の明細か」を利用者に選ばせる(計画Issue #193、[statement-import.md 1.5](./statement-import.md#15-レコード処理フロー)手順6) |
 
 科目に既定メンバーがある行は、既定値を明示的に保存する(NULLにして継承させない)。**既定メンバーのある科目の行に異なる値を入れることは、DDLトリガー(`docs/schema/journal.sql`)で禁止される**([journal.md 2.2](./journal.md#22-ddl)参照)。口座の名義は口座自体に固定される性質を持ち、これを許容すると口座単位のメンバー別集計(`aggregateByHouseholdMember`)と口座自体の残高が食い違いうるためである。INSERTは科目の既定値と異なる値を拒否する。UPDATEは`household_member_id`を変えない限り許可し(科目の既定メンバーを後から変えて旧メンバーのまま残した行の金額等を編集できるようにするため)、変える場合だけ科目の既定値との一致を検証する。
 
