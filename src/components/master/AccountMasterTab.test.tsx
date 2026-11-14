@@ -618,6 +618,41 @@ describe('AccountMasterTab', () => {
       expect(await screen.findByText(/「バス代」を「交通費」に統合しました/)).toBeInTheDocument()
     })
 
+    it('2件以上チェックすると、右パネルが編集パネルから一括操作パネルに切り替わり、1件に戻すと編集パネルに戻る', async () => {
+      accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
+      accounts.create({ category: 'expense', name: 'バス代', isReconcilable: null })
+      renderTab()
+      await open('交通費')
+      expect(screen.getByRole('region', { name: '科目の編集' })).toBeInTheDocument()
+
+      check('交通費')
+      check('バス代')
+
+      expect(screen.getByRole('region', { name: '一括操作' })).toBeInTheDocument()
+      expect(screen.queryByRole('region', { name: '科目の編集' })).not.toBeInTheDocument()
+      expect(screen.getByText('2件を選択中')).toBeInTheDocument()
+
+      check('バス代')
+
+      expect(screen.queryByRole('region', { name: '一括操作' })).not.toBeInTheDocument()
+      expect(screen.getByRole('region', { name: '科目の編集' })).toBeInTheDocument()
+    })
+
+    it('一括操作パネルの「グループへ移動」で、チェックした科目がまとめてグループに入る', async () => {
+      const group = groups.create({ name: '交通', category: 'expense' })
+      const bus = accounts.create({ category: 'expense', name: 'バス代', isReconcilable: null })
+      const train = accounts.create({ category: 'expense', name: '電車賃', isReconcilable: null })
+      renderTab()
+      await screen.findByRole('button', { name: 'バス代' })
+      check('バス代')
+      check('電車賃')
+
+      fireEvent.change(screen.getByLabelText('移動先'), { target: { value: `g:${group.id}` } })
+
+      await waitFor(() => expect(accounts.findById(bus.id)!.accountGroupId).toBe(group.id))
+      expect(accounts.findById(train.id)!.accountGroupId).toBe(group.id)
+    })
+
     it('区分が異なる科目をチェックすると、統合できない理由が表示され、統合ボタンは出ない', async () => {
       accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
       accounts.create({ category: 'revenue', name: '雑収入', isReconcilable: null })

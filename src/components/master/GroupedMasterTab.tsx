@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { computeTreeNodeUpdates, type TreeNodeUpdate } from '../common/tree-table/computeTreeNodeUpdates'
 import { TreeTable } from '../common/tree-table/TreeTable'
+import { BulkSelectionPanel } from './BulkSelectionPanel'
 import { CATEGORY_ID_PREFIX, resolveTreeMove, type TreeTableNode } from '../common/tree-table/treeTableModel'
 import { groupNodeId, leafNodeId, parseNodeId, type MasterTreeData } from './masterTreeNodes'
 import './master.css'
@@ -31,7 +32,9 @@ export interface GroupedMasterTabProps {
   onChanged: () => Promise<void>
   /** 選んだ項目の右パネルに足す固有の欄(例: 取引先の既定の科目・パターン) */
   renderLeafExtra?: (leafId: number, context: { reload: () => Promise<void>; busy: boolean }) => ReactNode
-  /** チェックした項目に対する固有の操作(例: 取引先の統合) */
+  /** 画面に出す直前の操作結果の通知(例: 統合しました)。空なら出さない */
+  notice?: string
+  /** 2件以上チェックしたときの一括操作パネルに足す、項目への固有の操作(例: 取引先の統合) */
   renderSelection?: (checkedLeafIds: number[], context: { reload: () => Promise<void> }) => ReactNode
 }
 
@@ -50,6 +53,7 @@ export function GroupedMasterTab({
   leafBlockedText,
   onChanged,
   renderLeafExtra,
+  notice,
   renderSelection,
 }: GroupedMasterTabProps) {
   const { t } = useTranslation('master')
@@ -143,9 +147,10 @@ export function GroupedMasterTab({
           onMoveRejected={setError}
         />
         <p className="master-note">{t('accountTab.dragHint')}</p>
-        {renderSelection?.(
-          liveCheckedIds.filter((id) => parseNodeId(id).kind === 'leaf').map((id) => parseNodeId(id).id),
-          { reload: onChanged },
+        {notice !== undefined && notice !== '' && (
+          <p role="status" className="master-flash">
+            {notice}
+          </p>
         )}
       </div>
 
@@ -155,7 +160,27 @@ export function GroupedMasterTab({
         </p>
       )}
 
-      {selected && (
+      {liveCheckedIds.length >= 2 && (
+        <BulkSelectionPanel
+          nodes={tree.nodes}
+          categories={tree.categories}
+          checkedIds={liveCheckedIds}
+          busy={busy}
+          onMove={(next) => {
+            setCheckedIds([])
+            void applyMove(next)
+          }}
+          onMoveRejected={setError}
+          onClear={() => setCheckedIds([])}
+        >
+          {renderSelection?.(
+            liveCheckedIds.filter((id) => parseNodeId(id).kind === 'leaf').map((id) => parseNodeId(id).id),
+            { reload: onChanged },
+          )}
+        </BulkSelectionPanel>
+      )}
+
+      {liveCheckedIds.length < 2 && selected && (
         <NodePanel
           key={selected.id}
           node={selected}

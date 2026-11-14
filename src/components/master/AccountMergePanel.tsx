@@ -16,7 +16,7 @@ export interface AccountMergePanelProps {
 }
 
 /**
- * チェックした勘定科目(2件以上)を1つに統合する(計画Issue #97)。取引先の統合と同じ流れで、
+ * チェックした勘定科目(2件以上)を1つに統合する(計画Issue #97)。一括操作パネルの中に置く欄で、取引先の統合と同じ流れで、
  * 統合先を選び、付け替える明細行の件数を示す確認を経て実行する。統合できない組み合わせ
  * (システム管理・区分違い・照合可否違い、findAccountMergeBlock)は理由だけを表示する。
  * 統合先に選べるのは有効な科目だけ。
@@ -31,13 +31,13 @@ export function AccountMergePanel({ accounts, lineCountOf, repository, onMerged 
   if (accounts.length < 2) return null
 
   const block = findAccountMergeBlock(accounts)
-  const title = t('accountTab.mergeTitle', { count: accounts.length })
+  const title = t('bulk.mergeTitle')
   const region = t('accountTab.mergeRegion')
 
   if (block !== null) {
     return (
-      <section className="master-panel" aria-label={region}>
-        <h2 className="master-panel__title">{title}</h2>
+      <section className="master-subsection" aria-label={region}>
+        <h3 className="master-subsection__title">{title}</h3>
         <p className="master-note">{t(`accountTab.mergeBlock${block[0].toUpperCase()}${block.slice(1)}`)}</p>
       </section>
     )
@@ -65,8 +65,8 @@ export function AccountMergePanel({ accounts, lineCountOf, repository, onMerged 
   }
 
   return (
-    <section className="master-panel" aria-label={region}>
-      <h2 className="master-panel__title">{title}</h2>
+    <section className="master-subsection" aria-label={region}>
+      <h3 className="master-subsection__title">{title}</h3>
       <div className="master-field">
         <label className="master-field__label" htmlFor="account-merge-target">
           {t('accountTab.mergeTarget')}

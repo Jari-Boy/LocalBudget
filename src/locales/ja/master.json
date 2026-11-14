@@ -60,7 +60,6 @@
     "mappingUnlinked": "紐づけを解除しました",
     "mappingError": "紐づけの変更に失敗しました。もう一度お試しください。",
     "mergeRegion": "科目の統合",
-    "mergeTitle": "{{count}}件を統合",
     "mergeTarget": "統合先",
     "mergeChoose": "選択してください",
     "mergeStart": "統合する",
@@ -72,6 +71,16 @@
     "mergeBlockSystemManaged": "システム管理の科目は統合できません。",
     "mergeBlockDifferentCategory": "区分が異なる科目は統合できません。",
     "mergeBlockDifferentReconcilability": "照合できる科目とできない科目は統合できません。"
+  },
+  "bulk": {
+    "region": "一括操作",
+    "title": "{{count}}件を選択中",
+    "moveTitle": "グループへ移動",
+    "moveDestination": "移動先",
+    "choose": "選択してください",
+    "moveCrossCategory": "区分をまたいで移動できません。同じ区分の行だけを選んでください。",
+    "mergeTitle": "1つに統合",
+    "clear": "選択を解除"
   },
   "createForm": {
     "title": "科目を登録",
@@ -128,7 +137,6 @@
     "patternAdd": "+ パターンを追加",
     "patternError": "パターンの更新に失敗しました。もう一度お試しください。",
     "mergeRegion": "取引先の統合",
-    "mergeTitle": "{{count}}件を統合",
     "mergeTarget": "統合先",
     "mergeChoose": "選択してください",
     "mergeStart": "統合する",

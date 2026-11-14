@@ -28,6 +28,7 @@ import {
 } from '../common/tree-table/treeTableModel'
 import { AccountCreateForm } from './AccountCreateForm'
 import { AccountMergePanel } from './AccountMergePanel'
+import { BulkSelectionPanel } from './BulkSelectionPanel'
 import { AccountMappingSection, AccountRegistrationInfo } from './AccountRegistrationSections'
 import { DefaultMemberChangeDialog } from './DefaultMemberChangeDialog'
 import { buildAccountTree, groupNodeId, leafNodeId, parseNodeId } from './masterTreeNodes'
@@ -233,6 +234,8 @@ export function AccountMasterTab({
       select(groupNodeId(group.id))
     }, t('accountTab.createError'))
 
+  // 消えた行のチェックは捨てる
+  const liveCheckedIds = checkedIds.filter((id) => tree.nodes.some((n) => n.id === id))
   const selected = selectedId ? tree.nodes.find((n) => n.id === selectedId) : undefined
   const selectedAccount =
     selected?.kind === 'leaf' ? data.accounts.find((a) => a.id === parseNodeId(selected.id).id) : undefined
@@ -245,7 +248,7 @@ export function AccountMasterTab({
           categories={tree.categories}
           nodes={tree.nodes}
           columns={['名義', '状態']}
-          checkedIds={checkedIds}
+          checkedIds={liveCheckedIds}
           selectedId={selectedId}
           onSelect={select}
           onCheckedChange={setCheckedIds}
@@ -286,18 +289,6 @@ export function AccountMasterTab({
             {mergeResult}
           </p>
         )}
-        <AccountMergePanel
-          accounts={data.accounts.filter((a) => checkedIds.includes(leafNodeId(a.id)))}
-          lineCountOf={(accountId) =>
-            data.entries.flatMap((e) => e.lines).filter((l) => l.accountId === accountId).length
-          }
-          repository={accountRepository}
-          onMerged={async (message) => {
-            setMergeResult(message)
-            setCheckedIds([])
-            await load()
-          }}
-        />
       </div>
 
       {error && (
@@ -306,7 +297,35 @@ export function AccountMasterTab({
         </p>
       )}
 
-      {creating !== null && (
+      {liveCheckedIds.length >= 2 && (
+        <BulkSelectionPanel
+          nodes={tree.nodes}
+          categories={tree.categories}
+          checkedIds={liveCheckedIds}
+          busy={busy}
+          onMove={(next) => {
+            setCheckedIds([])
+            void applyMove(next)
+          }}
+          onMoveRejected={setError}
+          onClear={() => setCheckedIds([])}
+        >
+          <AccountMergePanel
+            accounts={data.accounts.filter((a) => liveCheckedIds.includes(leafNodeId(a.id)))}
+            lineCountOf={(accountId) =>
+              data.entries.flatMap((e) => e.lines).filter((l) => l.accountId === accountId).length
+            }
+            repository={accountRepository}
+            onMerged={async (message) => {
+              setMergeResult(message)
+              setCheckedIds([])
+              await load()
+            }}
+          />
+        </BulkSelectionPanel>
+      )}
+
+      {liveCheckedIds.length < 2 && creating !== null && (
         <AccountCreateForm
           key={creating}
           accountRepository={accountRepository}
@@ -323,7 +342,7 @@ export function AccountMasterTab({
         />
       )}
 
-      {creating === null && selected && (
+      {liveCheckedIds.length < 2 && creating === null && selected && (
         <EditPanel
           key={selected.id}
           node={selected}
