@@ -5,11 +5,14 @@
  * 並び順の編集、グループ・プロジェクトの新設、有効/無効の切り替え、2回押しの削除と、
  * 仕訳・定期仕訳ルールで使用中のときの削除不可の理由表示を、sql.jsのNode実装
  * (createTestDatabase)を使って確認する。ツリー表の共通部分(GroupedMasterTab)の挙動も
- * このタブ経由で検証する。外部依存: sql.js(ネットワークアクセスなし)。
+ * このタブ経由で検証する。名称が未保存のまま別の行・別の画面へ移ろうとしたときの確認(保存して移動・
+ * 破棄して移動・キャンセル・保存失敗・追加ボタン・設定オフ、計画Issue #190)もここで検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { saveUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
+import { UnsavedGuardHarness } from './UnsavedGuardHarness'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
 import i18n from '../../infrastructure/i18n/i18n'
@@ -41,18 +44,23 @@ beforeEach(async () => {
   memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '夫' }).id
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  localStorage.clear()
+})
 
 function renderTab() {
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectMasterTab
-        accountRepository={new SqlJsAccountRepository(db)}
-        projectRepository={projects}
-        projectGroupRepository={groups}
-        journalEntryRepository={new SqlJsJournalEntryRepository(db)}
-        recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
-      />
+      <UnsavedGuardHarness>
+        <ProjectMasterTab
+          accountRepository={new SqlJsAccountRepository(db)}
+          projectRepository={projects}
+          projectGroupRepository={groups}
+          journalEntryRepository={new SqlJsJournalEntryRepository(db)}
+          recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
+        />
+      </UnsavedGuardHarness>
     </I18nextProvider>,
   )
 }
@@ -302,5 +310,92 @@ describe('ProjectMasterTab', () => {
     fireEvent.click(panel('グループの編集').getByRole('button', { name: 'グループを削除' }))
     fireEvent.click(panel('グループの編集').getByRole('button', { name: '本当に削除する' }))
     await waitFor(() => expect(groups.findById(empty.id)).toBeNull())
+  })
+})
+
+describe('ProjectMasterTab 未保存の編集の警告(計画Issue #190)', () => {
+  const dialog = () => screen.queryByRole('dialog', { name: '未保存の変更があります' })
+  const nameInput = () => panel('プロジェクトの編集').getByLabelText('名称')
+
+  /** 沖縄・京都を作り、沖縄を開いて名称を書き換えた(未保存の)状態にする */
+  async function editOkinawa() {
+    projects.create({ name: '沖縄', projectGroupId: null })
+    projects.create({ name: '京都', projectGroupId: null })
+    renderTab()
+    await open('沖縄')
+    fireEvent.change(nameInput(), { target: { value: '沖縄家族旅行' } })
+  }
+
+  it('書き換えていないときは、別の行を選んでも確認は出ない', async () => {
+    projects.create({ name: '沖縄', projectGroupId: null })
+    projects.create({ name: '京都', projectGroupId: null })
+    renderTab()
+    await open('沖縄')
+    await open('京都')
+    expect(dialog()).not.toBeInTheDocument()
+    expect(nameInput()).toHaveValue('京都')
+  })
+
+  it('未保存のまま別の行を選ぶと確認が出て、キャンセルでは行を移らず入力が残る', async () => {
+    await editOkinawa()
+    await open('京都')
+    expect(dialog()).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(nameInput()).toHaveValue('沖縄家族旅行')
+  })
+
+  it('「破棄して移動」で保存せずに移り、「保存して移動」で保存してから移る', async () => {
+    await editOkinawa()
+    await open('京都')
+    fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+    expect(nameInput()).toHaveValue('京都')
+    expect(projects.findAll().map((p) => p.name)).toContain('沖縄')
+
+    await open('沖縄')
+    fireEvent.change(nameInput(), { target: { value: '沖縄家族旅行' } })
+    await open('京都')
+    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+    await waitFor(() => expect(nameInput()).toHaveValue('京都'))
+    expect(projects.findAll().map((p) => p.name)).toContain('沖縄家族旅行')
+  })
+
+  it('保存に失敗したときは移動せず、エラーが出て入力が残る', async () => {
+    const okinawa = projects.create({ name: '沖縄', projectGroupId: null })
+    projects.create({ name: '京都', projectGroupId: null })
+    renderTab()
+    await open('沖縄')
+    fireEvent.change(nameInput(), { target: { value: '沖縄家族旅行' } })
+    // 画面を開いている間に別の操作で消えた状態にして、保存を失敗させる
+    projects.delete(okinawa.id)
+    await open('京都')
+    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(dialog()).not.toBeInTheDocument()
+    expect(nameInput()).toHaveValue('沖縄家族旅行')
+  })
+
+  it('未保存のまま「プロジェクトを追加」を押すと確認が出て、キャンセルでは何も作られない', async () => {
+    await editOkinawa()
+    fireEvent.click(screen.getByRole('button', { name: 'プロジェクトを追加' }))
+    expect(dialog()).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(projects.findAll()).toHaveLength(2)
+  })
+
+  it('未保存のままサイドナビのリンクを押すと確認が出て、キャンセルでは移動しない', async () => {
+    await editOkinawa()
+    fireEvent.click(screen.getByRole('link', { name: '他の画面へ' }))
+    expect(dialog()).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(screen.getByTestId('where')).toHaveTextContent('/master/here')
+    expect(nameInput()).toHaveValue('沖縄家族旅行')
+  })
+
+  it('設定が「出さない」のときは、未保存でも確認なしで別の行へ移る', async () => {
+    saveUnsavedWarningEnabled(false)
+    await editOkinawa()
+    await open('京都')
+    expect(dialog()).not.toBeInTheDocument()
+    expect(nameInput()).toHaveValue('京都')
   })
 })

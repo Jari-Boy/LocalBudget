@@ -5,6 +5,7 @@ import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
 import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
+import { useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import { reconciliationAnswerToIsReconcilable } from '../account-registration/reconciliationQuestion'
 import { registerAccount, type AccountCreator, type JournalEntryCreator } from '../account-registration/registerAccount'
 import { registerRevenueOrExpenseAccount } from '../account-registration/registerRevenueOrExpenseAccount'
@@ -37,7 +38,8 @@ export interface AccountCreateFormProps {
   /** 初期仕訳の日付(YYYY-MM-DD)。省略時は今日 */
   today?: string
   mappingLinking?: AccountMappingLinking
-  onCreated: (account: Account) => void
+  /** 登録できたとき。leavingは、未保存の確認の「保存して移動」で登録したとき(呼び出し側が別の移動を続けるため、登録した科目を選び直さない) */
+  onCreated: (account: Account, options?: { leaving?: boolean }) => void
   onCancel: () => void
 }
 
@@ -100,9 +102,9 @@ export function AccountCreateForm({
     setHasBalance(next === 'liability' ? 'no' : 'yes')
   }
 
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault()
-    if (name.trim() === '' || submitting) return
+  /** 登録する。登録できたらtrue(明細マッピングの紐づけに失敗したときはfalse) */
+  const submit = async (leaving: boolean): Promise<boolean> => {
+    if (name.trim() === '' || submitting) return false
     setSubmitting(true)
     setError(false)
     let account: Account
@@ -131,7 +133,7 @@ export function AccountCreateForm({
     } catch {
       setError(true)
       setSubmitting(false)
-      return
+      return false
     }
 
     // 登録できた科目に、チェックした明細マッピングを紐づける。失敗しても科目は残るので、再送信で
@@ -144,11 +146,24 @@ export function AccountCreateForm({
       } catch {
         setLinkFailedAccount(account)
         setSubmitting(false)
-        return
+        return false
       }
     }
-    onCreated(account)
+    onCreated(account, leaving ? { leaving: true } : undefined)
+    return true
   }
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault()
+    void submit(false)
+  }
+
+  // 名称か初期残高を入力している間は、画面を離れる前に確認する(区分などの選択は初期値があり、
+  // 名称なしでは登録できないため、入力の有無だけで判定する。計画Issue #190)
+  const unsavedDialog = useUnsavedEditGuard({
+    dirty: linkFailedAccount === null && (name.trim() !== '' || opening.trim() !== ''),
+    save: () => submit(true),
+  })
 
   const reconcileText = `${csvExists && hasBalance === 'yes' ? t('createForm.reconcileOn') : t('createForm.reconcileOff')}${
     openingAmount !== null && openingAmount > 0 ? t('createForm.initialBalanceNote') : ''
@@ -336,6 +351,7 @@ export function AccountCreateForm({
           </>
         )}
       </div>
+      {unsavedDialog}
     </form>
   )
 }

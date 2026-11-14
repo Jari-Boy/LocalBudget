@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
@@ -64,6 +65,8 @@ export function MemberMasterTab({
   const [flash, setFlash] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 未保存の編集があれば、行の選択・新規作成の前に確認を通す(計画Issue #190) */
+  const guarded = useGuardedAction()
 
   const load = useCallback(async () => {
     const [members, accounts, entries, rules] = await Promise.all([
@@ -99,7 +102,8 @@ export function MemberMasterTab({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  const run = async (action: () => unknown, errorMessage: string, successMessage = '') => {
+  /** 操作を実行する。成功したらtrue、失敗してエラー文言を出したらfalse */
+  const run = async (action: () => unknown, errorMessage: string, successMessage = ''): Promise<boolean> => {
     setBusy(true)
     setError('')
     setFlash('')
@@ -107,8 +111,10 @@ export function MemberMasterTab({
       await action()
       await load()
       setFlash(successMessage)
+      return true
     } catch {
       setError(errorMessage)
+      return false
     } finally {
       setBusy(false)
     }
@@ -141,10 +147,10 @@ export function MemberMasterTab({
     <div className="master-split">
       <div className="master-split__main">
         <div className="master-actions">
-          <button type="button" className="master-btn" disabled={busy} onClick={() => void add(false)}>
+          <button type="button" className="master-btn" disabled={busy} onClick={() => guarded(() => void add(false))}>
             {t('memberTab.addMember')}
           </button>
-          <button type="button" className="master-btn" disabled={busy} onClick={() => void add(true)}>
+          <button type="button" className="master-btn" disabled={busy} onClick={() => guarded(() => void add(true))}>
             {t('memberTab.addGroup')}
           </button>
         </div>
@@ -165,7 +171,7 @@ export function MemberMasterTab({
                       type="button"
                       className="master-link"
                       aria-current={m.id === selectedId ? 'true' : undefined}
-                      onClick={() => select(m.id)}
+                      onClick={() => guarded(() => select(m.id))}
                     >
                       {m.name}
                     </button>
@@ -238,7 +244,7 @@ interface MemberPanelProps {
   flash: string
   armed: boolean
   blockedText: string
-  onSave: (name: string) => void
+  onSave: (name: string) => Promise<boolean>
   onToggleGroupMember: (memberId: number, included: boolean) => void
   onToggleActive: () => void
   onDelete: () => void
@@ -249,6 +255,11 @@ function MemberPanel(props: MemberPanelProps) {
   const { member, busy } = props
   const { t } = useTranslation('master')
   const [name, setName] = useState(member.name)
+  // 名称が保存済みの値と違う間は、画面を離れる前に確認する(計画Issue #190)
+  const unsavedDialog = useUnsavedEditGuard({
+    dirty: name.trim() !== member.name,
+    save: () => (name.trim() === '' ? Promise.resolve(false) : props.onSave(name.trim())),
+  })
 
   return (
     <section className="master-panel" aria-label={t('memberTab.edit')}>
@@ -317,6 +328,7 @@ function MemberPanel(props: MemberPanelProps) {
       </div>
 
       {props.blockedText !== '' && <p className="master-note">{props.blockedText}</p>}
+      {unsavedDialog}
     </section>
   )
 }

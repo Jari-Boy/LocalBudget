@@ -5,11 +5,14 @@
  * 選んだCSVの元データと取り込み結果のプレビュー(符号付き1列・入金出金2列、読み取れない行の理由)、
  * 文字コード変更時のCSV読み直し、必須の列が足りない定義の保存不可と理由の表示、複数の科目の指定、
  * CSVからの新規作成(推測した下書き)、複製、2回押しの削除を、sql.jsのNode実装
- * (createTestDatabase)を使って確認する。外部依存: sql.js(ネットワークアクセスなし)。
+ * (createTestDatabase)を使って確認する。入力が未保存のまま別の定義・別の画面へ移ろうとしたときの確認
+ * (保存して移動・破棄して移動・キャンセル・検証エラーで保存できない・設定オフ、計画Issue #190)もここで検証する。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { saveUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
+import { UnsavedGuardHarness } from './UnsavedGuardHarness'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
 import i18n from '../../infrastructure/i18n/i18n'
@@ -41,16 +44,21 @@ beforeEach(async () => {
   accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  localStorage.clear()
+})
 
 function renderTab() {
   render(
     <I18nextProvider i18n={i18n}>
-      <MappingMasterTab
-        importMappingDefinitionRepository={mappings}
-        accountRepository={new SqlJsAccountRepository(db)}
-        accountGroupRepository={new SqlJsAccountGroupRepository(db)}
-      />
+      <UnsavedGuardHarness>
+        <MappingMasterTab
+          importMappingDefinitionRepository={mappings}
+          accountRepository={new SqlJsAccountRepository(db)}
+          accountGroupRepository={new SqlJsAccountGroupRepository(db)}
+        />
+      </UnsavedGuardHarness>
     </I18nextProvider>,
   )
 }
@@ -332,5 +340,87 @@ describe('MappingMasterTab', () => {
     fireEvent.click(panel().getByRole('button', { name: '本当に削除する' }))
 
     await waitFor(() => expect(mappings.findById(created.id)).toBeNull())
+  })
+})
+
+describe('MappingMasterTab 未保存の編集の警告(計画Issue #190)', () => {
+  const dialog = () => screen.queryByRole('dialog', { name: '未保存の変更があります' })
+
+  /** 楽天カード・楽天銀行の2定義を作り、楽天カードを開いて表示名を書き換えた(未保存の)状態にする */
+  async function editCard() {
+    makeMapping()
+    makeMapping({ formatGroupId: '楽天銀行', label: '楽天銀行(確定)', accountIds: [bankId] })
+    renderTab()
+    await openMapping('楽天カード')
+    fireEvent.change(panel().getByLabelText('表示名'), { target: { value: '楽天カード(新)' } })
+  }
+
+  it('書き換えていないときは、別の定義を選んでも確認は出ない', async () => {
+    makeMapping()
+    makeMapping({ formatGroupId: '楽天銀行', label: '楽天銀行(確定)', accountIds: [bankId] })
+    renderTab()
+    await openMapping('楽天カード')
+    await openMapping('楽天銀行')
+    expect(dialog()).not.toBeInTheDocument()
+    expect(panel().getByLabelText('表示名')).toHaveValue('楽天銀行(確定)')
+  })
+
+  it('未保存のまま別の定義を選ぶと確認が出て、キャンセルでは移らず入力が残る', async () => {
+    await editCard()
+    await openMapping('楽天銀行')
+    expect(dialog()).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(panel().getByLabelText('表示名')).toHaveValue('楽天カード(新)')
+  })
+
+  it('「破棄して移動」で保存せずに移り、「保存して移動」で保存してから移る', async () => {
+    await editCard()
+    await openMapping('楽天銀行')
+    fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+    expect(panel().getByLabelText('表示名')).toHaveValue('楽天銀行(確定)')
+    expect(mappings.findAll().map((m) => m.label)).toContain('楽天カード(確定)')
+
+    await openMapping('楽天カード')
+    fireEvent.change(panel().getByLabelText('表示名'), { target: { value: '楽天カード(新)' } })
+    await openMapping('楽天銀行')
+    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+    await waitFor(() => expect(panel().getByLabelText('表示名')).toHaveValue('楽天銀行(確定)'))
+    expect(mappings.findAll().map((m) => m.label)).toContain('楽天カード(新)')
+  })
+
+  it('必須の列が足りず保存できない状態では、「保存して移動」でも移動せず、入力が残る', async () => {
+    await editCard()
+    fireEvent.change(panel().getByLabelText('金額の列'), { target: { value: '' } })
+    await openMapping('楽天銀行')
+    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+    await waitFor(() => expect(dialog()).not.toBeInTheDocument())
+    expect(panel().getByLabelText('表示名')).toHaveValue('楽天カード(新)')
+    expect(panel().getByText('金額の列を指定してください')).toBeInTheDocument()
+  })
+
+  it('CSVから新規作成の下書きを作ったまま別の定義を選ぶと、確認が出る', async () => {
+    makeMapping()
+    renderTab()
+    fireEvent.change(await screen.findByLabelText('新規作成に使うCSV'), { target: { files: [csvFile(SIGNED_CSV)] } })
+    await screen.findByRole('region', { name: 'マッピングの編集' })
+    await openMapping('楽天カード')
+    expect(dialog()).toBeInTheDocument()
+  })
+
+  it('未保存のままサイドナビのリンクを押すと確認が出て、「破棄して移動」で移動する', async () => {
+    await editCard()
+    fireEvent.click(screen.getByRole('link', { name: '他の画面へ' }))
+    expect(dialog()).toBeInTheDocument()
+    expect(screen.getByTestId('where')).toHaveTextContent('/master/here')
+    fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+    expect(screen.getByTestId('where')).toHaveTextContent('/other')
+  })
+
+  it('設定が「出さない」のときは、未保存でも確認なしで別の定義へ移る', async () => {
+    saveUnsavedWarningEnabled(false)
+    await editCard()
+    await openMapping('楽天銀行')
+    expect(dialog()).not.toBeInTheDocument()
+    expect(panel().getByLabelText('表示名')).toHaveValue('楽天銀行(確定)')
   })
 })
