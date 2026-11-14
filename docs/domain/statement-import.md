@@ -42,7 +42,7 @@
 | --------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `entry_date`    | 取引日       |                                                                                                                                                        |
 | `description`   | 摘要        | 生文字列、正規化前。[counterparties.md 1.3](./counterparties.md#13-外部明細取込との関係)の取引先推定はここから行う                                                                    |
-| `amount`        | 金額        | 符号付き整数。正 = 対象科目(手順1で選んだ口座/カード)の残高が増える方向、負 = 減る方向。「増える方向」が借方/貸方どちらに対応するかはこの時点では決めない([1.5](#15-レコード処理フロー)参照)                                             |
+| `amount`        | 金額        | 符号付き整数。正 = 対象科目(手順1で選んだ口座/カード)の残高が増える方向、負 = 減る方向。CSVの正負が逆の定義は、マッピング定義の`invert_amount_sign`で反転した後の符号がここに入る([2.1](#21-フィールド))。「増える方向」が借方/貸方どちらに対応するかはこの時点では決めない([1.5](#15-レコード処理フロー)参照)                                             |
 | `balance_after` | 取引後残高     | 任意。CSVに残高列がある場合のみ。[reconciliation.md 1.5](./reconciliation.md#15-残高照合)の残高照合・[1.6](./reconciliation.md#16-原因不明差異への残高調整)の残高調整に使う                         |
 | `external_id`   | 外部取引の一意キー | 任意。金融機関側にIDがあれば使用。無ければレビュー確定時に`entry_date`/`amount`/`description`から正規化ハッシュを生成し代替する(具体的なアルゴリズムは[1.6](#16-重複防止フロー)、[reconciliation.md 1.3](./reconciliation.md#13-データモデルの考え方)参照)       |
 | `is_settled`    | 確定済みか     | 任意(Boolean、NULL許容)。CSVの中身を解析して判定するのではなく、[1.4](#14-マッピング定義データ駆動)のマッピングに使った`import_mapping_definitions.is_settled`をそのまま引き継ぐ。確定/未確定の区別を持たないフォーマットでは`NULL` |
@@ -182,8 +182,11 @@ CSV文字列を「行×列」の生データ(セル値の文字列の二次元�
 | `credit_column` | 入金額の列 | `amount_mode = debit_credit_split`のときのみ使用 |
 | `balance_column` | 取引後残高の列 | 任意。[reconciliation.md 1.5](./reconciliation.md#15-残高照合)・[1.6](./reconciliation.md#16-原因不明差異への残高調整)で使う |
 | `external_id_column` | 外部取引IDの列 | 任意。無ければレビュー確定時にハッシュで代替([reconciliation.md 1.3](./reconciliation.md#13-データモデルの考え方)参照) |
+| `invert_amount_sign` | 金額の符号を反転するか | BOOLEAN、既定false。`amount_mode = single_signed`のときのみ有効で、`amount_column`の金額の正負を逆に読む。`debit_credit_split`では使わない(false固定。向きが逆なら入金額の列・出金額の列の割り当てを入れ替える)。残高列(`balance_column`)は反転しない。適用は変換層(`mapRowToImportedRecord`)の1箇所のみ |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
+
+`invert_amount_sign`は、金融機関・カードによってCSVの金額の正負の意味が逆(例: 出金がプラス)のときに、定義ごとに設定する。[1.2](#12-中間表現importedrecord)の`ImportedRecord.amount`(正 = 対象科目の残高が増える方向)と`external_transaction_refs.amount`は反転後の符号になり、重複判定・確定版候補・残高照合は反転後の`amount`を前提に動く。保存済みの`external_transaction_refs.amount`は変わらないため、取込済みの定義の反転設定を後から変えると、過去分との重複判定の突合がずれ得る。マッピング編集のプレビューは、選んだ科目が仕訳の借方・貸方のどちらに入るかを「科目名 金額」で示し、相手科目は取込時に決まるため「任意の科目」と表示する(`asset`/`expense`はプラスが借方、`liability`/`equity`/`revenue`はプラスが貸方)。
 
 列の指定(`date_column`等)は、数値文字列であれば0始まりの列インデックス、そうでなければヘッダー行の列名として解釈する。ヘッダー名指定は列の並びが多少変わっても頑健だが、`header_row_count = 0`(ヘッダー行が無いCSV)の場合はインデックス指定のみ使える。
 
