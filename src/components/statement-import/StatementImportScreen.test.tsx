@@ -60,7 +60,7 @@ beforeEach(async () => {
 
 afterEach(cleanup)
 
-function renderScreen() {
+function renderScreen(householdMemberRepository: Pick<SqlJsHouseholdMemberRepository, 'findAll'> = new SqlJsHouseholdMemberRepository(db)) {
   render(
     <I18nextProvider i18n={i18n}>
       <StatementImportScreen
@@ -73,7 +73,7 @@ function renderScreen() {
         counterpartyGroupRepository={new SqlJsCounterpartyGroupRepository(db)}
         projectRepository={projects}
         projectGroupRepository={new SqlJsProjectGroupRepository(db)}
-        householdMemberRepository={new SqlJsHouseholdMemberRepository(db)}
+        householdMemberRepository={householdMemberRepository}
         settlementBatchRepository={batches}
         onEditMappings={onEditMappings}
       />
@@ -279,6 +279,23 @@ describe('StatementImportScreen', () => {
     const created = entries.findAll()[0]
     expect(created.householdMemberId).toBe(hanako.id)
     expect(created.lines.map((l) => l.householdMemberId)).toEqual([hanako.id, hanako.id])
+  })
+
+  it('名義の無い科目で世帯メンバーが0件のときは、選択肢が空で、確定できず理由を表示する(計画Issue #193)', async () => {
+    makeMapping()
+    renderScreen({ findAll: () => [] })
+    fireEvent.change(await screen.findByLabelText('CSVを選択'), {
+      target: { files: [csvFile(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)] },
+    })
+    await screen.findByText(/statement\.csv を読み込み済み/)
+    pick(rowOf(/スーパー/), '相手科目', '食費')
+
+    const owner = screen.getByLabelText('誰の明細か(必須)')
+    expect(within(owner).getAllByRole('option')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ })).toBeDisabled()
+    expect(screen.getByText('誰の明細かを選ぶと確定できます')).toBeInTheDocument()
+    expect(entries.findAll()).toHaveLength(0)
   })
 
   it('取込先の科目を変えると、選んだ「誰の明細か」は選び直しになる(計画Issue #193)', async () => {
