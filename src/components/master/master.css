@@ -124,8 +124,10 @@ label.master-btn {
   align-items: flex-start;
 }
 
+/* 一覧と右の詳細パネルは1:1(右パネルは画面の半分くらい。実機確認での指摘)。定期仕訳タブだけは
+ * 下の.master-split--ruleで、右パネルを広く取る(計画Issue #164) */
 .master-split__main {
-  flex: 3 1 520px;
+  flex: 1 1 400px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -133,7 +135,7 @@ label.master-btn {
 }
 
 .master-split > .master-panel {
-  flex: 2 1 300px;
+  flex: 1 1 400px;
 }
 
 .master-split__alert {
