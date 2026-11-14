@@ -4,12 +4,15 @@
  * マスタ画面の「世帯メンバー」タブ: 名称・種類(個人/グループ)・状態の一覧、個人とグループの追加、
  * 右パネルでの名称の変更、グループの構成メンバーの追加・解除(現行の世帯メンバー管理画面から
  * 引き継ぐ)、有効/無効の切り替え、2回押しの削除と、仕訳・仕訳の起票者・科目の名義・定期仕訳ルールで
- * 使用中のときの削除不可の理由表示を、sql.jsのNode実装(createTestDatabase)を使って確認する。
+ * 使用中のときの削除不可の理由表示と、名称が未保存のまま別の行・別の画面へ移ろうとしたときの確認
+ * (保存して移動・破棄して移動・キャンセル・保存失敗・設定オフ、計画Issue #190)を、sql.jsのNode実装(createTestDatabase)を使って確認する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { saveUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
+import { UnsavedGuardHarness } from './UnsavedGuardHarness'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
 import i18n from '../../infrastructure/i18n/i18n'
@@ -35,17 +38,22 @@ beforeEach(async () => {
   entries = new SqlJsJournalEntryRepository(db)
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  localStorage.clear()
+})
 
 function renderTab() {
   render(
     <I18nextProvider i18n={i18n}>
-      <MemberMasterTab
-        householdMemberRepository={members}
-        accountRepository={accounts}
-        journalEntryRepository={entries}
-        recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
-      />
+      <UnsavedGuardHarness>
+        <MemberMasterTab
+          householdMemberRepository={members}
+          accountRepository={accounts}
+          journalEntryRepository={entries}
+          recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
+        />
+      </UnsavedGuardHarness>
     </I18nextProvider>,
   )
 }
@@ -183,5 +191,92 @@ describe('MemberMasterTab', () => {
     expect(panel().getByText(/仕訳の明細1行/)).toBeInTheDocument()
     expect(panel().getByText(/科目の名義1件/)).toBeInTheDocument()
     expect(panel().getByText(/定期仕訳ルール1件/)).toBeInTheDocument()
+  })
+})
+
+describe('MemberMasterTab 未保存の編集の警告(計画Issue #190)', () => {
+  /** 夫・妻を作り、夫を開いて名称を「夫さん」に書き換えた(未保存の)状態にする */
+  async function editHusbandName() {
+    members.create({ name: '夫' })
+    members.create({ name: '妻' })
+    renderTab()
+    await open('夫')
+    fireEvent.change(panel().getByLabelText('名称'), { target: { value: '夫さん' } })
+  }
+  const dialog = () => screen.queryByRole('dialog', { name: '未保存の変更があります' })
+
+  it('名称を書き換えていないときは、別の行を選んでも確認は出ない', async () => {
+    members.create({ name: '夫' })
+    members.create({ name: '妻' })
+    renderTab()
+    await open('夫')
+    await open('妻')
+    expect(dialog()).not.toBeInTheDocument()
+    expect(panel().getByLabelText('名称')).toHaveValue('妻')
+  })
+
+  it('開いただけ・入力を元の値に戻したときは、別の画面への移動でも確認は出ない', async () => {
+    members.create({ name: '夫' })
+    renderTab()
+    await open('夫')
+    fireEvent.change(panel().getByLabelText('名称'), { target: { value: '夫さん' } })
+    fireEvent.change(panel().getByLabelText('名称'), { target: { value: '夫' } })
+    fireEvent.click(screen.getByRole('link', { name: '他の画面へ' }))
+    expect(dialog()).not.toBeInTheDocument()
+    expect(screen.getByTestId('where')).toHaveTextContent('/other')
+  })
+
+  it('未保存のまま別の行を選ぶと確認が出て、キャンセルでは行を移らず入力が残る', async () => {
+    await editHusbandName()
+    await open('妻')
+    expect(dialog()).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(dialog()).not.toBeInTheDocument()
+    expect(panel().getByLabelText('名称')).toHaveValue('夫さん')
+  })
+
+  it('「破棄して移動」で、保存せずに別の行へ移る', async () => {
+    await editHusbandName()
+    await open('妻')
+    fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+    expect(panel().getByLabelText('名称')).toHaveValue('妻')
+    expect(members.findAll().map((m) => m.name)).toContain('夫')
+  })
+
+  it('「保存して移動」で、名称を保存してから別の行へ移る', async () => {
+    await editHusbandName()
+    await open('妻')
+    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+    await waitFor(() => expect(panel().getByLabelText('名称')).toHaveValue('妻'))
+    expect(members.findAll().map((m) => m.name)).toContain('夫さん')
+  })
+
+  it('未保存のままサイドナビのリンクを押すと確認が出て、「破棄して移動」で移動する', async () => {
+    await editHusbandName()
+    fireEvent.click(screen.getByRole('link', { name: '他の画面へ' }))
+    expect(screen.getByTestId('where')).toHaveTextContent('/master/here')
+    expect(dialog()).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+    expect(screen.getByTestId('where')).toHaveTextContent('/other')
+  })
+
+  it('名称が空で保存できないときは、「保存して移動」でも移動せず、入力が残る', async () => {
+    members.create({ name: '夫' })
+    members.create({ name: '妻' })
+    renderTab()
+    await open('夫')
+    fireEvent.change(panel().getByLabelText('名称'), { target: { value: '' } })
+    await open('妻')
+    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+    await waitFor(() => expect(dialog()).not.toBeInTheDocument())
+    expect(panel().getByLabelText('名称')).toHaveValue('')
+  })
+
+  it('設定が「出さない」のときは、未保存でも確認なしで別の行へ移る', async () => {
+    saveUnsavedWarningEnabled(false)
+    await editHusbandName()
+    await open('妻')
+    expect(dialog()).not.toBeInTheDocument()
+    expect(panel().getByLabelText('名称')).toHaveValue('妻')
   })
 })

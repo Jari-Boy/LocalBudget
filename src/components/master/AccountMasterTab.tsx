@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
@@ -113,6 +114,8 @@ export function AccountMasterTab({
   const [busy, setBusy] = useState(false)
   /** 既定の世帯メンバーを変えるときの、過去の明細行の扱いの確認待ち(計画Issue #169) */
   const [memberChange, setMemberChange] = useState<MemberChangePlan | null>(null)
+  /** 未保存の編集があれば、行の選択・新規作成の開始の前に確認を通す(計画Issue #190) */
+  const guarded = useGuardedAction()
 
   const load = useCallback(async () => {
     const [accounts, groups, members, entries, budgets, rules, definitions] = await Promise.all([
@@ -168,8 +171,8 @@ export function AccountMasterTab({
     return <p role="status">{tCommon('loading')}</p>
   }
 
-  /** 操作を実行し、成功したら再読み込みする。失敗時はエラー文言を出す */
-  const run = async (action: () => Promise<void>, errorMessage: string, successMessage = '') => {
+  /** 操作を実行する。成功したらtrue、失敗してエラー文言を出したらfalse */
+  const run = async (action: () => Promise<void>, errorMessage: string, successMessage = ''): Promise<boolean> => {
     setBusy(true)
     setError('')
     setFlash('')
@@ -177,8 +180,10 @@ export function AccountMasterTab({
       await action()
       await load()
       setFlash(successMessage)
+      return true
     } catch {
       setError(errorMessage)
+      return false
     } finally {
       setBusy(false)
     }
@@ -250,8 +255,9 @@ export function AccountMasterTab({
           columns={['名義', '状態']}
           checkedIds={liveCheckedIds}
           selectedId={selectedId}
-          onSelect={select}
-          onCheckedChange={setCheckedIds}
+          onSelect={(id) => guarded(() => select(id))}
+          // 2件以上のチェックは右パネルを一括操作パネルに差し替えるため、未保存の編集があれば確認を通す
+          onCheckedChange={(ids) => (ids.length >= 2 ? guarded(() => setCheckedIds(ids)) : setCheckedIds(ids))}
           onMove={(next) => {
             setCheckedIds([])
             void applyMove(next)
@@ -263,7 +269,7 @@ export function AccountMasterTab({
                 type="button"
                 className="master-btn master-btn--small"
                 aria-label={t('accountTab.addGroupLabel', { category: categoryName(key) })}
-                onClick={() => void addGroup(key as AccountCategory, null)}
+                onClick={() => guarded(() => void addGroup(key as AccountCategory, null))}
               >
                 {t('accountTab.addGroup')}
               </button>
@@ -272,10 +278,12 @@ export function AccountMasterTab({
                   type="button"
                   className="master-btn master-btn--small"
                   aria-label={t('accountTab.addAccountLabel', { category: categoryName(key) })}
-                  onClick={() => {
-                    setSelectedId(null)
-                    setCreating(key as AccountCategory)
-                  }}
+                  onClick={() =>
+                    guarded(() => {
+                      setSelectedId(null)
+                      setCreating(key as AccountCategory)
+                    })
+                  }
                 >
                   {t('accountTab.addAccount')}
                 </button>
@@ -335,8 +343,10 @@ export function AccountMasterTab({
           initialCategory={creating}
           today={today}
           mappingLinking={{ definitions: data.definitions, repository: importMappingDefinitionRepository }}
-          onCreated={(account) => {
-            void load().then(() => select(leafNodeId(account.id)))
+          onCreated={(account, options) => {
+            // 未保存の確認の「保存して移動」で登録したときは、移動先を優先して、登録した科目を選び直さない
+            if (options?.leaving) void load()
+            else void load().then(() => select(leafNodeId(account.id)))
           }}
           onCancel={() => setCreating(null)}
         />
@@ -384,17 +394,18 @@ export function AccountMasterTab({
           }
           onMoveInto={(targetId) => moveInto(selected.id, targetId)}
           onShift={(delta) => shift(selected, delta)}
-          onSave={(patch) => {
+          onSave={async (patch) => {
             const { kind, id } = parseNodeId(selected.id)
             if (kind === 'leaf') {
               const change = planMemberChange(data, id, patch)
               if (change !== null) {
                 // 過去の明細行に影響するときは、更新するか残すかを選んでもらってから保存する
+                // 「保存して移動」のときは、確認が済むまで移動を止める
                 setMemberChange(change)
-                return
+                return false
               }
             }
-            void run(
+            return run(
               async () => {
                 if (kind === 'group') {
                   await accountGroupRepository.update(id, { name: patch.name })
@@ -415,8 +426,10 @@ export function AccountMasterTab({
               else await accountRepository.activate(account.id)
             }, t('accountTab.toggleError'))
           }
-          onAddSubgroup={() => void addGroup(selected.category as AccountCategory, parseNodeId(selected.id).id)}
-          onAddAccount={() => setCreating(selected.category as AccountCategory)}
+          onAddSubgroup={() =>
+            guarded(() => void addGroup(selected.category as AccountCategory, parseNodeId(selected.id).id))
+          }
+          onAddAccount={() => guarded(() => setCreating(selected.category as AccountCategory))}
           onDelete={() => {
             if (armedId !== selected.id) {
               setArmedId(selected.id)
@@ -548,7 +561,7 @@ interface EditPanelProps {
   onUnlinkDefinition: (definitionId: number) => void
   onMoveInto: (targetId: string) => void
   onShift: (delta: -1 | 1) => void
-  onSave: (patch: { name: string; householdMemberId?: number | null }) => void
+  onSave: (patch: { name: string; householdMemberId?: number | null }) => Promise<boolean>
   onToggleActive: () => void
   onAddSubgroup: () => void
   onAddAccount: () => void
@@ -563,6 +576,19 @@ function EditPanel(props: EditPanelProps) {
   const isSystem = account?.isSystemManaged === true
   const [name, setName] = useState(node.name)
   const [memberInput, setMemberInput] = useState(account?.householdMemberId?.toString() ?? '')
+  const memberEditable = !isGroup && account !== undefined && !isSystem
+  const buildPatch = () => ({
+    name: name.trim(),
+    ...(memberEditable ? { householdMemberId: memberInput === '' ? null : Number(memberInput) } : {}),
+  })
+  // 名称・名義が保存済みの値と違う間は、画面を離れる前に確認する。所属グループ・並び順・有効/無効・
+  // 明細マッピングの紐づけは選んだ時点で即時に反映されるため、対象外(計画Issue #190)
+  const unsavedDialog = useUnsavedEditGuard({
+    dirty:
+      name.trim() !== node.name ||
+      (memberEditable && memberInput !== (account?.householdMemberId?.toString() ?? '')),
+    save: () => (name.trim() === '' ? Promise.resolve(false) : props.onSave(buildPatch())),
+  })
   const siblings = nodes.filter((n) => n.category === node.category && n.parentId === node.parentId)
   const index = siblings.findIndex((n) => n.id === node.id)
   const options = parentOptions(nodes, node.category, new Set(isGroup ? withDescendants(nodes, node.id) : []))
@@ -684,14 +710,7 @@ function EditPanel(props: EditPanelProps) {
           type="button"
           className="master-btn master-btn--primary"
           disabled={busy || name.trim() === ''}
-          onClick={() =>
-            props.onSave({
-              name: name.trim(),
-              ...(!isGroup && account && !isSystem
-                ? { householdMemberId: memberInput === '' ? null : Number(memberInput) }
-                : {}),
-            })
-          }
+          onClick={() => void props.onSave(buildPatch())}
         >
           {t('accountTab.save')}
         </button>
@@ -719,6 +738,7 @@ function EditPanel(props: EditPanelProps) {
       {props.armed && props.hasInitialBalanceEntries && (
         <p className="master-note">{t('accountTab.deleteInitialBalanceNote')}</p>
       )}
+      {unsavedDialog}
     </section>
   )
 }

@@ -17,9 +17,7 @@ export function UnsavedChangesDialog({ saving = false, onCancel, onDiscard, onSa
     <div className="unsaved-dialog__backdrop">
       <div role="dialog" aria-modal="true" aria-label="未保存の変更があります" className="unsaved-dialog">
         <h2 className="unsaved-dialog__title">未保存の変更があります</h2>
-        <p className="unsaved-dialog__message">
-          保存が完了していない変更があります。保存して移動するか、破棄して移動するかを選んでください。
-        </p>
+        <p className="unsaved-dialog__message">保存が完了していない変更があります。</p>
         <div className="unsaved-dialog__actions">
           <button type="button" className="unsaved-dialog__button" onClick={onCancel}>
             キャンセル

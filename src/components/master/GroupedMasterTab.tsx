@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { computeTreeNodeUpdates, type TreeNodeUpdate } from '../common/tree-table/computeTreeNodeUpdates'
+import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import { TreeTable } from '../common/tree-table/TreeTable'
 import { BulkSelectionPanel } from './BulkSelectionPanel'
 import { CATEGORY_ID_PREFIX, resolveTreeMove, type TreeTableNode } from '../common/tree-table/treeTableModel'
@@ -63,6 +64,8 @@ export function GroupedMasterTab({
   const [flash, setFlash] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 未保存の編集があれば、行の選択・新規作成の前に確認を通す(計画Issue #190) */
+  const guarded = useGuardedAction()
 
   // 統合・削除などで消えた行のチェックは捨てる
   const liveCheckedIds = checkedIds.filter((id) => tree.nodes.some((n) => n.id === id))
@@ -70,7 +73,8 @@ export function GroupedMasterTab({
   const topId = `${CATEGORY_ID_PREFIX}${categoryKey}`
   const selected = selectedId ? tree.nodes.find((n) => n.id === selectedId) : undefined
 
-  const run = async (action: () => Promise<void>, errorMessage: string, successMessage = '') => {
+  /** 操作を実行する。成功したらtrue、失敗してエラー文言を出したらfalse */
+  const run = async (action: () => Promise<void>, errorMessage: string, successMessage = ''): Promise<boolean> => {
     setBusy(true)
     setError('')
     setFlash('')
@@ -78,8 +82,10 @@ export function GroupedMasterTab({
       await action()
       await onChanged()
       setFlash(successMessage)
+      return true
     } catch {
       setError(errorMessage)
+      return false
     } finally {
       setBusy(false)
     }
@@ -125,10 +131,10 @@ export function GroupedMasterTab({
     <div className="master-split">
       <div className="master-split__main">
         <div className="master-actions">
-          <button type="button" className="master-btn" disabled={busy} onClick={() => void create('group', null)}>
+          <button type="button" className="master-btn" disabled={busy} onClick={() => guarded(() => void create('group', null))}>
             {t('groupedTab.addGroup')}
           </button>
-          <button type="button" className="master-btn" disabled={busy} onClick={() => void create('leaf', null)}>
+          <button type="button" className="master-btn" disabled={busy} onClick={() => guarded(() => void create('leaf', null))}>
             {t('groupedTab.addLeaf', { leaf: leafLabel })}
           </button>
         </div>
@@ -138,8 +144,9 @@ export function GroupedMasterTab({
           columns={columns}
           checkedIds={liveCheckedIds}
           selectedId={selectedId}
-          onSelect={select}
-          onCheckedChange={setCheckedIds}
+          onSelect={(id) => guarded(() => select(id))}
+          // 2件以上のチェックは右パネルを一括操作パネルに差し替えるため、未保存の編集があれば確認を通す
+          onCheckedChange={(ids) => (ids.length >= 2 ? guarded(() => setCheckedIds(ids)) : setCheckedIds(ids))}
           onMove={(next) => {
             setCheckedIds([])
             void applyMove(next)
@@ -246,7 +253,7 @@ interface NodePanelProps {
   extra: ReactNode
   onMoveInto: (targetId: string) => void
   onShift: (delta: -1 | 1) => void
-  onSave: (name: string) => void
+  onSave: (name: string) => Promise<boolean>
   onToggleActive: () => void
   onAddSubgroup: () => void
   onAddLeaf: () => void
@@ -273,6 +280,11 @@ function NodePanel(props: NodePanelProps) {
   const { t } = useTranslation('master')
   const isGroup = node.kind === 'group'
   const [name, setName] = useState(node.name)
+  // 名称が保存済みの値と違う間は、画面を離れる前に確認する(計画Issue #190)
+  const unsavedDialog = useUnsavedEditGuard({
+    dirty: name.trim() !== node.name,
+    save: () => (name.trim() === '' ? Promise.resolve(false) : props.onSave(name.trim())),
+  })
   const siblings = nodes.filter((n) => n.parentId === node.parentId)
   const index = siblings.findIndex((n) => n.id === node.id)
   const options = groupOptions(nodes, new Set(isGroup ? withDescendants(nodes, node.id) : []))
@@ -370,6 +382,7 @@ function NodePanel(props: NodePanelProps) {
       </div>
 
       {props.blockedText !== '' && <p className="master-note">{props.blockedText}</p>}
+      {unsavedDialog}
     </section>
   )
 }

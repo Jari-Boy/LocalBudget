@@ -6,13 +6,16 @@
  * 2回押しの削除と、使用中・中に項目があるときの削除不可の理由表示、初期残高の仕訳だけが
  * 紐づく口座の一緒に削除、システム管理科目の制限(区分変更・削除不可)、有効/無効の切り替え、
  * 資産・負債科目の右パネルの「登録時の設定」(表示のみ)と「明細マッピング」の紐づけ・解除
- * (計画Issue #189)を、
+ * (計画Issue #189)、名称・名義が未保存のまま別の行・別の画面・新規登録へ移ろうとしたときの確認
+ * (保存して移動・破棄して移動・キャンセル・保存失敗・即時反映する欄は対象外・設定オフ、計画Issue #190)を、
  * sql.jsのNode実装(createTestDatabase)を使って確認する。ドラッグ移動の判定はTreeTableの
  * テストで扱う。外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { saveUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
+import { UnsavedGuardHarness } from './UnsavedGuardHarness'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
 import i18n from '../../infrastructure/i18n/i18n'
@@ -47,21 +50,26 @@ beforeEach(async () => {
   memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '夫' }).id
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  localStorage.clear()
+})
 
 function renderTab() {
   render(
     <I18nextProvider i18n={i18n}>
-      <AccountMasterTab
-        accountRepository={accounts}
-        accountGroupRepository={groups}
-        householdMemberRepository={new SqlJsHouseholdMemberRepository(db)}
-        journalEntryRepository={entries}
-        budgetRepository={new SqlJsBudgetRepository(db)}
-        recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
-        importMappingDefinitionRepository={mappings}
-        today="2026-11-07"
-      />
+      <UnsavedGuardHarness>
+        <AccountMasterTab
+          accountRepository={accounts}
+          accountGroupRepository={groups}
+          householdMemberRepository={new SqlJsHouseholdMemberRepository(db)}
+          journalEntryRepository={entries}
+          budgetRepository={new SqlJsBudgetRepository(db)}
+          recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
+          importMappingDefinitionRepository={mappings}
+          today="2026-11-07"
+        />
+      </UnsavedGuardHarness>
     </I18nextProvider>,
   )
 }
@@ -698,5 +706,126 @@ describe('AccountMasterTab', () => {
 
       expect(panel('科目の編集').getByRole('button', { name: '削除' })).toBeEnabled()
     })
+  })
+})
+
+describe('AccountMasterTab 未保存の編集の警告(計画Issue #190)', () => {
+  const dialog = () => screen.queryByRole('dialog', { name: '未保存の変更があります' })
+  const nameInput = () => panel('科目の編集').getByLabelText('名称')
+
+  /** 食費・交通費を作り、食費を開いて名称を書き換えた(未保存の)状態にする */
+  async function editFood() {
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
+    renderTab()
+    await open('食費')
+    fireEvent.change(nameInput(), { target: { value: '食料費' } })
+  }
+
+  it('書き換えていないときは、別の行を選んでも確認は出ない', async () => {
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
+    renderTab()
+    await open('食費')
+    await open('交通費')
+    expect(dialog()).not.toBeInTheDocument()
+    expect(nameInput()).toHaveValue('交通費')
+  })
+
+  it('未保存のまま別の行を選ぶと確認が出て、キャンセルでは行を移らず入力が残る', async () => {
+    await editFood()
+    await open('交通費')
+    expect(dialog()).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(dialog()).not.toBeInTheDocument()
+    expect(nameInput()).toHaveValue('食料費')
+  })
+
+  it('「破棄して移動」で保存せずに移る', async () => {
+    await editFood()
+    await open('交通費')
+    fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+    expect(nameInput()).toHaveValue('交通費')
+    expect(accounts.findAll().map((a) => a.name)).toContain('食費')
+  })
+
+  it('「保存して移動」で名称を保存してから移る', async () => {
+    await editFood()
+    await open('交通費')
+    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+    await waitFor(() => expect(nameInput()).toHaveValue('交通費'))
+    expect(accounts.findAll().map((a) => a.name)).toContain('食料費')
+  })
+
+  it('保存に失敗(同じ区分で名称が重複)したときは移動せず、エラーが出て入力が残る', async () => {
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
+    renderTab()
+    await open('食費')
+    fireEvent.change(nameInput(), { target: { value: '交通費' } })
+    await open('交通費')
+    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('保存に失敗しました')
+    expect(dialog()).not.toBeInTheDocument()
+    expect(nameInput()).toHaveValue('交通費')
+  })
+
+  it('名義だけを変えて未保存のときも、別の行を選ぶと確認が出る', async () => {
+    accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    renderTab()
+    await open('楽天銀行')
+    fireEvent.change(panel('科目の編集').getByLabelText('名義'), { target: { value: String(memberId) } })
+    await open('食費')
+    expect(dialog()).toBeInTheDocument()
+  })
+
+  it('所属グループの変更は選んだ時点で反映されるため、確認の対象にならない', async () => {
+    const group = groups.create({ name: '日常', category: 'expense' })
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
+    renderTab()
+    await open('食費')
+    fireEvent.change(panel('科目の編集').getByLabelText('所属グループ'), { target: { value: `g:${group.id}` } })
+    await waitFor(() => expect(panel('科目の編集').getByLabelText('所属グループ')).toHaveDisplayValue('日常'))
+    await open('交通費')
+    expect(dialog()).not.toBeInTheDocument()
+  })
+
+  it('未保存のままサイドナビのリンクを押すと確認が出て、「破棄して移動」で移動する', async () => {
+    await editFood()
+    fireEvent.click(screen.getByRole('link', { name: '他の画面へ' }))
+    expect(screen.getByTestId('where')).toHaveTextContent('/master/here')
+    expect(dialog()).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+    expect(screen.getByTestId('where')).toHaveTextContent('/other')
+  })
+
+  it('新規登録フォームに名称を入力したまま別の行を選ぶと確認が出て、「保存して移動」で登録してから移る', async () => {
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: '費用に科目を追加' }))
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '光熱費' } })
+    await open('食費')
+    expect(dialog()).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+    await waitFor(() => expect(nameInput()).toHaveValue('食費'))
+    expect(accounts.findAll().map((a) => a.name)).toContain('光熱費')
+  })
+
+  it('新規登録フォームを開いただけ(何も入力していない)ときは、別の行を選んでも確認は出ない', async () => {
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: '費用に科目を追加' }))
+    await open('食費')
+    expect(dialog()).not.toBeInTheDocument()
+  })
+
+  it('設定が「出さない」のときは、未保存でも確認なしで別の行へ移る', async () => {
+    saveUnsavedWarningEnabled(false)
+    await editFood()
+    await open('交通費')
+    expect(dialog()).not.toBeInTheDocument()
+    expect(nameInput()).toHaveValue('交通費')
   })
 })

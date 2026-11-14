@@ -8,6 +8,7 @@
  * (金額修正して確定・見送り・古い提案が残っていると処理できない)、関連仕訳の表示を検証する。計画Issue #164で追加した、
  * 承認待ちの定期仕訳タブの摘要・コメントの編集と保存、土日の調整後の日付と金額の初期値の表示、一覧に科目を出さないこと、
  * 複数の提案のまとめて確定(チェックの連動・すべて選択・起票者の一括指定・confirmManyの呼び出し)も検証する。
+ * 未保存の警告を出さない設定(計画Issue #190)のときは、仕訳の切り替えも画面外への移動もリロードも確認を出さないことも検証する。
  * 外部依存はインメモリの偽Repository(vi.fn)で置き換える。
  */
 import '@testing-library/jest-dom/vitest'
@@ -22,10 +23,14 @@ import type { JournalEntryDraft } from '../../domain/journal/JournalEntryDraft'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { UnsavedChangesGuardProvider, useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
+import { saveUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
 import { JournalScreen, type JournalScreenProps } from './JournalScreen'
 import type { RecurringTransactionRuleLine } from '../../domain/recurring-transaction/RecurringTransactionRule'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  localStorage.clear()
+})
 
 /** サイドナビなど、画面の外からの移動を模す。未保存の変更があればガードが引き受けて続行関数を預かる */
 const leaveSpy = vi.fn()
@@ -698,6 +703,32 @@ describe('JournalScreen', () => {
       const dirty = new Event('beforeunload', { cancelable: true })
       window.dispatchEvent(dirty)
       expect(dirty.defaultPrevented).toBe(true)
+    })
+  })
+
+  describe('未保存の警告を出さない設定のとき(計画Issue #190)', () => {
+    it('編集していても、別の仕訳を選ぶと確認なしで切り替わる', async () => {
+      saveUnsavedWarningEnabled(false)
+      setup()
+      await ready()
+      editMemo('ランチ(修正中)')
+      fireEvent.click(screen.getByRole('button', { name: /家賃/ }))
+      expect(leaveDialog()).not.toBeInTheDocument()
+      expect(memoInput()).toHaveValue('家賃')
+    })
+
+    it('編集していても、画面の外への移動は確認なしで続行され、リロードの警告も出ない', async () => {
+      saveUnsavedWarningEnabled(false)
+      leaveSpy.mockClear()
+      setup()
+      await ready()
+      editMemo('ランチ(修正中)')
+      fireEvent.click(screen.getByRole('button', { name: 'テスト用: 画面を離れる' }))
+      expect(leaveDialog()).not.toBeInTheDocument()
+      expect(leaveSpy).toHaveBeenCalledTimes(1)
+      const event = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
     })
   })
 

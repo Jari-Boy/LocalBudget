@@ -5,6 +5,7 @@
  * 確認ダイアログ(ファイル名・サイズ・更新日時、今のデータの書き出し)を出し、置き換えを選ぶと
  * 読み込み中の表示を経て、成功ならお知らせの印を残してページを再読み込みする。読み込めない
  * ファイル(InvalidBackupFileError)なら、データを変えていないことを伝えるダイアログを出す。
+ * 未保存の変更の警告を出す/出さないの設定(計画Issue #190)は、既定がオンであること、切り替えがlocalStorageに保存されることを検証する。
  * 外部依存: なし。Worker側のバックアップAPI・ダウンロード・再読み込み・sessionStorageは偽物を渡す。
  */
 import '@testing-library/jest-dom/vitest'
@@ -13,6 +14,7 @@ import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { InvalidBackupFileError } from '../../infrastructure/backup/InvalidBackupFileError'
 import i18n from '../../infrastructure/i18n/i18n'
+import { loadUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
 import { markImportCompleted, takeImportNotice, type NoticeStorage } from './importNotice'
 import { SettingsScreen, type BackupApi } from './SettingsScreen'
 
@@ -188,5 +190,29 @@ describe('SettingsScreen', () => {
   it('印がなければ完了のお知らせは出さない', () => {
     setup()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+})
+
+describe('SettingsScreen 未保存の変更の警告の設定(計画Issue #190)', () => {
+  afterEach(() => localStorage.clear())
+
+  it('既定ではオンで表示され、オフの注意書き(確認なしで失われる)が出ている', () => {
+    setup()
+    expect(screen.getByRole('checkbox', { name: '未保存の変更があるとき、移動前にお知らせする' })).toBeChecked()
+    expect(screen.getByText('オフにすると、確認なしで未保存の編集内容が失われます。')).toBeInTheDocument()
+  })
+
+  it('オフに切り替えると、保存され(再訪でも復元され)、オンに戻せる', () => {
+    setup()
+    const checkbox = screen.getByRole('checkbox', { name: '未保存の変更があるとき、移動前にお知らせする' })
+    fireEvent.click(checkbox)
+    expect(checkbox).not.toBeChecked()
+    expect(loadUnsavedWarningEnabled()).toBe(false)
+    cleanup()
+    setup()
+    const again = screen.getByRole('checkbox', { name: '未保存の変更があるとき、移動前にお知らせする' })
+    expect(again).not.toBeChecked()
+    fireEvent.click(again)
+    expect(loadUnsavedWarningEnabled()).toBe(true)
   })
 })

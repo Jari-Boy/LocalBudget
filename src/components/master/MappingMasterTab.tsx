@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
@@ -89,6 +90,8 @@ export function MappingMasterTab({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [flash, setFlash] = useState('')
+  /** 未保存の編集があれば、行の選択・新規作成の前に確認を通す(計画Issue #190) */
+  const guarded = useGuardedAction()
 
   const load = useCallback(async () => {
     const [definitions, accounts, groups] = await Promise.all([
@@ -121,15 +124,18 @@ export function MappingMasterTab({
   const institutionNames = collectFinancialInstitutionNames(data.definitions.map((d) => d.formatGroupId))
   const selected = typeof mode === 'number' ? data.definitions.find((d) => d.id === mode) : undefined
 
-  const run = async (action: () => unknown, errorMessage: string) => {
+  /** 操作を実行する。成功したらtrue、失敗してエラー文言を出したらfalse */
+  const run = async (action: () => unknown, errorMessage: string): Promise<boolean> => {
     setBusy(true)
     setError('')
     setFlash('')
     try {
       await action()
       await load()
+      return true
     } catch {
       setError(errorMessage)
+      return false
     } finally {
       setBusy(false)
     }
@@ -143,15 +149,19 @@ export function MappingMasterTab({
       const bytes = new Uint8Array(await file.arrayBuffer())
       const encoding = inferEncoding(bytes)
       const rows = readCsv(bytes, { encoding, delimiter: ',' })
-      setDraft({
+      const started: Draft = {
         form: mappingFormFromDraft(inferMappingDefinitionDraft(rows), encoding),
         sample: { bytes },
         notice: t('mappingTab.guessed'),
+      }
+      // ファイルを選んだ後で、編集中の内容があれば確認を通してから新規作成の下書きに切り替える
+      guarded(() => {
+        setDraft(started)
+        setDraftSeq((n) => n + 1)
+        setMode('create')
+        setArmed(false)
+        setError('')
       })
-      setDraftSeq((n) => n + 1)
-      setMode('create')
-      setArmed(false)
-      setError('')
     } catch {
       setError(t('mappingTab.readError'))
     }
@@ -190,12 +200,14 @@ export function MappingMasterTab({
                       type="button"
                       className={`master-list__button master-list__button--grouped${d.id === mode ? ' master-list__button--selected' : ''}`}
                       aria-current={d.id === mode ? 'true' : undefined}
-                      onClick={() => {
-                        setMode(d.id)
-                        setArmed(false)
-                        setError('')
-                        setFlash('')
-                      }}
+                      onClick={() =>
+                        guarded(() => {
+                          setMode(d.id)
+                          setArmed(false)
+                          setError('')
+                          setFlash('')
+                        })
+                      }
                     >
                       <span>{d.label}</span>
                       <span className="master-note">
@@ -282,7 +294,7 @@ interface MappingPanelProps {
   busy: boolean
   armed: boolean
   flash: string
-  onSave: (form: MappingForm) => unknown
+  onSave: (form: MappingForm) => Promise<boolean>
   onDuplicate: (form: MappingForm) => unknown
   onDelete: () => void
 }
@@ -304,6 +316,13 @@ function MappingPanel(props: MappingPanelProps) {
     [rows, form],
   )
   const reasons = validateMappingForm(form)
+  // 入力が保存済みの値(新規作成は空の状態)と違う間は、画面を離れる前に確認する(計画Issue #190)。
+  // 検証エラーが残っていて保存できないときは、「保存して移動」でも移動しない
+  const baseline = props.isCreate ? emptyMappingForm() : props.initial.form
+  const unsavedDialog = useUnsavedEditGuard({
+    dirty: JSON.stringify(form) !== JSON.stringify(baseline),
+    save: () => (reasons.length > 0 ? Promise.resolve(false) : props.onSave(form)),
+  })
   const split = form.amountMode === 'debit_credit_split'
   const headerCount = /^\d+$/.test(form.headerRows.trim()) ? Number(form.headerRows) : 0
 
@@ -643,6 +662,7 @@ function MappingPanel(props: MappingPanelProps) {
           </span>
         )}
       </div>
+      {unsavedDialog}
     </section>
   )
 }
