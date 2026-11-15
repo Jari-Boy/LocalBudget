@@ -19,6 +19,20 @@ export interface GroupedMasterActions {
   remove(nodeId: string): Promise<void>
 }
 
+/**
+ * 選んだ項目の右パネルに足す固有のフォーム(renderLeafExtra)が、親の「保存」「未保存の警告」と
+ * 連動するための状態(計画Issue #201。仕訳テンプレートの摘要・起票者・明細行)。固有のフォームは
+ * 内容が変わるたびにsetFormStateで渡し、右パネルの「保存」は名称と一緒にsaveを呼ぶ。
+ * validがfalseの間は「保存」が押せず、reasonを注記として出す。保存が失敗したらsaveは例外を投げる
+ */
+export interface LeafFormState {
+  dirty: boolean
+  valid: boolean
+  /** validがfalseのとき、押せない理由 */
+  reason?: string
+  save: () => Promise<void>
+}
+
 export interface GroupedMasterTabProps {
   tree: MasterTreeData
   columns: readonly string[]
@@ -32,7 +46,15 @@ export interface GroupedMasterTabProps {
   /** 変更後に呼び出し元のデータを読み直す */
   onChanged: () => Promise<void>
   /** 選んだ項目の右パネルに足す固有の欄(例: 取引先の既定の科目・パターン) */
-  renderLeafExtra?: (leafId: number, context: { reload: () => Promise<void>; busy: boolean }) => ReactNode
+  renderLeafExtra?: (
+    leafId: number,
+    context: {
+      reload: () => Promise<void>
+      busy: boolean
+      /** 固有のフォームが「保存」「未保存の警告」と連動したいときに状態を渡す。連動しない画面は使わない */
+      setFormState: (state: LeafFormState | null) => void
+    },
+  ) => ReactNode
   /** 画面に出す直前の操作結果の通知(例: 統合しました)。空なら出さない */
   notice?: string
   /** 2件以上チェックしたときの一括操作パネルに足す、項目への固有の操作(例: 取引先の統合) */
@@ -205,11 +227,13 @@ export function GroupedMasterTab({
                 : ''
               : leafBlockedText(parseNodeId(selected.id).id)
           }
-          extra={
-            selected.kind === 'leaf'
-              ? renderLeafExtra?.(parseNodeId(selected.id).id, { reload: onChanged, busy })
+          renderExtra={
+            selected.kind === 'leaf' && renderLeafExtra !== undefined
+              ? ({ setFormState }) =>
+                  renderLeafExtra(parseNodeId(selected.id).id, { reload: onChanged, busy, setFormState })
               : undefined
           }
+          onSaveExtra={(save) => run(save, t('accountTab.saveError'), t('accountTab.saved'))}
           onMoveInto={(targetId) => moveInto(selected.id, targetId)}
           onShift={(delta) => shift(selected, delta)}
           onSave={(name) =>
@@ -250,7 +274,10 @@ interface NodePanelProps {
   armed: boolean
   isActive: boolean
   blockedText: string
-  extra: ReactNode
+  /** 項目の固有のフォーム。状態を渡すsetFormStateを受け取る */
+  renderExtra?: (context: { setFormState: (state: LeafFormState | null) => void }) => ReactNode
+  /** 固有のフォームの保存を、他の操作と同じ流れ(実行中の表示・失敗の通知・データの読み直し)で実行する */
+  onSaveExtra: (save: () => Promise<void>) => Promise<boolean>
   onMoveInto: (targetId: string) => void
   onShift: (delta: -1 | 1) => void
   onSave: (name: string) => Promise<boolean>
@@ -280,10 +307,23 @@ function NodePanel(props: NodePanelProps) {
   const { t } = useTranslation('master')
   const isGroup = node.kind === 'group'
   const [name, setName] = useState(node.name)
-  // 名称が保存済みの値と違う間は、画面を離れる前に確認する(計画Issue #190)
+  /** 固有のフォームの状態(計画Issue #201)。無ければ名称だけが保存の対象 */
+  const [extraForm, setExtraForm] = useState<LeafFormState | null>(null)
+  const nameDirty = name.trim() !== node.name
+  const extraInvalid = extraForm !== null && !extraForm.valid
+
+  /** 名称が変わっていれば名称を、固有のフォームが変わっていればその内容を保存する。途中で失敗したらfalse */
+  const saveAll = async (): Promise<boolean> => {
+    if (name.trim() === '' || extraInvalid) return false
+    if (nameDirty && !(await props.onSave(name.trim()))) return false
+    if (extraForm?.dirty && !(await props.onSaveExtra(extraForm.save))) return false
+    return true
+  }
+
+  // 名称・固有のフォームが保存済みの値と違う間は、画面を離れる前に確認する(計画Issue #190)
   const unsavedDialog = useUnsavedEditGuard({
-    dirty: name.trim() !== node.name,
-    save: () => (name.trim() === '' ? Promise.resolve(false) : props.onSave(name.trim())),
+    dirty: nameDirty || (extraForm?.dirty ?? false),
+    save: saveAll,
   })
   const siblings = nodes.filter((n) => n.parentId === node.parentId)
   const index = siblings.findIndex((n) => n.id === node.id)
@@ -341,7 +381,7 @@ function NodePanel(props: NodePanelProps) {
         </button>
       </div>
 
-      {props.extra}
+      {props.renderExtra?.({ setFormState: setExtraForm })}
 
       {isGroup && (
         <div className="master-actions">
@@ -358,8 +398,8 @@ function NodePanel(props: NodePanelProps) {
         <button
           type="button"
           className="master-btn master-btn--primary"
-          disabled={busy || name.trim() === ''}
-          onClick={() => props.onSave(name.trim())}
+          disabled={busy || name.trim() === '' || extraInvalid}
+          onClick={() => void saveAll()}
         >
           {t('accountTab.save')}
         </button>
@@ -381,6 +421,7 @@ function NodePanel(props: NodePanelProps) {
         </span>
       </div>
 
+      {extraInvalid && extraForm?.reason !== undefined && <p className="master-note">{extraForm.reason}</p>}
       {props.blockedText !== '' && <p className="master-note">{props.blockedText}</p>}
       {unsavedDialog}
     </section>

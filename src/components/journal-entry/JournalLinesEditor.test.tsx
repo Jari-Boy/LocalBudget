@@ -56,6 +56,7 @@ function Harness(props: {
   initial: JournalEditorLine[]
   readOnlyLines?: boolean
   bookkeeperId?: number | null
+  allowBlankAmounts?: boolean
   onRequestCreateProject?: (apply: (id: number) => void) => void
   onCreateBatch?: JournalLinesEditorProps['onCreateBatch']
 }) {
@@ -67,6 +68,7 @@ function Harness(props: {
       master={master}
       bookkeeperId={props.bookkeeperId === undefined ? 1 : props.bookkeeperId}
       readOnlyLines={props.readOnlyLines}
+      allowBlankAmounts={props.allowBlankAmounts}
       onRequestCreateProject={props.onRequestCreateProject}
       onCreateBatch={props.onCreateBatch}
     />
@@ -150,5 +152,39 @@ describe('JournalLinesEditor', () => {
     )
 
     expect(within(screen.getByLabelText('精算バッチ')).getByRole('option', { name: '+ 新しいバッチ' })).toBeInTheDocument()
+  })
+})
+
+describe('JournalLinesEditor: 金額の空欄を許すモード(allowBlankAmounts、仕訳テンプレート、計画Issue #201)', () => {
+  it('全行が空欄のとき、列の見出しは「空欄(起票時に入力)」で、貸借の表示は出さない', () => {
+    render(<Harness allowBlankAmounts initial={[line(1, 'debit', 1, ''), line(2, 'credit', 2, '')]} />)
+
+    expect(within(screen.getByRole('group', { name: '借方' })).getByText('空欄(起票時に入力)')).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: '貸方' })).getByText('空欄(起票時に入力)')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('金額が空欄の行は、起票時に入力します')
+    expect(screen.getByRole('status')).not.toHaveClass('journal-editor__balance--off')
+  })
+
+  it('一部の行だけ空欄のとき、金額のある列は合計を出し、貸借の不一致は警告せず空欄の案内を出す', () => {
+    render(<Harness allowBlankAmounts initial={[line(1, 'debit', 1, '500'), line(2, 'credit', 2, '')]} />)
+
+    expect(within(screen.getByRole('group', { name: '借方' })).getByText('￥500')).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: '貸方' })).getByText('空欄(起票時に入力)')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('金額が空欄の行は、起票時に入力します')
+    expect(screen.getByRole('status')).not.toHaveClass('journal-editor__balance--off')
+  })
+
+  it('全行の金額が入っているときは、通常どおり貸借一致/差額を出す', () => {
+    render(<Harness allowBlankAmounts initial={[line(1, 'debit', 1, '500'), line(2, 'credit', 2, '500')]} />)
+    expect(screen.getByRole('status')).toHaveTextContent('貸借一致')
+    cleanup()
+    render(<Harness allowBlankAmounts initial={[line(1, 'debit', 1, '500'), line(2, 'credit', 2, '400')]} />)
+    expect(screen.getByRole('status')).toHaveTextContent('差額 ￥100')
+  })
+
+  it('指定しない通常のモードでは、空欄でも従来どおり「差額」の表示になる', () => {
+    render(<Harness initial={[line(1, 'debit', 1, ''), line(2, 'credit', 2, '')]} />)
+
+    expect(within(screen.getByRole('group', { name: '借方' })).queryByText('空欄(起票時に入力)')).toBeNull()
   })
 })
