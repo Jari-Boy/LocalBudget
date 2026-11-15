@@ -110,4 +110,4 @@
 
 ### 2.2 DDL
 
-[schema/journal_templates.sql](../schema/journal_templates.sql)を参照。マイグレーションのバージョン2で追加される([architecture.md 4章](../architecture.md))。
+[schema/journal_templates.sql](../schema/journal_templates.sql)を参照。最新スキーマの一部として、新規DBにそのまま作成される(本番前のため差分は持たない。[architecture.md 5章](../architecture.md))。

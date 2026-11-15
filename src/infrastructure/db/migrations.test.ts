@@ -73,23 +73,6 @@ describe('runMigrations', () => {
     expect(getUserVersion(db)).toBe(LATEST_SCHEMA_VERSION)
   })
 
-  it('仕訳テンプレートの表はバージョン2で追加され、バージョン1のDBはデータを保ったまま上がる(計画Issue #201)', async () => {
-    const db = await createTestDatabase()
-    runMigrations(db)
-    // バージョン1のDB(テンプレートの表が無い)を再現する
-    db.run('DROP TABLE journal_template_lines')
-    db.run('DROP TABLE journal_templates')
-    db.run('DROP TABLE journal_template_groups')
-    db.run('PRAGMA user_version = 1')
-    db.run(`INSERT INTO household_members (name) VALUES ('自分')`)
-
-    runMigrations(db)
-
-    expect(getUserVersion(db)).toBe(2)
-    expect(listTableNames(db)).toEqual(expect.arrayContaining(['journal_templates', 'journal_template_groups']))
-    expect(db.exec('SELECT COUNT(*) FROM household_members')[0].values[0][0]).toBe(1)
-  })
-
   it('recurring_transactions.sqlのALTER TABLEをjournal_entriesに適用する', async () => {
     const db = await createTestDatabase()
 

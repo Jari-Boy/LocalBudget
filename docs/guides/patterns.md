@@ -450,3 +450,10 @@
 **対策**: 撤回時は`docs/decisions.md`に撤回の旨と理由を書き、旧方針を述べていた箇所をgrepで洗い出して同じコミット群で改める。旧関数(`checkBalanceReconciliation`等)の廃止もドメインドキュメントから外す。
 **該当箇所（例）**: `docs/decisions.md` 2026-11-15(8)
 
+## 初期投入(seed)処理が`CREATE TABLE IF NOT EXISTS`で表を作ると、最新スキーマに入らず「固定データ+差分」と「新規作成」の比較がずれる(計画Issue #42)
+
+**症状**: 起動時の初期投入`seedStandardAccountGroups`が、`seed_markers`表を`CREATE TABLE IF NOT EXISTS`で自分で作っていた。この表は最新スキーマ(`docs/schema/*.sql`と`runMigrations`の新規作成)に含まれていなかったため、「凍結した固定データに差分を流したDB」と「最新スキーマで新規作成したDB」の構造比較(`schemaDifferences`)で、`seed_markers`の有無がずれた。
+**原因**: seed処理が自前で表を作ると、表の定義がスキーマ管理の外(seed処理の中)に残る。`IF NOT EXISTS`で冪等に動くため、スキーマ管理の外でも実行時には問題が出ず、新規作成と差分適用の結果を突き合わせて初めて発覚する。
+**対策**: 初期投入処理では`CREATE TABLE`をしない。表は最新スキーマ(`docs/schema/<名前>.sql`と`runMigrations`の新規作成)に含め、以後の追加は差分で行う。新しい表を足すときは、seed処理内に`CREATE TABLE`が紛れていないかをgrepで確認する。手順は`docs/guides/schema-migration.md`を参照。
+**該当箇所（例）**: `docs/schema/seed_markers.sql`、`src/infrastructure/db/schemaDifferences.ts`、`docs/guides/schema-migration.md`、計画Issue #42
+

@@ -13,6 +13,14 @@ const store = createIndexedDbSingleRecordStore<Uint8Array>(
   RECORD_KEY,
 )
 
+// 移行前のバックアップ(計画Issue #42)。本体と同じobject storeの別キーに、直近の1つだけ保存する
+const backupStore = createIndexedDbSingleRecordStore<Uint8Array>(
+  DATABASE_NAME,
+  DATABASE_VERSION,
+  OBJECT_STORE_NAME,
+  'pre-migration-backup',
+)
+
 /**
  * StorageAdapterのIndexedDB実装(docs/architecture.md 4.2節)。全ブラウザ対応の
  * 既定の保存先で、DB全体をシリアライズしたバイト列を単一レコードとして保存する。
@@ -26,5 +34,9 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
 
   async save(data: Uint8Array): Promise<void> {
     return store.put(data)
+  }
+
+  async savePreMigrationBackup(data: Uint8Array): Promise<void> {
+    return backupStore.put(data)
   }
 }

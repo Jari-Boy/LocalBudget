@@ -6,11 +6,12 @@
  * 外部依存: なし(createDbClientをモックしWorker/sql.jsには依存しない)。
  */
 import '@testing-library/jest-dom/vitest'
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
 import i18n from '../i18n/i18n'
 import { DbClientProvider, useDbClient } from './DbClientProvider'
+import { WorkerInitError } from './WorkerInitError'
 
 const { createDbClientMock } = vi.hoisted(() => ({
   createDbClientMock: vi.fn(),
@@ -24,6 +25,8 @@ function ClientConsumer() {
   const client = useDbClient()
   return <p>client-ready: {String(client != null)}</p>
 }
+
+afterEach(cleanup)
 
 describe('DbClientProvider', () => {
   it('Worker起動完了まではローディング表示になり、完了後は子要素からuseDbClientでクライアントを取得できる', async () => {
@@ -67,5 +70,36 @@ describe('DbClientProvider', () => {
     )
 
     expect(await screen.findByText('client-ready: true')).toBeInTheDocument()
+  })
+
+  it('Worker起動が失敗したら、ローディングのままにせず種類に応じた起動エラー画面を出す(計画Issue #42)', async () => {
+    createDbClientMock.mockRejectedValue(
+      new WorkerInitError('too new', { reason: 'schema-too-new', originalData: new Uint8Array([1]) }),
+    )
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <DbClientProvider>
+          <ClientConsumer />
+        </DbClientProvider>
+      </I18nextProvider>,
+    )
+
+    expect(await screen.findByRole('heading', { name: '新しいバージョンのアプリで保存されたデータです' })).toBeInTheDocument()
+    expect(screen.queryByText(/client-ready/)).not.toBeInTheDocument()
+  })
+
+  it('WorkerInitError以外の失敗も、起動エラー画面(other)で示す', async () => {
+    createDbClientMock.mockRejectedValue(new Error('boom'))
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <DbClientProvider>
+          <ClientConsumer />
+        </DbClientProvider>
+      </I18nextProvider>,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'アプリを起動できませんでした' })).toBeInTheDocument()
   })
 })

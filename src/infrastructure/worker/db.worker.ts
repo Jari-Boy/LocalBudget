@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink'
 import { createBrowserDatabase } from '../db/createBrowserDatabase'
-import { runMigrations } from '../db/migrations'
+import { openMigratedDatabase } from '../db/openMigratedDatabase'
 import { seedAdvanceAccounts } from '../db/seedAdvanceAccounts'
 import { seedBalanceAdjustmentAccount } from '../db/seedBalanceAdjustmentAccount'
 import { seedBuiltInMappingDefinitions } from '../db/seedBuiltInMappingDefinitions'
@@ -32,7 +32,8 @@ import { withAutoSave } from '../storage/withAutoSave'
  * メッセージを送出し、メインスレッド側のPromiseを無期限にハングさせず確実にrejectさせる。
  * 起動時は保存された保存先の選択(storageConfig、計画Issue #174)に応じたStorageAdapter
  * (IndexedDB、またはメインスレッドで権限確認済みのフォルダ)から既存DBのバイト列をロードして復元し(計画Issue #25)、
- * 書き込みの権利(Web Locks)が取れないタブでは保存を無視する読み取り専用のアダプタで包む。マイグレーション適用後
+ * 書き込みの権利(Web Locks)が取れないタブでは保存を無視する読み取り専用のアダプタで包む。マイグレーション(openMigratedDatabase、
+ * 計画Issue #42)適用後
  * withAutoSaveでDB変更をtrailing debounce(計画Issue #58)で永続化する。withAutoSaveが返す
  * AutoSaveControllerはRepositoryRegistryのautoSaveキーとして公開し、メインスレッド側が
  * ページ非表示時等にRPC越しにflush()を呼べるようにする。同じstorageAdapterインスタンスは
@@ -87,8 +88,18 @@ async function main(): Promise<void> {
   const storageAdapter = writable ? opened.adapter : createReadOnlyStorageAdapter(opened.adapter)
   const savedData = await storageAdapter.load()
 
-  const db = await createBrowserDatabase(savedData ?? undefined)
-  runMigrations(db)
+  // 保存データでDBを開き、最新のスキーマにする(計画Issue #42)。既存DBの移行は、元のバイト列を
+  // 保存先ごとのバックアップへ退避してから差分を1トランザクションで流し、成功したら直ちに保存する。
+  // 失敗・新しすぎるバージョンのときは例外(StartupDatabaseError)で起動を止め、元のバイト列をメインスレッドへ渡す
+  const db = await openMigratedDatabase({
+    savedData,
+    createDatabase: createBrowserDatabase,
+    save: (data) => storageAdapter.save(data),
+    saveBackup: async (data) => {
+      await opened.adapter.savePreMigrationBackup?.(data)
+    },
+    writable,
+  })
   seedDefaultHouseholdMember(db)
   seedBuiltInMappingDefinitions(db)
   seedDefaultAccounts(db)

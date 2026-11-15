@@ -11,45 +11,137 @@ import recurringTransactionsSql from '../../../docs/schema/recurring_transaction
 import reconciliationSql from '../../../docs/schema/reconciliation.sql?raw'
 import statementImportSql from '../../../docs/schema/statement_import.sql?raw'
 import journalTemplatesSql from '../../../docs/schema/journal_templates.sql?raw'
+import seedMarkersSql from '../../../docs/schema/seed_markers.sql?raw'
 
-export const LATEST_SCHEMA_VERSION = 2
+import { MigrationFailedError, SchemaTooNewError } from './migrationErrors'
+
+/**
+ * 最新スキーマと差分の2本立て(計画Issue #42、docs/decisions.md)。
+ * - 新規DB: docs/schema/*.sql(最新のDDL)をそのまま流し、user_versionを最新にする
+ * - 既存DB: 差分(DIFFS)をバージョン順に1つのトランザクションで流す。SQL文字列とTypeScript関数のどちらでも書ける
+ * 本番前は、スキーマ変更はDDLを直接修正してよい(差分は足さない)。初回の本番デプロイの直前に
+ * `npm run schema:freeze` でその時点のスキーマを凍結すると、以後は固定データ(src/infrastructure/db/schemaFixtures)
+ * との比較テストが、差分の書き忘れをCIで検出する(docs/guides/schema-migration.md)。
+ */
+export type MigrationStep = string | ((db: Database) => void)
+
+export interface MigrationPlan {
+  latestVersion: number
+  /** 空のDBに最新スキーマを作る */
+  createLatest: (db: Database) => void
+  /** version-1 → version への差分。キーは移行先のバージョン */
+  diffs: Readonly<Record<number, readonly MigrationStep[]>>
+}
+
+export const LATEST_SCHEMA_VERSION = 1
 
 // household_members → accounts(household_membersを参照) → projects/counterparties
 // → settlement_batches(counterpartiesを参照) → journal(accounts/projects/counterparties/
 // settlement_batchesを参照) → budgets(accountsを参照)
 // → recurring_transactions(accounts等を参照しjournal_entriesにALTER TABLEを追加するためjournalより後)
-// → reconciliation/statement_import(accounts/journal_entriesを参照) の順で適用する。
-const MIGRATIONS: Record<number, readonly string[]> = {
-  1: [
-    householdMembersSql,
-    accountsSql,
-    projectsSql,
-    counterpartiesSql,
-    settlementBatchesSql,
-    journalSql,
-    budgetsSql,
-    recurringTransactionsSql,
-    reconciliationSql,
-    statementImportSql,
-  ],
-  // 仕訳テンプレート(計画Issue #201)。新しい表を足すだけなので、バージョン1のDBには差分として適用する。
-  // 旧バックアップの取込を止めないよう、assertValidDatabaseSchemaの必須テーブルには加えない。
-  // household_members/accounts/projects/counterparties/settlement_batchesを参照するためバージョン1の後に置く
-  2: [journalTemplatesSql],
-}
+// → reconciliation/statement_import(accounts/journal_entriesを参照) → journal_templates の順で適用する。
+const LATEST_SCHEMA_SQL: readonly string[] = [
+  householdMembersSql,
+  accountsSql,
+  projectsSql,
+  counterpartiesSql,
+  settlementBatchesSql,
+  journalSql,
+  budgetsSql,
+  recurringTransactionsSql,
+  reconciliationSql,
+  statementImportSql,
+  journalTemplatesSql,
+  // 起動時の初期投入(seed)の印。seed側も CREATE TABLE IF NOT EXISTS で作るが、最新スキーマに含めておかないと、
+  // 「新規作成」と「固定データ+差分」の比較が、seedが作る表の有無でずれる(計画Issue #42)
+  seedMarkersSql,
+]
 
-export function runMigrations(db: Database): void {
-  const currentVersion = getUserVersion(db)
-
-  for (let version = currentVersion + 1; version <= LATEST_SCHEMA_VERSION; version++) {
-    for (const sql of MIGRATIONS[version] ?? []) {
-      db.run(sql)
-    }
-    db.run(`PRAGMA user_version = ${version}`)
-  }
+export const SCHEMA_PLAN: MigrationPlan = {
+  latestVersion: LATEST_SCHEMA_VERSION,
+  createLatest: (db) => {
+    for (const sql of LATEST_SCHEMA_SQL) db.run(sql)
+  },
+  // 本番前(凍結前)は差分を足さず、DDLを直接修正する。初回の本番デプロイの直前に、その時点のスキーマを
+  // バージョン1として凍結する(docs/guides/schema-migration.md)。凍結後のスキーマ変更は、ここに差分を足す
+  diffs: {},
 }
 
 export function getUserVersion(db: Database): number {
   const result = db.exec('PRAGMA user_version')
   return (result[0]?.values[0]?.[0] as number | undefined) ?? 0
+}
+
+function hasUserTables(db: Database): boolean {
+  const result = db.exec("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+  return (result[0]?.values[0]?.[0] as number) > 0
+}
+
+/** 既存のDB(表がある)で、user_versionが最新より古いか。空のDBは最新スキーマを作るだけなのでfalse。 */
+export function needsMigration(db: Database, plan: MigrationPlan = SCHEMA_PLAN): boolean {
+  return hasUserTables(db) && getUserVersion(db) < plan.latestVersion
+}
+
+/**
+ * DBを最新のスキーマにする(計画Issue #42)。
+ * - user_versionが最新より大きければ、何も変えずSchemaTooNewErrorで拒否する
+ * - 空のDBは最新スキーマを作り、user_versionを最新にする
+ * - 既存DBは、外部キー検査を止めた1つのトランザクションで差分を流し、最後にforeign_key_checkで
+ *   違反が無いことを確かめてCOMMITする。失敗したらROLLBACKしてMigrationFailedErrorを投げる(DBは元のまま)
+ */
+export function runMigrations(db: Database, plan: MigrationPlan = SCHEMA_PLAN): void {
+  const currentVersion = getUserVersion(db)
+  if (currentVersion > plan.latestVersion) {
+    throw new SchemaTooNewError(currentVersion, plan.latestVersion)
+  }
+
+  if (!hasUserTables(db)) {
+    db.run('BEGIN')
+    try {
+      plan.createLatest(db)
+      db.run(`PRAGMA user_version = ${plan.latestVersion}`)
+      db.run('COMMIT')
+    } catch (error) {
+      db.run('ROLLBACK')
+      throw new MigrationFailedError(`failed to create the latest schema: ${describe(error)}`, { cause: error })
+    }
+    return
+  }
+
+  if (currentVersion === plan.latestVersion) return
+  if (currentVersion === 0) {
+    throw new MigrationFailedError('database has tables but no schema version (user_version = 0)')
+  }
+
+  // 外部キー検査の切り替えはトランザクションの外でしか効かない(SQLiteの仕様)
+  db.run('PRAGMA foreign_keys = OFF')
+  try {
+    db.run('BEGIN')
+    try {
+      for (let version = currentVersion + 1; version <= plan.latestVersion; version++) {
+        for (const step of plan.diffs[version] ?? []) {
+          if (typeof step === 'string') db.run(step)
+          else step(db)
+        }
+        db.run(`PRAGMA user_version = ${version}`)
+      }
+      const violations = db.exec('PRAGMA foreign_key_check')
+      if (violations.length > 0) {
+        throw new Error(`foreign key violations remain after migration (${violations[0].values.length} rows)`)
+      }
+      db.run('COMMIT')
+    } catch (error) {
+      db.run('ROLLBACK')
+      throw new MigrationFailedError(
+        `failed to migrate schema from version ${currentVersion} to ${plan.latestVersion}: ${describe(error)}`,
+        { cause: error },
+      )
+    }
+  } finally {
+    db.run('PRAGMA foreign_keys = ON')
+  }
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

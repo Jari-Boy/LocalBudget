@@ -7,6 +7,7 @@ import { isFileSystemAccessSupported } from './isFileSystemAccessSupported'
 import type { StorageAdapter } from './StorageAdapter'
 
 const DEFAULT_FILE_NAME = 'local-budget.sqlite'
+const PRE_MIGRATION_BACKUP_FILE_NAME = 'local-budget.pre-migration-backup.sqlite'
 
 /** ファイルの更新日時とサイズ。外部変更の検知に使う(計画Issue #175)。 */
 interface FileStamp {
@@ -128,6 +129,17 @@ export class FileSystemAccessStorageAdapter implements StorageAdapter {
     } catch {
       this.knownState = null
     }
+  }
+
+  /**
+   * 移行前のバックアップを、同じフォルダの別ファイルに書く(計画Issue #42)。本体のファイルの記録(knownState)や
+   * 外部変更の検査には関与せず、2回目以降は同じファイルを上書きする(直近の1つだけ残る)。
+   * このファイルも同期クライアントの対象になる。
+   */
+  async savePreMigrationBackup(data: Uint8Array): Promise<void> {
+    const directoryHandle = this.requireDirectoryHandle()
+    const fileHandle = await directoryHandle.getFileHandle(PRE_MIGRATION_BACKUP_FILE_NAME, { create: true })
+    await writeDatabaseToFileHandle(fileHandle, data)
   }
 
   private requireDirectoryHandle(): FileSystemDirectoryHandle {

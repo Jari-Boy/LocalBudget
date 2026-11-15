@@ -1,5 +1,6 @@
 import type { Database } from 'sql.js'
 import { createBrowserDatabase } from '../db/createBrowserDatabase'
+import { SchemaTooNewError } from '../db/migrationErrors'
 import { runMigrations } from '../db/migrations'
 import { assertValidDatabaseSchema } from './assertValidDatabaseSchema'
 import { InvalidBackupFileError } from './InvalidBackupFileError'
@@ -20,6 +21,13 @@ export async function assertImportableDatabase(data: Uint8Array): Promise<void> 
   } catch (error) {
     if (error instanceof InvalidBackupFileError) {
       throw error
+    }
+    // アプリより新しいバージョンのバックアップは、起動時と同じ理由で拒否する(計画Issue #42。
+    // 消えた列を読んで画面が壊れるおそれがあるため、古いアプリでは開かない)
+    if (error instanceof SchemaTooNewError) {
+      throw new InvalidBackupFileError(
+        `invalid backup file: saved by a newer version of the app (schema version ${error.databaseVersion}, supported up to ${error.latestVersion})`,
+      )
     }
     throw new InvalidBackupFileError(`invalid backup file: ${String(error)}`)
   } finally {

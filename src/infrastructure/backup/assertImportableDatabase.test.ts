@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 import initSqlJs from 'sql.js'
 import { describe, expect, it, vi } from 'vitest'
 import { createTestDatabase } from '../db/createTestDatabase'
-import { runMigrations } from '../db/migrations'
+import { LATEST_SCHEMA_VERSION, runMigrations } from '../db/migrations'
 import { assertImportableDatabase } from './assertImportableDatabase'
 import { InvalidBackupFileError } from './InvalidBackupFileError'
 
@@ -37,6 +37,19 @@ describe('assertImportableDatabase', () => {
     const data = db.export()
     db.close()
     await expect(assertImportableDatabase(data)).rejects.toBeInstanceOf(InvalidBackupFileError)
+  })
+
+  it('アプリより新しいバージョンのバックアップはInvalidBackupFileErrorで拒否し、理由に新しいバージョンであることを示す(計画Issue #42)', async () => {
+    const db = await createTestDatabase()
+    runMigrations(db)
+    db.run(`PRAGMA user_version = ${LATEST_SCHEMA_VERSION + 1}`)
+    const data = db.export()
+    db.close()
+
+    const error = await assertImportableDatabase(data).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(InvalidBackupFileError)
+    expect((error as Error).message).toMatch(/newer version/)
   })
 
   it('DBとして読めないバイト列はInvalidBackupFileErrorを投げる', async () => {

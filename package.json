@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "test:e2e:pwa": "playwright test --config=playwright.pwa.config.ts",
     "preview": "vite preview",
+    "schema:freeze": "node scripts/freeze-schema.mjs",
     "generate:pwa-icons": "pwa-assets-generator"
   },
   "dependencies": {
