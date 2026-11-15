@@ -13,6 +13,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
+import { insertCounterparty, insertHouseholdMember, insertProject } from './insertTestMasterData'
 import { runMigrations } from './migrations'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
@@ -863,21 +864,6 @@ describe('deleteBySettlementBatchId(settlement_batch_id単位での一括物理�
 
 function countJournalLines(database: Database): number {
   return database.exec('SELECT COUNT(*) AS c FROM journal_lines')[0].values[0][0] as number
-}
-
-function insertHouseholdMember(database: Database, name: string): number {
-  database.run(`INSERT INTO household_members (name) VALUES (?)`, [name])
-  return lastInsertRowId(database)
-}
-
-function insertProject(database: Database, name: string): number {
-  database.run(`INSERT INTO projects (name) VALUES (?)`, [name])
-  return lastInsertRowId(database)
-}
-
-function insertCounterparty(database: Database, name: string): number {
-  database.run(`INSERT INTO counterparties (name) VALUES (?)`, [name])
-  return lastInsertRowId(database)
 }
 
 function insertSettlementBatch(database: Database, name: string): number {

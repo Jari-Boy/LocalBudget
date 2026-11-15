@@ -197,6 +197,7 @@
 ## 手動で起動した`npm run dev`を残したままPlaywrightを流すと、開発用のサンプルデータが入った状態のサーバーが再利用され、E2Eが失敗する(計画Issue #207)
 
 **内容**: `playwright.config.ts`の`webServer`は`reuseExistingServer: !process.env.CI`のため、5173番ですでに開発サーバーが動いていると、それをそのまま使う。手動で起動した`npm run dev`には、E2Eのためのダミーデータ投入の抑制(`VITE_DISABLE_DEV_SEED`、`webServer.env`でだけ付く)が効いていないので、開発用のサンプルデータ(口座・仕訳)が入った状態になる。E2Eは「口座・仕訳が0件」のクリーンな初期状態を前提にしているため、`UNIQUE constraint failed: accounts.category, accounts.name`や、同名のボタンが2つ見つかる`strict mode violation`で失敗する。実機の画面確認で開発サーバーを起動したあとにE2Eを流すときは、先に5173番の待ち受けを止める(`Get-NetTCPConnection -LocalPort 5173 -State Listen`で見つけて停止する)。落ちた原因がテストの不具合かを疑う前に、まずこれを確認する。
+Issue #187(`e2e/journal-entry.spec.ts`の「ランチ代」の`UNIQUE constraint failed`)も同じ原因だった(計画Issue #211で確認)。5173番が空きの状態では5件が連続2回とも通り、E2E全体も99件が通る。サンプルデータ入りの`npm run dev`を起動したまま実行すると、`UNIQUE constraint failed: accounts.category, accounts.name`で同スペックの4件が失敗して再現する。テストデータの重複・状態の持ち越し・アプリ側の不具合ではない。
 
 **参考**: `playwright.config.ts`、`docs/decisions.md`(開発サンプルデータの投入、計画Issue #101)、Issue #207
 
@@ -205,8 +206,9 @@
 **内容**: 作業ディレクトリのドライブ文字が小文字(`c:\Users\...`、Git Bashの`/c/Users/...`から起動した場合を含む)だと、vitestが同じファイルを大文字・小文字違いの別パスとして二重に読み込み、全テストファイルが「Vitest failed to find the runner」で失敗する(テストの中身とは無関係で、変更を退避した`main`でも再現する)。PowerShellで`Set-Location C:\Users\swsc3\LocalBudget`のように、ドライブ文字を大文字にしたパスから`npx vitest run`を実行すると動く。
 **参考**: 計画Issue #202の実装中に発生。
 
-## Vitestは通常実行が環境問題で全件失敗するため`--pool=vmThreads`を付け、落ちたファイルは単独で再実行して切り分ける(計画Issue #188・#42の実装中)
+## Vitestの全件失敗(Issue #188)の原因は小文字ドライブのパスで、`--pool=vmThreads`は不要。全件実行の負荷によるタイムアウトは`testTimeout`で吸収する(計画Issue #211)
 
-**内容**: この環境ではVitestの通常実行(既定のpool)が環境問題(Issue #188)で全件失敗するため、`npx vitest run --pool=vmThreads`で実行する。全体実行ではタイムアウトが散発することがあるので、落ちたファイルはそのファイルだけを単独で再実行し、単独で通れば環境・負荷起因、単独でも落ちれば実装の問題として切り分ける。ドライブ文字が小文字のパスから実行したときの全件失敗(上記「Vitest failed to find the runner」)とは原因が別である。
-**参考**: Issue #188、計画Issue #42
+**内容**: Issue #188(通常の`npx vitest run`で全ファイルが「Cannot read properties of undefined (reading 'config')」「Vitest failed to find the current suite」で失敗する)は、上記「小文字ドライブ」と同じ原因だった。Git Bash(`/c/Users/...`)や`c:\Users\...`の小文字ドライブから実行すると失敗し、PowerShellで`Set-Location C:\Users\swsc3\LocalBudget`のように大文字ドライブにすると、プール指定なしの通常実行で全ファイルが通る(切り分け: 同じ4ファイルが小文字ドライブで全失敗、大文字ドライブで117件通過。dev serverの起動有無は影響しない)。以前書いていた「`--pool=vmThreads`で実行する」は回避策として不要で、vm方式ではbackup・rpc系4ファイル5件が落ちるため使わない。
+全件を並列実行すると、sql.jsのWASM初期化を複数回行う`importDatabaseBackup.test.ts`の1件が負荷で5000msを超えて落ちた(3回連続で再現、単独実行では約3秒で通る)。`vitest.config.ts`の`testTimeout`を15000msにして解消し、大文字ドライブ・プール指定なしの全件実行(283ファイル・3123テスト)が3回連続で通ることを確認した。今後、全件実行でだけ落ちるテストが出たら、まず単独で再実行して負荷起因か実装の問題かを切り分ける。
+**参考**: Issue #188、計画Issue #211・#42
 
