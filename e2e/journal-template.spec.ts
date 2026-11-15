@@ -10,8 +10,17 @@ import { test, expect } from '@playwright/test'
 
 test.describe('仕訳テンプレート', () => {
   test('テンプレートを追加し、「テンプレートから起票」で選んで金額を入れて保存すると、仕訳が作られる', async ({ page }) => {
-    await page.goto('/')
+    // 開発用のダミーサンプルデータはE2Eでは投入されない(VITE_DISABLE_DEV_SEED)ため、口座(資産の科目)は
+    // テストで作る。画面のアプリのDBに入れるため、マスタ画面のフォームから登録する(createDbClientは別のWorkerのDB)。
+    // 仕訳画面は開いた時点で科目を読み込むため、仕訳画面を開く前に登録しておく
+    await page.goto('/#/master/accounts')
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '食費', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: '資産に科目を追加' }).click()
+    const accountForm = page.getByRole('form', { name: '科目を登録' })
+    await accountForm.getByLabel('名称').fill('E2E財布')
+    await accountForm.getByRole('button', { name: '登録' }).click()
+    await expect(page.getByRole('button', { name: 'E2E財布', exact: true })).toBeVisible()
     await page.getByRole('link', { name: '仕訳', exact: true }).click()
 
     // 「テンプレート」タブで追加して保存する
@@ -23,7 +32,7 @@ test.describe('仕訳テンプレート', () => {
     // 追加した直後は科目が空なので、選ぶまで保存できない
     await expect(editor.getByRole('button', { name: '保存' })).toBeDisabled()
     await expect(editor.getByText('科目が未選択の行があります')).toBeVisible()
-    for (const [side, account] of [['借方', '食費'], ['貸方', '現金']] as const) {
+    for (const [side, account] of [['借方', '食費'], ['貸方', 'E2E財布']] as const) {
       await editor.getByRole('group', { name: side }).getByRole('button', { name: /^科目/ }).click()
       const picker = page.getByRole('dialog', { name: '科目' })
       await picker.getByRole('searchbox', { name: '科目を検索' }).fill(account)
