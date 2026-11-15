@@ -14,6 +14,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
+import { insertHouseholdMember } from './insertTestMasterData'
 import { runMigrations } from './migrations'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
@@ -318,11 +319,6 @@ function insertBareJournalEntry(database: Database, householdMemberId: number): 
     '2026-08-01',
     householdMemberId,
   ])
-  return lastInsertRowId(database)
-}
-
-function insertHouseholdMember(database: Database, name: string): number {
-  database.run(`INSERT INTO household_members (name) VALUES (?)`, [name])
   return lastInsertRowId(database)
 }
 

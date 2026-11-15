@@ -8,6 +8,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
+import { insertHouseholdMember } from './insertTestMasterData'
 import { runMigrations } from './migrations'
 import { SqlJsAccountGroupRepository } from './SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
@@ -563,9 +564,4 @@ function insertAccountGroup(
 
 function lastInsertRowId(database: Database): number {
   return database.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
-}
-
-function insertHouseholdMember(database: Database, name: string): number {
-  database.run(`INSERT INTO household_members (name) VALUES (?)`, [name])
-  return lastInsertRowId(database)
 }
