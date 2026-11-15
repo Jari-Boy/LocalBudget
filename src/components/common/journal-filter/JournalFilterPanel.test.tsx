@@ -5,6 +5,10 @@
  * 世帯メンバー・精算バッチ・出どころを最初からすべて並べ(「条件を追加」方式にしない)、
  * 入力ごとにJournalEntryFilterで通知することを検証する。ポップアップ版は同じパネルを
  * ボタンの下に開き、有効な条件の数をボタンに出す。
+ 計画Issue #203で、全6軸(科目・取引先・プロジェクト・世帯メンバー・精算バッチ・出どころ)を
+ * 複数選択にした。選んでも各欄が閉じないこと、項目とグループ・「未割当」の併用、「指定なし」での
+ * 軸ごとの解除、ボタンの「ほか○件」表示、ポップアップ版の中でツリーを操作しても絞り込み全体が
+ * 閉じないことも検証する。
  * 外部依存なし(絞り込みの実行自体はドメイン層の責務のため、ここでは条件の生成だけを見る)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -35,18 +39,28 @@ const options: JournalFilterOptions = {
           kind: 'group',
           id: '10',
           name: '食費',
-          children: [{ kind: 'item', value: '1', name: '外食', isActive: true }],
+          children: [
+            { kind: 'item', value: '1', name: '外食', isActive: true },
+            { kind: 'item', value: '11', name: '食料品', isActive: true },
+          ],
         },
+        { kind: 'item', value: '9', name: '雑費', isActive: true },
       ],
     },
   ],
-  counterpartyCategories: flat([{ value: '2', name: 'ローソン' }]),
+  counterpartyCategories: flat([
+    { value: '2', name: 'ローソン' },
+    { value: '7', name: 'ファミマ' },
+  ]),
   projectCategories: flat([{ value: '3', name: '帰省' }]),
   members: [
     { value: '4', name: '太郎' },
     { value: '5', name: '花子' },
   ],
-  batches: [{ value: '6', name: '10月分' }],
+  batches: [
+    { value: '6', name: '10月分' },
+    { value: '8', name: '11月分' },
+  ],
   sourceTypes: [
     { value: 'manual', name: '手入力' },
     { value: 'external_import', name: '外部明細' },
@@ -71,6 +85,13 @@ function Harness({ initial = {}, onFilter }: { initial?: JournalEntryFilter; onF
 const pick = (label: string, optionName: string) => {
   fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}:`) }))
   fireEvent.click(within(screen.getByRole('dialog', { name: label })).getByRole('button', { name: optionName }))
+}
+
+/** 複数選択の欄を開き、続けて複数の項目を選ぶ(選んでも閉じないので、開くのは最初の1回だけ) */
+const pickMany = (label: string, ...optionNames: string[]) => {
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}:`) }))
+  const dialog = screen.getByRole('dialog', { name: label })
+  for (const name of optionNames) fireEvent.click(within(dialog).getByRole('button', { name }))
 }
 
 describe('JournalFilterPanel', () => {
@@ -114,9 +135,9 @@ describe('JournalFilterPanel', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '外食' }))
     expect(onFilter).toHaveBeenLastCalledWith({ accountIds: [1] })
 
-    fireEvent.click(screen.getByRole('button', { name: /^科目:/ }))
+    // 複数選択なので、続けて同じ欄でグループも選べる(併用、軸の中はOR)
     fireEvent.click(screen.getByRole('button', { name: '食費をすべて選ぶ' }))
-    expect(onFilter).toHaveBeenLastCalledWith({ accountGroupIds: [10] })
+    expect(onFilter).toHaveBeenLastCalledWith({ accountIds: [1], accountGroupIds: [10] })
   })
 
   it('取引先・プロジェクト・世帯メンバー・精算バッチ・出どころを選んで通知する', () => {
@@ -218,5 +239,93 @@ describe('JournalFilterPanel: 項目を隠す(計画Issue #153)', () => {
     render(<JournalFilterPanel filter={{}} onChange={() => {}} options={options} />)
 
     expect(screen.getByRole('button', { name: /^精算バッチ/ })).toBeInTheDocument()
+  })
+})
+
+describe('JournalFilterPanel: 複数選択(計画Issue #203)', () => {
+  it('科目・取引先・プロジェクトは、項目とグループを併用して複数選べる', () => {
+    const onFilter = vi.fn()
+    render(<Harness onFilter={onFilter} />)
+    pickMany('科目', '食費', '外食', '雑費')
+    fireEvent.click(screen.getByRole('button', { name: '食費をすべて選ぶ' }))
+    pickMany('取引先', 'ローソン', 'ファミマ')
+    pickMany('プロジェクト', '帰省')
+    expect(onFilter).toHaveBeenLastCalledWith({
+      accountIds: [1, 9],
+      accountGroupIds: [10],
+      counterpartyIds: [2, 7],
+      projectIds: [3],
+    })
+  })
+
+  it('世帯メンバー・精算バッチ・出どころも複数選べ、精算バッチは「未割当」と併用できる', () => {
+    const onFilter = vi.fn()
+    render(<Harness onFilter={onFilter} />)
+    pickMany('世帯メンバー', '太郎', '花子')
+    pickMany('精算バッチ', '未割当', '10月分')
+    pickMany('出どころ', '手入力', '外部明細')
+    expect(onFilter).toHaveBeenLastCalledWith({
+      householdMemberIds: [4, 5],
+      settlementBatchIds: [null, 6],
+      sourceTypes: ['manual', 'external_import'],
+    })
+  })
+
+  it('複数選択すると、ボタンに「先頭 ほか○件」を出す。1件のときはその項目名', () => {
+    render(<Harness initial={{ householdMemberIds: [4, 5], accountIds: [9] }} />)
+    expect(screen.getByRole('button', { name: /^世帯メンバー:/ })).toHaveTextContent('太郎 ほか1件')
+    expect(screen.getByRole('button', { name: /^科目:/ })).toHaveTextContent('雑費')
+  })
+
+  it('選んでも欄は閉じず、選択中の項目にチェックの印(aria-pressed)が付く', () => {
+    render(<Harness />)
+    pickMany('出どころ', '手入力')
+    const dialog = screen.getByRole('dialog', { name: '出どころ' })
+    expect(within(dialog).getByRole('button', { name: '手入力' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(dialog).getByRole('button', { name: '外部明細' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('「指定なし」を押すと、その軸の選択だけがすべて消える', () => {
+    const onFilter = vi.fn()
+    render(<Harness initial={{ householdMemberIds: [4, 5], sourceTypes: ['manual'] }} onFilter={onFilter} />)
+    pickMany('世帯メンバー', '指定なし')
+    expect(onFilter).toHaveBeenLastCalledWith({ sourceTypes: ['manual'] })
+  })
+
+  it('選択中の値がグループだけでも、項目だけでも、条件の数は軸ごとに1件', () => {
+    render(<JournalFilterPopup filter={{ accountIds: [1, 9], accountGroupIds: [10], sourceTypes: ['manual'] }} options={options} onChange={() => {}} />)
+    expect(screen.getByRole('button', { name: '絞り込み(2)' })).toBeInTheDocument()
+  })
+})
+
+describe('JournalFilterPopup: 中のツリー選択の操作(計画Issue #203)', () => {
+  function PopupHarness() {
+    const [filter, setFilter] = useState<JournalEntryFilter>({})
+    return <JournalFilterPopup filter={filter} options={options} onChange={setFilter} />
+  }
+
+  it('ポップアップの中でツリー選択の項目を押しても、絞り込み全体のポップアップは閉じない', () => {
+    render(<PopupHarness />)
+    fireEvent.click(screen.getByRole('button', { name: '絞り込み' }))
+    fireEvent.click(screen.getByRole('button', { name: /^出どころ:/ }))
+    const tree = screen.getByRole('dialog', { name: '出どころ' })
+    // ツリーの一覧はdocument.bodyへ描画されるため、DOM上は絞り込みの外にある
+    fireEvent.pointerDown(within(tree).getByRole('button', { name: '手入力' }))
+    fireEvent.click(within(tree).getByRole('button', { name: '手入力' }))
+    expect(screen.getByRole('search', { name: '仕訳の絞り込み' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^出どころ:/ })).toHaveTextContent('手入力')
+  })
+
+  it('ツリー選択の外側(絞り込みの外)を押すと、絞り込み全体が閉じる', () => {
+    render(
+      <div>
+        <button type="button">外側</button>
+        <PopupHarness />
+      </div>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '絞り込み' }))
+    fireEvent.click(screen.getByRole('button', { name: /^出どころ:/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '外側' }))
+    expect(screen.queryByRole('search')).toBeNull()
   })
 })

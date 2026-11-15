@@ -14,7 +14,9 @@ function isActive<T>(values: readonly T[] | undefined): values is readonly T[] {
  * 摘要・金額の範囲・取引先・精算バッチ(未割当を含む)・作成経路・複数選択・グループ指定
  * (配下すべてを対象)を、AND条件で組み合わせる。各軸は「仕訳内のいずれかの明細行が条件に
  * 一致すればその仕訳を含める」(行単位ではなく仕訳単位でフィルタする)ため、複数の軸を
- * 別々の明細行で満たしてもヒットする。1つの軸の中の複数指定はOR。
+ * 別々の明細行で満たしてもヒットする。1つの軸の中の複数指定はOR。科目・取引先・プロジェクトで
+ * 同じ軸の項目指定(accountIds等)とグループ指定(accountGroupIds等)を併用した場合もOR(計画Issue #203)。
+ * 互換用の単一指定(accountId等)は従来どおりAND。
  * 世帯メンバーの判定は明細行のhouseholdMemberIdと直接比較する(明細行は常に実際の世帯メンバーを
  * 持つ、docs/domain/household-members.md 1.2節、計画Issue #169)。
  * グループ指定の展開にはcontext(グループ・取引先・プロジェクトのマスタ)を渡す。DB非依存の純粋関数。
@@ -75,15 +77,33 @@ export function filterJournalEntries(
     }
 
     if (sourceTypeSet !== null && !sourceTypeSet.has(entry.sourceType)) return false
-    if (accountIdSet !== null && !anyLine(entry, (line) => accountIdSet.has(line.accountId))) return false
-    if (projectIdSet !== null && !anyLine(entry, (line) => line.projectId !== null && projectIdSet.has(line.projectId))) {
-      return false
+    // 項目指定とグループ指定は同じ軸の中でOR(計画Issue #203)。どちらか一方でも指定があれば、
+    // いずれかの明細行が項目指定またはグループ指定のどちらかに該当することを求める
+    if (accountIdSet !== null || accountGroupSet !== null) {
+      const matches = anyLine(entry, (line) => {
+        if (accountIdSet?.has(line.accountId)) return true
+        const groupId = accountsById.get(line.accountId)?.accountGroupId ?? null
+        return groupId !== null && (accountGroupSet?.has(groupId) ?? false)
+      })
+      if (!matches) return false
     }
-    if (
-      counterpartyIdSet !== null &&
-      !anyLine(entry, (line) => line.counterpartyId !== null && counterpartyIdSet.has(line.counterpartyId))
-    ) {
-      return false
+    if (projectIdSet !== null || projectGroupSet !== null) {
+      const matches = anyLine(entry, (line) => {
+        if (line.projectId === null) return false
+        if (projectIdSet?.has(line.projectId)) return true
+        const groupId = projectGroupById.get(line.projectId) ?? null
+        return groupId !== null && (projectGroupSet?.has(groupId) ?? false)
+      })
+      if (!matches) return false
+    }
+    if (counterpartyIdSet !== null || counterpartyGroupSet !== null) {
+      const matches = anyLine(entry, (line) => {
+        if (line.counterpartyId === null) return false
+        if (counterpartyIdSet?.has(line.counterpartyId)) return true
+        const groupId = counterpartyGroupById.get(line.counterpartyId) ?? null
+        return groupId !== null && (counterpartyGroupSet?.has(groupId) ?? false)
+      })
+      if (!matches) return false
     }
     if (
       memberIdSet !== null &&
@@ -101,28 +121,6 @@ export function filterJournalEntries(
         (line) => line.settlementBatchId !== null && batchIds.has(line.settlementBatchId),
       )
       if (!(matchesBatch || (wantsUnassigned && !hasAnyTag))) return false
-    }
-
-    if (accountGroupSet !== null) {
-      const matches = anyLine(entry, (line) => {
-        const groupId = accountsById.get(line.accountId)?.accountGroupId ?? null
-        return groupId !== null && accountGroupSet.has(groupId)
-      })
-      if (!matches) return false
-    }
-    if (counterpartyGroupSet !== null) {
-      const matches = anyLine(entry, (line) => {
-        const groupId = line.counterpartyId === null ? null : (counterpartyGroupById.get(line.counterpartyId) ?? null)
-        return groupId !== null && counterpartyGroupSet.has(groupId)
-      })
-      if (!matches) return false
-    }
-    if (projectGroupSet !== null) {
-      const matches = anyLine(entry, (line) => {
-        const groupId = line.projectId === null ? null : (projectGroupById.get(line.projectId) ?? null)
-        return groupId !== null && projectGroupSet.has(groupId)
-      })
-      if (!matches) return false
     }
 
     return true

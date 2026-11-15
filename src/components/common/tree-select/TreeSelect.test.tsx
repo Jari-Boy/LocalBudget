@@ -5,6 +5,9 @@
  * 入れ子のグループ・折りたたみを持つ。グループごとの選択は任意で許可でき、外側のクリックと
  * Escで閉じ、キーボードだけで操作できることを検証する。無効(disabled)のときは、現在の値を表示したまま
  * 押せず開かないこと(承認待ちの定期仕訳パネルで、行の2段目を読み取り専用で見せるために使う、計画Issue #164)も検証する。
+ * 計画Issue #203で追加した複数選択モード(multiple)も検証する。項目・グループを複数選べ、選んでも
+ * ポップアップが閉じず、選択中の項目にチェックが付き、ボタンに「先頭 ほか○件」を出し、
+ * 「指定なし」で選択をすべて消せること。単一モードの挙動は前半のテストが保証する。
  * 外部依存なし(DB・Repositoryに依存せず、汎用のノード型だけを受け取る)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -34,7 +37,10 @@ const categories: TreeSelectCategory[] = [
   { key: 'revenue', name: '収益', nodes: [item('給与')] },
 ]
 
-function renderSelect(overrides: Partial<TreeSelectProps> = {}) {
+type SingleProps = Extract<TreeSelectProps, { value: string }>
+type MultiProps = Extract<TreeSelectProps, { multiple: true }>
+
+function renderSelect(overrides: Partial<SingleProps> = {}) {
   const onChange = vi.fn()
   const view = render(
     <div>
@@ -236,5 +242,109 @@ describe('TreeSelect(無効、計画Issue #164)', () => {
     expect(trigger()).toBeDisabled()
     fireEvent.click(trigger())
     expect(screen.queryByRole('dialog', { name: '科目' })).not.toBeInTheDocument()
+  })
+})
+
+describe('TreeSelect: 複数選択モード(計画Issue #203)', () => {
+  function renderMulti(values: string[] = [], overrides: Partial<MultiProps> = {}) {
+    const onValuesChange = vi.fn()
+    const view = render(
+      <div>
+        <button type="button">外側</button>
+        <TreeSelect
+          multiple
+          label="科目"
+          categories={categories}
+          values={values}
+          onValuesChange={onValuesChange}
+          allowGroupSelect
+          emptyLabel="指定なし"
+          {...overrides}
+        />
+      </div>,
+    )
+    return { onValuesChange, ...view }
+  }
+
+  it('未選択は「指定なし」、1件のときはその項目名、複数のときは「先頭 ほか○件」をボタンに出す', () => {
+    const { unmount } = renderMulti([])
+    expect(trigger()).toHaveTextContent('指定なし')
+    unmount()
+    const one = renderMulti(['外食'])
+    expect(trigger()).toHaveTextContent('外食')
+    one.unmount()
+    renderMulti(['外食', '雑費', '給与'])
+    expect(trigger()).toHaveTextContent('外食 ほか2件')
+  })
+
+  it('グループを含む選択は「グループ名(配下すべて)」と数え、ホバーの説明(title)に全件を出す', () => {
+    renderMulti(['g:food', '雑費'])
+    expect(trigger()).toHaveTextContent('食費(配下すべて) ほか1件')
+    expect(trigger()).toHaveAttribute('title', '食費(配下すべて)、雑費')
+  })
+
+  it('項目を押すと選択に追加してonValuesChangeを呼び、ポップアップは閉じない', () => {
+    const { onValuesChange } = renderMulti(['雑費'])
+    fireEvent.click(trigger())
+    fireEvent.click(within(popup()).getByRole('button', { name: '食費' }))
+    fireEvent.click(within(popup()).getByRole('button', { name: '外食' }))
+    expect(onValuesChange).toHaveBeenCalledWith(['雑費', '外食'])
+    expect(screen.getByRole('dialog', { name: '科目' })).toBeInTheDocument()
+  })
+
+  it('選択中の項目をもう一度押すと選択から外れる', () => {
+    const { onValuesChange } = renderMulti(['外食', '雑費'])
+    fireEvent.click(trigger())
+    fireEvent.click(within(popup()).getByRole('button', { name: '外食' }))
+    expect(onValuesChange).toHaveBeenCalledWith(['雑費'])
+  })
+
+  it('選択中の項目はaria-pressedで示し、選択中の項目を含むグループは最初から開いている', () => {
+    renderMulti(['外食'])
+    fireEvent.click(trigger())
+    expect(within(popup()).getByRole('button', { name: '外食' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(popup()).getByRole('button', { name: '雑費' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('グループの「すべて」はオン/オフで切り替わり、オンの間は配下の項目がグループ経由で対象と示される', () => {
+    const { onValuesChange } = renderMulti(['g:food'])
+    fireEvent.click(trigger())
+    const all = within(popup()).getByRole('button', { name: '食費をすべて選ぶ' })
+    expect(all).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(within(popup()).getByRole('button', { name: '食費' }))
+    const child = within(popup()).getByRole('button', { name: '外食' })
+    expect(child).toHaveAttribute('aria-pressed', 'false')
+    expect(child).toHaveAttribute('data-via-group', 'true')
+    fireEvent.click(all)
+    expect(onValuesChange).toHaveBeenCalledWith([])
+    expect(screen.getByRole('dialog', { name: '科目' })).toBeInTheDocument()
+  })
+
+  it('グループがオフの「すべて」を押すとグループを選択に追加する', () => {
+    const { onValuesChange } = renderMulti(['雑費'])
+    fireEvent.click(trigger())
+    fireEvent.click(within(popup()).getByRole('button', { name: '食費をすべて選ぶ' }))
+    expect(onValuesChange).toHaveBeenCalledWith(['雑費', 'g:food'])
+  })
+
+  it('「指定なし」を押すと選択をすべて消し、ポップアップは閉じない', () => {
+    const { onValuesChange } = renderMulti(['外食', '雑費'])
+    fireEvent.click(trigger())
+    fireEvent.click(within(popup()).getByRole('button', { name: '指定なし' }))
+    expect(onValuesChange).toHaveBeenCalledWith([])
+    expect(screen.getByRole('dialog', { name: '科目' })).toBeInTheDocument()
+  })
+
+  it('Escと外側のクリックとボタンの再押下で閉じる', () => {
+    renderMulti(['雑費'])
+    fireEvent.click(trigger())
+    fireEvent.keyDown(within(popup()).getByRole('searchbox'), { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(trigger())
+    fireEvent.pointerDown(screen.getByRole('button', { name: '外側' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(trigger())
+    fireEvent.click(trigger())
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })

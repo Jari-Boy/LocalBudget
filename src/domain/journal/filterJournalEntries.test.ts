@@ -376,6 +376,107 @@ describe('filterJournalEntries: 拡張した条件(計画Issue #145)', () => {
     })
   })
 
+  describe('同じ軸のグループ指定と項目指定の併用(OR、計画Issue #203)', () => {
+    const accounts = [
+      buildAccount(10, { accountGroupId: 1 }),
+      buildAccount(11, { accountGroupId: 2 }),
+      buildAccount(12, { accountGroupId: null }),
+      buildAccount(13, { accountGroupId: null }),
+    ]
+    const accountGroups = [
+      { id: 1, parentGroupId: null },
+      { id: 2, parentGroupId: null },
+    ]
+
+    it('科目グループと科目を併用すると、どちらかに該当する仕訳を返す', () => {
+      const entries = [10, 11, 12, 13].map((accountId, index) =>
+        buildEntry({ id: index + 1, entryDate: '2026-08-01', lines: [{ accountId }] }),
+      )
+
+      const result = filterJournalEntries(
+        entries,
+        accounts,
+        { accountGroupIds: [1], accountIds: [12] },
+        { accountGroups },
+      )
+
+      expect(ids(result)).toEqual([1, 3])
+    })
+
+    it('取引先グループと取引先を併用すると、どちらかに該当する仕訳を返す', () => {
+      const counterparties = [
+        { id: 5, counterpartyGroupId: 1 },
+        { id: 6, counterpartyGroupId: null },
+        { id: 7, counterpartyGroupId: null },
+      ]
+      const counterpartyGroups = [{ id: 1, parentGroupId: null }]
+      const entries = [5, 6, 7].map((counterpartyId, index) =>
+        buildEntry({ id: index + 1, entryDate: '2026-08-01', lines: [{ accountId: 10, counterpartyId }] }),
+      )
+
+      const result = filterJournalEntries(
+        entries,
+        accounts,
+        { counterpartyGroupIds: [1], counterpartyIds: [6] },
+        { counterparties, counterpartyGroups },
+      )
+
+      expect(ids(result)).toEqual([1, 2])
+    })
+
+    it('プロジェクトグループとプロジェクトを併用すると、どちらかに該当する仕訳を返す', () => {
+      const projects = [
+        { id: 7, projectGroupId: 1 },
+        { id: 8, projectGroupId: null },
+        { id: 9, projectGroupId: null },
+      ]
+      const projectGroups = [{ id: 1, parentGroupId: null }]
+      const entries = [7, 8, 9].map((projectId, index) =>
+        buildEntry({ id: index + 1, entryDate: '2026-08-01', lines: [{ accountId: 10, projectId }] }),
+      )
+
+      const result = filterJournalEntries(
+        entries,
+        accounts,
+        { projectGroupIds: [1], projectIds: [9] },
+        { projects, projectGroups },
+      )
+
+      expect(ids(result)).toEqual([1, 3])
+    })
+
+    it('グループ指定と項目指定を併用しても、別の軸とはANDで結合される', () => {
+      const entries = [
+        buildEntry({ id: 1, entryDate: '2026-08-01', memo: '食費', lines: [{ accountId: 10 }] }),
+        buildEntry({ id: 2, entryDate: '2026-08-01', memo: '交通', lines: [{ accountId: 12 }] }),
+      ]
+
+      const result = filterJournalEntries(
+        entries,
+        accounts,
+        { accountGroupIds: [1], accountIds: [12], memo: '交通' },
+        { accountGroups },
+      )
+
+      expect(ids(result)).toEqual([2])
+    })
+
+    it('互換用の単一指定(accountId)は、グループ・項目の併用結果とANDのまま', () => {
+      const entries = [10, 12, 13].map((accountId, index) =>
+        buildEntry({ id: index + 1, entryDate: '2026-08-01', lines: [{ accountId }] }),
+      )
+
+      const result = filterJournalEntries(
+        entries,
+        accounts,
+        { accountId: 12, accountGroupIds: [1], accountIds: [12] },
+        { accountGroups },
+      )
+
+      expect(ids(result)).toEqual([2])
+    })
+  })
+
   describe('複数条件の組み合わせ(AND)と、別々の明細行での充足', () => {
     it('複数の条件はすべて満たす仕訳だけを返す(AND)', () => {
       const entries = [

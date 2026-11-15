@@ -161,3 +161,32 @@
   color: var(--color-accent);
   font-weight: 600;
 }
+
+/* 複数選択(計画Issue #203): 選択中は薄い緑の背景と太字に、右端のチェックを足す */
+.tree-select__item--multi {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.tree-select__check {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+/* グループ経由で対象になっている項目は、グレーの文字とチェックで示す */
+.tree-select__item[data-via-group='true']:not(.tree-select__item--selected) {
+  color: var(--color-text-muted);
+}
+
+.tree-select__item[data-via-group='true']:not(.tree-select__item--selected) .tree-select__check {
+  color: var(--color-text-muted);
+}
+
+.tree-select__select-all--on {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 700;
+}

@@ -2,6 +2,8 @@
  * 選択ツリーの表示行を組み立てる純粋関数(buildTreeSelectRows)のテスト(計画Issue #150)。
  * 区分の見出し・入れ子グループ・検索・無効項目の除外・開閉の初期状態を検証する。
  * 科目・取引先・プロジェクトで共通に使うため、ドメインの型には依存せず汎用のノード型だけを使う。
+ * 計画Issue #203で追加した複数選択(selectedValues: 複数の項目・グループの選択状態、グループ経由で
+ * 対象になる項目の印、選択中の項目を含むグループの初期展開)も検証する。
  * 外部依存なし(DB・DOMに依存しない)。
  */
 import { describe, expect, it } from 'vitest'
@@ -141,5 +143,66 @@ describe('buildTreeSelectRows', () => {
     const rows = buildTreeSelectRows({ categories: [expense], selectedValue: '', query: '', openOverrides: {} })
     const food = rows.find((r) => r.type === 'group' && r.name === '食費')
     expect(food && food.type === 'group' && food.value).toBe('g:food')
+  })
+})
+
+describe('buildTreeSelectRows: 複数選択(計画Issue #203)', () => {
+  const build = (selectedValues: string[], extra: Partial<Parameters<typeof buildTreeSelectRows>[0]> = {}) =>
+    buildTreeSelectRows({ categories: [expense], selectedValue: '', selectedValues, query: '', openOverrides: {}, ...extra })
+
+  it('複数の項目が選択中になり、どれもisSelectedが付く', () => {
+    const rows = build(['電気', '雑費'])
+    const selected = rows.filter((r) => r.type === 'item' && r.isSelected)
+    expect(selected.map((r) => r.name)).toEqual(['電気', '雑費'])
+  })
+
+  it('選択中の項目を含むグループは、複数あるときすべて最初から開く', () => {
+    const rows = build(['電気', '外食'])
+    const groups = rows.filter((r) => r.type === 'group')
+    expect(groups.map((g) => [g.name, g.isOpen])).toEqual([
+      ['食費', true],
+      ['住居', true],
+      ['光熱費', true],
+    ])
+  })
+
+  it('グループが選択中のとき、そのグループ行にisSelectedが付く', () => {
+    const rows = build(['g:food'])
+    const food = rows.find((r) => r.type === 'group' && r.name === '食費')
+    expect(food && food.type === 'group' && food.isSelected).toBe(true)
+    const living = rows.find((r) => r.type === 'group' && r.name === '住居')
+    expect(living && living.type === 'group' && living.isSelected).toBe(false)
+  })
+
+  it('選択中のグループの配下の項目は、グループ経由で対象であることを示すisViaGroupが付く(入れ子を含む)', () => {
+    const rows = build(['g:living'], { openOverrides: { living: true, utility: true } })
+    const via = rows.filter((r) => r.type === 'item' && r.isViaGroup).map((r) => r.name)
+    expect(via).toEqual(['電気', 'ガス', '家賃'])
+    const own = rows.filter((r) => r.type === 'item' && r.isSelected)
+    expect(own).toEqual([])
+  })
+
+  it('項目自体も選択中ならisSelectedとisViaGroupの両方が付く', () => {
+    const rows = build(['g:food', '外食'], { openOverrides: { food: true } })
+    const food = rows.find((r) => r.type === 'item' && r.name === '外食')
+    expect(food && food.type === 'item' && [food.isSelected, food.isViaGroup]).toEqual([true, true])
+  })
+
+  it('無効な項目も、選択中なら表示される', () => {
+    const inactive: TreeSelectCategory = { key: 'k', name: '', nodes: [item('旧科目', '旧科目', false), item('現科目')] }
+    const rows = buildTreeSelectRows({
+      categories: [inactive],
+      selectedValue: '',
+      selectedValues: ['旧科目'],
+      query: '',
+      openOverrides: {},
+    })
+    expect(labels(rows)).toEqual(['item:旧科目', 'item:現科目'])
+  })
+
+  it('selectedValuesを省略すると、従来のselectedValueの単一選択として動く', () => {
+    const rows = buildTreeSelectRows({ categories: [expense], selectedValue: '雑費', query: '', openOverrides: {} })
+    expect(rows.filter((r) => r.type === 'item' && r.isSelected).map((r) => r.name)).toEqual(['雑費'])
+    expect(rows.some((r) => r.type === 'item' && r.isViaGroup)).toBe(false)
   })
 })

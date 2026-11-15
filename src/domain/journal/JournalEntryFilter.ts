@@ -11,8 +11,10 @@ import type { JournalEntrySourceType } from './JournalEntry'
  * 追加した。判定は従来どおり仕訳全体で行い、複数の軸を別々の明細行で満たしてもヒットする
  * (例: クレジットカードの行と食費の行を持つ仕訳が「楽天カードで払った食費」にヒットする)。
  * 1つの軸の中で複数の値を指定した場合(accountIds等)は、いずれかに一致すればよい(OR)。
+ * 同じ軸の項目指定(accountIds等)とグループ指定(accountGroupIds等)を併用した場合も、
+ * どちらかに該当すればよい(OR、計画Issue #203)。
  * 空配列は絞り込みなしとして扱う。従来の単一指定(accountId等)は互換のため残しており、
- * 同じ軸の複数指定と同時に指定した場合は、両方を満たす仕訳だけを返す。
+ * 同じ軸の複数指定と同時に指定した場合は、両方を満たす仕訳だけを返す(AND)。
  */
 export interface JournalEntryFilter {
   /** 取引日(entry_date)がこの日付以降の仕訳のみを対象にする(YYYY-MM-DD) */

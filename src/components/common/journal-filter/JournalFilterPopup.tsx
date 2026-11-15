@@ -18,7 +18,11 @@ export function JournalFilterPopup(props: JournalFilterPanelProps) {
   useEffect(() => {
     if (!isOpen) return
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setIsOpen(false)
+      const target = event.target as Node
+      if (rootRef.current?.contains(target)) return
+      // 選択ツリーの一覧はdocument.bodyへ描画され、DOM上は絞り込みの外にある。その中の操作では閉じない(計画Issue #203)
+      if (target instanceof Element && target.closest('.tree-select__popup') !== null) return
+      setIsOpen(false)
     }
     document.addEventListener('pointerdown', onPointerDown)
     return () => document.removeEventListener('pointerdown', onPointerDown)
