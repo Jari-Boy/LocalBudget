@@ -39,12 +39,19 @@ function renderShell(path: string, pendingProposalCount = 0) {
 const nav = () => screen.getByRole('navigation', { name: 'メインメニュー' })
 
 describe('AppShell', () => {
-  it('サイドナビに仕訳・マスタ・明細取込・割勘・精算・分析・操作履歴・設定の順で並ぶ', () => {
+  it('サイドナビに仕訳・マスタ・明細取込・割勘・精算・分析・操作履歴・用語集・設定の順で並ぶ', () => {
     renderShell('/journal/entries')
     const labels = within(nav())
       .getAllByRole('link')
       .map((a) => a.textContent)
-    expect(labels).toEqual(['仕訳', 'マスタ', '明細取込', '割勘・精算', '分析', '操作履歴', '設定'])
+    expect(labels).toEqual(['仕訳', 'マスタ', '明細取込', '割勘・精算', '分析', '操作履歴', '用語集', '設定'])
+  })
+
+  it('「用語集」はクリックすると用語集の画面へ移動して強調される(計画Issue #177)', () => {
+    renderShell('/journal/entries')
+    fireEvent.click(within(nav()).getByRole('link', { name: '用語集' }))
+    expect(screen.getByTestId('where')).toHaveTextContent('/glossary')
+    expect(within(nav()).getByRole('link', { name: '用語集' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('「操作履歴」は区切り線の後ろに置き、クリックすると操作履歴画面へ移動して強調される(計画Issue #202)', () => {
