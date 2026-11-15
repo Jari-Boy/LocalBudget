@@ -189,3 +189,7 @@
 **未確認(調査で確かめられなかったこと)**: Dropbox・OneDrive・Google ドライブが競合を検出したときの「競合コピー」の命名と、元のファイルがどちらの内容になるか。プレースホルダー状態での`getFile()`の挙動。同期クライアントが自分の保存の直後に更新日時を書き換えるかどうか。今後、実機で誤検知や見逃しが報告されたら、ここに追記し、検知の粒度(日時のみ/サイズ併用)を見直す。
 
 **参考**: [Limitations of online-only placeholder files(Bombich)](https://bombich.com/kb/ccc5/limitations-online-only-placeholder-files)、[Files On-Demand for macOS Q&A(Microsoft Tech Community)](https://techcommunity.microsoft.com/t5/onedrive/files-on-demand-for-macos-qa/m-p/3186789)
+
+## Windows上のPythonスクリプトで日本語・改行を含むファイルを書き換えるときは`newline=''`を指定する(計画Issue #205)
+
+`open(path, 'w', encoding='utf-8')`のままだと、Windowsでは`\n`が`\r\n`に変換され、LF運用のファイルの全行が差分になったり、`\r\n`の読み込みで二重に変換されたりする。一括置換などでスクリプトを使うときは、読み書きとも`encoding='utf-8', newline=''`を指定して改行をそのまま保つ。置換後は`git diff --stat`で意図しない全行差分がないか確認する。
