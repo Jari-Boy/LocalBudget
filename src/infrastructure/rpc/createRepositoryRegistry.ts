@@ -16,6 +16,8 @@ import type {
 } from '../../domain/journal/JournalEntryDraft'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import type { JournalEntryLinkGroupRepository } from '../../domain/journal-link-group/JournalEntryLinkGroupRepository'
+import type { JournalTemplateRepository } from '../../domain/journal-template/JournalTemplateRepository'
+import type { JournalTemplateGroupRepository } from '../../domain/journal-template-group/JournalTemplateGroupRepository'
 import type { ProjectRepository } from '../../domain/project/ProjectRepository'
 import type { ProjectGroupRepository } from '../../domain/project-group/ProjectGroupRepository'
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
@@ -31,6 +33,8 @@ import { SqlJsImportMappingDefinitionRepository } from '../db/SqlJsImportMapping
 import { SqlJsJournalEntryDraftRepository } from '../db/SqlJsJournalEntryDraftRepository'
 import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsJournalEntryLinkGroupRepository } from '../db/SqlJsJournalEntryLinkGroupRepository'
+import { SqlJsJournalTemplateRepository } from '../db/SqlJsJournalTemplateRepository'
+import { SqlJsJournalTemplateGroupRepository } from '../db/SqlJsJournalTemplateGroupRepository'
 import { SqlJsProjectRepository } from '../db/SqlJsProjectRepository'
 import { SqlJsProjectGroupRepository } from '../db/SqlJsProjectGroupRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTransactionRuleRepository'
@@ -85,6 +89,10 @@ export interface RepositoryRegistry {
   journalEntryDraft: JournalEntryDraftRpcApi
   /** 関連仕訳グループ(計画Issue #138)。表示専用、残高計算・消込判定には関与しない */
   journalEntryLinkGroup: JournalEntryLinkGroupRepository
+  /** 仕訳テンプレート(計画Issue #201)。起票時に新規仕訳フォームへ展開するひな形で、仕訳・集計には関与しない */
+  journalTemplate: JournalTemplateRepository
+  /** 仕訳テンプレートのグループ(計画Issue #201)。表示専用 */
+  journalTemplateGroup: JournalTemplateGroupRepository
   project: ProjectRepository
   /** プロジェクトグループ(計画Issue #143)。表示専用、集計には関与しない */
   projectGroup: ProjectGroupRepository
@@ -145,6 +153,8 @@ export function createRepositoryRegistry(
       confirm: (id) => journalEntryDraftRepository.confirm(id, journalEntryRepository),
     },
     journalEntryLinkGroup: new SqlJsJournalEntryLinkGroupRepository(db),
+    journalTemplate: new SqlJsJournalTemplateRepository(db),
+    journalTemplateGroup: new SqlJsJournalTemplateGroupRepository(db),
     project: new SqlJsProjectRepository(db),
     projectGroup: new SqlJsProjectGroupRepository(db),
     settlementBatch: new SqlJsSettlementBatchRepository(db),

@@ -3,6 +3,7 @@ import { JournalLineHouseholdMemberRequiredError } from '../../domain/journal/Jo
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
+import { InvalidJournalTemplateError } from '../../domain/journal-template/InvalidJournalTemplateError'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
 import { MappingColumnNotFoundError } from '../../domain/statement-import/MappingColumnNotFoundError'
 import { InvalidBackupFileError } from '../backup/InvalidBackupFileError'
@@ -36,6 +37,7 @@ const DOMAIN_ERROR_REVIVERS: Record<string, DomainErrorReviver> = {
   JournalLineHouseholdMemberRequiredError: () => new JournalLineHouseholdMemberRequiredError(),
   NoBalanceDiscrepancyError: () => new NoBalanceDiscrepancyError(),
   InvalidRecurringScheduleError: (message) => new InvalidRecurringScheduleError(message),
+  InvalidJournalTemplateError: (message) => new InvalidJournalTemplateError(message),
   RecurringTransactionHouseholdMemberRequiredError: (_message, extra) =>
     new RecurringTransactionHouseholdMemberRequiredError(extra.ruleId as number),
   MappingColumnNotFoundError: (_message, extra) =>

@@ -11,6 +11,7 @@ import { JournalLineHouseholdMemberRequiredError } from '../../domain/journal/Jo
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
+import { InvalidJournalTemplateError } from '../../domain/journal-template/InvalidJournalTemplateError'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
 import { MappingColumnNotFoundError } from '../../domain/statement-import/MappingColumnNotFoundError'
 import { InvalidBackupFileError } from '../backup/InvalidBackupFileError'
@@ -97,6 +98,16 @@ describe('serializeDomainError / deserializeDomainError', () => {
 
     expect(revived).toBeInstanceOf(InvalidRecurringScheduleError)
     expect(revived.message).toBe('monthly requires day_of_month')
+  })
+
+  it('InvalidJournalTemplateErrorのmessageを保持して往復する(計画Issue #201)', () => {
+    const original = new InvalidJournalTemplateError('journal template must have at least 2 lines')
+
+    const revived = deserializeDomainError(serializeDomainError(original))
+
+    expect(isDomainError(original)).toBe(true)
+    expect(revived).toBeInstanceOf(InvalidJournalTemplateError)
+    expect(revived.message).toBe('journal template must have at least 2 lines')
   })
 
   it('MappingColumnNotFoundErrorのfieldName/columnSpecを保持して往復する', () => {

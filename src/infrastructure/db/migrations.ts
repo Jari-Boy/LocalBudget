@@ -10,8 +10,9 @@ import budgetsSql from '../../../docs/schema/budgets.sql?raw'
 import recurringTransactionsSql from '../../../docs/schema/recurring_transactions.sql?raw'
 import reconciliationSql from '../../../docs/schema/reconciliation.sql?raw'
 import statementImportSql from '../../../docs/schema/statement_import.sql?raw'
+import journalTemplatesSql from '../../../docs/schema/journal_templates.sql?raw'
 
-export const LATEST_SCHEMA_VERSION = 1
+export const LATEST_SCHEMA_VERSION = 2
 
 // household_members → accounts(household_membersを参照) → projects/counterparties
 // → settlement_batches(counterpartiesを参照) → journal(accounts/projects/counterparties/
@@ -31,6 +32,10 @@ const MIGRATIONS: Record<number, readonly string[]> = {
     reconciliationSql,
     statementImportSql,
   ],
+  // 仕訳テンプレート(計画Issue #201)。新しい表を足すだけなので、バージョン1のDBには差分として適用する。
+  // 旧バックアップの取込を止めないよう、assertValidDatabaseSchemaの必須テーブルには加えない。
+  // household_members/accounts/projects/counterparties/settlement_batchesを参照するためバージョン1の後に置く
+  2: [journalTemplatesSql],
 }
 
 export function runMigrations(db: Database): void {
