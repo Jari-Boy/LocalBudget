@@ -8,13 +8,10 @@ import {
 } from './treeSelectModel'
 import './TreeSelect.css'
 
-export interface TreeSelectProps {
+interface TreeSelectBaseProps {
   /** 項目の名称(ボタンの前置き・検索欄・ポップアップのラベルに使う) */
   label: string
   categories: readonly TreeSelectCategory[]
-  /** 項目の値、または「g:グループID」。未選択は空文字 */
-  value: string
-  onChange: (value: string) => void
   /** trueのとき、グループごと選択するボタン(「すべて」)を出す */
   allowGroupSelect?: boolean
   /** 渡すと、先頭に選択解除の項目(値は空文字)を出す */
@@ -28,6 +25,28 @@ export interface TreeSelectProps {
   /** trueのとき、現在の値は表示したまま押せなくする(読み取り専用の表示、計画Issue #164) */
   disabled?: boolean
 }
+
+/** 単一選択(従来の動き)。項目を選ぶと閉じる */
+interface TreeSelectSingleProps {
+  multiple?: false
+  /** 項目の値、または「g:グループID」。未選択は空文字 */
+  value: string
+  onChange: (value: string) => void
+}
+
+/**
+ * 複数選択(計画Issue #203)。項目・グループを複数選べ、選んでも閉じない(閉じるのはボタンの再押下・Esc・外側のクリック)。
+ * 選択中の項目にはチェックを出す。グループの「すべて」はオン/オフで切り替わり、オンの間は配下の項目を
+ * グループ経由で対象として示す。emptyLabelの項目は選択をすべて消す。
+ */
+interface TreeSelectMultiProps {
+  multiple: true
+  /** 選択中の値(項目の値と「g:グループID」の混在)。未選択は空配列 */
+  values: readonly string[]
+  onValuesChange: (values: string[]) => void
+}
+
+export type TreeSelectProps = TreeSelectBaseProps & (TreeSelectSingleProps | TreeSelectMultiProps)
 
 function findGroupName(nodes: readonly TreeSelectNode[], id: string): string | undefined {
   for (const node of nodes) {
@@ -51,24 +70,46 @@ function findItemName(nodes: readonly TreeSelectNode[], value: string): string |
   return undefined
 }
 
+/** 値(項目の値または「g:グループID」)の表示名。見つからなければ値そのもの */
+function nameOfValue(categories: readonly TreeSelectCategory[], value: string): string {
+  if (value.startsWith(GROUP_VALUE_PREFIX)) {
+    const id = value.slice(GROUP_VALUE_PREFIX.length)
+    for (const category of categories) {
+      const name = findGroupName(category.nodes, id)
+      if (name !== undefined) return `${name}(配下すべて)`
+    }
+    return value
+  }
+  for (const category of categories) {
+    const name = findItemName(category.nodes, value)
+    if (name !== undefined) return name
+  }
+  return value
+}
+
 /**
  * 科目・取引先・プロジェクトで共通の選択ツリー(計画Issue #150)。ボタンの直下に開き、
  * 検索欄・区分の見出し・入れ子のグループ・折りたたみを持つ。選択中の項目を含むグループだけ
  * 最初から開く。無効な項目は選択中のものを除いて出さない。外側のクリックとEscで閉じる。
  * 表示行の組み立ては純粋関数(buildTreeSelectRows)に切り出している。
  */
-export function TreeSelect({
-  label,
-  categories,
-  value,
-  onChange,
-  allowGroupSelect = false,
-  emptyLabel,
-  placeholder = '指定なし',
-  onCreate,
-  createLabel = '新規追加',
-  disabled = false,
-}: TreeSelectProps) {
+export function TreeSelect(props: TreeSelectProps) {
+  const {
+    label,
+    categories,
+    allowGroupSelect = false,
+    emptyLabel,
+    placeholder = '指定なし',
+    onCreate,
+    createLabel = '新規追加',
+    disabled = false,
+  } = props
+  const isMulti = props.multiple === true
+  const selectedValues = useMemo<readonly string[]>(
+    () => (props.multiple === true ? props.values : props.value === '' ? [] : [props.value]),
+    [props],
+  )
+  const value = props.multiple === true ? '' : props.value
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [openOverrides, setOpenOverrides] = useState<Record<string, boolean>>({})
@@ -81,26 +122,29 @@ export function TreeSelect({
   const popupId = useId()
 
   const rows = useMemo(
-    () => buildTreeSelectRows({ categories, selectedValue: value, query, openOverrides }),
-    [categories, value, query, openOverrides],
+    () =>
+      buildTreeSelectRows({
+        categories,
+        selectedValue: value,
+        selectedValues: isMulti ? selectedValues : undefined,
+        query,
+        openOverrides,
+      }),
+    [categories, value, isMulti, selectedValues, query, openOverrides],
   )
 
-  const selectedText = useMemo(() => {
-    if (value === '') return placeholder
-    if (value.startsWith(GROUP_VALUE_PREFIX)) {
-      const id = value.slice(GROUP_VALUE_PREFIX.length)
-      for (const category of categories) {
-        const name = findGroupName(category.nodes, id)
-        if (name !== undefined) return `${name}(配下すべて)`
-      }
-      return value
-    }
-    for (const category of categories) {
-      const name = findItemName(category.nodes, value)
-      if (name !== undefined) return name
-    }
-    return value
-  }, [categories, value, placeholder])
+  const selectedNames = useMemo(
+    () => selectedValues.map((selectedValue) => nameOfValue(categories, selectedValue)),
+    [categories, selectedValues],
+  )
+  const selectedText =
+    selectedNames.length === 0
+      ? placeholder
+      : selectedNames.length === 1
+        ? selectedNames[0]
+        : `${selectedNames[0]} ほか${selectedNames.length - 1}件`
+  // 複数選択のときは、ホバーですべての選択を確認できるようにする
+  const selectedTitle = selectedNames.length > 1 ? selectedNames.join('、') : undefined
 
   // ポップアップは画面全体に固定して描画する。表のようにoverflowで切れる親の中でも見切れないようにするため。
   // ボタンの直下に出し、下に十分な余白が無く上の方が広ければ上に出す。スクロール・リサイズに追従する。
@@ -152,7 +196,18 @@ export function TreeSelect({
   }
 
   const choose = (next: string) => {
-    onChange(next)
+    if (props.multiple === true) {
+      // 複数選択は選んでも閉じない。選択中なら外し、そうでなければ末尾に足す
+      props.onValuesChange(
+        next === ''
+          ? []
+          : props.values.includes(next)
+            ? props.values.filter((current) => current !== next)
+            : [...props.values, next],
+      )
+      return
+    }
+    props.onChange(next)
     close()
   }
 
@@ -183,7 +238,8 @@ export function TreeSelect({
       <button
         type="button"
         ref={triggerRef}
-        className={`tree-select__trigger${value === '' ? ' tree-select__trigger--empty' : ''}`}
+        className={`tree-select__trigger${selectedValues.length === 0 ? ' tree-select__trigger--empty' : ''}`}
+        title={selectedTitle}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-controls={isOpen ? popupId : undefined}
@@ -220,9 +276,9 @@ export function TreeSelect({
             {emptyLabel !== undefined && query.trim() === '' && (
               <button
                 type="button"
-                className={`tree-select__item${value === '' ? ' tree-select__item--selected' : ''}`}
+                className={`tree-select__item${selectedValues.length === 0 ? ' tree-select__item--selected' : ''}`}
                 style={{ paddingLeft: 8 }}
-                aria-current={value === '' ? 'true' : undefined}
+                aria-current={selectedValues.length === 0 ? 'true' : undefined}
                 onClick={() => choose('')}
               >
                 {emptyLabel}
@@ -253,8 +309,9 @@ export function TreeSelect({
                     {allowGroupSelect && (
                       <button
                         type="button"
-                        className="tree-select__select-all"
+                        className={`tree-select__select-all${row.isSelected ? ' tree-select__select-all--on' : ''}`}
                         aria-label={`${row.name}をすべて選ぶ`}
+                        aria-pressed={isMulti ? row.isSelected : undefined}
                         onClick={() => choose(row.value)}
                       >
                         すべて
@@ -267,12 +324,19 @@ export function TreeSelect({
                 <button
                   key={`i:${row.value}`}
                   type="button"
-                  className={`tree-select__item${row.isSelected ? ' tree-select__item--selected' : ''}`}
+                  className={`tree-select__item${row.isSelected ? ' tree-select__item--selected' : ''}${isMulti ? ' tree-select__item--multi' : ''}`}
                   style={{ paddingLeft: row.indent }}
-                  aria-current={row.isSelected ? 'true' : undefined}
+                  aria-current={!isMulti && row.isSelected ? 'true' : undefined}
+                  aria-pressed={isMulti ? row.isSelected : undefined}
+                  data-via-group={isMulti && row.isViaGroup ? 'true' : undefined}
                   onClick={() => choose(row.value)}
                 >
-                  {row.name}
+                  <span>{row.name}</span>
+                  {isMulti && (row.isSelected || row.isViaGroup) && (
+                    <span aria-hidden="true" className="tree-select__check">
+                      ✓
+                    </span>
+                  )}
                 </button>
               )
             })}
