@@ -6,7 +6,7 @@
  * 自然なため、仕訳画面の「定期仕訳」タブに移した)。
  * 設定(計画Issue #173)は日々の記帳の領域ではないため、区切り線の後ろ(サイドナビの一番下)に置く。
  */
-export type AreaKey = 'journal' | 'master' | 'import' | 'split' | 'analysis' | 'settings'
+export type AreaKey = 'journal' | 'master' | 'import' | 'split' | 'analysis' | 'history' | 'settings'
 
 export interface AreaTab {
   /** common.jsonのnav.tab.*のキー */
@@ -43,7 +43,9 @@ export const AREAS: Area[] = [
   // 割勘・精算の「割勘」「精算」は、画面内のタブにした(計画Issue #153)
   { key: 'split', to: '/journal/splitting', prefixes: ['/journal/splitting'], tabs: [] },
   { key: 'analysis', to: '/reports/analysis', prefixes: ['/reports'], tabs: [] },
-  { key: 'settings', to: '/settings', prefixes: ['/settings'], tabs: [], separated: true },
+  // 操作履歴(計画Issue #202)は日々の記帳ではなく取り消しの道具なので、設定と並べて区切り線の後ろに置く
+  { key: 'history', to: '/history', prefixes: ['/history'], tabs: [], separated: true },
+  { key: 'settings', to: '/settings', prefixes: ['/settings'], tabs: [] },
 ]
 
 /** パスが接頭辞(セグメント境界で)に一致するか。 */

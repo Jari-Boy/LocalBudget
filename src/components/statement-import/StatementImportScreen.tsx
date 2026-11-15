@@ -30,6 +30,7 @@ import type { ApproximateDuplicateSearchOptions } from '../../domain/statement-i
 import { estimateCounterparty, normalizeDescriptionForMatching, type CounterpartyPatternLookup } from '../../domain/statement-import/estimateCounterparty'
 import { resolveMappingDefinitionCandidates, type MappingDefinitionCandidateMatch } from '../../domain/statement-import/resolveMappingDefinitionCandidates'
 import { suggestCounterpartyAccount, type CounterpartyLookup } from '../../domain/statement-import/suggestCounterpartyAccount'
+import { runInHistoryGroup, type HistoryGroupApi } from '../../infrastructure/history/historyGroupRunner'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
@@ -78,6 +79,8 @@ const DEFAULT_APPROXIMATE_DUPLICATE_OPTIONS: ApproximateDuplicateSearchOptions =
 }
 
 export interface StatementImportScreenProps {
+  /** 確定(複数の仕訳の作成)を操作履歴上1件にまとめる(計画Issue #202)。省略時はまとめない */
+  history?: HistoryGroupApi
   accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll' | 'create'>>
   accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
   importMappingDefinitionRepository: MaybeAsync<
@@ -178,6 +181,7 @@ interface ConfirmFailure {
  */
 export function StatementImportScreen(props: StatementImportScreenProps) {
   const {
+    history,
     accountRepository,
     accountGroupRepository,
     importMappingDefinitionRepository,
@@ -806,6 +810,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   /** 確定(docs/domain/statement-import.md 1.5手順7)。1件が失敗しても残りの確定を続ける(継続処理方式) */
   async function handleConfirm(): Promise<boolean> {
+    return runInHistoryGroup(history, 'statementImport.confirm', confirmImpl)
+  }
+
+  async function confirmImpl(): Promise<boolean> {
     if (!session || statementOwnerId === null) return false
     // 摘要から入るキーワード(「新規」)を直して不正にしたまま確定すると、気付かないまま登録が抜けるので、確定する前に止める
     const hasInvalidSuggestion = importable.some((index) => {

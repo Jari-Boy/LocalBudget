@@ -14,6 +14,7 @@ import {
   type ExpenseSplittingAllocationMode,
   type ExpenseSplittingParticipantRow,
 } from '../expense-splitting/expenseSplittingFormParticipant'
+import { runInHistoryGroup } from '../../infrastructure/history/historyGroupRunner'
 import { submitExpenseSplit, type SubmitExpenseSplitError } from '../expense-splitting/submitExpenseSplit'
 import type { SplitSettleData, SplitSettleDerived, SplitSettleRepositories } from './splitSettleData'
 import {
@@ -177,17 +178,19 @@ export function SplitTab({
     setError('')
     setFlash('')
     try {
-      const result = await submitExpenseSplit({
-        originalEntries: chosen.map((c) => c.entry),
-        accounts: data.accounts,
-        settlementBatches: data.batches,
-        participants: partners,
-        allocationMode: mode,
-        memo: memoInput.trim() === '' ? defaultMemo(chosen) : memoInput.trim(),
-        settlementBatchId: batchId,
-        today,
-        repositories,
-      })
+      const result = await runInHistoryGroup(repositories.history, 'expenseSplit.submit', () =>
+        submitExpenseSplit({
+          originalEntries: chosen.map((c) => c.entry),
+          accounts: data.accounts,
+          settlementBatches: data.batches,
+          participants: partners,
+          allocationMode: mode,
+          memo: memoInput.trim() === '' ? defaultMemo(chosen) : memoInput.trim(),
+          settlementBatchId: batchId,
+          today,
+          repositories,
+        }),
+      )
       if (!result.ok) {
         setError(ERROR_TEXT[result.error])
         return

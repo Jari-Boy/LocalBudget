@@ -17,7 +17,7 @@ import type { JournalTemplateGroupRepository } from '../domain/journal-template-
 import type { SettlementBatchRepository } from '../domain/settlement-batch/SettlementBatchRepository'
 import type { ImportMappingDefinitionRepository } from '../domain/statement-import/ImportMappingDefinitionRepository'
 import type { ExternalTransactionRefRepository } from '../domain/reconciliation/ExternalTransactionRefRepository'
-import type { JournalEntryDraftRpcApi } from '../infrastructure/rpc/createRepositoryRegistry'
+import type { HistoryRpcApi, JournalEntryDraftRpcApi } from '../infrastructure/rpc/createRepositoryRegistry'
 import type { RecurringTransactionProposalRpcApi } from '../infrastructure/rpc/createRecurringTransactionProposalApi'
 import type { AccountBalanceRecordRepository } from '../domain/reconciliation/AccountBalanceRecordRepository'
 import { useDbClient } from '../infrastructure/rpc/DbClientProvider'
@@ -36,6 +36,7 @@ import { ProjectMasterTab } from '../components/master/ProjectMasterTab'
 import { MappingMasterTab } from '../components/master/MappingMasterTab'
 import { RuleMasterTab } from '../components/master/RuleMasterTab'
 import { JournalTemplateTab } from '../components/journal-template/JournalTemplateTab'
+import { HistoryScreen } from '../components/history/HistoryScreen'
 import { SettingsScreen, type BackupApi } from '../components/settings/SettingsScreen'
 import { ExternalChangeBanner } from '../components/settings/ExternalChangeBanner'
 import { ReadOnlyBanner } from '../components/settings/ReadOnlyBanner'
@@ -128,6 +129,7 @@ export function AppRoutes() {
     journalTemplateGroupRepository,
     backupApi,
     storageApi,
+    historyApi,
   } = useMemo(
     () => ({
       accountRepository: client.account as unknown as Comlink.Remote<AccountRepository>,
@@ -163,6 +165,7 @@ export function AppRoutes() {
         client.journalTemplateGroup as unknown as Comlink.Remote<JournalTemplateGroupRepository>,
       backupApi: client.backup as unknown as Comlink.Remote<BackupApi>,
       storageApi: client.storage as unknown as Comlink.Remote<StorageApi>,
+      historyApi: client.history as unknown as Comlink.Remote<HistoryRpcApi>,
     }),
     [client],
   )
@@ -310,6 +313,7 @@ export function AppRoutes() {
         path="/journal/create/import"
         element={
           <StatementImportScreen
+            history={historyApi}
             accountRepository={accountRepository}
             accountGroupRepository={accountGroupRepository}
             importMappingDefinitionRepository={importMappingDefinitionRepository}
@@ -382,6 +386,7 @@ export function AppRoutes() {
         path="/journal/splitting"
         element={
           <SplitSettleScreenRoute
+            history={historyApi}
             journalEntryRepository={journalEntryRepository}
             journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             accountRepository={accountRepository}
@@ -415,6 +420,9 @@ export function AppRoutes() {
           />
         }
       />
+
+      {/* 操作履歴画面(計画Issue #202)。履歴はWorkerのメモリ上にだけあり、再読み込みで消える */}
+      <Route path="/history" element={<HistoryScreen history={historyApi} />} />
 
       {/* 設定画面(計画Issue #173)。読み込みの成功後は、ページを再読み込みしてWorkerに新しいDBを読み直させる */}
       <Route

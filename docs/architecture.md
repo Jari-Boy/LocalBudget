@@ -121,6 +121,7 @@ interface StorageAdapter {
 - DBは必ずWeb Worker内で実行し、Reactのメインスレッドはメッセージパッシング（RPC）経由でのみアクセスする。UIをブロックしないことが目的。RPCの実装には`Comlink`を採用する。Worker側（`src/infrastructure/worker/`）で全Repositoryインスタンスを1つのレジストリオブジェクトへ集約して`Comlink.expose()`し、メインスレッド側（`src/infrastructure/rpc/`）は`Comlink.wrap()`した型安全なプロキシとして呼び出す。Worker側の初期化（sql.jsのWASMロード等、非同期）が完了する前にメインスレッドがRPC呼び出しを送ると応答が失われるため、Worker起動完了をメインスレッドが待ち合わせてからRPCクライアントを生成する（Issue #24、詳細は`docs/decisions.md`）。
 - ドメインは複式簿記をベースとするため、Repository層は単純な「取引（Transaction）」ではなく、**勘定科目（Account）・仕訳（JournalEntry）・仕訳明細（借方/貸方の各行）**を中心としたインターフェース（例: `AccountRepository`、`JournalEntryRepository`）で設計する。エンティティの詳細な属性・制約（勘定科目の分類、貸借バランスの検証ルール等）は`docs/domain.md`で別途定義し、本ドキュメントでは扱わない。
 - DBアクセス層のテストはこれらのRepositoryインターフェースに対して書く。sql.jsを採用しているため、Vitest上でそのまま統合テストとして記述できる。
+- **操作履歴（ロールバック、計画Issue #202）**: Worker内の`createRepositoryRegistry`が、マイグレーション・seed適用後に`OperationHistory`（`src/infrastructure/history/`）で全表（sqlite内部表を除く）にTEMPトリガーを張り、書き込みを打ち消す逆操作SQLをTEMP表（接続のメモリ）へ記録する。Repositoryの各メソッド呼び出し（1回のRPC）を1件として記録し（`recordedByHistory`のProxy）、複数RPCのバッチはメインスレッドの`runInHistoryGroup`（`history.beginGroup`〜`endGroup`）で1件にまとめる。履歴は`db.export()`に含まれないため永続化・バックアップの対象外で、リロードで消える。メインスレッドへは`history`としてRPCに公開され（`HistoryRpcApi`）、操作履歴画面（`/history`）が「選んだ操作以降」の取消を呼ぶ。設計判断は`docs/decisions.md`、永続履歴ではない旨は`docs/domain/journal.md` 1.5を参照。新しいテーブルは`rowid`表であること（`WITHOUT ROWID`は履歴の対象外）。
 - 起動時に`PRAGMA user_version`を用いた簡易マイグレーションランナーを実行し、スキーマバージョンを管理する。
 - 将来の競合解決（マルチデバイス同期）に備え、主要テーブル（仕訳・勘定科目・予算など）には`updated_at`（更新時刻）カラムを持たせておく。現時点では競合解決ロジックは実装しないが、将来の拡張の余地を残す設計とする。
 

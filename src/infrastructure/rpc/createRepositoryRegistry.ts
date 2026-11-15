@@ -43,6 +43,13 @@ import { SqlJsRecurringTransactionRuleRepository } from '../db/SqlJsRecurringTra
 import { SqlJsSettlementBatchRepository } from '../db/SqlJsSettlementBatchRepository'
 import { importDatabaseBackup } from '../backup/importDatabaseBackup'
 import {
+  createOperationHistory,
+  DEFAULT_HISTORY_LIMIT,
+  type HistoryOperation,
+  type OperationHistory,
+  type UndoPreview,
+} from '../history/OperationHistory'
+import {
   createRecurringTransactionProposalApi,
   type RecurringTransactionProposalRpcApi,
 } from './createRecurringTransactionProposalApi'
@@ -75,6 +82,24 @@ export interface JournalEntryDraftRpcApi {
 export interface BackupRpcApi {
   export(): Uint8Array
   importDatabase(data: Uint8Array): Promise<void>
+}
+
+/**
+ * 操作履歴(ロールバック、計画Issue #202)のRPC API。履歴はWorkerのメモリ上にだけあり、永続化・
+ * バックアップには含まれない。Repositoryの書き込みはレジストリが自動で記録するため、メインスレッドが
+ * 記録のために呼ぶ必要はない。複数のRPC呼び出しからなるバッチ(CSV取込確定・割勘・精算など)だけは、
+ * beginGroup〜endGroupで囲むと履歴上1件の取消単位になる。
+ */
+export interface HistoryRpcApi {
+  /** 新しい順 */
+  list(): HistoryOperation[]
+  /** 履歴に保持する操作の上限 */
+  limit(): number
+  previewUndoTo(operationId: number): UndoPreview
+  /** 選んだ操作とそれ以降を新しい順に戻す(全体で1トランザクション)。戻した操作数を返す */
+  undoTo(operationId: number): number
+  beginGroup(label: string): void
+  endGroup(): void
 }
 
 export interface RepositoryRegistry {
@@ -119,6 +144,24 @@ export interface RepositoryRegistry {
   backup: BackupRpcApi
   /** 保存先の状態の取得と切り替え(計画Issue #174) */
   storage: StorageRpcApi
+  /** 操作履歴の一覧・影響範囲の確認・取消(計画Issue #202) */
+  history: HistoryRpcApi
+}
+
+/**
+ * Repository(またはそれと同じ形のAPI)の全メソッド呼び出しを、操作履歴の1件として記録するProxyで包む。
+ * 呼び出し中に書き込みがなければ履歴には残らない(読み取りは何も残さない)。ラベルは
+ * 「レジストリのキー.メソッド名」(例: journalEntry.create)で、表示名への変換はUI側が行う。
+ */
+function recordedByHistory<T extends object>(history: OperationHistory, key: string, target: T): T {
+  return new Proxy(target, {
+    get(obj, prop) {
+      const value = Reflect.get(obj, prop, obj) as unknown
+      if (typeof value !== 'function' || typeof prop !== 'string') return value
+      return (...args: unknown[]) =>
+        history.record(`${key}.${prop}`, () => (value as (...a: unknown[]) => unknown).apply(obj, args))
+    },
+  })
 }
 
 /**
@@ -137,39 +180,52 @@ export function createRepositoryRegistry(
 ): RepositoryRegistry {
   const journalEntryRepository = new SqlJsJournalEntryRepository(db)
   const journalEntryDraftRepository = new SqlJsJournalEntryDraftRepository(db)
+  const history = createOperationHistory(db, { limit: DEFAULT_HISTORY_LIMIT })
+  const recorded = <T extends object>(key: string, target: T): T => recordedByHistory(history, key, target)
 
   return {
-    account: new SqlJsAccountRepository(db),
-    accountGroup: new SqlJsAccountGroupRepository(db),
-    accountBalanceRecord: new SqlJsAccountBalanceRecordRepository(db),
-    budget: new SqlJsBudgetRepository(db),
-    counterparty: new SqlJsCounterpartyRepository(db),
-    counterpartyGroup: new SqlJsCounterpartyGroupRepository(db),
-    externalTransactionRef: new SqlJsExternalTransactionRefRepository(db),
-    householdMember: new SqlJsHouseholdMemberRepository(db),
-    importMappingDefinition: new SqlJsImportMappingDefinitionRepository(db),
-    journalEntry: journalEntryRepository,
-    journalEntryDraft: {
+    account: recorded('account', new SqlJsAccountRepository(db)),
+    accountGroup: recorded('accountGroup', new SqlJsAccountGroupRepository(db)),
+    accountBalanceRecord: recorded('accountBalanceRecord', new SqlJsAccountBalanceRecordRepository(db)),
+    budget: recorded('budget', new SqlJsBudgetRepository(db)),
+    counterparty: recorded('counterparty', new SqlJsCounterpartyRepository(db)),
+    counterpartyGroup: recorded('counterpartyGroup', new SqlJsCounterpartyGroupRepository(db)),
+    externalTransactionRef: recorded('externalTransactionRef', new SqlJsExternalTransactionRefRepository(db)),
+    householdMember: recorded('householdMember', new SqlJsHouseholdMemberRepository(db)),
+    importMappingDefinition: recorded('importMappingDefinition', new SqlJsImportMappingDefinitionRepository(db)),
+    journalEntry: recorded('journalEntry', journalEntryRepository),
+    journalEntryDraft: recorded('journalEntryDraft', {
       create: (input) => journalEntryDraftRepository.create(input),
       findById: (id) => journalEntryDraftRepository.findById(id),
       findAll: () => journalEntryDraftRepository.findAll(),
       update: (id, input) => journalEntryDraftRepository.update(id, input),
       delete: (id) => journalEntryDraftRepository.delete(id),
       confirm: (id) => journalEntryDraftRepository.confirm(id, journalEntryRepository),
-    },
-    journalEntryLinkGroup: new SqlJsJournalEntryLinkGroupRepository(db),
-    journalTemplate: new SqlJsJournalTemplateRepository(db),
-    journalTemplateGroup: new SqlJsJournalTemplateGroupRepository(db),
-    project: new SqlJsProjectRepository(db),
-    projectGroup: new SqlJsProjectGroupRepository(db),
-    settlementBatch: new SqlJsSettlementBatchRepository(db),
-    recurringTransactionRule: new SqlJsRecurringTransactionRuleRepository(db),
-    recurringTransactionProposal: createRecurringTransactionProposalApi(db, journalEntryRepository),
+    }),
+    journalEntryLinkGroup: recorded('journalEntryLinkGroup', new SqlJsJournalEntryLinkGroupRepository(db)),
+    journalTemplate: recorded('journalTemplate', new SqlJsJournalTemplateRepository(db)),
+    journalTemplateGroup: recorded('journalTemplateGroup', new SqlJsJournalTemplateGroupRepository(db)),
+    project: recorded('project', new SqlJsProjectRepository(db)),
+    projectGroup: recorded('projectGroup', new SqlJsProjectGroupRepository(db)),
+    settlementBatch: recorded('settlementBatch', new SqlJsSettlementBatchRepository(db)),
+    recurringTransactionRule: recorded('recurringTransactionRule', new SqlJsRecurringTransactionRuleRepository(db)),
+    recurringTransactionProposal: recorded(
+      'recurringTransactionProposal',
+      createRecurringTransactionProposalApi(db, journalEntryRepository),
+    ),
     autoSave: Comlink.proxy(autoSaveController),
     backup: {
       export: () => db.export(),
       importDatabase: (data) => importDatabaseBackup(data, storageAdapter, autoSaveController),
     },
     storage,
+    history: {
+      list: () => history.list(),
+      limit: () => DEFAULT_HISTORY_LIMIT,
+      previewUndoTo: (operationId) => history.previewUndoTo(operationId),
+      undoTo: (operationId) => history.undoTo(operationId),
+      beginGroup: (label) => history.beginGroup(label),
+      endGroup: () => history.endGroup(),
+    },
   }
 }
