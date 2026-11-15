@@ -4,7 +4,9 @@ import { GROUP_VALUE_PREFIX } from '../tree-select/treeSelectModel'
 /**
  * 仕訳の絞り込みUIと検索条件(JournalEntryFilter)を相互変換する純粋関数(計画Issue #150)。
  * 選択ツリーの値は、項目が「ID」、グループが「g:ID」、未選択が空文字。UIは各軸について
- * 1件だけ選ぶ(ドメインは複数指定を許すが、UIでは単一指定のみ扱う)。DB・DOM非依存。
+ * 複数選択に対応する(計画Issue #203)。各軸の選択は値の配列で扱い、項目とグループを併用できる
+ * (軸の中はOR)。単一選択の関数(getTreeValue等)は、先頭の1件だけを扱う従来の呼び出し用に残す。
+ * DB・DOM非依存。
  */
 export type TreeAxis = 'account' | 'counterparty' | 'project'
 
@@ -41,6 +43,26 @@ export function setTreeValue(filter: JournalEntryFilter, axis: TreeAxis, value: 
   return { ...cleared, [ids]: [Number(value)] }
 }
 
+/** 項目(ID)→グループ(g:ID)の順に、選択ツリーの値の配列として取り出す */
+export function getTreeValues(filter: JournalEntryFilter, axis: TreeAxis): string[] {
+  const { ids, groupIds } = AXIS_KEYS[axis]
+  return [
+    ...(filter[ids] ?? []).map(String),
+    ...(filter[groupIds] ?? []).map((id) => `${GROUP_VALUE_PREFIX}${id}`),
+  ]
+}
+
+/** 項目の値とグループの値(g:ID)の混在した配列を、「〜Ids」と「〜GroupIds」に振り分ける。空配列でその軸を消す */
+export function setTreeValues(filter: JournalEntryFilter, axis: TreeAxis, values: readonly string[]): JournalEntryFilter {
+  const { ids, groupIds } = AXIS_KEYS[axis]
+  const next = without(filter, [ids, groupIds])
+  const groups = values.filter((value) => value.startsWith(GROUP_VALUE_PREFIX))
+  const items = values.filter((value) => !value.startsWith(GROUP_VALUE_PREFIX))
+  if (items.length > 0) next[ids] = items.map(Number)
+  if (groups.length > 0) next[groupIds] = groups.map((value) => Number(value.slice(GROUP_VALUE_PREFIX.length)))
+  return next
+}
+
 export function setMemo(filter: JournalEntryFilter, text: string): JournalEntryFilter {
   return text.trim() === '' ? without(filter, ['memo']) : { ...filter, memo: text }
 }
@@ -73,6 +95,31 @@ export function getBatchValue(filter: JournalEntryFilter): string {
 export function setBatchValue(filter: JournalEntryFilter, value: string): JournalEntryFilter {
   if (value === '') return without(filter, ['settlementBatchIds'])
   return { ...filter, settlementBatchIds: [value === NO_BATCH_VALUE ? null : Number(value)] }
+}
+
+export function getBatchValues(filter: JournalEntryFilter): string[] {
+  return (filter.settlementBatchIds ?? []).map((id) => (id === null ? NO_BATCH_VALUE : String(id)))
+}
+
+/** 「未割当」(none)はnull、バッチはIDにして保持する。空配列で指定を消す */
+export function setBatchValues(filter: JournalEntryFilter, values: readonly string[]): JournalEntryFilter {
+  if (values.length === 0) return without(filter, ['settlementBatchIds'])
+  return { ...filter, settlementBatchIds: values.map((value) => (value === NO_BATCH_VALUE ? null : Number(value))) }
+}
+
+export function getMultiValues(filter: JournalEntryFilter, key: 'householdMemberIds' | 'sourceTypes'): string[] {
+  return (filter[key] ?? []).map(String)
+}
+
+/** 世帯メンバーは数値ID、出どころは文字列で保持する。空配列で指定を消す */
+export function setMultiValues(
+  filter: JournalEntryFilter,
+  key: 'householdMemberIds' | 'sourceTypes',
+  values: readonly string[],
+): JournalEntryFilter {
+  if (values.length === 0) return without(filter, [key])
+  if (key === 'householdMemberIds') return { ...filter, householdMemberIds: values.map(Number) }
+  return { ...filter, sourceTypes: values as NonNullable<JournalEntryFilter['sourceTypes']> }
 }
 
 export function getSingleValue(

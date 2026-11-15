@@ -2,20 +2,27 @@
  * 仕訳の絞り込みUIと検索条件(JournalEntryFilter)の相互変換の純粋関数のテスト(計画Issue #150)。
  * 選択ツリーの値(項目は「ID」、グループは「g:ID」、未選択は空文字)と、フィルタの
  * accountIds / accountGroupIds 等の対応、金額・精算バッチの変換、有効な条件の数え方を検証する。
- * 外部依存なし(DB・DOMに依存しない)。
+ * 計画Issue #203で、各軸の複数選択(項目とグループの併用、精算バッチの未割当との併用を含む)の
+ * 相互変換を追加した。外部依存なし(DB・DOMに依存しない)。
  */
 import { describe, expect, it } from 'vitest'
 import type { JournalEntryFilter } from '../../../domain/journal/JournalEntryFilter'
 import {
   countActiveConditions,
   getBatchValue,
+  getBatchValues,
+  getMultiValues,
   getTreeValue,
+  getTreeValues,
   NO_BATCH_VALUE,
   setAmount,
   setBatchValue,
+  setBatchValues,
   setMemo,
+  setMultiValues,
   setSingleValue,
   setTreeValue,
+  setTreeValues,
 } from './journalFilterModel'
 
 describe('getTreeValue / setTreeValue', () => {
@@ -102,5 +109,69 @@ describe('countActiveConditions', () => {
     }
     expect(countActiveConditions(filter)).toBe(6)
     expect(countActiveConditions({ memo: '  ' })).toBe(0)
+  })
+})
+
+describe('getTreeValues / setTreeValues(複数選択、計画Issue #203)', () => {
+  it('項目とグループの値を混ぜて渡すと、「〜Ids」と「〜GroupIds」に振り分けて保持する', () => {
+    const next = setTreeValues({}, 'account', ['12', 'g:3', '14'])
+    expect(next).toEqual({ accountIds: [12, 14], accountGroupIds: [3] })
+  })
+
+  it('保持している項目とグループを、項目、グループの順の値の配列として取り出せる', () => {
+    expect(getTreeValues({ projectIds: [1, 2], projectGroupIds: [5] }, 'project')).toEqual(['1', '2', 'g:5'])
+    expect(getTreeValues({}, 'project')).toEqual([])
+  })
+
+  it('空配列を渡すとその軸の指定がすべて消え、他の条件は残る', () => {
+    const filter: JournalEntryFilter = { counterpartyIds: [1], counterpartyGroupIds: [2], memo: '昼食' }
+    expect(setTreeValues(filter, 'counterparty', [])).toEqual({ memo: '昼食' })
+  })
+
+  it('項目だけを渡したときは、グループの指定は空にせずキーごと消す', () => {
+    expect(setTreeValues({ accountGroupIds: [3] }, 'account', ['1'])).toEqual({ accountIds: [1] })
+  })
+
+  it('元のfilterオブジェクトは書き換えない', () => {
+    const filter: JournalEntryFilter = { accountIds: [1] }
+    setTreeValues(filter, 'account', ['2', '3'])
+    expect(filter).toEqual({ accountIds: [1] })
+  })
+})
+
+describe('getBatchValues / setBatchValues(複数選択、計画Issue #203)', () => {
+  it('「未割当」と複数のバッチを併用でき、選択ツリーの値の配列に相互変換できる', () => {
+    const next = setBatchValues({}, [NO_BATCH_VALUE, '5', '7'])
+    expect(next).toEqual({ settlementBatchIds: [null, 5, 7] })
+    expect(getBatchValues(next)).toEqual([NO_BATCH_VALUE, '5', '7'])
+  })
+
+  it('空配列で指定が消え、未指定は空配列になる', () => {
+    expect(setBatchValues({ settlementBatchIds: [5], memo: 'a' }, [])).toEqual({ memo: 'a' })
+    expect(getBatchValues({})).toEqual([])
+  })
+})
+
+describe('getMultiValues / setMultiValues(世帯メンバー・出どころの複数選択、計画Issue #203)', () => {
+  it('世帯メンバーは数値ID、出どころは文字列で複数保持し、取り出せる', () => {
+    const members = setMultiValues({}, 'householdMemberIds', ['1', '2'])
+    expect(members).toEqual({ householdMemberIds: [1, 2] })
+    expect(getMultiValues(members, 'householdMemberIds')).toEqual(['1', '2'])
+    const sources = setMultiValues({}, 'sourceTypes', ['manual', 'external_import'])
+    expect(sources).toEqual({ sourceTypes: ['manual', 'external_import'] })
+    expect(getMultiValues(sources, 'sourceTypes')).toEqual(['manual', 'external_import'])
+  })
+
+  it('空配列で指定が消え、未指定は空配列になる', () => {
+    expect(setMultiValues({ sourceTypes: ['manual'] }, 'sourceTypes', [])).toEqual({})
+    expect(getMultiValues({}, 'householdMemberIds')).toEqual([])
+  })
+})
+
+describe('countActiveConditions(複数選択でも軸ごとに1件、計画Issue #203)', () => {
+  it('同じ軸に複数の項目・グループを指定しても1件として数える', () => {
+    expect(countActiveConditions({ accountIds: [1, 2, 3], accountGroupIds: [4, 5] })).toBe(1)
+    expect(countActiveConditions({ settlementBatchIds: [null, 1, 2] })).toBe(1)
+    expect(countActiveConditions({ householdMemberIds: [1, 2], sourceTypes: ['manual', 'external_import'] })).toBe(2)
   })
 })
