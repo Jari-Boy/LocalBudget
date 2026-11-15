@@ -204,3 +204,9 @@
 
 **内容**: 作業ディレクトリのドライブ文字が小文字(`c:\Users\...`、Git Bashの`/c/Users/...`から起動した場合を含む)だと、vitestが同じファイルを大文字・小文字違いの別パスとして二重に読み込み、全テストファイルが「Vitest failed to find the runner」で失敗する(テストの中身とは無関係で、変更を退避した`main`でも再現する)。PowerShellで`Set-Location C:\Users\swsc3\LocalBudget`のように、ドライブ文字を大文字にしたパスから`npx vitest run`を実行すると動く。
 **参考**: 計画Issue #202の実装中に発生。
+
+## Vitestは通常実行が環境問題で全件失敗するため`--pool=vmThreads`を付け、落ちたファイルは単独で再実行して切り分ける(計画Issue #188・#42の実装中)
+
+**内容**: この環境ではVitestの通常実行(既定のpool)が環境問題(Issue #188)で全件失敗するため、`npx vitest run --pool=vmThreads`で実行する。全体実行ではタイムアウトが散発することがあるので、落ちたファイルはそのファイルだけを単独で再実行し、単独で通れば環境・負荷起因、単独でも落ちれば実装の問題として切り分ける。ドライブ文字が小文字のパスから実行したときの全件失敗(上記「Vitest failed to find the runner」)とは原因が別である。
+**参考**: Issue #188、計画Issue #42
+
