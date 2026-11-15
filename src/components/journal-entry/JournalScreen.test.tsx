@@ -54,6 +54,7 @@ function account(id: number, name: string, category: Account['category'], isReco
     hasExternalStatement: isReconcilable,
     isActive: true,
     isSystemManaged: false,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId: null,
     sortOrder: id,

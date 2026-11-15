@@ -20,6 +20,7 @@ function buildAccount(overrides: Partial<Account> = {}): Account {
     hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId: null,
     sortOrder: 0,

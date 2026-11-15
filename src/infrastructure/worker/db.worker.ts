@@ -3,6 +3,7 @@ import * as Comlink from 'comlink'
 import { createBrowserDatabase } from '../db/createBrowserDatabase'
 import { runMigrations } from '../db/migrations'
 import { seedAdvanceAccounts } from '../db/seedAdvanceAccounts'
+import { seedBalanceAdjustmentAccount } from '../db/seedBalanceAdjustmentAccount'
 import { seedBuiltInMappingDefinitions } from '../db/seedBuiltInMappingDefinitions'
 import { seedDefaultAccounts } from '../db/seedDefaultAccounts'
 import { seedInitialBalanceAccount } from '../db/seedInitialBalanceAccount'
@@ -93,6 +94,7 @@ async function main(): Promise<void> {
   seedDefaultAccounts(db)
   seedAdvanceAccounts(db)
   seedInitialBalanceAccount(db)
+  seedBalanceAdjustmentAccount(db)
   seedSettlementAdjustmentAccounts(db)
   seedStandardAccountGroups(db)
   seedDevSampleDataIfDev(db)

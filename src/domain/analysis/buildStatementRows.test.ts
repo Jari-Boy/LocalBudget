@@ -22,6 +22,7 @@ function account(id: number, name: string, accountGroupId: number | null, sortOr
     hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId,
     sortOrder,

@@ -31,6 +31,7 @@ function account(id: number, name: string, category: Account['category'], extra:
     hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId: null,
     sortOrder: id,

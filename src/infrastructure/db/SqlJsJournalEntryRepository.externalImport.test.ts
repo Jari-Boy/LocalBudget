@@ -11,6 +11,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
+import { seedBalanceAdjustmentAccount } from './seedBalanceAdjustmentAccount'
+import { seedInitialBalanceAccount } from './seedInitialBalanceAccount'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
@@ -24,6 +26,9 @@ let memberId: number
 beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
+  // 取引後残高付きの取込は基準点になり、自動調整仕訳の相手科目(初期残高・残高調整)が必要になる(計画Issue #205)
+  seedInitialBalanceAccount(db)
+  seedBalanceAdjustmentAccount(db)
   const accounts = new SqlJsAccountRepository(db)
   repository = new SqlJsJournalEntryRepository(db)
   memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '自分' }).id

@@ -27,6 +27,7 @@ function account(id: number, overrides: Partial<Account>): Account {
     hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     ...overrides,
   } as Account

@@ -14,6 +14,8 @@ export interface Account {
   hasExternalStatement: boolean | null
   isActive: boolean
   isSystemManaged: boolean
+  /** 残高の基準点に合うように自動で調整仕訳を入れるか(計画Issue #205)。初期値はオン */
+  autoBalanceAdjustment: boolean
   householdMemberId: number | null
   accountGroupId: number | null
   /** 所属グループ内での表示順(未分類の場合は意味を持たない、計画Issue #129) */
@@ -50,6 +52,8 @@ export interface UpdateAccountOptions {
 
 export interface UpdateAccountInput {
   name?: string
+  /** 自動調整のオン・オフ(計画Issue #205)。変更すると自動調整仕訳が計算し直される */
+  autoBalanceAdjustment?: boolean
   householdMemberId?: number | null
   accountGroupId?: number | null
   sortOrder?: number

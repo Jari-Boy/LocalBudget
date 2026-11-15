@@ -18,6 +18,7 @@ function account(id: number, category: Account['category']): Account {
     hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId: null,
     sortOrder: 0,

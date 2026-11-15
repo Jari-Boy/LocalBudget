@@ -187,6 +187,7 @@ describe('registerAccount', () => {
       category: 'equity',
       name: '初期残高',
       isSystemManaged: true,
+      autoBalanceAdjustment: true,
     })
 
     const entries = journalEntryRepository.findAll()

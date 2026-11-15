@@ -494,6 +494,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     const failed: ConfirmFailure[] = []
     const succeeded = new Set<number>()
     let learned = 0
+    // 同じ取込の行は同じ取込日時にそろえる(残高の基準点の並び順を取込単位で判定するため、計画Issue #205)
+    const importedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
 
     for (const index of importable) {
       const { record, externalId, approximateCandidates } = records[index]
@@ -525,6 +527,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               householdMemberId: state.householdMemberId,
               settlementBatchId: isTaggableAccountId(state.counterAccountId, accountList) ? state.settlementBatchId : null,
               comment: state.comment,
+              rowOrder: index,
+              importedAt,
               entryHouseholdMemberId,
               // 明細行の世帯メンバー: 科目の既定メンバー > 相手科目の行に選んだ世帯メンバー > 起票者(計画Issue #169)
               resolveLineHouseholdMemberId: createLineHouseholdMemberResolver([account, ...accountList], entryHouseholdMemberId),

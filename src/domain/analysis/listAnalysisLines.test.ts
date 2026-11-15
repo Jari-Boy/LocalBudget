@@ -23,6 +23,7 @@ function account(id: number, category: AccountCategory, name: string): Account {
     hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId: null,
     sortOrder: 0,

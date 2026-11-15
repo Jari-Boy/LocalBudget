@@ -91,7 +91,7 @@ describe('toJournalResultItem', () => {
 })
 
 describe('SOURCE_TAGS', () => {
-  it('作成経路6種すべてにモックアップの表示名が定義されている', () => {
+  it('作成経路7種すべてにモックアップの表示名が定義されている', () => {
     expect(Object.fromEntries(Object.entries(SOURCE_TAGS).map(([k, v]) => [k, v.label]))).toEqual({
       external_import: '外部明細',
       manual: '手入力',
@@ -99,6 +99,7 @@ describe('SOURCE_TAGS', () => {
       recurring_generated: '定期',
       initial_balance: '初期残高',
       balance_adjustment: '残高調整',
+      auto_balance_adjustment: '自動調整',
     })
   })
 })

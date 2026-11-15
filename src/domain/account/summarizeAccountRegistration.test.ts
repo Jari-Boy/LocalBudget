@@ -18,6 +18,7 @@ const account = (overrides: Partial<Account>): Account => ({
   hasExternalStatement: true,
   isActive: true,
   isSystemManaged: false,
+  autoBalanceAdjustment: true,
   householdMemberId: null,
   accountGroupId: null,
   sortOrder: 0,

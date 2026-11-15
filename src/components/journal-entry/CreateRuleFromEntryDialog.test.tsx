@@ -26,6 +26,7 @@ function account(id: number, name: string, category: Account['category']): Accou
     hasExternalStatement: category === 'expense' ? null : false,
     isActive: true,
     isSystemManaged: false,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId: null,
     sortOrder: 0,

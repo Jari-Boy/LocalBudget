@@ -1,4 +1,5 @@
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
+import { AutoBalanceAdjustmentEntryReadOnlyError } from '../../domain/journal/AutoBalanceAdjustmentEntryReadOnlyError'
 import { JournalLineHouseholdMemberRequiredError } from '../../domain/journal/JournalLineHouseholdMemberRequiredError'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
@@ -34,6 +35,8 @@ const DOMAIN_ERROR_REVIVERS: Record<string, DomainErrorReviver> = {
     ),
   SettlementBatchOnNonAdvanceAccountError: (_message, extra) =>
     new SettlementBatchOnNonAdvanceAccountError(extra.accountId as number),
+  AutoBalanceAdjustmentEntryReadOnlyError: (_message, extra) =>
+    new AutoBalanceAdjustmentEntryReadOnlyError(extra.entryId as number),
   JournalLineHouseholdMemberRequiredError: () => new JournalLineHouseholdMemberRequiredError(),
   NoBalanceDiscrepancyError: () => new NoBalanceDiscrepancyError(),
   InvalidRecurringScheduleError: (message) => new InvalidRecurringScheduleError(message),
