@@ -437,3 +437,16 @@
 **症状**: ツリー表+右パネルのマスタ編集(`GroupedMasterTab`)で、固有のフォーム(テンプレートの明細行など)を子に持たせると、名称の保存と固有フォームの保存が別々になり、一括保存・未保存警告の対象から固有フォームが漏れる。
 **対策**: 子が固有フォームの状態(名称・保存可否・保存処理・未保存か)を`LeafFormState`として親へ渡し、親が名称と合わせて1回の一括保存と未保存警告を扱う。子に独自の保存ボタンは置かない。
 **該当箇所（例）**: `src/components/master/GroupedMasterTab.tsx`、`src/components/journal-template/JournalTemplateExtra.tsx`
+
+## 導出データ(自動調整仕訳)の再計算を画面・呼び出し元ごとに書き、作成経路の追加で呼び忘れる(計画Issue #205)
+
+**症状(予防)**: 仕訳の作成経路は手入力・取込・定期仕訳・割勘・テンプレートと多い。自動調整仕訳のような「他の行から常に導出されるデータ」の計算し直しを画面側・ユースケース側から呼ぶ設計だと、新しい経路を足すたびに呼び忘れ、基準点と帳簿が静かにずれる。
+**対策**: 計算は純粋関数(`planBalanceAnchorAdjustments`・`resolveStatementAnchors`)に切り出し、DBへの反映(`reconcileAutoBalanceAdjustments`)はRepository内部で、元の書き込みと同じトランザクション内(自身はBEGIN/COMMITを持たない)に置く。仕訳の作成・更新・削除・取込確定・残高記録の変更・科目の統合など、影響しうる書き込みのたびに対象科目のidを集めて呼ぶ。導出データは`source_type`で区別し、Repositoryで更新・削除を拒否する(`AutoBalanceAdjustmentEntryReadOnlyError`)。導出データのidは計算し直しで変わるため、他のデータから参照させない。
+**該当箇所（例）**: `src/infrastructure/db/autoBalanceAdjustment.ts`、`src/infrastructure/db/SqlJsJournalEntryRepository.ts`、`docs/decisions.md` 2026-11-15(計画Issue #205)
+
+## 方針を撤回・変更する実装で、旧方針を前提にした記述が他のドキュメントに残る(計画Issue #205)
+
+**症状(予防)**: 「差異を検出してもシステムは自動で調整仕訳を作らない」を撤回する変更では、`reconciliation.md`・`architecture.md`・`financial-statements.md`・`accounts.md`(初期残高・口座削除)など複数箇所に旧方針の文言が散在する。
+**対策**: 撤回時は`docs/decisions.md`に撤回の旨と理由を書き、旧方針を述べていた箇所をgrepで洗い出して同じコミット群で改める。旧関数(`checkBalanceReconciliation`等)の廃止もドメインドキュメントから外す。
+**該当箇所（例）**: `docs/decisions.md` 2026-11-15(8)
+

@@ -143,8 +143,9 @@
 | `manual` | 手入力(既定値) |
 | `external_import` | 外部明細取込のレビュー確定を経て作成された。通常の取引・消込のどちらも含む |
 | `recurring_generated` | 定期仕訳([recurring-transactions.md](./recurring-transactions.md))の提案をレビュー確認(承認)して作成された。ルールの行(2行でも3行以上でも)が仕訳の明細行になり、ルールの行に精算バッチが設定されていれば、立替金・未払金の行にそのバッチのタグが付く(計画Issue #180)。起票者はルール単位、行の世帯メンバーは 科目の既定 > 行 > 起票者 の順で決まる |
-| `initial_balance` | 口座/カード開設時の初期残高仕訳([accounts.md 4.3 初期残高の自動仕訳](./accounts.md#43-初期残高の自動仕訳)) |
-| `balance_adjustment` | 残高調整([reconciliation.md 1.6](./reconciliation.md#16-原因不明差異への残高調整)、[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)) |
+| `auto_balance_adjustment` | 残高の基準点に合わせて自動で入る調整仕訳(元手=初期残高を含む、計画Issue #205)。科目ごとの計算で導出されるデータで、利用者は編集・削除・関連付けできない([reconciliation.md 1.6](./reconciliation.md#16-原因不明差異への残高調整)、[accounts.md 4.3](./accounts.md#43-初期残高最初の基準点の自動仕訳))。一覧には「自動調整」のタグで表示する |
+| `initial_balance` | (旧)口座/カード開設時の初期残高仕訳。計画Issue #205で「初期残高」の入力を最初の基準点に統合したため新規には作らない。旧データの表示用に値だけ残す |
+| `balance_adjustment` | (旧)残高調整。計画Issue #205の自動調整仕訳(`auto_balance_adjustment`)に置き換えた。旧データの表示用に値だけ残す |
 | `expense_splitting` | 割勘機能で作った仕訳([expense-splitting.md](./expense-splitting.md)、計画Issue #149)。割勘かどうかは科目構成ではなくこの値で判定する。精算の仕訳は分類を増やさず、口座明細からなら`external_import`、手で起票したものなら`manual`とする |
 
 `source_type`は仕訳の作成経路を表す。以前は[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)が「この仕訳はis_reconcilable = trueの科目に記帳してよいか」を判定する根拠にしていたが、計画Issue #145でその制限を廃止したため、現在は一覧の出どころ表示など、経路を区別する用途に使う。

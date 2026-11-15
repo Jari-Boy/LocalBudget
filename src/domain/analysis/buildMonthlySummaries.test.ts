@@ -20,6 +20,7 @@ function account(id: number, category: AccountCategory, name: string, accountGro
     hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId,
     sortOrder: id,

@@ -21,6 +21,8 @@ import { I18nextProvider } from 'react-i18next'
 import i18n from '../../infrastructure/i18n/i18n'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
+import { SqlJsAccountBalanceRecordRepository } from '../../infrastructure/db/SqlJsAccountBalanceRecordRepository'
+import { seedBalanceAdjustmentAccount } from '../../infrastructure/db/seedBalanceAdjustmentAccount'
 import { SqlJsAccountGroupRepository } from '../../infrastructure/db/SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsBudgetRepository } from '../../infrastructure/db/SqlJsBudgetRepository'
@@ -38,11 +40,14 @@ let groups: SqlJsAccountGroupRepository
 let entries: SqlJsJournalEntryRepository
 let mappings: SqlJsImportMappingDefinitionRepository
 let memberId: number
+let balanceRecords: SqlJsAccountBalanceRecordRepository
 
 beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
   seedInitialBalanceAccount(db)
+  seedBalanceAdjustmentAccount(db)
+  balanceRecords = new SqlJsAccountBalanceRecordRepository(db)
   accounts = new SqlJsAccountRepository(db)
   groups = new SqlJsAccountGroupRepository(db)
   entries = new SqlJsJournalEntryRepository(db)
@@ -55,7 +60,7 @@ afterEach(() => {
   localStorage.clear()
 })
 
-function renderTab() {
+function renderTab(options: { initialAccountId?: number } = {}) {
   render(
     <I18nextProvider i18n={i18n}>
       <UnsavedGuardHarness>
@@ -67,6 +72,8 @@ function renderTab() {
           budgetRepository={new SqlJsBudgetRepository(db)}
           recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
           importMappingDefinitionRepository={mappings}
+          accountBalanceRecordRepository={balanceRecords}
+          initialAccountId={options.initialAccountId}
           today="2026-11-07"
         />
       </UnsavedGuardHarness>
@@ -75,7 +82,7 @@ function renderTab() {
 }
 
 /** 借方・貸方の2行の仕訳を1件登録する */
-function postEntry(debitId: number, creditId: number, sourceType: 'manual' | 'initial_balance' = 'manual') {
+function postEntry(debitId: number, creditId: number, sourceType: 'manual' | 'initial_balance' | 'auto_balance_adjustment' = 'manual') {
   return entries.create({
     entryDate: '2026-11-01',
     sourceType,
@@ -252,15 +259,14 @@ describe('AccountMasterTab', () => {
   })
 
   it('「下へ」で並び順が入れ替わる', async () => {
-    const first = accounts.create({ category: 'expense', name: '食費', isReconcilable: null, sortOrder: 0 })
-    const second = accounts.create({ category: 'expense', name: '交通費', isReconcilable: null, sortOrder: 1 })
+    const first = accounts.create({ category: 'expense', name: '食費', isReconcilable: null, sortOrder: 10 })
+    const second = accounts.create({ category: 'expense', name: '交通費', isReconcilable: null, sortOrder: 11 })
     renderTab()
     await open('食費')
 
     fireEvent.click(panel('科目の編集').getByRole('button', { name: '下へ' }))
 
-    await waitFor(() => expect(accounts.findById(first.id)!.sortOrder).toBe(1))
-    expect(accounts.findById(second.id)!.sortOrder).toBe(0)
+    await waitFor(() => expect(accounts.findById(first.id)!.sortOrder).toBeGreaterThan(accounts.findById(second.id)!.sortOrder))
   })
 
   it('区分の見出しの「グループを追加」で、その区分にグループが作られ、編集パネルが開く', async () => {
@@ -338,15 +344,15 @@ describe('AccountMasterTab', () => {
     expect(editor.getByText(/定期仕訳ルール1件/)).toBeInTheDocument()
   })
 
-  it('初期残高の仕訳だけが紐づく口座は、確認の文言でその旨が伝わり、仕訳と一緒に削除される', async () => {
+  it('自動で作られた仕訳だけが紐づく口座は、確認の文言でその旨が伝わり、仕訳と一緒に削除される', async () => {
     const bank = accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
     const initial = accounts.findAll().find((a) => a.isSystemManaged)!
-    const entry = postEntry(bank.id, initial.id, 'initial_balance')
+    const entry = postEntry(bank.id, initial.id, 'auto_balance_adjustment')
     renderTab()
     await open('楽天銀行')
 
     fireEvent.click(panel('科目の編集').getByRole('button', { name: '削除' }))
-    expect(panel('科目の編集').getByText(/初期残高の仕訳も一緒に削除します/)).toBeInTheDocument()
+    expect(panel('科目の編集').getByText('自動で作られた仕訳(初期残高・自動調整)と残高の記録も一緒に削除します。')).toBeInTheDocument()
     fireEvent.click(panel('科目の編集').getByRole('button', { name: '本当に削除する' }))
 
     await waitFor(() => expect(accounts.findById(bank.id)).toBeNull())
@@ -357,7 +363,7 @@ describe('AccountMasterTab', () => {
     const bank = accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: false })
     const initial = accounts.findAll().find((a) => a.isSystemManaged)!
     const food = accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
-    postEntry(bank.id, initial.id, 'initial_balance')
+    postEntry(bank.id, initial.id, 'auto_balance_adjustment')
     postEntry(food.id, bank.id)
     renderTab()
     await open('楽天銀行')
@@ -432,9 +438,8 @@ describe('AccountMasterTab', () => {
     /** 「外部明細の情報」の1項目(見出しと値のまとまり) */
     const item = (info: ReturnType<typeof panel>, label: string) => within(info.getByText(label).closest('div')!)
 
-    it('外部明細ありで残高情報ありの資産科目は、外部明細・残高情報・初期残高が表示される', async () => {
-      const bank = accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
-      postEntry(bank.id, accounts.findAll().find((a) => a.isSystemManaged)!.id, 'initial_balance')
+    it('外部明細ありで残高情報ありの資産科目は、外部明細・残高情報が表示される(初期残高は照合欄へ統合、計画Issue #205)', async () => {
+      accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
       renderTab()
 
       await open('楽天銀行')
@@ -442,7 +447,7 @@ describe('AccountMasterTab', () => {
       const info = panel('外部明細の情報')
       expect(item(info, '外部明細').getByText('あり')).toBeInTheDocument()
       expect(item(info, '残高情報').getByText('あり')).toBeInTheDocument()
-      expect(item(info, '初期残高').getByText(/¥1,000/)).toBeInTheDocument()
+      expect(info.queryByText('初期残高')).toBeNull()
     })
 
     it('外部明細あり・残高情報なし(カード未払金)は、外部明細あり・残高情報なしと区別して表示される', async () => {
@@ -454,7 +459,6 @@ describe('AccountMasterTab', () => {
       const info = panel('外部明細の情報')
       expect(item(info, '外部明細').getByText('あり')).toBeInTheDocument()
       expect(item(info, '残高情報').getByText('なし')).toBeInTheDocument()
-      expect(item(info, '初期残高').getByText('なし')).toBeInTheDocument()
     })
 
     it('外部明細なし(現金)は、外部明細なしと表示され、補足の長い文言は出ない', async () => {
@@ -827,5 +831,195 @@ describe('AccountMasterTab 未保存の編集の警告(計画Issue #190)', () =>
     await open('交通費')
     expect(dialog()).not.toBeInTheDocument()
     expect(nameInput()).toHaveValue('交通費')
+  })
+})
+
+describe('AccountMasterTab: 残高の照合欄(計画Issue #205)', () => {
+  const section = () => panel('残高の照合')
+  /** 照合表の読み込みが終わり、欄が表示されるのを待つ */
+  const ready = () => screen.findByRole('region', { name: '残高の照合' })
+
+  /** 現金から食費への支出(帳簿の増減)を1件入れる */
+  function spendFromCash(cashId: number, date: string, amount: number) {
+    const food = accounts.findAll().find((a) => a.name === '食費') ?? accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    entries.create({
+      entryDate: date,
+      householdMemberId: memberId,
+      lines: [
+        { householdMemberId: memberId, accountId: food.id, side: 'debit', amount },
+        { householdMemberId: memberId, accountId: cashId, side: 'credit', amount },
+      ],
+    })
+  }
+
+  function record(date: string, amount: string) {
+    fireEvent.change(section().getByLabelText('日付'), { target: { value: date } })
+    fireEvent.change(section().getByLabelText('金額'), { target: { value: amount } })
+    fireEvent.click(section().getByRole('button', { name: '残高を記録する' }))
+  }
+
+  it('資産・負債の科目にだけ出て、収益・費用の科目には出ない', async () => {
+    accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    renderTab()
+
+    await open('現金')
+    expect(await ready()).toBeInTheDocument()
+    await open('食費')
+    expect(screen.queryByRole('region', { name: '残高の照合' })).toBeNull()
+  })
+
+  it('initialAccountIdを渡すと、その科目を最初から選んだ状態で開く(仕訳の詳細の「科目の照合を見る」から来る)', async () => {
+    const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
+    renderTab({ initialAccountId: cash.id })
+
+    expect(await ready()).toBeInTheDocument()
+    expect(panel('科目の編集').getByLabelText('名称')).toHaveValue('現金')
+  })
+
+  it('システム管理の科目(立替金・未払金など)には、残高の照合欄を出さない', async () => {
+    accounts.create({ category: 'asset', name: '立替金', isReconcilable: false, hasExternalStatement: false, isSystemManaged: true })
+    renderTab()
+
+    await open('立替金')
+
+    expect(await screen.findByRole('region', { name: '科目の編集' })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '残高の照合' })).toBeNull()
+  })
+
+  it('自動調整の説明は、角丸のツールチップ(CSSで出し入れ)にし、「原因を直すと」の手前で改行する', async () => {
+    accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
+    renderTab()
+    await open('現金')
+    await ready()
+
+    // 標準のtitle属性だと枠の形を変えられないので使わない
+    expect(section().queryAllByTitle(/ずれた区間ごとに調整の仕訳が自動で入ります/)).toHaveLength(0)
+    const tooltip = section().getByRole('tooltip', { hidden: true })
+    expect(tooltip.textContent).toMatch(/ずれた区間ごとに調整の仕訳が自動で入ります。\n原因を直すと調整は消えるか金額が変わります/)
+    expect(section().getByRole('checkbox', { name: '基準点に合わせて自動で調整する' })).toHaveAccessibleDescription(/ずれた区間ごとに/)
+  })
+
+  it('自動調整のチェックボックスは初期値がオンで、外すと科目の設定に保存される', async () => {
+    const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
+    renderTab()
+    await open('現金')
+    await ready()
+
+    const checkbox = section().getByRole('checkbox', { name: '基準点に合わせて自動で調整する' })
+    expect(checkbox).toBeChecked()
+    fireEvent.click(checkbox)
+
+    await waitFor(() => expect(accounts.findById(cash.id)!.autoBalanceAdjustment).toBe(false))
+    expect(section().getByRole('checkbox', { name: '基準点に合わせて自動で調整する' })).not.toBeChecked()
+  })
+
+  it('手で記録する科目は、日付と金額を入れて残高を記録でき、表に元手(初期残高)の行が出る', async () => {
+    const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
+    renderTab()
+    await open('現金')
+    await ready()
+
+    record('2026-01-31', '10000')
+
+    await waitFor(() => expect(balanceRecords.findByAccount(cash.id)).toHaveLength(1))
+    const row = await section().findByRole('row', { name: /2026-01-31/ })
+    expect(within(row).getByText('初期残高')).toBeInTheDocument()
+    expect(within(row).getByText('¥10,000')).toBeInTheDocument()
+    expect(entries.findAll().filter((e) => e.sourceType === 'auto_balance_adjustment')).toHaveLength(1)
+  })
+
+  it('金額を入れると、その日の帳簿残高との差と、記録すると入る調整額をその場で表示する', async () => {
+    const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
+    balanceRecords.create({ accountId: cash.id, recordDate: '2026-01-31', balance: 10000 })
+    spendFromCash(cash.id, '2026-02-10', 2000)
+    renderTab()
+    await open('現金')
+    await ready()
+
+    fireEvent.change(section().getByLabelText('日付'), { target: { value: '2026-02-28' } })
+    fireEvent.change(section().getByLabelText('金額'), { target: { value: '7000' } })
+
+    expect(await section().findByText(/この日の帳簿残高 ¥8,000/)).toBeInTheDocument()
+    expect(section().getByText(/記録すると −¥1,000 の調整が入ります/)).toBeInTheDocument()
+  })
+
+  it('2つ目以降の記録の食い違いは自動調整として表に載り、下に合計(初期残高を除く)が出る', async () => {
+    const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
+    balanceRecords.create({ accountId: cash.id, recordDate: '2026-01-31', balance: 10000 })
+    spendFromCash(cash.id, '2026-02-10', 2000)
+    renderTab()
+    await open('現金')
+    await ready()
+
+    record('2026-02-28', '7000')
+
+    const row = await section().findByRole('row', { name: /2026-02-28/ })
+    expect(within(row).getByText('2026-02-01〜2026-02-28')).toBeInTheDocument()
+    expect(within(row).getByText('−¥1,000')).toBeInTheDocument()
+    const total = section().getByRole('row', { name: /自動調整の合計\(初期残高を除く\)/ })
+    expect(within(total).getByText('−¥1,000')).toBeInTheDocument()
+  })
+
+  it('記録は行ごとに編集・削除でき、反映すると調整も計算し直される', async () => {
+    const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
+    const first = balanceRecords.create({ accountId: cash.id, recordDate: '2026-01-31', balance: 10000 })
+    renderTab()
+    await open('現金')
+    await ready()
+
+    fireEvent.click(await section().findByRole('button', { name: '2026-01-31の記録を編集' }))
+    fireEvent.change(section().getByLabelText('記録した残高'), { target: { value: '12000' } })
+    fireEvent.click(section().getByRole('button', { name: '更新' }))
+    await waitFor(() => expect(balanceRecords.findByAccount(cash.id)[0].balance).toBe(12000))
+
+    fireEvent.click(await section().findByRole('button', { name: '2026-01-31の記録を削除' }))
+    await waitFor(() => expect(balanceRecords.findByAccount(cash.id)).toHaveLength(0))
+    expect(first.id).toBeGreaterThan(0)
+    expect(entries.findAll().filter((e) => e.sourceType === 'auto_balance_adjustment')).toHaveLength(0)
+  })
+
+  it('取引後残高のあるCSVの科目は、記録欄も編集・削除も出さず、表だけを出す', async () => {
+    const bank = accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true })
+    const salary = accounts.create({ category: 'revenue', name: '給与', isReconcilable: null })
+    entries.create({
+      entryDate: '2026-02-10',
+      sourceType: 'external_import',
+      householdMemberId: memberId,
+      lines: [
+        { householdMemberId: memberId, accountId: bank.id, side: 'debit', amount: 1000 },
+        { householdMemberId: memberId, accountId: salary.id, side: 'credit', amount: 1000 },
+      ],
+      externalTransactionRef: {
+        accountId: bank.id,
+        externalId: 'A',
+        entryDate: '2026-02-10',
+        description: '給与',
+        amount: 1000,
+        externalBalanceAfter: 11000,
+        rowOrder: 0,
+      },
+    })
+    renderTab()
+    await open('楽天銀行')
+    await ready()
+
+    expect(await section().findByRole('row', { name: /2026-02-10/ })).toBeInTheDocument()
+    expect(section().queryByRole('button', { name: '残高を記録する' })).toBeNull()
+    expect(section().queryByRole('button', { name: /の記録を編集/ })).toBeNull()
+    expect(section().getByText('明細の残高')).toBeInTheDocument()
+  })
+
+  it('自動調整をオフにすると、調整は入らず、ずれている額が表に出る', async () => {
+    const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
+    balanceRecords.create({ accountId: cash.id, recordDate: '2026-01-31', balance: 10000 })
+    balanceRecords.create({ accountId: cash.id, recordDate: '2026-02-28', balance: 7000 })
+    accounts.update(cash.id, { autoBalanceAdjustment: false })
+    renderTab()
+    await open('現金')
+    await ready()
+
+    const row = await section().findByRole('row', { name: /2026-02-28/ })
+    expect(within(row).getByText('ずれ −¥3,000')).toBeInTheDocument()
   })
 })

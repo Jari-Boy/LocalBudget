@@ -2,6 +2,7 @@ import * as Comlink from 'comlink'
 import type { Database } from 'sql.js'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { AccountGroupRepository } from '../../domain/account-group/AccountGroupRepository'
+import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
 import type { BudgetRepository } from '../../domain/budget/BudgetRepository'
 import type { CounterpartyRepository } from '../../domain/counterparty/CounterpartyRepository'
 import type { CounterpartyGroupRepository } from '../../domain/counterparty-group/CounterpartyGroupRepository'
@@ -23,6 +24,7 @@ import type { ProjectGroupRepository } from '../../domain/project-group/ProjectG
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
 import { SqlJsAccountRepository } from '../db/SqlJsAccountRepository'
+import { SqlJsAccountBalanceRecordRepository } from '../db/SqlJsAccountBalanceRecordRepository'
 import { SqlJsAccountGroupRepository } from '../db/SqlJsAccountGroupRepository'
 import { SqlJsBudgetRepository } from '../db/SqlJsBudgetRepository'
 import { SqlJsCounterpartyRepository } from '../db/SqlJsCounterpartyRepository'
@@ -78,6 +80,8 @@ export interface BackupRpcApi {
 export interface RepositoryRegistry {
   account: AccountRepository
   accountGroup: AccountGroupRepository
+  /** 手で記録した残高(基準点、計画Issue #205)。追加・編集・削除で自動調整仕訳が計算し直される */
+  accountBalanceRecord: AccountBalanceRecordRepository
   budget: BudgetRepository
   counterparty: CounterpartyRepository
   /** 取引先グループ(計画Issue #143)。表示専用、集計には関与しない */
@@ -137,6 +141,7 @@ export function createRepositoryRegistry(
   return {
     account: new SqlJsAccountRepository(db),
     accountGroup: new SqlJsAccountGroupRepository(db),
+    accountBalanceRecord: new SqlJsAccountBalanceRecordRepository(db),
     budget: new SqlJsBudgetRepository(db),
     counterparty: new SqlJsCounterpartyRepository(db),
     counterpartyGroup: new SqlJsCounterpartyGroupRepository(db),

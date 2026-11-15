@@ -42,6 +42,8 @@ import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBa
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
 import { JournalFilterPanel, type JournalFilterOptions } from '../common/journal-filter/JournalFilterPanel'
 import { JournalResultList } from '../common/journal-result/JournalResultList'
+import { AutoBalanceAdjustmentDetail } from './AutoBalanceAdjustmentDetail'
+import { describeAutoBalanceAdjustment } from '../../domain/journal/describeAutoBalanceAdjustment'
 import { SOURCE_TAGS, DRAFT_TAG, type JournalResultItem } from '../common/journal-result/journalResultModel'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
 import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../master/masterTreeNodes'
@@ -99,9 +101,13 @@ import type { JournalTemplateGroupRepository } from '../../domain/journal-templa
 import { TemplatePickerDialog } from '../journal-template/TemplatePickerDialog'
 import './JournalScreen.css'
 
+import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
+
 export type JournalScreenTab = 'list' | 'drafts' | 'proposals' | 'rules' | 'templates'
 
 export interface JournalScreenProps {
+  /** 科目の登録フォームで最初の残高を記録する先(計画Issue #205)。省略時は最初の残高の欄を出さない */
+  accountBalanceRecordRepository?: MaybeAsync<Pick<AccountBalanceRecordRepository, 'create'>>
   journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'update' | 'delete'>>
   journalEntryDraftRepository: MaybeAsync<
     Pick<JournalEntryDraftRpcApi, 'findAll' | 'create' | 'update' | 'delete' | 'confirm'>
@@ -130,6 +136,8 @@ export interface JournalScreenProps {
   recurringTransactionRuleRepository: MaybeAsync<Pick<RecurringTransactionRuleRepository, 'findAll' | 'create'>>
   /** 「この仕訳を割勘」を押したときの移動(割勘の入力フォームへ) */
   onSplit: (entry: JournalEntry) => void
+  /** 自動調整仕訳の詳細から、対象科目の「残高の照合」欄を開く(計画Issue #205)。省略時は導線を出さない */
+  onOpenAccountReconciliation?: (accountId: number) => void
   /** 提案を確定・見送りしたとき(サイドナビのバッジの件数を取り直すため) */
   onProposalsChanged?: () => void
   initialTab?: JournalScreenTab
@@ -1004,6 +1012,13 @@ export function JournalScreen(props: JournalScreenProps) {
     guarded(() => {
       // 一括編集の選択は、インライン編集を始めるときに解く(同時には使わない)
       resetBulk()
+      // 自動調整仕訳は編集できないので、行の入力欄にはせず、読み取り専用の詳細(仕訳単位の表示)で開く(計画Issue #205)
+      if (data.entries.find((e) => e.id === id)?.sourceType === 'auto_balance_adjustment') {
+        setViewMode('entry')
+        saveJournalViewMode('entry')
+        open({ kind: 'entry', id }, data)
+        return
+      }
       open({ kind: 'entry', id }, data)
       setLineEditing(true)
     })
@@ -1028,7 +1043,9 @@ export function JournalScreen(props: JournalScreenProps) {
 
   // ---- 一括編集(計画Issue #182) ----
   /** 表示中の明細行(選べる行)。絞り込みで見えなくなった行は、選択に含めない */
-  const visibleLines: BulkSelectedLine[] = visibleEntries.flatMap((entry) => entry.lines.map((line) => ({ entry, line })))
+  const visibleLines: BulkSelectedLine[] = visibleEntries
+    .filter((entry) => entry.sourceType !== 'auto_balance_adjustment') // 自動調整仕訳は一括編集の対象にしない(計画Issue #205)
+    .flatMap((entry) => entry.lines.map((line) => ({ entry, line })))
   const bulkSelected = visibleLines.filter((s) => bulkLineIds.includes(s.line.id))
   const bulkSelectedIds = new Set(bulkSelected.map((s) => s.line.id))
   /** 選択した行に合わせて、選べなくなった項目の選択を外した、変える項目の選択 */
@@ -1103,6 +1120,15 @@ export function JournalScreen(props: JournalScreenProps) {
           onRequestCreateAccount: (apply) => setAccountDialog({ apply }),
         }
       : undefined
+
+  /** 自動調整仕訳(計画Issue #205)は読み取り専用の詳細を出す。相手科目は元手・調整のシステム管理科目 */
+  const autoDescription =
+    selection?.kind === 'entry' && selectedEntry
+      ? describeAutoBalanceAdjustment(selectedEntry, (accountId) => {
+          const account = data.accounts.find((a) => a.id === accountId)
+          return account !== undefined && (account.category === 'equity' || (account.category === 'expense' && account.isSystemManaged))
+        })
+      : null
 
   const sourceTag =
     selection?.kind === 'entry' && selectedEntry
@@ -1360,7 +1386,7 @@ export function JournalScreen(props: JournalScreenProps) {
                   )}
                   <h2>{title}</h2>
                 </div>
-                {selectedEntry && (
+                {selectedEntry && autoDescription === null && (
                   <a
                     className="journal-screen__button"
                     href="#related-entries"
@@ -1387,6 +1413,23 @@ export function JournalScreen(props: JournalScreenProps) {
                 </>
               )}
 
+              {autoDescription !== null && selectedEntry ? (
+                <AutoBalanceAdjustmentDetail
+                  entry={selectedEntry}
+                  description={autoDescription}
+                  accountNameOf={accountNameOf}
+                  onShowPeriod={() => {
+                    const from = autoDescription.periodStart ?? autoDescription.periodEnd
+                    setFilter({ accountIds: [autoDescription.accountId], dateFrom: from, dateTo: autoDescription.periodEnd })
+                  }}
+                  onOpenReconciliation={
+                    props.onOpenAccountReconciliation === undefined
+                      ? undefined
+                      : () => props.onOpenAccountReconciliation!(autoDescription.accountId)
+                  }
+                />
+              ) : (
+              <>
               <JournalEntryEditor
                 value={editor}
                 onChange={changeEditor}
@@ -1609,6 +1652,8 @@ export function JournalScreen(props: JournalScreenProps) {
                   )}
                 </div>
               )}
+              </>
+              )}
             </>
           )}
         </section>
@@ -1645,7 +1690,7 @@ export function JournalScreen(props: JournalScreenProps) {
           <div role="dialog" aria-modal="true" aria-label="科目を登録" className="import-dialog import-dialog--wide">
             <AccountCreateForm
               accountRepository={props.accountRepository}
-              journalEntryRepository={props.journalEntryRepository}
+              balanceRecordRepository={props.accountBalanceRecordRepository}
               groups={data.accountGroups}
               householdMembers={data.members}
               initialCategory="expense"

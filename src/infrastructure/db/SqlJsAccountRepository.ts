@@ -7,6 +7,7 @@ import type {
   UpdateAccountOptions,
 } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
+import { AUTO_BALANCE_ADJUSTMENT_SOURCE_TYPE, reconcileAutoBalanceAdjustments } from './autoBalanceAdjustment'
 
 /**
  * AccountRepository(ドメイン層のポート)のsql.js実装。
@@ -68,9 +69,11 @@ export class SqlJsAccountRepository implements AccountRepository {
     this.db.run('BEGIN')
     try {
       this.db.run(
-        `UPDATE accounts SET name = ?, household_member_id = ?, account_group_id = ?, sort_order = ? WHERE id = ?`,
+        `UPDATE accounts SET name = ?, auto_balance_adjustment = ?, household_member_id = ?, account_group_id = ?,
+           sort_order = ? WHERE id = ?`,
         [
           input.name ?? current.name,
+          (input.autoBalanceAdjustment ?? current.autoBalanceAdjustment) ? 1 : 0,
           nextMemberId,
           input.accountGroupId === undefined ? current.accountGroupId : input.accountGroupId,
           input.sortOrder === undefined ? current.sortOrder : input.sortOrder,
@@ -80,6 +83,8 @@ export class SqlJsAccountRepository implements AccountRepository {
       if (options.updateExistingLines === true && nextMemberId !== null) {
         this.db.run(`UPDATE journal_lines SET household_member_id = ? WHERE account_id = ?`, [nextMemberId, id])
       }
+      // 自動調整のオン・オフや科目名(摘要に入る)の変更を自動調整仕訳へ反映する(計画Issue #205)
+      reconcileAutoBalanceAdjustments(this.db, [id])
       this.db.run('COMMIT')
     } catch (error) {
       this.db.run('ROLLBACK')
@@ -89,7 +94,28 @@ export class SqlJsAccountRepository implements AccountRepository {
   }
 
   delete(id: number): void {
-    this.db.run('DELETE FROM accounts WHERE id = ?', [id])
+    // 自動で作られた仕訳(元手と自動調整)と残高の記録だけなら一緒に削除できる(計画Issue #205)。
+    // 手入力など他の仕訳が1行でもあれば、自動調整仕訳には触れずDDLのトリガーが削除を拒否する
+    this.db.run('BEGIN')
+    try {
+      const [others] = this.db.exec(
+        `SELECT 1 FROM journal_lines l JOIN journal_entries e ON e.id = l.journal_entry_id
+         WHERE l.account_id = ? AND e.source_type != ? LIMIT 1`,
+        [id, AUTO_BALANCE_ADJUSTMENT_SOURCE_TYPE],
+      )
+      if (!others) {
+        this.db.run(
+          `DELETE FROM journal_entries WHERE source_type = ? AND id IN (
+             SELECT journal_entry_id FROM journal_lines WHERE account_id = ?)`,
+          [AUTO_BALANCE_ADJUSTMENT_SOURCE_TYPE, id],
+        )
+      }
+      this.db.run('DELETE FROM accounts WHERE id = ?', [id])
+      this.db.run('COMMIT')
+    } catch (error) {
+      this.db.run('ROLLBACK')
+      throw error
+    }
   }
 
   deactivate(id: number): Account {
@@ -146,6 +172,7 @@ export class SqlJsAccountRepository implements AccountRepository {
         )
       }
 
+      reconcileAutoBalanceAdjustments(this.db, [targetId, ...sourceIds])
       this.db.run('COMMIT')
     } catch (error) {
       this.db.run('ROLLBACK')
@@ -184,6 +211,7 @@ function mapRowToAccount(columns: string[], values: unknown[]): Account {
     hasExternalStatement: sqlToBool(get<number | null>('has_external_statement')),
     isActive: sqlToBool(get<number>('is_active')) as boolean,
     isSystemManaged: sqlToBool(get<number>('is_system_managed')) as boolean,
+    autoBalanceAdjustment: sqlToBool(get<number>('auto_balance_adjustment')) as boolean,
     householdMemberId: get<number | null>('household_member_id'),
     accountGroupId: get<number | null>('account_group_id'),
     sortOrder: get<number>('sort_order'),

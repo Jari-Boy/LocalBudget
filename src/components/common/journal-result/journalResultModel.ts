@@ -26,6 +26,7 @@ export const SOURCE_TAGS: Record<JournalEntrySourceType, SourceTag> = {
   recurring_generated: { label: '定期', ...PURPLE },
   initial_balance: { label: '初期残高', ...NEUTRAL },
   balance_adjustment: { label: '残高調整', ...NEUTRAL },
+  auto_balance_adjustment: { label: '自動調整', ...PURPLE },
 }
 
 export const DRAFT_TAG: SourceTag = { label: '下書き', ...YELLOW }

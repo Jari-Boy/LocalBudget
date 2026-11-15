@@ -24,6 +24,7 @@ function account(id: number, category: Account['category'], isSystemManaged = fa
     hasExternalStatement: null,
     isActive: true,
     isSystemManaged,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId: null,
     sortOrder: 0,

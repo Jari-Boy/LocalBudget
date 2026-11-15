@@ -12,6 +12,8 @@ export interface ExternalTransactionRef {
   description: string
   amount: number
   externalBalanceAfter: number | null
+  /** 取込時のCSV上の行の順番(計画Issue #205)。既存データはnull(id順で代用) */
+  rowOrder: number | null
   isSettled: boolean | null
   importedAt: string
 }
@@ -24,5 +26,8 @@ export interface CreateExternalTransactionRefInput {
   description: string
   amount: number
   externalBalanceAfter?: number | null
+  rowOrder?: number | null
   isSettled?: boolean | null
+  /** 取込日時。同じ取込の行を同じ値にそろえるために指定する(省略時はDBの現在時刻、計画Issue #205) */
+  importedAt?: string
 }

@@ -16,7 +16,7 @@ import type { Project } from '../../domain/project/Project'
 import type { ProjectRepository } from '../../domain/project/ProjectRepository'
 import type { ProjectGroup } from '../../domain/project-group/ProjectGroup'
 import type { ProjectGroupRepository } from '../../domain/project-group/ProjectGroupRepository'
-import { checkBalanceReconciliation, type ReconciliationLine } from '../../domain/reconciliation/checkBalanceReconciliation'
+import { previewImportReconciliation, type ImportPreviewLine, type ImportPreviewRef } from '../../domain/reconciliation/previewImportReconciliation'
 import type { ExternalTransactionRef } from '../../domain/reconciliation/ExternalTransactionRef'
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
@@ -32,6 +32,7 @@ import { resolveMappingDefinitionCandidates, type MappingDefinitionCandidateMatc
 import { suggestCounterpartyAccount, type CounterpartyLookup } from '../../domain/statement-import/suggestCounterpartyAccount'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
+import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
 import { AccountCreateForm } from '../master/AccountCreateForm'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
 import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../master/masterTreeNodes'
@@ -79,6 +80,8 @@ export interface StatementImportScreenProps {
   >
   externalTransactionRefRepository: { findByAccount(accountId: number): ExternalTransactionRef[] | Promise<ExternalTransactionRef[]> }
   journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'delete'>>
+  /** 科目の登録フォームで最初の残高を記録する先(計画Issue #205)。省略時は最初の残高の欄を出さない */
+  accountBalanceRecordRepository?: MaybeAsync<Pick<AccountBalanceRecordRepository, 'create'>>
   counterpartyRepository: MaybeAsync<
     Pick<CounterpartyRepository, 'findAll' | 'findByPattern' | 'addPattern' | 'create' | 'update'>
   >
@@ -146,6 +149,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     importMappingDefinitionRepository,
     externalTransactionRefRepository,
     journalEntryRepository,
+    accountBalanceRecordRepository,
     counterpartyRepository,
     counterpartyGroupRepository,
     projectRepository,
@@ -184,7 +188,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [createTarget, setCreateTarget] = useState<CreateTarget>(null)
   const [quickAddedCounterpartyIds, setQuickAddedCounterpartyIds] = useState<Set<number>>(new Set())
   const [editingLearn, setEditingLearn] = useState<Set<number>>(new Set())
-  const [pastLines, setPastLines] = useState<Array<{ journalEntryId: number; side: 'debit' | 'credit'; amount: number }> | null>(null)
+  /** 残高の照合に使う、取込先の既存の明細行と突合マスタ(計画Issue #205) */
+  const [pastData, setPastData] = useState<{ lines: ImportPreviewLine[]; refs: ImportPreviewRef[] } | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -220,23 +225,43 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const statementOwnerId = targetAccount
     ? (targetAccount.householdMemberId ?? (ownerChoice?.accountId === targetAccount.id ? ownerChoice.memberId : null))
     : null
-  const externalBalance = session?.review.latestExternalBalance ?? null
+  const hasStatementBalance = session?.review.records.some((r) => r.record.balanceAfter !== null) ?? false
 
-  // 残高照合に使う、取込先の確定済み(過去分)の明細行
+  // 残高の照合に使う、取込先の既存の明細行と突合マスタ(計画Issue #205)
   useEffect(() => {
-    if (!session || session.targetAccount.isReconcilable !== true || externalBalance === null) {
-      setPastLines(null)
+    if (!session || session.targetAccount.isReconcilable !== true || !hasStatementBalance) {
+      setPastData(null)
       return
     }
-    void Promise.resolve(journalEntryRepository.findAll()).then((all: JournalEntry[]) =>
-      setPastLines(
-        all
-          .flatMap((entry) => entry.lines)
-          .filter((line) => line.accountId === session.targetAccount.id)
-          .map((line) => ({ journalEntryId: line.journalEntryId, side: line.side, amount: line.amount })),
-      ),
+    const accountId = session.targetAccount.id
+    void Promise.all([
+      Promise.resolve(journalEntryRepository.findAll()),
+      Promise.resolve(externalTransactionRefRepository.findByAccount(accountId)),
+    ]).then(([all, refs]: [JournalEntry[], ExternalTransactionRef[]]) =>
+      setPastData({
+        lines: all.flatMap((entry) =>
+          entry.lines
+            .filter((line) => line.accountId === accountId)
+            .map((line) => ({
+              journalEntryId: line.journalEntryId,
+              entryDate: entry.entryDate,
+              side: line.side,
+              amount: line.amount,
+              sourceType: entry.sourceType,
+            })),
+        ),
+        refs: refs.map((ref) => ({
+          id: ref.id,
+          journalEntryId: ref.journalEntryId,
+          entryDate: ref.entryDate,
+          amount: ref.amount,
+          externalBalanceAfter: ref.externalBalanceAfter,
+          rowOrder: ref.rowOrder,
+          importedAt: ref.importedAt,
+        })),
+      }),
     )
-  }, [session?.targetAccount.id, session?.targetAccount.isReconcilable, externalBalance, journalEntryRepository]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session?.targetAccount.id, session?.targetAccount.isReconcilable, hasStatementBalance, journalEntryRepository, externalTransactionRefRepository]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 未保存の警告(計画Issue #193)。取り込んだ行の入力を初期状態から変えて、まだ確定していないとき。
   // 「保存して移動」は、確定できる行を確定する(確定できない行が残るときは移動しない)
@@ -494,6 +519,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     const failed: ConfirmFailure[] = []
     const succeeded = new Set<number>()
     let learned = 0
+    // 同じ取込の行は同じ取込日時にそろえる(残高の基準点の並び順を取込単位で判定するため、計画Issue #205)
+    const importedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
 
     for (const index of importable) {
       const { record, externalId, approximateCandidates } = records[index]
@@ -525,6 +552,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               householdMemberId: state.householdMemberId,
               settlementBatchId: isTaggableAccountId(state.counterAccountId, accountList) ? state.settlementBatchId : null,
               comment: state.comment,
+              rowOrder: index,
+              importedAt,
               entryHouseholdMemberId,
               // 明細行の世帯メンバー: 科目の既定メンバー > 相手科目の行に選んだ世帯メンバー > 起票者(計画Issue #169)
               resolveLineHouseholdMemberId: createLineHouseholdMemberResolver([account, ...accountList], entryHouseholdMemberId),
@@ -579,17 +608,19 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     ),
   )
   const reconciliation =
-    session && session.targetAccount.isReconcilable === true && pastLines !== null && externalBalance !== null && importable.length > 0
-      ? checkBalanceReconciliation(
-          [
-            ...pastLines.filter((l) => !replacedIds.has(l.journalEntryId)).map((l): ReconciliationLine => ({ side: l.side, amount: l.amount })),
-            ...importable.map((i): ReconciliationLine => {
-              const amount = records[i].record.amount
-              return amount >= 0 ? { side: 'debit', amount } : { side: 'credit', amount: -amount }
-            }),
-          ],
-          externalBalance,
-        )
+    session && session.targetAccount.isReconcilable === true && pastData !== null && hasStatementBalance && importable.length > 0
+      ? previewImportReconciliation({
+          existingLines: pastData.lines,
+          existingRefs: pastData.refs,
+          replacedEntryIds: replacedIds,
+          newRows: importable.map((i) => ({
+            entryDate: records[i].record.entryDate,
+            amount: records[i].record.amount,
+            balanceAfter: records[i].record.balanceAfter,
+            rowOrder: i,
+          })),
+          autoAdjust: session.targetAccount.autoBalanceAdjustment,
+        })
       : null
 
   const signedYen = (n: number) => `${n < 0 ? '-' : ''}${formatCurrency(Math.abs(n), 'JPY').replace('￥', '¥')}`
@@ -787,16 +818,26 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             {t('loadedSummary', { fileName: session.fileName, newCount: importable.length, dupCount, checkCount })}
           </p>
 
-          {reconciliation && (
-            <p role={reconciliation.isReconciled ? 'status' : 'alert'} className={reconciliation.isReconciled ? 'import-summary' : 'import-error'}>
-              {reconciliation.isReconciled
-                ? t('balanceReconciled')
-                : t('balanceMismatchWarning', {
-                    bookBalance: formatCurrency(reconciliation.bookBalance, 'JPY'),
-                    externalBalance: formatCurrency(reconciliation.externalBalance, 'JPY'),
-                    difference: formatCurrency(reconciliation.difference, 'JPY'),
-                  })}
+          {reconciliation && reconciliation.gaps.length === 0 && (
+            <p role="status" className="import-summary">
+              {t('balanceReconciled')}
             </p>
+          )}
+          {reconciliation && reconciliation.gaps.length > 0 && (
+            <div role="alert" className="import-error">
+              <p>{t(reconciliation.adjusted ? 'balanceGapAdjusted' : 'balanceGapNotAdjusted')}</p>
+              <ul>
+                {reconciliation.gaps.slice(0, 5).map((gap) => (
+                  <li key={gap.periodEnd}>
+                    {t('balanceGapItem', {
+                      period: `${gap.periodStart}〜${gap.periodEnd}`,
+                      amount: signedYen(gap.amount),
+                    })}
+                  </li>
+                ))}
+                {reconciliation.gaps.length > 5 && <li>{t('balanceGapMore', { count: reconciliation.gaps.length - 5 })}</li>}
+              </ul>
+            </div>
           )}
 
           {selected.size > 0 && (
@@ -1225,7 +1266,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           <div role="dialog" aria-modal="true" aria-label={t('createAccountTitle')} className="import-dialog import-dialog--wide">
             <AccountCreateForm
               accountRepository={accountRepository}
-              journalEntryRepository={journalEntryRepository}
+              balanceRecordRepository={accountBalanceRecordRepository}
               groups={data.accountGroups}
               householdMembers={data.members}
               initialCategory="asset"

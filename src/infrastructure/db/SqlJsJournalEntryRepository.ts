@@ -13,6 +13,12 @@ import { assertJournalBalance } from '../../domain/journal/assertJournalBalance'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import type { AccountCategory } from '../../domain/account/Account'
+import { AutoBalanceAdjustmentEntryReadOnlyError } from '../../domain/journal/AutoBalanceAdjustmentEntryReadOnlyError'
+import {
+  findAffectedAccountIdsOfEntry,
+  isAutoBalanceAdjustmentEntry,
+  reconcileAutoBalanceAdjustments,
+} from './autoBalanceAdjustment'
 import { SqlJsExternalTransactionRefRepository } from './SqlJsExternalTransactionRefRepository'
 
 /**
@@ -47,6 +53,11 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     this.db.run('BEGIN')
     try {
       const entryIds = inputs.map((input) => this.insertEntry(input))
+      // 残高の基準点との食い違いを、同じトランザクションで自動調整仕訳に反映する(計画Issue #205)
+      reconcileAutoBalanceAdjustments(
+        this.db,
+        entryIds.flatMap((entryId) => findAffectedAccountIdsOfEntry(this.db, entryId)),
+      )
       this.db.run('COMMIT')
       return entryIds.map((entryId) => this.findById(entryId)!)
     } catch (error) {
@@ -115,6 +126,9 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     if (!current) {
       throw new Error(`journal entry not found: ${id}`)
     }
+    if (current.sourceType === 'auto_balance_adjustment') {
+      throw new AutoBalanceAdjustmentEntryReadOnlyError(id)
+    }
     this.assertSettlementBatchOnlyOnAdvanceAccounts(input.lines)
     assertLineIdsBelongToEntry(input.lines, current)
 
@@ -131,6 +145,11 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
         ],
       )
       applyLineDiff(this.db, current, input.lines)
+      // 更新前後で触れた科目の自動調整仕訳を計算し直す(計画Issue #205)
+      reconcileAutoBalanceAdjustments(this.db, [
+        ...current.lines.map((line) => line.accountId),
+        ...findAffectedAccountIdsOfEntry(this.db, id),
+      ])
       this.db.run('COMMIT')
       return this.findById(id)!
     } catch (error) {
@@ -140,18 +159,37 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
   }
 
   delete(id: number): void {
-    this.db.run('DELETE FROM journal_entries WHERE id = ?', [id])
+    if (isAutoBalanceAdjustmentEntry(this.db, id)) {
+      throw new AutoBalanceAdjustmentEntryReadOnlyError(id)
+    }
+    this.db.run('BEGIN')
+    try {
+      const affected = findAffectedAccountIdsOfEntry(this.db, id)
+      this.db.run('DELETE FROM journal_entries WHERE id = ?', [id])
+      reconcileAutoBalanceAdjustments(this.db, affected)
+      this.db.run('COMMIT')
+    } catch (error) {
+      this.db.run('ROLLBACK')
+      throw error
+    }
   }
 
   deleteBySettlementBatchId(settlementBatchId: number): void {
     this.db.run('BEGIN')
     try {
+      const [entries] = this.db.exec(
+        'SELECT DISTINCT journal_entry_id FROM journal_lines WHERE settlement_batch_id = ?',
+        [settlementBatchId],
+      )
+      const entryIds = (entries?.values ?? []).map((row) => row[0] as number)
+      const affected = entryIds.flatMap((entryId) => findAffectedAccountIdsOfEntry(this.db, entryId))
       this.db.run(
         `DELETE FROM journal_entries WHERE id IN (
            SELECT DISTINCT journal_entry_id FROM journal_lines WHERE settlement_batch_id = ?
          )`,
         [settlementBatchId],
       )
+      reconcileAutoBalanceAdjustments(this.db, affected)
       this.db.run('COMMIT')
     } catch (error) {
       this.db.run('ROLLBACK')

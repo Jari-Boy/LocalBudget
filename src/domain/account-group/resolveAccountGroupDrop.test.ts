@@ -28,6 +28,7 @@ function makeAccount(overrides: Partial<Account> & Pick<Account, 'id' | 'name'>)
     hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId: null,
     sortOrder: 0,

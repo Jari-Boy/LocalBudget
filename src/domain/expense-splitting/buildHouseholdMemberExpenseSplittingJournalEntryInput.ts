@@ -26,7 +26,7 @@ export interface BuildHouseholdMemberExpenseSplittingJournalEntryInputParams {
  * (toMember)を発生させる」行の2組4行から成る単一の仕訳を組み立て、
  * JournalEntryRepository.create()にそのまま渡せるCreateJournalEntryInput
  * (source_typeは'expense_splitting'、計画Issue #149)を返す。科目id・household_member_id・settlementBatchIdの
- * 解決は呼び出し側の責務(buildBalanceAdjustmentJournalEntryInputと同じパターン)。
+ * 解決は呼び出し側の責務(他の仕訳ビルダーと同じパターン)。
  *
  * 立替金(資産/負債)行は`settlementBatchId`(計画Issue #133、精算バッチのタグ)を持ち、
  * 費用付け替え2行は`eventProjectId`(元仕訳のproject_id、イベントのタグ)を引き継ぐ。

@@ -19,6 +19,8 @@ import { I18nextProvider } from 'react-i18next'
 import i18n from '../../infrastructure/i18n/i18n'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
+import { seedBalanceAdjustmentAccount } from '../../infrastructure/db/seedBalanceAdjustmentAccount'
+import { seedInitialBalanceAccount } from '../../infrastructure/db/seedInitialBalanceAccount'
 import { SqlJsAccountGroupRepository } from '../../infrastructure/db/SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsCounterpartyGroupRepository } from '../../infrastructure/db/SqlJsCounterpartyGroupRepository'
@@ -45,10 +47,18 @@ let bank: ReturnType<SqlJsAccountRepository['create']>
 let food: ReturnType<SqlJsAccountRepository['create']>
 let onEditMappings: () => void
 
+/** 利用者が作った仕訳(取引後残高の基準点から自動で入る調整仕訳は除く、計画Issue #205) */
+function userEntries() {
+  return entries.findAll().filter((e) => e.sourceType !== 'auto_balance_adjustment')
+}
+
 beforeEach(async () => {
   localStorage.clear()
   db = await createTestDatabase()
   runMigrations(db)
+  // 取引後残高付きの取込は基準点になり、自動調整仕訳の相手科目が必要になる(計画Issue #205)
+  seedInitialBalanceAccount(db)
+  seedBalanceAdjustmentAccount(db)
   accounts = new SqlJsAccountRepository(db)
   entries = new SqlJsJournalEntryRepository(db)
   counterparties = new SqlJsCounterpartyRepository(db)
@@ -237,7 +247,7 @@ describe('StatementImportScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
 
     expect(await screen.findByText(/確定しました。続けて次のCSVを取り込めます。/)).toBeInTheDocument()
-    const created = entries.findAll()
+    const created = userEntries()
     expect(created).toHaveLength(1)
     expect(created[0]).toMatchObject({ comment: 'まとめ買い', sourceType: 'external_import' })
     expect(screen.queryByRole('row', { name: /スーパー/ })).not.toBeInTheDocument()
@@ -259,7 +269,7 @@ describe('StatementImportScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /^1 件を「花子の口座」に確定$/ }))
 
     await screen.findByText(/確定しました/)
-    expect(entries.findAll()[0]).toMatchObject({ householdMemberId: hanako.id })
+    expect(userEntries()[0]).toMatchObject({ householdMemberId: hanako.id })
   })
 
   it('科目に名義が無いときは「誰の明細か」を選ばせ、未選択のままでは確定できず、選んだ人が起票者と全行に入る(計画Issue #193)', async () => {
@@ -282,7 +292,7 @@ describe('StatementImportScreen', () => {
     fireEvent.click(confirm)
 
     await screen.findByText(/確定しました/)
-    const created = entries.findAll()[0]
+    const created = userEntries()[0]
     expect(created.householdMemberId).toBe(hanako.id)
     expect(created.lines.map((l) => l.householdMemberId)).toEqual([hanako.id, hanako.id])
   })
@@ -301,7 +311,7 @@ describe('StatementImportScreen', () => {
     expect(within(owner).getAllByRole('option')).toHaveLength(1)
     expect(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ })).toBeDisabled()
     expect(screen.getByText('誰の明細かを選ぶと確定できます')).toBeInTheDocument()
-    expect(entries.findAll()).toHaveLength(0)
+    expect(userEntries()).toHaveLength(0)
   })
 
   it('取込先の科目を変えると、選んだ「誰の明細か」は選び直しになる(計画Issue #193)', async () => {
@@ -369,7 +379,7 @@ describe('StatementImportScreen', () => {
       clickChoose()
       fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
       expect(openPicker).toHaveBeenCalledTimes(1)
-      expect(entries.findAll()).toHaveLength(0)
+      expect(userEntries()).toHaveLength(0)
     })
 
     it('「保存して移動」では、行を確定してからファイル選択を開く', async () => {
@@ -383,7 +393,7 @@ describe('StatementImportScreen', () => {
       fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
 
       await waitFor(() => expect(openPicker).toHaveBeenCalledTimes(1))
-      expect(entries.findAll()).toHaveLength(1)
+      expect(userEntries()).toHaveLength(1)
     })
   })
 
@@ -417,7 +427,7 @@ describe('StatementImportScreen', () => {
       leave()
       fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
       expect(screen.getByTestId('where')).toHaveTextContent('/other')
-      expect(entries.findAll()).toHaveLength(0)
+      expect(userEntries()).toHaveLength(0)
     })
 
     it('「保存して移動」では、行を確定してから移動する', async () => {
@@ -431,7 +441,7 @@ describe('StatementImportScreen', () => {
       fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
 
       await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/other'))
-      expect(entries.findAll()).toHaveLength(1)
+      expect(userEntries()).toHaveLength(1)
     })
 
     it('確定できない行(相手科目が未選択)が残るときは、「保存して移動」でも移動しない', async () => {
@@ -485,7 +495,7 @@ describe('StatementImportScreen', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
 
     expect(await screen.findByText(/相手科目が未選択です/)).toBeInTheDocument()
-    expect(entries.findAll()).toHaveLength(0)
+    expect(userEntries()).toHaveLength(0)
   })
 
   it('確定版の可能性がある行は、「これは確定版です」を選ぶと既存の仕訳を置き換える', async () => {
@@ -509,16 +519,28 @@ describe('StatementImportScreen', () => {
     await screen.findByText(/確定しました/)
     // 削除した仕訳のIDは新しい仕訳に再利用されうるので、手入力の仕訳が残っていないことを起源で確認する
     expect(manual.sourceType).toBe('manual')
-    expect(entries.findAll().map((e) => e.sourceType)).toEqual(['external_import'])
+    expect(userEntries().map((e) => e.sourceType)).toEqual(['external_import'])
   })
 
-  it('残高が照合対象の取込先では、帳簿残高と明細の残高の一致・不一致を表示する', async () => {
+  it('残高が照合対象の取込先では、基準点(取引後残高)と帳簿が合わない期間を、自動調整が入ることとあわせて表示する(計画Issue #205)', async () => {
     makeMapping()
     renderScreen()
 
-    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+    // 10/05=97000 と 10/20=90000 の間は残高が7000減るが、取り込む行は1000だけ → 10/06〜10/20 に6000のずれ
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/20,コンビニ,-1000,90000\n`)
 
-    expect(await screen.findByText(/帳簿残高.*外部残高.*一致しません/)).toBeInTheDocument()
+    expect(await screen.findByText(/帳簿と明細の残高が合わない期間があります/)).toBeInTheDocument()
+    expect(screen.getByText(/2026-10-06〜2026-10-20/)).toBeInTheDocument()
+    expect(screen.getByText(/確定すると.*自動で調整/)).toBeInTheDocument()
+  })
+
+  it('取り込んだ明細の残高と帳簿が合っていれば、一致していることを表示する', async () => {
+    makeMapping()
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/20,コンビニ,-1000,96000\n`)
+
+    expect(await screen.findByText(/帳簿と明細の残高は一致しています/)).toBeInTheDocument()
   })
 
   it('取引先を選んだ行は確定時にパターンを登録し、件数を伝える', async () => {
@@ -583,7 +605,7 @@ describe('StatementImportScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /^1 件を「楽天VISA」に確定$/ }))
 
     await screen.findByText(/確定しました/)
-    const accountIds = entries.findAll()[0].lines.map((l) => l.accountId)
+    const accountIds = userEntries()[0].lines.map((l) => l.accountId)
     expect(accountIds).toContain(card.id)
     expect(accountIds).not.toContain(bank.id)
   })
@@ -735,7 +757,7 @@ describe('StatementImportScreen', () => {
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
     await screen.findByText(/確定しました/)
-    expect(entries.findAll()).toHaveLength(1)
+    expect(userEntries()).toHaveLength(1)
   })
 
   it('読み取れない行の方が多いときは、取り込めるが、マッピングが合っているか確認する警告を出す(計画Issue #151)', async () => {

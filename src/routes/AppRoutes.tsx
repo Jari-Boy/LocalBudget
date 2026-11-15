@@ -19,6 +19,7 @@ import type { ImportMappingDefinitionRepository } from '../domain/statement-impo
 import type { ExternalTransactionRefRepository } from '../domain/reconciliation/ExternalTransactionRefRepository'
 import type { JournalEntryDraftRpcApi } from '../infrastructure/rpc/createRepositoryRegistry'
 import type { RecurringTransactionProposalRpcApi } from '../infrastructure/rpc/createRecurringTransactionProposalApi'
+import type { AccountBalanceRecordRepository } from '../domain/reconciliation/AccountBalanceRecordRepository'
 import { useDbClient } from '../infrastructure/rpc/DbClientProvider'
 import { AnalysisScreen } from '../components/analysis/AnalysisScreen'
 import type { AnalysisRepositories } from '../components/analysis/analysisData'
@@ -107,6 +108,7 @@ export function AppRoutes() {
    */
   const {
     accountRepository,
+    accountBalanceRecordRepository,
     journalEntryRepository,
     journalEntryLinkGroupRepository,
     householdMemberRepository,
@@ -129,6 +131,8 @@ export function AppRoutes() {
   } = useMemo(
     () => ({
       accountRepository: client.account as unknown as Comlink.Remote<AccountRepository>,
+      accountBalanceRecordRepository:
+        client.accountBalanceRecord as unknown as Comlink.Remote<AccountBalanceRecordRepository>,
       journalEntryRepository: client.journalEntry as unknown as Comlink.Remote<JournalEntryRepository>,
       journalEntryLinkGroupRepository:
         client.journalEntryLinkGroup as unknown as Comlink.Remote<JournalEntryLinkGroupRepository>,
@@ -185,6 +189,7 @@ export function AppRoutes() {
       householdMemberRepository={householdMemberRepository}
       settlementBatchRepository={settlementBatchRepository}
       journalEntryRepository={journalEntryRepository}
+      accountBalanceRecordRepository={accountBalanceRecordRepository}
     />
   )
 
@@ -242,7 +247,7 @@ export function AppRoutes() {
       <Route
         path="/master/accounts"
         element={
-          <AccountMasterTab
+          <AccountMasterRoute
             accountRepository={accountRepository}
             accountGroupRepository={accountGroupRepository}
             householdMemberRepository={householdMemberRepository}
@@ -250,6 +255,7 @@ export function AppRoutes() {
             budgetRepository={budgetRepository}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
             importMappingDefinitionRepository={importMappingDefinitionRepository}
+            accountBalanceRecordRepository={accountBalanceRecordRepository}
           />
         }
       />
@@ -315,6 +321,7 @@ export function AppRoutes() {
             projectGroupRepository={projectGroupRepository}
             householdMemberRepository={householdMemberRepository}
             settlementBatchRepository={settlementBatchRepository}
+            accountBalanceRecordRepository={accountBalanceRecordRepository}
             onEditMappings={() => navigate('/master/mappings')}
           />
         }
@@ -323,6 +330,7 @@ export function AppRoutes() {
         path="/journal/entries"
         element={
           <JournalScreenRoute
+            accountBalanceRecordRepository={accountBalanceRecordRepository}
             journalEntryRepository={journalEntryRepository}
             journalEntryDraftRepository={journalEntryDraftRepository}
             journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
@@ -348,6 +356,7 @@ export function AppRoutes() {
         path="/journal/entries/:id"
         element={
           <JournalScreenRoute
+            accountBalanceRecordRepository={accountBalanceRecordRepository}
             journalEntryRepository={journalEntryRepository}
             journalEntryDraftRepository={journalEntryDraftRepository}
             journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
@@ -430,6 +439,16 @@ export function AppRoutes() {
   )
 }
 
+type AccountMasterRouteProps = Parameters<typeof AccountMasterTab>[0]
+
+/** 勘定科目マスタのルート(/master/accounts)。URLの`account`は最初に選ぶ科目の指定にだけ使う(計画Issue #205) */
+function AccountMasterRoute(props: AccountMasterRouteProps) {
+  const [searchParams] = useSearchParams()
+  const accountParam = Number(searchParams.get('account'))
+  const initialAccountId = Number.isInteger(accountParam) && accountParam > 0 ? accountParam : undefined
+  return <AccountMasterTab key={initialAccountId ?? ''} {...props} initialAccountId={initialAccountId} />
+}
+
 type JournalScreenRouteProps = Omit<JournalScreenProps, 'onSplit' | 'initialTab' | 'initialEntryId'>
 
 /**
@@ -461,6 +480,7 @@ function JournalScreenRoute(props: JournalScreenRouteProps) {
       initialEntryId={entryId}
       initialFilter={initialFilter}
       onSplit={(entry) => navigate('/journal/splitting', { state: { entryIds: [entry.id] } })}
+      onOpenAccountReconciliation={(accountId) => navigate(`/master/accounts?account=${accountId}`)}
     />
   )
 }

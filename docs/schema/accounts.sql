@@ -13,6 +13,9 @@ CREATE TABLE accounts (
   has_external_statement BOOLEAN,
   is_active           BOOLEAN NOT NULL DEFAULT TRUE,
   is_system_managed    BOOLEAN NOT NULL DEFAULT FALSE,
+  -- 残高の基準点に合うように自動で調整仕訳を入れるか(計画Issue #205、docs/domain/reconciliation.md 1.6)。
+  -- 資産・負債だけが使う。オフでも最初の基準点(元手)の仕訳は作る。開発用のDBは作り直す前提でマイグレーションは行わない
+  auto_balance_adjustment BOOLEAN NOT NULL DEFAULT TRUE,
   household_member_id  INTEGER REFERENCES household_members(id),
   account_group_id     INTEGER REFERENCES account_groups(id),
   sort_order           INTEGER NOT NULL DEFAULT 0,

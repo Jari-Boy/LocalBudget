@@ -30,6 +30,7 @@ import {
 import { AccountCreateForm } from './AccountCreateForm'
 import { AccountMergePanel } from './AccountMergePanel'
 import { BulkSelectionPanel } from './BulkSelectionPanel'
+import { AccountReconciliationSection, type ReconciliationRepository } from './AccountReconciliationSection'
 import { AccountMappingSection, AccountRegistrationInfo } from './AccountRegistrationSections'
 import { DefaultMemberChangeDialog } from './DefaultMemberChangeDialog'
 import { buildAccountTree, groupNodeId, leafNodeId, parseNodeId } from './masterTreeNodes'
@@ -49,7 +50,11 @@ export interface AccountMasterTabProps {
   importMappingDefinitionRepository: MaybeAsync<
     Pick<ImportMappingDefinitionRepository, 'findAll' | 'linkAccount' | 'unlinkAccount'>
   >
-  /** 初期残高の仕訳の日付(YYYY-MM-DD)。省略時は今日 */
+  /** 手で記録した残高(基準点)の操作(計画Issue #205)。省略時は「残高の照合」欄と最初の残高の欄を出さない */
+  accountBalanceRecordRepository?: ReconciliationRepository
+  /** 最初から選んでおく科目のid(仕訳の詳細の「科目の照合を見る」から開くとき、計画Issue #205) */
+  initialAccountId?: number
+  /** 最初の残高の記録の日付の初期値(YYYY-MM-DD)。省略時は今日 */
   today?: string
 }
 
@@ -99,12 +104,16 @@ export function AccountMasterTab({
   budgetRepository,
   recurringTransactionRuleRepository,
   importMappingDefinitionRepository,
+  accountBalanceRecordRepository,
+  initialAccountId,
   today,
 }: AccountMasterTabProps) {
   const { t } = useTranslation('master')
   const { t: tCommon } = useTranslation('common')
   const [data, setData] = useState<LoadedData | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    initialAccountId === undefined ? null : leafNodeId(initialAccountId),
+  )
   const [checkedIds, setCheckedIds] = useState<readonly string[]>([])
   const [creating, setCreating] = useState<AccountCategory | null>(null)
   const [armedId, setArmedId] = useState<string | null>(null)
@@ -337,7 +346,7 @@ export function AccountMasterTab({
         <AccountCreateForm
           key={creating}
           accountRepository={accountRepository}
-          journalEntryRepository={journalEntryRepository}
+          balanceRecordRepository={accountBalanceRecordRepository}
           groups={data.groups}
           householdMembers={data.members}
           initialCategory={creating}
@@ -368,9 +377,21 @@ export function AccountMasterTab({
             selected.kind === 'leaf' &&
             usage.get('account', parseNodeId(selected.id).id).initialBalanceEntryIds.length > 0
           }
+          reconciliation={
+            accountBalanceRecordRepository && selected.kind === 'leaf' && selectedAccount && !selectedAccount.isSystemManaged && summarizeAccountRegistration(selectedAccount)
+              ? {
+                  repository: accountBalanceRecordRepository,
+                  reloadToken: data.entries,
+                  today,
+                  onToggleAutoAdjust: (next: boolean) =>
+                    Promise.resolve(accountRepository.update(selectedAccount.id, { autoBalanceAdjustment: next })).then(() => true),
+                  onChanged: load,
+                }
+              : null
+          }
           registration={
             selected.kind === 'leaf' && selectedAccount
-              ? summarizeAccountRegistration(selectedAccount, data.entries)
+              ? summarizeAccountRegistration(selectedAccount)
               : null
           }
           definitions={data.definitions}
@@ -440,8 +461,12 @@ export function AccountMasterTab({
               if (kind === 'group') {
                 await accountGroupRepository.delete(id)
               } else {
+                // 自動調整仕訳は科目の削除と一緒にRepositoryが消す。旧初期残高の仕訳だけここで消す
+                const autoEntryIds = new Set(
+                  data.entries.filter((e) => e.sourceType === 'auto_balance_adjustment').map((e) => e.id),
+                )
                 for (const entryId of usage.get('account', id).initialBalanceEntryIds) {
-                  await journalEntryRepository.delete(entryId)
+                  if (!autoEntryIds.has(entryId)) await journalEntryRepository.delete(entryId)
                 }
                 await accountRepository.delete(id)
               }
@@ -556,6 +581,14 @@ interface EditPanelProps {
   hasInitialBalanceEntries: boolean
   /** 資産・負債科目の登録時の設定。それ以外(収益・費用・資本・グループ)はnull */
   registration: AccountRegistrationSummary | null
+  /** 資産・負債科目の「残高の照合」欄(計画Issue #205)。渡さなければ欄を出さない */
+  reconciliation: {
+    repository: ReconciliationRepository
+    reloadToken: unknown
+    today?: string
+    onToggleAutoAdjust: (next: boolean) => Promise<boolean>
+    onChanged: () => Promise<void>
+  } | null
   definitions: readonly ImportMappingDefinition[]
   onLinkDefinition: (definitionId: number) => void
   onUnlinkDefinition: (definitionId: number) => void
@@ -692,6 +725,17 @@ function EditPanel(props: EditPanelProps) {
       {account && props.registration && (
         <>
           <AccountRegistrationInfo summary={props.registration} />
+          {props.reconciliation && (
+            <AccountReconciliationSection
+              account={account}
+              repository={props.reconciliation.repository}
+              busy={busy}
+              today={props.reconciliation.today}
+              reloadToken={props.reconciliation.reloadToken}
+              onToggleAutoAdjust={props.reconciliation.onToggleAutoAdjust}
+              onChanged={props.reconciliation.onChanged}
+            />
+          )}
           {/* 取込先になれるのは外部明細がある科目だけなので、紐づけも外部明細ありの科目にだけ出す */}
           {props.registration.hasExternalStatement && (
             <AccountMappingSection

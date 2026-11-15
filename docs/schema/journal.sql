@@ -14,7 +14,10 @@ CREATE TABLE journal_entries (
       'manual', 'external_import', 'recurring_generated',
       'initial_balance', 'balance_adjustment',
       -- 割勘機能で作る仕訳(計画Issue #149)。割勘かどうかの判定は科目構成ではなくこの値で行う
-      'expense_splitting'
+      'expense_splitting',
+      -- 残高の基準点に合わせて自動で入る調整仕訳(元手を含む、計画Issue #205)。導出データで、
+      -- 利用者は編集・削除・関連付けできない。initial_balance・balance_adjustmentは旧データ用に残す
+      'auto_balance_adjustment'
     )),
   -- 起票者(この仕訳を切った主体)。NOT NULL(docs/domain/journal.md 1.1「起票者」)。
   -- journal_lines.household_member_id(誰の行か)とは別の列。明細行の世帯メンバーの入力時の

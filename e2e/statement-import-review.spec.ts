@@ -289,14 +289,22 @@ test.describe('明細取込画面', () => {
     await expect(page.getByRole('status').filter({ hasText: '一致しています' })).toBeVisible()
   })
 
-  test('CSVの残高と帳簿残高が一致しないときは、警告が表示される(取込はブロックしない)', async ({ page }) => {
+  test('CSVの基準点(取引後残高)と帳簿が合わない期間があるときは、その期間と自動調整が入る旨が表示される(取込はブロックしない、計画Issue #205)', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING)
 
-    await startImport(page, '普通預金', '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n')
+    // 7/20=97000 と 7/25=90000 の間は残高が7000減るが、取り込む行は1000だけ → 7/21〜7/25 に6000のずれ
+    await startImport(
+      page,
+      '普通預金',
+      '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n2026/07/25,コンビニ,-1000,90000\n',
+    )
 
-    await expect(page.getByRole('alert').filter({ hasText: '一致しません' })).toBeVisible()
+    const alert = page.getByRole('alert').filter({ hasText: '合わない期間があります' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('2026-07-21〜2026-07-25')
+    await expect(alert).toContainText('自動で調整')
     await expect(rowOf(page, /スーパー/)).toBeVisible()
   })
 

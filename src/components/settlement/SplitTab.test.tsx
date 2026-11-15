@@ -26,6 +26,7 @@ function account(id: number, name: string, category: Account['category'], isSyst
     hasExternalStatement: null,
     isActive: true,
     isSystemManaged,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId: null,
     sortOrder: id,

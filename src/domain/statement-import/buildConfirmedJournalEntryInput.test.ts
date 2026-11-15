@@ -124,8 +124,25 @@ describe('共通のヘッダー情報', () => {
       description: 'セブンイレブン 日本橋店',
       amount: -150,
       externalBalanceAfter: 9850,
+      rowOrder: null,
       isSettled: true,
     })
+  })
+
+  it('CSV上の行の順番と取込日時を突合マスタのスナップショットに引き継ぐ(計画Issue #205)', () => {
+    const input = buildConfirmedJournalEntryInput({
+      record: record({ amount: -150, balanceAfter: 9850 }),
+      externalId: 'HASH-001',
+      targetAccountId: 1,
+      targetAccountCategory: 'asset',
+      counterAccountId: 2,
+      rowOrder: 3,
+      importedAt: '2026-03-01 00:00:00',
+      entryHouseholdMemberId: 99,
+      resolveLineHouseholdMemberId,
+    })
+
+    expect(input.externalTransactionRef).toMatchObject({ rowOrder: 3, importedAt: '2026-03-01 00:00:00' })
   })
 
   it('相手科目行にcounterpartyId/projectId/householdMemberIdを設定できる', () => {

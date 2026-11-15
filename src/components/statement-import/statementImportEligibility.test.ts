@@ -14,6 +14,7 @@ function account(overrides: Partial<Parameters<typeof isStatementImportEligibleA
     category: 'asset' as const,
     isActive: true,
     isSystemManaged: false,
+    autoBalanceAdjustment: true,
     isReconcilable: true as boolean | null,
     hasExternalStatement: true as boolean | null,
     ...overrides,
@@ -71,6 +72,7 @@ const counter = (overrides: Partial<Parameters<typeof isStatementImportCounterAc
   category: 'expense' as const,
   isReconcilable: null,
   isSystemManaged: false,
+  autoBalanceAdjustment: true,
   ...overrides,
 })
 

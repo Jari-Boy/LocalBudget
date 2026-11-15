@@ -22,6 +22,9 @@ export interface BuildConfirmedJournalEntryInputParams {
   settlementBatchId?: number | null
   /** 仕訳のコメント(計画Issue #144)。摘要(CSVの摘要が入るmemo)とは別。空白のみは未設定扱い */
   comment?: string | null
+  /** CSV上の行の順番(0始まり)と、同じ取込で共通の取込日時(計画Issue #205。残高の基準点の並び順判定に使う) */
+  rowOrder?: number | null
+  importedAt?: string
   /** 起票者(CreateJournalEntryInput.householdMemberId、計画Issue #88)。解決は呼び出し側の責務 */
   entryHouseholdMemberId: number
   /**
@@ -78,6 +81,8 @@ export function buildConfirmedJournalEntryInput(
       description: record.description,
       amount: record.amount,
       externalBalanceAfter: record.balanceAfter,
+      rowOrder: params.rowOrder ?? null,
+      ...(params.importedAt === undefined ? {} : { importedAt: params.importedAt }),
       isSettled: record.isSettled,
     },
   }

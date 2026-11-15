@@ -19,6 +19,7 @@ function account(id: number, category: Account['category'], extra: Partial<Accou
     hasExternalStatement: null,
     isActive: true,
     isSystemManaged: false,
+    autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId: null,
     sortOrder: id,

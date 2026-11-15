@@ -7,6 +7,8 @@ export type JournalEntrySourceType =
   | 'initial_balance'
   | 'balance_adjustment'
   | 'expense_splitting'
+  /** 残高の基準点に合わせて自動で入る調整仕訳(元手を含む、計画Issue #205)。利用者は編集・削除・関連付けできない */
+  | 'auto_balance_adjustment'
 
 export interface JournalLine {
   id: number
@@ -99,7 +101,10 @@ export interface CreateExternalTransactionRefTarget {
   description: string
   amount: number
   externalBalanceAfter?: number | null
+  rowOrder?: number | null
   isSettled?: boolean | null
+  /** 取込日時。同じ取込の行で同じ値にそろえる(並び順の判定を取込単位で行うため、計画Issue #205) */
+  importedAt?: string
 }
 
 export interface UpdateJournalEntryInput {

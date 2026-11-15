@@ -18,7 +18,7 @@ export type DeletionBlockSource =
   | 'generatedEntries'
 
 export interface MasterUsageCount {
-  /** 仕訳の明細で使われた件数。初期残高の仕訳の明細は含めない(initialBalanceEntryIdsで別に持つ) */
+  /** 仕訳の明細で使われた件数。自動で作られた仕訳(初期残高・自動調整)の明細は含めない(initialBalanceEntryIdsで別に持つ) */
   journalLines: number
   /** 科目の明細を持つ初期残高の仕訳のid。口座の削除時に一緒に消す対象 */
   initialBalanceEntryIds: number[]
@@ -93,7 +93,8 @@ export function summarizeMasterUsage(input: MasterUsageInput): MasterUsage {
   }
 
   for (const entry of input.entries) {
-    const isInitialBalance = entry.sourceType === 'initial_balance'
+    // 自動で作られた仕訳(旧初期残高と、自動調整仕訳=元手・自動調整、計画Issue #205)は科目の削除をさまたげない
+    const isInitialBalance = entry.sourceType === 'initial_balance' || entry.sourceType === 'auto_balance_adjustment'
     countOf('householdMember', entry.householdMemberId).entryAuthors += 1
     if (entry.generatedFromRuleId !== null) {
       countOf('recurringRule', entry.generatedFromRuleId).generatedEntries += 1
