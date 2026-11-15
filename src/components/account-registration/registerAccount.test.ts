@@ -160,8 +160,21 @@ describe('registerAccount: 最初の残高の記録(計画Issue #205)', () => {
     expect(journalEntryRepository.findAll()).toHaveLength(0)
   })
 
+  it('マイナスの残高(当座貸越など)も記録できる', async () => {
+    const account = await registerAccount(accountRepository, balanceRecords, {
+      category: 'asset',
+      isReconcilable: false,
+      name: '当座',
+      householdMemberId: null,
+      firstBalance: { date: '2026-08-03', balance: -5000 },
+    })
+
+    expect(balanceRecords.findByAccount(account.id)).toMatchObject([{ balance: -5000 }])
+    const [entry] = journalEntryRepository.findAll()
+    expect(entry.lines.find((l) => l.accountId === account.id)).toMatchObject({ side: 'credit', amount: 5000 })
+  })
+
   it.each([
-    ['負数', -1],
     ['NaN(数値変換に失敗した入力相当)', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
   ])('金額が%sの場合は、最初の残高なしとして扱う', async (_label, balance) => {

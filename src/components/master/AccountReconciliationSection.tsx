@@ -68,7 +68,7 @@ export function AccountReconciliationSection(props: AccountReconciliationSection
   }, [reload, props.reloadToken])
 
   const amountValue = amount.trim() === '' ? null : Number(amount)
-  const amountValid = amountValue !== null && Number.isFinite(amountValue) && amountValue >= 0 && date !== ''
+  const amountValid = amountValue !== null && Number.isFinite(amountValue) && date !== ''
   useEffect(() => {
     if (!amountValid) {
       setPreview(null)
@@ -118,7 +118,7 @@ export function AccountReconciliationSection(props: AccountReconciliationSection
   const saveEdit = async () => {
     if (!editing) return
     const balance = Number(editing.balance)
-    if (editing.balance.trim() === '' || !Number.isFinite(balance) || balance < 0 || editing.date === '') return
+    if (editing.balance.trim() === '' || !Number.isFinite(balance) || editing.date === '') return
     const saved = await perform(() =>
       Promise.resolve(repository.update(editing.id, { recordDate: editing.date, balance })),
     )

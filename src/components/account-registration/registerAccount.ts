@@ -51,7 +51,7 @@ export interface BalanceRecordCreator {
  * 資産または負債科目を1件作成し、最初の残高(日付+金額)が入力されていれば残高の記録として保存する。
  * 記録の保存と同じトランザクションで、Worker側が純資産「初期残高」を相手科目とする元手の自動調整仕訳を
  * 入れる(docs/domain/reconciliation.md 1.6)。ユーザーには「区分」「純資産」等の簿記用語を見せない。
- * 0以上の有限の数値だけを残高として扱い、それ以外(負数・NaN・Infinity)は「最初の残高なし」とする。
+ * 有限の数値だけを残高として扱い(マイナスの残高=当座貸越なども記録できる)、NaN・Infinityは「最初の残高なし」とする。
  * balanceRecordRepositoryがnullの使い方(残高の記録に対応しない画面)では科目だけを作る。
  */
 export async function registerAccount(
@@ -75,8 +75,7 @@ export async function registerAccount(
     first !== null &&
     first !== undefined &&
     first.date !== '' &&
-    Number.isFinite(first.balance) &&
-    first.balance >= 0
+    Number.isFinite(first.balance)
   if (recordable) {
     await balanceRecordRepository.create({ accountId: account.id, recordDate: first.date, balance: first.balance })
   }
