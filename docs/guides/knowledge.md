@@ -199,3 +199,8 @@
 **内容**: `playwright.config.ts`の`webServer`は`reuseExistingServer: !process.env.CI`のため、5173番ですでに開発サーバーが動いていると、それをそのまま使う。手動で起動した`npm run dev`には、E2Eのためのダミーデータ投入の抑制(`VITE_DISABLE_DEV_SEED`、`webServer.env`でだけ付く)が効いていないので、開発用のサンプルデータ(口座・仕訳)が入った状態になる。E2Eは「口座・仕訳が0件」のクリーンな初期状態を前提にしているため、`UNIQUE constraint failed: accounts.category, accounts.name`や、同名のボタンが2つ見つかる`strict mode violation`で失敗する。実機の画面確認で開発サーバーを起動したあとにE2Eを流すときは、先に5173番の待ち受けを止める(`Get-NetTCPConnection -LocalPort 5173 -State Listen`で見つけて停止する)。落ちた原因がテストの不具合かを疑う前に、まずこれを確認する。
 
 **参考**: `playwright.config.ts`、`docs/decisions.md`(開発サンプルデータの投入、計画Issue #101)、Issue #207
+
+## Windowsのvitestは、Git Bashの小文字ドライブ(`/c/...`・`c:\...`)から実行すると「Vitest failed to find the runner」で全テストが落ちる
+
+**内容**: 作業ディレクトリのドライブ文字が小文字(`c:\Users\...`、Git Bashの`/c/Users/...`から起動した場合を含む)だと、vitestが同じファイルを大文字・小文字違いの別パスとして二重に読み込み、全テストファイルが「Vitest failed to find the runner」で失敗する(テストの中身とは無関係で、変更を退避した`main`でも再現する)。PowerShellで`Set-Location C:\Users\swsc3\LocalBudget`のように、ドライブ文字を大文字にしたパスから`npx vitest run`を実行すると動く。
+**参考**: 計画Issue #202の実装中に発生。

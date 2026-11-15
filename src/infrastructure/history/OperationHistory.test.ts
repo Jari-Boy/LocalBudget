@@ -252,19 +252,94 @@ describe('取消', () => {
   })
 
   it('取消の途中で失敗したら全体をROLLBACKし、何も戻さず履歴も保つ', () => {
+    const counterparties = new SqlJsCounterpartyRepository(db)
     const entry = history.record('journalEntry.create', () => createEntry(100))
+    const counterparty = history.record('counterparty.create', () => counterparties.create({ name: 'カフェB' }))
     history.record('journalEntry.create', () => createEntry(200))
-    // 取消の途中で必ず失敗するよう、最古の操作の逆操作を存在しない表への書き込みに差し替える
+    // 履歴の外(記録されない書き込み)で、取引先を参照する仕訳を作る。取引先の作成の取消(DELETE)は
+    // DBのトリガー(prevent_delete_counterparty_with_journal_lines)に拒否され、取消が途中で失敗する
+    journal.create({
+      householdMemberId: memberId,
+      entryDate: '2026-11-03',
+      lines: [
+        { householdMemberId: memberId, accountId: foodId, side: 'debit', amount: 50, counterpartyId: counterparty.id },
+        { householdMemberId: memberId, accountId: cashId, side: 'credit', amount: 50 },
+      ],
+    })
     const ops = history.list()
-    db.run(
-      `UPDATE __undo_log SET undo_sql = 'INSERT INTO no_such_table VALUES (1)' WHERE seq = (SELECT MIN(seq) FROM __undo_log)`,
-    )
+    const entriesBefore = scalar('SELECT COUNT(*) FROM journal_entries')
 
     expect(() => history.undoTo(ops[1].id)).toThrow()
 
+    // 最新の操作(仕訳の作成)だけは先に戻っていたはずだが、全体がROLLBACKされて残っている
+    expect(scalar('SELECT COUNT(*) FROM journal_entries')).toBe(entriesBefore)
     expect(journal.findById(entry.id)).not.toBeNull()
-    expect(scalar('SELECT COUNT(*) FROM journal_entries')).toBe(2)
+    expect(history.list()).toHaveLength(3)
+  })
+})
+
+describe('db.exportでTEMPが作り直されても動く', () => {
+  // sql.jsのdb.export()は、DBをいったん閉じて開き直す(TEMP表・TEMPトリガーが消え、PRAGMA foreign_keysもOFFに戻る)。
+  // withAutoSaveが保存のたびに呼ぶため、実ブラウザでは起きるがNodeの単純なテストでは起きない
+  function exportLikeAutoSave() {
+    db.export()
+    db.run('PRAGMA foreign_keys = ON')
+  }
+
+  it('exportの後も新しい操作を記録でき、exportより前の操作とまとめて取り消せる', () => {
+    const first = history.record('journalEntry.create', () => createEntry(100))
+    exportLikeAutoSave()
+    const second = history.record('journalEntry.create', () => createEntry(200))
+    exportLikeAutoSave()
+
     expect(history.list()).toHaveLength(2)
+    history.undoTo(history.list()[1].id)
+
+    expect(journal.findById(first.id)).toBeNull()
+    expect(journal.findById(second.id)).toBeNull()
+  })
+
+  it('トリガーの張り直しや記録の受け渡しはdb.runを使わない(読み取りだけの呼び出しで、保存を予約させない)', () => {
+    history.record('journalEntry.create', () => createEntry(100))
+    exportLikeAutoSave()
+    const runs: string[] = []
+    const original = db.run.bind(db)
+    db.run = ((...args: Parameters<Database['run']>) => {
+      runs.push(args[0])
+      return original(...args)
+    }) as Database['run']
+
+    history.record('journalEntry.findAll', () => journal.findAll())
+    history.record('journalEntry.create', () => createEntry(200))
+
+    // 書き込み(仕訳の作成)自体のdb.runだけで、履歴の内部処理は含まない
+    expect(runs.filter((sql) => sql.includes('__undo'))).toEqual([])
+  })
+
+  it('グループの途中でexportが挟まっても、グループ全体が1件にまとまる', () => {
+    history.beginGroup('statementImport.confirm')
+    createEntry(100)
+    history.record('journalEntry.create', () => createEntry(200))
+    exportLikeAutoSave()
+    history.record('journalEntry.create', () => createEntry(300))
+    history.endGroup()
+
+    expect(history.list()).toHaveLength(1)
+    history.undoTo(history.list()[0].id)
+    expect(scalar('SELECT COUNT(*) FROM journal_entries')).toBe(0)
+  })
+
+  it('exportの後でも、削除の取消で波及削除分(関連仕訳グループの所属)が戻る', () => {
+    const a = createEntry(1000)
+    const b = createEntry(2000)
+    new SqlJsJournalEntryLinkGroupRepository(db).createGroup([a.id, b.id])
+    const memberships = scalar('SELECT COUNT(*) FROM journal_entry_link_group_memberships')
+    history.record('journalEntry.delete', () => journal.delete(a.id))
+    exportLikeAutoSave()
+
+    history.undoTo(history.list()[0].id)
+
+    expect(scalar('SELECT COUNT(*) FROM journal_entry_link_group_memberships')).toBe(memberships)
   })
 })
 

@@ -39,18 +39,26 @@ function renderShell(path: string, pendingProposalCount = 0) {
 const nav = () => screen.getByRole('navigation', { name: 'メインメニュー' })
 
 describe('AppShell', () => {
-  it('サイドナビに仕訳・マスタ・明細取込・割勘・精算・分析・設定の順で並ぶ', () => {
+  it('サイドナビに仕訳・マスタ・明細取込・割勘・精算・分析・操作履歴・設定の順で並ぶ', () => {
     renderShell('/journal/entries')
     const labels = within(nav())
       .getAllByRole('link')
       .map((a) => a.textContent)
-    expect(labels).toEqual(['仕訳', 'マスタ', '明細取込', '割勘・精算', '分析', '設定'])
+    expect(labels).toEqual(['仕訳', 'マスタ', '明細取込', '割勘・精算', '分析', '操作履歴', '設定'])
   })
 
-  it('「設定」は区切り線の後ろ(一番下)に置き、クリックすると設定画面へ移動して強調される(計画Issue #173)', () => {
+  it('「操作履歴」は区切り線の後ろに置き、クリックすると操作履歴画面へ移動して強調される(計画Issue #202)', () => {
+    renderShell('/journal/entries')
+    const history = within(nav()).getByRole('link', { name: '操作履歴' })
+    expect(history.previousElementSibling).toHaveClass('app-shell__nav-separator')
+    fireEvent.click(history)
+    expect(screen.getByTestId('where')).toHaveTextContent('/history')
+    expect(within(nav()).getByRole('link', { name: '操作履歴' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('「設定」は一番下に置き、クリックすると設定画面へ移動して強調される(計画Issue #173)', () => {
     renderShell('/journal/entries')
     const settings = within(nav()).getByRole('link', { name: '設定' })
-    expect(settings.previousElementSibling).toHaveClass('app-shell__nav-separator')
     fireEvent.click(settings)
     expect(screen.getByTestId('where')).toHaveTextContent('/settings')
     expect(within(nav()).getByRole('link', { name: '設定' })).toHaveAttribute('aria-current', 'page')

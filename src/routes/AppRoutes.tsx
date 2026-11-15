@@ -36,6 +36,7 @@ import { ProjectMasterTab } from '../components/master/ProjectMasterTab'
 import { MappingMasterTab } from '../components/master/MappingMasterTab'
 import { RuleMasterTab } from '../components/master/RuleMasterTab'
 import { JournalTemplateTab } from '../components/journal-template/JournalTemplateTab'
+import { HistoryScreen } from '../components/history/HistoryScreen'
 import { SettingsScreen, type BackupApi } from '../components/settings/SettingsScreen'
 import { ExternalChangeBanner } from '../components/settings/ExternalChangeBanner'
 import { ReadOnlyBanner } from '../components/settings/ReadOnlyBanner'
@@ -419,6 +420,9 @@ export function AppRoutes() {
           />
         }
       />
+
+      {/* 操作履歴画面(計画Issue #202)。履歴はWorkerのメモリ上にだけあり、再読み込みで消える */}
+      <Route path="/history" element={<HistoryScreen history={historyApi} />} />
 
       {/* 設定画面(計画Issue #173)。読み込みの成功後は、ページを再読み込みしてWorkerに新しいDBを読み直させる */}
       <Route

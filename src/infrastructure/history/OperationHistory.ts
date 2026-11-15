@@ -52,9 +52,17 @@ export interface OperationHistory {
   clear(): void
 }
 
+/** トリガーが記録した、書き込み1行分の逆操作 */
+interface UndoRecord {
+  table: string
+  op: 'insert' | 'update' | 'delete'
+  /** この書き込みを打ち消すSQL */
+  sql: string
+}
+
 interface StoredOperation extends HistoryOperation {
-  firstSeq: number
-  lastSeq: number
+  /** 書き込んだ順。取消では逆順に実行する */
+  undo: UndoRecord[]
 }
 
 const LOG_TABLE = '__undo_log'
@@ -71,12 +79,19 @@ function sqlLiteral(text: string): string {
 
 /**
  * 操作履歴(計画Issue #202)。DBの全表に一時(TEMP)トリガーを張り、書き込みの逆操作のSQLを
- * 一時テーブルへ自動で記録する。履歴はこの接続(Workerのメモリ)の中だけにあり、
- * db.export()(永続化・バックアップ)には含まれない。トリガー方式なので、Repositoryに依らず
- * 波及削除(ON DELETE CASCADE)や他のトリガーによる書き込みも漏れなく記録される。
- * 取消は、記録を新しい順に逆順で実行する(その間は記録を止める)。
+ * 一時テーブルへ自動で記録し、各呼び出しの直後にこのオブジェクトのメモリへ移す。履歴は
+ * この接続(Workerのメモリ)の中だけにあり、db.export()(永続化・バックアップ)には含まれない。
+ * トリガー方式なので、Repositoryに依らず波及削除(ON DELETE CASCADE)や他のトリガーによる書き込みも
+ * 漏れなく記録される。取消は、記録を新しい順に逆順で実行する(その間は記録を止める)。
  *
- * db.run()経由でBEGIN〜COMMITするため、withAutoSave(db.runを監視)の保存経路に乗る。
+ * sql.jsのdb.export()はDBをいったん閉じて開き直すため、TEMP表とTEMPトリガーが消える
+ * (withAutoSaveが保存のたびに呼ぶ)。そのため履歴の本体は一時テーブルではなくメモリに持ち、
+ * 一時テーブルは「直前の呼び出しの書き込み」の受け渡しにだけ使う。呼び出しの前にトリガーが
+ * 残っているかを確認し、消えていれば張り直す。
+ *
+ * 取消はdb.run()経由でBEGIN〜COMMITするため、withAutoSave(db.runを監視)の保存経路に乗る。一方、
+ * トリガーの張り直しや記録の受け渡しはメインDBを変えない内部処理なので、保存を予約しないようdb.exec()で行う
+ * (db.run()にすると、読み取りだけの呼び出しの後にも毎回DB全体の再保存が走ってしまう)。
  */
 export function createOperationHistory(
   db: Database,
@@ -87,49 +102,54 @@ export function createOperationHistory(
   let nextId = 1
   let groupDepth = 0
   let groupLabel = ''
-  let groupStartSeq = 0
+  let groupRecords: UndoRecord[] = []
 
   installTriggers(db)
 
-  function maxSeq(): number {
-    return (db.exec(`SELECT COALESCE(MAX(seq), 0) FROM temp.${LOG_TABLE}`)[0].values[0][0] as number) ?? 0
+  /** 一時テーブルの記録をメモリへ移す(一時テーブルは空になる) */
+  function drain(): UndoRecord[] {
+    const rows = db.exec(`SELECT tbl, op, undo_sql FROM temp.${LOG_TABLE} ORDER BY seq`)[0]?.values ?? []
+    if (rows.length > 0) db.exec(`DELETE FROM temp.${LOG_TABLE}`)
+    return rows.map(([table, op, sql]) => ({
+      table: table as string,
+      op: op as UndoRecord['op'],
+      sql: sql as string,
+    }))
   }
 
-  function summarize(firstSeq: number, lastSeq: number): TableChange[] {
-    const rows = db.exec(
-      `SELECT tbl, op, COUNT(*) FROM temp.${LOG_TABLE} WHERE seq BETWEEN ${firstSeq} AND ${lastSeq} GROUP BY tbl, op`,
-    )
+  /** db.exportでTEMPが消えていれば張り直す */
+  function ensureInstalled(): void {
+    const present = db.exec(`SELECT 1 FROM sqlite_temp_master WHERE name = '${CTL_TABLE}'`).length > 0
+    if (!present) installTriggers(db)
+  }
+
+  function summarize(records: readonly UndoRecord[]): TableChange[] {
     const byTable = new Map<string, TableChange>()
-    for (const [tbl, op, count] of rows[0]?.values ?? []) {
-      const change = byTable.get(tbl as string) ?? {
-        table: tbl as string,
+    for (const record of records) {
+      const change = byTable.get(record.table) ?? {
+        table: record.table,
         inserted: 0,
         updated: 0,
         deleted: 0,
       }
-      if (op === 'insert') change.inserted = count as number
-      else if (op === 'update') change.updated = count as number
-      else change.deleted = count as number
-      byTable.set(tbl as string, change)
+      if (record.op === 'insert') change.inserted += 1
+      else if (record.op === 'update') change.updated += 1
+      else change.deleted += 1
+      byTable.set(record.table, change)
     }
     return [...byTable.values()]
   }
 
-  function commitOperation(label: string, startSeq: number): void {
-    const lastSeq = maxSeq()
-    if (lastSeq <= startSeq) return
+  function commitOperation(label: string, records: UndoRecord[]): void {
+    if (records.length === 0) return
     operations.push({
       id: nextId++,
       label,
       recordedAt: new Date().toISOString(),
-      changes: summarize(startSeq + 1, lastSeq),
-      firstSeq: startSeq + 1,
-      lastSeq,
+      changes: summarize(records),
+      undo: records,
     })
-    while (operations.length > limit) {
-      const dropped = operations.shift()!
-      db.run(`DELETE FROM temp.${LOG_TABLE} WHERE seq <= ${dropped.lastSeq}`)
-    }
+    while (operations.length > limit) operations.shift()
   }
 
   function toPublic(operation: StoredOperation): HistoryOperation {
@@ -145,19 +165,24 @@ export function createOperationHistory(
 
   return {
     record<T>(label: string, fn: () => T): T {
-      if (groupDepth > 0) return fn()
-      const startSeq = maxSeq()
+      ensureInstalled()
+      // この呼び出しより前の、履歴の外で起きた書き込みの記録は、この操作に混ぜない
+      if (groupDepth === 0) drain()
       try {
         return fn()
       } finally {
-        commitOperation(label, startSeq)
+        const records = drain()
+        if (groupDepth > 0) groupRecords.push(...records)
+        else commitOperation(label, records)
       }
     },
 
     beginGroup(label: string): void {
       if (groupDepth === 0) {
+        ensureInstalled()
+        drain()
         groupLabel = label
-        groupStartSeq = maxSeq()
+        groupRecords = []
       }
       groupDepth += 1
     },
@@ -165,7 +190,12 @@ export function createOperationHistory(
     endGroup(): void {
       if (groupDepth === 0) return
       groupDepth -= 1
-      if (groupDepth === 0) commitOperation(groupLabel, groupStartSeq)
+      if (groupDepth > 0) return
+      // グループの途中でrecordを通らなかった書き込みも、ここで取り込む
+      ensureInstalled()
+      groupRecords.push(...drain())
+      commitOperation(groupLabel, groupRecords)
+      groupRecords = []
     },
 
     list(): HistoryOperation[] {
@@ -182,26 +212,26 @@ export function createOperationHistory(
 
     undoTo(operationId: number): number {
       const index = indexOf(operationId)
-      const target = operations[index]
       const undone = operations.length - index
+      const statements: string[] = []
+      for (const operation of operations.slice(index).reverse()) {
+        for (const record of [...operation.undo].reverse()) statements.push(record.sql)
+      }
 
-      const rows = db.exec(
-        `SELECT undo_sql FROM temp.${LOG_TABLE} WHERE seq >= ${target.firstSeq} ORDER BY seq DESC`,
-      )
-      const statements = (rows[0]?.values ?? []).map((row) => row[0] as string)
-
+      ensureInstalled()
+      // 履歴の外で起きた書き込みの記録は、取消の対象ではない
+      drain()
       db.run('BEGIN')
       try {
-        db.run(`UPDATE temp.${CTL_TABLE} SET suppress = 1`)
+        db.exec(`UPDATE temp.${CTL_TABLE} SET suppress = 1`)
         // 逆順に戻す途中は、親子関係が一時的に崩れうるため、FKの検査をCOMMITまで遅らせる
         db.run('PRAGMA defer_foreign_keys = ON')
         for (const statement of statements) db.run(statement)
-        db.run(`DELETE FROM temp.${LOG_TABLE} WHERE seq >= ${target.firstSeq}`)
-        db.run(`UPDATE temp.${CTL_TABLE} SET suppress = 0`)
+        db.exec(`UPDATE temp.${CTL_TABLE} SET suppress = 0`)
         db.run('COMMIT')
       } catch (error) {
         db.run('ROLLBACK')
-        db.run(`UPDATE temp.${CTL_TABLE} SET suppress = 0`)
+        db.exec(`UPDATE temp.${CTL_TABLE} SET suppress = 0`)
         throw error
       }
       operations.splice(index)
@@ -210,7 +240,9 @@ export function createOperationHistory(
 
     clear(): void {
       operations.length = 0
-      db.run(`DELETE FROM temp.${LOG_TABLE}`)
+      groupRecords = []
+      ensureInstalled()
+      drain()
     },
   }
 }
@@ -222,7 +254,7 @@ export function createOperationHistory(
  * 行はrowidで特定する(全表がrowid表。INTEGER PRIMARY KEYはrowidの別名)。
  */
 function installTriggers(db: Database): void {
-  db.run(
+  db.exec(
     `CREATE TEMP TABLE IF NOT EXISTS ${LOG_TABLE} (
        seq INTEGER PRIMARY KEY AUTOINCREMENT,
        tbl TEXT NOT NULL,
@@ -230,9 +262,9 @@ function installTriggers(db: Database): void {
        undo_sql TEXT NOT NULL
      )`,
   )
-  db.run(`CREATE TEMP TABLE IF NOT EXISTS ${CTL_TABLE} (suppress INTEGER NOT NULL)`)
+  db.exec(`CREATE TEMP TABLE IF NOT EXISTS ${CTL_TABLE} (suppress INTEGER NOT NULL)`)
   if (!db.exec(`SELECT 1 FROM temp.${CTL_TABLE}`).length) {
-    db.run(`INSERT INTO temp.${CTL_TABLE} (suppress) VALUES (0)`)
+    db.exec(`INSERT INTO temp.${CTL_TABLE} (suppress) VALUES (0)`)
   }
 
   const tables = (
@@ -282,8 +314,8 @@ function installTriggers(db: Database): void {
     ]
     for (const [kind, event, body] of triggers) {
       const name = quoteIdent(`__undo_${kind}_${table}`)
-      db.run(`DROP TRIGGER IF EXISTS temp.${name}`)
-      db.run(`CREATE TEMP TRIGGER ${name} ${event} ON main.${t} ${when} BEGIN ${body} END`)
+      db.exec(`DROP TRIGGER IF EXISTS temp.${name}`)
+      db.exec(`CREATE TEMP TRIGGER ${name} ${event} ON main.${t} ${when} BEGIN ${body} END`)
     }
   }
 }
