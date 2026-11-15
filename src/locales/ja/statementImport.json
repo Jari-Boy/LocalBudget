@@ -87,7 +87,7 @@
   "settingsTitle": "取引先の設定: {{name}}",
   "settingsNote": "※変更は、この取引先の行を確定したときに保存されます。",
   "settingsLoading": "パターンを読み込み中…",
-  "settingsPatternsLabel": "取引先を選ぶキーワード(摘要に含まれると、この取引先を自動で選びます)",
+  "settingsPatternsLabel": "取引先のキーワード",
   "patternRowsTitle": "この明細で、このキーワードを含む行の数",
   "settingsClose": "閉じる",
   "settingsInvalid": "取引先の設定に問題があります。直してから確定してください。",
