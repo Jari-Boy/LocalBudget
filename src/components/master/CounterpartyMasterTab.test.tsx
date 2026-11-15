@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * CounterpartyMasterTab(計画Issue #154)のコンポーネントテスト。
- * マスタ画面の「取引先」タブ: 既定の科目の列とパターン件数の表示、右パネルでの既定の科目の変更、
- * 登録済みパターンの追加・編集・削除(現行の取引先管理画面から引き継ぐ)、チェックした取引先の
+ * マスタ画面の「取引先」タブ: 既定の科目の列とキーワード件数の表示、右パネルでの既定の科目の変更、
+ * 登録済みキーワードの追加・編集・削除(現行の取引先管理画面から引き継ぐ)、チェックした取引先の
  * 統合(現行画面から引き継ぐ)、仕訳・定期仕訳ルール・精算バッチの相手で使用中のときの
  * 削除不可の理由表示を、sql.jsのNode実装(createTestDatabase)を使って確認する。
  * ツリー表・グループ操作の共通部分はProjectMasterTab.test.tsx側で検証する。
@@ -63,7 +63,7 @@ const panel = (name: string) => within(screen.getByRole('region', { name }))
 const open = async (name: string) => fireEvent.click(await screen.findByRole('button', { name }))
 
 describe('CounterpartyMasterTab', () => {
-  it('「すべての取引先」の下に取引先が並び、既定の科目の列とパターンの件数が表示される', async () => {
+  it('「すべての取引先」の下に取引先が並び、既定の科目の列とキーワードの件数が表示される', async () => {
     const aeon = counterparties.create({ name: 'イオン', defaultAccountId: expenseId })
     counterparties.addPattern(aeon.id, 'イオン')
     counterparties.addPattern(aeon.id, 'ｲｵﾝ')
@@ -73,7 +73,7 @@ describe('CounterpartyMasterTab', () => {
     expect(await screen.findByText('すべての取引先')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'イオン' })).toBeInTheDocument()
     expect(screen.getByText('食費')).toBeInTheDocument()
-    expect(screen.getByText('パターン2件')).toBeInTheDocument()
+    expect(screen.getByText('キーワード2件')).toBeInTheDocument()
   })
 
   it('右パネルで既定の科目を選ぶと、すぐにDBへ反映される', async () => {
@@ -97,7 +97,7 @@ describe('CounterpartyMasterTab', () => {
     expect(within(select).queryByRole('option', { name: '現金' })).not.toBeInTheDocument()
   })
 
-  it('登録済みパターンが一覧され、文字列を追加できる', async () => {
+  it('登録済みキーワードが一覧され、文字列を追加できる', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
     counterparties.addPattern(aeon.id, 'イオン')
     renderTab()
@@ -105,21 +105,21 @@ describe('CounterpartyMasterTab', () => {
 
     const editor = panel('取引先の編集')
     expect(editor.getByText('イオン', { selector: 'span' })).toBeInTheDocument()
-    fireEvent.change(editor.getByLabelText('追加するパターン'), { target: { value: 'AEON' } })
-    fireEvent.click(editor.getByRole('button', { name: '+ パターンを追加' }))
+    fireEvent.change(editor.getByLabelText('追加するキーワード'), { target: { value: 'AEON' } })
+    fireEvent.click(editor.getByRole('button', { name: '+ キーワードを追加' }))
 
     await waitFor(() => expect(counterparties.findPatternsByCounterparty(aeon.id)).toHaveLength(2))
   })
 
-  it('パターンを編集して保存すると、DBの文字列が変わる', async () => {
+  it('キーワードを編集して保存すると、DBの文字列が変わる', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
     const pattern = counterparties.addPattern(aeon.id, 'イオン')
     renderTab()
     await open('イオン')
 
     fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'イオンを編集' }))
-    fireEvent.change(panel('取引先の編集').getByLabelText('パターン'), { target: { value: 'イオンモール' } })
-    fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'パターンを保存' }))
+    fireEvent.change(panel('取引先の編集').getByLabelText('キーワード'), { target: { value: 'イオンモール' } })
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'キーワードを保存' }))
 
     await waitFor(() =>
       expect(counterparties.findPatternsByCounterparty(aeon.id).find((p) => p.id === pattern.id)!.pattern).toBe(
@@ -128,7 +128,7 @@ describe('CounterpartyMasterTab', () => {
     )
   })
 
-  it('パターンの「削除」を押すと、確認なしでDBから削除される', async () => {
+  it('キーワードの「削除」を押すと、確認なしでDBから削除される', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
     counterparties.addPattern(aeon.id, 'イオン')
     renderTab()
