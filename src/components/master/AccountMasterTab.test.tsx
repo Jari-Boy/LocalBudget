@@ -887,14 +887,17 @@ describe('AccountMasterTab: 残高の照合欄(計画Issue #205)', () => {
     expect(screen.queryByRole('region', { name: '残高の照合' })).toBeNull()
   })
 
-  it('自動調整の説明は常時表示せず、マウスオーバー(title)で表示する', async () => {
+  it('自動調整の説明は、角丸のツールチップ(CSSで出し入れ)にし、「原因を直すと」の手前で改行する', async () => {
     accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
     renderTab()
     await open('現金')
     await ready()
 
-    expect(section().queryByText(/ずれた区間ごとに調整の仕訳が自動で入ります/)).toBeNull()
-    expect(section().getAllByTitle(/ずれた区間ごとに調整の仕訳が自動で入ります/).length).toBeGreaterThan(0)
+    // 標準のtitle属性だと枠の形を変えられないので使わない
+    expect(section().queryAllByTitle(/ずれた区間ごとに調整の仕訳が自動で入ります/)).toHaveLength(0)
+    const tooltip = section().getByRole('tooltip', { hidden: true })
+    expect(tooltip.textContent).toMatch(/ずれた区間ごとに調整の仕訳が自動で入ります。\n原因を直すと調整は消えるか金額が変わります/)
+    expect(section().getByRole('checkbox', { name: '基準点に合わせて自動で調整する' })).toHaveAccessibleDescription(/ずれた区間ごとに/)
   })
 
   it('自動調整のチェックボックスは初期値がオンで、外すと科目の設定に保存される', async () => {

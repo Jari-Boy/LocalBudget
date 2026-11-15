@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
@@ -44,6 +44,7 @@ const signedYen = (amount: number) => (amount === 0 ? '—' : `${amount > 0 ? '+
 export function AccountReconciliationSection(props: AccountReconciliationSectionProps) {
   const { account, repository, busy } = props
   const { t } = useTranslation('master')
+  const tooltipId = useId()
   const [data, setData] = useState<AccountReconciliation | null>(null)
   const [records, setRecords] = useState<AccountBalanceRecord[]>([])
   const [date, setDate] = useState(() => props.today ?? new Date().toISOString().slice(0, 10))
@@ -139,19 +140,25 @@ export function AccountReconciliationSection(props: AccountReconciliationSection
     <section className="master-subsection" aria-label={t('reconcile.title')}>
       <h3 className="master-subsection__title">{t('reconcile.title')}</h3>
 
-      <label className="master-check" title={t('reconcile.autoAdjustNote')}>
-        <input
-          type="checkbox"
-          title={t('reconcile.autoAdjustNote')}
-          checked={account.autoBalanceAdjustment}
-          disabled={disabled}
-          onChange={(event) => void perform(() => props.onToggleAutoAdjust(event.target.checked))}
-        />
-        {t('reconcile.autoAdjust')}
-        <span className="master-hint" aria-hidden="true" title={t('reconcile.autoAdjustNote')}>
-          ⓘ
+      {/* 説明はマウスオーバー(またはフォーカス)で出す角丸のツールチップ。標準のtitleは枠の形を変えられない */}
+      <div className="master-tooltip">
+        <label className="master-check">
+          <input
+            type="checkbox"
+            aria-describedby={tooltipId}
+            checked={account.autoBalanceAdjustment}
+            disabled={disabled}
+            onChange={(event) => void perform(() => props.onToggleAutoAdjust(event.target.checked))}
+          />
+          {t('reconcile.autoAdjust')}
+          <span className="master-hint" aria-hidden="true">
+            ⓘ
+          </span>
+        </label>
+        <span id={tooltipId} role="tooltip" className="master-tooltip__bubble">
+          {t('reconcile.autoAdjustNote')}
         </span>
-      </label>
+      </div>
 
       {usesStatement ? (
         <p className="master-note">{t('reconcile.statementOnly')}</p>

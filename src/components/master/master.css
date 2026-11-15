@@ -546,9 +546,42 @@ label.master-btn {
   justify-content: flex-end;
 }
 
-/* マウスオーバーで説明を出す印(計画Issue #205) */
+/* マウスオーバー(またはフォーカス)で説明を出す角丸のツールチップ(計画Issue #205) */
+.master-tooltip {
+  position: relative;
+  align-self: flex-start;
+}
+
 .master-hint {
   color: var(--color-text-muted);
   cursor: help;
   font-size: var(--font-size-sm, var(--font-size-base));
+}
+
+.master-tooltip__bubble {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  width: max-content;
+  max-width: min(420px, 90vw);
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popup);
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  white-space: pre-line;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+
+.master-tooltip:hover .master-tooltip__bubble,
+.master-tooltip:focus-within .master-tooltip__bubble {
+  visibility: visible;
+  opacity: 1;
 }
