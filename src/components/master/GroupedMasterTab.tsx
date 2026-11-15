@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { computeTreeNodeUpdates, type TreeNodeUpdate } from '../common/tree-table/computeTreeNodeUpdates'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
+import { TreeCardList, type TreeCardContent } from '../common/tree-table/TreeCardList'
 import { TreeTable } from '../common/tree-table/TreeTable'
 import { BulkSelectionPanel } from './BulkSelectionPanel'
 import { CATEGORY_ID_PREFIX, resolveTreeMove, type TreeTableNode } from '../common/tree-table/treeTableModel'
@@ -46,6 +47,13 @@ export interface GroupedMasterTabProps {
   /** 変更後に呼び出し元のデータを読み直す */
   onChanged: () => Promise<void>
   /** 選んだ項目の右パネルに足す固有の欄(例: 取引先の既定の科目・パターン) */
+  /**
+   * 渡すと、左の一覧を表(TreeTable)ではなく、仕訳一覧と同じ見た目のカード型(TreeCardList)で出す
+   * (計画Issue #201。仕訳テンプレート)。カード型は複数選択(チェック)を持たない
+   */
+  renderCard?: (node: TreeTableNode) => TreeCardContent
+  /** 外枠(master-split)に足すクラス。例: master-split--ruleで、右パネルを広く取る(仕訳の詳細と同じ幅の比) */
+  splitClassName?: string
   renderLeafExtra?: (
     leafId: number,
     context: {
@@ -76,6 +84,8 @@ export function GroupedMasterTab({
   leafBlockedText,
   onChanged,
   renderLeafExtra,
+  renderCard,
+  splitClassName,
   notice,
   renderSelection,
 }: GroupedMasterTabProps) {
@@ -150,7 +160,7 @@ export function GroupedMasterTab({
     }, t('accountTab.createError'))
 
   return (
-    <div className="master-split">
+    <div className={`master-split${splitClassName === undefined ? '' : ` ${splitClassName}`}`}>
       <div className="master-split__main">
         <div className="master-actions">
           <button type="button" className="master-btn" disabled={busy} onClick={() => guarded(() => void create('group', null))}>
@@ -160,21 +170,33 @@ export function GroupedMasterTab({
             {t('groupedTab.addLeaf', { leaf: leafLabel })}
           </button>
         </div>
-        <TreeTable
-          categories={tree.categories}
-          nodes={tree.nodes}
-          columns={columns}
-          checkedIds={liveCheckedIds}
-          selectedId={selectedId}
-          onSelect={(id) => guarded(() => select(id))}
-          // 2件以上のチェックは右パネルを一括操作パネルに差し替えるため、未保存の編集があれば確認を通す
-          onCheckedChange={(ids) => (ids.length >= 2 ? guarded(() => setCheckedIds(ids)) : setCheckedIds(ids))}
-          onMove={(next) => {
-            setCheckedIds([])
-            void applyMove(next)
-          }}
-          onMoveRejected={setError}
-        />
+        {renderCard !== undefined ? (
+          <TreeCardList
+            categories={tree.categories}
+            nodes={tree.nodes}
+            selectedId={selectedId}
+            onSelect={(id) => guarded(() => select(id))}
+            onMove={(next) => void applyMove(next)}
+            onMoveRejected={setError}
+            renderCard={renderCard}
+          />
+        ) : (
+          <TreeTable
+            categories={tree.categories}
+            nodes={tree.nodes}
+            columns={columns}
+            checkedIds={liveCheckedIds}
+            selectedId={selectedId}
+            onSelect={(id) => guarded(() => select(id))}
+            // 2件以上のチェックは右パネルを一括操作パネルに差し替えるため、未保存の編集があれば確認を通す
+            onCheckedChange={(ids) => (ids.length >= 2 ? guarded(() => setCheckedIds(ids)) : setCheckedIds(ids))}
+            onMove={(next) => {
+              setCheckedIds([])
+              void applyMove(next)
+            }}
+            onMoveRejected={setError}
+          />
+        )}
         <p className="master-note">{t('accountTab.dragHint')}</p>
         {notice !== undefined && notice !== '' && (
           <p role="status" className="master-flash">

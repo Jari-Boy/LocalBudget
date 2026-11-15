@@ -96,12 +96,25 @@ describe('JournalTemplateTab: 一覧', () => {
     renderTab()
 
     expect(await screen.findByText('すべてのテンプレート')).toBeInTheDocument()
-    const row = (name: string) => screen.getByRole('button', { name }).closest('tr') as HTMLElement
+    const row = (name: string) => screen.getByRole('button', { name }).closest('li') as HTMLElement
     expect(screen.getByRole('button', { name: '食事' })).toBeInTheDocument()
     expect(within(row('コンビニ')).getByText('食費 / 現金')).toBeInTheDocument()
     expect(within(row('コンビニ')).getByText('起票時に入力')).toBeInTheDocument()
     expect(within(row('ジム')).getByText('￥8,800')).toBeInTheDocument()
     expect(within(row('旧')).getByText('無効')).toBeInTheDocument()
+  })
+})
+
+describe('JournalTemplateTab: 見た目(仕訳一覧と同じ)', () => {
+  it('左の一覧は仕訳一覧と同じカード型で、右パネルは仕訳の詳細と同じ幅の比(2:3)で出す', async () => {
+    templates.create({ name: 'コンビニ', lines: blankLines() })
+
+    renderTab()
+
+    const card = await screen.findByRole('button', { name: 'コンビニ' })
+    expect(card).toHaveClass('journal-result-list__row')
+    expect(card.closest('.master-split')).toHaveClass('master-split--rule')
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 })
 
@@ -146,7 +159,7 @@ describe('JournalTemplateTab: 編集と保存', () => {
     await open('コンビニ')
 
     fireEvent.change(panel().getByLabelText('名称'), { target: { value: 'コンビニ(昼)' } })
-    fireEvent.change(panel().getByLabelText('摘要(任意。起票時の初期値)'), { target: { value: '昼ごはん' } })
+    fireEvent.change(panel().getByLabelText('摘要(任意)'), { target: { value: '昼ごはん' } })
     fireEvent.change(panel().getByLabelText('食費の金額'), { target: { value: '500' } })
     fireEvent.change(panel().getByLabelText('現金の金額'), { target: { value: '500' } })
     fireEvent.click(panel().getByRole('button', { name: '保存' }))
@@ -162,7 +175,7 @@ describe('JournalTemplateTab: 編集と保存', () => {
     renderTab()
     await open('A')
 
-    fireEvent.change(panel().getByLabelText('摘要(任意。起票時の初期値)'), { target: { value: 'y' } })
+    fireEvent.change(panel().getByLabelText('摘要(任意)'), { target: { value: 'y' } })
     fireEvent.click(panel().getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(templates.findById(created.id)!.memo).toBe('y'))
@@ -239,7 +252,7 @@ describe('JournalTemplateTab: 未保存の編集の警告(計画Issue #190)', ()
     templates.create({ name: 'B', lines: blankLines() })
     renderTab()
     await open('A')
-    fireEvent.change(panel().getByLabelText('摘要(任意。起票時の初期値)'), { target: { value: '編集中' } })
+    fireEvent.change(panel().getByLabelText('摘要(任意)'), { target: { value: '編集中' } })
 
     fireEvent.click(screen.getByRole('button', { name: 'B' }))
 
@@ -254,7 +267,7 @@ describe('JournalTemplateTab: 未保存の編集の警告(計画Issue #190)', ()
     templates.create({ name: 'B', lines: blankLines() })
     renderTab()
     await open('A')
-    fireEvent.change(panel().getByLabelText('摘要(任意。起票時の初期値)'), { target: { value: '編集中' } })
+    fireEvent.change(panel().getByLabelText('摘要(任意)'), { target: { value: '編集中' } })
 
     fireEvent.click(screen.getByRole('button', { name: 'B' }))
     fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
@@ -269,7 +282,7 @@ describe('JournalTemplateTab: 未保存の編集の警告(計画Issue #190)', ()
     templates.create({ name: 'B', lines: blankLines() })
     renderTab()
     await open('A')
-    fireEvent.change(panel().getByLabelText('摘要(任意。起票時の初期値)'), { target: { value: '編集中' } })
+    fireEvent.change(panel().getByLabelText('摘要(任意)'), { target: { value: '編集中' } })
 
     fireEvent.click(screen.getByRole('button', { name: 'B' }))
 

@@ -42,6 +42,20 @@ export interface JournalEntryEditorProps {
    * ルールか確認パネルの専用欄で決める)。科目・金額・行の追加・削除は、承認待ちの定期仕訳でも編集できる(計画Issue #180)
    */
   lockEntryDate?: boolean
+  /**
+   * 仕訳テンプレートの編集として使うための指定(計画Issue #201)。仕訳の入力欄と同じ部品を使い、
+   * テンプレートが持たない項目を隠し、テンプレートに必要な動きを足す。
+   * hideEntryDate: 取引日を出さない(テンプレートは日付を持たない。展開時に今日になる)。
+   */
+  hideEntryDate?: boolean
+  /** コメント欄を出さない(テンプレートはコメントを持たない) */
+  hideComment?: boolean
+  /** 金額が空欄の行を許す(空欄の行は起票時に入力する)。JournalLinesEditorへそのまま渡す */
+  allowBlankAmounts?: boolean
+  /** 渡すと、起票者の選択肢にこの名前の「決めない」項目を常に出す(テンプレート。起票時に選ぶ) */
+  bookkeeperNoneLabel?: string
+  /** 渡すと、行の世帯メンバーの選択肢にこの名前の「決めない」項目を常に出す(テンプレート。JournalLinesEditorへそのまま渡す) */
+  memberNoneLabel?: string
   /** 渡すと、精算バッチの選択肢に「+ 新しいバッチ」を出す。名前を受けて作成したバッチを返す */
   onCreateBatch?: (name: string) => Promise<SettlementBatch>
   /** 渡すと、取引先の選択ツリーに「+ 新規追加」を出す。作成後に呼ぶ apply へ取引先のIDを渡す */
@@ -66,6 +80,11 @@ export function JournalEntryEditor({
   master,
   readOnlyLines = false,
   lockEntryDate = false,
+  hideEntryDate = false,
+  hideComment = false,
+  allowBlankAmounts = false,
+  bookkeeperNoneLabel,
+  memberNoneLabel,
   onCreateBatch,
   onRequestCreateCounterparty,
   onRequestCreateProject,
@@ -98,19 +117,21 @@ export function JournalEntryEditor({
   return (
     <div className="journal-editor">
       <div className="journal-editor__head">
-        <div className="journal-editor__field journal-editor__field--date">
-          <label className="journal-editor__label" htmlFor="journal-editor-date">
-            取引日
-          </label>
-          <input
-            id="journal-editor-date"
-            type="date"
-            className="journal-editor__control"
-            value={value.entryDate}
-            disabled={lockEntryDate}
-            onChange={(e) => update({ entryDate: e.target.value })}
-          />
-        </div>
+        {!hideEntryDate && (
+          <div className="journal-editor__field journal-editor__field--date">
+            <label className="journal-editor__label" htmlFor="journal-editor-date">
+              取引日
+            </label>
+            <input
+              id="journal-editor-date"
+              type="date"
+              className="journal-editor__control"
+              value={value.entryDate}
+              disabled={lockEntryDate}
+              onChange={(e) => update({ entryDate: e.target.value })}
+            />
+          </div>
+        )}
         <div className="journal-editor__field journal-editor__field--memo">
           <label className="journal-editor__label" htmlFor="journal-editor-memo">
             摘要(任意)
@@ -133,22 +154,28 @@ export function JournalEntryEditor({
             disabled={lockEntryDate}
             onChange={(e) => changeBookkeeper(e.target.value === '' ? null : Number(e.target.value))}
           >
-            {value.householdMemberId === null && <option value="">選択してください</option>}
+            {bookkeeperNoneLabel !== undefined ? (
+              <option value="">{bookkeeperNoneLabel}</option>
+            ) : (
+              value.householdMemberId === null && <option value="">選択してください</option>
+            )}
             {memberOptions(value.householdMemberId)}
           </select>
         </div>
-        <div className="journal-editor__field journal-editor__field--comment">
-          <label className="journal-editor__label" htmlFor="journal-editor-comment">
-            コメント(任意)
-          </label>
-          <textarea
-            id="journal-editor-comment"
-            className="journal-editor__control journal-editor__textarea"
-            rows={2}
-            value={value.comment}
-            onChange={(e) => update({ comment: e.target.value })}
-          />
-        </div>
+        {!hideComment && (
+          <div className="journal-editor__field journal-editor__field--comment">
+            <label className="journal-editor__label" htmlFor="journal-editor-comment">
+              コメント(任意)
+            </label>
+            <textarea
+              id="journal-editor-comment"
+              className="journal-editor__control journal-editor__textarea"
+              rows={2}
+              value={value.comment}
+              onChange={(e) => update({ comment: e.target.value })}
+            />
+          </div>
+        )}
       </div>
 
       <JournalLinesEditor
@@ -157,6 +184,8 @@ export function JournalEntryEditor({
         master={master}
         bookkeeperId={value.householdMemberId}
         readOnlyLines={readOnlyLines}
+        allowBlankAmounts={allowBlankAmounts}
+        memberNoneLabel={memberNoneLabel}
         onCreateBatch={onCreateBatch}
         onRequestCreateCounterparty={onRequestCreateCounterparty}
         onRequestCreateProject={onRequestCreateProject}

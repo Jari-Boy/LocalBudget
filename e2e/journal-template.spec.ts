@@ -19,7 +19,7 @@ test.describe('仕訳テンプレート', () => {
     await page.getByRole('button', { name: 'テンプレートを追加' }).click()
     const editor = page.getByRole('region', { name: 'テンプレートの編集' })
     await editor.getByLabel('名称').fill('E2Eコンビニ')
-    await editor.getByLabel('摘要(任意。起票時の初期値)').fill('E2E昼食')
+    await editor.getByLabel('摘要(任意)').fill('E2E昼食')
     await editor.getByRole('button', { name: '保存' }).click()
     await expect(page.getByRole('button', { name: 'E2Eコンビニ', exact: true })).toBeVisible()
 

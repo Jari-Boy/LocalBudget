@@ -229,6 +229,13 @@ export function JournalTemplateTab(props: JournalTemplateTabProps) {
       tree={tree}
       columns={['内容', '金額', '状態']}
       leafLabel={LEAF_LABEL}
+      // 左の一覧は仕訳一覧と同じカード型、右パネルは仕訳の詳細と同じ幅の比(2:3)にする
+      renderCard={(node) => ({
+        sub: node.cells[0],
+        amount: node.cells[1],
+        tag: node.cells[2] === '有効' ? undefined : node.cells[2],
+      })}
+      splitClassName="master-split--rule"
       actions={actions}
       isLeafActive={(id) => data.templates.find((x) => x.id === id)?.isActive ?? true}
       // テンプレートは仕訳から参照されないため、いつでも削除できる

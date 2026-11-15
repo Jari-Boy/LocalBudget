@@ -66,9 +66,33 @@ const credit = (key: number, accountId: number | null, amount: string): JournalE
   line: { accountId, side: 'credit' as const, amountInput: amount, projectId: null, householdMemberId: 1, counterpartyId: null },
 })
 
-function Harness({ initial, readOnlyLines, lockEntryDate }: { initial: JournalEditorValue; readOnlyLines?: boolean; lockEntryDate?: boolean }) {
+function Harness({
+  initial,
+  readOnlyLines,
+  lockEntryDate,
+  template,
+}: {
+  initial: JournalEditorValue
+  readOnlyLines?: boolean
+  lockEntryDate?: boolean
+  /** 仕訳テンプレートの編集として使う(計画Issue #201) */
+  template?: boolean
+}) {
   const [v, setV] = useState(initial)
-  return <JournalEntryEditor value={v} onChange={setV} master={master} readOnlyLines={readOnlyLines} lockEntryDate={lockEntryDate} />
+  return (
+    <JournalEntryEditor
+      value={v}
+      onChange={setV}
+      master={master}
+      readOnlyLines={readOnlyLines}
+      lockEntryDate={lockEntryDate}
+      hideEntryDate={template}
+      hideComment={template}
+      allowBlankAmounts={template}
+      bookkeeperNoneLabel={template ? '起票時に選ぶ' : undefined}
+      memberNoneLabel={template ? '起票者と同じ' : undefined}
+    />
+  )
 }
 
 describe('JournalEntryEditor', () => {
@@ -237,5 +261,61 @@ describe('JournalEntryEditor', () => {
     expect(creditColumn.getByRole('button', { name: /^プロジェクト/ })).toBeDisabled()
     // 費用・収益ではない科目の行には、取引先は出ない
     expect(creditColumn.queryByRole('button', { name: /^取引先/ })).not.toBeInTheDocument()
+  })
+
+  describe('仕訳テンプレートの編集として使う(hideEntryDate・hideComment・allowBlankAmounts・bookkeeperNoneLabel、計画Issue #201)', () => {
+    it('指定しない通常の使い方では、取引日・コメントが出て、起票者に「未選択」の項目は出ない', () => {
+      render(<Harness initial={value([debit(1, 1, '1000'), credit(2, 2, '1000')])} />)
+
+      expect(screen.getByLabelText('取引日')).toBeInTheDocument()
+      expect(screen.getByLabelText('コメント(任意)')).toBeInTheDocument()
+      expect(within(screen.getByLabelText('起票者')).queryByRole('option', { name: '起票時に選ぶ' })).not.toBeInTheDocument()
+    })
+
+    it('取引日とコメントを隠し、摘要・起票者と借方・貸方の行は仕訳の入力欄と同じ部品で出る', () => {
+      render(<Harness template initial={value([debit(1, 1, ''), credit(2, 2, '')])} />)
+
+      expect(screen.queryByLabelText('取引日')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('コメント(任意)')).not.toBeInTheDocument()
+      expect(screen.getByLabelText('摘要(任意)')).toHaveValue('ランチ')
+      expect(screen.getByRole('group', { name: '借方' })).toBeInTheDocument()
+      expect(screen.getByRole('group', { name: '貸方' })).toBeInTheDocument()
+    })
+
+    it('起票者に指定した名前の項目が常に出て、選ぶと起票者を決めない(null)状態に戻せる', () => {
+      render(<Harness template initial={value([debit(1, 1, ''), credit(2, 2, '')])} />)
+
+      const bookkeeper = screen.getByLabelText('起票者')
+      expect(within(bookkeeper).getByRole('option', { name: '起票時に選ぶ' })).toBeInTheDocument()
+      fireEvent.change(bookkeeper, { target: { value: '' } })
+
+      expect(bookkeeper).toHaveValue('')
+    })
+
+    it('金額が空欄の行を許し、空欄の案内を出す', () => {
+      render(<Harness template initial={value([debit(1, 1, ''), credit(2, 2, '')])} />)
+
+      expect(screen.getByRole('status')).toHaveTextContent('金額が空欄の行は、起票時に入力します')
+    })
+
+    it('起票者を変えると、手で変えていない行の世帯メンバーが追従する(仕訳の入力欄と同じ動き)', () => {
+      render(<Harness template initial={value([debit(1, 1, ''), credit(2, 2, '')])} />)
+
+      fireEvent.change(screen.getByLabelText('起票者'), { target: { value: '2' } })
+
+      const members = screen.getAllByRole('combobox', { name: '世帯メンバー' })
+      expect(members.map((m) => (m as HTMLSelectElement).value)).toEqual(['2', '2'])
+    })
+
+    it('memberNoneLabelを渡すと、行の世帯メンバーの選択肢にその名前の「決めない」項目が出る(起票者を決めないテンプレートの行)', () => {
+      render(<Harness template initial={{ ...value([debit(1, 1, ''), credit(2, 2, '')]), householdMemberId: null, lines: [
+        { key: 1, line: { accountId: 1, side: 'debit', amountInput: '', projectId: null, householdMemberId: null, counterpartyId: null } },
+        { key: 2, line: { accountId: 2, side: 'credit', amountInput: '', projectId: null, householdMemberId: null, counterpartyId: null } },
+      ] }} />)
+
+      const members = screen.getAllByRole('combobox', { name: '世帯メンバー' })
+      expect(members.map((m) => (m as HTMLSelectElement).value)).toEqual(['', ''])
+      expect(within(members[0]).getByRole('option', { name: '起票者と同じ' })).toBeInTheDocument()
+    })
   })
 })
