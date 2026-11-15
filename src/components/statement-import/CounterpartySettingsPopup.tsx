@@ -148,7 +148,7 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
                             value={pattern.text}
                             onChange={(e) => onChange(updateDraftPatternText(draft, pattern.key, e.target.value))}
                           />
-                          <span className="import-note import-nowrap">{t('patternRows', { count: countRowsContaining(pattern.text, descriptions) })}</span>
+                          <span className="import-note import-nowrap" title={t('patternRowsTitle')}>{t('patternRows', { count: countRowsContaining(pattern.text, descriptions) })}</span>
                           <button
                             type="button"
                             className="import-link"
