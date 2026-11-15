@@ -1,4 +1,3 @@
-import { runInHistoryGroup } from '../../infrastructure/history/historyGroupRunner'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import {
@@ -21,6 +20,7 @@ import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { SplitSettleData, SplitSettleDerived, SplitSettleRepositories } from './splitSettleData'
 import { EntryDetailDialog } from './EntryDetailDialog'
 import { createLineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
+import { runInHistoryGroup } from '../../infrastructure/history/historyGroupRunner'
 import { createSettlementEntry, tagCandidatesToBatch } from './submitSettlement'
 import './SplitSettleScreen.css'
 
@@ -187,21 +187,23 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
     }
     void run(
       () =>
-        runInHistoryGroup(repositories.history, 'settlement.tagCandidates', () => tagCandidatesToBatch({
-          batchId: batch.id,
-          taggedEntryIds,
-          direction,
-          accountId: directionSummary.accountId,
-          target: resolved.target!,
-          entryHouseholdMemberId,
-          resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(data.accounts, entryHouseholdMemberId),
-          repositories,
-          candidates: chosen,
-          diff,
-          createAdjustment,
-          adjustmentAccountIds: { gain: gainId ?? 0, loss: lossId ?? 0 },
-          today,
-        })),
+        runInHistoryGroup(repositories.history, 'settlement.tagCandidates', () =>
+          tagCandidatesToBatch({
+            batchId: batch.id,
+            taggedEntryIds,
+            direction,
+            accountId: directionSummary.accountId,
+            target: resolved.target!,
+            entryHouseholdMemberId,
+            resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(data.accounts, entryHouseholdMemberId),
+            repositories,
+            candidates: chosen,
+            diff,
+            createAdjustment,
+            adjustmentAccountIds: { gain: gainId ?? 0, loss: lossId ?? 0 },
+            today,
+          }),
+        ),
       createAdjustment && mismatched
         ? `差額を${adjustAccountName}に計上して精算しました`
         : createAdjustment || matched
@@ -259,22 +261,26 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
       return
     }
     if (resolved.target === null || directionSummary === null || entryHouseholdMemberId === null) return
-    void run(() => runInHistoryGroup(repositories.history, 'settlement.createEntry', async () => {
-      await createSettlementEntry({
-        batchId: batch.id,
-        taggedEntryIds,
-        direction,
-        accountId: directionSummary.accountId,
-        target: resolved.target!,
-        entryHouseholdMemberId,
-        resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(data.accounts, entryHouseholdMemberId),
-        repositories,
-        counterAccountId: Number(draftAccount),
-        amount,
-        entryDate: draftDate,
-        memo: `${batch.name} 精算`,
-      })
-    }), '仕訳を起票してバッチに紐付けました')
+    void run(
+      () =>
+        runInHistoryGroup(repositories.history, 'settlement.createEntry', async () => {
+          await createSettlementEntry({
+            batchId: batch.id,
+            taggedEntryIds,
+            direction,
+            accountId: directionSummary.accountId,
+            target: resolved.target!,
+            entryHouseholdMemberId,
+            resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(data.accounts, entryHouseholdMemberId),
+            repositories,
+            counterAccountId: Number(draftAccount),
+            amount,
+            entryDate: draftDate,
+            memo: `${batch.name} 精算`,
+          })
+        }),
+      '仕訳を起票してバッチに紐付けました',
+    )
   }
 
   const breakdownText = (d: SettlementDirection) => {

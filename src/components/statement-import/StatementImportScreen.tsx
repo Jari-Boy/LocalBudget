@@ -1,4 +1,3 @@
-import { runInHistoryGroup, type HistoryGroupApi } from '../../infrastructure/history/historyGroupRunner'
 import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
@@ -31,6 +30,7 @@ import type { ApproximateDuplicateSearchOptions } from '../../domain/statement-i
 import { estimateCounterparty, normalizeDescriptionForMatching, type CounterpartyPatternLookup } from '../../domain/statement-import/estimateCounterparty'
 import { resolveMappingDefinitionCandidates, type MappingDefinitionCandidateMatch } from '../../domain/statement-import/resolveMappingDefinitionCandidates'
 import { suggestCounterpartyAccount, type CounterpartyLookup } from '../../domain/statement-import/suggestCounterpartyAccount'
+import { runInHistoryGroup, type HistoryGroupApi } from '../../infrastructure/history/historyGroupRunner'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'

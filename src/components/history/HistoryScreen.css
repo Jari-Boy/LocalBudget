@@ -4,6 +4,7 @@
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+  font-size: var(--font-size-base);
 }
 
 .history__title {
@@ -192,7 +193,7 @@
 .history__big {
   display: flex;
   flex-direction: column;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
 }
 
@@ -328,13 +329,14 @@
 .history__empty {
   padding: 28px 16px;
   text-align: center;
+  font-size: var(--font-size-sm);
   color: var(--color-text-muted);
   white-space: pre-line;
 }
 
 .history__empty-title {
   margin-bottom: 4px;
-  font-size: 17px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--color-text);
 }
