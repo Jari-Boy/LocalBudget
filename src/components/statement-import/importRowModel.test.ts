@@ -146,6 +146,11 @@ describe('パターン登録の提案(shouldOfferLearn)', () => {
     expect(shouldOfferLearn(record({ isExactDuplicate: true }), state({ counterpartyId: 5 }))).toBe(false)
   })
 
+  it('取引先の候補が複数あって決まらなかった行は、摘要の提案(確定時のキーワード登録)を既定でオフにする', () => {
+    expect(createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [1, 2] }).learnOn).toBe(false)
+    expect(createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [] }).learnOn).toBe(true)
+    expect(createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [] }).learnPattern).toBeNull()
+  })
 })
 
 describe('isRowEdited', () => {
@@ -167,10 +172,12 @@ describe('isRowEdited', () => {
     for (const change of changes) expect(isRowEdited({ ...initial, ...change }, initial)).toBe(true)
   })
 
-  it('重複を取り込む・確定版の判断を変えたら、編集したとみなす', () => {
+  it('重複を取り込む・確定版の判断・摘要の提案の変更(消す、文字列を変える)をしたら、編集したとみなす', () => {
     const changes: Array<Partial<ImportRowState>> = [
       { includeDuplicate: true },
       { approximateDecision: 'confirmed_replacement' },
+      { learnOn: !initial.learnOn },
+      { learnPattern: 'スーパー' },
     ]
     for (const change of changes) expect(isRowEdited({ ...initial, ...change }, initial)).toBe(true)
   })

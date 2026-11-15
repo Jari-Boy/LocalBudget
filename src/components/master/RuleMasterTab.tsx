@@ -38,6 +38,7 @@ import {
   ruleFormFromRule,
 } from './recurringRuleForm'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
+import { buildGroupSelectCategories } from '../common/tree-select/groupSelectCategories'
 import { AccountCreateForm } from './AccountCreateForm'
 import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
 import { RuleEditForm, type RuleStatus } from './RuleEditForm'
@@ -391,8 +392,9 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
         <QuickCreateDialog
           title="取引先を追加"
           nameLabel="取引先名"
-          onSubmit={async (name) => {
-            const created = await counterpartyRepository.create({ name })
+          groupField={{ label: '取引先グループ', categories: buildGroupSelectCategories(data.counterpartyGroups) }}
+          onSubmit={async (name, groupId) => {
+            const created = await counterpartyRepository.create({ name, counterpartyGroupId: groupId })
             setData((prev) => (prev === null ? prev : { ...prev, counterparties: [...prev.counterparties, created] }))
             counterpartyDialog.apply(created.id)
             setCounterpartyDialog(null)
@@ -424,8 +426,9 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
         <QuickCreateDialog
           title="プロジェクトを追加"
           nameLabel="プロジェクト名"
-          onSubmit={async (name) => {
-            const created = await projectRepository.create({ name })
+          groupField={{ label: 'プロジェクトグループ', categories: buildGroupSelectCategories(data.projectGroups) }}
+          onSubmit={async (name, groupId) => {
+            const created = await projectRepository.create({ name, projectGroupId: groupId })
             setData((prev) => (prev === null ? prev : { ...prev, projects: [...prev.projects, created] }))
             projectDialog.apply(created.id)
             setProjectDialog(null)

@@ -28,6 +28,13 @@ export interface ImportRowState {
   /** 取り込み済みと完全一致する行を、それでも取り込むか */
   includeDuplicate: boolean
   approximateDecision: ApproximateDecision
+  /**
+   * 摘要の提案(確定時のキーワード登録、計画Issue #207)を残すか。ポップアップで「新規」として一覧に出る。
+   * 消すとfalseになり、確定時にも登録しない
+   */
+  learnOn: boolean
+  /** 提案の文字列。nullなら摘要そのまま */
+  learnPattern: string | null
 }
 
 export type RowStatus = 'new' | 'duplicate' | 'check'
@@ -49,6 +56,9 @@ export function createInitialRowState(params: {
     comment: '',
     includeDuplicate: false,
     approximateDecision: 'unresolved',
+    // 摘要だけでは取引先が決まらなかった行は、既定でキーワードを登録しない(誤った学習を避ける)
+    learnOn: params.candidateCounterpartyIds.length < 2,
+    learnPattern: null,
   }
 }
 
@@ -68,7 +78,9 @@ export function isRowEdited(state: ImportRowState, initial: ImportRowState): boo
     state.settlementBatchId !== initial.settlementBatchId ||
     state.comment !== initial.comment ||
     state.includeDuplicate !== initial.includeDuplicate ||
-    state.approximateDecision !== initial.approximateDecision
+    state.approximateDecision !== initial.approximateDecision ||
+    state.learnOn !== initial.learnOn ||
+    state.learnPattern !== initial.learnPattern
   )
 }
 

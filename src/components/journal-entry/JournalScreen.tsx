@@ -55,6 +55,7 @@ import { canCreateRuleFromEntry } from '../../domain/recurring-transaction/canCr
 import { AccountCreateForm } from '../master/AccountCreateForm'
 import { CreateRuleFromEntryDialog } from './CreateRuleFromEntryDialog'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
+import { buildGroupSelectCategories } from '../common/tree-select/groupSelectCategories'
 import { JournalEntryEditor, type JournalEditorLine, type JournalEditorMaster, type JournalEditorValue } from './JournalEntryEditor'
 import {
   createEmptyJournalEntryFormLine,
@@ -1723,8 +1724,9 @@ export function JournalScreen(props: JournalScreenProps) {
         <QuickCreateDialog
           title="プロジェクトを追加"
           nameLabel="プロジェクト名"
-          onSubmit={async (name) => {
-            const created = await props.projectRepository.create({ name })
+          groupField={{ label: 'プロジェクトグループ', categories: buildGroupSelectCategories(data?.projectGroups ?? []) }}
+          onSubmit={async (name, groupId) => {
+            const created = await props.projectRepository.create({ name, projectGroupId: groupId })
             setData((prev) => (prev === null ? prev : { ...prev, projects: [...prev.projects, created] }))
             projectDialog.apply(created.id)
             setProjectDialog(null)
@@ -1736,8 +1738,9 @@ export function JournalScreen(props: JournalScreenProps) {
         <QuickCreateDialog
           title="取引先を追加"
           nameLabel="取引先名"
-          onSubmit={async (name) => {
-            const created = await counterpartyRepository.create({ name })
+          groupField={{ label: '取引先グループ', categories: buildGroupSelectCategories(data?.counterpartyGroups ?? []) }}
+          onSubmit={async (name, groupId) => {
+            const created = await counterpartyRepository.create({ name, counterpartyGroupId: groupId })
             setData((prev) => (prev === null ? prev : { ...prev, counterparties: [...prev.counterparties, created] }))
             counterpartyDialog.apply(created.id)
             setCounterpartyDialog(null)

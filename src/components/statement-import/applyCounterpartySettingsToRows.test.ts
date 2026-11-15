@@ -1,14 +1,13 @@
 /**
- * applyCounterpartyDraftToRows(「ほかの行にも適用」、計画Issue #207)の単体テスト。
- * 取引先の下書き(パターンの一覧と相手科目の初期値)を、取り込み中のほかの行へ画面上だけで反映する規則を確認する。
- * パターンを含み取引先が未設定の行にだけ取引先を設定し、別の取引先に自動マッチした行・手で選んだ行・
+ * applyCounterpartySettingsToRows(「ほかの行にも適用」、計画Issue #207)の単体テスト。
+ * 取引先の設定(キーワードの一覧と相手科目の初期値)を、取り込み中のほかの行へ画面上だけで反映する規則を確認する。
+ * キーワードを含み取引先が未設定の行にだけ取引先を設定し、別の取引先に自動マッチした行・手で選んだ行・
  * 候補が複数ある曖昧な行・確定済みの行・重複の行は変えない。相手科目は手で選んでいない行にだけ入れる。
- * 反映した行は初期状態も合わせて更新する(未保存警告の誤検知と二重学習を避ける)。DB・DOM非依存、外部依存なし。
+ * 反映した行は初期状態も合わせて更新する(未保存警告の誤検知と二重のキーワード登録を避ける)。DB・DOM非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import type { Account } from '../../domain/account/Account'
-import { applyCounterpartyDraftToRows } from './applyCounterpartyDraftToRows'
-import { addDraftPattern, createCounterpartyDraft, setDraftDefaultAccount } from './counterpartyDraftModel'
+import { applyCounterpartySettingsToRows, type CounterpartySettings } from './applyCounterpartySettingsToRows'
 import { createInitialRowState, isRowEdited, shouldOfferLearn, type ImportRowState } from './importRowModel'
 
 function account(id: number, overrides: Partial<Account>): Account {
@@ -41,39 +40,34 @@ function state(overrides: Partial<ImportRowState> = {}): ImportRowState {
   return { ...createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [] }), ...overrides }
 }
 
-/** 新聞販売店Aのパターン「新聞販売店A」を持つ下書き(既定科目はなし) */
-const draftWith = (defaultAccountId: number | null = null) =>
-  setDraftDefaultAccount(
-    createCounterpartyDraft({
-      counterpartyId: NEWS_SHOP,
-      defaultAccountId: null,
-      registered: [],
-      initialNewPattern: { text: '新聞販売店A', sourceDescription: '新聞販売店A 3月分' },
-    }),
-    defaultAccountId,
-  )
+/** 新聞販売店Aのキーワード「新聞販売店A」を持つ設定(相手科目の初期値は指定がなければなし) */
+const settingsWith = (defaultAccountId: number | null = null, keywords: string[] = ['新聞販売店A']): CounterpartySettings => ({
+  counterpartyId: NEWS_SHOP,
+  keywords,
+  defaultAccountId,
+})
 
 function run(params: {
   rows: ImportRowState[]
   descriptions: string[]
-  draft?: ReturnType<typeof draftWith>
+  settings?: CounterpartySettings
   done?: number[]
   records?: unknown[]
   initialRows?: ImportRowState[]
 }) {
-  return applyCounterpartyDraftToRows({
+  return applyCounterpartySettingsToRows({
     states: params.rows,
     initialStates: params.initialRows ?? params.rows,
     records: (params.records ?? params.rows.map(() => record())) as never,
     descriptions: params.descriptions,
     done: new Set(params.done ?? []),
-    draft: params.draft ?? draftWith(),
+    settings: params.settings ?? settingsWith(),
     accounts: ACCOUNTS,
   })
 }
 
-describe('取引先の設定(パターン)', () => {
-  it('パターンを含み、取引先が未設定で手で触っていない行にだけ取引先を設定し、件数を返す', () => {
+describe('取引先の設定(キーワード)', () => {
+  it('キーワードを含み、取引先が未設定で手で触っていない行にだけ取引先を設定し、件数を返す', () => {
     const result = run({
       rows: [state(), state(), state()],
       descriptions: ['新聞販売店A 2月分', '別の店B', '新聞販売店A 1月分'],
@@ -83,14 +77,8 @@ describe('取引先の設定(パターン)', () => {
     expect(result.applied).toBe(2)
   })
 
-  it('パターンの照合は正規化(全角半角・大文字小文字・空白)して行う', () => {
-    const draft = createCounterpartyDraft({
-      counterpartyId: NEWS_SHOP,
-      defaultAccountId: null,
-      registered: [{ id: 1, pattern: 'SHINBUN-A' }],
-    })
-
-    const result = run({ rows: [state()], descriptions: ['ｓｈｉｎｂｕｎ-a 引落'], draft })
+  it('キーワードの照合は正規化(全角半角・大文字小文字・空白)して行う', () => {
+    const result = run({ rows: [state()], descriptions: ['ｓｈｉｎｂｕｎ-a 引落'], settings: settingsWith(null, ['SHINBUN-A']) })
 
     expect(result.states[0].counterpartyId).toBe(NEWS_SHOP)
   })
@@ -131,13 +119,8 @@ describe('取引先の設定(パターン)', () => {
     expect(result.applied).toBe(0)
   })
 
-  it('空のパターンだけの下書きでは、どの行にも設定しない', () => {
-    const draft = addDraftPattern(
-      createCounterpartyDraft({ counterpartyId: NEWS_SHOP, defaultAccountId: null, registered: [] }),
-      { text: ' ', sourceDescription: '新聞販売店A' },
-    )
-
-    expect(run({ rows: [state()], descriptions: ['新聞販売店A'], draft }).applied).toBe(0)
+  it('空のキーワードだけの設定では、どの行にも設定しない', () => {
+    expect(run({ rows: [state()], descriptions: ['新聞販売店A'], settings: settingsWith(null, [' ']) }).applied).toBe(0)
   })
 })
 
@@ -150,7 +133,7 @@ describe('相手科目の初期値', () => {
     const result = run({
       rows: [untouched, touched, otherShop],
       descriptions: ['x', 'x', 'x'],
-      draft: draftWith(NEWS.id),
+      settings: settingsWith(NEWS.id),
     })
 
     expect(result.states.map((s) => s.counterAccountId)).toEqual([NEWS.id, FOOD.id, FOOD.id])
@@ -158,14 +141,14 @@ describe('相手科目の初期値', () => {
   })
 
   it('取引先を新しく設定した行にも、初期値の科目が入る。科目は手で選んだ扱いにならない', () => {
-    const result = run({ rows: [state()], descriptions: ['新聞販売店A'], draft: draftWith(NEWS.id) })
+    const result = run({ rows: [state()], descriptions: ['新聞販売店A'], settings: settingsWith(NEWS.id) })
 
     expect(result.states[0]).toMatchObject({ counterpartyId: NEWS_SHOP, counterAccountId: NEWS.id, counterAccountTouched: false })
     expect(result.applied).toBe(1)
   })
 
   it('取引先が違う行・取引先が未設定のままの行は、初期値の科目を入れない', () => {
-    const result = run({ rows: [state({ counterAccountId: FOOD.id })], descriptions: ['別の店B'], draft: draftWith(NEWS.id) })
+    const result = run({ rows: [state({ counterAccountId: FOOD.id })], descriptions: ['別の店B'], settings: settingsWith(NEWS.id) })
 
     expect(result.states[0].counterAccountId).toBe(FOOD.id)
   })
@@ -173,26 +156,26 @@ describe('相手科目の初期値', () => {
   it('初期値が未設定の下書きでは、相手科目を変えない', () => {
     const row = state({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: FOOD.id })
 
-    expect(run({ rows: [row], descriptions: ['x'], draft: draftWith(null) }).applied).toBe(0)
+    expect(run({ rows: [row], descriptions: ['x'], settings: settingsWith(null) }).applied).toBe(0)
   })
 
   it('初期値の科目が費用・収益でない(取引先を持てない)場合は、設定しない', () => {
     const row = state({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: FOOD.id })
 
-    expect(run({ rows: [row], descriptions: ['x'], draft: draftWith(BANK.id) }).applied).toBe(0)
+    expect(run({ rows: [row], descriptions: ['x'], settings: settingsWith(BANK.id) }).applied).toBe(0)
   })
 
   it('すでに初期値と同じ科目の行は、設定した件数に数えない', () => {
     const row = state({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: NEWS.id })
 
-    expect(run({ rows: [row], descriptions: ['x'], draft: draftWith(NEWS.id) }).applied).toBe(0)
+    expect(run({ rows: [row], descriptions: ['x'], settings: settingsWith(NEWS.id) }).applied).toBe(0)
   })
 })
 
 describe('反映した行の初期状態', () => {
   it('反映した行は初期状態も更新し、未保存の編集とは見なされず、パターン登録の候補にもならない', () => {
     const rows = [state()]
-    const result = run({ rows, descriptions: ['新聞販売店A'], draft: draftWith(NEWS.id), initialRows: rows })
+    const result = run({ rows, descriptions: ['新聞販売店A'], settings: settingsWith(NEWS.id), initialRows: rows })
 
     expect(isRowEdited(result.states[0], result.initialStates[0])).toBe(false)
     expect(result.initialStates[0]).toMatchObject({ counterpartyId: NEWS_SHOP, counterAccountId: NEWS.id })

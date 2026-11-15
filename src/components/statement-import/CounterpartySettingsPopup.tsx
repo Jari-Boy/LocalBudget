@@ -3,35 +3,29 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
-import {
-  addDraftPattern,
-  countRowsContaining,
-  removeDraftPattern,
-  setDraftDefaultAccount,
-  updateDraftPatternText,
-  validateDraftPatterns,
-  type CounterpartyDraft,
-  type DraftPatternError,
-} from './counterpartyDraftModel'
+import { KeywordList, type KeywordListItem } from './KeywordList'
 
 export interface CounterpartySettingsPopupProps {
   isOpen: boolean
   onToggle: () => void
   onClose: () => void
   counterpartyName: string
-  /** 取引先の登録済みパターンを読み込み中はnull */
-  draft: CounterpartyDraft | null
-  /** 「この明細で含む行の数」の対象にする、未確定の行の摘要 */
-  descriptions: readonly string[]
-  /** この行の摘要(新規パターンは、この摘要に含まれる文字列だけ入力できる) */
-  rowDescription: string
-  /** 「この行の科目を入れる」で取り込む、この行の相手科目(取引先を持てない科目ならnull) */
-  rowAccount: { id: number; name: string } | null
+  /** 取引先の登録済みキーワードを読み込み中はnull */
+  items: readonly KeywordListItem[] | null
+  defaultAccountId: number | null
   /** 相手科目の初期値に選べる科目(取引先を持てる費用・収益の科目) */
   accountCategories: readonly TreeSelectCategory[]
+  /** この行の摘要(リンクの名前に使う) */
+  rowDescription: string
   /** 「ほかの行にも適用」を押した結果の表示 */
   message: string
-  onChange: (draft: CounterpartyDraft) => void
+  /** 保存に失敗したときの表示(入力した内容は残す) */
+  saveError: string
+  onTextChange: (key: string, text: string) => void
+  onCommit: (key: string) => void
+  onDelete: (key: string) => void
+  onAdd: () => void
+  onDefaultAccountChange: (accountId: number | null) => void
   onApply: () => void
 }
 
@@ -39,12 +33,12 @@ const POPUP_WIDTH = 420
 
 /**
  * 取引先セルの下に置く「取引先の設定」のリンクと、押すと開くポップアップ(計画Issue #207)。
- * 取引先のパターン(登録済み・新規)の編集・削除・追加と、相手科目の初期値の変更、ほかの行への適用ができる。
- * 変更は取引先ごとの下書きに入り、DBへは確定時にだけ保存する。ポップアップはTreeSelectと同じく画面に固定して描画し、
- * 表のoverflowで見切れないようにする。
+ * 取引先のキーワードの編集・削除・追加と、相手科目の初期値の変更、ほかの行への適用ができる。
+ * 変更は操作した時点で保存される(「新規」のキーワードだけは、行を確定したときに登録される)。
+ * ポップアップはTreeSelectと同じく画面に固定して描画し、表のoverflowで見切れないようにする。
  */
 export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps) {
-  const { isOpen, onToggle, onClose, counterpartyName, draft, descriptions, rowDescription, rowAccount, accountCategories, message, onChange, onApply } = props
+  const { isOpen, onToggle, onClose, counterpartyName, items, defaultAccountId, accountCategories, rowDescription, message, saveError } = props
   const { t } = useTranslation('statementImport')
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
@@ -95,10 +89,6 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
     triggerRef.current?.focus()
   }
 
-  const errors = draft ? validateDraftPatterns(draft) : new Map<string, DraftPatternError>()
-  const errorText = (error: DraftPatternError) =>
-    error === 'empty' ? t('patternErrorEmpty') : error === 'duplicate' ? t('patternErrorDuplicate') : t('patternErrorNotInDescription')
-
   return (
     <>
       <button
@@ -124,54 +114,19 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
           >
             <p className="import-settings__title">{t('settingsTitle', { name: counterpartyName })}</p>
             <p className="import-note">{t('settingsNote')}</p>
-            {draft === null ? (
+            {items === null ? (
               <p className="import-note" role="status">
                 {t('settingsLoading')}
               </p>
             ) : (
               <>
-                <div className="import-field">
-                  <span className="import-field__label">{t('settingsPatternsLabel')}</span>
-                  {draft.patterns.map((pattern, index) => {
-                    const error = errors.get(pattern.key)
-                    const isNew = pattern.patternId === null
-                    return (
-                      <div key={pattern.key} className="import-settings__pattern">
-                        <div className="import-settings__row">
-                          <span className={`import-tag ${isNew ? 'import-tag--new' : 'import-tag--registered'}`}>
-                            {isNew ? t('tagNew') : t('tagRegistered')}
-                          </span>
-                          <input
-                            className="import-control import-control--small import-settings__input"
-                            aria-label={t('patternInput', { index: index + 1 })}
-                            aria-invalid={error !== undefined}
-                            value={pattern.text}
-                            onChange={(e) => onChange(updateDraftPatternText(draft, pattern.key, e.target.value))}
-                          />
-                          <span className="import-note import-nowrap" title={t('patternRowsTitle')}>{t('patternRows', { count: countRowsContaining(pattern.text, descriptions) })}</span>
-                          <button
-                            type="button"
-                            className="import-link"
-                            aria-label={t('patternDeleteLabel', { index: index + 1 })}
-                            onClick={() => onChange(removeDraftPattern(draft, pattern.key))}
-                          >
-                            {t('patternDelete')}
-                          </button>
-                        </div>
-                        {error !== undefined && <span className="import-error import-settings__error">{errorText(error)}</span>}
-                      </div>
-                    )
-                  })}
-                  <div>
-                    <button
-                      type="button"
-                      className="import-btn import-btn--small"
-                      onClick={() => onChange(addDraftPattern(draft, { text: '', sourceDescription: rowDescription }))}
-                    >
-                      {t('patternAdd')}
-                    </button>
-                  </div>
-                </div>
+                <KeywordList
+                  items={items}
+                  onTextChange={props.onTextChange}
+                  onCommit={props.onCommit}
+                  onDelete={props.onDelete}
+                  onAdd={props.onAdd}
+                />
 
                 <div className="import-field import-settings__section">
                   <span className="import-field__label">{t('defaultAccountLabel')}</span>
@@ -179,31 +134,26 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
                     <TreeSelect
                       label={t('defaultAccountLabel')}
                       categories={accountCategories}
-                      value={draft.defaultAccountId === null ? '' : String(draft.defaultAccountId)}
+                      value={defaultAccountId === null ? '' : String(defaultAccountId)}
                       emptyLabel={t('defaultAccountNone')}
                       placeholder={t('defaultAccountNone')}
-                      onChange={(v) => onChange(setDraftDefaultAccount(draft, v === '' ? null : Number(v)))}
+                      onChange={(v) => props.onDefaultAccountChange(v === '' ? null : Number(v))}
                     />
-                    {rowAccount !== null && draft.defaultAccountId !== rowAccount.id && (
-                      <button
-                        type="button"
-                        className="import-link import-nowrap"
-                        aria-label={t('useRowAccountLabel', { account: rowAccount.name })}
-                        onClick={() => onChange(setDraftDefaultAccount(draft, rowAccount.id))}
-                      >
-                        {t('useRowAccount')}
-                      </button>
-                    )}
                   </div>
                 </div>
 
+                {saveError !== '' && (
+                  <span className="import-error" role="alert">
+                    {saveError}
+                  </span>
+                )}
                 {message !== '' && (
                   <span className="import-note" role="status">
                     {message}
                   </span>
                 )}
                 <div className="import-settings__actions">
-                  <button type="button" className="import-btn import-btn--small" onClick={onApply}>
+                  <button type="button" className="import-btn import-btn--small" onClick={props.onApply}>
                     {t('applyToOtherRows')}
                   </button>
                   <button
