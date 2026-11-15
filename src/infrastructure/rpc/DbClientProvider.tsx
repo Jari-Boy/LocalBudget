@@ -2,7 +2,12 @@ import * as Comlink from 'comlink'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { RepositoryRegistry } from './createRepositoryRegistry'
+import { StartupErrorScreen } from '../../components/settings/StartupErrorScreen'
+import { backupFileName } from '../../components/settings/backupFileName'
+import { downloadDatabaseBackup } from '../backup/downloadDatabaseBackup'
+import { updateApp } from '../pwa/updateApp'
 import { createDbClient } from './createDbClient'
+import { WorkerInitError } from './WorkerInitError'
 
 export type DbClient = Comlink.Remote<RepositoryRegistry>
 
@@ -16,23 +21,47 @@ const DbClientContext = createContext<DbClient | null>(null)
 export function DbClientProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
   const [client, setClient] = useState<DbClient | null>(null)
+  const [startupError, setStartupError] = useState<WorkerInitError | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    void createDbClient().then((createdClient) => {
-      if (!cancelled) {
-        // ComlinkのRemoteオブジェクトは内部的にfunction()を対象としたProxyであり
-        // typeof演算子で"function"と判定される。setState(x)にそのまま渡すと、
-        // Reactがxを「更新関数」と誤認しx(prevState)のように呼び出してしまい、
-        // path=[]のAPPLYメッセージがWorkerに送られて例外になる。
-        // setState(() => x)の形で渡し、Reactに関数呼び出しをさせず値として設定する。
-        setClient(() => createdClient)
-      }
-    })
+    createDbClient().then(
+      (createdClient) => {
+        if (!cancelled) {
+          // ComlinkのRemoteオブジェクトは内部的にfunction()を対象としたProxyであり
+          // typeof演算子で"function"と判定される。setState(x)にそのまま渡すと、
+          // Reactがxを「更新関数」と誤認しx(prevState)のように呼び出してしまい、
+          // path=[]のAPPLYメッセージがWorkerに送られて例外になる。
+          // setState(() => x)の形で渡し、Reactに関数呼び出しをさせず値として設定する。
+          setClient(() => createdClient)
+        }
+      },
+      (error: unknown) => {
+        // 起動に失敗したら、読み込み中のまま止めずに種類に応じた起動エラー画面を出す(計画Issue #42)
+        if (!cancelled) {
+          setStartupError(
+            error instanceof WorkerInitError
+              ? error
+              : new WorkerInitError(error instanceof Error ? error.message : String(error)),
+          )
+        }
+      },
+    )
     return () => {
       cancelled = true
     }
   }, [])
+
+  if (startupError) {
+    return (
+      <StartupErrorScreen
+        error={startupError}
+        onExport={(data) => downloadDatabaseBackup(data, backupFileName(new Date()))}
+        onUpdate={() => updateApp({ container: navigator.serviceWorker, reload: () => window.location.reload() })}
+        onReload={() => window.location.reload()}
+      />
+    )
+  }
 
   if (!client) {
     return <p role="status">{t('loading')}</p>

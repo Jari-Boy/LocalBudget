@@ -404,3 +404,13 @@
   height: 22px;
   accent-color: var(--color-accent);
 }
+
+/* 起動エラー画面(計画Issue #42) */
+.settings__pre-line {
+  white-space: pre-line;
+}
+
+.settings__break-all {
+  word-break: break-all;
+  line-height: 1.6;
+}
