@@ -74,7 +74,10 @@ beforeEach(async () => {
 
 afterEach(cleanup)
 
-function renderScreen(householdMemberRepository: Pick<SqlJsHouseholdMemberRepository, 'findAll'> = new SqlJsHouseholdMemberRepository(db)) {
+function renderScreen(
+  householdMemberRepository: Pick<SqlJsHouseholdMemberRepository, 'findAll'> = new SqlJsHouseholdMemberRepository(db),
+  counterpartyRepository: SqlJsCounterpartyRepository = counterparties,
+) {
   render(
     <I18nextProvider i18n={i18n}>
       <UnsavedGuardHarness>
@@ -84,7 +87,7 @@ function renderScreen(householdMemberRepository: Pick<SqlJsHouseholdMemberReposi
         importMappingDefinitionRepository={mappings}
         externalTransactionRefRepository={new SqlJsExternalTransactionRefRepository(db)}
         journalEntryRepository={entries}
-        counterpartyRepository={counterparties}
+        counterpartyRepository={counterpartyRepository}
         counterpartyGroupRepository={new SqlJsCounterpartyGroupRepository(db)}
         projectRepository={projects}
         projectGroupRepository={new SqlJsProjectGroupRepository(db)}
@@ -570,11 +573,15 @@ describe('StatementImportScreen', () => {
 
   describe('取引先の設定(計画Issue #207)', () => {
     /** 取引先を手で選んだ行(取引先の設定のリンクが出る行)を作る */
-    async function setupPickedRow(description = 'スーパー 新宿店', extra: (cpId: number) => void = () => undefined) {
+    async function setupPickedRow(
+      description = 'スーパー 新宿店',
+      extra: (cpId: number) => void = () => undefined,
+      repository: SqlJsCounterpartyRepository = counterparties,
+    ) {
       makeMapping()
       const cp = counterparties.create({ name: 'スーパーA' })
       extra(cp.id)
-      renderScreen()
+      renderScreen(undefined, repository)
       await chooseCsv(`${HEADER}2026/10/05,${description},-3000,97000\n`)
       pick(rowOf(new RegExp(description)), '相手科目', '食費')
       pick(rowOf(new RegExp(description)), '取引先', 'スーパーA')
@@ -837,6 +844,124 @@ describe('StatementImportScreen', () => {
 
       await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('新宿'))
     })
+
+    describe('保存に失敗したとき', () => {
+      /** 指定したメソッドだけ失敗する取引先のRepository(ほかは本物のまま) */
+      const failing = (method: 'updatePattern' | 'addPattern' | 'deletePattern' | 'update') =>
+        Object.assign(Object.create(counterparties), {
+          [method]: () => {
+            throw new Error('保存の失敗')
+          },
+        }) as typeof counterparties
+      const SAVE_ERROR = '保存できませんでした。もう一度お試しください。'
+
+      it('登録済みのキーワードの編集を保存できなかったら、ポップアップ内にエラーを出し、入力した内容は残す', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店', (id) => counterparties.addPattern(id, 'マルエツ'), failing('updatePattern'))
+        await openCounterpartySettings('スーパー 新宿店')
+        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
+
+        fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'マルエツ新宿' } })
+        fireEvent.blur(settings().getByLabelText('キーワード1'))
+
+        expect(await settings().findByText(SAVE_ERROR)).toBeInTheDocument()
+        expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ新宿')
+        expect(patternsOf(cp.id)).toEqual(['マルエツ'])
+      })
+
+      it('新規のキーワードを保存できなかったら、ポップアップ内にエラーを出し、「新規」のまま入力を残す', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店', () => undefined, failing('addPattern'))
+        await openCounterpartySettings('スーパー 新宿店')
+        fireEvent.click(settings().getByRole('button', { name: '+ キーワードを追加' }))
+
+        fireEvent.change(settings().getByLabelText('キーワード2'), { target: { value: 'スーパー' } })
+        fireEvent.blur(settings().getByLabelText('キーワード2'))
+
+        expect(await settings().findByText(SAVE_ERROR)).toBeInTheDocument()
+        expect(settings().getByLabelText('キーワード2')).toHaveValue('スーパー')
+        expect(settings().queryByText('登録済み')).not.toBeInTheDocument()
+        expect(patternsOf(cp.id)).toEqual([])
+      })
+
+      it('登録済みのキーワードの削除を保存できなかったら、ポップアップ内にエラーを出し、一覧からは消さない', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店', (id) => counterparties.addPattern(id, 'マルエツ'), failing('deletePattern'))
+        await openCounterpartySettings('スーパー 新宿店')
+        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
+
+        fireEvent.click(settings().getByRole('button', { name: 'キーワード1を削除' }))
+
+        expect(await settings().findByText(SAVE_ERROR)).toBeInTheDocument()
+        expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ')
+        expect(patternsOf(cp.id)).toEqual(['マルエツ'])
+      })
+
+      it('相手科目の初期値を保存できなかったら、ポップアップ内にエラーを出し、初期値は変わらない', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店', () => undefined, failing('update'))
+        await openCounterpartySettings('スーパー 新宿店')
+
+        fireEvent.click(settings().getByRole('button', { name: /^相手科目の初期値/ }))
+        fireEvent.click(within(screen.getByRole('dialog', { name: '相手科目の初期値' })).getByRole('button', { name: '食費' }))
+
+        expect(await settings().findByText(SAVE_ERROR)).toBeInTheDocument()
+        expect(settings().getByRole('button', { name: /^相手科目の初期値: 指定なし/ })).toBeInTheDocument()
+        expect(counterparties.findById(cp.id)!.defaultAccountId).toBeNull()
+      })
+    })
+
+    it('Escキーでポップアップが閉じる', async () => {
+      await setupPickedRow('スーパー 新宿店')
+      await openCounterpartySettings('スーパー 新宿店')
+
+      fireEvent.keyDown(screen.getByRole('dialog', { name: /^取引先の設定: / }), { key: 'Escape' })
+
+      expect(screen.queryByRole('dialog', { name: /^取引先の設定: / })).not.toBeInTheDocument()
+    })
+
+    it('ポップアップの外側を押すと閉じるが、中の相手科目の選択のポップアップの操作では閉じない', async () => {
+      await setupPickedRow('スーパー 新宿店')
+      await openCounterpartySettings('スーパー 新宿店')
+
+      fireEvent.click(settings().getByRole('button', { name: /^相手科目の初期値/ }))
+      fireEvent.pointerDown(within(screen.getByRole('dialog', { name: '相手科目の初期値' })).getByRole('button', { name: '食費' }))
+      expect(screen.getByRole('dialog', { name: /^取引先の設定: / })).toBeInTheDocument()
+
+      fireEvent.pointerDown(document.body)
+      expect(screen.queryByRole('dialog', { name: /^取引先の設定: / })).not.toBeInTheDocument()
+    })
+
+    it('開いたまま行の取引先を別の取引先に変えても、「取引先の設定」を1回押せば新しい取引先の設定が開く', async () => {
+      makeMapping()
+      counterparties.create({ name: 'スーパーA' })
+      counterparties.create({ name: 'スーパーB' })
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n`)
+      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+      pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
+      await openCounterpartySettings('スーパー 新宿店')
+
+      pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーB')
+      fireEvent.click(rowOf(/スーパー 新宿店/).getByRole('button', { name: 'スーパー 新宿店の取引先の設定' }))
+
+      expect(await screen.findByRole('dialog', { name: '取引先の設定: スーパーB' })).toBeInTheDocument()
+    })
+
+    it('摘要の提案を不正な文字列に直したまま確定しようとすると、確定せずにその旨を出し、直す(または削除する)と確定できる', async () => {
+      const cp = await setupPickedRow('スーパー 新宿店')
+      await openCounterpartySettings('スーパー 新宿店')
+      fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'ローソン' } })
+      fireEvent.click(settings().getByRole('button', { name: '閉じる' }))
+
+      fireEvent.click(confirmButton(1))
+
+      expect(await screen.findByText('摘要から入るキーワードに問題があります。「取引先の設定」で直すか、削除してください。')).toBeInTheDocument()
+      expect(userEntries()).toHaveLength(0)
+
+      await openCounterpartySettings('スーパー 新宿店')
+      fireEvent.click(settings().getByRole('button', { name: 'キーワード1を削除' }))
+      fireEvent.click(confirmButton(1))
+
+      await waitFor(() => expect(userEntries()).toHaveLength(1))
+      expect(patternsOf(cp.id)).toEqual([])
+    })
   })
 
   describe('取引先・プロジェクトの追加ダイアログ(計画Issue #207)', () => {
@@ -1012,6 +1137,28 @@ describe('StatementImportScreen', () => {
 
       await waitFor(() => expect(projects.findAll()).toHaveLength(1))
       expect(projects.findAll()[0].projectGroupId).toBe(new SqlJsProjectGroupRepository(db).findAll()[0].id)
+    })
+
+    it('取引先を追加できてもキーワードの保存に失敗したら、取引先は追加したうえで、保存できなかったキーワードがあることを知らせる', async () => {
+      makeMapping()
+      const failingRepo = Object.assign(Object.create(counterparties), {
+        addPattern: () => {
+          throw new Error('保存の失敗')
+        },
+      }) as typeof counterparties
+      renderScreen(undefined, failingRepo)
+      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n`)
+      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+      openCounterpartyDialog(/スーパー 新宿店/)
+
+      fireEvent.change(dialog('取引先を追加').getByLabelText('取引先名'), { target: { value: '新しい店' } })
+      fireEvent.click(dialog('取引先を追加').getByRole('button', { name: '追加' }))
+
+      await waitFor(() => expect(counterparties.findAll().map((c) => c.name)).toEqual(['新しい店']))
+      expect(
+        await screen.findByText('取引先は追加しましたが、保存できなかったキーワードがあります。「取引先の設定」から追加してください。'),
+      ).toBeInTheDocument()
+      expect(await rowOf(/スーパー 新宿店/).findByRole('button', { name: /^取引先: 新しい店/ })).toBeInTheDocument()
     })
 
     it('グループを選ばずに追加すると、未分類で作られる', async () => {

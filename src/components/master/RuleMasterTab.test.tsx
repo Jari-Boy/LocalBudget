@@ -482,6 +482,49 @@ describe('パネルの見た目(計画Issue #164、仕訳エディタと同じ�
     expect(await column(form, '借方').findByRole('button', { name: /^取引先.*不動産会社/ })).toBeInTheDocument()
   })
 
+  it('行のプロジェクトの追加ダイアログで、すでにあるグループを選べ、そのグループに属して作られる(計画Issue #207)', async () => {
+    const group = new SqlJsProjectGroupRepository(db).create({ name: '旅行系' })
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
+
+    fireEvent.click(column(form, '借方').getByRole('button', { name: /^プロジェクト/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクト' })).getByRole('button', { name: /新規追加/ }))
+    const dialog = within(screen.getByRole('dialog', { name: 'プロジェクトを追加' }))
+    expect(dialog.getByRole('button', { name: /^プロジェクトグループ: 未分類/ })).toBeInTheDocument()
+    fireEvent.change(dialog.getByLabelText('プロジェクト名'), { target: { value: '沖縄旅行' } })
+    fireEvent.click(dialog.getByRole('button', { name: /^プロジェクトグループ/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクトグループ' })).getByRole('button', { name: '旅行系' }))
+    fireEvent.click(dialog.getByRole('button', { name: '追加' }))
+
+    await waitFor(() => expect(new SqlJsProjectRepository(db).findAll().map((p) => p.name)).toContain('沖縄旅行'))
+    expect(new SqlJsProjectRepository(db).findAll().find((p) => p.name === '沖縄旅行')!.projectGroupId).toBe(group.id)
+  })
+
+  it('行の取引先の追加ダイアログで、グループをその場で作って選べる。グループを選ばなければ未分類で作られる(計画Issue #207)', async () => {
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+    const form = panel('定期仕訳の追加')
+    pick(column(form, '借方'), '科目', '家賃')
+
+    fireEvent.click(column(form, '借方').getByRole('button', { name: /^取引先/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '取引先' })).getByRole('button', { name: /新規追加/ }))
+    const dialog = () => within(screen.getByRole('dialog', { name: '取引先を追加' }))
+    fireEvent.click(dialog().getByRole('button', { name: /^取引先グループ/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '取引先グループ' })).getByRole('button', { name: '+ グループを新規追加' }))
+    fireEvent.change(within(screen.getByRole('dialog', { name: '取引先グループを追加' })).getByLabelText('グループ名'), { target: { value: '不動産系' } })
+    fireEvent.click(within(screen.getByRole('dialog', { name: '取引先グループを追加' })).getByRole('button', { name: '追加' }))
+
+    await waitFor(() => expect(new SqlJsCounterpartyGroupRepository(db).findAll().map((g) => g.name)).toEqual(['不動産系']))
+    expect(await dialog().findByRole('button', { name: /^取引先グループ: 不動産系/ })).toBeInTheDocument()
+    fireEvent.change(dialog().getByLabelText('取引先名'), { target: { value: '不動産会社' } })
+    fireEvent.click(dialog().getByRole('button', { name: '追加' }))
+
+    await waitFor(() => expect(new SqlJsCounterpartyRepository(db).findAll().map((c) => c.name)).toContain('不動産会社'))
+    const groupId = new SqlJsCounterpartyGroupRepository(db).findAll()[0].id
+    expect(new SqlJsCounterpartyRepository(db).findAll().find((c) => c.name === '不動産会社')!.counterpartyGroupId).toBe(groupId)
+  })
+
   it('行の科目を、選択ツリーの「+ 新規追加」からその場で登録して選べる(計画Issue #180)', async () => {
     renderTab()
     fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))

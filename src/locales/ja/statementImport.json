@@ -91,6 +91,8 @@
   "patternRowsTitle": "この明細で、このキーワードを含む行の数",
   "settingsClose": "閉じる",
   "settingsSaveError": "保存できませんでした。もう一度お試しください。",
+  "newKeywordSaveError": "取引先は追加しましたが、保存できなかったキーワードがあります。「取引先の設定」から追加してください。",
+  "suggestionInvalidError": "摘要から入るキーワードに問題があります。「取引先の設定」で直すか、削除してください。",
   "tagNew": "新規",
   "tagRegistered": "登録済み",
   "patternInput": "キーワード{{index}}",

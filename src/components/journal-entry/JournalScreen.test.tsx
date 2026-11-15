@@ -132,6 +132,8 @@ function makeDrafts(): JournalEntryDraft[] {
   ]
 }
 
+const groupOf = (id: number, name: string) => ({ id, name, parentGroupId: null, sortOrder: 0, isActive: true, createdAt: '', updatedAt: '' })
+
 /** 貸借が一致している下書き(借方: 科目1、貸方: 科目2、同額) */
 function balancedDraft(id: number, memo: string): JournalEntryDraft {
   const base = makeDrafts()[0]
@@ -157,6 +159,9 @@ function setup(
     templateGroups: JournalTemplateGroup[]
     templatesPanel: ReactNode
     onOpenAccountReconciliation: (accountId: number) => void
+    /** 取引先・プロジェクトの追加ダイアログのグループ欄に出す、すでにあるグループ(計画Issue #207) */
+    counterpartyGroups: ReturnType<typeof groupOf>[]
+    projectGroups: ReturnType<typeof groupOf>[]
   }> = {},
 ) {
   let entries = overrides.entries ?? makeEntries()
@@ -214,10 +219,39 @@ function setup(
     },
     accountRepository: { findAll: vi.fn(async () => accounts) },
     accountGroupRepository: { findAll: vi.fn(async () => []) },
-    counterpartyRepository: { findAll: vi.fn(async () => []), create: vi.fn() },
-    counterpartyGroupRepository: { findAll: vi.fn(async () => []) },
-    projectRepository: { findAll: vi.fn(async () => []) },
-    projectGroupRepository: { findAll: vi.fn(async () => []) },
+    counterpartyRepository: {
+      findAll: vi.fn(async () => []),
+      create: vi.fn(async (input: { name: string; counterpartyGroupId?: number | null }) => ({
+        id: 50,
+        name: input.name,
+        defaultAccountId: null,
+        counterpartyGroupId: input.counterpartyGroupId ?? null,
+        sortOrder: 0,
+        isActive: true,
+        createdAt: '',
+        updatedAt: '',
+      })),
+    },
+    counterpartyGroupRepository: {
+      findAll: vi.fn(async () => overrides.counterpartyGroups ?? []),
+      create: vi.fn(async (input: { name: string }) => groupOf(77, input.name)),
+    },
+    projectRepository: {
+      findAll: vi.fn(async () => []),
+      create: vi.fn(async (input: { name: string; projectGroupId?: number | null }) => ({
+        id: 60,
+        name: input.name,
+        projectGroupId: input.projectGroupId ?? null,
+        sortOrder: 0,
+        isActive: true,
+        createdAt: '',
+        updatedAt: '',
+      })),
+    },
+    projectGroupRepository: {
+      findAll: vi.fn(async () => overrides.projectGroups ?? []),
+      create: vi.fn(async (input: { name: string }) => groupOf(88, input.name)),
+    },
     householdMemberRepository: {
       findAll: vi.fn(async () => [
         { id: 1, name: '夫', isGroup: false, isActive: true, createdAt: '', updatedAt: '' },
@@ -598,6 +632,56 @@ describe('JournalScreen', () => {
     // 科目を選ばずに保存しようとしても作成されない
     fireEvent.click(within(detail()).getByRole('button', { name: '保存して続けて入力' }))
     expect(props.journalEntryRepository.create).not.toHaveBeenCalled()
+  })
+
+  describe('明細行の取引先・プロジェクトの追加ダイアログ(計画Issue #207)', () => {
+    /** 新規仕訳を開き、借方の科目に食費(費用)を選ぶ。取引先の欄が出る */
+    async function openEditorWithExpense(overrides: Parameters<typeof setup>[0] = {}) {
+      const props = setup(overrides)
+      await ready()
+      fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+      fireEvent.click(within(detail()).getAllByRole('button', { name: /^科目/ })[0])
+      fireEvent.click(within(screen.getByRole('dialog', { name: '科目' })).getByRole('button', { name: '食費' }))
+      return props
+    }
+    const dialog = (name: string) => within(screen.getByRole('dialog', { name }))
+
+    it('プロジェクトの追加ダイアログにグループ欄が出て、すでにあるグループを選ぶと、そのグループで作られる', async () => {
+      const props = await openEditorWithExpense({ projectGroups: [groupOf(3, '旅行系')] })
+
+      fireEvent.click(within(detail()).getAllByRole('button', { name: /^プロジェクト/ })[0])
+      fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクト' })).getByRole('button', { name: /新規追加/ }))
+      expect(dialog('プロジェクトを追加').getByRole('button', { name: /^プロジェクトグループ: 未分類/ })).toBeInTheDocument()
+      fireEvent.change(dialog('プロジェクトを追加').getByLabelText('プロジェクト名'), { target: { value: '夏の旅行' } })
+      fireEvent.click(dialog('プロジェクトを追加').getByRole('button', { name: /^プロジェクトグループ/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクトグループ' })).getByRole('button', { name: '旅行系' }))
+      fireEvent.click(dialog('プロジェクトを追加').getByRole('button', { name: '追加' }))
+
+      await waitFor(() => expect(props.projectRepository.create).toHaveBeenCalledWith({ name: '夏の旅行', projectGroupId: 3 }))
+    })
+
+    it('取引先の追加ダイアログで、グループをその場で作って選べる(グループは名前だけで作る)。キャンセルしたら何も作らない', async () => {
+      const props = await openEditorWithExpense()
+
+      fireEvent.click(within(detail()).getAllByRole('button', { name: /^取引先/ })[0])
+      fireEvent.click(within(screen.getByRole('dialog', { name: '取引先' })).getByRole('button', { name: /新規追加/ }))
+      fireEvent.click(dialog('取引先を追加').getByRole('button', { name: /^取引先グループ/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '取引先グループ' })).getByRole('button', { name: '+ グループを新規追加' }))
+      fireEvent.change(dialog('取引先グループを追加').getByLabelText('グループ名'), { target: { value: '取り消す系' } })
+      fireEvent.click(dialog('取引先グループを追加').getByRole('button', { name: 'キャンセル' }))
+      expect(props.counterpartyGroupRepository.create).not.toHaveBeenCalled()
+
+      fireEvent.click(dialog('取引先を追加').getByRole('button', { name: /^取引先グループ/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '取引先グループ' })).getByRole('button', { name: '+ グループを新規追加' }))
+      fireEvent.change(dialog('取引先グループを追加').getByLabelText('グループ名'), { target: { value: '新しい系' } })
+      fireEvent.click(dialog('取引先グループを追加').getByRole('button', { name: '追加' }))
+      await waitFor(() => expect(props.counterpartyGroupRepository.create).toHaveBeenCalledWith({ name: '新しい系' }))
+      expect(await dialog('取引先を追加').findByRole('button', { name: /^取引先グループ: 新しい系/ })).toBeInTheDocument()
+      fireEvent.change(dialog('取引先を追加').getByLabelText('取引先名'), { target: { value: '新しい店' } })
+      fireEvent.click(dialog('取引先を追加').getByRole('button', { name: '追加' }))
+
+      await waitFor(() => expect(props.counterpartyRepository.create).toHaveBeenCalledWith({ name: '新しい店', counterpartyGroupId: 77 }))
+    })
   })
 
   it('既存の仕訳の編集には「保存して続けて入力」を出さない(新規仕訳にだけ出す)', async () => {

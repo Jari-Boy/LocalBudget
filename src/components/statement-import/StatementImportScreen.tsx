@@ -403,11 +403,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   /** 「取引先の設定」を開く。登録済みのキーワードをDBから読み込む */
   async function toggleSettings(index: number) {
     if (!session) return
-    if (settings?.index === index) {
+    const counterpartyId = session.rows[index].counterpartyId
+    // 開いている取引先の設定が、いまの行の取引先のものなら閉じる。行の取引先を変えたあとの古い設定が残っていても、
+    // 1回の操作で新しい取引先の設定が開く
+    if (settings?.index === index && settings.counterpartyId === counterpartyId) {
       setSettings(null)
       return
     }
-    const counterpartyId = session.rows[index].counterpartyId
     if (counterpartyId === null) return
     const counterparty = data!.counterparties.find((c) => c.id === counterpartyId)
     setSettingsMessage('')
@@ -767,16 +769,19 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         ...(input.defaultAccountId === null ? {} : { defaultAccountId: input.defaultAccountId }),
       }),
     )
+    let keywordSaveFailed = false
     for (const keyword of input.keywords) {
       try {
         await Promise.resolve(counterpartyRepository.addPattern(created.id, keywordOf(keyword)))
       } catch {
-        // 正規化すると同じになるキーワードなど。取引先の追加は成功しているので、残りの保存は続ける
+        // 取引先の追加は成功しているので、残りの保存は続け、保存できなかったことは最後に知らせる
+        keywordSaveFailed = true
       }
     }
     setData((prev) => (prev ? { ...prev, counterparties: [...prev.counterparties, created] } : prev))
     apply(created.id)
     setCreateTarget(null)
+    if (keywordSaveFailed) setError(t('newKeywordSaveError'))
   }
 
   /** 追加ダイアログのグループ欄から、名前だけで最上位のグループをその場で作る(入れ子や並び順はグループ管理画面で) */
@@ -802,6 +807,16 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   /** 確定(docs/domain/statement-import.md 1.5手順7)。1件が失敗しても残りの確定を続ける(継続処理方式) */
   async function handleConfirm(): Promise<boolean> {
     if (!session || statementOwnerId === null) return false
+    // 摘要から入るキーワード(「新規」)を直して不正にしたまま確定すると、気付かないまま登録が抜けるので、確定する前に止める
+    const hasInvalidSuggestion = importable.some((index) => {
+      const state = session.rows[index]
+      if (!shouldOfferLearn(records[index], state) || state.counterpartyId === null || !state.learnOn || state.learnPattern === null) return false
+      return validateKeyword({ text: state.learnPattern, otherTexts: [], sourceDescription: records[index].record.description }) !== null
+    })
+    if (hasInvalidSuggestion) {
+      setError(t('suggestionInvalidError'))
+      return false
+    }
     setBusy(true)
     setError('')
     setDoneMessage('')
