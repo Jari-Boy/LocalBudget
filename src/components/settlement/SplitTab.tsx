@@ -1,3 +1,4 @@
+import { runInHistoryGroup } from '../../infrastructure/history/historyGroupRunner'
 import { useMemo, useRef, useState } from 'react'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
@@ -177,7 +178,7 @@ export function SplitTab({
     setError('')
     setFlash('')
     try {
-      const result = await submitExpenseSplit({
+      const result = await runInHistoryGroup(repositories.history, 'expenseSplit.submit', () => submitExpenseSplit({
         originalEntries: chosen.map((c) => c.entry),
         accounts: data.accounts,
         settlementBatches: data.batches,
@@ -187,7 +188,7 @@ export function SplitTab({
         settlementBatchId: batchId,
         today,
         repositories,
-      })
+      }))
       if (!result.ok) {
         setError(ERROR_TEXT[result.error])
         return

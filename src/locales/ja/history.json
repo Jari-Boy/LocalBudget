@@ -1,0 +1,108 @@
+{
+  "title": "操作履歴",
+  "lead": "操作を選ぶと、その操作と、それ以降の操作をまとめて取り消し、選んだ操作を行う前の状態に戻します。",
+  "notice": {
+    "count": "履歴 {{count}} / {{limit}}件",
+    "memory": "この画面を開いている間だけ保持します。ページを再読み込みすると消えます",
+    "backup": "バックアップには含まれません"
+  },
+  "list": {
+    "heading": "操作の一覧",
+    "order": "新しい順",
+    "empty": "戻せる操作はまだありません",
+    "emptyHint": "仕訳やマスタの操作を行うと、ここに表示されます",
+    "willUndo": "戻る",
+    "impactEntries": "仕訳{{count}}件に影響"
+  },
+  "panel": {
+    "heading": "戻す範囲",
+    "empty": "左の一覧から、戻したい時点の操作を選んでください。\n選んだ操作より新しい操作もまとめて戻ります。",
+    "undoCount": "{{count}}件の操作を戻します",
+    "undoTo": "{{time}} 「{{title}}」の直前の状態になります",
+    "impactEntries": "仕訳 {{count}}件に影響",
+    "impactLines": "仕訳の明細 {{count}}行に影響",
+    "impactMasters": "マスタ {{count}}件に影響",
+    "stepsHeading": "戻す順番(新しい操作から)",
+    "kept": "{{time}}より前の {{count}}件の操作は、そのまま残ります。",
+    "undoButton": "この時点まで戻す",
+    "clearButton": "選択を解除",
+    "confirmText": "{{count}}件の操作を取り消します。この操作は、やり直し(Redo)できません。保存まで1回で行い、途中で失敗した場合は何も変わりません。",
+    "confirmButton": "{{count}}件を戻して保存する",
+    "cancelButton": "キャンセル"
+  },
+  "done": "{{count}}件の操作を戻して、保存しました。",
+  "error": {
+    "load": "操作履歴を読み込めませんでした",
+    "undo": "戻せませんでした。何も変更していません。履歴を読み直しました。"
+  },
+  "entity": {
+    "journalEntry": "仕訳",
+    "journalEntryDraft": "仕訳の下書き",
+    "journalEntryLinkGroup": "関連仕訳グループ",
+    "account": "科目",
+    "accountGroup": "科目グループ",
+    "accountBalanceRecord": "残高の基準点",
+    "budget": "予算",
+    "counterparty": "取引先",
+    "counterpartyGroup": "取引先グループ",
+    "externalTransactionRef": "取込の記録",
+    "householdMember": "世帯メンバー",
+    "importMappingDefinition": "明細マッピング",
+    "journalTemplate": "仕訳テンプレート",
+    "journalTemplateGroup": "テンプレートのグループ",
+    "project": "プロジェクト",
+    "projectGroup": "プロジェクトグループ",
+    "settlementBatch": "精算バッチ",
+    "recurringTransactionRule": "定期仕訳のルール",
+    "recurringTransactionProposal": "定期仕訳"
+  },
+  "verb": {
+    "create": "作成",
+    "update": "編集",
+    "delete": "削除",
+    "merge": "統合",
+    "createMany": "まとめて作成",
+    "confirm": "確定",
+    "confirmMany": "まとめて確定",
+    "skip": "見送り",
+    "other": "変更"
+  },
+  "operation": {
+    "statementImport.confirm": "CSV取込を確定",
+    "expenseSplit.submit": "割勘を実行",
+    "settlement.tagCandidates": "精算を実行",
+    "settlement.createEntry": "精算の仕訳を起票",
+    "settlement.deleteBatch": "精算バッチを削除"
+  },
+  "table": {
+    "journal_entries": "仕訳",
+    "journal_lines": "仕訳の明細",
+    "journal_entry_link_groups": "関連仕訳グループ",
+    "journal_entry_link_group_memberships": "関連仕訳グループの所属",
+    "journal_entry_drafts": "仕訳の下書き",
+    "journal_entry_draft_lines": "下書きの明細",
+    "accounts": "科目",
+    "account_groups": "科目グループ",
+    "account_merge_log": "科目統合の記録",
+    "account_balance_records": "残高の基準点",
+    "counterparties": "取引先",
+    "counterparty_groups": "取引先グループ",
+    "counterparty_patterns": "取引先のキーワード",
+    "counterparty_merge_log": "取引先統合の記録",
+    "household_members": "世帯メンバー",
+    "projects": "プロジェクト",
+    "project_groups": "プロジェクトグループ",
+    "budgets": "予算",
+    "settlement_batches": "精算バッチ",
+    "external_transaction_refs": "取込の記録",
+    "import_mapping_definitions": "明細マッピング",
+    "recurring_transaction_rules": "定期仕訳のルール",
+    "journal_templates": "仕訳テンプレート",
+    "journal_template_groups": "テンプレートのグループ"
+  },
+  "action": {
+    "remove": "{{table}} {{count}}件を削除する",
+    "revert": "{{table}} {{count}}件を元の内容に戻す",
+    "restore": "{{table}} {{count}}件を復元する"
+  }
+}

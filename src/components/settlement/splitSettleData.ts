@@ -1,3 +1,4 @@
+import type { HistoryGroupApi } from '../../infrastructure/history/historyGroupRunner'
 import type { Account } from '../../domain/account/Account'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { AccountGroupRepository } from '../../domain/account-group/AccountGroupRepository'
@@ -28,6 +29,8 @@ import type { MaybeAsync } from '../master/maybeAsync'
 
 /** 割勘・精算画面が使うRepository。割勘タブ・精算タブの両方の書き込みを含む */
 export interface SplitSettleRepositories {
+  /** 割勘・精算(複数の書き込み)を操作履歴上1件にまとめる(計画Issue #202)。省略時はまとめない */
+  history?: HistoryGroupApi
   journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'update' | 'delete'>>
   journalEntryLinkGroupRepository: MaybeAsync<
     Pick<JournalEntryLinkGroupRepository, 'findAllMemberships' | 'joinOrCreateGroups'>

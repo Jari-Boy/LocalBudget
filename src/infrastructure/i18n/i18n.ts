@@ -8,6 +8,7 @@ import expenseSplitting from '../../locales/ja/expenseSplitting.json'
 import recurringTransaction from '../../locales/ja/recurringTransaction.json'
 import analysis from '../../locales/ja/analysis.json'
 import settings from '../../locales/ja/settings.json'
+import history from '../../locales/ja/history.json'
 
 /**
  * ドメイン別の名前空間(account.json等)は、それぞれのUI実装Issue(D1〜D10、
@@ -23,6 +24,7 @@ import settings from '../../locales/ja/settings.json'
  * (describeRecurringSchedule)が使う(ルールの編集画面はmaster名前空間、計画Issue #154)。
  * analysis名前空間は計画Issue #155(分析画面の刷新)で追加した。
  * settings名前空間は計画Issue #173(設定画面とバックアップの書き出し・読み込み)で追加した。
+ * history名前空間は計画Issue #202(操作履歴・ロールバック)で追加した。
  */
 void i18n.use(initReactI18next).init({
   lng: 'ja',
@@ -38,6 +40,7 @@ void i18n.use(initReactI18next).init({
       recurringTransaction,
       analysis,
       settings,
+      history,
     },
   },
   interpolation: {

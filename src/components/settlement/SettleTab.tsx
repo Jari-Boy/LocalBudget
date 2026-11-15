@@ -1,3 +1,4 @@
+import { runInHistoryGroup } from '../../infrastructure/history/historyGroupRunner'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import {
@@ -186,7 +187,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
     }
     void run(
       () =>
-        tagCandidatesToBatch({
+        runInHistoryGroup(repositories.history, 'settlement.tagCandidates', () => tagCandidatesToBatch({
           batchId: batch.id,
           taggedEntryIds,
           direction,
@@ -200,7 +201,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
           createAdjustment,
           adjustmentAccountIds: { gain: gainId ?? 0, loss: lossId ?? 0 },
           today,
-        }),
+        })),
       createAdjustment && mismatched
         ? `差額を${adjustAccountName}に計上して精算しました`
         : createAdjustment || matched
@@ -217,8 +218,10 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
     setSubmitting(true)
     setError('')
     try {
-      for (const id of deletion.splitEntryIds) await repositories.journalEntryRepository.delete(id)
-      await repositories.settlementBatchRepository.delete(batch.id)
+      await runInHistoryGroup(repositories.history, 'settlement.deleteBatch', async () => {
+        for (const id of deletion.splitEntryIds) await repositories.journalEntryRepository.delete(id)
+        await repositories.settlementBatchRepository.delete(batch.id)
+      })
       resetWorking()
       setSelectedId(null)
       await onChanged()
@@ -256,7 +259,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
       return
     }
     if (resolved.target === null || directionSummary === null || entryHouseholdMemberId === null) return
-    void run(async () => {
+    void run(() => runInHistoryGroup(repositories.history, 'settlement.createEntry', async () => {
       await createSettlementEntry({
         batchId: batch.id,
         taggedEntryIds,
@@ -271,7 +274,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
         entryDate: draftDate,
         memo: `${batch.name} 精算`,
       })
-    }, '仕訳を起票してバッチに紐付けました')
+    }), '仕訳を起票してバッチに紐付けました')
   }
 
   const breakdownText = (d: SettlementDirection) => {

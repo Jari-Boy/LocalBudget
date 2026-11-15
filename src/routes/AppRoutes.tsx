@@ -17,7 +17,7 @@ import type { JournalTemplateGroupRepository } from '../domain/journal-template-
 import type { SettlementBatchRepository } from '../domain/settlement-batch/SettlementBatchRepository'
 import type { ImportMappingDefinitionRepository } from '../domain/statement-import/ImportMappingDefinitionRepository'
 import type { ExternalTransactionRefRepository } from '../domain/reconciliation/ExternalTransactionRefRepository'
-import type { JournalEntryDraftRpcApi } from '../infrastructure/rpc/createRepositoryRegistry'
+import type { HistoryRpcApi, JournalEntryDraftRpcApi } from '../infrastructure/rpc/createRepositoryRegistry'
 import type { RecurringTransactionProposalRpcApi } from '../infrastructure/rpc/createRecurringTransactionProposalApi'
 import type { AccountBalanceRecordRepository } from '../domain/reconciliation/AccountBalanceRecordRepository'
 import { useDbClient } from '../infrastructure/rpc/DbClientProvider'
@@ -128,6 +128,7 @@ export function AppRoutes() {
     journalTemplateGroupRepository,
     backupApi,
     storageApi,
+    historyApi,
   } = useMemo(
     () => ({
       accountRepository: client.account as unknown as Comlink.Remote<AccountRepository>,
@@ -163,6 +164,7 @@ export function AppRoutes() {
         client.journalTemplateGroup as unknown as Comlink.Remote<JournalTemplateGroupRepository>,
       backupApi: client.backup as unknown as Comlink.Remote<BackupApi>,
       storageApi: client.storage as unknown as Comlink.Remote<StorageApi>,
+      historyApi: client.history as unknown as Comlink.Remote<HistoryRpcApi>,
     }),
     [client],
   )
@@ -310,6 +312,7 @@ export function AppRoutes() {
         path="/journal/create/import"
         element={
           <StatementImportScreen
+            history={historyApi}
             accountRepository={accountRepository}
             accountGroupRepository={accountGroupRepository}
             importMappingDefinitionRepository={importMappingDefinitionRepository}
@@ -382,6 +385,7 @@ export function AppRoutes() {
         path="/journal/splitting"
         element={
           <SplitSettleScreenRoute
+            history={historyApi}
             journalEntryRepository={journalEntryRepository}
             journalEntryLinkGroupRepository={journalEntryLinkGroupRepository}
             accountRepository={accountRepository}
