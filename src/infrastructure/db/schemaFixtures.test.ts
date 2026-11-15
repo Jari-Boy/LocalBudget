@@ -40,18 +40,6 @@ describe('スキーマの固定データ(フィクスチャ)と差分の整合',
     })
   }
 
-  it('実際の差分2(仕訳テンプレート)を、バージョン1相当のDBに流した結果が新規作成と一致する', async () => {
-    const v1 = await createFresh(SCHEMA_PLAN)
-    v1.run('DROP TABLE journal_template_lines')
-    v1.run('DROP TABLE journal_templates')
-    v1.run('DROP TABLE journal_template_groups')
-    v1.run('PRAGMA user_version = 1')
-
-    runMigrations(v1, SCHEMA_PLAN)
-
-    expect(findSchemaDifferences(v1, await createFresh(SCHEMA_PLAN))).toEqual([])
-  })
-
   it('差分を書き忘れると食い違いとして検出される(列の追加・CHECK制約の変更)', async () => {
     const v1Sql = 'CREATE TABLE t (id INTEGER PRIMARY KEY, a INTEGER CHECK (a > 0));\nPRAGMA user_version = 1;'
     const latest = (db: Database) => db.run('CREATE TABLE t (id INTEGER PRIMARY KEY, a INTEGER CHECK (a >= 0), b TEXT)')

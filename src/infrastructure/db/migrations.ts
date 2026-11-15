@@ -33,7 +33,7 @@ export interface MigrationPlan {
   diffs: Readonly<Record<number, readonly MigrationStep[]>>
 }
 
-export const LATEST_SCHEMA_VERSION = 2
+export const LATEST_SCHEMA_VERSION = 1
 
 // household_members → accounts(household_membersを参照) → projects/counterparties
 // → settlement_batches(counterpartiesを参照) → journal(accounts/projects/counterparties/
@@ -62,11 +62,9 @@ export const SCHEMA_PLAN: MigrationPlan = {
   createLatest: (db) => {
     for (const sql of LATEST_SCHEMA_SQL) db.run(sql)
   },
-  diffs: {
-    // 仕訳テンプレート(計画Issue #201)。新しい表を足すだけの差分(バージョン1のDB向け)。
-    // 旧バックアップの取込を止めないよう、assertValidDatabaseSchemaの必須テーブルには加えない
-    2: [journalTemplatesSql],
-  },
+  // 本番前(凍結前)は差分を足さず、DDLを直接修正する。初回の本番デプロイの直前に、その時点のスキーマを
+  // バージョン1として凍結する(docs/guides/schema-migration.md)。凍結後のスキーマ変更は、ここに差分を足す
+  diffs: {},
 }
 
 export function getUserVersion(db: Database): number {
