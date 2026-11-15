@@ -3,16 +3,16 @@ import { TreeSelect } from '../tree-select/TreeSelect'
 import type { TreeSelectCategory } from '../tree-select/treeSelectModel'
 import {
   countActiveConditions,
-  getBatchValue,
-  getSingleValue,
-  getTreeValue,
+  getBatchValues,
+  getMultiValues,
+  getTreeValues,
   NO_BATCH_VALUE,
   setAmount,
-  setBatchValue,
+  setBatchValues,
   setDate,
   setMemo,
-  setSingleValue,
-  setTreeValue,
+  setMultiValues,
+  setTreeValues,
 } from './journalFilterModel'
 import './JournalFilterPanel.css'
 
@@ -57,7 +57,7 @@ const flat = (choices: readonly JournalFilterChoice[]): TreeSelectCategory[] => 
  * 世帯メンバー・精算バッチ・出どころを最初からすべて並べる(「条件を追加」方式にしない)。
  * 条件の状態は呼び出し側が持つ制御コンポーネントで、常時表示でもポップアップ
  * (JournalFilterPopup)の中でも使える。絞り込みの実行はドメイン層(filterJournalEntries)の責務で、
- * ここはJournalEntryFilterの生成だけを行う。
+ * ここはJournalEntryFilterの生成だけを行う。各軸は複数選択で、軸の中はOR(計画Issue #203)。
  */
 export function JournalFilterPanel({ filter, onChange, options, resultCount, hide = [] }: JournalFilterPanelProps) {
   const activeCount = countActiveConditions(filter)
@@ -121,8 +121,9 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount, hid
             <TreeSelect
               label="科目"
               categories={options.accountCategories}
-              value={getTreeValue(filter, 'account')}
-              onChange={(value) => onChange(setTreeValue(filter, 'account', value))}
+              multiple
+              values={getTreeValues(filter, 'account')}
+              onValuesChange={(values) => onChange(setTreeValues(filter, 'account', values))}
               allowGroupSelect
               emptyLabel="指定なし"
             />
@@ -133,8 +134,9 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount, hid
             <TreeSelect
               label="取引先"
               categories={options.counterpartyCategories}
-              value={getTreeValue(filter, 'counterparty')}
-              onChange={(value) => onChange(setTreeValue(filter, 'counterparty', value))}
+              multiple
+              values={getTreeValues(filter, 'counterparty')}
+              onValuesChange={(values) => onChange(setTreeValues(filter, 'counterparty', values))}
               allowGroupSelect
               emptyLabel="指定なし"
             />
@@ -145,8 +147,9 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount, hid
             <TreeSelect
               label="プロジェクト"
               categories={options.projectCategories}
-              value={getTreeValue(filter, 'project')}
-              onChange={(value) => onChange(setTreeValue(filter, 'project', value))}
+              multiple
+              values={getTreeValues(filter, 'project')}
+              onValuesChange={(values) => onChange(setTreeValues(filter, 'project', values))}
               allowGroupSelect
               emptyLabel="指定なし"
             />
@@ -157,8 +160,9 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount, hid
             <TreeSelect
               label="世帯メンバー"
               categories={flat(options.members)}
-              value={getSingleValue(filter, 'householdMemberIds')}
-              onChange={(value) => onChange(setSingleValue(filter, 'householdMemberIds', value))}
+              multiple
+              values={getMultiValues(filter, 'householdMemberIds')}
+              onValuesChange={(values) => onChange(setMultiValues(filter, 'householdMemberIds', values))}
               emptyLabel="指定なし"
             />
           </Field>
@@ -168,8 +172,9 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount, hid
             <TreeSelect
               label="精算バッチ"
               categories={batchCategories}
-              value={getBatchValue(filter)}
-              onChange={(value) => onChange(setBatchValue(filter, value))}
+              multiple
+              values={getBatchValues(filter)}
+              onValuesChange={(values) => onChange(setBatchValues(filter, values))}
               emptyLabel="指定なし"
             />
           </Field>
@@ -179,8 +184,9 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount, hid
             <TreeSelect
               label="出どころ"
               categories={flat(options.sourceTypes)}
-              value={getSingleValue(filter, 'sourceTypes')}
-              onChange={(value) => onChange(setSingleValue(filter, 'sourceTypes', value))}
+              multiple
+              values={getMultiValues(filter, 'sourceTypes')}
+              onValuesChange={(values) => onChange(setMultiValues(filter, 'sourceTypes', values))}
               emptyLabel="指定なし"
             />
           </Field>

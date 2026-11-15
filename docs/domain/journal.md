@@ -64,12 +64,12 @@
 > |---|---|
 > | `memo` | 摘要の部分一致(英字は大文字小文字を区別しない。空白だけは絞り込みなし) |
 > | `amountMin`・`amountMax` | 仕訳の金額の範囲(両端を含む)。仕訳の金額は**借方の合計**(貸借が一致するので貸方の合計と同じ) |
-> | `accountIds`・`householdMemberIds`・`projectIds`・`counterpartyIds` | 複数選択。いずれかに一致すればよい(OR)。従来の単一指定(`accountId`等)は互換のため残し、同じ軸で両方を指定すると両方を満たす仕訳だけを返す |
+> | `accountIds`・`householdMemberIds`・`projectIds`・`counterpartyIds` | 複数選択。いずれかに一致すればよい(OR)。従来の単一指定(`accountId`等)は互換のため残し、同じ軸で両方を指定すると両方を満たす仕訳だけを返す(AND) |
 > | `settlementBatchIds` | 精算バッチ。数値はそのバッチのタグが付いた明細行を持つ仕訳、`null`は**未割当**(精算バッチのタグが付いた明細行が仕訳内に1行も無い)。複数指定はOR |
 > | `sourceTypes` | 作成経路([1.7](#17-作成経路source_type))。割勘(`expense_splitting`)を含む |
-> | `accountGroupIds`・`counterpartyGroupIds`・`projectGroupIds` | グループ指定。指定したグループと配下(入れ子を含む)のグループに属する科目・取引先・プロジェクトを含む仕訳を対象にする。展開は`expandGroupIds`で、グループ・取引先・プロジェクトのマスタは`filterJournalEntries`の第4引数(`JournalEntryFilterContext`)で渡す(科目は第2引数のaccountsの`account_group_id`を使う) |
+> | `accountGroupIds`・`counterpartyGroupIds`・`projectGroupIds` | グループ指定。指定したグループと配下(入れ子を含む)のグループに属する科目・取引先・プロジェクトを含む仕訳を対象にする。**同じ軸の項目指定(`accountIds`等)と併用したときはOR**(どちらかに該当すればよい、計画Issue #203)。展開は`expandGroupIds`で、グループ・取引先・プロジェクトのマスタは`filterJournalEntries`の第4引数(`JournalEntryFilterContext`)で渡す(科目は第2引数のaccountsの`account_group_id`を使う) |
 >
-> **判定は仕訳全体で行う**: 軸の間はAND、軸の内側(複数選択)はOR。各軸は仕訳内のどの明細行で満たしてもよく、複数の軸を別々の明細行で満たしてもヒットする(例: クレジットカードの行と食費の行を持つ仕訳が「楽天カードで払った食費」にヒットする)。空配列は絞り込みなしとして扱う。
+> **判定は仕訳全体で行う**: 軸の間はAND、軸の内側(複数選択、同じ軸の項目指定とグループ指定の併用を含む)はOR。互換用の単一指定(`accountId`等)だけは従来どおりANDのまま。各軸は仕訳内のどの明細行で満たしてもよく、複数の軸を別々の明細行で満たしてもヒットする(例: クレジットカードの行と食費の行を持つ仕訳が「楽天カードで払った食費」にヒットする)。空配列は絞り込みなしとして扱う。
 >
 > **精算の候補だけは固定条件を別に持つ**: 精算画面(精算タブ)の「消込む仕訳を選ぶ」候補(`findUnassignedAdvanceEntriesForTarget`)は、「対象の立替金科目かつ対象者」を**同じ明細行**で満たし、精算バッチが未設定の行を持つ仕訳に限る。この固定条件は仕訳全体の検索条件では置き換えられないため、`filterJournalEntries`で先に仕訳を絞り込んだうえで(省略可の`search`引数)、行単位の固定条件を重ねる。精算の候補と関連仕訳の追加は従来から`filterJournalEntries`を使っておらず、今回も関連仕訳の追加には手を入れていない(既存の挙動を崩さないため)。
 >
