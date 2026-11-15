@@ -43,7 +43,6 @@ import {
   applyBulkSetting,
   createInitialRowState,
   defaultMemberIdOf,
-  isLearnPatternValid,
   isRowEdited,
   isTaggableAccountId,
   resolveEligibleCounterpartyId,
@@ -57,6 +56,16 @@ import {
 import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFormLine'
 import { collectFinancialInstitutionNames } from '../../domain/statement-import/financialInstitution'
 import { MappingCreateDialog } from './MappingCreateDialog'
+import { CounterpartySettingsPopup } from './CounterpartySettingsPopup'
+import { applyCounterpartyDraftToRows } from './applyCounterpartyDraftToRows'
+import {
+  countRowsContaining,
+  createCounterpartyDraft,
+  isDraftDirty,
+  isDraftValid,
+  planDraftSave,
+  type CounterpartyDraft,
+} from './counterpartyDraftModel'
 import { mappingFormToInput } from '../master/mappingForm'
 import { QuickCreateDialog } from './QuickCreateDialog'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
@@ -83,7 +92,17 @@ export interface StatementImportScreenProps {
   /** 科目の登録フォームで最初の残高を記録する先(計画Issue #205)。省略時は最初の残高の欄を出さない */
   accountBalanceRecordRepository?: MaybeAsync<Pick<AccountBalanceRecordRepository, 'create'>>
   counterpartyRepository: MaybeAsync<
-    Pick<CounterpartyRepository, 'findAll' | 'findByPattern' | 'addPattern' | 'create' | 'update'>
+    Pick<
+      CounterpartyRepository,
+      | 'findAll'
+      | 'findByPattern'
+      | 'addPattern'
+      | 'create'
+      | 'update'
+      | 'findPatternsByCounterparty'
+      | 'updatePattern'
+      | 'deletePattern'
+    >
   >
   counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll'>>
   projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll' | 'create'>>
@@ -187,7 +206,12 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [failures, setFailures] = useState<ConfirmFailure[]>([])
   const [createTarget, setCreateTarget] = useState<CreateTarget>(null)
   const [quickAddedCounterpartyIds, setQuickAddedCounterpartyIds] = useState<Set<number>>(new Set())
-  const [editingLearn, setEditingLearn] = useState<Set<number>>(new Set())
+  /** 取引先ごとの「取引先の設定」の下書き(計画Issue #207)。確定するまでDBには書かない */
+  const [drafts, setDrafts] = useState<Map<number, CounterpartyDraft>>(new Map())
+  /** 「取引先の設定」を開いている行 */
+  const [openSettings, setOpenSettings] = useState<number | null>(null)
+  /** 「ほかの行にも適用」を押した結果(開いているポップアップに出す) */
+  const [settingsMessage, setSettingsMessage] = useState('')
   /** 残高の照合に使う、取込先の既存の明細行と突合マスタ(計画Issue #205) */
   const [pastData, setPastData] = useState<{ lines: ImportPreviewLine[]; refs: ImportPreviewRef[] } | null>(null)
 
@@ -265,9 +289,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   // 未保存の警告(計画Issue #193)。取り込んだ行の入力を初期状態から変えて、まだ確定していないとき。
   // 「保存して移動」は、確定できる行を確定する(確定できない行が残るときは移動しない)
+  // 取引先の設定の下書き(パターンの編集・追加・削除、相手科目の初期値)があるときも未保存の編集とする(計画Issue #207)
+  const hasDirtyDraft = [...drafts.values()].some(isDraftDirty)
+  const hasInvalidDraft = [...drafts.values()].some((draft) => isDraftDirty(draft) && !isDraftValid(draft))
   const hasUnsavedEdits =
     session !== null &&
-    session.rows.some((state, index) => !session.done.has(index) && isRowEdited(state, session.initialRows[index]))
+    (hasDirtyDraft ||
+      session.rows.some((state, index) => !session.done.has(index) && isRowEdited(state, session.initialRows[index])))
   const unsavedDialog = useUnsavedEditGuard({ dirty: hasUnsavedEdits, save: () => handleConfirm() })
   const guarded = useGuardedAction()
 
@@ -297,6 +325,15 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         inactive(data.projects),
       ),
       counterAccountList: counterAccounts,
+      // 取引先の設定で相手科目の初期値に選べるのは、取引先を持てる費用・収益の科目だけ(計画Issue #207)
+      defaultAccounts: buildTreeSelectCategories(
+        buildAccountTree({
+          groups: data.accountGroups,
+          accounts: counterAccounts.filter((a) => isCounterpartyEligibleCategory(a.category)),
+          memberNameById: new Map(),
+        }),
+        inactive(counterAccounts),
+      ).filter((c) => c.nodes.length > 0),
     }
   }, [data, targetAccount?.id])
 
@@ -314,6 +351,60 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setSession((prev) =>
       prev === null ? prev : { ...prev, rows: prev.rows.map((state, i) => (i === index ? update(state) : state)) },
     )
+
+  /**
+   * 「取引先の設定」を開く(計画Issue #207)。取引先の下書きが無ければ、登録済みパターンを読み込んで作る。
+   * 推定と違う取引先を選んだ行(パターン登録の候補)なら、その行の摘要を新しいパターンの初期値に入れる。
+   * 曖昧で決まらなかった行と、すでに登録済みのパターンが摘要に含まれる行は、新しいパターンを入れない。
+   */
+  async function toggleSettings(index: number) {
+    if (!session) return
+    if (openSettings === index) {
+      setOpenSettings(null)
+      return
+    }
+    setOpenSettings(index)
+    setSettingsMessage('')
+    const state = session.rows[index]
+    const counterpartyId = state.counterpartyId
+    if (counterpartyId === null || drafts.has(counterpartyId)) return
+    const registered = await Promise.resolve(counterpartyRepository.findPatternsByCounterparty(counterpartyId))
+    const description = records[index].record.description
+    const offerSeed =
+      shouldOfferLearn(records[index], state) &&
+      state.candidateCounterpartyIds.length < 2 &&
+      !registered.some((p) => countRowsContaining(p.pattern, [description]) > 0)
+    const counterparty = data!.counterparties.find((c) => c.id === counterpartyId)
+    setDrafts((prev) =>
+      prev.has(counterpartyId)
+        ? prev
+        : new Map(prev).set(
+            counterpartyId,
+            createCounterpartyDraft({
+              counterpartyId,
+              defaultAccountId: counterparty?.defaultAccountId ?? null,
+              registered: registered.map((p) => ({ id: p.id, pattern: p.pattern })),
+              initialNewPattern: offerSeed ? { text: description.trim(), sourceDescription: description } : null,
+            }),
+          ),
+    )
+  }
+
+  /** 「ほかの行にも適用」。取引先の下書きを、取り込み中のほかの行へ画面上だけで反映する(DBには書かない) */
+  function applySettingsToOtherRows(draft: CounterpartyDraft) {
+    if (!session) return
+    const result = applyCounterpartyDraftToRows({
+      states: session.rows,
+      initialStates: session.initialRows,
+      records,
+      descriptions: records.map((r) => r.record.description),
+      done: session.done,
+      draft,
+      accounts: accountList,
+    })
+    setSession({ ...session, rows: result.states, initialRows: result.initialStates })
+    setSettingsMessage(result.applied > 0 ? t('applyDone', { count: result.applied }) : t('applyNone'))
+  }
 
   /** 取引先推定と相手科目のサジェストで、各行の初期値を作る(docs/domain/statement-import.md 1.5手順4・5) */
   async function computeInitialRows(
@@ -369,7 +460,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setSession({ fileName, targetAccount: account, definition: match.definition, review, rows, initialRows: rows, done: new Set() })
     setSelected(new Set())
     setBulkMessage('')
-    setEditingLearn(new Set())
+    setDrafts(new Map())
+    setOpenSettings(null)
+    setSettingsMessage('')
   }
 
   /** 定義が決まったら、紐づく科目(取込先に選べるもの)の先頭を初期値にして取り込む。無ければ選ばせる */
@@ -511,13 +604,16 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   /** 確定(docs/domain/statement-import.md 1.5手順7)。1件が失敗しても残りの確定を続ける(継続処理方式) */
   async function handleConfirm(): Promise<boolean> {
-    if (!session || statementOwnerId === null) return false
+    if (!session || statementOwnerId === null || hasInvalidDraft) return false
     setBusy(true)
+    setError('')
     setDoneMessage('')
     const account = session.targetAccount
     const deleted = new Set<number>()
     const failed: ConfirmFailure[] = []
     const succeeded = new Set<number>()
+    /** 確定に成功した行の取引先(取引先の下書きは、その取引先の行が1件でも確定できたときに保存する) */
+    const succeededCounterpartyIds = new Set<number>()
     let learned = 0
     // 同じ取込の行は同じ取込日時にそろえる(残高の基準点の並び順を取込単位で判定するため、計画Issue #205)
     const importedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
@@ -561,10 +657,16 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           ),
         )
         succeeded.add(index)
+        if (state.counterpartyId !== null) succeededCounterpartyIds.add(state.counterpartyId)
 
-        if (shouldOfferLearn(records[index], state) && state.counterpartyId !== null) {
-          const pattern = (state.learnPattern ?? record.description).trim()
-          if (state.learnOn && isLearnPatternValid(pattern, record.description)) {
+        // 取引先の設定を開いていない取引先は、従来どおり摘要を新しいパターンとして登録する(計画Issue #207)。
+        // 開いたものは、下書きの内容に従ってループの後でまとめて保存する
+        if (shouldOfferLearn(records[index], state) && state.counterpartyId !== null && !drafts.has(state.counterpartyId)) {
+          // パターンは正規化して保存する。取引先の推定(findByPattern)は正規化した摘要にSQLのLIKEで照合するため、
+          // 空白や小文字を含んだまま保存すると、次回以降の推定に当たらない(計画Issue #207)
+          const pattern = normalizeDescriptionForMatching(record.description)
+          // 摘要だけでは取引先が決まらなかった行は、誤った学習を避けるため登録しない
+          if (state.candidateCounterpartyIds.length < 2 && pattern.length > 0) {
             try {
               await Promise.resolve(counterpartyRepository.addPattern(state.counterpartyId, pattern))
               learned++
@@ -572,7 +674,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               // 同じパターンが登録済みなど。確定自体は成功しているので無視する
             }
           }
-          if (state.useAsDefaultAccount && quickAddedCounterpartyIds.has(state.counterpartyId)) {
+          // その場で追加した取引先は、この行の相手科目を取引先の既定の科目にする
+          if (quickAddedCounterpartyIds.has(state.counterpartyId)) {
             await Promise.resolve(
               counterpartyRepository.update(state.counterpartyId, { defaultAccountId: state.counterAccountId }),
             )
@@ -583,6 +686,46 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       }
     }
 
+    // 取引先の設定の下書きを、その取引先の行が1件でも確定できたものだけ保存する(計画Issue #207)。
+    // 削除→更新→追加の順に書く(同じ文字列への付け替えで重複しないため)
+    const savedDraftIds = new Set<number>()
+    const updatedCounterparties = new Map<number, Counterparty>()
+    let draftSaveFailed = false
+    for (const draft of drafts.values()) {
+      if (!succeededCounterpartyIds.has(draft.counterpartyId) || !isDraftDirty(draft)) continue
+      const plan = planDraftSave(draft)
+      try {
+        for (const id of plan.deletePatternIds) await Promise.resolve(counterpartyRepository.deletePattern(id))
+        for (const { id, pattern } of plan.updatePatterns) await Promise.resolve(counterpartyRepository.updatePattern(id, normalizeDescriptionForMatching(pattern)))
+        for (const pattern of plan.addPatterns) {
+          try {
+            await Promise.resolve(counterpartyRepository.addPattern(draft.counterpartyId, normalizeDescriptionForMatching(pattern)))
+            learned++
+          } catch {
+            // 同じパターンが登録済みなど。ほかの保存は続ける
+          }
+        }
+        if (plan.defaultAccountId !== null) {
+          const updated = await Promise.resolve(
+            counterpartyRepository.update(draft.counterpartyId, { defaultAccountId: plan.defaultAccountId.value }),
+          )
+          updatedCounterparties.set(draft.counterpartyId, updated)
+        }
+        savedDraftIds.add(draft.counterpartyId)
+      } catch {
+        draftSaveFailed = true
+      }
+    }
+    if (savedDraftIds.size > 0) {
+      setDrafts((prev) => new Map([...prev].filter(([id]) => !savedDraftIds.has(id))))
+      setOpenSettings(null)
+    }
+    if (updatedCounterparties.size > 0) {
+      setData((prev) =>
+        prev ? { ...prev, counterparties: prev.counterparties.map((c) => updatedCounterparties.get(c.id) ?? c) } : prev,
+      )
+    }
+
     if (succeeded.size > 0) {
       // 選んで取り込んだ定義を、取込先の科目に紐づける(次回から候補の先頭に出る)
       await Promise.resolve(importMappingDefinitionRepository.linkAccount(session.definition.id, account.id))
@@ -590,6 +733,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setSession({ ...session, done: new Set([...session.done, ...succeeded]) })
     setSelected(new Set())
     setFailures(failed)
+    if (draftSaveFailed) setError(t('settingsSaveError'))
     setDoneMessage(
       failed.length === 0
         ? t('confirmDone', { learned: learned > 0 ? t('confirmLearned', { count: learned }) : '' })
@@ -954,9 +1098,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                   const defaultMemberId = defaultMemberIdOf(state.counterAccountId, accountList)
                   const taggable = isTaggableAccountId(state.counterAccountId, accountList)
                   const offerLearn = !isDup && shouldOfferLearn(reviewRecord, state) && state.counterpartyId !== null
-                  const learnPattern = state.learnPattern ?? desc
-                  const learnValid = isLearnPatternValid(learnPattern, desc)
-                  const quickAdded = state.counterpartyId !== null && quickAddedCounterpartyIds.has(state.counterpartyId)
+                  const settingsDraft = state.counterpartyId === null ? null : (drafts.get(state.counterpartyId) ?? null)
                   const setCounterAccount = (id: number | null) =>
                     updateRow(index, (s) => withCounterAccount(s, id, accountList))
                   const statusText = status === 'new' ? t('statusNew') : status === 'duplicate' ? t('statusDuplicate') : t('statusCheck')
@@ -1027,7 +1169,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                     onCreate={() =>
                                       setCreateTarget({
                                         kind: 'counterparty',
-                                        apply: (id) => updateRow(index, (s) => ({ ...s, counterpartyId: id, useAsDefaultAccount: true })),
+                                        apply: (id) => updateRow(index, (s) => ({ ...s, counterpartyId: id })),
                                       })
                                     }
                                     createLabel={t('createCounterparty')}
@@ -1035,6 +1177,22 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                 )}
                                 {showCounterparty && state.counterpartyId === null && state.candidateCounterpartyIds.length > 1 && (
                                   <span className="import-note">{t('noteCandidates', { count: state.candidateCounterpartyIds.length })}</span>
+                                )}
+                                {showCounterparty && offerLearn && (
+                                  <CounterpartySettingsPopup
+                                    isOpen={openSettings === index}
+                                    onToggle={() => void toggleSettings(index)}
+                                    onClose={() => setOpenSettings(null)}
+                                    counterpartyName={data.counterparties.find((c) => c.id === state.counterpartyId)?.name ?? ''}
+                                    draft={settingsDraft}
+                                    descriptions={visibleIndices.map((i) => records[i].record.description)}
+                                    rowDescription={desc}
+                                    rowAccount={account !== undefined && isCounterpartyEligibleCategory(account.category) ? { id: account.id, name: account.name } : null}
+                                    accountCategories={categories.defaultAccounts}
+                                    message={settingsMessage}
+                                    onChange={(next) => setDrafts((prev) => new Map(prev).set(next.counterpartyId, next))}
+                                    onApply={() => settingsDraft && applySettingsToOtherRows(settingsDraft)}
+                                  />
                                 )}
                                 {taggable && (
                                   <select
@@ -1123,65 +1281,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                           </td>
                         </tr>
                       )}
-                      {offerLearn && (
-                        <tr className="import-sub">
-                          <td colSpan={4} />
-                          <td colSpan={6}>
-                            <div className="import-sub__body">
-                              <label className="import-check">
-                                <input
-                                  type="checkbox"
-                                  checked={state.learnOn}
-                                  onChange={(e) => updateRow(index, (s) => ({ ...s, learnOn: e.target.checked }))}
-                                />
-                                {t('learnLabel')}
-                              </label>
-                              {state.learnOn && editingLearn.has(index) ? (
-                                <>
-                                  <input
-                                    className="import-control import-control--small"
-                                    aria-label={t('learnInput', { desc })}
-                                    value={learnPattern}
-                                    onChange={(e) => updateRow(index, (s) => ({ ...s, learnPattern: e.target.value }))}
-                                  />
-                                  <button
-                                    type="button"
-                                    className="import-link"
-                                    onClick={() => setEditingLearn((prev) => { const next = new Set(prev); next.delete(index); return next })}
-                                  >
-                                    {t('learnDone')}
-                                  </button>
-                                </>
-                              ) : (
-                                state.learnOn && (
-                                  <>
-                                    <span>{`「${learnPattern}」`}</span>
-                                    <button
-                                      type="button"
-                                      className="import-link"
-                                      aria-label={t('learnChangeLabel', { desc })}
-                                      onClick={() => setEditingLearn((prev) => new Set(prev).add(index))}
-                                    >
-                                      {t('learnChange')}
-                                    </button>
-                                  </>
-                                )
-                              )}
-                              {state.learnOn && !learnValid && <span className="import-error">{t('learnInvalid')}</span>}
-                              {quickAdded && account && (
-                                <label className="import-check">
-                                  <input
-                                    type="checkbox"
-                                    checked={state.useAsDefaultAccount}
-                                    onChange={(e) => updateRow(index, (s) => ({ ...s, useAsDefaultAccount: e.target.checked }))}
-                                  />
-                                  {t('learnDefaultAccount', { account: account.name })}
-                                </label>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
                     </Fragment>
                   )
                 })}
@@ -1230,7 +1329,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             <button
               type="button"
               className="import-btn import-btn--primary"
-              disabled={busy || statementOwnerId === null}
+              disabled={busy || statementOwnerId === null || hasInvalidDraft}
               onClick={() => void handleConfirm()}
             >
               {t('confirmCount', { count: importable.length, account: session.targetAccount.name })}
@@ -1239,6 +1338,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           {session && importable.length > 0 && statementOwnerId === null && (
             <span className="import-summary">{t('confirmBlockedNoOwner')}</span>
           )}
+          {session && importable.length > 0 && hasInvalidDraft && <span className="import-error">{t('settingsInvalid')}</span>}
         </div>
       )}
 

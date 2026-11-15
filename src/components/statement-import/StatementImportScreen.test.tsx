@@ -134,6 +134,14 @@ const pick = (scope: ReturnType<typeof within>, label: string, item: string) => 
   fireEvent.click(within(screen.getByRole('dialog', { name: label })).getByRole('button', { name: item }))
 }
 
+/** 行の「取引先の設定」(計画Issue #207)を開く。開いたあとのポップアップは settings() で、操作のたびに取り直して使う */
+async function openCounterpartySettings(desc: string) {
+  fireEvent.click(rowOf(new RegExp(desc)).getByRole('button', { name: `${desc}の取引先の設定` }))
+  await screen.findByRole('dialog', { name: /^取引先の設定: / })
+}
+const settings = () => within(screen.getByRole('dialog', { name: /^取引先の設定: / }))
+const confirmButton = (count: number) => screen.getByRole('button', { name: new RegExp(`^${count} 件を「普通預金」に確定$`) })
+
 /** ダイアログの金融機関名欄で「新しい金融機関名を入力…」を選び、名前を入力する */
 function enterInstitution(dialog: ReturnType<typeof within>, name: string) {
   fireEvent.change(dialog.getByLabelText('金融機関名'), { target: { value: '__new__' } })
@@ -444,6 +452,27 @@ describe('StatementImportScreen', () => {
       expect(userEntries()).toHaveLength(1)
     })
 
+    it('取引先の設定を変えて移動しようとしても確認が出て、「保存して移動」で行の確定と一緒に設定も保存される(計画Issue #207)', async () => {
+      makeMapping()
+      const cp = counterparties.create({ name: 'スーパーA' })
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000
+`)
+      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+      pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
+      await openCounterpartySettings('スーパー 新宿店')
+      fireEvent.click(settings().getByRole('button', { name: '+ パターンを追加' }))
+      fireEvent.change(settings().getByLabelText('パターン2'), { target: { value: '新宿' } })
+
+      leave()
+      expect(screen.getByRole('dialog', { name: '未保存の変更があります' })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+
+      await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/other'))
+      expect(userEntries()).toHaveLength(1)
+      expect(counterparties.findPatternsByCounterparty(cp.id).map((p) => p.pattern)).toEqual(['スーパー新宿店', '新宿'])
+    })
+
     it('確定できない行(相手科目が未選択)が残るときは、「保存して移動」でも移動しない', async () => {
       makeMapping()
       renderScreen()
@@ -543,22 +572,235 @@ describe('StatementImportScreen', () => {
     expect(await screen.findByText(/帳簿と明細の残高は一致しています/)).toBeInTheDocument()
   })
 
-  it('取引先を選んだ行は確定時にパターンを登録し、件数を伝える', async () => {
+  it('取引先を選んだ行は、取引先の設定を開かなくても確定時に摘要が正規化されてパターンに登録され、件数を伝える', async () => {
     makeMapping()
     const cp = counterparties.create({ name: 'スーパーA' })
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n`)
     pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
     pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
-    // パターン登録は明細の行の直下の補助行にある
-    expect(screen.getByLabelText('パターン登録')).toBeChecked()
+    // 行の下に割り込む設定行(パターン登録のチェックなど)は無い
+    expect(screen.queryByLabelText('パターン登録')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'スーパー 新宿店のパターンを変更' }))
-    fireEvent.change(screen.getByLabelText('スーパー 新宿店から登録するパターン'), { target: { value: 'スーパー' } })
-    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+    fireEvent.click(confirmButton(1))
 
     expect(await screen.findByText(/パターンを1件登録しました/)).toBeInTheDocument()
-    expect(counterparties.findByPattern('スーパー').map((p) => p.counterpartyId)).toEqual([cp.id])
+    // 空白を除いた形で保存するので、次回以降の取引先の推定(正規化した摘要への部分一致)に当たる
+    expect(counterparties.findByPattern('スーパー新宿店').map((p) => p.counterpartyId)).toEqual([cp.id])
+  })
+
+  describe('取引先の設定(計画Issue #207)', () => {
+    it('「取引先の設定」は推定と違う取引先を選んだ行にだけ出て、開くとタイトル・注意書き・登録済みと新規のパターンが並ぶ', async () => {
+      makeMapping()
+      const cp = counterparties.create({ name: 'スーパーA' })
+      counterparties.addPattern(cp.id, 'ローソン')
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n2026/10/06,ローソン 渋谷,-500,96500\n`)
+      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+      pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
+
+      // 「ローソン」のパターンで自動マッチした行には、設定のリンクを出さない
+      expect(await rowOf(/ローソン 渋谷/).findByRole('button', { name: /^取引先: スーパーA/ })).toBeInTheDocument()
+      expect(rowOf(/ローソン 渋谷/).queryByRole('button', { name: /の取引先の設定$/ })).not.toBeInTheDocument()
+
+      await openCounterpartySettings('スーパー 新宿店')
+
+      expect(screen.getByRole('dialog', { name: '取引先の設定: スーパーA' })).toBeInTheDocument()
+      expect(settings().getByText('※変更は、この取引先の行を確定したときに保存されます。')).toBeInTheDocument()
+      expect(settings().getByLabelText('パターン1')).toHaveValue('ローソン')
+      expect(settings().getByLabelText('パターン2')).toHaveValue('スーパー 新宿店')
+      expect(settings().getByText('登録済み')).toBeInTheDocument()
+      expect(settings().getByText('新規')).toBeInTheDocument()
+      // 各パターンを含む行の数(この明細で)
+      expect(settings().getAllByText('1行')).toHaveLength(2)
+    })
+
+    it('パターンの編集・削除・追加と相手科目の初期値は、開いて変えただけでは保存されず、確定したときにまとめて保存される', async () => {
+      makeMapping()
+      const cp = counterparties.create({ name: 'スーパーA' })
+      counterparties.addPattern(cp.id, 'マルエツ')
+      counterparties.addPattern(cp.id, '丸江')
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n`)
+      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+      pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
+      await openCounterpartySettings('スーパー 新宿店')
+
+      fireEvent.change(settings().getByLabelText('パターン1'), { target: { value: 'マルエツ新宿' } })
+      fireEvent.click(settings().getByRole('button', { name: 'パターン2を削除' }))
+      fireEvent.click(settings().getByRole('button', { name: '+ パターンを追加' }))
+      fireEvent.change(settings().getByLabelText('パターン3'), { target: { value: 'スーパー' } })
+      fireEvent.click(settings().getByRole('button', { name: /^相手科目の初期値/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '相手科目の初期値' })).getByRole('button', { name: '食費' }))
+
+      // ポップアップの操作ではDBに書かない
+      expect(counterparties.findPatternsByCounterparty(cp.id).map((p) => p.pattern)).toEqual(['マルエツ', '丸江'])
+      expect(counterparties.findById(cp.id)!.defaultAccountId).toBeNull()
+
+      fireEvent.click(confirmButton(1))
+
+      expect(await screen.findByText(/パターンを2件登録しました/)).toBeInTheDocument()
+      expect(counterparties.findPatternsByCounterparty(cp.id).map((p) => p.pattern)).toEqual(['マルエツ新宿', 'スーパー新宿店', 'スーパー'])
+      expect(counterparties.findById(cp.id)!.defaultAccountId).toBe(food.id)
+    })
+
+    it('「この行の科目を入れる」で、この行の相手科目を相手科目の初期値にできる', async () => {
+      makeMapping()
+      const cp = counterparties.create({ name: 'スーパーA' })
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n`)
+      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+      pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
+      await openCounterpartySettings('スーパー 新宿店')
+
+      fireEvent.click(settings().getByRole('button', { name: 'この行の科目「食費」を初期値にする' }))
+
+      expect(settings().getByRole('button', { name: /^相手科目の初期値: 食費/ })).toBeInTheDocument()
+      expect(settings().queryByRole('button', { name: 'この行の科目「食費」を初期値にする' })).not.toBeInTheDocument()
+      fireEvent.click(confirmButton(1))
+      await waitFor(() => expect(counterparties.findById(cp.id)!.defaultAccountId).toBe(food.id))
+    })
+
+    it('新規パターンが摘要に含まれない文字列だと、その旨を出して確定できず、削除すれば確定できる', async () => {
+      makeMapping()
+      counterparties.create({ name: 'スーパーA' })
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n`)
+      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+      pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
+      await openCounterpartySettings('スーパー 新宿店')
+
+      fireEvent.change(settings().getByLabelText('パターン1'), { target: { value: 'ローソン' } })
+
+      expect(settings().getByText('この文字列は摘要に含まれないため登録できません')).toBeInTheDocument()
+      expect(confirmButton(1)).toBeDisabled()
+      expect(screen.getByText('取引先の設定に問題があります。直してから確定してください。')).toBeInTheDocument()
+
+      fireEvent.click(settings().getByRole('button', { name: 'パターン1を削除' }))
+
+      expect(confirmButton(1)).toBeEnabled()
+    })
+
+    it('登録済みのパターンを空にすると確定できない(消すときは削除を使う)', async () => {
+      makeMapping()
+      const cp = counterparties.create({ name: 'スーパーA' })
+      counterparties.addPattern(cp.id, 'マルエツ')
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n`)
+      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+      pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
+      await openCounterpartySettings('スーパー 新宿店')
+
+      fireEvent.change(settings().getByLabelText('パターン1'), { target: { value: '  ' } })
+
+      expect(settings().getByText('パターンを入力してください。消す場合は削除を押してください')).toBeInTheDocument()
+      expect(confirmButton(1)).toBeDisabled()
+    })
+
+    it('「ほかの行にも適用」は、パターンを含み取引先が未設定の行にだけ取引先を設定して件数を示し、手で選んだ行は変えず、DBには書かない', async () => {
+      makeMapping()
+      const cp = counterparties.create({ name: 'スーパーA' })
+      const other = counterparties.create({ name: 'スーパーB' })
+      renderScreen()
+      await chooseCsv(
+        `${HEADER}2026/10/05,ニチケイ 3月,-1000,97000\n2026/10/06,ニチケイ 2月,-1000,96000\n2026/10/07,別の店 1月,-500,95500\n2026/10/08,ニチケイ 4月,-1000,94500\n`,
+      )
+      pick(rowOf(/ニチケイ 3月/), '相手科目', '食費')
+      pick(rowOf(/ニチケイ 3月/), '取引先', 'スーパーA')
+      // 4行目は利用者が別の取引先を手で選んでいる
+      pick(rowOf(/ニチケイ 4月/), '相手科目', '食費')
+      pick(rowOf(/ニチケイ 4月/), '取引先', 'スーパーB')
+      await openCounterpartySettings('ニチケイ 3月')
+      fireEvent.change(settings().getByLabelText('パターン1'), { target: { value: 'ニチケイ' } })
+
+      fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
+
+      expect(settings().getByText('1行に適用しました')).toBeInTheDocument()
+      expect(rowOf(/ニチケイ 2月/).getByRole('button', { name: /^取引先: スーパーA/ })).toBeInTheDocument()
+      expect(rowOf(/別の店 1月/).queryByRole('button', { name: /^取引先: スーパーA/ })).not.toBeInTheDocument()
+      expect(rowOf(/ニチケイ 4月/).getByRole('button', { name: /^取引先: スーパーB/ })).toBeInTheDocument()
+      expect(counterparties.findPatternsByCounterparty(cp.id)).toEqual([])
+      expect(counterparties.findPatternsByCounterparty(other.id)).toEqual([])
+    })
+
+    it('適用した行は、確定時に摘要が重ねてパターン登録されず、取引先の設定のリンクも出ない', async () => {
+      makeMapping()
+      const cp = counterparties.create({ name: 'スーパーA' })
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,ニチケイ 3月,-1000,97000\n2026/10/06,ニチケイ 2月,-1000,96000\n`)
+      pick(rowOf(/ニチケイ 3月/), '相手科目', '食費')
+      pick(rowOf(/ニチケイ 3月/), '取引先', 'スーパーA')
+      pick(rowOf(/ニチケイ 2月/), '相手科目', '食費')
+      await openCounterpartySettings('ニチケイ 3月')
+      fireEvent.change(settings().getByLabelText('パターン1'), { target: { value: 'ニチケイ' } })
+      fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
+      expect(rowOf(/ニチケイ 2月/).queryByRole('button', { name: /の取引先の設定$/ })).not.toBeInTheDocument()
+
+      fireEvent.click(confirmButton(2))
+
+      expect(await screen.findByText(/パターンを1件登録しました/)).toBeInTheDocument()
+      expect(counterparties.findPatternsByCounterparty(cp.id).map((p) => p.pattern)).toEqual(['ニチケイ'])
+    })
+
+    it('「ほかの行にも適用」で相手科目の初期値も、取引先が同じで科目を手で選んでいない行にだけ入る', async () => {
+      makeMapping()
+      const supplies = accounts.create({ category: 'expense', name: '日用品費', isReconcilable: null })
+      accounts.create({ category: 'expense', name: '雑費', isReconcilable: null })
+      const cp = counterparties.create({ name: 'セブン', defaultAccountId: food.id })
+      counterparties.addPattern(cp.id, 'セブン')
+      renderScreen()
+      await chooseCsv(
+        `${HEADER}2026/10/05,セブン 1,-100,97000\n2026/10/06,セブン 2,-100,96000\n2026/10/07,セブン 3,-100,95000\n2026/10/08,ローソン 4,-100,94000\n`,
+      )
+      // 3行目は科目を手で選んでいる。4行目は利用者が取引先を手で選んだ(設定のリンクが出る行)
+      pick(rowOf(/セブン 3/), '相手科目', '雑費')
+      pick(rowOf(/ローソン 4/), '取引先', 'セブン')
+      await openCounterpartySettings('ローソン 4')
+
+      fireEvent.click(settings().getByRole('button', { name: /^相手科目の初期値/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '相手科目の初期値' })).getByRole('button', { name: supplies.name }))
+      fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
+
+      // セブン1・セブン2(取引先が同じで科目は未編集)・ローソン4(取引先を選んだ行)の3行に入る
+      expect(settings().getByText('3行に適用しました')).toBeInTheDocument()
+      expect(rowOf(/セブン 1/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument()
+      expect(rowOf(/セブン 2/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument()
+      expect(rowOf(/セブン 3/).getByRole('button', { name: /^相手科目: 雑費/ })).toBeInTheDocument()
+      expect(rowOf(/ローソン 4/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument()
+      expect(counterparties.findById(cp.id)!.defaultAccountId).toBe(food.id)
+    })
+
+    it('適用できる行が無いときは、その旨を示す', async () => {
+      makeMapping()
+      counterparties.create({ name: 'スーパーA' })
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n`)
+      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+      pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
+      await openCounterpartySettings('スーパー 新宿店')
+
+      fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
+
+      expect(settings().getByText('適用できる行はありませんでした')).toBeInTheDocument()
+    })
+
+    it('「閉じる」でポップアップが閉じ、もう一度開いても同じ取引先の下書きの内容が見える', async () => {
+      makeMapping()
+      counterparties.create({ name: 'スーパーA' })
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n`)
+      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+      pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
+      await openCounterpartySettings('スーパー 新宿店')
+      fireEvent.click(settings().getByRole('button', { name: '+ パターンを追加' }))
+      fireEvent.change(settings().getByLabelText('パターン2'), { target: { value: '新宿' } })
+
+      fireEvent.click(settings().getByRole('button', { name: '閉じる' }))
+      expect(screen.queryByRole('dialog', { name: /^取引先の設定: / })).not.toBeInTheDocument()
+      await openCounterpartySettings('スーパー 新宿店')
+
+      expect(settings().getByLabelText('パターン2')).toHaveValue('新宿')
+    })
   })
 
   it('「+ 新規追加」から取引先をその場で作って、その行に選べる', async () => {

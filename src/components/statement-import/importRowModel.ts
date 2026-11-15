@@ -1,5 +1,4 @@
 import type { Account } from '../../domain/account/Account'
-import { normalizeDescriptionForMatching } from '../../domain/statement-import/estimateCounterparty'
 import type { StatementImportReviewRecord } from '../../domain/statement-import/buildStatementImportReview'
 import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFormLine'
@@ -29,12 +28,6 @@ export interface ImportRowState {
   /** 取り込み済みと完全一致する行を、それでも取り込むか */
   includeDuplicate: boolean
   approximateDecision: ApproximateDecision
-  /** パターン登録するか(モックアップの「パターン登録」) */
-  learnOn: boolean
-  /** 登録する文字列。nullなら摘要そのまま */
-  learnPattern: string | null
-  /** 取引先の既定の科目に、この行の相手科目を使うか(その場で追加した取引先のみ) */
-  useAsDefaultAccount: boolean
 }
 
 export type RowStatus = 'new' | 'duplicate' | 'check'
@@ -56,10 +49,6 @@ export function createInitialRowState(params: {
     comment: '',
     includeDuplicate: false,
     approximateDecision: 'unresolved',
-    // 摘要だけでは取引先が決まらなかった行は、既定でパターンを登録しない(誤った学習を避ける)
-    learnOn: params.candidateCounterpartyIds.length < 2,
-    learnPattern: null,
-    useAsDefaultAccount: false,
   }
 }
 
@@ -79,10 +68,7 @@ export function isRowEdited(state: ImportRowState, initial: ImportRowState): boo
     state.settlementBatchId !== initial.settlementBatchId ||
     state.comment !== initial.comment ||
     state.includeDuplicate !== initial.includeDuplicate ||
-    state.approximateDecision !== initial.approximateDecision ||
-    state.learnOn !== initial.learnOn ||
-    state.learnPattern !== initial.learnPattern ||
-    state.useAsDefaultAccount !== initial.useAsDefaultAccount
+    state.approximateDecision !== initial.approximateDecision
   )
 }
 
@@ -207,14 +193,11 @@ export function applyBulkSetting(params: {
   return { states: next, applied, skipped }
 }
 
-/** 推定と違う取引先を選んだ行(推定が無かった行を含む)だけが、パターン登録の候補になる。 */
+/**
+ * 推定と違う取引先を選んだ行(推定が無かった行を含む)だけが、パターン登録の候補になる。
+ * 候補の行には「取引先の設定」のリンクを出し、確定時に摘要を新しいパターンとして登録する(計画Issue #207)。
+ */
 export function shouldOfferLearn(record: RowRecord, state: ImportRowState): boolean {
   if (record.isExactDuplicate && !state.includeDuplicate) return false
   return state.counterpartyId !== null && state.counterpartyId !== state.initialCounterpartyId
-}
-
-/** 登録する文字列は、正規化した摘要に含まれるものだけが有効(空は無効)。 */
-export function isLearnPatternValid(pattern: string, description: string): boolean {
-  const normalized = normalizeDescriptionForMatching(pattern)
-  return normalized.length > 0 && normalizeDescriptionForMatching(description).includes(normalized)
 }
