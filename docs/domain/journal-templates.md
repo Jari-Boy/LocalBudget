@@ -30,7 +30,7 @@
 
 ### 1.2 グループ・並び順
 
-取引先([counterparties.md](./counterparties.md))・プロジェクト([projects.md](./projects.md))と同じ仕様のグループ(`journal_template_groups`)を持ち、グループ付きのツリー表で管理する。
+取引先([counterparties.md](./counterparties.md))・プロジェクト([projects.md](./projects.md))と同じ仕様のグループ(`journal_template_groups`)を持ち、グループ付きのツリー(カード型の一覧)で管理する。
 
 - 入れ子可・単一所属(1つのテンプレートが所属できるグループは1つ)・表示専用(集計には関与しない)。`category`は持たない。
 - 子グループまたは所属するテンプレートがある(中身のある)グループは削除できない(DDLトリガーで強制)。
