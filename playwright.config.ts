@@ -42,7 +42,9 @@ export default defineConfig({
     // クリーンな初期状態と衝突する。VITE_DISABLE_DEV_SEEDはVite起動時にimport.meta.envへ
     // 伝播するprocess.env由来のVITE_プレフィックス変数であり、これによりE2Eテスト実行中の
     // 開発サーバーに限りダミーデータ投入を抑制する(通常のnpm run devでの手動起動には影響しない)。
-    env: { VITE_DISABLE_DEV_SEED: 'true' },
+    // 初回セットアップ(計画Issue #177)も同じ理由で止める。既存のE2Eは、ウェルカム画面を経ずに
+    // 仕訳画面などを直接開く前提のため、VITE_DISABLE_ONBOARDINGで完了済みの状態から始める。
+    env: { VITE_DISABLE_DEV_SEED: 'true', VITE_DISABLE_ONBOARDING: 'true' },
   },
   projects: [
     {
