@@ -98,10 +98,17 @@ describe('下書きの操作', () => {
 })
 
 describe('validateDraftPatterns', () => {
-  it('空文字・空白だけのパターンは「空」として検出する', () => {
+  it('登録済みパターンを空文字・空白だけにすると「空」として検出する(消したいときは削除を使う)', () => {
+    const draft = baseDraft()
+    const edited = updateDraftPatternText(draft, draft.patterns[0].key, '  ')
+
+    expect(validateDraftPatterns(edited).get(edited.patterns[0].key)).toBe('empty')
+  })
+
+  it('追加したばかりで入力前の新規パターン(空文字・空白だけ)は、未入力として扱い、問題にしない', () => {
     const draft = addDraftPattern(baseDraft(), { text: '  ', sourceDescription: '日経購読料' })
 
-    expect(validateDraftPatterns(draft).get(draft.patterns[2].key)).toBe('empty')
+    expect(validateDraftPatterns(draft).size).toBe(0)
   })
 
   it('正規化(全角半角・大文字小文字・空白)したときに他のパターンと同じなら、後ろの方を「重複」として検出する', () => {
@@ -134,7 +141,8 @@ describe('validateDraftPatterns', () => {
 
   it('問題がなければ有効で、1件でも問題があれば無効', () => {
     expect(isDraftValid(baseDraft())).toBe(true)
-    expect(isDraftValid(addDraftPattern(baseDraft(), { text: '', sourceDescription: 'x' }))).toBe(false)
+    expect(isDraftValid(addDraftPattern(baseDraft(), { text: '', sourceDescription: 'x' }))).toBe(true)
+    expect(isDraftValid(addDraftPattern(baseDraft(), { text: 'y', sourceDescription: 'x' }))).toBe(false)
   })
 })
 
@@ -152,6 +160,10 @@ describe('isDraftDirty', () => {
     expect(isDraftDirty(removeDraftPattern(baseDraft(), baseDraft().patterns[0].key))).toBe(true)
     expect(isDraftDirty(setDraftDefaultAccount(baseDraft(), 99))).toBe(true)
     expect(isDraftDirty(addDraftPattern(baseDraft(), { text: 'a', sourceDescription: 'a' }))).toBe(true)
+  })
+
+  it('追加したばかりで入力前の新規パターンだけなら、変更なしのまま', () => {
+    expect(isDraftDirty(addDraftPattern(baseDraft(), { text: ' ', sourceDescription: 'a' }))).toBe(false)
   })
 
   it('相手科目の初期値を変えてから元に戻せば、変更なしに戻る', () => {
@@ -173,6 +185,12 @@ describe('planDraftSave', () => {
       addPatterns: ['日経'],
       defaultAccountId: { value: 20 },
     })
+  })
+
+  it('入力前の新規パターン(空文字・空白だけ)は、保存する内容に含めない', () => {
+    const draft = addDraftPattern(baseDraft(), { text: ' ', sourceDescription: 'a' })
+
+    expect(planDraftSave(draft).addPatterns).toEqual([])
   })
 
   it('何も変えていなければ、保存する内容は空で、相手科目の初期値も変えない', () => {

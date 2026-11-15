@@ -94,6 +94,8 @@ export function setDraftDefaultAccount(draft: CounterpartyDraft, accountId: numb
 /**
  * パターンごとの問題を返す(問題のないパターンは含まない)。空、正規化後に他と同じ(後ろの方を重複とする)、
  * 新規なのに元の摘要に含まれない文字列、の3種類。登録済みパターンの編集には「摘要に含まれる」条件をかけない。
+ * 追加したばかりで入力前の新規パターン(空文字・空白だけ)は未入力として無視し、問題にしない。
+ * 登録済みパターンが空になった場合は「空」とする(消したいときは削除を使う)。
  */
 export function validateDraftPatterns(draft: CounterpartyDraft): Map<string, DraftPatternError> {
   const errors = new Map<string, DraftPatternError>()
@@ -101,7 +103,7 @@ export function validateDraftPatterns(draft: CounterpartyDraft): Map<string, Dra
   for (const pattern of draft.patterns) {
     const normalized = normalizeDescriptionForMatching(pattern.text)
     if (normalized.length === 0) {
-      errors.set(pattern.key, 'empty')
+      if (pattern.patternId !== null) errors.set(pattern.key, 'empty')
       continue
     }
     if (seen.has(normalized)) {
@@ -125,7 +127,7 @@ export function isDraftDirty(draft: CounterpartyDraft): boolean {
   return (
     draft.deletedPatternIds.length > 0 ||
     draft.defaultAccountId !== draft.originalDefaultAccountId ||
-    draft.patterns.some((p) => p.patternId === null || p.text !== p.originalText)
+    draft.patterns.some((p) => (p.patternId === null ? p.text.trim() !== '' : p.text !== p.originalText))
   )
 }
 
@@ -144,7 +146,7 @@ export function planDraftSave(draft: CounterpartyDraft): DraftSavePlan {
     updatePatterns: draft.patterns
       .filter((p): p is DraftPattern & { patternId: number } => p.patternId !== null && p.text !== p.originalText)
       .map((p) => ({ id: p.patternId, pattern: p.text.trim() })),
-    addPatterns: draft.patterns.filter((p) => p.patternId === null).map((p) => p.text.trim()),
+    addPatterns: draft.patterns.filter((p) => p.patternId === null && p.text.trim() !== '').map((p) => p.text.trim()),
     defaultAccountId: draft.defaultAccountId !== draft.originalDefaultAccountId ? { value: draft.defaultAccountId } : null,
   }
 }
