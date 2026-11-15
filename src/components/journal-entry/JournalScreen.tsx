@@ -91,9 +91,15 @@ import { JournalLineTable, type JournalLineTableEditing, type JournalLineTableLo
 import { useJournalLineTableColumns } from './useJournalLineTableColumns'
 import { loadJournalViewMode, saveJournalViewMode, type JournalViewMode } from './journalViewMode'
 import { RelatedEntriesSection } from './RelatedEntriesSection'
+import { describeTemplateExpansionWarnings, expandJournalTemplate } from './expandJournalTemplate'
+import type { JournalTemplate } from '../../domain/journal-template/JournalTemplate'
+import type { JournalTemplateRepository } from '../../domain/journal-template/JournalTemplateRepository'
+import type { JournalTemplateGroup } from '../../domain/journal-template-group/JournalTemplateGroup'
+import type { JournalTemplateGroupRepository } from '../../domain/journal-template-group/JournalTemplateGroupRepository'
+import { TemplatePickerDialog } from '../journal-template/TemplatePickerDialog'
 import './JournalScreen.css'
 
-export type JournalScreenTab = 'list' | 'drafts' | 'proposals' | 'rules'
+export type JournalScreenTab = 'list' | 'drafts' | 'proposals' | 'rules' | 'templates'
 
 export interface JournalScreenProps {
   journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'update' | 'delete'>>
@@ -132,6 +138,17 @@ export interface JournalScreenProps {
    * 受け持つため、呼び出し側(ルート)が組み立てて渡す。省略時はタブを出さない
    */
   rulesPanel?: React.ReactNode
+  /**
+   * 「テンプレート」タブ(仕訳テンプレートの管理、計画Issue #201)の中身。一覧・作成・編集は専用の画面部品が
+   * 受け持つため、呼び出し側(ルート)が組み立てて渡す。省略時はタブを出さない
+   */
+  templatesPanel?: React.ReactNode
+  /**
+   * 「テンプレートから起票」(計画Issue #201)に使う。両方渡したときだけ、画面上部の「テンプレートから起票」を出す。
+   * 選んだテンプレートの内容は、下書きを作らず「新規仕訳」のフォームへ展開する
+   */
+  journalTemplateRepository?: MaybeAsync<Pick<JournalTemplateRepository, 'findAll'>>
+  journalTemplateGroupRepository?: MaybeAsync<Pick<JournalTemplateGroupRepository, 'findAll'>>
   /** 最初に選ぶ仕訳(割勘の履歴などから開くとき) */
   initialEntryId?: number
   /** 最初の絞り込み条件(分析画面から、期間と選んだ条件を引き継いで開くとき。計画Issue #155) */
@@ -153,11 +170,15 @@ interface LoadedData {
   groups: JournalEntryLinkGroup[]
   proposals: PendingRecurringTransactionProposal[]
   rules: RecurringTransactionRule[]
+  /** 仕訳テンプレートとそのグループ(計画Issue #201)。リポジトリを渡さないときは空 */
+  templates: JournalTemplate[]
+  templateGroups: JournalTemplateGroup[]
 }
 
 type Selection =
   | { kind: 'entry'; id: number }
-  | { kind: 'new' }
+  /** templateIdがあるときは、そのテンプレートの内容を展開した新規仕訳(計画Issue #201) */
+  | { kind: 'new'; templateId?: number }
   | { kind: 'draft'; id: number }
   | { kind: 'proposal'; ruleId: number; dueDate: string }
 
@@ -245,6 +266,10 @@ export function JournalScreen(props: JournalScreenProps) {
   const [counterpartyDialog, setCounterpartyDialog] = useState<{ apply: (id: number) => void } | null>(null)
   /** 詳細を開いた時点の編集内容。現在の内容と違えば、未保存の変更がある */
   const [baseline, setBaseline] = useState('')
+  /** 「テンプレートから起票」のダイアログを開いているか(計画Issue #201) */
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
+  /** テンプレートを展開した新規仕訳の案内(テンプレート名と、使えない項目の警告)。他の仕訳を開くと消える */
+  const [templateNotice, setTemplateNotice] = useState<{ name: string; warnings: string[] } | null>(null)
   /** 未保存の変更があるまま移動しようとしたときの、保存か破棄の後に実行する移動 */
   const [leaveRequest, setLeaveRequest] = useState<(() => void) | null>(null)
   const guard = useUnsavedChangesGuard()
@@ -253,7 +278,7 @@ export function JournalScreen(props: JournalScreenProps) {
   selectionRef.current = selection
 
   const fetchAll = async (): Promise<LoadedData> => {
-    const [entries, drafts, accounts, accountGroups, counterparties, counterpartyGroups, projects, projectGroups, members, batches, memberships, groups, proposals, rules] =
+    const [entries, drafts, accounts, accountGroups, counterparties, counterpartyGroups, projects, projectGroups, members, batches, memberships, groups, proposals, rules, templates, templateGroups] =
       await Promise.all([
         journalEntryRepository.findAll(),
         journalEntryDraftRepository.findAll(),
@@ -269,10 +294,12 @@ export function JournalScreen(props: JournalScreenProps) {
         journalEntryLinkGroupRepository.findAllGroups(),
         recurringTransactionProposalApi.listPending(),
         props.recurringTransactionRuleRepository.findAll(),
+        props.journalTemplateRepository === undefined ? [] : props.journalTemplateRepository.findAll(),
+        props.journalTemplateGroupRepository === undefined ? [] : props.journalTemplateGroupRepository.findAll(),
       ])
     return {
       entries, drafts, accounts, accountGroups, counterparties, counterpartyGroups, projects, projectGroups,
-      members, batches, memberships, groups, proposals: [...proposals], rules,
+      members, batches, memberships, groups, proposals: [...proposals], rules, templates, templateGroups,
     }
   }
 
@@ -359,9 +386,37 @@ export function JournalScreen(props: JournalScreenProps) {
       { ...createEmptyJournalEntryFormLine(), side: 'credit', householdMemberId: memberId },
     ])
 
+  /** テンプレートを新規仕訳の初期値へ展開する(計画Issue #201)。無いテンプレートはnull */
+  function expandTemplateById(templateId: number, d: LoadedData) {
+    const found = d.templates.find((x) => x.id === templateId)
+    if (found === undefined) return null
+    return {
+      template: found,
+      expansion: expandJournalTemplate({
+        template: found,
+        today: today(),
+        accounts: d.accounts,
+        members: d.members,
+        projects: d.projects,
+        counterparties: d.counterparties,
+      }),
+    }
+  }
+
   function buildValue(sel: Selection, d: LoadedData): JournalEditorValue | null {
     const firstMember = d.members.find((m) => m.isActive)?.id ?? null
     if (sel.kind === 'new') {
+      const expanded = sel.templateId === undefined ? null : expandTemplateById(sel.templateId, d)
+      if (expanded !== null) {
+        const { expansion } = expanded
+        return {
+          entryDate: expansion.entryDate,
+          memo: expansion.memo,
+          comment: expansion.comment,
+          householdMemberId: expansion.householdMemberId,
+          lines: withKeys(expansion.lines),
+        }
+      }
       return { entryDate: today(), memo: '', comment: '', householdMemberId: firstMember, lines: emptyLines(firstMember) }
     }
     if (sel.kind === 'entry') {
@@ -435,6 +490,12 @@ export function JournalScreen(props: JournalScreenProps) {
     setProposalMemberId('')
     setLineEditing(false)
     const value = sel === null ? null : buildValue(sel, d)
+    const expanded = sel?.kind === 'new' && sel.templateId !== undefined ? expandTemplateById(sel.templateId, d) : null
+    setTemplateNotice(
+      expanded === null
+        ? null
+        : { name: expanded.template.name, warnings: describeTemplateExpansionWarnings(expanded.expansion.warnings) },
+    )
     setSelection(sel)
     setEditor(value)
     setBaseline(value === null ? '' : serializeEditor(value))
@@ -446,7 +507,7 @@ export function JournalScreen(props: JournalScreenProps) {
       const first = [...d.drafts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id - a.id)[0]
       return first ? { kind: 'draft', id: first.id } : null
     }
-    if (which === 'rules') return null
+    if (which === 'rules' || which === 'templates') return null
     const first = sortProposalsOldestFirst(d.proposals).find((p) => d.rules.some((r) => r.id === p.ruleId))
     return first ? { kind: 'proposal', ruleId: first.ruleId, dueDate: first.dueDate } : null
   }
@@ -827,6 +888,27 @@ export function JournalScreen(props: JournalScreenProps) {
     return created
   }
 
+  /**
+   * 「テンプレートから起票」のダイアログを開く(計画Issue #201)。「テンプレート」タブでの追加・変更は
+   * この画面の読み込み済みのデータに反映されないため、開く時点でテンプレートとグループを読み直す。
+   * 読み直しに失敗したら、読み込み済みの内容のまま開く
+   */
+  const openTemplatePicker = async () => {
+    const { journalTemplateRepository, journalTemplateGroupRepository } = props
+    if (journalTemplateRepository !== undefined && journalTemplateGroupRepository !== undefined) {
+      try {
+        const [templates, templateGroups] = await Promise.all([
+          journalTemplateRepository.findAll(),
+          journalTemplateGroupRepository.findAll(),
+        ])
+        setData((prev) => (prev === null ? prev : { ...prev, templates, templateGroups }))
+      } catch {
+        // 読み込み済みの内容で開く
+      }
+    }
+    setTemplatePickerOpen(true)
+  }
+
   const cancelLeave = () => setLeaveRequest(null)
 
   const discardAndLeave = () => {
@@ -854,6 +936,7 @@ export function JournalScreen(props: JournalScreenProps) {
     { key: 'drafts', label: `下書き ${data.drafts.length}` },
     { key: 'proposals', label: `承認待ち ${proposalRows.length}` },
     ...(props.rulesPanel === undefined ? [] : [{ key: 'rules' as const, label: '定期仕訳' }]),
+    ...(props.templatesPanel === undefined ? [] : [{ key: 'templates' as const, label: 'テンプレート' }]),
   ]
 
   const selectedIds =
@@ -1054,18 +1137,30 @@ export function JournalScreen(props: JournalScreenProps) {
     <div className="journal-screen">
       <div className="journal-screen__head">
         <h1 className="journal-screen__title">仕訳</h1>
-        <button
-          type="button"
-          className="journal-screen__button journal-screen__button--primary"
-          onClick={() =>
-            guarded(() => {
-              setTab('list')
-              open({ kind: 'new' }, data)
-            })
-          }
-        >
-          新規仕訳
-        </button>
+        <div className="journal-screen__actions">
+          {props.journalTemplateRepository !== undefined && props.journalTemplateGroupRepository !== undefined && (
+            <button
+              type="button"
+              className="journal-screen__button"
+              aria-haspopup="dialog"
+              onClick={() => guarded(() => void openTemplatePicker())}
+            >
+              テンプレートから起票
+            </button>
+          )}
+          <button
+            type="button"
+            className="journal-screen__button journal-screen__button--primary"
+            onClick={() =>
+              guarded(() => {
+                setTab('list')
+                open({ kind: 'new' }, data)
+              })
+            }
+          >
+            新規仕訳
+          </button>
+        </div>
       </div>
 
       <div role="tablist" aria-label="仕訳の種類" className="journal-screen__tabs">
@@ -1085,6 +1180,8 @@ export function JournalScreen(props: JournalScreenProps) {
 
       {tab === 'rules' && props.rulesPanel !== undefined ? (
         <div className="journal-screen__rules">{props.rulesPanel}</div>
+      ) : tab === 'templates' && props.templatesPanel !== undefined ? (
+        <div className="journal-screen__rules">{props.templatesPanel}</div>
       ) : (
         <>
       {tab === 'list' && (
@@ -1276,6 +1373,19 @@ export function JournalScreen(props: JournalScreenProps) {
                   </a>
                 )}
               </div>
+
+              {selection.kind === 'new' && templateNotice !== null && (
+                <>
+                  <p className="journal-screen__note">
+                    {`テンプレート「${templateNotice.name}」の内容を入れました。金額を入力してください。`}
+                  </p>
+                  {templateNotice.warnings.map((warning) => (
+                    <p key={warning} className="journal-screen__error">
+                      {warning}
+                    </p>
+                  ))}
+                </>
+              )}
 
               <JournalEntryEditor
                 value={editor}
@@ -1548,6 +1658,21 @@ export function JournalScreen(props: JournalScreenProps) {
             />
           </div>
         </div>
+      )}
+      {templatePickerOpen && (
+        <TemplatePickerDialog
+          groups={data.templateGroups}
+          templates={data.templates}
+          accountNameById={new Map(data.accounts.map((a) => [a.id, a.name]))}
+          counterpartyNameById={new Map(data.counterparties.map((c) => [c.id, c.name]))}
+          onCancel={() => setTemplatePickerOpen(false)}
+          onSelect={(selected) => {
+            setTemplatePickerOpen(false)
+            resetBulk()
+            setTab('list')
+            open({ kind: 'new', templateId: selected.id }, data)
+          }}
+        />
       )}
       {projectDialog && (
         <QuickCreateDialog

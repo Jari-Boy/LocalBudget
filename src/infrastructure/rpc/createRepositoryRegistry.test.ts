@@ -20,6 +20,8 @@ import { SqlJsAccountRepository } from '../db/SqlJsAccountRepository'
 import { SqlJsAccountGroupRepository } from '../db/SqlJsAccountGroupRepository'
 import { SqlJsCounterpartyGroupRepository } from '../db/SqlJsCounterpartyGroupRepository'
 import { SqlJsProjectGroupRepository } from '../db/SqlJsProjectGroupRepository'
+import { SqlJsJournalTemplateRepository } from '../db/SqlJsJournalTemplateRepository'
+import { SqlJsJournalTemplateGroupRepository } from '../db/SqlJsJournalTemplateGroupRepository'
 import { SqlJsBudgetRepository } from '../db/SqlJsBudgetRepository'
 import { SqlJsCounterpartyRepository } from '../db/SqlJsCounterpartyRepository'
 import { SqlJsExternalTransactionRefRepository } from '../db/SqlJsExternalTransactionRefRepository'
@@ -74,6 +76,11 @@ afterEach(() => {
 })
 
 describe('createRepositoryRegistry', () => {
+  it('仕訳テンプレートとそのグループ(計画Issue #201)にSqlJs実装クラスのインスタンスを割り当てる', () => {
+    expect(registry.journalTemplate).toBeInstanceOf(SqlJsJournalTemplateRepository)
+    expect(registry.journalTemplateGroup).toBeInstanceOf(SqlJsJournalTemplateGroupRepository)
+  })
+
   it('14種全てのキーに対応するSqlJs実装クラスのインスタンスを割り当てる', () => {
     expect(registry.account).toBeInstanceOf(SqlJsAccountRepository)
     expect(registry.accountGroup).toBeInstanceOf(SqlJsAccountGroupRepository)

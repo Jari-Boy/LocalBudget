@@ -2,6 +2,10 @@ import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { CounterpartyGroup } from '../../domain/counterparty-group/CounterpartyGroup'
+import type { JournalTemplate } from '../../domain/journal-template/JournalTemplate'
+import type { JournalTemplateGroup } from '../../domain/journal-template-group/JournalTemplateGroup'
+import { describeTemplateContent, summarizeTemplateAmount } from '../../domain/journal-template/describeJournalTemplate'
+import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import type { Project } from '../../domain/project/Project'
 import type { ProjectGroup } from '../../domain/project-group/ProjectGroup'
 import type { TreeTableCategory, TreeTableNode } from '../common/tree-table/treeTableModel'
@@ -155,6 +159,52 @@ export function buildCounterpartyTree({
     }),
   ]
   return assemble([{ key: category, name: 'すべての取引先' }], raws)
+}
+
+/**
+ * 仕訳テンプレートのツリー(計画Issue #201)。列は 内容(借方の科目 / 貸方の科目)・金額・状態。
+ * 金額は、全行の金額があれば借方の合計、全行が空欄なら「起票時に入力」、一部だけなら「一部入力」。
+ */
+export function buildJournalTemplateTree({
+  groups,
+  templates,
+  accountNameById,
+}: {
+  groups: readonly JournalTemplateGroup[]
+  templates: readonly JournalTemplate[]
+  accountNameById: ReadonlyMap<number, string>
+}): MasterTreeData {
+  const category = 'journalTemplate'
+  const amountText = (template: JournalTemplate): string => {
+    const summary = summarizeTemplateAmount(template)
+    if (summary.kind === 'fixed') return formatCurrency(summary.total, 'JPY')
+    return summary.kind === 'input' ? '起票時に入力' : '一部入力'
+  }
+  const raws: RawNode[] = [
+    ...groups.map((g) => ({
+      sortOrder: g.sortOrder,
+      node: {
+        id: groupNodeId(g.id),
+        kind: 'group' as const,
+        category,
+        parentId: g.parentGroupId === null ? null : groupNodeId(g.parentGroupId),
+        name: g.name,
+        cells: ['', '', ''],
+      },
+    })),
+    ...templates.map((t) => ({
+      sortOrder: t.sortOrder,
+      node: {
+        id: leafNodeId(t.id),
+        kind: 'leaf' as const,
+        category,
+        parentId: t.groupId === null ? null : groupNodeId(t.groupId),
+        name: t.name,
+        cells: [describeTemplateContent(t, accountNameById), amountText(t), stateText(t)],
+      },
+    })),
+  ]
+  return assemble([{ key: category, name: 'すべてのテンプレート' }], raws)
 }
 
 export function buildProjectTree({

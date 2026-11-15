@@ -26,6 +26,12 @@ export interface JournalLinesEditorProps {
    * ときは、確定時に 科目の既定メンバー > 起票者 の順で決まる)。省略時は、未指定の行にだけ「選択してください」を出す
    */
   memberNoneLabel?: string
+  /**
+   * true のとき、金額が空欄の行を許す(仕訳テンプレート、計画Issue #201。空欄の行は起票時に入力する)。
+   * 列の合計の代わりに、その列の全行が空欄なら「空欄(起票時に入力)」を出し、空欄の行があるときは
+   * 貸借の不一致を警告せず、空欄の案内を出す。全行の金額があるときは通常どおり貸借一致/差額を出す
+   */
+  allowBlankAmounts?: boolean
   /** 渡すと、精算バッチの選択肢に「+ 新しいバッチ」を出す。名前を受けて作成したバッチを返す */
   onCreateBatch?: (name: string) => Promise<SettlementBatch>
   /** 渡すと、取引先の選択ツリーに「+ 新規追加」を出す。作成後に呼ぶ apply へ取引先のIDを渡す */
@@ -56,6 +62,7 @@ export function JournalLinesEditor({
   bookkeeperId,
   readOnlyLines = false,
   memberNoneLabel,
+  allowBlankAmounts = false,
   onCreateBatch,
   onRequestCreateCounterparty,
   onRequestCreateProject,
@@ -66,6 +73,8 @@ export function JournalLinesEditor({
   const accountById = new Map(master.accounts.map((a) => [a.id, a]))
   const memberById = new Map(master.members.map((m) => [m.id, m]))
   const balance = summarizeBalance(lines.map((l) => l.line))
+  const isBlank = (l: JournalEditorLine) => l.line.amountInput.trim() === ''
+  const hasBlankAmount = allowBlankAmounts && lines.some(isBlank)
 
   const updateLine = (key: number, change: (line: JournalEntryFormLine) => JournalEntryFormLine) =>
     onChange(lines.map((l) => (l.key === key ? { key, line: change(l.line) } : l)))
@@ -107,7 +116,9 @@ export function JournalLinesEditor({
             <section key={side} role="group" aria-label={label} className="journal-editor__column">
               <header className="journal-editor__column-head">
                 <span>{label}</span>
-                <span className="journal-editor__amount-text">{formatCurrency(total, 'JPY')}</span>
+                <span className="journal-editor__amount-text">
+                  {allowBlankAmounts && rows.every(isBlank) ? '空欄(起票時に入力)' : formatCurrency(total, 'JPY')}
+                </span>
               </header>
               {rows.map(({ key, line }) => {
                 const account = line.accountId === null ? undefined : accountById.get(line.accountId)
@@ -283,9 +294,13 @@ export function JournalLinesEditor({
 
       <div
         role="status"
-        className={`journal-editor__balance${balance.isBalanced ? '' : ' journal-editor__balance--off'}`}
+        className={`journal-editor__balance${balance.isBalanced || hasBlankAmount ? '' : ' journal-editor__balance--off'}`}
       >
-        {balance.isBalanced ? '貸借一致' : `差額 ${formatCurrency(balance.difference, 'JPY')}`}
+        {hasBlankAmount
+          ? '金額が空欄の行は、起票時に入力します'
+          : balance.isBalanced
+            ? '貸借一致'
+            : `差額 ${formatCurrency(balance.difference, 'JPY')}`}
       </div>
     </>
   )

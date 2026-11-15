@@ -12,6 +12,8 @@ import type { JournalEntryLinkGroupRepository } from '../domain/journal-link-gro
 import type { HouseholdMemberRepository } from '../domain/household-member/HouseholdMemberRepository'
 import type { ProjectRepository } from '../domain/project/ProjectRepository'
 import type { ProjectGroupRepository } from '../domain/project-group/ProjectGroupRepository'
+import type { JournalTemplateRepository } from '../domain/journal-template/JournalTemplateRepository'
+import type { JournalTemplateGroupRepository } from '../domain/journal-template-group/JournalTemplateGroupRepository'
 import type { SettlementBatchRepository } from '../domain/settlement-batch/SettlementBatchRepository'
 import type { ImportMappingDefinitionRepository } from '../domain/statement-import/ImportMappingDefinitionRepository'
 import type { ExternalTransactionRefRepository } from '../domain/reconciliation/ExternalTransactionRefRepository'
@@ -32,6 +34,7 @@ import { MemberMasterTab } from '../components/master/MemberMasterTab'
 import { ProjectMasterTab } from '../components/master/ProjectMasterTab'
 import { MappingMasterTab } from '../components/master/MappingMasterTab'
 import { RuleMasterTab } from '../components/master/RuleMasterTab'
+import { JournalTemplateTab } from '../components/journal-template/JournalTemplateTab'
 import { SettingsScreen, type BackupApi } from '../components/settings/SettingsScreen'
 import { ExternalChangeBanner } from '../components/settings/ExternalChangeBanner'
 import { ReadOnlyBanner } from '../components/settings/ReadOnlyBanner'
@@ -119,6 +122,8 @@ export function AppRoutes() {
     budgetRepository,
     recurringTransactionRuleRepository,
     recurringTransactionProposalApi,
+    journalTemplateRepository,
+    journalTemplateGroupRepository,
     backupApi,
     storageApi,
   } = useMemo(
@@ -148,6 +153,10 @@ export function AppRoutes() {
         client.recurringTransactionRule as unknown as Comlink.Remote<RecurringTransactionRuleRepository>,
       recurringTransactionProposalApi:
         client.recurringTransactionProposal as unknown as Comlink.Remote<RecurringTransactionProposalRpcApi>,
+      journalTemplateRepository:
+        client.journalTemplate as unknown as Comlink.Remote<JournalTemplateRepository>,
+      journalTemplateGroupRepository:
+        client.journalTemplateGroup as unknown as Comlink.Remote<JournalTemplateGroupRepository>,
       backupApi: client.backup as unknown as Comlink.Remote<BackupApi>,
       storageApi: client.storage as unknown as Comlink.Remote<StorageApi>,
     }),
@@ -176,6 +185,22 @@ export function AppRoutes() {
       householdMemberRepository={householdMemberRepository}
       settlementBatchRepository={settlementBatchRepository}
       journalEntryRepository={journalEntryRepository}
+    />
+  )
+
+  /** 仕訳画面の「テンプレート」タブ(仕訳テンプレートの管理)の中身(計画Issue #201) */
+  const templatesPanel = (
+    <JournalTemplateTab
+      journalTemplateRepository={journalTemplateRepository}
+      journalTemplateGroupRepository={journalTemplateGroupRepository}
+      accountRepository={accountRepository}
+      accountGroupRepository={accountGroupRepository}
+      counterpartyRepository={counterpartyRepository}
+      counterpartyGroupRepository={counterpartyGroupRepository}
+      projectRepository={projectRepository}
+      projectGroupRepository={projectGroupRepository}
+      householdMemberRepository={householdMemberRepository}
+      settlementBatchRepository={settlementBatchRepository}
     />
   )
 
@@ -312,6 +337,9 @@ export function AppRoutes() {
             recurringTransactionProposalApi={recurringTransactionProposalApi}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
             rulesPanel={rulesPanel}
+            templatesPanel={templatesPanel}
+            journalTemplateRepository={journalTemplateRepository}
+            journalTemplateGroupRepository={journalTemplateGroupRepository}
             onProposalsChanged={() => setProposalRefreshKey((key) => key + 1)}
           />
         }
@@ -334,6 +362,9 @@ export function AppRoutes() {
             recurringTransactionProposalApi={recurringTransactionProposalApi}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
             rulesPanel={rulesPanel}
+            templatesPanel={templatesPanel}
+            journalTemplateRepository={journalTemplateRepository}
+            journalTemplateGroupRepository={journalTemplateGroupRepository}
             onProposalsChanged={() => setProposalRefreshKey((key) => key + 1)}
           />
         }
@@ -412,7 +443,9 @@ function JournalScreenRoute(props: JournalScreenRouteProps) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
-  const initialTab: JournalScreenTab = tabParam === 'drafts' || tabParam === 'proposals' || tabParam === 'rules' ? tabParam : 'list'
+  const initialTab: JournalScreenTab = tabParam === 'drafts' || tabParam === 'proposals' || tabParam === 'rules' || tabParam === 'templates'
+      ? tabParam
+      : 'list'
   const initialFilter = (useLocation().state as { filter?: JournalEntryFilter } | null)?.filter
   const entryId = id === undefined ? undefined : Number(id)
 

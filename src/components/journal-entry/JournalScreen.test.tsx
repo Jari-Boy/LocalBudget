@@ -26,6 +26,8 @@ import { UnsavedChangesGuardProvider, useUnsavedChangesGuard } from '../common/u
 import { saveUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
 import { JournalScreen, type JournalScreenProps } from './JournalScreen'
 import type { RecurringTransactionRuleLine } from '../../domain/recurring-transaction/RecurringTransactionRule'
+import type { JournalTemplate } from '../../domain/journal-template/JournalTemplate'
+import type { JournalTemplateGroup } from '../../domain/journal-template-group/JournalTemplateGroup'
 
 afterEach(() => {
   cleanup()
@@ -143,7 +145,16 @@ function balancedDraft(id: number, memo: string): JournalEntryDraft {
 }
 
 function setup(
-  overrides: Partial<{ entries: JournalEntry[]; drafts: JournalEntryDraft[]; initialFilter: JournalEntryFilter; rulesPanel: ReactNode }> = {},
+  overrides: Partial<{
+    entries: JournalEntry[]
+    drafts: JournalEntryDraft[]
+    initialFilter: JournalEntryFilter
+    rulesPanel: ReactNode
+    /** 渡すと「テンプレートから起票」が使える(計画Issue #201) */
+    templates: JournalTemplate[]
+    templateGroups: JournalTemplateGroup[]
+    templatesPanel: ReactNode
+  }> = {},
 ) {
   let entries = overrides.entries ?? makeEntries()
   let drafts = overrides.drafts ?? makeDrafts()
@@ -267,6 +278,10 @@ function setup(
     onProposalsChanged: vi.fn(),
     initialFilter: overrides.initialFilter,
     rulesPanel: overrides.rulesPanel,
+    templatesPanel: overrides.templatesPanel,
+    journalTemplateRepository: overrides.templates === undefined ? undefined : { findAll: vi.fn(async () => [...overrides.templates!]) },
+    journalTemplateGroupRepository:
+      overrides.templates === undefined ? undefined : { findAll: vi.fn(async () => overrides.templateGroups ?? []) },
   }
   render(
     <I18nextProvider i18n={i18n}>
@@ -1480,5 +1495,178 @@ describe('JournalScreen(明細行単位)', () => {
         expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
       })
     })
+  })
+})
+
+describe('JournalScreen: テンプレートから起票(計画Issue #201)', () => {
+  const template = (overrides: Partial<JournalTemplate> = {}): JournalTemplate => ({
+    id: 1,
+    name: 'コンビニ(昼食)',
+    memo: '昼食',
+    bookkeeperHouseholdMemberId: 2,
+    groupId: null,
+    sortOrder: 0,
+    isActive: true,
+    lines: [
+      { lineNo: 1, side: 'debit', accountId: 1, amount: null, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+      { lineNo: 2, side: 'credit', accountId: 2, amount: null, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+    ],
+    createdAt: '',
+    updatedAt: '',
+    ...overrides,
+  })
+  const pickerButton = () => screen.getByRole('button', { name: 'テンプレートから起票' })
+  /** ボタンを押してダイアログを開く(開く直前にテンプレートを読み直すため、表示を待つ) */
+  const openPicker = async () => {
+    fireEvent.click(pickerButton())
+    return screen.findByRole('dialog', { name: 'テンプレートから起票' })
+  }
+  /** ダイアログを開いて、名前のテンプレートで起票する */
+  const startFrom = async (name: string) => {
+    const dialog = await openPicker()
+    fireEvent.doubleClick(within(dialog).getByRole('option', { name: new RegExp(name) }))
+  }
+
+  it('テンプレートの機能(リポジトリ)を渡さないときは、ボタンもタブも出ない', async () => {
+    setup()
+    await ready()
+
+    expect(screen.queryByRole('button', { name: 'テンプレートから起票' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'テンプレート' })).not.toBeInTheDocument()
+  })
+
+  it('templatesPanelを渡すと「テンプレート」タブが出て、押すとその内容が表示される', async () => {
+    setup({ templates: [], templatesPanel: <p>テンプレート管理の中身</p> })
+    await ready()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'テンプレート' }))
+
+    expect(await screen.findByText('テンプレート管理の中身')).toBeInTheDocument()
+  })
+
+  it('「テンプレートから起票」を押すとダイアログが開き、有効なテンプレートが一覧に出る', async () => {
+    setup({ templates: [template(), template({ id: 2, name: '無効なもの', isActive: false })] })
+    await ready()
+
+    const dialog = await openPicker()
+
+    expect(within(dialog).getByRole('option', { name: /コンビニ\(昼食\)/ })).toBeInTheDocument()
+    expect(within(dialog).queryByRole('option', { name: /無効なもの/ })).not.toBeInTheDocument()
+  })
+
+  it('画面を開いた後に追加・変更されたテンプレートも、ボタンを押した時点の最新の内容で一覧に出る(「テンプレート」タブでの追加直後など)', async () => {
+    const templates: JournalTemplate[] = []
+    setup({ templates })
+    await ready()
+
+    // 画面を開いたあと(別のタブでの操作など)にテンプレートが追加された
+    templates.push(template({ name: '後から追加した' }))
+    const dialog = await openPicker()
+
+    expect(within(dialog).getByRole('option', { name: /後から追加した/ })).toBeInTheDocument()
+  })
+
+  it('テンプレートを選ぶと、「新しい仕訳」にテンプレートの内容(日付は今日・摘要・起票者・科目)が入り、案内が出る', async () => {
+    setup({ templates: [template()] })
+    await ready()
+
+    await startFrom('コンビニ')
+
+    expect(screen.queryByRole('dialog', { name: 'テンプレートから起票' })).not.toBeInTheDocument()
+    expect(within(detail()).getByRole('heading', { name: '新しい仕訳' })).toBeInTheDocument()
+    expect(within(detail()).getByLabelText('取引日')).toHaveValue(new Date().toISOString().slice(0, 10))
+    expect(memoInput()).toHaveValue('昼食')
+    expect(within(detail()).getByLabelText('起票者')).toHaveDisplayValue('妻')
+    expect(within(detail()).getByRole('button', { name: /^科目: 食費/ })).toBeInTheDocument()
+    expect(within(detail()).getByRole('button', { name: /^科目: 普通預金/ })).toBeInTheDocument()
+    expect(within(detail()).getByText('テンプレート「コンビニ(昼食)」の内容を入れました。金額を入力してください。')).toBeInTheDocument()
+  })
+
+  it('金額を入れて「保存」すると、テンプレートの内容で仕訳が作られる', async () => {
+    const props = setup({ templates: [template()] })
+    await ready()
+    await startFrom('コンビニ')
+
+    fireEvent.change(within(detail()).getByLabelText('食費の金額'), { target: { value: '650' } })
+    fireEvent.change(within(detail()).getByLabelText('普通預金の金額'), { target: { value: '650' } })
+    fireEvent.click(within(detail()).getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(props.journalEntryRepository.create).toHaveBeenCalledTimes(1))
+    expect(props.journalEntryRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        memo: '昼食',
+        householdMemberId: 2,
+        lines: [
+          expect.objectContaining({ side: 'debit', accountId: 1, amount: 650 }),
+          expect.objectContaining({ side: 'credit', accountId: 2, amount: 650 }),
+        ],
+      }),
+    )
+  })
+
+  it('テンプレートで固定の金額は、そのまま入る', async () => {
+    setup({
+      templates: [
+        template({
+          name: 'ジム',
+          lines: [
+            { lineNo: 1, side: 'debit', accountId: 1, amount: 8800, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+            { lineNo: 2, side: 'credit', accountId: 2, amount: 8800, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+          ],
+        }),
+      ],
+    })
+    await ready()
+
+    await startFrom('ジム')
+
+    expect(within(detail()).getByLabelText('食費の金額')).toHaveValue('8800')
+    expect(within(detail()).getByText('貸借一致')).toBeInTheDocument()
+  })
+
+  it('無効な科目があるテンプレートは、その行の科目を空にして警告を出し、保存できない', async () => {
+    const props = setup({
+      templates: [
+        template({
+          lines: [
+            { lineNo: 1, side: 'debit', accountId: 99, amount: 500, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+            { lineNo: 2, side: 'credit', accountId: 2, amount: 500, projectId: null, householdMemberId: null, counterpartyId: null, settlementBatchId: null },
+          ],
+        }),
+      ],
+    })
+    await ready()
+
+    await startFrom('コンビニ')
+
+    expect(within(detail()).getByText('1行目の科目「不明な科目」は使えないため、選び直してください')).toBeInTheDocument()
+    fireEvent.click(within(detail()).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(within(detail()).getByRole('alert')).toBeInTheDocument())
+    expect(props.journalEntryRepository.create).not.toHaveBeenCalled()
+  })
+
+  it('入力途中の内容があるときは、ボタンを押すと未保存の確認が出て、破棄するとダイアログが開く', async () => {
+    setup({ templates: [template()] })
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+    editMemo('入力途中')
+
+    fireEvent.click(pickerButton())
+
+    expect(leaveDialog()).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'テンプレートから起票' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+    expect(await screen.findByRole('dialog', { name: 'テンプレートから起票' })).toBeInTheDocument()
+  })
+
+  it('キャンセルすると、何も変わらずダイアログが閉じる', async () => {
+    setup({ templates: [template()] })
+    await ready()
+
+    const dialog = await openPicker()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'キャンセル' }))
+
+    expect(screen.queryByRole('dialog', { name: 'テンプレートから起票' })).not.toBeInTheDocument()
+    expect(within(detail()).queryByRole('heading', { name: '新しい仕訳' })).not.toBeInTheDocument()
   })
 })

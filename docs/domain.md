@@ -56,4 +56,5 @@
 | 消込 | 暫定記帳(未払金・未収金)とCSV到着後の消込という会計処理パターン。 | [domain/settlement.md](./domain/settlement.md) |
 | 割勘 | 複数人で分担する支出の按分(割勘)。立替金(一時勘定)を経由した世帯メンバー間・世帯外の相手との精算。 | [domain/expense-splitting.md](./domain/expense-splitting.md) |
 | 定期仕訳 | 家賃・サブスク・給与・ローン返済等、繰り返し発生する仕訳(複合仕訳・回ごとに金額が変わる償却やローンを含む)のテンプレート化。 | [domain/recurring-transactions.md](./domain/recurring-transactions.md) |
+| 仕訳テンプレート | よく使う仕訳のひな形(繰り返し周期・提案を持たない)。仕訳画面の「テンプレート」タブで管理し、「テンプレートから起票」で新規仕訳フォームへ展開する。 | [domain/journal-templates.md](./domain/journal-templates.md) |
 | 外部明細取込 | 金融機関の明細(CSV等)の取込フロー。マッピング定義・照合機能。 | [domain/statement-import.md](./domain/statement-import.md) |

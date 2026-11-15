@@ -11,11 +11,14 @@ import type { Account } from '../../domain/account/Account'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { CounterpartyGroup } from '../../domain/counterparty-group/CounterpartyGroup'
+import type { JournalTemplate } from '../../domain/journal-template/JournalTemplate'
+import type { JournalTemplateGroup } from '../../domain/journal-template-group/JournalTemplateGroup'
 import type { Project } from '../../domain/project/Project'
 import type { ProjectGroup } from '../../domain/project-group/ProjectGroup'
 import {
   buildAccountTree,
   buildCounterpartyTree,
+  buildJournalTemplateTree,
   buildProjectTree,
   groupNodeId,
   leafNodeId,
@@ -201,5 +204,80 @@ describe('buildProjectTree', () => {
       parentId: groupNodeId(1),
       cells: ['無効'],
     })
+  })
+})
+
+describe('buildJournalTemplateTree(計画Issue #201)', () => {
+  const group: JournalTemplateGroup = { id: 1, name: '食事', parentGroupId: null, sortOrder: 0, isActive: true, ...stamp }
+  const line = (lineNo: number, side: 'debit' | 'credit', accountId: number, amount: number | null) => ({
+    lineNo,
+    side,
+    accountId,
+    amount,
+    projectId: null,
+    householdMemberId: null,
+    counterpartyId: null,
+    settlementBatchId: null,
+  })
+  const template = (
+    id: number,
+    name: string,
+    amounts: [number | null, number | null],
+    overrides: Partial<JournalTemplate> = {},
+  ): JournalTemplate => ({
+    id,
+    name,
+    memo: null,
+    bookkeeperHouseholdMemberId: null,
+    groupId: 1,
+    sortOrder: id,
+    isActive: true,
+    lines: [line(1, 'debit', 1, amounts[0]), line(2, 'credit', 2, amounts[1])],
+    ...stamp,
+    ...overrides,
+  })
+  const accountNameById = new Map([
+    [1, '食費'],
+    [2, '現金'],
+  ])
+
+  it('区分は「すべてのテンプレート」の1つだけで、内容・金額・状態を列に出す', () => {
+    const { categories, nodes } = buildJournalTemplateTree({
+      groups: [group],
+      templates: [template(1, 'コンビニ', [null, null]), template(2, 'ジム', [8800, 8800], { isActive: false })],
+      accountNameById,
+    })
+
+    expect(categories).toEqual([{ key: 'journalTemplate', name: 'すべてのテンプレート' }])
+    expect(nodes.find((n) => n.id === groupNodeId(1))).toMatchObject({ kind: 'group', cells: ['', '', ''] })
+    expect(nodes.find((n) => n.id === leafNodeId(1))).toMatchObject({
+      parentId: groupNodeId(1),
+      cells: ['食費 / 現金', '起票時に入力', '有効'],
+    })
+    expect(nodes.find((n) => n.id === leafNodeId(2))).toMatchObject({ cells: ['食費 / 現金', '￥8,800', '無効'] })
+  })
+
+  it('一部の行だけ金額があるテンプレートの金額は「一部入力」と表す', () => {
+    const { nodes } = buildJournalTemplateTree({
+      groups: [],
+      templates: [template(1, 'A', [500, null], { groupId: null })],
+      accountNameById,
+    })
+
+    expect(nodes[0]).toMatchObject({ parentId: null, cells: ['食費 / 現金', '一部入力', '有効'] })
+  })
+
+  it('グループとテンプレートを並び順で混在させ、現在の並び順をidごとに返す', () => {
+    const { nodes, sortOrders } = buildJournalTemplateTree({
+      groups: [{ ...group, sortOrder: 5 }],
+      templates: [
+        template(1, 'A', [null, null], { groupId: null, sortOrder: 2 }),
+        template(2, 'B', [null, null], { groupId: null, sortOrder: 9 }),
+      ],
+      accountNameById,
+    })
+
+    expect(nodes.map((n) => n.id)).toEqual([leafNodeId(1), groupNodeId(1), leafNodeId(2)])
+    expect(sortOrders.get(groupNodeId(1))).toBe(5)
   })
 })

@@ -1,22 +1,15 @@
-import { useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   buildTreeTableRows,
   CATEGORY_ID_PREFIX,
-  dropZoneFor,
-  resolveTreeMove,
-  type DropZone,
   type TreeTableCategory,
   type TreeTableNode,
 } from './treeTableModel'
+import { useTreeDrag, type TreeMoveInfo } from './useTreeDrag'
 import './TreeTable.css'
 
-export interface TreeTableMoveInfo {
-  ids: readonly string[]
-  targetId: string
-  zone: DropZone
-  /** 中へ移動したグループ。呼び出し側が折りたたみを解除するための情報(区分の最上位への移動では無し) */
-  expandId?: string
-}
+/** ドラッグ移動の通知の情報(useTreeDragと共通) */
+export type TreeTableMoveInfo = TreeMoveInfo
 
 export interface TreeTableProps {
   categories: readonly TreeTableCategory[]
@@ -33,11 +26,6 @@ export interface TreeTableProps {
   onMoveRejected?: (reason: string) => void
   /** 区分の見出し行の右側に差し込む操作(例: 「+ グループ」)。引数は区分のkey */
   renderCategoryActions?: (categoryKey: string) => ReactNode
-}
-
-interface DragOver {
-  id: string
-  zone: DropZone
 }
 
 /**
@@ -61,8 +49,12 @@ export function TreeTable({
   renderCategoryActions,
 }: TreeTableProps) {
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(new Set())
-  const [dragOver, setDragOver] = useState<DragOver | null>(null)
-  const draggingIds = useRef<readonly string[] | null>(null)
+  const { dragOver, endDrag, handleDragStart, handleNodeDragOver, handleCategoryDragOver, handleDrop } = useTreeDrag({
+    nodes,
+    checkedIds,
+    onMove,
+    onMoveRejected,
+  })
 
   const rows = buildTreeTableRows({ categories, nodes, collapsedIds })
 
@@ -76,47 +68,6 @@ export function TreeTable({
 
   const toggleChecked = (id: string) =>
     onCheckedChange(checkedIds.includes(id) ? checkedIds.filter((x) => x !== id) : [...checkedIds, id])
-
-  const endDrag = () => {
-    draggingIds.current = null
-    setDragOver(null)
-  }
-
-  const handleDragStart = (event: DragEvent<HTMLTableRowElement>, id: string) => {
-    draggingIds.current = checkedIds.includes(id) ? checkedIds : [id]
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', id)
-  }
-
-  const handleNodeDragOver = (event: DragEvent<HTMLTableRowElement>, node: TreeTableNode) => {
-    if (!draggingIds.current) return
-    event.preventDefault()
-    const rect = event.currentTarget.getBoundingClientRect()
-    const ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5
-    const zone = dropZoneFor(node.kind === 'group', ratio)
-    if (dragOver?.id !== node.id || dragOver.zone !== zone) setDragOver({ id: node.id, zone })
-  }
-
-  const handleCategoryDragOver = (event: DragEvent<HTMLTableRowElement>, key: string) => {
-    if (!draggingIds.current) return
-    event.preventDefault()
-    const id = `${CATEGORY_ID_PREFIX}${key}`
-    if (dragOver?.id !== id) setDragOver({ id, zone: 'inside' })
-  }
-
-  const handleDrop = (event: DragEvent<HTMLTableRowElement>, targetId: string) => {
-    event.preventDefault()
-    const ids = draggingIds.current
-    const over = dragOver
-    endDrag()
-    if (!ids || ids.length === 0 || over?.id !== targetId) return
-    const result = resolveTreeMove(nodes, ids, { id: targetId, zone: over.zone })
-    if (!result.ok) {
-      onMoveRejected?.(result.reason)
-      return
-    }
-    onMove(result.nodes, { ids, targetId, zone: over.zone, expandId: result.expandId })
-  }
 
   const colSpan = columns.length + 2
 
