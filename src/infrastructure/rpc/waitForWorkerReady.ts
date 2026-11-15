@@ -1,3 +1,4 @@
+import { WorkerInitError } from './WorkerInitError'
 import { WORKER_READY_MESSAGE, isWorkerInitErrorMessage } from './workerLifecycleMessages'
 
 /**
@@ -23,7 +24,14 @@ export function waitForWorkerReady(target: EventTarget): Promise<void> {
         resolve()
       } else if (isWorkerInitErrorMessage(data)) {
         cleanup()
-        reject(new Error(data.message))
+        reject(
+          new WorkerInitError(data.message, {
+            reason: data.reason,
+            originalData: data.originalData,
+            databaseVersion: data.databaseVersion,
+            latestVersion: data.latestVersion,
+          }),
+        )
       }
     }
     function handleError(event: Event): void {
