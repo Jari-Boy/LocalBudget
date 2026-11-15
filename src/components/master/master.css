@@ -487,3 +487,61 @@ label.master-btn {
   border-left: 1px solid var(--color-border);
   border-right: 1px solid var(--color-border);
 }
+
+/* 残高の照合欄(計画Issue #205) */
+.master-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-base);
+}
+
+.master-reconcile__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+
+.master-reconcile__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm, var(--font-size-base));
+}
+
+.master-reconcile__table th,
+.master-reconcile__table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.master-reconcile__table th[scope='col']:first-child,
+.master-reconcile__table td:first-child,
+.master-reconcile__table th[scope='col']:nth-child(2),
+.master-reconcile__table td:nth-child(2),
+.master-reconcile__table tfoot th {
+  text-align: left;
+}
+
+.master-reconcile__table thead th {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.master-reconcile__table tfoot th,
+.master-reconcile__table tfoot td {
+  font-weight: 600;
+}
+
+.master-reconcile__capital {
+  color: var(--color-text-muted);
+}
+
+.master-reconcile__actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}

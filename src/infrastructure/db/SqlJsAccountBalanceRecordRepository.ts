@@ -1,11 +1,13 @@
 import type { Database } from 'sql.js'
 import type {
   AccountBalanceRecord,
+  AccountReconciliation,
+  BalanceRecordPreview,
   CreateAccountBalanceRecordInput,
   UpdateAccountBalanceRecordInput,
 } from '../../domain/reconciliation/AccountBalanceRecord'
 import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
-import { reconcileAutoBalanceAdjustments } from './autoBalanceAdjustment'
+import { computeAccountPlan, reconcileAutoBalanceAdjustments } from './autoBalanceAdjustment'
 
 /**
  * AccountBalanceRecordRepository(ドメイン層のポート)のsql.js実装(計画Issue #205)。
@@ -63,6 +65,19 @@ export class SqlJsAccountBalanceRecordRepository implements AccountBalanceRecord
       [accountId],
     )
     return (result?.values ?? []).map((row) => mapRow(result.columns, row))
+  }
+
+  describeReconciliation(accountId: number): AccountReconciliation {
+    const plan = computeAccountPlan(this.db, accountId)
+    if (!plan) return { usesStatement: false, autoAdjust: true, rows: [] }
+    return { usesStatement: plan.usesStatement, autoAdjust: plan.autoAdjust, rows: plan.rows }
+  }
+
+  previewRecord(accountId: number, recordDate: string, balance: number): BalanceRecordPreview {
+    const plan = computeAccountPlan(this.db, accountId, [{ date: recordDate, balance }])
+    const row = plan?.rows.find((r) => r.date === recordDate)
+    if (!row) return { bookBalance: 0, adjustment: 0 }
+    return { bookBalance: row.bookBalance, adjustment: row.isCapital ? row.adjustment : row.adjustment || row.discrepancy }
   }
 
   private findById(id: number): AccountBalanceRecord | null {

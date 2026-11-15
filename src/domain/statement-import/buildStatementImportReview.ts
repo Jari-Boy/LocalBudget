@@ -38,11 +38,6 @@ export interface StatementImportReviewResult {
    * 理由を見せる(計画Issue #151)。すべて読み取れれば空
    */
   unreadableRows: Array<Pick<MappingPreviewRow, 'rowNumber' | 'cells' | 'error'>>
-  /**
-   * CSVレコード群のうちbalance_afterが取得できた最後の値。残高照合(reconciliation.md 1.5)の
-   * 外部残高として使う。CSVに残高列が無い、またはいずれの行にも値が無ければnull
-   */
-  latestExternalBalance: number | null
 }
 
 /**
@@ -84,14 +79,6 @@ export function buildStatementImportReview(
   return {
     records: reviewRecords,
     unreadableRows,
-    latestExternalBalance: resolveLatestExternalBalance(records),
   }
 }
 
-function resolveLatestExternalBalance(records: readonly ImportedRecord[]): number | null {
-  for (let i = records.length - 1; i >= 0; i--) {
-    const balance = records[i].balanceAfter
-    if (balance !== null) return balance
-  }
-  return null
-}

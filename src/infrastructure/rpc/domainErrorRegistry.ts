@@ -2,7 +2,6 @@ import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJour
 import { AutoBalanceAdjustmentEntryReadOnlyError } from '../../domain/journal/AutoBalanceAdjustmentEntryReadOnlyError'
 import { JournalLineHouseholdMemberRequiredError } from '../../domain/journal/JournalLineHouseholdMemberRequiredError'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
-import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
 import { InvalidJournalTemplateError } from '../../domain/journal-template/InvalidJournalTemplateError'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
@@ -38,7 +37,6 @@ const DOMAIN_ERROR_REVIVERS: Record<string, DomainErrorReviver> = {
   AutoBalanceAdjustmentEntryReadOnlyError: (_message, extra) =>
     new AutoBalanceAdjustmentEntryReadOnlyError(extra.entryId as number),
   JournalLineHouseholdMemberRequiredError: () => new JournalLineHouseholdMemberRequiredError(),
-  NoBalanceDiscrepancyError: () => new NoBalanceDiscrepancyError(),
   InvalidRecurringScheduleError: (message) => new InvalidRecurringScheduleError(message),
   InvalidJournalTemplateError: (message) => new InvalidJournalTemplateError(message),
   RecurringTransactionHouseholdMemberRequiredError: (_message, extra) =>

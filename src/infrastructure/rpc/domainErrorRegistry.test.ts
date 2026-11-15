@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import { JournalLineHouseholdMemberRequiredError } from '../../domain/journal/JournalLineHouseholdMemberRequiredError'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
-import { NoBalanceDiscrepancyError } from '../../domain/reconciliation/NoBalanceDiscrepancyError'
+import { AutoBalanceAdjustmentEntryReadOnlyError } from '../../domain/journal/AutoBalanceAdjustmentEntryReadOnlyError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
 import { InvalidJournalTemplateError } from '../../domain/journal-template/InvalidJournalTemplateError'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
@@ -25,7 +25,7 @@ describe('isDomainError', () => {
   it('登録済みのドメインエラーをtrueと判定する', () => {
     expect(isDomainError(new UnbalancedJournalEntryError(100, 90))).toBe(true)
     expect(isDomainError(new SettlementBatchOnNonAdvanceAccountError(1))).toBe(true)
-    expect(isDomainError(new NoBalanceDiscrepancyError())).toBe(true)
+    expect(isDomainError(new AutoBalanceAdjustmentEntryReadOnlyError(1))).toBe(true)
     expect(isDomainError(new InvalidRecurringScheduleError('invalid'))).toBe(true)
     expect(isDomainError(new RecurringTransactionHouseholdMemberRequiredError(1))).toBe(true)
     expect(isDomainError(new MappingColumnNotFoundError('date', 'A'))).toBe(true)
@@ -82,13 +82,13 @@ describe('serializeDomainError / deserializeDomainError', () => {
     expect(revived.message).toBe(original.message)
   })
 
-  it('NoBalanceDiscrepancyErrorを往復する', () => {
-    const original = new NoBalanceDiscrepancyError()
+  it('AutoBalanceAdjustmentEntryReadOnlyErrorをentryIdごと往復する(計画Issue #205)', () => {
+    const original = new AutoBalanceAdjustmentEntryReadOnlyError(42)
 
     const revived = deserializeDomainError(serializeDomainError(original))
 
-    expect(revived).toBeInstanceOf(NoBalanceDiscrepancyError)
-    expect(revived.message).toBe(original.message)
+    expect(revived).toBeInstanceOf(AutoBalanceAdjustmentEntryReadOnlyError)
+    expect((revived as AutoBalanceAdjustmentEntryReadOnlyError).entryId).toBe(42)
   })
 
   it('InvalidRecurringScheduleErrorのmessageを保持して往復する', () => {

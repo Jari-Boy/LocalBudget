@@ -25,19 +25,24 @@ import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJourna
 import { seedInitialBalanceAccount } from '../../infrastructure/db/seedInitialBalanceAccount'
 import { seedStandardAccountGroups } from '../../infrastructure/db/seedStandardAccountGroups'
 import type { AccountCategory } from '../../domain/account/Account'
+import { SqlJsAccountBalanceRecordRepository } from '../../infrastructure/db/SqlJsAccountBalanceRecordRepository'
+import { seedBalanceAdjustmentAccount } from '../../infrastructure/db/seedBalanceAdjustmentAccount'
 import { AccountCreateForm } from './AccountCreateForm'
 
 let db: Database
 let accounts: SqlJsAccountRepository
 let entries: SqlJsJournalEntryRepository
+let balanceRecords: SqlJsAccountBalanceRecordRepository
 
 beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
   seedInitialBalanceAccount(db)
+  seedBalanceAdjustmentAccount(db)
   seedStandardAccountGroups(db)
   accounts = new SqlJsAccountRepository(db)
   entries = new SqlJsJournalEntryRepository(db)
+  balanceRecords = new SqlJsAccountBalanceRecordRepository(db)
   new SqlJsHouseholdMemberRepository(db).create({ name: '夫' })
   new SqlJsHouseholdMemberRepository(db).create({ name: '妻' })
 })
@@ -50,7 +55,7 @@ function renderForm(initialCategory: AccountCategory = 'asset', callbacks: { onC
     <I18nextProvider i18n={i18n}>
       <AccountCreateForm
         accountRepository={accounts}
-        journalEntryRepository={entries}
+        balanceRecordRepository={balanceRecords}
         groups={new SqlJsAccountGroupRepository(db).findAll()}
         householdMembers={new SqlJsHouseholdMemberRepository(db).findAll()}
         initialCategory={initialCategory}
@@ -71,7 +76,7 @@ describe('AccountCreateForm', () => {
 
     expect(screen.queryByLabelText('外部明細(CSV)はありますか?')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('名義')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('初期残高(任意)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('最初の残高の金額')).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '食費' } })
     fireEvent.click(screen.getByRole('button', { name: '登録' }))
@@ -154,16 +159,27 @@ describe('AccountCreateForm', () => {
     expect(screen.queryByRole('option', { name: '普通預金' })).not.toBeInTheDocument()
   })
 
-  it('初期残高を入力すると、初期残高の仕訳も作られる', async () => {
+  it('外部明細がないときは「最初の残高の記録」(日付の初期値は今日)を入れられ、残高の記録と元手の仕訳が作られる(計画Issue #205)', async () => {
     renderForm('asset')
 
     fireEvent.change(screen.getByLabelText('外部明細(CSV)はありますか?'), { target: { value: 'no' } })
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '現金' } })
-    fireEvent.change(screen.getByLabelText('初期残高(任意)'), { target: { value: '12000' } })
+    expect(screen.getByLabelText('最初の残高の日付')).toHaveValue('2026-11-07')
+    fireEvent.change(screen.getByLabelText('最初の残高の金額'), { target: { value: '12000' } })
     fireEvent.click(screen.getByRole('button', { name: '登録' }))
 
     await waitFor(() => expect(entries.findAll()).toHaveLength(1))
-    expect(entries.findAll()[0]).toMatchObject({ sourceType: 'initial_balance', entryDate: '2026-11-07' })
+    expect(entries.findAll()[0]).toMatchObject({ sourceType: 'auto_balance_adjustment', entryDate: '2026-11-07' })
+    const cash = accounts.findAll().find((a) => a.name === '現金')!
+    expect(balanceRecords.findByAccount(cash.id)).toMatchObject([{ recordDate: '2026-11-07', balance: 12000 }])
+  })
+
+  it('取引後残高のあるCSVの科目では、最初の残高の記録欄を出さない(最初の明細から自動で決まる、計画Issue #205)', () => {
+    renderForm('asset')
+
+    // 初期値は「外部明細あり・残高情報あり」
+    expect(screen.queryByLabelText('最初の残高の金額')).not.toBeInTheDocument()
+    expect(screen.getByText(/最初の明細の残高から自動で決まります/)).toBeInTheDocument()
   })
 
   it('名称が空のときは、登録ボタンが押せない', () => {
@@ -227,7 +243,7 @@ describe('AccountCreateForm の明細マッピング(計画Issue #189)', () => {
       <I18nextProvider i18n={i18n}>
         <AccountCreateForm
           accountRepository={accounts}
-          journalEntryRepository={entries}
+          balanceRecordRepository={balanceRecords}
           groups={new SqlJsAccountGroupRepository(db).findAll()}
           householdMembers={new SqlJsHouseholdMemberRepository(db).findAll()}
           initialCategory={initialCategory}

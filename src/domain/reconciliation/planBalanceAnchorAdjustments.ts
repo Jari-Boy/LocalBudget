@@ -25,7 +25,7 @@ export interface AnchorRow {
   date: string
   periodStart: string | null
   anchorBalance: number
-  /** 自動調整を含まない帳簿残高(entry_date <= date の合計) */
+  /** 調整前の帳簿残高(entry_date <= date の明細の合計に、この行より前に入る元手・調整を足したもの) */
   bookBalance: number
   /** 自動で入る調整額(符号付き、入らなければ0) */
   adjustment: number
@@ -62,6 +62,8 @@ export function planBalanceAnchorAdjustments(params: PlanBalanceAnchorAdjustment
     params.ledger.filter((line) => line.date <= date).reduce((total, line) => total + line.delta, 0)
 
   let previous: { anchor: BalanceAnchor; book: number } | null = null
+  // これまでに入る元手・調整の合計(調整前の帳簿の表示用)
+  let applied = 0
   for (const anchor of anchors) {
     const book = bookAt(anchor.date)
     if (previous === null) {
@@ -76,7 +78,7 @@ export function planBalanceAnchorAdjustments(params: PlanBalanceAnchorAdjustment
         date: anchor.date,
         periodStart: null,
         anchorBalance: anchor.balance,
-        bookBalance: book,
+        bookBalance: book + applied,
         adjustment: amount,
         discrepancy: 0,
         isCapital: true,
@@ -97,12 +99,13 @@ export function planBalanceAnchorAdjustments(params: PlanBalanceAnchorAdjustment
         date: anchor.date,
         periodStart,
         anchorBalance: anchor.balance,
-        bookBalance: book,
+        bookBalance: book + applied,
         adjustment: params.autoAdjust ? gap : 0,
         discrepancy: params.autoAdjust ? 0 : gap,
         isCapital: false,
       })
     }
+    applied += rows[rows.length - 1].adjustment
     previous = { anchor, book }
   }
   return { adjustments, rows }

@@ -39,6 +39,7 @@ import {
 } from './recurringRuleForm'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
 import { AccountCreateForm } from './AccountCreateForm'
+import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
 import { RuleEditForm, type RuleStatus } from './RuleEditForm'
 import '../journal-entry/JournalEntryEditor.css'
 import './master.css'
@@ -68,6 +69,8 @@ export interface RuleMasterTabProps {
    * 「+ 新規追加」を出さない
    */
   journalEntryRepository?: MaybeAsync<Pick<JournalEntryRepository, 'create'>>
+  /** 科目の登録フォームで最初の残高を記録する先(計画Issue #205)。省略時は最初の残高の欄を出さない */
+  accountBalanceRecordRepository?: MaybeAsync<Pick<AccountBalanceRecordRepository, 'create'>>
   /** 行の精算バッチの選択肢(計画Issue #180)。省略時は選択肢なし */
   settlementBatchRepository?: MaybeAsync<Pick<SettlementBatchRepository, 'findAll' | 'create'>>
   /** 「次回」・終了の判定・再開日の既定・開始日の既定の基準日(YYYY-MM-DD)。省略時は今日 */
@@ -402,7 +405,7 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           <div role="dialog" aria-modal="true" aria-label="科目を登録" className="import-dialog import-dialog--wide">
             <AccountCreateForm
               accountRepository={accountRepository}
-              journalEntryRepository={props.journalEntryRepository}
+              balanceRecordRepository={props.accountBalanceRecordRepository}
               groups={data.accountGroups}
               householdMembers={data.members}
               initialCategory="expense"

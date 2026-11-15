@@ -106,6 +106,21 @@ describe('summarizeMasterUsage', () => {
     expect(account.initialBalanceEntryIds).toEqual([1])
   })
 
+  it('自動調整仕訳(元手・自動調整、計画Issue #205)の明細も通常の使用件数に数えず、そのidを別に持つ', () => {
+    const usage = summarizeMasterUsage({
+      ...emptyInput,
+      entries: [
+        makeEntry(1, [makeLine({ accountId: 10 }), makeLine({ accountId: 99, side: 'credit' })], {
+          sourceType: 'auto_balance_adjustment',
+        }),
+      ],
+    })
+
+    const account = usage.get('account', 10)
+    expect(account.journalLines).toBe(0)
+    expect(account.initialBalanceEntryIds).toEqual([1])
+  })
+
   it('取引先は、仕訳の明細・定期仕訳ルール・精算バッチの相手で使われた件数を数える', () => {
     const usage = summarizeMasterUsage({
       ...emptyInput,

@@ -112,41 +112,6 @@ describe('buildStatementImportReview', () => {
     expect(result.records[0].approximateCandidates).toEqual([existing])
   })
 
-  it('balance_afterが取得できる最後のレコードの値をlatestExternalBalanceとして返す', () => {
-    const rows = [
-      ['日付', '摘要', '金額', '残高'],
-      ['2026/07/20', 'スーパー', '-3000', '97000'],
-      ['2026/07/21', '給与', '250000', '347000'],
-    ]
-
-    const result = buildStatementImportReview({
-      rows,
-      definition: definition(),
-      existingExternalIds: new Set(),
-      existingTransactions: [],
-      approximateDuplicateOptions: APPROXIMATE_OPTIONS,
-    })
-
-    expect(result.latestExternalBalance).toBe(347000)
-  })
-
-  it('マッピング定義にbalanceColumnが無ければlatestExternalBalanceはnullになる', () => {
-    const rows = [
-      ['日付', '摘要', '金額'],
-      ['2026/07/20', 'スーパー', '-3000'],
-    ]
-
-    const result = buildStatementImportReview({
-      rows,
-      definition: definition({ balanceColumn: null }),
-      existingExternalIds: new Set(),
-      existingTransactions: [],
-      approximateDuplicateOptions: APPROXIMATE_OPTIONS,
-    })
-
-    expect(result.latestExternalBalance).toBeNull()
-  })
-
   it('列構成が定義と一致しない場合はMappingColumnNotFoundErrorをそのまま伝播する', () => {
     const rows = [
       ['違うヘッダー1', '違うヘッダー2'],

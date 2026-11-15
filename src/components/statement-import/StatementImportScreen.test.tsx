@@ -522,13 +522,25 @@ describe('StatementImportScreen', () => {
     expect(userEntries().map((e) => e.sourceType)).toEqual(['external_import'])
   })
 
-  it('残高が照合対象の取込先では、帳簿残高と明細の残高の一致・不一致を表示する', async () => {
+  it('残高が照合対象の取込先では、基準点(取引後残高)と帳簿が合わない期間を、自動調整が入ることとあわせて表示する(計画Issue #205)', async () => {
     makeMapping()
     renderScreen()
 
-    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+    // 10/05=97000 と 10/20=90000 の間は残高が7000減るが、取り込む行は1000だけ → 10/06〜10/20 に6000のずれ
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/20,コンビニ,-1000,90000\n`)
 
-    expect(await screen.findByText(/帳簿残高.*外部残高.*一致しません/)).toBeInTheDocument()
+    expect(await screen.findByText(/帳簿と明細の残高が合わない期間があります/)).toBeInTheDocument()
+    expect(screen.getByText(/2026-10-06〜2026-10-20/)).toBeInTheDocument()
+    expect(screen.getByText(/確定すると.*自動で調整/)).toBeInTheDocument()
+  })
+
+  it('取り込んだ明細の残高と帳簿が合っていれば、一致していることを表示する', async () => {
+    makeMapping()
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/20,コンビニ,-1000,96000\n`)
+
+    expect(await screen.findByText(/帳簿と明細の残高は一致しています/)).toBeInTheDocument()
   })
 
   it('取引先を選んだ行は確定時にパターンを登録し、件数を伝える', async () => {

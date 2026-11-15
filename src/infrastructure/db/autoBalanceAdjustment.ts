@@ -32,10 +32,19 @@ export function reconcileAutoBalanceAdjustments(db: Database, accountIds: Iterab
 }
 
 /** 科目の基準点・帳簿から、あるべき自動調整の計画を計算する(DBは変更しない) */
-export function computeAccountPlan(db: Database, accountId: number): BalanceAnchorPlan | null {
+export function computeAccountPlan(
+  db: Database,
+  accountId: number,
+  extraAnchors: readonly BalanceAnchor[] = [],
+): (BalanceAnchorPlan & { usesStatement: boolean; autoAdjust: boolean }) | null {
   const account = loadAccount(db, accountId)
   if (!account) return null
-  return planFor(db, account, loadAnchors(db, accountId))
+  const plan = planFor(db, account, [...loadAnchors(db, accountId), ...extraAnchors])
+  const [refs] = db.exec(
+    'SELECT 1 FROM external_transaction_refs WHERE account_id = ? AND external_balance_after IS NOT NULL LIMIT 1',
+    [accountId],
+  )
+  return { ...plan, usesStatement: Boolean(refs), autoAdjust: account.autoBalanceAdjustment }
 }
 
 /** 科目の基準点(CSVの取引後残高 + 手で記録した残高) */

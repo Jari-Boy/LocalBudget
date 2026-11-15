@@ -106,6 +106,20 @@ describe('planBalanceAnchorAdjustments', () => {
     ])
   })
 
+  it('rows の bookBalance は、その行の調整の前までに入る元手・調整を含めた帳簿残高(調整前の帳簿)', () => {
+    const plan = planBalanceAnchorAdjustments({
+      anchors: [
+        { date: '2026-01-31', balance: 10000 },
+        { date: '2026-02-28', balance: 7000 },
+      ],
+      ledger: [{ date: '2026-02-10', delta: -2000 }],
+      autoAdjust: true,
+    })
+    // 1行目(元手)は明細だけ(-0)、2行目は元手 10000 を含む 10000 - 2000 = 8000
+    expect(plan.rows.map((row) => row.bookBalance)).toEqual([0, 8000])
+    expect(plan.rows[1].adjustment).toBe(-1000)
+  })
+
   it('調整を適用すると、どの基準点の日でも帳簿が基準点に一致する', () => {
     const anchors = [
       { date: '2026-01-31', balance: 5000 },

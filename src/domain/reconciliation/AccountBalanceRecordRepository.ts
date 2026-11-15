@@ -1,5 +1,7 @@
 import type {
   AccountBalanceRecord,
+  AccountReconciliation,
+  BalanceRecordPreview,
   CreateAccountBalanceRecordInput,
   UpdateAccountBalanceRecordInput,
 } from './AccountBalanceRecord'
@@ -14,4 +16,8 @@ export interface AccountBalanceRecordRepository {
   update(id: number, input: UpdateAccountBalanceRecordInput): AccountBalanceRecord
   delete(id: number): void
   findByAccount(accountId: number): AccountBalanceRecord[]
+  /** 科目の照合表(基準点ごとの行)。DBは変更しない */
+  describeReconciliation(accountId: number): AccountReconciliation
+  /** 残高を記録した場合の帳簿残高と調整額のプレビュー。DBは変更しない */
+  previewRecord(accountId: number, recordDate: string, balance: number): BalanceRecordPreview
 }

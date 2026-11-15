@@ -231,3 +231,52 @@ describe('科目の削除', () => {
     expect(() => accounts.delete(cashId)).toThrow()
   })
 })
+
+describe('照合表とプレビュー(残高の照合欄が読む)', () => {
+  it('describeReconciliationは基準点ごとの行と、CSVの科目かどうか・自動調整の設定を返す', () => {
+    records.create({ accountId: cashId, recordDate: '2026-01-31', balance: 10000 })
+    records.create({ accountId: cashId, recordDate: '2026-02-28', balance: 7000 })
+
+    const result = records.describeReconciliation(cashId)
+
+    expect(result.usesStatement).toBe(false)
+    expect(result.autoAdjust).toBe(true)
+    expect(result.rows.map((r) => [r.date, r.anchorBalance, r.adjustment])).toEqual([
+      ['2026-01-31', 10000, 10000],
+      ['2026-02-28', 7000, -3000],
+    ])
+  })
+
+  it('取引後残高のあるCSVの科目はusesStatementがtrueになる', () => {
+    journal.create({
+      entryDate: '2026-02-10',
+      householdMemberId: memberId,
+      sourceType: 'external_import',
+      lines: [
+        { accountId: bankId, side: 'debit', amount: 1000, householdMemberId: memberId },
+        { accountId: salaryId, side: 'credit', amount: 1000, householdMemberId: memberId },
+      ],
+      externalTransactionRef: {
+        accountId: bankId,
+        externalId: 'X1',
+        entryDate: '2026-02-10',
+        description: 'CSV',
+        amount: 1000,
+        externalBalanceAfter: 11000,
+        rowOrder: 0,
+      },
+    })
+    expect(records.describeReconciliation(bankId).usesStatement).toBe(true)
+  })
+
+  it('previewRecordは、その日の帳簿残高と、記録すると入る調整額を返す(DBは変更しない)', () => {
+    records.create({ accountId: cashId, recordDate: '2026-01-31', balance: 10000 })
+    spend(cashId, '2026-02-10', 2000)
+
+    const preview = records.previewRecord(cashId, '2026-02-28', 7000)
+
+    // 帳簿は元手込みで 8000、記録 7000 との差 -1000 が調整額
+    expect(preview).toEqual({ bookBalance: 8000, adjustment: -1000 })
+    expect(records.findByAccount(cashId)).toHaveLength(1)
+  })
+})

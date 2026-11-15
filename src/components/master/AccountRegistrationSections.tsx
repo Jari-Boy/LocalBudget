@@ -4,11 +4,9 @@ import type { ImportMappingDefinition } from '../../domain/statement-import/Impo
 import { DefinitionLinkPicker } from './DefinitionLinkPicker'
 import './master.css'
 
-const yen = (amount: number) => `¥${amount.toLocaleString('ja-JP')}`
-
 /**
  * 資産・負債科目の右パネルに出す「外部明細の情報」(計画Issue #189)。登録時の回答(外部明細の有無・
- * 残高情報の有無)と初期残高を、外部明細・残高情報・初期残高の順で横に並べる。表示のみで、変更手段は持たない。
+ * 残高情報の有無)を、外部明細・残高情報の順で横に並べる(初期残高は残高の照合欄へ統合、計画Issue #205)。表示のみで、変更手段は持たない。
  */
 export function AccountRegistrationInfo({ summary }: { summary: AccountRegistrationSummary }) {
   const { t } = useTranslation('master')
@@ -16,13 +14,6 @@ export function AccountRegistrationInfo({ summary }: { summary: AccountRegistrat
   const items = [
     { label: t('accountTab.registrationCsv'), value: yesNo(summary.hasExternalStatement) },
     { label: t('accountTab.registrationBalance'), value: yesNo(summary.hasBalanceInfo) },
-    {
-      label: t('accountTab.registrationInitialBalance'),
-      value:
-        summary.initialBalance === null
-          ? t('accountTab.registrationNo')
-          : `${yen(summary.initialBalance.amount)}(${summary.initialBalance.date})`,
-    },
   ]
   return (
     <section className="master-subsection" aria-label={t('accountTab.registrationTitle')}>

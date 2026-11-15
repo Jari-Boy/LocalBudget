@@ -68,6 +68,7 @@ const accounts = [
   account(2, '普通預金', 'asset', true),
   { ...account(3, '立替金', 'asset', false), isSystemManaged: true },
   account(4, '家賃', 'expense'),
+  { ...account(5, '残高調整', 'expense'), isSystemManaged: true },
 ]
 
 function line(id: number, entryId: number, side: 'debit' | 'credit', accountId: number, amount: number, batch: number | null = null): JournalLine {
@@ -155,6 +156,7 @@ function setup(
     templates: JournalTemplate[]
     templateGroups: JournalTemplateGroup[]
     templatesPanel: ReactNode
+    onOpenAccountReconciliation: (accountId: number) => void
   }> = {},
 ) {
   let entries = overrides.entries ?? makeEntries()
@@ -277,6 +279,7 @@ function setup(
     },
     onSplit: vi.fn(),
     onProposalsChanged: vi.fn(),
+    onOpenAccountReconciliation: overrides.onOpenAccountReconciliation,
     initialFilter: overrides.initialFilter,
     rulesPanel: overrides.rulesPanel,
     templatesPanel: overrides.templatesPanel,
@@ -314,6 +317,58 @@ async function ready() {
 }
 
 const detail = () => screen.getByRole('region', { name: '仕訳の詳細' })
+
+describe('JournalScreen: 自動調整の仕訳(計画Issue #205)', () => {
+  const autoEntry = () =>
+    entry(5, '2026-09-30', '残高の自動調整(普通預金 09/01〜09/30)', 'auto_balance_adjustment', [
+      line(51, 5, 'debit', 2, 500),
+      line(52, 5, 'credit', 5, 500),
+    ])
+
+  it('一覧に「自動調整」のタグが出て、出どころで絞り込める', async () => {
+    setup({ entries: [...makeEntries(), autoEntry()] })
+    await ready()
+
+    expect(screen.getAllByText('自動調整').length).toBeGreaterThan(0)
+  })
+
+  it('詳細パネルは読み取り専用で、自動で作られたこと・ずれた期間と内容を表示し、保存・削除・関連付けの操作を出さない', async () => {
+    setup({ entries: [...makeEntries(), autoEntry()] })
+    await ready()
+
+    fireEvent.click(screen.getByRole('button', { name: /残高の自動調整/ }))
+
+    const panel = within(detail())
+    expect(panel.getByText(/自動で作られました/)).toBeInTheDocument()
+    expect(panel.getByText('2026-09-01〜2026-09-30')).toBeInTheDocument()
+    expect(panel.getByText('残高の自動調整(普通預金 09/01〜09/30)')).toBeInTheDocument()
+    expect(panel.queryByRole('button', { name: '保存' })).toBeNull()
+    expect(panel.queryByRole('button', { name: '削除' })).toBeNull()
+    expect(panel.queryByText(/関連仕訳/)).toBeNull()
+  })
+
+  it('「この期間の仕訳を見る」で、その科目・期間の仕訳に絞り込む', async () => {
+    setup({ entries: [...makeEntries(), autoEntry()] })
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: /残高の自動調整/ }))
+
+    fireEvent.click(within(detail()).getByRole('button', { name: 'この期間の仕訳を見る' }))
+
+    await waitFor(() => expect(screen.queryByText('ランチ', { selector: '.journal-result-list__memo' })).toBeNull())
+    expect(screen.getByText('残高の自動調整(普通預金 09/01〜09/30)', { selector: '.journal-result-list__memo' })).toBeInTheDocument()
+  })
+
+  it('「科目の照合を見る」で、対象の科目を渡して照合欄へ移る', async () => {
+    const onOpenAccountReconciliation = vi.fn()
+    setup({ entries: [...makeEntries(), autoEntry()], onOpenAccountReconciliation })
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: /残高の自動調整/ }))
+
+    fireEvent.click(within(detail()).getByRole('button', { name: '科目の照合を見る' }))
+
+    expect(onOpenAccountReconciliation).toHaveBeenCalledWith(2)
+  })
+})
 
 describe('JournalScreen', () => {
   it('initialFilterを渡すと、その条件で絞り込んだ状態で開く(分析画面から期間・条件を引き継ぐため、計画Issue #155)', async () => {
