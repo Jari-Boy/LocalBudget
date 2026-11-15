@@ -7,6 +7,11 @@ export interface QuickCreateGroupField {
   /** グループの選択欄の名称(「取引先グループ」など) */
   label: string
   categories: readonly TreeSelectCategory[]
+  /**
+   * 渡すと、選択欄の末尾に「+ グループを新規追加」を出す。名前だけで最上位のグループを作り、作ったグループのidを返す
+   * (入れ子や並び順はグループ管理画面で整える)。作ったグループはそのまま選ばれる
+   */
+  onCreate?: (name: string) => Promise<number>
 }
 
 export interface QuickCreateDialogProps {
@@ -36,6 +41,7 @@ export function QuickCreateDialog({ title, nameLabel, onSubmit, onCancel, groupF
   const [groupId, setGroupId] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false)
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -52,6 +58,7 @@ export function QuickCreateDialog({ title, nameLabel, onSubmit, onCancel, groupF
   }
 
   return (
+    <>
     <div className="import-dialog__backdrop">
       <form
         role="dialog"
@@ -77,6 +84,8 @@ export function QuickCreateDialog({ title, nameLabel, onSubmit, onCancel, groupF
               emptyLabel={t('groupUnclassified')}
               placeholder={t('groupUnclassified')}
               onChange={(v) => setGroupId(v === '' ? null : Number(v))}
+              onCreate={groupField.onCreate ? () => setGroupDialogOpen(true) : undefined}
+              createLabel={t('createGroup')}
             />
           </div>
         )}
@@ -92,5 +101,19 @@ export function QuickCreateDialog({ title, nameLabel, onSubmit, onCancel, groupF
         </div>
       </form>
     </div>
+    {groupField?.onCreate && groupDialogOpen && (
+      // グループの追加は、この追加ダイアログのフォームの外に重ねて出す(フォームの入れ子にしないため)
+      <QuickCreateDialog
+        title={t('createGroupTitle', { group: groupField.label })}
+        nameLabel={t('createGroupName')}
+        onSubmit={async (groupName) => {
+          const createdId = await groupField.onCreate!(groupName)
+          setGroupId(createdId)
+          setGroupDialogOpen(false)
+        }}
+        onCancel={() => setGroupDialogOpen(false)}
+      />
+    )}
+    </>
   )
 }

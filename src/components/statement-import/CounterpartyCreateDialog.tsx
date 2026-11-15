@@ -22,6 +22,8 @@ export interface CounterpartyCreateDialogProps {
   /** 「含む行の数」の対象にする、未確定の行の摘要 */
   descriptions: readonly string[]
   groupCategories: readonly TreeSelectCategory[]
+  /** 取引先グループをその場で作る(名前だけ、最上位)。作ったグループのidを返す */
+  onCreateGroup: (name: string) => Promise<number>
   accountCategories: readonly TreeSelectCategory[]
   onSubmit: (input: CounterpartyCreateInput) => Promise<void>
   onCancel: () => void
@@ -38,7 +40,7 @@ interface KeywordInput {
  * 追加を押すと、呼び出し側が取引先・キーワード・相手科目の初期値をまとめて保存する。
  */
 export function CounterpartyCreateDialog(props: CounterpartyCreateDialogProps) {
-  const { rowDescription, rowAccountId, descriptions, groupCategories, accountCategories, onSubmit, onCancel } = props
+  const { rowDescription, rowAccountId, descriptions, groupCategories, onCreateGroup, accountCategories, onSubmit, onCancel } = props
   const { t } = useTranslation('statementImport')
   const [keywords, setKeywords] = useState<KeywordInput[]>(
     rowDescription.trim() === '' ? [] : [{ key: 'k0', text: rowDescription.trim() }],
@@ -66,7 +68,7 @@ export function CounterpartyCreateDialog(props: CounterpartyCreateDialogProps) {
     <QuickCreateDialog
       title={t('createCounterpartyTitle')}
       nameLabel={t('createCounterpartyName')}
-      groupField={{ label: t('counterpartyGroupLabel'), categories: groupCategories }}
+      groupField={{ label: t('counterpartyGroupLabel'), categories: groupCategories, onCreate: onCreateGroup }}
       validate={() => items.every((item) => item.error === null)}
       onSubmit={(name, groupId) =>
         onSubmit({

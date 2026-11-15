@@ -100,9 +100,9 @@ export interface StatementImportScreenProps {
       | 'deletePattern'
     >
   >
-  counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll'>>
+  counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll' | 'create'>>
   projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll' | 'create'>>
-  projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll'>>
+  projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll' | 'create'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
   settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll'>>
   /** 「マッピングを編集」を押したときの移動(マスタの明細マッピングタブへ) */
@@ -777,6 +777,19 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setData((prev) => (prev ? { ...prev, counterparties: [...prev.counterparties, created] } : prev))
     apply(created.id)
     setCreateTarget(null)
+  }
+
+  /** 追加ダイアログのグループ欄から、名前だけで最上位のグループをその場で作る(入れ子や並び順はグループ管理画面で) */
+  async function createCounterpartyGroup(name: string): Promise<number> {
+    const created = await Promise.resolve(counterpartyGroupRepository.create({ name }))
+    setData((prev) => (prev ? { ...prev, counterpartyGroups: [...prev.counterpartyGroups, created] } : prev))
+    return created.id
+  }
+
+  async function createProjectGroup(name: string): Promise<number> {
+    const created = await Promise.resolve(projectGroupRepository.create({ name }))
+    setData((prev) => (prev ? { ...prev, projectGroups: [...prev.projectGroups, created] } : prev))
+    return created.id
   }
 
   async function createProject(name: string, groupId: number | null, apply: (id: number) => void) {
@@ -1490,6 +1503,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           })()}
           descriptions={visibleIndices.map((i) => records[i].record.description)}
           groupCategories={buildGroupSelectCategories(data.counterpartyGroups)}
+          onCreateGroup={createCounterpartyGroup}
           accountCategories={categories.defaultAccounts}
           onSubmit={(input) => createCounterparty(input, createTarget.apply)}
           onCancel={() => setCreateTarget(null)}
@@ -1499,7 +1513,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         <QuickCreateDialog
           title={t('createProjectTitle')}
           nameLabel={t('createProjectName')}
-          groupField={{ label: t('projectGroupLabel'), categories: buildGroupSelectCategories(data.projectGroups) }}
+          groupField={{ label: t('projectGroupLabel'), categories: buildGroupSelectCategories(data.projectGroups), onCreate: createProjectGroup }}
           onSubmit={(name, groupId) => createProject(name, groupId, createTarget.apply)}
           onCancel={() => setCreateTarget(null)}
         />

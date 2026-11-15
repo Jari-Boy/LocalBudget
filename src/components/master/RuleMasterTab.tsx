@@ -61,9 +61,9 @@ export interface RuleMasterTabProps {
   accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll' | 'create'>>
   accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
   counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll' | 'create'>>
-  counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll'>>
+  counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll' | 'create'>>
   projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll' | 'create'>>
-  projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll'>>
+  projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll' | 'create'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
   /**
    * 科目をその場で新規登録するときの初期残高の仕訳の作成に使う(計画Issue #180)。省略時は、行の科目の選択ツリーに
@@ -392,7 +392,15 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
         <QuickCreateDialog
           title="取引先を追加"
           nameLabel="取引先名"
-          groupField={{ label: '取引先グループ', categories: buildGroupSelectCategories(data.counterpartyGroups) }}
+          groupField={{
+            label: '取引先グループ',
+            categories: buildGroupSelectCategories(data.counterpartyGroups),
+            onCreate: async (name) => {
+              const created = await Promise.resolve(counterpartyGroupRepository.create({ name }))
+              setData((prev) => (prev === null ? prev : { ...prev, counterpartyGroups: [...prev.counterpartyGroups, created] }))
+              return created.id
+            },
+          }}
           onSubmit={async (name, groupId) => {
             const created = await counterpartyRepository.create({ name, counterpartyGroupId: groupId })
             setData((prev) => (prev === null ? prev : { ...prev, counterparties: [...prev.counterparties, created] }))
@@ -426,7 +434,15 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
         <QuickCreateDialog
           title="プロジェクトを追加"
           nameLabel="プロジェクト名"
-          groupField={{ label: 'プロジェクトグループ', categories: buildGroupSelectCategories(data.projectGroups) }}
+          groupField={{
+            label: 'プロジェクトグループ',
+            categories: buildGroupSelectCategories(data.projectGroups),
+            onCreate: async (name) => {
+              const created = await Promise.resolve(projectGroupRepository.create({ name }))
+              setData((prev) => (prev === null ? prev : { ...prev, projectGroups: [...prev.projectGroups, created] }))
+              return created.id
+            },
+          }}
           onSubmit={async (name, groupId) => {
             const created = await projectRepository.create({ name, projectGroupId: groupId })
             setData((prev) => (prev === null ? prev : { ...prev, projects: [...prev.projects, created] }))

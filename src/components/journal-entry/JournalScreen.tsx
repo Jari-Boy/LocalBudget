@@ -128,9 +128,9 @@ export interface JournalScreenProps {
   accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll' | 'create'>>
   accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
   counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll' | 'create'>>
-  counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll'>>
+  counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll' | 'create'>>
   projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll' | 'create'>>
-  projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll'>>
+  projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll' | 'create'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
   settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll' | 'create'>>
   recurringTransactionProposalApi: MaybeAsync<Pick<RecurringTransactionProposalRpcApi, 'listPending' | 'confirm' | 'confirmMany' | 'skip'>>
@@ -1724,7 +1724,15 @@ export function JournalScreen(props: JournalScreenProps) {
         <QuickCreateDialog
           title="プロジェクトを追加"
           nameLabel="プロジェクト名"
-          groupField={{ label: 'プロジェクトグループ', categories: buildGroupSelectCategories(data?.projectGroups ?? []) }}
+          groupField={{
+            label: 'プロジェクトグループ',
+            categories: buildGroupSelectCategories(data?.projectGroups ?? []),
+            onCreate: async (name) => {
+              const created = await props.projectGroupRepository.create({ name })
+              setData((prev) => (prev === null ? prev : { ...prev, projectGroups: [...prev.projectGroups, created] }))
+              return created.id
+            },
+          }}
           onSubmit={async (name, groupId) => {
             const created = await props.projectRepository.create({ name, projectGroupId: groupId })
             setData((prev) => (prev === null ? prev : { ...prev, projects: [...prev.projects, created] }))
@@ -1738,7 +1746,15 @@ export function JournalScreen(props: JournalScreenProps) {
         <QuickCreateDialog
           title="取引先を追加"
           nameLabel="取引先名"
-          groupField={{ label: '取引先グループ', categories: buildGroupSelectCategories(data?.counterpartyGroups ?? []) }}
+          groupField={{
+            label: '取引先グループ',
+            categories: buildGroupSelectCategories(data?.counterpartyGroups ?? []),
+            onCreate: async (name) => {
+              const created = await props.counterpartyGroupRepository.create({ name })
+              setData((prev) => (prev === null ? prev : { ...prev, counterpartyGroups: [...prev.counterpartyGroups, created] }))
+              return created.id
+            },
+          }}
           onSubmit={async (name, groupId) => {
             const created = await counterpartyRepository.create({ name, counterpartyGroupId: groupId })
             setData((prev) => (prev === null ? prev : { ...prev, counterparties: [...prev.counterparties, created] }))

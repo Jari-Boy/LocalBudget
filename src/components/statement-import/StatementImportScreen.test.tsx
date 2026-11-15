@@ -960,6 +960,60 @@ describe('StatementImportScreen', () => {
       expect(projects.findAll()[0].projectGroupId).toBe(group.id)
     })
 
+    it('取引先グループの選択欄の「+ グループを新規追加」から名前だけでグループを作り、そのまま選んで取引先を追加できる', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000
+`)
+      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+      openCounterpartyDialog(/スーパー 新宿店/)
+
+      fireEvent.click(dialog('取引先を追加').getByRole('button', { name: /^取引先グループ/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '取引先グループ' })).getByRole('button', { name: '+ グループを新規追加' }))
+      fireEvent.change(dialog('取引先グループを追加').getByLabelText('グループ名'), { target: { value: '新しい系' } })
+      fireEvent.click(dialog('取引先グループを追加').getByRole('button', { name: '追加' }))
+
+      await waitFor(() => expect(new SqlJsCounterpartyGroupRepository(db).findAll().map((g) => g.name)).toEqual(['新しい系']))
+      expect(new SqlJsCounterpartyGroupRepository(db).findAll()[0].parentGroupId).toBeNull()
+      // 作ったグループがそのまま選ばれ、グループの追加ダイアログは閉じる
+      expect(await dialog('取引先を追加').findByRole('button', { name: /^取引先グループ: 新しい系/ })).toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: '取引先グループを追加' })).not.toBeInTheDocument()
+
+      fireEvent.change(dialog('取引先を追加').getByLabelText('取引先名'), { target: { value: '新しい店' } })
+      fireEvent.click(dialog('取引先を追加').getByRole('button', { name: '追加' }))
+
+      await waitFor(() => expect(counterparties.findAll()).toHaveLength(1))
+      expect(counterparties.findAll()[0].counterpartyGroupId).toBe(new SqlJsCounterpartyGroupRepository(db).findAll()[0].id)
+    })
+
+    it('プロジェクトグループもその場で作って選べる。グループの追加をキャンセルすると、何も作らず選択も変わらない', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000
+`)
+      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+      fireEvent.click(rowOf(/スーパー 新宿店/).getByRole('button', { name: /^プロジェクト/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクト' })).getByRole('button', { name: '+ プロジェクトを新規追加' }))
+
+      fireEvent.click(dialog('プロジェクトを追加').getByRole('button', { name: /^プロジェクトグループ/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクトグループ' })).getByRole('button', { name: '+ グループを新規追加' }))
+      fireEvent.change(dialog('プロジェクトグループを追加').getByLabelText('グループ名'), { target: { value: '取り消す系' } })
+      fireEvent.click(dialog('プロジェクトグループを追加').getByRole('button', { name: 'キャンセル' }))
+      expect(new SqlJsProjectGroupRepository(db).findAll()).toEqual([])
+      expect(dialog('プロジェクトを追加').getByRole('button', { name: /^プロジェクトグループ: 未分類/ })).toBeInTheDocument()
+
+      fireEvent.click(dialog('プロジェクトを追加').getByRole('button', { name: /^プロジェクトグループ/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクトグループ' })).getByRole('button', { name: '+ グループを新規追加' }))
+      fireEvent.change(dialog('プロジェクトグループを追加').getByLabelText('グループ名'), { target: { value: '旅行系' } })
+      fireEvent.click(dialog('プロジェクトグループを追加').getByRole('button', { name: '追加' }))
+      await waitFor(() => expect(new SqlJsProjectGroupRepository(db).findAll().map((g) => g.name)).toEqual(['旅行系']))
+      fireEvent.change(dialog('プロジェクトを追加').getByLabelText('プロジェクト名'), { target: { value: '夏の旅行' } })
+      fireEvent.click(dialog('プロジェクトを追加').getByRole('button', { name: '追加' }))
+
+      await waitFor(() => expect(projects.findAll()).toHaveLength(1))
+      expect(projects.findAll()[0].projectGroupId).toBe(new SqlJsProjectGroupRepository(db).findAll()[0].id)
+    })
+
     it('グループを選ばずに追加すると、未分類で作られる', async () => {
       makeMapping()
       renderScreen()
