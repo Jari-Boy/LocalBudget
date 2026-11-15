@@ -193,3 +193,9 @@
 ## Windows上のPythonスクリプトで日本語・改行を含むファイルを書き換えるときは`newline=''`を指定する(計画Issue #205)
 
 `open(path, 'w', encoding='utf-8')`のままだと、Windowsでは`\n`が`\r\n`に変換され、LF運用のファイルの全行が差分になったり、`\r\n`の読み込みで二重に変換されたりする。一括置換などでスクリプトを使うときは、読み書きとも`encoding='utf-8', newline=''`を指定して改行をそのまま保つ。置換後は`git diff --stat`で意図しない全行差分がないか確認する。
+
+## 手動で起動した`npm run dev`を残したままPlaywrightを流すと、開発用のサンプルデータが入った状態のサーバーが再利用され、E2Eが失敗する(計画Issue #207)
+
+**内容**: `playwright.config.ts`の`webServer`は`reuseExistingServer: !process.env.CI`のため、5173番ですでに開発サーバーが動いていると、それをそのまま使う。手動で起動した`npm run dev`には、E2Eのためのダミーデータ投入の抑制(`VITE_DISABLE_DEV_SEED`、`webServer.env`でだけ付く)が効いていないので、開発用のサンプルデータ(口座・仕訳)が入った状態になる。E2Eは「口座・仕訳が0件」のクリーンな初期状態を前提にしているため、`UNIQUE constraint failed: accounts.category, accounts.name`や、同名のボタンが2つ見つかる`strict mode violation`で失敗する。実機の画面確認で開発サーバーを起動したあとにE2Eを流すときは、先に5173番の待ち受けを止める(`Get-NetTCPConnection -LocalPort 5173 -State Listen`で見つけて停止する)。落ちた原因がテストの不具合かを疑う前に、まずこれを確認する。
+
+**参考**: `playwright.config.ts`、`docs/decisions.md`(開発サンプルデータの投入、計画Issue #101)、Issue #207
