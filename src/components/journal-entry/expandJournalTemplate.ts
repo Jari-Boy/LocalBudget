@@ -65,9 +65,10 @@ export function expandJournalTemplate(params: ExpandJournalTemplateParams): Jour
   }
 
   const lines = template.lines.map((line): JournalEntryFormLine => {
-    const account = accountById.get(line.accountId)
+    const account = line.accountId === null ? undefined : accountById.get(line.accountId)
     const accountUsable = account?.isActive === true
-    if (!accountUsable) {
+    // 科目が空の行(追加直後)は、利用者が選ぶだけなので警告は出さない。無効・存在しない科目だけ警告する
+    if (!accountUsable && line.accountId !== null) {
       warnings.push({ lineNo: line.lineNo, kind: 'account', name: account?.name ?? '不明な科目' })
     }
 

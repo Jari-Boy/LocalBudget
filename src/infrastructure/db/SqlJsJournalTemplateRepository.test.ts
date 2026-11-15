@@ -114,6 +114,43 @@ describe('create / findById / findAll', () => {
   })
 })
 
+describe('科目が空の行(「テンプレートを追加」の直後の状態)', () => {
+  it('科目を指定しない行で作成でき、そのまま取得できる', () => {
+    const created = repository.create({
+      name: '新しいテンプレート',
+      lines: [
+        { side: 'debit', accountId: null, amount: null },
+        { side: 'credit', accountId: null, amount: null },
+      ],
+    })
+
+    expect(repository.findById(created.id)!.lines.map((l) => [l.side, l.accountId, l.amount])).toEqual([
+      ['debit', null, null],
+      ['credit', null, null],
+    ])
+  })
+
+  it('科目が空の行は、あとから科目を入れて更新できる', () => {
+    const created = repository.create({
+      name: 'A',
+      lines: [
+        { side: 'debit', accountId: null },
+        { side: 'credit', accountId: null },
+      ],
+    })
+
+    const updated = repository.update(created.id, { lines: blankLines() })
+
+    expect(updated.lines.map((l) => l.accountId)).toEqual([expenseId, assetId])
+  })
+
+  it('科目が空でも、2行以上で借方と貸方の両方が必要という検証は変わらない', () => {
+    expect(() =>
+      repository.create({ name: 'B', lines: [{ side: 'debit', accountId: null }] }),
+    ).toThrow(InvalidJournalTemplateError)
+  })
+})
+
 describe('検証', () => {
   it('全行の金額があって貸借が一致しないときはUnbalancedJournalEntryErrorで拒否する', () => {
     expect(() =>

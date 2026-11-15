@@ -88,7 +88,7 @@ function searchableText(
 ): string {
   const parts = [template.name, template.memo ?? '']
   for (const line of template.lines) {
-    parts.push(accountNameById.get(line.accountId) ?? '')
+    parts.push(line.accountId === null ? '' : (accountNameById.get(line.accountId) ?? ''))
     if (line.counterpartyId !== null) parts.push(counterpartyNameById.get(line.counterpartyId) ?? '')
   }
   return parts.join(' ')

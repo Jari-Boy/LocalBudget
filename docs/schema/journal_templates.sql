@@ -46,13 +46,15 @@ CREATE INDEX idx_journal_templates_group ON journal_templates(journal_template_g
 -- amountがNULLの行は「起票時に入力する」。全行の金額があるときだけ、Repositoryが貸借の一致を検証する
 -- (assertJournalBalance。journal.md 1.3と同じ検証)。世帯メンバーはNULLなら「行では決めない」で、
 -- 起票時に 科目の既定メンバー > 起票者 の順で決まる。精算バッチは、システム管理の立替金・未払金の
--- 科目の行にだけ設定できる(Repositoryが検証、journal_linesと同じ)
+-- 科目の行にだけ設定できる(Repositoryが検証、journal_linesと同じ)。
+-- account_idがNULLの行は「科目がまだ決まっていない行」(「テンプレートを追加」の直後は科目を空のまま作る)。
+-- 画面の保存は科目が決まっていることを求めるが、DBとRepositoryは空を許す
 CREATE TABLE journal_template_lines (
   id                       INTEGER PRIMARY KEY,
   journal_template_id      INTEGER NOT NULL REFERENCES journal_templates(id) ON DELETE CASCADE,
   line_no                  INTEGER NOT NULL CHECK (line_no >= 1),
   side                     TEXT NOT NULL CHECK (side IN ('debit', 'credit')),
-  account_id               INTEGER NOT NULL REFERENCES accounts(id),
+  account_id               INTEGER REFERENCES accounts(id),
   amount                   INTEGER CHECK (amount IS NULL OR amount > 0),
   project_id               INTEGER REFERENCES projects(id),
   household_member_id      INTEGER REFERENCES household_members(id),

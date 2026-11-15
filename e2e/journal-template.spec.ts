@@ -20,6 +20,15 @@ test.describe('仕訳テンプレート', () => {
     const editor = page.getByRole('region', { name: 'テンプレートの編集' })
     await editor.getByLabel('名称').fill('E2Eコンビニ')
     await editor.getByLabel('摘要(任意)').fill('E2E昼食')
+    // 追加した直後は科目が空なので、選ぶまで保存できない
+    await expect(editor.getByRole('button', { name: '保存' })).toBeDisabled()
+    await expect(editor.getByText('科目が未選択の行があります')).toBeVisible()
+    for (const [side, account] of [['借方', '食費'], ['貸方', '現金']] as const) {
+      await editor.getByRole('group', { name: side }).getByRole('button', { name: /^科目/ }).click()
+      const picker = page.getByRole('dialog', { name: '科目' })
+      await picker.getByRole('searchbox', { name: '科目を検索' }).fill(account)
+      await picker.getByRole('button', { name: account, exact: true }).click()
+    }
     await editor.getByRole('button', { name: '保存' }).click()
     await expect(page.getByRole('button', { name: 'E2Eコンビニ', exact: true })).toBeVisible()
 

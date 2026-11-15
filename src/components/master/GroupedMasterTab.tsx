@@ -24,7 +24,8 @@ export interface GroupedMasterActions {
  * 選んだ項目の右パネルに足す固有のフォーム(renderLeafExtra)が、親の「保存」「未保存の警告」と
  * 連動するための状態(計画Issue #201。仕訳テンプレートの摘要・起票者・明細行)。固有のフォームは
  * 内容が変わるたびにsetFormStateで渡し、右パネルの「保存」は名称と一緒にsaveを呼ぶ。
- * validがfalseの間は「保存」が押せず、reasonを注記として出す。保存が失敗したらsaveは例外を投げる
+ * validがfalseの間はreasonを注記として出し、変更(dirty)があるときは「保存」が押せない(変更が無ければ、名称だけ
+ * 保存できる)。保存が失敗したらsaveは例外を投げる
  */
 export interface LeafFormState {
   dirty: boolean
@@ -332,11 +333,14 @@ function NodePanel(props: NodePanelProps) {
   /** 固有のフォームの状態(計画Issue #201)。無ければ名称だけが保存の対象 */
   const [extraForm, setExtraForm] = useState<LeafFormState | null>(null)
   const nameDirty = name.trim() !== node.name
+  /** 固有のフォームが不正か(理由の表示用) */
   const extraInvalid = extraForm !== null && !extraForm.valid
+  /** 保存を止めるのは、固有のフォームが変更されていて、かつ不正なときだけ(未変更なら名称だけ保存できる) */
+  const extraBlocking = extraInvalid && (extraForm?.dirty ?? false)
 
   /** 名称が変わっていれば名称を、固有のフォームが変わっていればその内容を保存する。途中で失敗したらfalse */
   const saveAll = async (): Promise<boolean> => {
-    if (name.trim() === '' || extraInvalid) return false
+    if (name.trim() === '' || extraBlocking) return false
     if (nameDirty && !(await props.onSave(name.trim()))) return false
     if (extraForm?.dirty && !(await props.onSaveExtra(extraForm.save))) return false
     return true
@@ -420,7 +424,7 @@ function NodePanel(props: NodePanelProps) {
         <button
           type="button"
           className="master-btn master-btn--primary"
-          disabled={busy || name.trim() === '' || extraInvalid}
+          disabled={busy || name.trim() === '' || extraBlocking}
           onClick={() => void saveAll()}
         >
           {t('accountTab.save')}

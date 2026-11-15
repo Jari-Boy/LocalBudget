@@ -74,7 +74,8 @@ const NEW_TEMPLATE_NAME = '新しいテンプレート'
  * (JournalTemplateExtra。行の編集部品は定期仕訳・仕訳の起票と共通で、金額は空欄にできる)を編集する。
  * 「保存」は名称と摘要・起票者・明細行をまとめて保存する。テンプレートは仕訳から参照されないため、
  * いつでも削除できる(2回押し)。並び順は「テンプレートから起票」のダイアログの並びにそのまま使われる。
- * 「テンプレートを追加」は、費用の科目と資産の科目で金額が空欄の2行を持つテンプレートを作り、編集パネルを開く。
+ * 「テンプレートを追加」は、科目も金額も空の借方・貸方の2行を持つテンプレートを作り、編集パネルを開く
+ * (科目は利用者が選ぶ。選ぶまで、摘要・金額・行は保存できず、名称だけ保存できる)。
  */
 export function JournalTemplateTab(props: JournalTemplateTabProps) {
   const { t } = useTranslation('master')
@@ -192,22 +193,18 @@ export function JournalTemplateTab(props: JournalTemplateTabProps) {
           parentGroupId,
         })
       ).id,
-    createLeaf: async (groupId) => {
-      const [debit, credit] = pickDefaultAccounts(data.accounts)
-      if (debit === undefined || credit === undefined) {
-        throw new Error('テンプレートの行にする科目が2つ以上必要です')
-      }
-      return (
+    // 科目は空のまま作る(利用者が選ぶ。選ぶまで、摘要・金額・行は保存できない)
+    createLeaf: async (groupId) =>
+      (
         await templateRepo.create({
           name: uniqueName(NEW_TEMPLATE_NAME, data.templates.map((x) => x.name)),
           groupId,
           lines: [
-            { side: 'debit', accountId: debit.id, amount: null },
-            { side: 'credit', accountId: credit.id, amount: null },
+            { side: 'debit', accountId: null, amount: null },
+            { side: 'credit', accountId: null, amount: null },
           ],
         })
-      ).id
-    },
+      ).id,
     rename: async (nodeId, name) => {
       const { kind, id } = parseNodeId(nodeId)
       if (kind === 'group') await groupRepo.update(id, { name })
@@ -255,15 +252,4 @@ export function JournalTemplateTab(props: JournalTemplateTabProps) {
       }}
     />
   )
-}
-
-/**
- * 新しいテンプレートの既定の行に使う科目。借方は有効な費用の科目、貸方は有効な資産の科目を優先し、
- * 無ければ有効な別の科目で補う(資本の科目は使わない)。2つ見つからなければundefinedを含む
- */
-function pickDefaultAccounts(accounts: readonly Account[]): [Account | undefined, Account | undefined] {
-  const usable = accounts.filter((a) => a.isActive && a.category !== 'equity')
-  const debit = usable.find((a) => a.category === 'expense') ?? usable[0]
-  const credit = usable.find((a) => a.category === 'asset' && a.id !== debit?.id) ?? usable.find((a) => a.id !== debit?.id)
-  return [debit, credit]
 }

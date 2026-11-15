@@ -119,7 +119,7 @@ describe('JournalTemplateTab: 見た目(仕訳一覧と同じ)', () => {
 })
 
 describe('JournalTemplateTab: 追加', () => {
-  it('「テンプレートを追加」で、既定の科目(費用と資産)・空欄の金額のテンプレートが作られ、編集パネルが開く', async () => {
+  it('「テンプレートを追加」で、科目も金額も空のテンプレートが作られ、編集パネルが開く', async () => {
     renderTab()
 
     fireEvent.click(await screen.findByRole('button', { name: 'テンプレートを追加' }))
@@ -128,9 +128,42 @@ describe('JournalTemplateTab: 追加', () => {
     const [created] = templates.findAll()
     expect(created.name).toBe('新しいテンプレート')
     expect(created.lines.map((l) => [l.side, l.accountId, l.amount])).toEqual([
-      ['debit', expenseId, null],
-      ['credit', cashId, null],
+      ['debit', null, null],
+      ['credit', null, null],
     ])
+  })
+
+  it('科目が空の間は、一覧の内容に「科目未設定」と出て、編集パネルに科目を選ぶよう案内が出る', async () => {
+    renderTab()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'テンプレートを追加' }))
+
+    await screen.findByRole('region', { name: 'テンプレートの編集' })
+    expect(panel().getByText('科目が未選択の行があります')).toBeInTheDocument()
+    expect(screen.getByText('科目未設定 / 科目未設定')).toBeInTheDocument()
+  })
+
+  it('科目が空のままでも、名称だけは変えて保存できる(科目を選ぶまで、摘要・金額・行の保存は求めない)', async () => {
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: 'テンプレートを追加' }))
+
+    await screen.findByRole('region', { name: 'テンプレートの編集' })
+    fireEvent.change(panel().getByLabelText('名称'), { target: { value: 'コンビニ' } })
+    expect(panel().getByRole('button', { name: '保存' })).toBeEnabled()
+    fireEvent.click(panel().getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(templates.findAll()[0].name).toBe('コンビニ'))
+  })
+
+  it('科目が空のまま摘要を変えると、保存ボタンが無効になり、科目を選ぶよう案内が出る', async () => {
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: 'テンプレートを追加' }))
+
+    await screen.findByRole('region', { name: 'テンプレートの編集' })
+    fireEvent.change(panel().getByLabelText('摘要(任意)'), { target: { value: '昼食' } })
+
+    expect(panel().getByRole('button', { name: '保存' })).toBeDisabled()
+    expect(panel().getByText('科目が未選択の行があります')).toBeInTheDocument()
   })
 
   it('同じ名前があるときは連番を付けて作る', async () => {

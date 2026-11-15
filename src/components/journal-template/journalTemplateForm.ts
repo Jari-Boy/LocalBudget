@@ -47,7 +47,7 @@ function parseAmountInput(input: string): number | null {
 export function buildTemplateUpdateInput(form: JournalTemplateForm): UpdateJournalTemplateInput {
   const lines: JournalTemplateLineInput[] = form.lines.map(({ line }) => ({
     side: line.side as 'debit' | 'credit',
-    accountId: line.accountId as number,
+    accountId: line.accountId,
     amount: parseAmountInput(line.amountInput),
     projectId: line.projectId,
     householdMemberId: line.householdMemberId,

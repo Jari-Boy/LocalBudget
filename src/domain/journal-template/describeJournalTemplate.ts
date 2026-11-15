@@ -13,7 +13,7 @@ export function describeTemplateContent(
     const names: string[] = []
     for (const line of template.lines) {
       if (line.side !== side) continue
-      const name = accountNameById.get(line.accountId) ?? '不明な科目'
+      const name = line.accountId === null ? '科目未設定' : (accountNameById.get(line.accountId) ?? '不明な科目')
       if (!names.includes(name)) names.push(name)
     }
     return names.join('・')

@@ -119,6 +119,7 @@ export class SqlJsJournalTemplateRepository implements JournalTemplateRepository
   private assertSettlementBatchLines(lines: readonly JournalTemplateLineInput[]): void {
     for (const line of lines) {
       if (line.settlementBatchId === undefined || line.settlementBatchId === null) continue
+      if (line.accountId === undefined || line.accountId === null) continue
       const [result] = this.db.exec('SELECT category, is_system_managed FROM accounts WHERE id = ?', [line.accountId])
       const row = result?.values[0]
       if (!row) continue
@@ -138,7 +139,7 @@ export class SqlJsJournalTemplateRepository implements JournalTemplateRepository
           templateId,
           index + 1,
           line.side,
-          line.accountId,
+          line.accountId ?? null,
           line.amount ?? null,
           line.projectId ?? null,
           line.householdMemberId ?? null,
@@ -263,7 +264,7 @@ function mapRowToLine(columns: string[], values: unknown[]): JournalTemplateLine
   return {
     lineNo: get<number>('line_no'),
     side: get<'debit' | 'credit'>('side'),
-    accountId: get<number>('account_id'),
+    accountId: get<number | null>('account_id'),
     amount: get<number | null>('amount'),
     projectId: get<number | null>('project_id'),
     householdMemberId: get<number | null>('household_member_id'),

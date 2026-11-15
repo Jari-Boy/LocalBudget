@@ -10,7 +10,7 @@ import { describeTemplateContent, summarizeTemplateAmount } from './describeJour
 const line = (
   lineNo: number,
   side: 'debit' | 'credit',
-  accountId: number,
+  accountId: number | null,
   amount: number | null,
 ): JournalTemplateLine => ({
   lineNo,
@@ -58,6 +58,12 @@ describe('describeTemplateContent', () => {
     ])
 
     expect(describeTemplateContent(t, names)).toBe('食費・日用品費 / 現金')
+  })
+
+  it('科目が空の行(追加直後)は「科目未設定」と表す', () => {
+    expect(describeTemplateContent(template([line(1, 'debit', null, null), line(2, 'credit', null, null)]), names)).toBe(
+      '科目未設定 / 科目未設定',
+    )
   })
 
   it('名前が分からない科目は「不明な科目」と表す', () => {

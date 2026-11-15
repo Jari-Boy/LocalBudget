@@ -8,7 +8,8 @@ export interface JournalTemplateLine {
   /** 1始まりの行番号(入力順) */
   lineNo: number
   side: JournalLineSide
-  accountId: number
+  /** nullは科目がまだ決まっていない行(「テンプレートを追加」の直後)。起票時も科目は空のまま展開される */
+  accountId: number | null
   /** nullは「起票時に入力する」(空欄)。値があるときは正の整数 */
   amount: number | null
   projectId: number | null
@@ -20,7 +21,7 @@ export interface JournalTemplateLine {
 
 export interface JournalTemplateLineInput {
   side: JournalLineSide
-  accountId: number
+  accountId?: number | null
   amount?: number | null
   projectId?: number | null
   householdMemberId?: number | null

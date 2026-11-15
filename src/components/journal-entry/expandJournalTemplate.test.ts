@@ -146,6 +146,13 @@ describe('expandJournalTemplate: 無効・存在しない項目', () => {
     expect(result.warnings).toEqual([{ lineNo: 1, kind: 'account', name: '旧費用' }])
   })
 
+  it('科目が空の行(追加直後)は、警告を出さずに科目を空のまま展開する', () => {
+    const result = expand(template({ lines: [line({ lineNo: 1, side: 'debit', accountId: null }), line({ lineNo: 2, side: 'credit', accountId: null })] }))
+
+    expect(result.lines.map((l) => l.accountId)).toEqual([null, null])
+    expect(result.warnings).toEqual([])
+  })
+
   it('一覧に無い科目は「不明な科目」として警告する', () => {
     const result = expand(template({ lines: [line({ lineNo: 1, side: 'debit', accountId: 99 }), line({ lineNo: 2, side: 'credit', accountId: 2 })] }))
 
