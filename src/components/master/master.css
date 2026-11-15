@@ -545,3 +545,10 @@ label.master-btn {
   gap: 4px;
   justify-content: flex-end;
 }
+
+/* マウスオーバーで説明を出す印(計画Issue #205) */
+.master-hint {
+  color: var(--color-text-muted);
+  cursor: help;
+  font-size: var(--font-size-sm, var(--font-size-base));
+}

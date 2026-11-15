@@ -877,6 +877,26 @@ describe('AccountMasterTab: 残高の照合欄(計画Issue #205)', () => {
     expect(panel('科目の編集').getByLabelText('名称')).toHaveValue('現金')
   })
 
+  it('システム管理の科目(立替金・未払金など)には、残高の照合欄を出さない', async () => {
+    accounts.create({ category: 'asset', name: '立替金', isReconcilable: false, hasExternalStatement: false, isSystemManaged: true })
+    renderTab()
+
+    await open('立替金')
+
+    expect(await screen.findByRole('region', { name: '科目の編集' })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '残高の照合' })).toBeNull()
+  })
+
+  it('自動調整の説明は常時表示せず、マウスオーバー(title)で表示する', async () => {
+    accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
+    renderTab()
+    await open('現金')
+    await ready()
+
+    expect(section().queryByText(/ずれた区間ごとに調整の仕訳が自動で入ります/)).toBeNull()
+    expect(section().getAllByTitle(/ずれた区間ごとに調整の仕訳が自動で入ります/).length).toBeGreaterThan(0)
+  })
+
   it('自動調整のチェックボックスは初期値がオンで、外すと科目の設定に保存される', async () => {
     const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false, hasExternalStatement: false })
     renderTab()

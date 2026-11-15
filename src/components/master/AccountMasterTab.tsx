@@ -378,7 +378,7 @@ export function AccountMasterTab({
             usage.get('account', parseNodeId(selected.id).id).initialBalanceEntryIds.length > 0
           }
           reconciliation={
-            accountBalanceRecordRepository && selected.kind === 'leaf' && selectedAccount && summarizeAccountRegistration(selectedAccount)
+            accountBalanceRecordRepository && selected.kind === 'leaf' && selectedAccount && !selectedAccount.isSystemManaged && summarizeAccountRegistration(selectedAccount)
               ? {
                   repository: accountBalanceRecordRepository,
                   reloadToken: data.entries,

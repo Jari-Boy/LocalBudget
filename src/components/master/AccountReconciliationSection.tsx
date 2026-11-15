@@ -139,16 +139,19 @@ export function AccountReconciliationSection(props: AccountReconciliationSection
     <section className="master-subsection" aria-label={t('reconcile.title')}>
       <h3 className="master-subsection__title">{t('reconcile.title')}</h3>
 
-      <label className="master-check">
+      <label className="master-check" title={t('reconcile.autoAdjustNote')}>
         <input
           type="checkbox"
+          title={t('reconcile.autoAdjustNote')}
           checked={account.autoBalanceAdjustment}
           disabled={disabled}
           onChange={(event) => void perform(() => props.onToggleAutoAdjust(event.target.checked))}
         />
         {t('reconcile.autoAdjust')}
+        <span className="master-hint" aria-hidden="true" title={t('reconcile.autoAdjustNote')}>
+          ⓘ
+        </span>
       </label>
-      <p className="master-note">{t('reconcile.autoAdjustNote')}</p>
 
       {usesStatement ? (
         <p className="master-note">{t('reconcile.statementOnly')}</p>
