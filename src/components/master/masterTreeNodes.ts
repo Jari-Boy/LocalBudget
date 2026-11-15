@@ -153,7 +153,7 @@ export function buildCounterpartyTree({
           parentId: c.counterpartyGroupId === null ? null : groupNodeId(c.counterpartyGroupId),
           name: c.name,
           cells: [c.defaultAccountId === null ? '' : (accountNameById.get(c.defaultAccountId) ?? ''), stateText(c)],
-          ...(patternCount > 0 ? { note: `パターン${patternCount}件` } : {}),
+          ...(patternCount > 0 ? { note: `キーワード${patternCount}件` } : {}),
         },
       }
     }),

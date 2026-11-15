@@ -427,3 +427,80 @@
   font-size: 16px;
   font-weight: 600;
 }
+
+/* 取引先の設定ポップアップ(計画Issue #207)。TreeSelectのポップアップ(.tree-select__popup)に重ねて使う */
+.import-marker {
+  font-size: 11px;
+  align-self: flex-start;
+}
+
+.import-settings {
+  gap: 10px;
+  padding: 12px;
+  font-size: var(--font-size-sm);
+  overflow-y: auto;
+}
+
+.import-settings__title {
+  margin: 0;
+  font-size: var(--font-size-brand);
+  font-weight: 700;
+}
+
+.import-settings__pattern {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.import-settings__row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.import-settings__row .tree-select {
+  flex: 1 1 auto;
+}
+
+.import-settings__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.import-settings__error {
+  font-size: var(--font-size-xs);
+}
+
+.import-settings__section {
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.import-settings__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* 登録済み・新規のタグ。同じ形で色だけ変える */
+.import-tag {
+  flex: none;
+  min-width: 44px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  font-size: 11px;
+  text-align: center;
+  border-radius: 8px;
+}
+
+.import-tag--new {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.import-tag--registered {
+  background: var(--color-tag-neutral-bg);
+  color: var(--color-tag-neutral-text);
+}

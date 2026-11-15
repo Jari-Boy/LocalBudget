@@ -173,7 +173,7 @@ describe('buildCounterpartyTree', () => {
     })
   })
 
-  it('登録済みパターンがあれば、名称の横の補足に件数を出す', () => {
+  it('登録済みキーワードがあれば、名称の横の補足に件数を出す', () => {
     const { nodes } = buildCounterpartyTree({
       groups: [],
       counterparties: [counterparty({ id: 2, name: 'イオン' }), counterparty({ id: 3, name: 'Amazon' })],
@@ -181,7 +181,7 @@ describe('buildCounterpartyTree', () => {
       patternCountById: new Map([[2, 3]]),
     })
 
-    expect(nodes.find((n) => n.id === leafNodeId(2))!.note).toBe('パターン3件')
+    expect(nodes.find((n) => n.id === leafNodeId(2))!.note).toBe('キーワード3件')
     expect(nodes.find((n) => n.id === leafNodeId(3))!.note).toBeUndefined()
   })
 })
