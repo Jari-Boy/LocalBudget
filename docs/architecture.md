@@ -122,7 +122,7 @@ interface StorageAdapter {
 - ドメインは複式簿記をベースとするため、Repository層は単純な「取引（Transaction）」ではなく、**勘定科目（Account）・仕訳（JournalEntry）・仕訳明細（借方/貸方の各行）**を中心としたインターフェース（例: `AccountRepository`、`JournalEntryRepository`）で設計する。エンティティの詳細な属性・制約（勘定科目の分類、貸借バランスの検証ルール等）は`docs/domain.md`で別途定義し、本ドキュメントでは扱わない。
 - DBアクセス層のテストはこれらのRepositoryインターフェースに対して書く。sql.jsを採用しているため、Vitest上でそのまま統合テストとして記述できる。
 - **操作履歴（ロールバック、計画Issue #202）**: Worker内の`createRepositoryRegistry`が、マイグレーション・seed適用後に`OperationHistory`（`src/infrastructure/history/`）で全表（sqlite内部表を除く）にTEMPトリガーを張り、書き込みを打ち消す逆操作SQLをTEMP表（接続のメモリ）へ記録する。Repositoryの各メソッド呼び出し（1回のRPC）を1件として記録し（`recordedByHistory`のProxy）、複数RPCのバッチはメインスレッドの`runInHistoryGroup`（`history.beginGroup`〜`endGroup`）で1件にまとめる。履歴は`db.export()`に含まれないため永続化・バックアップの対象外で、リロードで消える。メインスレッドへは`history`としてRPCに公開され（`HistoryRpcApi`）、操作履歴画面（`/history`）が「選んだ操作以降」の取消を呼ぶ。設計判断は`docs/decisions.md`、永続履歴ではない旨は`docs/domain/journal.md` 1.5を参照。新しいテーブルは`rowid`表であること（`WITHOUT ROWID`は履歴の対象外）。
-- 起動時に`PRAGMA user_version`を用いた簡易マイグレーションランナーを実行し、スキーマバージョンを管理する。
+- 起動時に`PRAGMA user_version`を用いたマイグレーションを実行し、スキーマバージョンを管理する(`openMigratedDatabase`、計画Issue #42)。新規DBは`docs/schema/*.sql`(最新)をそのまま流して`user_version`を最新にし、既存DBは差分(`SCHEMA_PLAN.diffs`)を1つのトランザクションで順に流す。既存DBの移行では、①流す前に元のバイト列を保存先ごとのバックアップ(IndexedDBは別キー、フォルダ保存は同じフォルダの別ファイル。直近の1つだけ)へ保存 → ②差分を適用(外部キー検査を止め、最後に`foreign_key_check`、失敗はロールバック) → ③成功したら直ちに保存、の順に行う。失敗、または`user_version`が最新より大きい(新しいアプリで保存された)DBのときは、起動を止めて`worker-init-error`に種類(`reason`)と元のバイト列を載せ、メインスレッドの`DbClientProvider`が起動エラー画面(`StartupErrorScreen`)を出す(元のデータの書き出し、アプリの更新、再読み込み)。書き込みの権利のない(読み取り専用の)タブは、メモリ上でだけ移行し、バックアップも保存もしない。凍結前の運用・凍結手順・差分の書き方は`docs/guides/schema-migration.md`、判断は`docs/decisions.md` 2026-11-15を参照。
 - 将来の競合解決（マルチデバイス同期）に備え、主要テーブル（仕訳・勘定科目・予算など）には`updated_at`（更新時刻）カラムを持たせておく。現時点では競合解決ロジックは実装しないが、将来の拡張の余地を残す設計とする。
 
 ### 5.1 ドメイン層とインフラ層の分離
@@ -190,9 +190,9 @@ interface StorageAdapter {
 - 未保存の編集の警告を、マスタの各タブ（勘定科目・取引先・プロジェクト・世帯メンバー・明細マッピング）と仕訳画面で統一した（計画Issue #190）。共通部品は`src/components/common/unsaved-changes/`に置く。`useUnsavedEditGuard`は編集パネルが「未保存か」と「保存」を渡すと、確認の登録・リロード時の警告（`beforeunload`）・ダイアログを引き受け、`useGuardedAction`は行の選択・新規作成などの画面内の操作を確認に通してから実行する。画面外への移動は、#169で導入した`GuardedLink`とコンテキストのガードを再利用する。明細取込画面(`StatementImportScreen`)にも同じ部品で警告を出す(計画Issue #193。取り込んだ行の入力が初期値から変わっているときのみ、サイドナビ・「マッピングを編集」・新しいCSVの選択・リロードで確認する)。設定画面に「編集内容の保護」（出す/出さない）を置き、値は`localStorage`（`localbudget:unsaved-warning`、`unsavedWarningSetting.ts`）に保存する。既定は「出す」で、DB・バックアップには含めない。判断の詳細は`docs/decisions.md` 2026-11-14（計画Issue #190）を参照。
 詳細は`docs/decisions.md`の2026-11-10の項を参照。
 
-**旧バックアップの取込は対象外とする場合がある(計画Issue #169)**: `journal_lines.household_member_id`をNOT NULLにした際、開発用DBは作り直す前提のため、データ移行用のマイグレーション(バージョン2以降・テーブル再作成)は作らなかった。したがって、NULL行を含む、または`journal_lines.household_member_id`がNULL許容の旧スキーマのバックアップは取込の対象外で、取込時のスキーマ検証(`assertValidDatabaseSchema`)が`InvalidBackupFileError`で拒否する。スキーマを破壊的に変える際は、この前提(作り直し・旧バックアップ非対応)で進めるか、マイグレーションを書くかをその都度決める(判断は`docs/decisions.md` 2026-11-09、計画Issue #169)。
+**旧バックアップの取込(計画Issue #169・#42)**: 凍結前(本番運用の開始前)は、`journal_lines.household_member_id`をNOT NULLにした際のように、DDLを直接修正して開発用DBを作り直す。そのため、NULL許容の旧スキーマのバックアップは、取込時のスキーマ検証(`assertValidDatabaseSchema`)が`InvalidBackupFileError`で拒否する。この検査は、初回の本番デプロイの直前の凍結時に外す(`docs/guides/schema-migration.md`)。凍結後は、本番で公開したバージョン以降のバックアップを必ず読み込める(読み込み時の検証で、使い捨てのDBに差分を流して確かめ、保存するのは元のバイト列。起動時に改めて差分が流れる)。アプリより新しい`user_version`のバックアップは、起動時と同じ理由(消えた列を読んで画面が壊れるおそれ)で、`InvalidBackupFileError`で拒否する。
 
-**マイグレーションのバージョン2(計画Issue #201)**: 仕訳テンプレートの追加で、`PRAGMA user_version`が2になった。バージョン1のDBには`docs/schema/journal_templates.sql`だけを差分適用する(追加のみのため、上記の「作り直し前提」とは別にマイグレーションを書いた。判断は`docs/decisions.md` 2026-11-15)。旧バックアップ(テンプレートの表を持たないバージョン1のDB)の取込を止めないため、`journal_templates`系のテーブルは`assertValidDatabaseSchema`の必須テーブルには加えていない(取込時の`runMigrations`で追加される)。
+**マイグレーションのバージョン2(計画Issue #201)**: 仕訳テンプレートの追加で、`PRAGMA user_version`が2になった。バージョン1のDBには`docs/schema/journal_templates.sql`だけを差分適用する(新規DBは最新スキーマに含まれる)。旧バックアップ(テンプレートの表を持たないバージョン1のDB)の取込を止めないため、`journal_templates`系のテーブルは`assertValidDatabaseSchema`の必須テーブルには加えていない(取込時の`runMigrations`で追加される)。差分の仕組みと凍結は計画Issue #42(`docs/guides/schema-migration.md`)。
 
 ## 9. 既知の制約・将来課題
 

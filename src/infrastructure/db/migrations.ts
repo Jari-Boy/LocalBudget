@@ -11,6 +11,7 @@ import recurringTransactionsSql from '../../../docs/schema/recurring_transaction
 import reconciliationSql from '../../../docs/schema/reconciliation.sql?raw'
 import statementImportSql from '../../../docs/schema/statement_import.sql?raw'
 import journalTemplatesSql from '../../../docs/schema/journal_templates.sql?raw'
+import seedMarkersSql from '../../../docs/schema/seed_markers.sql?raw'
 
 import { MigrationFailedError, SchemaTooNewError } from './migrationErrors'
 
@@ -51,6 +52,9 @@ const LATEST_SCHEMA_SQL: readonly string[] = [
   reconciliationSql,
   statementImportSql,
   journalTemplatesSql,
+  // 起動時の初期投入(seed)の印。seed側も CREATE TABLE IF NOT EXISTS で作るが、最新スキーマに含めておかないと、
+  // 「新規作成」と「固定データ+差分」の比較が、seedが作る表の有無でずれる(計画Issue #42)
+  seedMarkersSql,
 ]
 
 export const SCHEMA_PLAN: MigrationPlan = {
