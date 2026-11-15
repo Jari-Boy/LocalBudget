@@ -139,7 +139,8 @@ describe('JournalTemplateTab: 追加', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'テンプレートを追加' }))
 
     await screen.findByRole('region', { name: 'テンプレートの編集' })
-    expect(panel().getByText('科目が未選択の行があります')).toBeInTheDocument()
+    // フォームの状態は、パネルが出た後のuseEffectで親へ渡るため、案内は少し遅れて出る
+    expect(await panel().findByText('科目が未選択の行があります')).toBeInTheDocument()
     expect(screen.getByText('科目未設定 / 科目未設定')).toBeInTheDocument()
   })
 
@@ -148,6 +149,8 @@ describe('JournalTemplateTab: 追加', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'テンプレートを追加' }))
 
     await screen.findByRole('region', { name: 'テンプレートの編集' })
+    // 親へフォームの状態が渡る(科目が空で不正だが未変更)のを待ってから、名称だけ変える
+    await panel().findByText('科目が未選択の行があります')
     fireEvent.change(panel().getByLabelText('名称'), { target: { value: 'コンビニ' } })
     expect(panel().getByRole('button', { name: '保存' })).toBeEnabled()
     fireEvent.click(panel().getByRole('button', { name: '保存' }))
@@ -162,8 +165,8 @@ describe('JournalTemplateTab: 追加', () => {
     await screen.findByRole('region', { name: 'テンプレートの編集' })
     fireEvent.change(panel().getByLabelText('摘要(任意)'), { target: { value: '昼食' } })
 
-    expect(panel().getByRole('button', { name: '保存' })).toBeDisabled()
-    expect(panel().getByText('科目が未選択の行があります')).toBeInTheDocument()
+    await waitFor(() => expect(panel().getByRole('button', { name: '保存' })).toBeDisabled())
+    expect(await panel().findByText('科目が未選択の行があります')).toBeInTheDocument()
   })
 
   it('同じ名前があるときは連番を付けて作る', async () => {
