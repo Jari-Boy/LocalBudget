@@ -85,7 +85,6 @@
   "settingsLink": "取引先の設定",
   "settingsLinkLabel": "{{desc}}の取引先の設定",
   "settingsTitle": "取引先の設定: {{name}}",
-  "settingsNote": "※「新規」のキーワードは、この行を確定したときに登録されます。",
   "settingsLoading": "キーワードを読み込み中…",
   "settingsPatternsLabel": "取引先のキーワード",
   "patternRowsTitle": "この明細で、このキーワードを含む行の数",

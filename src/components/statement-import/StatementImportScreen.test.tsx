@@ -589,7 +589,7 @@ describe('StatementImportScreen', () => {
     }
     const patternsOf = (cpId: number) => counterparties.findPatternsByCounterparty(cpId).map((p) => p.pattern)
 
-    it('「取引先の設定」は推定と違う取引先を選んだ行にだけ出て、開くとタイトル・注意書き・登録済みと新規のキーワードが並ぶ', async () => {
+    it('「取引先の設定」は推定と違う取引先を選んだ行にだけ出て、開くとタイトル・登録済みと新規のキーワードが並ぶ(確定時に登録の注記は出ない)', async () => {
       makeMapping()
       const cp = counterparties.create({ name: 'スーパーA' })
       counterparties.addPattern(cp.id, 'ローソン')
@@ -605,7 +605,8 @@ describe('StatementImportScreen', () => {
       await openCounterpartySettings('スーパー 新宿店')
 
       expect(screen.getByRole('dialog', { name: '取引先の設定: スーパーA' })).toBeInTheDocument()
-      expect(settings().getByText('※「新規」のキーワードは、この行を確定したときに登録されます。')).toBeInTheDocument()
+      // 「+ キーワードを追加」で足したキーワードは入力を終えた時点で保存されるため、「確定時に登録」の注記は出さない(計画Issue #218)
+      expect(settings().queryByText(/この行を確定したときに登録されます/)).not.toBeInTheDocument()
       expect(settings().getByText('取引先のキーワード')).toBeInTheDocument()
       await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('ローソン'))
       expect(settings().getByLabelText('キーワード2')).toHaveValue('スーパー 新宿店')
