@@ -155,7 +155,7 @@ interface SettingsView {
   loaded: boolean
   /** 保存済みのキーワード。textは入力中の文字列、savedTextは保存済みの文字列 */
   registered: { key: string; id: number; text: string; savedText: string; accountId: number | null }[]
-  /** 「+ キーワードを追加」で足した、入力を終えるまで保存しないキーワード */
+  /** 「キーワードを追加」で足した、入力を終えるまで保存しないキーワード */
   typing: { key: string; text: string; accountId: number | null }[]
   /** 入力を終えたときの検証で見つかった問題(キーごと) */
   errors: Record<string, KeywordError>
@@ -974,7 +974,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     for (const keyword of input.keywords) {
       try {
         await Promise.resolve(
-          keywordRuleRepository.create({ pattern: keywordOf(keyword), counterpartyId: created.id, accountId: input.accountId }),
+          keywordRuleRepository.create({ pattern: keywordOf(keyword.text), counterpartyId: created.id, accountId: keyword.accountId }),
         )
       } catch {
         // 取引先の追加は成功しているので、残りの保存は続け、保存できなかったことは最後に知らせる
@@ -994,7 +994,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           records,
           descriptions: records.map((r) => r.record.description),
           done: prev.done,
-          settings: { counterpartyId: created.id, keywords: input.keywords.map((text) => ({ text, accountId: input.accountId })) },
+          settings: { counterpartyId: created.id, keywords: input.keywords },
           accounts: accountList,
         })
         return result.applied === 0 ? prev : { ...prev, rows: result.states, initialRows: result.initialStates }
