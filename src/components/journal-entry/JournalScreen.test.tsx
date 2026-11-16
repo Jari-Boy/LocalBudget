@@ -641,7 +641,7 @@ describe('JournalScreen', () => {
   it('新規仕訳で保存して続けて入力すると、作成して空の新しい仕訳が開く', async () => {
     const props = setup()
     await ready()
-    fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+    fireEvent.click(screen.getByRole('button', { name: '手入力で起票' }))
     expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('')
     expect(within(detail()).getByRole('heading', { name: '新しい仕訳' })).toBeInTheDocument()
     // 科目を選ばずに保存しようとしても作成されない
@@ -654,7 +654,7 @@ describe('JournalScreen', () => {
     async function openEditorWithExpense(overrides: Parameters<typeof setup>[0] = {}) {
       const props = setup(overrides)
       await ready()
-      fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+      fireEvent.click(screen.getByRole('button', { name: '手入力で起票' }))
       fireEvent.click(within(detail()).getAllByRole('button', { name: /^科目/ })[0])
       fireEvent.click(within(screen.getByRole('dialog', { name: '科目' })).getByRole('button', { name: '食費' }))
       return props
@@ -704,7 +704,7 @@ describe('JournalScreen', () => {
     await ready()
     expect(within(detail()).queryByRole('button', { name: '保存して続けて入力' })).not.toBeInTheDocument()
     expect(within(detail()).getByRole('button', { name: '保存' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+    fireEvent.click(screen.getByRole('button', { name: '手入力で起票' }))
     expect(within(detail()).getByRole('button', { name: '保存して続けて入力' })).toBeInTheDocument()
   })
 
@@ -732,7 +732,7 @@ describe('JournalScreen', () => {
     it('新規仕訳では、明細行の世帯メンバーの既定値は起票者(有効な最初のメンバー)になる', async () => {
       setup()
       await ready()
-      fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+      fireEvent.click(screen.getByRole('button', { name: '手入力で起票' }))
 
       const memberSelects = within(detail()).getAllByRole('combobox', { name: '世帯メンバー' })
       expect(memberSelects).toHaveLength(2)
@@ -817,11 +817,11 @@ describe('JournalScreen', () => {
       expect(screen.getByRole('tab', { name: /下書き/ })).toHaveAttribute('aria-selected', 'true')
     })
 
-    it('編集してから「新規仕訳」を押すときも確認する', async () => {
+    it('編集してから「手入力で起票」を押すときも確認する', async () => {
       setup()
       await ready()
       editMemo('ランチ(修正中)')
-      fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+      fireEvent.click(screen.getByRole('button', { name: '手入力で起票' }))
       expect(leaveDialog()).toBeInTheDocument()
       expect(memoInput()).toHaveValue('ランチ(修正中)')
     })
@@ -942,7 +942,7 @@ describe('JournalScreen', () => {
     async function saveNewAsDraft(prepare: () => void = () => {}) {
       const props = setup()
       await ready()
-      fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+      fireEvent.click(screen.getByRole('button', { name: '手入力で起票' }))
       prepare()
       fireEvent.click(within(detail()).getByRole('button', { name: '下書きに保存' }))
       return props
@@ -975,7 +975,7 @@ describe('JournalScreen', () => {
   it('未入力が多い新規仕訳を編集して移動するときは、「保存して移動」で下書きとして保存し、検証エラーで移動が止まらない(計画Issue #183)', async () => {
     const props = setup()
     await ready()
-    fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+    fireEvent.click(screen.getByRole('button', { name: '手入力で起票' }))
     editMemo('書きかけの新規')
     fireEvent.click(screen.getByRole('tab', { name: '下書き 1' }))
     fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
@@ -1346,9 +1346,9 @@ describe('JournalScreen(明細行単位)', () => {
       expect(memoInput()).toHaveValue('家賃')
     })
 
-    it('「新規仕訳」を押すと、入力欄のある仕訳単位の画面で開く。保存した表示方式は変わらない', async () => {
+    it('「手入力で起票」を押すと、入力欄のある仕訳単位の画面で開く。保存した表示方式は変わらない', async () => {
       await setupLineView()
-      fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+      fireEvent.click(screen.getByRole('button', { name: '手入力で起票' }))
       expect(screen.getByRole('heading', { name: '新しい仕訳' })).toBeInTheDocument()
       expect(screen.queryByRole('table', { name: '仕訳の明細行' })).not.toBeInTheDocument()
       expect(localStorage.getItem(VIEW_KEY)).toBe('line')
@@ -1803,7 +1803,7 @@ describe('JournalScreen: テンプレートから起票(計画Issue #201)', () =
   it('入力途中の内容があるときは、ボタンを押すと未保存の確認が出て、破棄するとダイアログが開く', async () => {
     setup({ templates: [template()] })
     await ready()
-    fireEvent.click(screen.getByRole('button', { name: '新規仕訳' }))
+    fireEvent.click(screen.getByRole('button', { name: '手入力で起票' }))
     editMemo('入力途中')
 
     fireEvent.click(pickerButton())
@@ -1895,5 +1895,19 @@ describe('JournalScreen: 明細から起票(計画Issue #214)', () => {
     fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
 
     expect(onPicked).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('JournalScreen: 起票の入口のボタン(計画Issue #214)', () => {
+  it('「明細から起票」「テンプレートから起票」「手入力で起票」は、同じ見た目(強調なし)で並ぶ', async () => {
+    setup({ onStatementFilesPicked: vi.fn(), templates: [] })
+    await ready()
+
+    const names = ['明細から起票', 'テンプレートから起票', '手入力で起票']
+    const buttons = names.map((name) => screen.getByRole('button', { name }))
+
+    expect(buttons.map((b) => b.className)).toEqual(Array(3).fill('journal-screen__button'))
+    expect(screen.queryByRole('button', { name: '新規仕訳' })).not.toBeInTheDocument()
+    expect(new Set(buttons.map((b) => b.parentElement)).size).toBe(1)
   })
 })

@@ -1208,7 +1208,7 @@ export function JournalScreen(props: JournalScreenProps) {
           )}
           <button
             type="button"
-            className="journal-screen__button journal-screen__button--primary"
+            className="journal-screen__button"
             onClick={() =>
               guarded(() => {
                 setTab('list')
@@ -1216,7 +1216,7 @@ export function JournalScreen(props: JournalScreenProps) {
               })
             }
           >
-            新規仕訳
+            手入力で起票
           </button>
         </div>
       </div>
@@ -1408,7 +1408,7 @@ export function JournalScreen(props: JournalScreenProps) {
         {!lineView && (
         <section aria-label="仕訳の詳細" className="journal-screen__detail">
           {editor === null || selection === null ? (
-            <p className="journal-screen__note">仕訳を選ぶか、「新規仕訳」を押してください</p>
+            <p className="journal-screen__note">仕訳を選ぶか、「手入力で起票」を押してください</p>
           ) : (
             <>
               <div className="journal-screen__detail-head">
