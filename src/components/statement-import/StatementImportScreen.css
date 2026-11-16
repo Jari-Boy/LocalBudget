@@ -495,10 +495,11 @@
   justify-content: flex-end;
 }
 
-/* 登録済み・新規のタグ。同じ形で色だけ変える */
+/* 登録済み・新規のタグ。同じ形で色だけ変える。文字数が違っても入力欄の左端が縦にそろうよう、幅を固定する
+   (最も長い「登録済み」が収まる幅) */
 .import-tag {
   flex: none;
-  min-width: 44px;
+  width: 60px;
   padding: 0 6px;
   box-sizing: border-box;
   font-size: 11px;
