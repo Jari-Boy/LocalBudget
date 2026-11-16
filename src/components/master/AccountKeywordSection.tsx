@@ -25,6 +25,8 @@ export function AccountKeywordSection({ account, repository, busy }: AccountKeyw
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [newPattern, setNewPattern] = useState('')
+  /** 「+ キーワードを追加」を押すと、入力欄が出る(計画Issue #219) */
+  const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
 
@@ -127,29 +129,58 @@ export function AccountKeywordSection({ account, repository, busy }: AccountKeyw
           ),
         )}
       </ul>
-      <div className="master-list__item">
-        <input
-          className="master-field__control"
-          aria-label={t('counterpartyTab.patternNewInput')}
-          placeholder={t('counterpartyTab.patternPlaceholder')}
-          value={newPattern}
-          onChange={(event) => setNewPattern(event.target.value)}
-        />
-        <button
-          type="button"
-          className="master-btn"
-          disabled={disabled || trimmedNew === ''}
-          onClick={() =>
-            void run(async () => {
-              if (!validate(trimmedNew, null)) return
-              await repository.create({ pattern: toStoredKeyword(trimmedNew), accountId: account.id })
+      {adding ? (
+        <div className="master-list__item">
+          <input
+            className="master-field__control"
+            aria-label={t('counterpartyTab.patternNewInput')}
+            placeholder={t('counterpartyTab.patternPlaceholder')}
+            value={newPattern}
+            onChange={(event) => setNewPattern(event.target.value)}
+          />
+          <button
+            type="button"
+            className="master-btn master-btn--primary"
+            disabled={disabled || trimmedNew === ''}
+            onClick={() =>
+              void run(async () => {
+                if (!validate(trimmedNew, null)) return
+                await repository.create({ pattern: toStoredKeyword(trimmedNew), accountId: account.id })
+                setNewPattern('')
+                setAdding(false)
+              })
+            }
+          >
+            {t('counterpartyTab.patternAddSubmit')}
+          </button>
+          <button
+            type="button"
+            className="master-btn"
+            onClick={() => {
+              setAdding(false)
               setNewPattern('')
-            })
-          }
-        >
-          {t('counterpartyTab.patternAdd')}
-        </button>
-      </div>
+              setError('')
+            }}
+          >
+            {t('counterpartyTab.patternCancel')}
+          </button>
+        </div>
+      ) : (
+        <div className="master-actions">
+          <button
+            type="button"
+            className="master-btn"
+            disabled={disabled}
+            onClick={() => {
+              setAdding(true)
+              setEditingId(null)
+              setError('')
+            }}
+          >
+            {t('counterpartyTab.patternAdd')}
+          </button>
+        </div>
+      )}
       {error && (
         <p role="alert" className="master-error">
           {error}

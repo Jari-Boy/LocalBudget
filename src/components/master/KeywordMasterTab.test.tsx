@@ -32,7 +32,7 @@ beforeEach(async () => {
   const accounts = new SqlJsAccountRepository(db)
   cashId = accounts.create({ category: 'asset', name: '現金', isReconcilable: false }).id
   foodId = accounts.create({ category: 'expense', name: '食費', isReconcilable: null }).id
-  aeonId = new SqlJsCounterpartyRepository(db).create({ name: 'イオン', defaultAccountId: foodId }).id
+  aeonId = new SqlJsCounterpartyRepository(db).create({ name: 'イオン' }).id
 })
 
 afterEach(cleanup)
