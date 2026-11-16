@@ -62,6 +62,8 @@
 >
 > asset区分のうち「立替金」だけは例外的に、`seedDefaultAccounts`とは別の`seedAdvanceAccounts`(計画Issue #40)が`is_system_managed = true`の科目として自動投入する。詳細は[expense-splitting.md 1.2](./expense-splitting.md#12-一時勘定立替金未払金)参照。
 
+> **初回セットアップでの調整(計画Issue #177)**: 新規DBでは、初回セットアップの確定(`completeOnboarding`、`src/infrastructure/db/onboarding.ts`)が、選んだテンプレート(最小/標準/簿記寄り、`src/domain/onboarding/accountTemplates.ts`)に合わせて自動投入済みの収益・費用の科目を整える(雑収入・雑損失は残す)。また、資産「現金」(外部明細なし、標準グループ「現金・電子マネー」)をこのときに入れる。銀行・カードの口座は外部明細の有無や名義が口座ごとに違うためテンプレートに入れず、利用者が登録する。
+
 > **資産振替は費用ではない**
 > 貯蓄・投資は、現金という資産が別の資産へ形を変える資産→資産の振替である。したがって費用ではない。PLには影響しない。
 

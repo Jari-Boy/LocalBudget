@@ -212,3 +212,12 @@ Issue #187(`e2e/journal-entry.spec.ts`の「ランチ代」の`UNIQUE constraint
 全件を並列実行すると、sql.jsのWASM初期化を複数回行う`importDatabaseBackup.test.ts`の1件が負荷で5000msを超えて落ちた(3回連続で再現、単独実行では約3秒で通る)。`vitest.config.ts`の`testTimeout`を15000msにして解消し、大文字ドライブ・プール指定なしの全件実行(283ファイル・3123テスト)が3回連続で通ることを確認した。今後、全件実行でだけ落ちるテストが出たら、まず単独で再実行して負荷起因か実装の問題かを切り分ける。
 **参考**: Issue #188、計画Issue #211・#42
 
+## 読み取り処理が`db.run`(`CREATE TABLE IF NOT EXISTS`等)を呼ぶと、withAutoSaveが変更とみなして保存を予約し、別のWorker・タブが書いたデータを古いDBで上書きしうる(計画Issue #177)
+
+**内容**: `withAutoSave`は、RPCで`db.run`が呼ばれると「変更があった」とみなして保存を予約する。読み取りだけのAPIの中で`CREATE TABLE IF NOT EXISTS`などを`db.run`で実行すると、データを変えていなくても保存が走り、別のWorkerや別のタブが先に書いたデータを、このWorkerが持つ古いDBの内容で上書きしうる。E2Eの`recurring-transaction-proposal-review.spec.ts`(ページ内で`createDbClient`を直接呼んで別Workerにデータを書く)の3件が落ちて発覚した。読み取りは`db.exec`のみにし、表の作成は起動時(自動保存の開始前)に済ませる。
+**参考**: `src/infrastructure/db/onboarding.ts`、`e2e/recurring-transaction-proposal-review.spec.ts`、計画Issue #177
+
+## 初回セットアップのゲートはE2Eで`VITE_DISABLE_ONBOARDING=true`により止める(計画Issue #177)
+
+**内容**: 新規DBでは初回セットアップの画面が出て他の画面に進めないため、E2Eは`playwright.config.ts`の`webServer.env`に`VITE_DISABLE_ONBOARDING=true`を渡して止める(`VITE_DISABLE_DEV_SEED`と同じく、`VITE_`付きの環境変数が`import.meta.env`から参照できる仕組み)。手動で起動した`npm run dev`を再利用するとこの変数が効かないので、上記の「手動で起動した`npm run dev`を残したまま」の項と同様に注意する。
+**参考**: `playwright.config.ts`、計画Issue #177
