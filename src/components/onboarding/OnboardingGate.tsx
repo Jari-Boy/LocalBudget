@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { OnboardingRpcApi, OnboardingStatus } from '../../infrastructure/rpc/createOnboardingApi'
 import type { StorageRpcApi } from '../../infrastructure/rpc/createStorageApi'
 import type { FolderPicker } from '../../infrastructure/storage/browserFolderPicker'
-import { SetupScreen, type SetupValues } from './SetupScreen'
+import { SetupScreen, type FolderChoice, type SetupValues } from './SetupScreen'
 import { WelcomeScreen } from './WelcomeScreen'
 import './onboarding.css'
 
@@ -26,11 +26,12 @@ type View = 'checking' | 'welcome' | 'setup' | 'folderFailed' | 'ready'
 /**
  * 初回セットアップのゲート(計画Issue #177)。Workerの完了済みの印(DBの状態。保存先を切り替えても食い違わない)を見て、
  * 完了済み(既存の利用者を含む)ならアプリ本体を出し、未完了のときだけウェルカム → 初期設定の順に出す
- * (スキップの導線は無い。初期設定の確定が、完了の印を付ける唯一の経路)。
+ * (スキップの導線は無い。初期設定の確定が、完了の印を付ける唯一の経路。既存のデータを開く場合は、開いた先のDBの印で決まる)。
  * StorageGate(保存先が開けるかの確認)を通ったあと、DbClientProviderの内側に置くので、起動時の他の表示
  * (保存先の再接続・更新バナー・iOSの案内)と競合しない。
- * フォルダ保存を選んだときは、ユーザー操作の中でフォルダを先に選び(ブラウザはフォルダ選択を操作の直後にしか許さない)、
- * 設定を確定してから保存先を切り替えて再読み込みする。フォルダの選択を取りやめた・切り替えに失敗したときは、
+ * フォルダは、ブラウザが操作の直後にしか選ばせないため、選ぶ操作(ウェルカムの「既存のデータを開く」、初期設定で
+ * 「フォルダに保存」を選んだとき)の中で選ぶ。フォルダに既存のデータがあるときは、上書きせず、そのまま開く
+ * ('open')。空のフォルダなら、設定を確定してから今のデータをコピー('copy')して再読み込みする。切り替えに失敗したときは、
  * 設定は確定済みなので、ブラウザ内のまま始められる。
  */
 export function OnboardingGate({ onboarding, storage, folderPicker, reload, children }: OnboardingGateProps) {
@@ -39,6 +40,7 @@ export function OnboardingGate({ onboarding, storage, folderPicker, reload, chil
   const [view, setView] = useState<View>('checking')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [openError, setOpenError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -56,22 +58,48 @@ export function OnboardingGate({ onboarding, storage, folderPicker, reload, chil
     }
   }, [onboarding])
 
+  /** ウェルカムの「既存のデータを開く」: フォルダを選び、既存のデータがあればそのまま開く */
+  async function handleOpenExisting() {
+    setOpenError(null)
+    let folder: FileSystemDirectoryHandle | null
+    let hasData: boolean
+    try {
+      folder = await folderPicker.pick()
+      if (folder === null) return
+      hasData = (await folderPicker.describe(folder)) !== null
+    } catch {
+      setOpenError(t('welcome.openExisting.failed'))
+      return
+    }
+    if (!hasData) {
+      setOpenError(t('welcome.openExisting.empty'))
+      return
+    }
+    try {
+      await storage.moveToFolder(folder, 'open')
+      reload()
+    } catch {
+      setOpenError(t('welcome.openExisting.failed'))
+    }
+  }
+
+  /** 初期設定で「フォルダに保存」を選んだとき: フォルダを選び、既存のデータがあるかを調べる。取りやめならnull */
+  async function chooseFolder(): Promise<FolderChoice | null> {
+    const folder = await folderPicker.pick()
+    if (folder === null) return null
+    const info = await folderPicker.describe(folder)
+    return { handle: folder, name: folder.name, hasExistingData: info !== null }
+  }
+
+  /** 初期設定で既存のデータがあるフォルダを選び、「このデータを読み込む」を押したとき。失敗は呼び出し元が表示する */
+  async function loadExistingFolder(folder: FileSystemDirectoryHandle): Promise<void> {
+    await storage.moveToFolder(folder, 'open')
+    reload()
+  }
+
   async function handleSubmit(values: SetupValues) {
     setSubmitting(true)
     setError(null)
-
-    let folder: FileSystemDirectoryHandle | null = null
-    let existing = false
-    let folderFailed = false
-    if (values.storage === 'folder') {
-      try {
-        folder = await folderPicker.pick()
-        if (folder) existing = (await folderPicker.describe(folder)) !== null
-      } catch {
-        folder = null
-        folderFailed = true
-      }
-    }
 
     try {
       await onboarding.complete({ memberName: values.memberName, template: values.template })
@@ -81,18 +109,19 @@ export function OnboardingGate({ onboarding, storage, folderPicker, reload, chil
       return
     }
 
-    if (folder) {
+    if (values.folder) {
       try {
-        // 既存のDBファイルがあるときは、上書きせずそのファイルを開く
-        await storage.moveToFolder(folder, existing ? 'open' : 'copy')
+        await storage.moveToFolder(values.folder, 'copy')
         reload()
         return
       } catch {
-        folderFailed = true
+        setSubmitting(false)
+        setView('folderFailed')
+        return
       }
     }
     setSubmitting(false)
-    setView(folderFailed ? 'folderFailed' : 'ready')
+    setView('ready')
   }
 
   if (view === 'checking') return <p role="status">{tc('loading')}</p>
@@ -103,6 +132,8 @@ export function OnboardingGate({ onboarding, storage, folderPicker, reload, chil
         folderSupported={folderPicker.isSupported}
         submitting={submitting}
         error={error}
+        onChooseFolder={chooseFolder}
+        onLoadFolder={loadExistingFolder}
         onSubmit={(values) => void handleSubmit(values)}
         onBack={() => setView('welcome')}
       />
@@ -124,5 +155,12 @@ export function OnboardingGate({ onboarding, storage, folderPicker, reload, chil
       </div>
     )
   }
-  return <WelcomeScreen onNext={() => setView('setup')} />
+  return (
+    <WelcomeScreen
+      onNext={() => setView('setup')}
+      onOpenExisting={() => void handleOpenExisting()}
+      folderSupported={folderPicker.isSupported}
+      error={openError}
+    />
+  )
 }

@@ -14,7 +14,15 @@ export type SetupStorageChoice = 'indexeddb' | 'folder'
 export interface SetupValues {
   memberName: string
   template: AccountTemplateKey
-  storage: SetupStorageChoice
+  /** 保存先に選んだ空のフォルダ。ブラウザ内なら null */
+  folder: FileSystemDirectoryHandle | null
+}
+
+/** 選んだフォルダ。hasExistingDataは、すでにLocalBudgetのデータ(DBファイル)があるか */
+export interface FolderChoice {
+  handle: FileSystemDirectoryHandle
+  name: string
+  hasExistingData: boolean
 }
 
 export interface SetupScreenProps {
@@ -24,6 +32,10 @@ export interface SetupScreenProps {
   submitting: boolean
   /** 確定に失敗したときのメッセージ */
   error: string | null
+  /** 「フォルダに保存」を選んだ時点でフォルダを選ばせる。取りやめたらnull。失敗は例外 */
+  onChooseFolder: () => Promise<FolderChoice | null>
+  /** すでにデータがあるフォルダを、上書きせずそのまま読み込む(成功すると再読み込みされる)。失敗は例外 */
+  onLoadFolder: (folder: FileSystemDirectoryHandle) => Promise<void>
   onSubmit: (values: SetupValues) => void
   onBack: () => void
 }
@@ -42,14 +54,76 @@ const EXAMPLE_LIABILITY = ['クレジットカード', 'ローン']
  * 科目テンプレートを1画面で決める。テンプレートを選ぶと、入る科目を資産・負債・純資産・収益・費用の
  * 5区分のプレビューに出す(テンプレートで入る/システム管理で常に入る/自分で登録する、を見分けられる)。
  * 名前が空の間は「この設定で始める」を押せない。
+ * 「フォルダに保存」を選ぶと、その場でフォルダを選ぶ。選んだフォルダにすでにデータがあるときは、上書きせず、
+ * 「このデータを読み込む」か「別のフォルダを選ぶ」かを選ばせる(読み込む場合は、名前・テンプレートは使わない)。
+ * 空のフォルダを選んだときだけ、「この設定で始める」で今の設定をそのフォルダへ保存できる。
  */
-export function SetupScreen({ folderSupported, submitting, error, onSubmit, onBack }: SetupScreenProps) {
+export function SetupScreen({
+  folderSupported,
+  submitting,
+  error,
+  onChooseFolder,
+  onLoadFolder,
+  onSubmit,
+  onBack,
+}: SetupScreenProps) {
   const { t } = useTranslation('onboarding')
   const [name, setName] = useState('')
   const [touched, setTouched] = useState(false)
   const [storage, setStorage] = useState<SetupStorageChoice>('indexeddb')
   const [template, setTemplate] = useState<AccountTemplateKey>('standard')
+  /** 保存先に選んだ空のフォルダ */
+  const [folder, setFolder] = useState<FolderChoice | null>(null)
+  /** 選んだが、すでにデータがあったフォルダ(読み込むか、選び直すかを選ばせる) */
+  const [existing, setExisting] = useState<FolderChoice | null>(null)
+  const [folderError, setFolderError] = useState<string | null>(null)
+  const [folderBusy, setFolderBusy] = useState(false)
 
+  /** フォルダを選ぶ。取りやめたときは、何も選んでいなければブラウザ内に戻す */
+  async function chooseFolder() {
+    setFolderError(null)
+    setFolderBusy(true)
+    try {
+      const choice = await onChooseFolder()
+      if (choice === null) {
+        if (folder === null && existing === null) setStorage('indexeddb')
+        return
+      }
+      setStorage('folder')
+      if (choice.hasExistingData) {
+        setExisting(choice)
+        setFolder(null)
+      } else {
+        setFolder(choice)
+        setExisting(null)
+      }
+    } catch {
+      setFolderError(t('setup.storage.folder.pickFailed'))
+      if (folder === null && existing === null) setStorage('indexeddb')
+    } finally {
+      setFolderBusy(false)
+    }
+  }
+
+  function chooseBrowserStorage() {
+    setStorage('indexeddb')
+    setFolder(null)
+    setExisting(null)
+    setFolderError(null)
+  }
+
+  async function loadExisting(target: FolderChoice) {
+    setFolderError(null)
+    setFolderBusy(true)
+    try {
+      await onLoadFolder(target.handle)
+    } catch {
+      setFolderError(t('setup.storage.existing.loadFailed'))
+      setFolderBusy(false)
+    }
+  }
+
+  const folderMissing = storage === 'folder' && folder === null
   const trimmed = name.trim()
   const nameMissing = trimmed === ''
   const additions = findTemplateAdditions(template)
@@ -94,18 +168,55 @@ export function SetupScreen({ folderSupported, submitting, error, onSubmit, onBa
               description={t('setup.storage.browser.description')}
               tag={t('setup.storage.browser.tag')}
               tagClass="blue"
-              onSelect={() => setStorage('indexeddb')}
+              onSelect={chooseBrowserStorage}
             />
             <Choice
               checked={storage === 'folder'}
-              disabled={!folderSupported}
+              disabled={!folderSupported || folderBusy}
               title={t('setup.storage.folder.title')}
               description={folderSupported ? t('setup.storage.folder.description') : t('setup.storage.folder.unsupported')}
               tag={t('setup.storage.folder.tag')}
               tagClass="purple"
-              onSelect={() => setStorage('folder')}
+              onSelect={() => {
+                if (storage !== 'folder') void chooseFolder()
+              }}
             />
           </div>
+
+          {folder && (
+            <div className="onboarding__folder">
+              <p>{t('setup.storage.folder.picked', { name: folder.name })}</p>
+              <button type="button" className="onboarding__button" disabled={folderBusy} onClick={() => void chooseFolder()}>
+                {t('setup.storage.folder.rechoose')}
+              </button>
+            </div>
+          )}
+
+          {existing && (
+            <div className="onboarding__folder onboarding__folder--existing">
+              <p>{t('setup.storage.existing.message')}</p>
+              <p className="onboarding__muted">{t('setup.storage.folder.picked', { name: existing.name })}</p>
+              <div className="onboarding__actions">
+                <button
+                  type="button"
+                  className="onboarding__button onboarding__button--primary"
+                  disabled={folderBusy}
+                  onClick={() => void loadExisting(existing)}
+                >
+                  {t('setup.storage.existing.load')}
+                </button>
+                <button type="button" className="onboarding__button" disabled={folderBusy} onClick={() => void chooseFolder()}>
+                  {t('setup.storage.existing.other')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {folderError && (
+            <div role="alert" className="onboarding__error-box">
+              {folderError}
+            </div>
+          )}
         </div>
 
         <div>
@@ -189,8 +300,8 @@ export function SetupScreen({ folderSupported, submitting, error, onSubmit, onBa
           <button
             type="button"
             className="onboarding__button onboarding__button--primary"
-            disabled={nameMissing || submitting}
-            onClick={() => onSubmit({ memberName: trimmed, template, storage })}
+            disabled={nameMissing || submitting || folderMissing}
+            onClick={() => onSubmit({ memberName: trimmed, template, folder: folder?.handle ?? null })}
           >
             {t('setup.submit')}
           </button>
@@ -200,7 +311,9 @@ export function SetupScreen({ folderSupported, submitting, error, onSubmit, onBa
           {submitting ? (
             <span className="onboarding__muted">{t('setup.saving')}</span>
           ) : (
-            nameMissing && <span className="onboarding__muted">{t('setup.needName')}</span>
+            (nameMissing || folderMissing) && (
+              <span className="onboarding__muted">{nameMissing ? t('setup.needName') : t('setup.needFolder')}</span>
+            )
           )}
         </div>
       </section>

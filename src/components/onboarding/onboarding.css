@@ -247,6 +247,27 @@
   color: var(--color-tag-neutral-text);
 }
 
+/* 保存先に選んだフォルダと、すでにデータがあるフォルダの案内 */
+.onboarding__folder {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-field-subtle);
+}
+
+.onboarding__folder--existing {
+  border-color: var(--color-warning-text);
+  background: var(--color-tag-yellow-bg);
+}
+
+.onboarding__error-box {
+  margin-top: 12px;
+}
+
 /* 科目のプレビュー(5区分) */
 .onboarding__preview {
   display: grid;

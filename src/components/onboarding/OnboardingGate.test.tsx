@@ -3,9 +3,10 @@
  * 初回セットアップのゲート(OnboardingGate)とウェルカム・初期設定の画面のテスト(計画Issue #177、承認済みモックアップ①②)。
  * 完了済み(既存の利用者を含む)ならアプリ本体を出し、未完了のときだけウェルカム → 初期設定の順に出す。
  * 初期設定は、世帯メンバーの名前(必須)・保存先・科目テンプレートを1画面で決め、「この設定で始める」で確定する。
- * フォルダ保存を選んだときは、フォルダを先に選び(ブラウザは操作の直後にしか選ばせない)、設定を確定してから、
- * 保存先を切り替えてページを再読み込みする。
- * ウェルカム画面は「初期設定へ進む」だけを置く(用語集・スキップのボタンは無い)。外部依存: なし(Worker側のAPI・フォルダ選択・再読み込みは偽物を渡す)。
+ * ウェルカムには、「初期設定へ進む」と「既存のデータを開く」(フォルダを選び、既存のデータをそのまま開く)を置く。
+ * 初期設定で「フォルダに保存」を選ぶと、その場でフォルダを選ぶ(ブラウザは操作の直後にしか選ばせない)。選んだフォルダに
+ * すでにデータがあるときは、上書きせず、「そのまま読み込む」か「別のフォルダを選ぶ」かを選ばせる。空のフォルダなら、
+ * 設定を確定してから保存先を切り替え、ページを再読み込みする。外部依存: なし(Worker側のAPI・フォルダ選択・再読み込みは偽物を渡す)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -197,7 +198,7 @@ describe('OnboardingGate', () => {
     expect(screen.getByRole('button', { name: '初期設定へ進む' })).toBeInTheDocument()
   })
 
-  it('ウェルカムには「初期設定へ進む」だけを置き、「用語集を見る」「あとで設定する」のボタンも、「設定はあとから変更できます」の但し書きも無い', async () => {
+  it('ウェルカムには、「用語集を見る」「あとで設定する」のボタンも、「設定はあとから変更できます」の但し書きも無い', async () => {
     setup()
     await screen.findByRole('button', { name: '初期設定へ進む' })
 
@@ -207,7 +208,66 @@ describe('OnboardingGate', () => {
   })
 })
 
+const EXISTING: FolderDatabaseInfo = { size: 1024, lastModified: 0 }
+
+describe('OnboardingGate のウェルカム「既存のデータを開く」', () => {
+  const openExisting = async () => fireEvent.click(await screen.findByRole('button', { name: '既存のデータを開く' }))
+
+  it('既存のデータがあるフォルダを選ぶと、上書きせずそのフォルダを開いて再読み込みする。初回セットアップの確定はしない', async () => {
+    const { onboarding, storage, folderPicker, reload } = setup()
+    folderPicker.describe.mockResolvedValue(EXISTING)
+
+    await openExisting()
+
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+    expect(storage.moveToFolder).toHaveBeenCalledWith(expect.objectContaining({ name: '家計簿' }), 'open')
+    expect(onboarding.complete).not.toHaveBeenCalled()
+  })
+
+  it('選んだフォルダにデータが無いときは、その旨を出して何も切り替えない', async () => {
+    const { storage, reload } = setup()
+
+    await openExisting()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('このフォルダには LocalBudget のデータがありません。')
+    expect(storage.moveToFolder).not.toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('フォルダの選択を取りやめたときは、何もしない', async () => {
+    const folderPicker = { isSupported: true, pick: vi.fn(async () => null), describe: vi.fn(async () => null) }
+    const { storage, reload } = setup({ folderPicker })
+
+    await openExisting()
+
+    await waitFor(() => expect(folderPicker.pick).toHaveBeenCalled())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(storage.moveToFolder).not.toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('開けないファイルのときは、理由を出し、ウェルカムにとどまる', async () => {
+    const { storage, folderPicker, reload } = setup()
+    folderPicker.describe.mockResolvedValue(EXISTING)
+    storage.moveToFolder.mockRejectedValueOnce(new Error('失敗'))
+
+    await openExisting()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('このフォルダのデータを開けませんでした。')
+    expect(reload).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '初期設定へ進む' })).toBeInTheDocument()
+  })
+
+  it('フォルダ保存に未対応のブラウザでは、押せない', async () => {
+    setup({ folderPicker: { isSupported: false, pick: vi.fn(), describe: vi.fn() } })
+
+    expect(await screen.findByRole('button', { name: '既存のデータを開く' })).toBeDisabled()
+  })
+})
+
 describe('OnboardingGate の保存先', () => {
+  const chooseFolderStorage = () => fireEvent.click(screen.getByRole('radio', { name: /フォルダに保存/ }))
+
   it('保存先の初期値は「このブラウザ内」で、確定してもフォルダ選択・再読み込みはしない', async () => {
     const { folderPicker, reload } = setup()
     await openSetup()
@@ -221,71 +281,106 @@ describe('OnboardingGate の保存先', () => {
     expect(reload).not.toHaveBeenCalled()
   })
 
-  it('フォルダ保存に未対応のブラウザでは、「フォルダに保存」を選べず、対応ブラウザを案内する', async () => {
-    setup({
-      folderPicker: { isSupported: false, pick: vi.fn(), describe: vi.fn() },
-    })
+  it('フォルダ保存に未対応のブラウザでは、「フォルダに保存」を選べない', async () => {
+    setup({ folderPicker: { isSupported: false, pick: vi.fn(), describe: vi.fn() } })
     await openSetup()
 
     expect(screen.getByRole('radio', { name: /フォルダに保存/ })).toBeDisabled()
   })
 
-  it('「フォルダに保存」を選んで始めると、フォルダ選択→確定→今のデータをコピー→再読み込みの順に行う', async () => {
+  it('「フォルダに保存」を選ぶと、その場でフォルダを選び、選んだフォルダ名を示す。この時点では切り替えない', async () => {
+    const { folderPicker, storage } = setup()
+    await openSetup()
+
+    chooseFolderStorage()
+
+    expect(await screen.findByText('選んだフォルダ: 家計簿')).toBeInTheDocument()
+    expect(folderPicker.pick).toHaveBeenCalledTimes(1)
+    expect(storage.moveToFolder).not.toHaveBeenCalled()
+  })
+
+  it('フォルダの選択を取りやめたときは、「このブラウザ内」のままにする', async () => {
+    const folderPicker = { isSupported: true, pick: vi.fn(async () => null), describe: vi.fn(async () => null) }
+    setup({ folderPicker })
+    await openSetup()
+
+    chooseFolderStorage()
+
+    await waitFor(() => expect(folderPicker.pick).toHaveBeenCalled())
+    expect(screen.getByRole('radio', { name: /このブラウザ内/ })).toBeChecked()
+  })
+
+  it('空のフォルダを選んで始めると、フォルダ選択→確定→今のデータをコピー→再読み込みの順に行う', async () => {
     const { onboarding, storage, folderPicker, reload } = setup()
     await openSetup()
     fireEvent.change(nameInput(), { target: { value: '太郎' } })
-    fireEvent.click(screen.getByRole('radio', { name: /フォルダに保存/ }))
+    chooseFolderStorage()
+    await screen.findByText('選んだフォルダ: 家計簿')
 
     fireEvent.click(startButton())
 
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
-    expect(onboarding.complete).toHaveBeenCalledTimes(1)
-    expect(folderPicker.pick).toHaveBeenCalledTimes(1)
     expect(storage.moveToFolder).toHaveBeenCalledWith(expect.objectContaining({ name: '家計簿' }), 'copy')
     const order = (fn: { mock: { invocationCallOrder: number[] } }) => fn.mock.invocationCallOrder[0]
     expect(order(folderPicker.pick)).toBeLessThan(order(onboarding.complete))
     expect(order(onboarding.complete)).toBeLessThan(order(storage.moveToFolder))
   })
 
-  it('選んだフォルダに既にDBファイルがあるときは、上書きせずそのファイルを開く', async () => {
-    const info: FolderDatabaseInfo = { size: 1024, lastModified: 0 } as FolderDatabaseInfo
-    const { storage, reload } = setup()
-    await openSetup()
-    // setupの偽物を差し替えるため、describeの戻りを変える
-    cleanup()
-    const folderPicker = {
-      isSupported: true,
-      pick: vi.fn(async () => fakeFolder('同期フォルダ')),
-      describe: vi.fn(async () => info),
-    }
-    const second = setup({ folderPicker })
+  it('既存のデータがあるフォルダを選ぶと、「このデータを読み込む」か「別のフォルダを選ぶ」かを選ばせ、そのままでは始められない', async () => {
+    const { folderPicker, storage } = setup()
+    folderPicker.describe.mockResolvedValue(EXISTING)
     await openSetup()
     fireEvent.change(nameInput(), { target: { value: '太郎' } })
-    fireEvent.click(screen.getByRole('radio', { name: /フォルダに保存/ }))
 
-    fireEvent.click(startButton())
+    chooseFolderStorage()
 
-    await waitFor(() => expect(second.reload).toHaveBeenCalledTimes(1))
-    expect(second.storage.moveToFolder).toHaveBeenCalledWith(expect.objectContaining({ name: '同期フォルダ' }), 'open')
+    expect(await screen.findByText('このフォルダには、すでに LocalBudget のデータがあります。')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'このデータを読み込む' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '別のフォルダを選ぶ' })).toBeInTheDocument()
+    expect(startButton()).toBeDisabled()
     expect(storage.moveToFolder).not.toHaveBeenCalled()
-    expect(reload).not.toHaveBeenCalled()
   })
 
-  it('フォルダの選択を取りやめたときは、ブラウザ内のまま、再読み込みせずアプリ本体へ進む', async () => {
-    const folderPicker = {
-      isSupported: true,
-      pick: vi.fn(async () => null),
-      describe: vi.fn(async () => null),
-    }
-    const { storage, reload } = setup({ folderPicker })
+  it('「このデータを読み込む」で、上書きせずに開いて再読み込みする(名前・テンプレートの確定はしない)', async () => {
+    const { onboarding, folderPicker, storage, reload } = setup()
+    folderPicker.describe.mockResolvedValue(EXISTING)
+    await openSetup()
+    chooseFolderStorage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'このデータを読み込む' }))
+
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+    expect(storage.moveToFolder).toHaveBeenCalledWith(expect.objectContaining({ name: '家計簿' }), 'open')
+    expect(onboarding.complete).not.toHaveBeenCalled()
+  })
+
+  it('「別のフォルダを選ぶ」で選び直し、空のフォルダならそのまま始められる', async () => {
+    const { folderPicker, storage, reload } = setup()
+    folderPicker.pick.mockResolvedValueOnce(fakeFolder('同期フォルダ')).mockResolvedValueOnce(fakeFolder('空のフォルダ'))
+    folderPicker.describe.mockResolvedValueOnce(EXISTING).mockResolvedValueOnce(null)
     await openSetup()
     fireEvent.change(nameInput(), { target: { value: '太郎' } })
-    fireEvent.click(screen.getByRole('radio', { name: /フォルダに保存/ }))
+    chooseFolderStorage()
 
+    fireEvent.click(await screen.findByRole('button', { name: '別のフォルダを選ぶ' }))
+
+    expect(await screen.findByText('選んだフォルダ: 空のフォルダ')).toBeInTheDocument()
+    expect(startButton()).toBeEnabled()
     fireEvent.click(startButton())
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+    expect(storage.moveToFolder).toHaveBeenCalledWith(expect.objectContaining({ name: '空のフォルダ' }), 'copy')
+  })
 
-    expect(await screen.findByText('アプリ本体')).toBeInTheDocument()
-    expect(storage.moveToFolder).not.toHaveBeenCalled()
+  it('既存のデータを読み込めなかったときは、理由を出し、初期設定にとどまる', async () => {
+    const { folderPicker, storage, reload } = setup()
+    folderPicker.describe.mockResolvedValue(EXISTING)
+    storage.moveToFolder.mockRejectedValueOnce(new Error('失敗'))
+    await openSetup()
+    chooseFolderStorage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'このデータを読み込む' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('このフォルダのデータを開けませんでした。')
     expect(reload).not.toHaveBeenCalled()
   })
 
@@ -294,7 +389,8 @@ describe('OnboardingGate の保存先', () => {
     storage.moveToFolder.mockRejectedValueOnce(new Error('失敗'))
     await openSetup()
     fireEvent.change(nameInput(), { target: { value: '太郎' } })
-    fireEvent.click(screen.getByRole('radio', { name: /フォルダに保存/ }))
+    chooseFolderStorage()
+    await screen.findByText('選んだフォルダ: 家計簿')
 
     fireEvent.click(startButton())
 
