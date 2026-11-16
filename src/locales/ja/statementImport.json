@@ -116,6 +116,7 @@
   "applyToOtherRowsOption": "ほかの行にも適用する",
   "applyToOtherRowsNote": "キーワードを含み、取引先が未設定の行に、この取引先と相手科目の初期値を入れます(画面上のみ。確定するまで保存されません)。",
   "applyDone": "{{count}}行に適用しました",
+  "defaultAccountFollowed": "{{count}}行の相手科目を新しい初期値にしました",
   "applyNone": "適用できる行はありませんでした",
   "confirmCount": "{{count}} 件を「{{account}}」に確定",
   "confirmDone": "確定しました。{{learned}}続けて次のCSVを取り込めます。",

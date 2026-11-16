@@ -572,8 +572,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   /** 相手科目の初期値を選んだ時点で保存する */
   async function changeDefaultAccount(accountId: number | null) {
-    if (!settings) return
+    if (!settings || !session) return
     setSettingsSaveError('')
+    // 直前の「ほかの行にも適用」の結果が、今回の変更の結果として残らないようにする
+    setSettingsMessage('')
     try {
       const updated = await Promise.resolve(
         counterpartyRepository.update(settings.counterpartyId, { defaultAccountId: accountId }),
@@ -584,20 +586,33 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       withSettings((view) => ({ ...view, defaultAccountId: accountId }))
       // 初期値は取引先ごとの設定なので、この取引先を持ち相手科目を手で選んでいない行(適用済みの行を含む)にも
       // 再適用なしで反映する(計画Issue #218)。取引先の設定(キーワード)は使わず、科目だけを追従させる。
-      // 保存を待つ間に行が変わりうるので、その時点の最新の状態に対して計算する
+      // 保存を待つ間に行が変わりうるので、状態はその時点の最新のものに対して計算する
+      const followSettings = { counterpartyId: updated.id, keywords: [], defaultAccountId: accountId }
+      const descriptions = records.map((r) => r.record.description)
       setSession((prev) => {
         if (prev === null) return prev
         const result = applyCounterpartySettingsToRows({
           states: prev.rows,
           initialStates: prev.initialRows,
           records,
-          descriptions: records.map((r) => r.record.description),
+          descriptions,
           done: prev.done,
-          settings: { counterpartyId: updated.id, keywords: [], defaultAccountId: accountId },
+          settings: followSettings,
           accounts: accountList,
         })
         return result.applied === 0 ? prev : { ...prev, rows: result.states, initialRows: result.initialStates }
       })
+      // 反映した行数は、クリックした時点の行の状態から数えて示す(0行なら何も出さない)
+      const followed = applyCounterpartySettingsToRows({
+        states: session.rows,
+        initialStates: session.initialRows,
+        records,
+        descriptions,
+        done: session.done,
+        settings: followSettings,
+        accounts: accountList,
+      }).applied
+      if (followed > 0) setSettingsMessage(t('defaultAccountFollowed', { count: followed }))
     } catch {
       setSettingsSaveError(t('settingsSaveError'))
     }

@@ -1008,6 +1008,23 @@ describe('StatementImportScreen', () => {
         await waitFor(() => expect(rowOf(/ニチケイ 2月/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument())
         expect(rowOf(/ニチケイ 3月/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument()
         expect(rowOf(/ニチケイ 1月/).getByRole('button', { name: /^相手科目: 雑費/ })).toBeInTheDocument()
+        // 反映した行数を示す。直前の「ほかの行にも適用」の結果(適用できる行はありませんでした等)は残さない
+        expect(settings().getByText('2行の相手科目を新しい初期値にしました')).toBeInTheDocument()
+        expect(settings().queryByText('適用できる行はありませんでした')).not.toBeInTheDocument()
+      })
+
+      it('相手科目の初期値を変えても反映する行が無いときは、直前の適用の結果のメッセージを消し、何も出さない', async () => {
+        // 科目は画面を開く前に作っておく(開いたあとに作った科目は一覧に出ない)
+        const supplies = accounts.create({ category: 'expense', name: '日用品費', isReconcilable: null })
+        await setupPickedRow('スーパー 新宿店')
+        await openCounterpartySettings('スーパー 新宿店')
+        fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
+        expect(settings().getByText('適用できる行はありませんでした')).toBeInTheDocument()
+
+        fireEvent.click(settings().getByRole('button', { name: /^相手科目の初期値/ }))
+        fireEvent.click(within(screen.getByRole('dialog', { name: '相手科目の初期値' })).getByRole('button', { name: supplies.name }))
+
+        await waitFor(() => expect(settings().queryByText('適用できる行はありませんでした')).not.toBeInTheDocument())
       })
     })
   })
