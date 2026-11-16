@@ -70,27 +70,26 @@ describe('OnboardingGate', () => {
     setup()
 
     expect(await screen.findByRole('button', { name: '初期設定へ進む' })).toBeInTheDocument()
-    expect(screen.getByText('複式簿記で記帳する、サーバーを持たない家計簿です。')).toBeInTheDocument()
+    expect(screen.getByText(/複式簿記で記帳する、サーバーを持たない家計簿です。/)).toBeInTheDocument()
     expect(screen.queryByText('アプリ本体')).not.toBeInTheDocument()
   })
 
-  it('「前提」の説明は、「LocalBudgetは複式簿記の家計簿アプリです。」と「複式簿記の知識を前提にしています。」の2行である', async () => {
+  it('ウェルカムは、リード文に「複式簿記で記帳する・サーバーを持たない・データの置き場所」をまとめ、データが消えるリスクの注意書きを添える', async () => {
     setup()
     await screen.findByRole('button', { name: '初期設定へ進む' })
 
-    const premise = screen.getByText('前提').closest('.onboarding__fact') as HTMLElement
-    const lines = within(premise).getAllByText(/./, { selector: 'p' }).map((p) => p.textContent)
-    expect(lines).toEqual(['LocalBudgetは複式簿記の家計簿アプリです。', '複式簿記の知識を前提にしています。'])
+    expect(screen.getByText(/複式簿記で記帳する、サーバーを持たない家計簿です。/)).toBeInTheDocument()
+    expect(screen.getByText(/家計データは、この端末のブラウザ内か、選んだフォルダにだけ保存されます。サーバーには送りません。/)).toBeInTheDocument()
+    expect(screen.getByText(/バックアップは自分で取る必要があります/)).toBeInTheDocument()
   })
 
-  it('ウェルカムは、前提とデータの置き場所(消えるリスク)だけを示し、「最初に入るもの」は出さない', async () => {
+  it('ウェルカムには「前提」「データの置き場所」「最初に入るもの」の見出し(項目)を出さない', async () => {
     setup()
     await screen.findByRole('button', { name: '初期設定へ進む' })
 
-    expect(screen.getByText('前提')).toBeInTheDocument()
-    expect(screen.getByText('データの置き場所')).toBeInTheDocument()
-    expect(screen.getByText(/バックアップは自分で取る必要があります/)).toBeInTheDocument()
-    expect(screen.queryByText('最初に入るもの')).not.toBeInTheDocument()
+    for (const heading of ['前提', 'データの置き場所', '最初に入るもの']) {
+      expect(screen.queryByText(heading)).not.toBeInTheDocument()
+    }
   })
 
   it('「初期設定へ進む」で、名前・保存先・科目テンプレートの初期設定画面へ移る', async () => {
