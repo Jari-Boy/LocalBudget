@@ -5,7 +5,6 @@
   "nav": {
     "mainMenu": "メインメニュー",
     "areaTabs": "領域内のタブ",
-    "import": "明細取込",
     "journal": "仕訳",
     "split": "割勘・精算",
     "master": "マスタ",

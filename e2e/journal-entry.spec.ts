@@ -1,6 +1,6 @@
 /**
  * 仕訳画面(計画Issue #152、旧マニュアル仕訳入力UI・計画Issue #32を統合)のE2Eテスト。
- * 実ブラウザ(Chromium)でサイドナビの「仕訳」から画面内の「新規仕訳」を操作し、
+ * 実ブラウザ(Chromium)でサイドナビの「仕訳」から画面内の「手入力で起票」を操作し、
  * Web Worker + RPC層を経由して複合仕訳(3行以上)の作成、借方/貸方合計・差額の
  * リアルタイム表示、貸借不一致時のエラーフィードバック、取引先入力欄の費用・収益行限定、
  * 下書きの保存・リロード後の「下書き」タブからの再開・削除、確定済み仕訳の削除(2回押し)を検証する。
@@ -27,7 +27,7 @@ async function pickAccount(page: Page, side: '借方' | '貸方', index: number,
 
 async function openNewEntry(page: Page) {
   await page.getByRole('link', { name: '仕訳', exact: true }).click()
-  await page.getByRole('button', { name: '新規仕訳' }).click()
+  await page.getByRole('button', { name: '手入力で起票' }).click()
   await expect(detailPanel(page).getByRole('heading', { name: '新しい仕訳' })).toBeVisible()
 }
 

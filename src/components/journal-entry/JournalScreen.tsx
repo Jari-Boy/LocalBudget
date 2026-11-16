@@ -137,6 +137,11 @@ export interface JournalScreenProps {
   recurringTransactionRuleRepository: MaybeAsync<Pick<RecurringTransactionRuleRepository, 'findAll' | 'create'>>
   /** 「この仕訳を割勘」を押したときの移動(割勘の入力フォームへ) */
   onSplit: (entry: JournalEntry) => void
+  /**
+   * 「明細から起票」でCSVを選んだとき(計画Issue #214)。ファイルを選んだ後、未保存の警告を通してから呼ぶ。
+   * 省略時は「明細から起票」を出さない
+   */
+  onStatementFilesPicked?: (files: File[]) => void
   /** 自動調整仕訳の詳細から、対象科目の「残高の照合」欄を開く(計画Issue #205)。省略時は導線を出さない */
   onOpenAccountReconciliation?: (accountId: number) => void
   /** 提案を確定・見送りしたとき(サイドナビのバッジの件数を取り直すため) */
@@ -566,6 +571,9 @@ export function JournalScreen(props: JournalScreenProps) {
       window.removeEventListener('beforeunload', warnBeforeUnload)
     }
   }, [warnOnLeave, guard])
+
+  /** 「明細から起票」のCSVを選ぶ入力欄(計画Issue #214) */
+  const statementFileInputRef = useRef<HTMLInputElement>(null)
 
   if (data === null || derived === null) {
     return <p role="status">{tCommon('loading')}</p>
@@ -1167,6 +1175,27 @@ export function JournalScreen(props: JournalScreenProps) {
       <div className="journal-screen__head">
         <h1 className="journal-screen__title">仕訳</h1>
         <div className="journal-screen__actions">
+          {props.onStatementFilesPicked !== undefined && (
+            <>
+              <input
+                ref={statementFileInputRef}
+                type="file"
+                accept=".csv"
+                multiple
+                hidden
+                aria-label="明細のCSVを選択"
+                onChange={(e) => {
+                  const picked = Array.from(e.target.files ?? [])
+                  e.target.value = ''
+                  // ファイルを選んだ後で、未保存の警告を通す(ボタンを押した時点で破棄すると、選択をキャンセルしても編集だけ失われる)
+                  if (picked.length > 0) guarded(() => props.onStatementFilesPicked?.(picked))
+                }}
+              />
+              <button type="button" className="journal-screen__button" onClick={() => statementFileInputRef.current?.click()}>
+                明細から起票
+              </button>
+            </>
+          )}
           {props.journalTemplateRepository !== undefined && props.journalTemplateGroupRepository !== undefined && (
             <button
               type="button"
@@ -1179,7 +1208,7 @@ export function JournalScreen(props: JournalScreenProps) {
           )}
           <button
             type="button"
-            className="journal-screen__button journal-screen__button--primary"
+            className="journal-screen__button"
             onClick={() =>
               guarded(() => {
                 setTab('list')
@@ -1187,7 +1216,7 @@ export function JournalScreen(props: JournalScreenProps) {
               })
             }
           >
-            新規仕訳
+            手入力で起票
           </button>
         </div>
       </div>
@@ -1379,7 +1408,7 @@ export function JournalScreen(props: JournalScreenProps) {
         {!lineView && (
         <section aria-label="仕訳の詳細" className="journal-screen__detail">
           {editor === null || selection === null ? (
-            <p className="journal-screen__note">仕訳を選ぶか、「新規仕訳」を押してください</p>
+            <p className="journal-screen__note">仕訳を選ぶか、「手入力で起票」を押してください</p>
           ) : (
             <>
               <div className="journal-screen__detail-head">

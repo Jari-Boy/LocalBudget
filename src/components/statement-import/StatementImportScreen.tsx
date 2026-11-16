@@ -20,15 +20,19 @@ import { previewImportReconciliation, type ImportPreviewLine, type ImportPreview
 import type { ExternalTransactionRef } from '../../domain/reconciliation/ExternalTransactionRef'
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
+import type { MultiFileSummary } from '../../domain/statement-import/buildMultiFileStatementImportReview'
 import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
 import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
 import { createLineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
 import { buildConfirmedJournalEntryInput } from '../../domain/statement-import/buildConfirmedJournalEntryInput'
-import { buildStatementImportReview, type StatementImportReviewResult } from '../../domain/statement-import/buildStatementImportReview'
+import {
+  buildMultiFileStatementImportReview,
+  type MultiFileStatementImportReviewResult,
+} from '../../domain/statement-import/buildMultiFileStatementImportReview'
 import { collectUnreferencedTransactions } from '../../domain/statement-import/collectUnreferencedTransactions'
 import type { ApproximateDuplicateSearchOptions } from '../../domain/statement-import/duplicateDetection'
 import { estimateCounterparty, normalizeDescriptionForMatching, type CounterpartyPatternLookup } from '../../domain/statement-import/estimateCounterparty'
-import { resolveMappingDefinitionCandidates, type MappingDefinitionCandidateMatch } from '../../domain/statement-import/resolveMappingDefinitionCandidates'
+import { resolveMultiFileMappingCandidates, type MultiFileMappingMatch } from '../../domain/statement-import/resolveMultiFileMappingCandidates'
 import { suggestCounterpartyAccount, type CounterpartyLookup } from '../../domain/statement-import/suggestCounterpartyAccount'
 import { runInHistoryGroup, type HistoryGroupApi } from '../../infrastructure/history/historyGroupRunner'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
@@ -65,6 +69,7 @@ import type { KeywordListItem } from './KeywordList'
 import { buildGroupSelectCategories } from '../common/tree-select/groupSelectCategories'
 import { mappingFormToInput } from '../master/mappingForm'
 import { QuickCreateDialog } from './QuickCreateDialog'
+import { takePendingImportFiles } from './pendingImportFiles'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import './StatementImportScreen.css'
 
@@ -127,10 +132,15 @@ interface LoadedData {
 
 /** 取り込んだCSV1回分。確定するまで画面の状態としてだけ持つ(ドラフト保存は使わない) */
 interface ImportSession {
+  /** 取り込んだファイル名(複数のときは「、」でつなぐ) */
   fileName: string
   targetAccount: Account
   definition: ImportMappingDefinition
-  review: StatementImportReviewResult
+  review: MultiFileStatementImportReviewResult
+  /** 取込済み(突合マスタ)の外部取引ID → 仕訳。「取り込み済みの仕訳を見る」に使う */
+  existingRefs: Map<string, { journalEntryId: number; importedAt: string; entryDate: string; amount: number }>
+  /** 取込先の既存の仕訳(内容の表示用) */
+  existingEntries: Map<number, JournalEntry>
   rows: ImportRowState[]
   /** 取り込んだ直後の行の状態。編集したか(未保存の警告)の判定に使う */
   initialRows: ImportRowState[]
@@ -204,8 +214,16 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [data, setData] = useState<LoadedData | null>(null)
   const [csv, setCsv] = useState<LoadedCsv | null>(null)
   /** 実パースが通った定義の候補(2件以上のときだけ表示名で選ばせる) */
-  const [candidates, setCandidates] = useState<MappingDefinitionCandidateMatch[]>([])
-  const [match, setMatch] = useState<MappingDefinitionCandidateMatch | null>(null)
+  const [candidates, setCandidates] = useState<MultiFileMappingMatch[]>([])
+  const [match, setMatch] = useState<MultiFileMappingMatch | null>(null)
+  /** 選んだすべてのCSV(定義に合わないものも含む)。定義の新規作成のサンプルと、読み直しに使う */
+  const [csvs, setCsvs] = useState<LoadedCsv[]>([])
+  /** 取り込むファイルのチェック(ファイル名)。外したファイルは最初から選ばなかったものとして扱う(計画Issue #214) */
+  const [checkedFiles, setCheckedFiles] = useState<Set<string>>(new Set())
+  /** 定義で読めたファイルの期間・件数(チェックの有無によらず、期間の早い順) */
+  const [fileSummaries, setFileSummaries] = useState<MultiFileSummary[]>([])
+  /** 重複行のジャンプで強調している行(2秒ほど) */
+  const [flashIndex, setFlashIndex] = useState<number | null>(null)
   const [noMatch, setNoMatch] = useState(false)
   const [showMappingDialog, setShowMappingDialog] = useState(false)
   const [institutionNames, setInstitutionNames] = useState<string[]>([])
@@ -260,6 +278,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     householdMemberRepository,
     settlementBatchRepository,
   ])
+
+  // 仕訳画面の「明細から起票」で選んだCSVが渡されていれば、データの読み込み後に1回だけ読み込む(計画Issue #214)
+  const pendingTaken = useRef(false)
+  useEffect(() => {
+    if (data === null || pendingTaken.current) return
+    pendingTaken.current = true
+    void loadFiles(takePendingImportFiles())
+  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const targetAccount = data?.accounts.find((a) => a.id === targetAccountId) ?? null
   /**
@@ -582,7 +608,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   /** 取引先推定と相手科目のサジェストで、各行の初期値を作る(docs/domain/statement-import.md 1.5手順4・5) */
   async function computeInitialRows(
-    review: StatementImportReviewResult,
+    review: MultiFileStatementImportReviewResult,
     counterparties: readonly Counterparty[],
     accounts: readonly Account[],
   ): Promise<ImportRowState[]> {
@@ -610,7 +636,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     })
   }
 
-  async function buildSession(account: Account, fileName: string, match: MappingDefinitionCandidateMatch) {
+  /** 取込先とチェックしたファイルから、取り込む一覧を作る。チェックしたファイルが無ければ一覧は出さない */
+  async function buildSession(account: Account, next: MultiFileMappingMatch, checked: ReadonlySet<string>) {
+    const files = next.files.filter((f) => checked.has(f.fileName))
+    if (files.length === 0) {
+      setSession(null)
+      return
+    }
     const existingRefs = await Promise.resolve(externalTransactionRefRepository.findByAccount(account.id))
     // 手入力・定期仕訳生成など突合マスタを持たない仕訳も確定版候補に含める(計画Issue #145)
     const all = await Promise.resolve(journalEntryRepository.findAll())
@@ -623,15 +655,31 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       })),
       ...collectUnreferencedTransactions(all, account, new Set(existingRefs.map((ref) => ref.journalEntryId))),
     ]
-    const review = buildStatementImportReview({
-      rows: match.rows,
-      definition: match.definition,
+    // 期間が重なる複数ファイルの重複は、ファイル単位のハッシュで判定する(計画Issue #214、docs/domain/statement-import.md 1.6)
+    const review = buildMultiFileStatementImportReview({
+      files,
+      definition: next.definition,
       existingExternalIds: new Set(existingRefs.map((ref) => ref.externalId)),
       existingTransactions,
       approximateDuplicateOptions: approximateDuplicateOptions ?? DEFAULT_APPROXIMATE_DUPLICATE_OPTIONS,
     })
     const rows = await computeInitialRows(review, data!.counterparties, data!.accounts)
-    setSession({ fileName, targetAccount: account, definition: match.definition, review, rows, initialRows: rows, done: new Set() })
+    setSession({
+      fileName: files.map((f) => f.fileName).join('、'),
+      targetAccount: account,
+      definition: next.definition,
+      review,
+      existingRefs: new Map(
+        existingRefs.map((ref) => [
+          ref.externalId,
+          { journalEntryId: ref.journalEntryId, importedAt: ref.importedAt, entryDate: ref.entryDate, amount: ref.amount },
+        ]),
+      ),
+      existingEntries: new Map(all.map((entry) => [entry.id, entry])),
+      rows,
+      initialRows: rows,
+      done: new Set(),
+    })
     setSelected(new Set())
     setBulkMessage('')
     setSettings(null)
@@ -640,21 +688,37 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   /** 定義が決まったら、紐づく科目(取込先に選べるもの)の先頭を初期値にして取り込む。無ければ選ばせる */
-  async function selectMatch(next: MappingDefinitionCandidateMatch, fileName: string) {
+  async function selectMatch(next: MultiFileMappingMatch) {
     setMatch(next)
     setSession(null)
+    const everyFile = new Set(next.files.map((f) => f.fileName))
+    setCheckedFiles(everyFile)
+    // ファイルの期間・件数(チェックの有無によらず、期間の早い順)
+    setFileSummaries(
+      buildMultiFileStatementImportReview({
+        files: next.files,
+        definition: next.definition,
+        existingExternalIds: new Set(),
+        existingTransactions: [],
+        approximateDuplicateOptions: approximateDuplicateOptions ?? DEFAULT_APPROXIMATE_DUPLICATE_OPTIONS,
+      }).files,
+    )
     const linked = next.definition.accountIds
       .map((id) => data!.accounts.find((a) => a.id === id))
       .filter((a): a is Account => a !== undefined && isStatementImportEligibleAccount(a))
     const initial = linked[0] ?? null
     setTargetAccountId(initial?.id ?? null)
-    if (initial) await buildSession(initial, fileName, next)
+    if (initial) await buildSession(initial, next, everyFile)
   }
 
-  async function handleFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
+  function handleFile(event: ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(event.target.files ?? [])
     event.target.value = ''
-    if (!file) return
+    void loadFiles(picked)
+  }
+
+  async function loadFiles(picked: File[]) {
+    if (picked.length === 0) return
     setBusy(true)
     setError('')
     setDoneMessage('')
@@ -665,17 +729,25 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setNoMatch(false)
     setTargetAccountId(null)
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer())
-      setCsv({ fileName: file.name, bytes })
-      // 取込先は定義から決まるので、まず全定義に実際のパースを試して絞り込む
+      // 同じ名前のファイルを選んだときも、一覧のチェックで区別できるように名前を一意にする
+      const used = new Map<string, number>()
+      const loaded: LoadedCsv[] = []
+      for (const file of picked) {
+        const count = (used.get(file.name) ?? 0) + 1
+        used.set(file.name, count)
+        loaded.push({ fileName: count === 1 ? file.name : `${file.name} (${count})`, bytes: new Uint8Array(await file.arrayBuffer()) })
+      }
+      setCsvs(loaded)
+      setCsv(loaded[0])
+      // 取込先は定義から決まるので、まず全定義に実際のパースを試して絞り込む。複数ファイルは共通で読める定義を選ぶ
       const definitions = await Promise.resolve(importMappingDefinitionRepository.findAll())
       setInstitutionNames(collectFinancialInstitutionNames(definitions.map((d) => d.formatGroupId)))
       setAllDefinitions(definitions)
-      const matches = resolveMappingDefinitionCandidates(bytes, definitions)
+      const matches = resolveMultiFileMappingCandidates(loaded, definitions)
       if (matches.length === 0) {
         setNoMatch(true)
       } else if (matches.length === 1) {
-        await selectMatch(matches[0], file.name)
+        await selectMatch(matches[0])
       } else {
         setCandidates(matches)
       }
@@ -691,7 +763,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     if (!next || !csv) return
     setBusy(true)
     try {
-      await selectMatch(next, csv.fileName)
+      await selectMatch(next)
     } catch {
       setError(t('uploadError'))
     } finally {
@@ -707,7 +779,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     if (!account || !match || !csv) return
     setBusy(true)
     try {
-      await buildSession(account, csv.fileName, match)
+      await buildSession(account, match, checkedFiles)
     } catch {
       setError(t('uploadError'))
     } finally {
@@ -715,15 +787,40 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     }
   }
 
+  /** ファイルのチェックを切り替える。外したファイルは選ばなかったものとして一覧を作り直す(入力済みの内容は失われるので警告を通す) */
+  function toggleFile(fileName: string) {
+    guarded(() => void applyFileToggle(fileName))
+  }
+
+  async function applyFileToggle(fileName: string) {
+    {
+      if (!match) return
+      const next = new Set(checkedFiles)
+      if (next.has(fileName)) next.delete(fileName)
+      else next.add(fileName)
+      setCheckedFiles(next)
+      const account = data!.accounts.find((a) => a.id === targetAccountId)
+      if (!account) return
+      setBusy(true)
+      try {
+        await buildSession(account, match, next)
+      } catch {
+        setError(t('uploadError'))
+      } finally {
+        setBusy(false)
+      }
+    }
+  }
+
   /** 画面内で作った定義を保存し、そのまま取り込みに進む */
   async function saveMappingAndContinue(form: MappingForm) {
     if (!csv) return
     const created = await Promise.resolve(importMappingDefinitionRepository.create(mappingFormToInput(form)))
-    const matches = resolveMappingDefinitionCandidates(csv.bytes, [created])
+    const matches = resolveMultiFileMappingCandidates(csvs, [created])
     if (matches.length === 0) throw new Error('created mapping does not parse the csv')
     setShowMappingDialog(false)
     setNoMatch(false)
-    await selectMatch(matches[0], csv.fileName)
+    await selectMatch(matches[0])
   }
 
   const records = session?.review.records ?? []
@@ -731,6 +828,36 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const statusOf = (i: number) => rowStatus(records[i], session!.rows[i])
   const importable = visibleIndices.filter((i) => statusOf(i) !== 'duplicate')
   const dupCount = visibleIndices.length - importable.length
+  const crossFileDupCount = visibleIndices.filter(
+    (i) => statusOf(i) === 'duplicate' && records[i].crossFileDuplicateOf !== null,
+  ).length
+  const showFileColumn = (session?.review.files.length ?? 0) >= 2
+  /** 重複元の行 → 最初の重複した行(重複元の行から重複した行へ移る導線に使う) */
+  const firstDuplicateOf = new Map<number, number>()
+  records.forEach((r, i) => {
+    if (r.crossFileDuplicateOf !== null && !firstDuplicateOf.has(r.crossFileDuplicateOf)) firstDuplicateOf.set(r.crossFileDuplicateOf, i)
+  })
+  const jumpToRow = (index: number) => {
+    document.getElementById(`import-row-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setFlashIndex(index)
+    window.setTimeout(() => setFlashIndex((current) => (current === index ? null : current)), 2200)
+  }
+  const formatPeriod = (start: string, end: string) => {
+    const from = start.replaceAll('-', '/')
+    const to = end.replaceAll('-', '/')
+    return from.slice(0, 4) === to.slice(0, 4) ? `${from}〜${to.slice(5)}` : `${from}〜${to}`
+  }
+  const overlapsOther = (file: MultiFileSummary) =>
+    file.periodStart !== null &&
+    file.periodEnd !== null &&
+    fileSummaries.some(
+      (other) =>
+        other.fileName !== file.fileName &&
+        other.periodStart !== null &&
+        other.periodEnd !== null &&
+        other.periodStart <= file.periodEnd! &&
+        file.periodStart! <= other.periodEnd,
+    )
   const checkCount = visibleIndices.filter((i) => statusOf(i) === 'check').length
 
   const applyBulk = (change: BulkChange) => {
@@ -948,6 +1075,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     </button>
   )
 
+  const noMatchTitle = csvs.length > 1 ? t('noMatchTitleMulti') : t('noMatchTitle', { fileName: csv?.fileName ?? '' })
+
   return (
     <div className="import-screen">
       {unsavedDialog}
@@ -963,7 +1092,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
       {error && <p role="alert" className="import-error">{error}</p>}
 
-      <input ref={fileInputRef} type="file" accept=".csv" hidden aria-label={t('chooseCsv')} disabled={busy} onChange={(e) => void handleFile(e)} />
+      <input ref={fileInputRef} type="file" accept=".csv" multiple hidden aria-label={t('chooseCsv')} disabled={busy} onChange={handleFile} />
       {!csv && (
         <section aria-label={t('csvStartLabel')} className="import-start">
           {chooseCsvButton('import-btn import-btn--primary import-btn--large')}
@@ -972,8 +1101,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       )}
 
       {csv && noMatch && (
-        <section role="alert" aria-label={t('noMatchTitle', { fileName: csv.fileName })} className="import-panel">
-          <p className="import-panel__title import-error">{t('noMatchTitle', { fileName: csv.fileName })}</p>
+        <section role="alert" aria-label={noMatchTitle} className="import-panel">
+          <p className="import-panel__title import-error">{noMatchTitle}</p>
           <p className="import-note">{t('noMatchBody')}</p>
           <div className="import-panel__actions">
             <button type="button" className="import-btn import-btn--primary" onClick={() => setShowMappingDialog(true)}>
@@ -989,10 +1118,39 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       {csv && !noMatch && (candidates.length > 1 || match) && (
         <section aria-label={t('settingsLabel')} className="import-panel">
           <div className="import-panel__row">
-            <div className="import-field">
-              <span className="import-field__label">CSV</span>
-              <span className="import-panel__value">{csv.fileName}</span>
-            </div>
+            {match && fileSummaries.length >= 2 ? (
+              <div className="import-field">
+                <span className="import-field__label">{t('filesLabel')}</span>
+                <ul className="import-files" aria-label={t('filesListLabel')}>
+                  {fileSummaries.map((file) => (
+                    <li key={file.fileName}>
+                      <label className="import-files__check">
+                        <input
+                          type="checkbox"
+                          aria-label={t('fileInclude', { name: file.fileName })}
+                          checked={checkedFiles.has(file.fileName)}
+                          disabled={busy}
+                          onChange={() => toggleFile(file.fileName)}
+                        />
+                      </label>
+                      <span className="import-files__name">{file.fileName}</span>
+                      <span className="import-files__meta">
+                        {file.periodStart !== null && file.periodEnd !== null ? formatPeriod(file.periodStart, file.periodEnd) : ''}
+                      </span>
+                      <span className="import-files__meta import-files__num">{t('fileCount', { count: file.recordCount })}</span>
+                      <span className="import-files__meta">{overlapsOther(file) ? t('fileOverlap') : ''}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <div className="import-field">
+                <span className="import-field__label">CSV</span>
+                <span className="import-panel__value">
+                  {match ? (match.files[0]?.fileName ?? csv.fileName) : csvs.map((c) => c.fileName).join('、')}
+                </span>
+              </div>
+            )}
             {candidates.length > 1 ? (
               <div className="import-field">
                 <label className="import-field__label" htmlFor="import-definition">
@@ -1121,14 +1279,44 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         </section>
       )}
 
+      {csv && !noMatch && match && match.excluded.length > 0 && (
+        <section aria-label={t('excludedTitle', { count: match.excluded.length })} className="import-panel">
+          <p className="import-panel__title import-error">{t('excludedTitle', { count: match.excluded.length })}</p>
+          <ul className="import-files">
+            {match.excluded.map((file) => (
+              <li key={file.fileName}>
+                <span className="import-files__name">{file.fileName}</span>
+                <span className="import-files__reason">
+                  {file.reason.missingColumn !== null
+                    ? t('excludedReasonColumn', { label: match.definition.label, column: file.reason.missingColumn.columnSpec })
+                    : t('excludedReasonOther', { label: match.definition.label })}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="import-note">{t('excludedNote')}</p>
+        </section>
+      )}
+
       {csv && match && targetAccountId === null && !noMatch && (
         <p className="import-empty">{t('pickAccountPrompt')}</p>
+      )}
+      {csv && match && targetAccountId !== null && !noMatch && session === null && checkedFiles.size === 0 && (
+        <p className="import-empty">{t('pickFilePrompt')}</p>
       )}
 
       {session && visibleIndices.length > 0 && (
         <>
           <p className="import-summary">
-            {t('loadedSummary', { fileName: session.fileName, newCount: importable.length, dupCount, checkCount })}
+            {showFileColumn
+              ? t('loadedSummaryMulti', {
+                  count: session.review.files.length,
+                  newCount: importable.length,
+                  dupCount: dupCount - crossFileDupCount,
+                  crossFileDupCount,
+                  checkCount,
+                })
+              : t('loadedSummary', { fileName: session.fileName, newCount: importable.length, dupCount, checkCount })}
           </p>
 
           {reconciliation && reconciliation.gaps.length === 0 && (
@@ -1236,6 +1424,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             <table className="import-table" aria-label={t('tableLabel')}>
               <thead>
                 <tr>
+                  {showFileColumn && <th>{t('colFile')}</th>}
                   <th style={{ width: 24 }}>
                     <input
                       type="checkbox"
@@ -1274,7 +1463,15 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
                   return (
                     <Fragment key={reviewRecord.externalId + index}>
-                      <tr className={isDup ? 'import-row--dup' : undefined}>
+                      <tr
+                        id={`import-row-${index}`}
+                        className={[isDup ? 'import-row--dup' : '', flashIndex === index ? 'import-row--flash' : ''].filter(Boolean).join(' ') || undefined}
+                      >
+                        {showFileColumn && (
+                          <td className="import-file-col" title={reviewRecord.fileName}>
+                            {reviewRecord.fileName}
+                          </td>
+                        )}
                         <td>
                           {!isDup && (
                             <input
@@ -1290,7 +1487,44 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                         <td className="import-num">{signedYen(reviewRecord.record.amount)}</td>
                         {isDup ? (
                           <td colSpan={5} className="import-dup-note">
-                            {t('duplicateExcluded')}{' '}
+                            {reviewRecord.crossFileDuplicateOf !== null ? (
+                              <>
+                                {t('crossFileDuplicate', { fileName: records[reviewRecord.crossFileDuplicateOf].fileName })}
+                                <button
+                                  type="button"
+                                  className="import-link import-jump"
+                                  onClick={() => jumpToRow(reviewRecord.crossFileDuplicateOf!)}
+                                >
+                                  {t('jumpToOriginal')}
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {t('duplicateExcluded')}
+                                {(() => {
+                                  const ref = session.existingRefs.get(reviewRecord.externalId)
+                                  const entry = ref ? session.existingEntries.get(ref.journalEntryId) : undefined
+                                  return ref && entry ? (
+                                    <details className="import-detail">
+                                      <summary className="import-link">{t('viewExistingEntry')}</summary>
+                                      <div className="import-detail__body">
+                                        <span>
+                                          {t('existingEntrySummary', {
+                                            id: entry.id,
+                                            date: ref.entryDate.replaceAll('-', '/'),
+                                            memo: entry.memo ?? '',
+                                            amount: signedYen(ref.amount),
+                                          })}
+                                        </span>
+                                        <span className="import-note">
+                                          {t('existingEntryImportedAt', { date: ref.importedAt.slice(0, 10).replaceAll('-', '/') })}
+                                        </span>
+                                      </div>
+                                    </details>
+                                  ) : null
+                                })()}
+                              </>
+                            )}
                             <button
                               type="button"
                               className="import-link"
@@ -1427,11 +1661,21 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                             </td>
                           </>
                         )}
-                        <td className={`import-status import-status--${status}`}>{statusText}</td>
+                        <td className={`import-status import-status--${status}`}>
+                          {statusText}
+                          {firstDuplicateOf.has(index) && (
+                            <>
+                              <br />
+                              <button type="button" className="import-link import-jump" onClick={() => jumpToRow(firstDuplicateOf.get(index)!)}>
+                                {t('jumpToDuplicate')}
+                              </button>
+                            </>
+                          )}
+                        </td>
                       </tr>
                       {!isDup && reviewRecord.approximateCandidates.length > 0 && (
                         <tr className="import-sub">
-                          <td colSpan={4} />
+                          <td colSpan={showFileColumn ? 5 : 4} />
                           <td colSpan={6}>
                             <div role="group" className="import-sub__body">
                               <span>{t('approximateDuplicateWarning')}</span>
@@ -1477,8 +1721,12 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           <p className="import-note">{t('unreadableNote')}</p>
           <ul className="import-unreadable">
             {session.review.unreadableRows.map((row) => (
-              <li key={row.rowNumber}>
-                <span className="import-nowrap">{t('unreadableRow', { row: row.rowNumber })}</span>
+              <li key={`${row.fileName}:${row.rowNumber}`}>
+                <span className="import-nowrap">
+                  {showFileColumn
+                    ? t('unreadableRowInFile', { fileName: row.fileName, row: row.rowNumber })
+                    : t('unreadableRow', { row: row.rowNumber })}
+                </span>
                 <span className="import-unreadable__cells">{row.cells.filter((c) => c !== '').join(' / ')}</span>
                 <span className="import-error">
                   {row.error === 'invalidAmount' ? tMaster('mappingTab.errorInvalidAmount') : tMaster('mappingTab.errorInvalidDate')}

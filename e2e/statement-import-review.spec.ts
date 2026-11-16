@@ -1,6 +1,6 @@
 /**
  * 明細取込画面(計画Issue #76・#77・#78の基盤を計画Issue #151で1画面に統合)のE2Eテスト。
- * 実ブラウザ(Chromium)で、サイドナビの「明細取込」から取込先とCSVを選び、Web Worker + RPC層を
+ * 実ブラウザ(Chromium)で、仕訳画面の「明細から起票」から取込先とCSVを選び、Web Worker + RPC層を
  * 経由して、候補定義への実パース試行による絞り込み、一致する定義が無い場合のエラー表示、
  * 完全一致重複の行(対象外)、確定版の候補の置き換えと残高照合、取引先推定・一括設定・確定の
  * 一連のフロー、マスタの「明細マッピング」タブでの編集を検証する。細かい入力規則は
@@ -151,12 +151,12 @@ function csvFile(content: string) {
 }
 
 /**
- * サイドナビの「明細取込」を開き、CSVを選ぶ。取込先は、マッピング定義に紐づく科目が初期値になる
+ * 仕訳画面の「明細から起票」でCSVを選ぶ(計画Issue #214)。取込先は、マッピング定義に紐づく科目が初期値になる
  * (accountNameはその初期値の確認に使う)。紐づく科目が無い定義では取込先が未選択のまま。
  */
 async function startImport(page: Page, accountName: string | null, csv: string) {
-  await page.getByRole('link', { name: '明細取込', exact: true }).click()
-  await page.getByLabel('CSVを選択').setInputFiles(csvFile(csv))
+  await page.getByRole('link', { name: /^仕訳/ }).click()
+  await page.getByLabel('明細のCSVを選択').setInputFiles(csvFile(csv))
   if (accountName !== null) {
     await expect(page.getByLabel('科目', { exact: true }).locator('option:checked')).toHaveText(accountName)
     await chooseOwner(page)
@@ -391,7 +391,8 @@ test.describe('明細取込画面', () => {
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING)
 
-    await page.getByRole('link', { name: '明細取込', exact: true }).click()
+    await page.getByRole('link', { name: /^仕訳/ }).click()
+    await page.getByLabel('明細のCSVを選択').setInputFiles(csvFile(['x,y', '1,2', ''].join('\n')))
     await page.getByRole('button', { name: 'マッピングを編集' }).click()
 
     await expect(page).toHaveURL(/\/master\/mappings$/)

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * 全体の枠(AppShell)とサイドナビ・領域タブのテスト(計画Issue #150)。
- * 常設の左サイドナビ(仕訳・マスタ・明細取込・割勘・精算・分析、一番下に区切って設定)から1クリックで各領域へ
+ * 常設の左サイドナビ(仕訳・マスタ・割勘・精算・分析、一番下に区切って設定)から1クリックで各領域へ
  * 移動でき、現在の領域が強調され、承認待ちの定期仕訳提案の件数が「仕訳」に表示されること、
  * 旧ハブ画面の入口が領域内のタブとして残ることを検証する。
  * 外部依存: react-routerのMemoryRouter(DB・Repositoryには依存しない)。
@@ -39,12 +39,12 @@ function renderShell(path: string, pendingProposalCount = 0) {
 const nav = () => screen.getByRole('navigation', { name: 'メインメニュー' })
 
 describe('AppShell', () => {
-  it('サイドナビに仕訳・マスタ・明細取込・割勘・精算・分析・操作履歴・用語集・設定の順で並ぶ', () => {
+  it('サイドナビに仕訳・マスタ・割勘・精算・分析・操作履歴・用語集・設定の順で並び、明細取込は並ばない(計画Issue #214)', () => {
     renderShell('/journal/entries')
     const labels = within(nav())
       .getAllByRole('link')
       .map((a) => a.textContent)
-    expect(labels).toEqual(['仕訳', 'マスタ', '明細取込', '割勘・精算', '分析', '操作履歴', '用語集', '設定'])
+    expect(labels).toEqual(['仕訳', 'マスタ', '割勘・精算', '分析', '操作履歴', '用語集', '設定'])
   })
 
   it('「用語集」はクリックすると用語集の画面へ移動して強調される(計画Issue #177)', () => {
@@ -87,8 +87,11 @@ describe('AppShell', () => {
     expect(screen.getByTestId('where')).toHaveTextContent('/master/accounts')
     fireEvent.click(within(nav()).getByRole('link', { name: '割勘・精算' }))
     expect(screen.getByTestId('where')).toHaveTextContent('/journal/splitting')
-    fireEvent.click(within(nav()).getByRole('link', { name: '明細取込' }))
-    expect(screen.getByTestId('where')).toHaveTextContent('/journal/create/import')
+  })
+
+  it('明細取込の画面(/journal/create/import)を開いている間は、サイドナビの「仕訳」が強調される(計画Issue #214)', () => {
+    renderShell('/journal/create/import')
+    expect(within(nav()).getByRole('link', { name: '仕訳' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('現在の領域のリンクだけがaria-current="page"になる(配下の画面でも維持される)', () => {
