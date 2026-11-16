@@ -74,6 +74,15 @@ describe('OnboardingGate', () => {
     expect(screen.queryByText('アプリ本体')).not.toBeInTheDocument()
   })
 
+  it('「前提」の説明は、「LocalBudgetは複式簿記の家計簿アプリです。」と「複式簿記の知識を前提にしています。」の2行である', async () => {
+    setup()
+    await screen.findByRole('button', { name: '初期設定へ進む' })
+
+    const premise = screen.getByText('前提').closest('.onboarding__fact') as HTMLElement
+    const lines = within(premise).getAllByText(/./, { selector: 'p' }).map((p) => p.textContent)
+    expect(lines).toEqual(['LocalBudgetは複式簿記の家計簿アプリです。', '複式簿記の知識を前提にしています。'])
+  })
+
   it('ウェルカムは、前提とデータの置き場所(消えるリスク)だけを示し、「最初に入るもの」は出さない', async () => {
     setup()
     await screen.findByRole('button', { name: '初期設定へ進む' })

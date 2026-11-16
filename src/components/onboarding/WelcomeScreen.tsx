@@ -26,8 +26,8 @@ export function WelcomeScreen({ onNext }: WelcomeScreenProps) {
           <div className="onboarding__fact">
             <h3>{t('welcome.premise.title')}</h3>
             <div>
-              <p>{t('welcome.premise.body')}</p>
-              <p className="onboarding__muted">{t('welcome.premise.note')}</p>
+              <p>{t('welcome.premise.line1')}</p>
+              <p>{t('welcome.premise.line2')}</p>
             </div>
           </div>
           <div className="onboarding__fact">
