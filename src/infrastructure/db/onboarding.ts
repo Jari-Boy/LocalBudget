@@ -29,13 +29,16 @@ export interface CompleteOnboardingInput {
 
 /** 初回セットアップの完了を、DBの状態として持つ。保存先(ブラウザ内/フォルダ)を切り替えても、DBの中身が正になる。 */
 export function isOnboardingCompleted(db: Database): boolean {
-  db.run(seedMarkersSql)
-  const [marked] = db.exec('SELECT 1 FROM seed_markers WHERE name = ?', [ONBOARDING_MARKER])
-  return marked !== undefined
+  return hasMarker(db, ONBOARDING_MARKER)
 }
 
+/**
+ * 印の有無を読む。読み取りでは`db.run`を呼ばない(表の作成も含めて)。自動保存(withAutoSave)は`db.run`を
+ * すべて変更とみなして保存を予約するため、画面を開くだけの読み取りで保存が走り、別のタブ・Workerが書いた
+ * データを古いDBで上書きしうるため(E2Eで発覚、計画Issue #177)。表は、最新スキーマと、起動時の
+ * seedStandardAccountGroups・seedOnboardingMarker(どちらも自動保存の開始前)が必ず作る。
+ */
 function hasMarker(db: Database, name: string): boolean {
-  db.run(seedMarkersSql)
   const [marked] = db.exec('SELECT 1 FROM seed_markers WHERE name = ?', [name])
   return marked !== undefined
 }
@@ -58,6 +61,7 @@ function markCompleted(db: Database): void {
  * 開発用サンプルデータ(seedDevSampleDataIfDev)を入れた後に呼ぶと、開発モードでは完了済みになる。
  */
 export function seedOnboardingMarker(db: Database): void {
+  db.run(seedMarkersSql)
   if (isOnboardingCompleted(db)) return
 
   const hasUserBalanceSheetAccount = new SqlJsAccountRepository(db)

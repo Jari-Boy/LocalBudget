@@ -11,7 +11,13 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
-import { completeOnboarding, isOnboardingCompleted, seedOnboardingMarker, skipOnboarding } from './onboarding'
+import {
+  completeOnboarding,
+  getOnboardingChecklist,
+  isOnboardingCompleted,
+  seedOnboardingMarker,
+  skipOnboarding,
+} from './onboarding'
 import { SqlJsAccountGroupRepository } from './SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
@@ -195,6 +201,27 @@ describe('completeOnboarding', () => {
     expect(isOnboardingCompleted(db)).toBe(true)
     expect(members.findAll().map((m) => m.name)).toEqual(['太郎'])
     expect(namesOf('expense')).toContain('医療費')
+  })
+})
+
+describe('読み取り(自動保存を予約しない)', () => {
+  it('完了の判定とチェックリストの取得は、DBを書き換える文(db.run)を実行しない', () => {
+    // 自動保存(withAutoSave)はdb.run()をすべて変更とみなして保存を予約する。画面を開くだけの読み取りで
+    // 保存が走ると、別のタブ・Workerが書いたデータを古いDBで上書きしうる(E2Eで発覚、計画Issue #177)
+    seedLikeStartup(db)
+    seedOnboardingMarker(db)
+    completeOnboarding(db, { memberName: '太郎', template: 'standard' })
+    const originalRun = db.run.bind(db)
+    const runCalls: string[] = []
+    db.run = ((sql: string, params?: unknown) => {
+      runCalls.push(sql)
+      return originalRun(sql, params as never)
+    }) as Database['run']
+
+    isOnboardingCompleted(db)
+    getOnboardingChecklist(db)
+
+    expect(runCalls).toEqual([])
   })
 })
 
