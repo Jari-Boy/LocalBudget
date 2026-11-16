@@ -156,8 +156,9 @@
   color: var(--color-text-muted);
 }
 
+/* 検索欄の直下に固定する(計画Issue #218)。一覧(.tree-select__list)の外なので、スクロールしても動かない */
 .tree-select__create {
-  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
   color: var(--color-accent);
   font-weight: 600;
 }

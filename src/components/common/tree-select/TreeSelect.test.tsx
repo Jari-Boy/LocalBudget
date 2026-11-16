@@ -210,7 +210,17 @@ describe('TreeSelect', () => {
     expect(popup()).toBeInTheDocument()
   })
 
-  it('onCreateを渡すと一覧の末尾に新規追加のボタンが出て、押すと閉じてonCreateが呼ばれる(計画Issue #151)', () => {
+  it('新規追加のボタンは、スクロールする一覧の外の検索欄の直下に固定され、一覧が長くても常に見える(計画Issue #218)', () => {
+    renderSelect({ onCreate: vi.fn(), createLabel: '科目を新規追加' })
+    fireEvent.click(trigger())
+
+    const create = within(popup()).getByRole('button', { name: '+ 科目を新規追加' })
+
+    expect(create.closest('.tree-select__list')).toBeNull()
+    expect(create.previousElementSibling).toBe(within(popup()).getByRole('searchbox'))
+  })
+
+  it('onCreateを渡すと新規追加のボタンが出て、押すと閉じてonCreateが呼ばれる(計画Issue #151)', () => {
     const onCreate = vi.fn()
     renderSelect({ onCreate, createLabel: '科目を新規追加' })
     fireEvent.click(trigger())
