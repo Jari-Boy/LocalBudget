@@ -589,7 +589,7 @@ describe('StatementImportScreen', () => {
     }
     const patternsOf = (cpId: number) => counterparties.findPatternsByCounterparty(cpId).map((p) => p.pattern)
 
-    it('「取引先の設定」は推定と違う取引先を選んだ行にだけ出て、開くとタイトル・注意書き・登録済みと新規のキーワードが並ぶ', async () => {
+    it('「取引先の設定」は推定と違う取引先を選んだ行にだけ出て、開くとタイトル・登録済みと新規のキーワードが並ぶ(確定時に登録の注記は出ない)', async () => {
       makeMapping()
       const cp = counterparties.create({ name: 'スーパーA' })
       counterparties.addPattern(cp.id, 'ローソン')
@@ -605,7 +605,8 @@ describe('StatementImportScreen', () => {
       await openCounterpartySettings('スーパー 新宿店')
 
       expect(screen.getByRole('dialog', { name: '取引先の設定: スーパーA' })).toBeInTheDocument()
-      expect(settings().getByText('※「新規」のキーワードは、この行を確定したときに登録されます。')).toBeInTheDocument()
+      // 「+ キーワードを追加」で足したキーワードは入力を終えた時点で保存されるため、「確定時に登録」の注記は出さない(計画Issue #218)
+      expect(settings().queryByText(/この行を確定したときに登録されます/)).not.toBeInTheDocument()
       expect(settings().getByText('取引先のキーワード')).toBeInTheDocument()
       await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('ローソン'))
       expect(settings().getByLabelText('キーワード2')).toHaveValue('スーパー 新宿店')
@@ -793,7 +794,7 @@ describe('StatementImportScreen', () => {
       expect(patternsOf(cp.id)).toEqual(['ニチケイ'])
     })
 
-    it('「ほかの行にも適用」で相手科目の初期値も、取引先が同じで科目を手で選んでいない行にだけ入る(初期値の保存は選んだ時点で済んでいる)', async () => {
+    it('相手科目の初期値を選ぶと、取引先が同じで科目を手で選んでいない行にだけ、その時点で入る(「ほかの行にも適用」を押す必要はない。計画Issue #218)', async () => {
       makeMapping()
       const supplies = accounts.create({ category: 'expense', name: '日用品費', isReconcilable: null })
       accounts.create({ category: 'expense', name: '雑費', isReconcilable: null })
@@ -811,10 +812,9 @@ describe('StatementImportScreen', () => {
       fireEvent.click(settings().getByRole('button', { name: /^相手科目の初期値/ }))
       fireEvent.click(within(screen.getByRole('dialog', { name: '相手科目の初期値' })).getByRole('button', { name: supplies.name }))
       await waitFor(() => expect(counterparties.findById(cp.id)!.defaultAccountId).toBe(supplies.id))
-      fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
 
       // セブン1・セブン2(取引先が同じで科目は未編集)・ローソン4(取引先を選んだ行)の3行に入る
-      expect(settings().getByText('3行に適用しました')).toBeInTheDocument()
+      await waitFor(() => expect(rowOf(/セブン 1/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument())
       expect(rowOf(/セブン 1/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument()
       expect(rowOf(/セブン 2/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument()
       expect(rowOf(/セブン 3/).getByRole('button', { name: /^相手科目: 雑費/ })).toBeInTheDocument()
@@ -961,6 +961,162 @@ describe('StatementImportScreen', () => {
 
       await waitFor(() => expect(userEntries()).toHaveLength(1))
       expect(patternsOf(cp.id)).toEqual([])
+    })
+
+    describe('不具合の再現(計画Issue #218)', () => {
+      it('適用済みの行がある状態で相手科目の初期値を変えたあと、もう一度「ほかの行にも適用」すると、適用済みの行の科目も新しい初期値に変わる', async () => {
+        makeMapping()
+        const supplies = accounts.create({ category: 'expense', name: '日用品費', isReconcilable: null })
+        const cp = counterparties.create({ name: 'スーパーA', defaultAccountId: food.id })
+        renderScreen()
+        await chooseCsv(`${HEADER}2026/10/05,ニチケイ 3月,-1000,97000\n2026/10/06,ニチケイ 2月,-1000,96000\n`)
+        pick(rowOf(/ニチケイ 3月/), '取引先', 'スーパーA')
+        await openCounterpartySettings('ニチケイ 3月')
+        fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'ニチケイ' } })
+        fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
+        expect(rowOf(/ニチケイ 2月/).getByRole('button', { name: /^相手科目: 食費/ })).toBeInTheDocument()
+
+        fireEvent.click(settings().getByRole('button', { name: /^相手科目の初期値/ }))
+        fireEvent.click(within(screen.getByRole('dialog', { name: '相手科目の初期値' })).getByRole('button', { name: supplies.name }))
+        await waitFor(() => expect(counterparties.findById(cp.id)!.defaultAccountId).toBe(supplies.id))
+        fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
+
+        expect(rowOf(/ニチケイ 2月/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument()
+        expect(rowOf(/ニチケイ 3月/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument()
+      })
+
+      it('相手科目の初期値を変えた時点で、その取引先を持ち科目を手で選んでいない行(適用済みの行を含む)の科目が、再適用しなくても新しい初期値に変わる', async () => {
+        makeMapping()
+        const supplies = accounts.create({ category: 'expense', name: '日用品費', isReconcilable: null })
+        accounts.create({ category: 'expense', name: '雑費', isReconcilable: null })
+        const cp = counterparties.create({ name: 'スーパーA', defaultAccountId: food.id })
+        renderScreen()
+        await chooseCsv(
+          `${HEADER}2026/10/05,ニチケイ 3月,-1000,97000\n2026/10/06,ニチケイ 2月,-1000,96000\n2026/10/07,ニチケイ 1月,-1000,95000\n`,
+        )
+        pick(rowOf(/ニチケイ 3月/), '取引先', 'スーパーA')
+        await openCounterpartySettings('ニチケイ 3月')
+        fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'ニチケイ' } })
+        fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
+        // 1月の行は、科目を手で選び直したので追従させない
+        pick(rowOf(/ニチケイ 1月/), '相手科目', '雑費')
+
+        fireEvent.click(settings().getByRole('button', { name: /^相手科目の初期値/ }))
+        fireEvent.click(within(screen.getByRole('dialog', { name: '相手科目の初期値' })).getByRole('button', { name: supplies.name }))
+        await waitFor(() => expect(counterparties.findById(cp.id)!.defaultAccountId).toBe(supplies.id))
+
+        await waitFor(() => expect(rowOf(/ニチケイ 2月/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument())
+        expect(rowOf(/ニチケイ 3月/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument()
+        expect(rowOf(/ニチケイ 1月/).getByRole('button', { name: /^相手科目: 雑費/ })).toBeInTheDocument()
+        // 反映した行数を示す。直前の「ほかの行にも適用」の結果(適用できる行はありませんでした等)は残さない
+        expect(settings().getByText('2行の相手科目を新しい初期値にしました')).toBeInTheDocument()
+        expect(settings().queryByText('適用できる行はありませんでした')).not.toBeInTheDocument()
+      })
+
+      it('相手科目の初期値を変えても反映する行が無いときは、直前の適用の結果のメッセージを消し、何も出さない', async () => {
+        // 科目は画面を開く前に作っておく(開いたあとに作った科目は一覧に出ない)
+        const supplies = accounts.create({ category: 'expense', name: '日用品費', isReconcilable: null })
+        await setupPickedRow('スーパー 新宿店')
+        await openCounterpartySettings('スーパー 新宿店')
+        fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
+        expect(settings().getByText('適用できる行はありませんでした')).toBeInTheDocument()
+
+        fireEvent.click(settings().getByRole('button', { name: /^相手科目の初期値/ }))
+        fireEvent.click(within(screen.getByRole('dialog', { name: '相手科目の初期値' })).getByRole('button', { name: supplies.name }))
+
+        await waitFor(() => expect(settings().queryByText('適用できる行はありませんでした')).not.toBeInTheDocument())
+      })
+    })
+  })
+
+  describe('取引先の追加ダイアログの改善(計画Issue #218)', () => {
+    const openCounterpartyDialog = (desc: RegExp) => {
+      fireEvent.click(rowOf(desc).getByRole('button', { name: /^取引先/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '取引先' })).getByRole('button', { name: '+ 取引先を新規追加' }))
+    }
+    const dialog = () => within(screen.getByRole('dialog', { name: '取引先を追加' }))
+    const openCreateAccount = (button: RegExp, listLabel: string) => {
+      fireEvent.click(dialog().getByRole('button', { name: button }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: listLabel })).getByRole('button', { name: '+ 科目を新規追加' }))
+    }
+
+    /** 「ニチケイ」を含む2行のうち、3月の行から取引先「新しい店」(キーワード「ニチケイ」)を追加するところまで進める */
+    async function fillCounterpartyDialog() {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,ニチケイ 3月,-1000,97000\n2026/10/06,ニチケイ 2月,-1000,96000\n`)
+      pick(rowOf(/ニチケイ 3月/), '相手科目', '食費')
+      openCounterpartyDialog(/ニチケイ 3月/)
+      fireEvent.change(dialog().getByLabelText('取引先名'), { target: { value: '新しい店' } })
+      fireEvent.change(dialog().getByLabelText('キーワード1'), { target: { value: 'ニチケイ' } })
+    }
+
+    it('「ほかの行にも適用する」のチェックが、最初から入った状態で出る', async () => {
+      await fillCounterpartyDialog()
+
+      expect(dialog().getByRole('checkbox', { name: 'ほかの行にも適用する' })).toBeChecked()
+    })
+
+    it('チェックを入れたまま追加すると、キーワードを含み取引先が未設定の行にも、取引先と相手科目の初期値が入る(DBにはキーワードは取引先の分だけ)', async () => {
+      await fillCounterpartyDialog()
+
+      fireEvent.click(dialog().getByRole('button', { name: '追加' }))
+
+      expect(await rowOf(/ニチケイ 2月/).findByRole('button', { name: /^取引先: 新しい店/ })).toBeInTheDocument()
+      expect(rowOf(/ニチケイ 2月/).getByRole('button', { name: /^相手科目: 食費/ })).toBeInTheDocument()
+      expect(rowOf(/ニチケイ 3月/).getByRole('button', { name: /^取引先: 新しい店/ })).toBeInTheDocument()
+    })
+
+    it('チェックを外して追加すると、ほかの行には反映されず、その行だけに取引先が入る', async () => {
+      await fillCounterpartyDialog()
+
+      fireEvent.click(dialog().getByRole('checkbox', { name: 'ほかの行にも適用する' }))
+      fireEvent.click(dialog().getByRole('button', { name: '追加' }))
+
+      expect(await rowOf(/ニチケイ 3月/).findByRole('button', { name: /^取引先: 新しい店/ })).toBeInTheDocument()
+      expect(rowOf(/ニチケイ 2月/).queryByRole('button', { name: /^取引先: 新しい店/ })).not.toBeInTheDocument()
+    })
+
+    it('相手科目の初期値の選択肢の末尾の「+ 科目を新規追加」から科目を登録でき、登録した科目がそのまま初期値に選ばれる', async () => {
+      await fillCounterpartyDialog()
+
+      openCreateAccount(/^相手科目の初期値/, '相手科目の初期値')
+      const form = within(screen.getByRole('dialog', { name: '科目を登録' }))
+      fireEvent.change(form.getByLabelText('名称'), { target: { value: '新聞図書費' } })
+      fireEvent.click(form.getByRole('button', { name: '登録' }))
+
+      expect(await dialog().findByRole('button', { name: /^相手科目の初期値: 新聞図書費/ })).toBeInTheDocument()
+      expect(accounts.findAll().some((a) => a.name === '新聞図書費' && a.category === 'expense')).toBe(true)
+    })
+
+    it('取引先の追加ダイアログから科目を登録するとき、区分の既定は「費用」である', async () => {
+      await fillCounterpartyDialog()
+
+      openCreateAccount(/^相手科目の初期値/, '相手科目の初期値')
+
+      expect(within(screen.getByRole('dialog', { name: '科目を登録' })).getByLabelText('区分')).toHaveValue('expense')
+    })
+
+    it('表の相手科目の「+ 科目を新規追加」でも、区分の既定は「費用」である', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+
+      fireEvent.click(rowOf(/スーパー/).getByRole('button', { name: /^相手科目/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '相手科目' })).getByRole('button', { name: '+ 科目を新規追加' }))
+
+      expect(within(screen.getByRole('dialog', { name: '科目を登録' })).getByLabelText('区分')).toHaveValue('expense')
+    })
+
+    it('取込先の「+ 科目を新規追加」では、区分の既定は従来どおり「資産」のままである', async () => {
+      makeMapping({ accountIds: [] })
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+      await screen.findByLabelText('科目')
+
+      fireEvent.click(screen.getByRole('button', { name: '+ 科目を新規追加' }))
+
+      expect(within(screen.getByRole('dialog', { name: '科目を登録' })).getByLabelText('区分')).toHaveValue('asset')
     })
   })
 
@@ -1245,6 +1401,24 @@ describe('StatementImportScreen', () => {
 
     await screen.findByText(/確定しました/)
     expect(mappings.findById(only.id)?.accountIds).toEqual([bank.id])
+  })
+
+  it('定義に紐づく取込先が選ばれているときは、「このマッピングは…に紐づいています」の案内を出さない(計画Issue #218)', async () => {
+    makeMapping()
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+
+    expect(screen.queryByText(/このマッピングは.*に紐づいています/)).not.toBeInTheDocument()
+  })
+
+  it('定義がまだどの科目にも紐づいていないときの案内は、これまでどおり出る', async () => {
+    makeMapping({ accountIds: [] })
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+
+    expect(await screen.findByText(/このマッピングは、まだどの科目にも紐づいていません/)).toBeInTheDocument()
   })
 
   it('取込先の「+ 科目を新規追加」では、いま取り込んでいる定義が最初から選ばれ、登録すると紐づく(計画Issue #189)', async () => {

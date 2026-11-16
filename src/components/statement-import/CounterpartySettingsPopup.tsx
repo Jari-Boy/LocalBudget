@@ -113,7 +113,6 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
             onKeyDown={handleKeyDown}
           >
             <p className="import-settings__title">{t('settingsTitle', { name: counterpartyName })}</p>
-            <p className="import-note">{t('settingsNote')}</p>
             {items === null ? (
               <p className="import-note" role="status">
                 {t('settingsLoading')}

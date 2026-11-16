@@ -171,6 +171,9 @@ type CreateTarget =
   | { kind: 'counterparty'; rowIndex: number; apply: (id: number) => void }
   | null
 
+/** 取引先の追加ダイアログの相手科目の初期値から開く科目の登録(計画Issue #218)。登録できた科目のidを返す先 */
+type DefaultAccountCreate = ((accountId: number) => void) | null
+
 /** 取込画面で選んだCSV。定義の作成ダイアログや、文字コードの違う定義での読み直しに元のバイト列を持つ */
 interface LoadedCsv {
   fileName: string
@@ -242,6 +245,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [doneMessage, setDoneMessage] = useState('')
   const [failures, setFailures] = useState<ConfirmFailure[]>([])
   const [createTarget, setCreateTarget] = useState<CreateTarget>(null)
+  const [defaultAccountCreate, setDefaultAccountCreate] = useState<DefaultAccountCreate>(null)
   /** 開いている「取引先の設定」(計画Issue #207)。登録済みのキーワードは開くたびにDBから読み込む */
   const [settings, setSettings] = useState<SettingsView | null>(null)
   /** 「ほかの行にも適用」を押した結果(開いているポップアップに出す) */
@@ -568,8 +572,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   /** 相手科目の初期値を選んだ時点で保存する */
   async function changeDefaultAccount(accountId: number | null) {
-    if (!settings) return
+    if (!settings || !session) return
     setSettingsSaveError('')
+    // 直前の「ほかの行にも適用」の結果が、今回の変更の結果として残らないようにする
+    setSettingsMessage('')
     try {
       const updated = await Promise.resolve(
         counterpartyRepository.update(settings.counterpartyId, { defaultAccountId: accountId }),
@@ -578,6 +584,35 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         prev ? { ...prev, counterparties: prev.counterparties.map((c) => (c.id === updated.id ? updated : c)) } : prev,
       )
       withSettings((view) => ({ ...view, defaultAccountId: accountId }))
+      // 初期値は取引先ごとの設定なので、この取引先を持ち相手科目を手で選んでいない行(適用済みの行を含む)にも
+      // 再適用なしで反映する(計画Issue #218)。取引先の設定(キーワード)は使わず、科目だけを追従させる。
+      // 保存を待つ間に行が変わりうるので、状態はその時点の最新のものに対して計算する
+      const followSettings = { counterpartyId: updated.id, keywords: [], defaultAccountId: accountId }
+      const descriptions = records.map((r) => r.record.description)
+      setSession((prev) => {
+        if (prev === null) return prev
+        const result = applyCounterpartySettingsToRows({
+          states: prev.rows,
+          initialStates: prev.initialRows,
+          records,
+          descriptions,
+          done: prev.done,
+          settings: followSettings,
+          accounts: accountList,
+        })
+        return result.applied === 0 ? prev : { ...prev, rows: result.states, initialRows: result.initialStates }
+      })
+      // 反映した行数は、クリックした時点の行の状態から数えて示す(0行なら何も出さない)
+      const followed = applyCounterpartySettingsToRows({
+        states: session.rows,
+        initialStates: session.initialRows,
+        records,
+        descriptions,
+        done: session.done,
+        settings: followSettings,
+        accounts: accountList,
+      }).applied
+      if (followed > 0) setSettingsMessage(t('defaultAccountFollowed', { count: followed }))
     } catch {
       setSettingsSaveError(t('settingsSaveError'))
     }
@@ -911,6 +946,23 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     }
     setData((prev) => (prev ? { ...prev, counterparties: [...prev.counterparties, created] } : prev))
     apply(created.id)
+    if (input.applyToOtherRows) {
+      // ダイアログのキーワードと相手科目の初期値を、ほかの行へ画面上だけで反映する(計画Issue #218)。
+      // 追加した行は上のapplyで取引先が入る。保存を待つ間に行が変わりうるので、その時点の最新の状態に対して計算する
+      setSession((prev) => {
+        if (prev === null) return prev
+        const result = applyCounterpartySettingsToRows({
+          states: prev.rows,
+          initialStates: prev.initialRows,
+          records,
+          descriptions: records.map((r) => r.record.description),
+          done: prev.done,
+          settings: { counterpartyId: created.id, keywords: input.keywords, defaultAccountId: input.defaultAccountId },
+          accounts: accountList,
+        })
+        return result.applied === 0 ? prev : { ...prev, rows: result.states, initialRows: result.initialStates }
+      })
+    }
     setCreateTarget(null)
     if (keywordSaveFailed) setError(t('newKeywordSaveError'))
   }
@@ -1263,19 +1315,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 : t('statementOwnerHintRequired')}
             </p>
           )}
-          {match && (
-            <p className="import-note">
-              {match.definition.accountIds.length > 0
-                ? t('accountLinkedNote', {
-                    accounts: match.definition.accountIds
-                      .map((id) => data.accounts.find((a) => a.id === id)?.name)
-                      .filter(Boolean)
-                      .map((name) => `「${name}」`)
-                      .join(''),
-                  })
-                : t('accountUnlinkedNote')}
-            </p>
-          )}
+          {/* 紐づいているときの案内(「このマッピングは…に紐づいています」)は、取込先の欄から分かるので出さない(計画Issue #218) */}
+          {match && match.definition.accountIds.length === 0 && <p className="import-note">{t('accountUnlinkedNote')}</p>}
         </section>
       )}
 
@@ -1776,6 +1817,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           groupCategories={buildGroupSelectCategories(data.counterpartyGroups)}
           onCreateGroup={createCounterpartyGroup}
           accountCategories={categories.defaultAccounts}
+          onCreateAccount={(onCreated) => setDefaultAccountCreate(() => onCreated)}
           onSubmit={(input) => createCounterparty(input, createTarget.apply)}
           onCancel={() => setCreateTarget(null)}
         />
@@ -1792,6 +1834,26 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       {showMappingDialog && csv && (
         <MappingCreateDialog bytes={csv.bytes} institutionNames={institutionNames} onSave={saveMappingAndContinue} onCancel={() => setShowMappingDialog(false)} />
       )}
+      {defaultAccountCreate !== null && (
+        // 取引先の追加ダイアログの上に重ねて出す。登録した科目は初期値としてそのまま選ばれる
+        <div className="import-dialog__backdrop">
+          <div role="dialog" aria-modal="true" aria-label={t('createAccountTitle')} className="import-dialog import-dialog--wide">
+            <AccountCreateForm
+              accountRepository={accountRepository}
+              balanceRecordRepository={accountBalanceRecordRepository}
+              groups={data.accountGroups}
+              householdMembers={data.members}
+              initialCategory="expense"
+              onCreated={(created) => {
+                setData((prev) => (prev ? { ...prev, accounts: [...prev.accounts, created] } : prev))
+                defaultAccountCreate(created.id)
+                setDefaultAccountCreate(null)
+              }}
+              onCancel={() => setDefaultAccountCreate(null)}
+            />
+          </div>
+        </div>
+      )}
       {(createTarget?.kind === 'counterAccount' || createTarget?.kind === 'targetAccount') && (
         <div className="import-dialog__backdrop">
           <div role="dialog" aria-modal="true" aria-label={t('createAccountTitle')} className="import-dialog import-dialog--wide">
@@ -1800,7 +1862,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               balanceRecordRepository={accountBalanceRecordRepository}
               groups={data.accountGroups}
               householdMembers={data.members}
-              initialCategory="asset"
+              // 取込先は資産、相手科目は費用が既定(計画Issue #218)
+              initialCategory={createTarget.kind === 'targetAccount' ? 'asset' : 'expense'}
               mappingLinking={{
                 definitions: allDefinitions,
                 repository: importMappingDefinitionRepository,

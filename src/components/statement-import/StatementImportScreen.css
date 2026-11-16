@@ -233,8 +233,9 @@
   align-items: center;
 }
 
-/* マッピング作成ダイアログの「金額の符号を反転する」(計画Issue #192): 他の入力項目と同じ文字の大きさにそろえる */
-.import-dialog__cell .import-check {
+/* マッピング作成ダイアログの「金額の符号を反転する」(計画Issue #192)・取引先の追加ダイアログの「ほかの行にも適用する」(計画Issue #218): 他の入力項目と同じ文字の大きさにそろえる */
+.import-dialog__cell .import-check,
+.import-dialog .import-field .import-check {
   font-size: var(--font-size-base);
 }
 
@@ -311,7 +312,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 24px;
-  align-items: flex-end;
+  /* ラベルを上でそろえる。文字だけの値は下の入力欄と同じ高さにする(計画Issue #218) */
+  align-items: flex-start;
+}
+
+/* ラベルの無いボタン(取込先の追加)は、入力欄と同じ高さに置く */
+.import-panel__row > .import-btn {
+  align-self: flex-end;
 }
 
 .import-panel__title {
@@ -323,6 +330,10 @@
 .import-panel__value {
   font-size: var(--font-size-base);
   font-weight: 500;
+  /* 入力欄(.import-control の min-height: 36px)と同じ高さで縦中央にそろえる */
+  min-height: 36px;
+  display: flex;
+  align-items: center;
 }
 
 .import-panel__actions {

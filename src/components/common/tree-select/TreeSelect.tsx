@@ -272,6 +272,20 @@ export function TreeSelect(props: TreeSelectProps) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
+          {onCreate !== undefined && (
+            // 一覧が長くてもスクロールせずに押せるよう、スクロールする一覧の外の検索欄の直下に固定する(計画Issue #218)
+            <button
+              type="button"
+              className="tree-select__item tree-select__create"
+              style={{ paddingLeft: 8 }}
+              onClick={() => {
+                close()
+                onCreate()
+              }}
+            >
+              {`+ ${createLabel}`}
+            </button>
+          )}
           <div className="tree-select__list" ref={listRef}>
             {emptyLabel !== undefined && query.trim() === '' && (
               <button
@@ -341,19 +355,6 @@ export function TreeSelect(props: TreeSelectProps) {
               )
             })}
             {rows.length === 0 && <p className="tree-select__empty">該当する項目がありません</p>}
-            {onCreate !== undefined && (
-              <button
-                type="button"
-                className="tree-select__item tree-select__create"
-                style={{ paddingLeft: 8 }}
-                onClick={() => {
-                  close()
-                  onCreate()
-                }}
-              >
-                {`+ ${createLabel}`}
-              </button>
-            )}
           </div>
         </div>,
         document.body,
