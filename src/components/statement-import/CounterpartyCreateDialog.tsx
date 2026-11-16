@@ -12,6 +12,8 @@ export interface CounterpartyCreateInput {
   /** 取引先に登録するキーワード(空は除く、前後の空白は除いた入力のまま) */
   keywords: string[]
   defaultAccountId: number | null
+  /** 追加と同時に、キーワードを含む未設定のほかの行へ取引先と相手科目の初期値を反映するか(計画Issue #218) */
+  applyToOtherRows: boolean
 }
 
 export interface CounterpartyCreateDialogProps {
@@ -25,6 +27,11 @@ export interface CounterpartyCreateDialogProps {
   /** 取引先グループをその場で作る(名前だけ、最上位)。作ったグループのidを返す */
   onCreateGroup: (name: string) => Promise<number>
   accountCategories: readonly TreeSelectCategory[]
+  /**
+   * 渡すと、相手科目の初期値の選択肢の末尾に「+ 科目を新規追加」を出す(計画Issue #218)。
+   * 押すと呼び出し側が科目の登録を開き、登録できたらその科目のidでonCreatedを呼ぶ
+   */
+  onCreateAccount?: (onCreated: (accountId: number) => void) => void
   onSubmit: (input: CounterpartyCreateInput) => Promise<void>
   onCancel: () => void
 }
@@ -40,13 +47,24 @@ interface KeywordInput {
  * 追加を押すと、呼び出し側が取引先・キーワード・相手科目の初期値をまとめて保存する。
  */
 export function CounterpartyCreateDialog(props: CounterpartyCreateDialogProps) {
-  const { rowDescription, rowAccountId, descriptions, groupCategories, onCreateGroup, accountCategories, onSubmit, onCancel } = props
+  const {
+    rowDescription,
+    rowAccountId,
+    descriptions,
+    groupCategories,
+    onCreateGroup,
+    accountCategories,
+    onCreateAccount,
+    onSubmit,
+    onCancel,
+  } = props
   const { t } = useTranslation('statementImport')
   const [keywords, setKeywords] = useState<KeywordInput[]>(
     rowDescription.trim() === '' ? [] : [{ key: 'k0', text: rowDescription.trim() }],
   )
   const [nextKey, setNextKey] = useState(1)
   const [defaultAccountId, setDefaultAccountId] = useState<number | null>(rowAccountId)
+  const [applyToOtherRows, setApplyToOtherRows] = useState(true)
 
   // 入力前の空欄は無視する。それ以外の問題(重複・摘要に含まれない)はその場に出し、追加を止める
   const items: KeywordListItem[] = keywords.map((keyword) => ({
@@ -76,6 +94,7 @@ export function CounterpartyCreateDialog(props: CounterpartyCreateDialogProps) {
           groupId,
           keywords: keywords.map((keyword) => keyword.text.trim()).filter((text) => text !== ''),
           defaultAccountId,
+          applyToOtherRows,
         })
       }
       onCancel={onCancel}
@@ -99,7 +118,16 @@ export function CounterpartyCreateDialog(props: CounterpartyCreateDialogProps) {
           emptyLabel={t('defaultAccountNone')}
           placeholder={t('defaultAccountNone')}
           onChange={(v) => setDefaultAccountId(v === '' ? null : Number(v))}
+          onCreate={onCreateAccount ? () => onCreateAccount((accountId) => setDefaultAccountId(accountId)) : undefined}
+          createLabel={t('createCounterAccount')}
         />
+      </div>
+      <div className="import-field">
+        <label className="import-check">
+          <input type="checkbox" checked={applyToOtherRows} onChange={(e) => setApplyToOtherRows(e.target.checked)} />
+          {t('applyToOtherRowsOption')}
+        </label>
+        <span className="import-note">{t('applyToOtherRowsNote')}</span>
       </div>
     </QuickCreateDialog>
   )

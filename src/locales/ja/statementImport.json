@@ -114,6 +114,8 @@
   "useRowAccount": "この行の科目を入れる",
   "useRowAccountLabel": "この行の科目「{{account}}」を初期値にする",
   "applyToOtherRows": "ほかの行にも適用",
+  "applyToOtherRowsOption": "ほかの行にも適用する",
+  "applyToOtherRowsNote": "キーワードを含み、取引先が未設定の行に、この取引先と相手科目の初期値を入れます(画面上のみ。確定するまで保存されません)。",
   "applyDone": "{{count}}行に適用しました",
   "applyNone": "適用できる行はありませんでした",
   "confirmCount": "{{count}} 件を「{{account}}」に確定",
