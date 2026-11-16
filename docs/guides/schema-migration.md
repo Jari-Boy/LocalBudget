@@ -28,6 +28,7 @@
 
 ### 凍結時の後片付け
 
+- 計画Issue #219で足した、旧`counterparty_patterns`表を`keyword_rules`へ変換する暫定処理(起動時・`assertImportableDatabase`)と、そのテストを取り除き、凍結後に必要な変換は差分で行う。
 - `src/infrastructure/backup/assertValidDatabaseSchema.ts` の、`journal_lines.household_member_id` がNOT NULLでない旧スキーマのバックアップを拒否する検査(計画Issue #169)と、そのテストを外す。凍結後は、旧バージョンのバックアップも差分で読み込めるのが原則である。
 - 起動時の初期投入(seed)が `CREATE TABLE` をしていないかを確認する。現状は `seedStandardAccountGroups` が `seed_markers` を `CREATE TABLE IF NOT EXISTS` で作っている(凍結前の開発用DBのため)。この `db.run(seedMarkersSql)` を取り除き、以後の表の追加は差分で行う。
 
