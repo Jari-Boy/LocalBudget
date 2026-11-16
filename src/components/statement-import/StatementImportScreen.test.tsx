@@ -1403,6 +1403,24 @@ describe('StatementImportScreen', () => {
     expect(mappings.findById(only.id)?.accountIds).toEqual([bank.id])
   })
 
+  it('定義に紐づく取込先が選ばれているときは、「このマッピングは…に紐づいています」の案内を出さない(計画Issue #218)', async () => {
+    makeMapping()
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+
+    expect(screen.queryByText(/このマッピングは.*に紐づいています/)).not.toBeInTheDocument()
+  })
+
+  it('定義がまだどの科目にも紐づいていないときの案内は、これまでどおり出る', async () => {
+    makeMapping({ accountIds: [] })
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+
+    expect(await screen.findByText(/このマッピングは、まだどの科目にも紐づいていません/)).toBeInTheDocument()
+  })
+
   it('取込先の「+ 科目を新規追加」では、いま取り込んでいる定義が最初から選ばれ、登録すると紐づく(計画Issue #189)', async () => {
     const current = makeMapping({ accountIds: [] })
     // CSVには一致しない定義(取込先の選択は current だけで決まる)

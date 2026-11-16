@@ -1315,19 +1315,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 : t('statementOwnerHintRequired')}
             </p>
           )}
-          {match && (
-            <p className="import-note">
-              {match.definition.accountIds.length > 0
-                ? t('accountLinkedNote', {
-                    accounts: match.definition.accountIds
-                      .map((id) => data.accounts.find((a) => a.id === id)?.name)
-                      .filter(Boolean)
-                      .map((name) => `「${name}」`)
-                      .join(''),
-                  })
-                : t('accountUnlinkedNote')}
-            </p>
-          )}
+          {/* 紐づいているときの案内(「このマッピングは…に紐づいています」)は、取込先の欄から分かるので出さない(計画Issue #218) */}
+          {match && match.definition.accountIds.length === 0 && <p className="import-note">{t('accountUnlinkedNote')}</p>}
         </section>
       )}
 
