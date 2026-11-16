@@ -290,3 +290,54 @@ describe('列見出しの並び替え・見出しの名称・ドラッグ無効(
   })
 })
 
+describe('全選択のヘッダー・区分の見出し行の非表示(計画Issue #219)', () => {
+  const flatNodes: TreeTableNode[] = [node('a', 'leaf', 'all', null), node('b', 'leaf', 'all', null)]
+  const renderFlat = (checkedIds: readonly string[], extra: Partial<Parameters<typeof TreeTable>[0]> = {}) => {
+    const onCheckedChange = vi.fn()
+    render(
+      <TreeTable
+        categories={[{ key: 'all', name: 'すべて' }]}
+        nodes={flatNodes}
+        columns={[]}
+        checkedIds={checkedIds}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onCheckedChange={onCheckedChange}
+        onMove={vi.fn()}
+        {...extra}
+      />,
+    )
+    return { onCheckedChange }
+  }
+
+  it('ヘッダーの「すべて選択」を押すと、表示中の全行をチェックする', () => {
+    const { onCheckedChange } = renderFlat([])
+
+    fireEvent.click(screen.getByLabelText('すべて選択'))
+
+    expect(onCheckedChange).toHaveBeenCalledWith(['a', 'b'])
+  })
+
+  it('全行がチェック済みのときにヘッダーを押すと、チェックをすべて外す', () => {
+    const { onCheckedChange } = renderFlat(['a', 'b'])
+
+    expect(screen.getByLabelText('すべて選択')).toBeChecked()
+    fireEvent.click(screen.getByLabelText('すべて選択'))
+
+    expect(onCheckedChange).toHaveBeenCalledWith([])
+  })
+
+  it('一部だけチェックしているときは、ヘッダーが中間状態(indeterminate)になる', () => {
+    renderFlat(['a'])
+
+    expect((screen.getByLabelText('すべて選択') as HTMLInputElement).indeterminate).toBe(true)
+  })
+
+  it('showCategoryRows={false}なら、区分の見出し行(名前と件数)を出さない', () => {
+    renderFlat([], { showCategoryRows: false })
+
+    expect(screen.queryByText('すべて')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'a' })).toBeInTheDocument()
+  })
+})
+

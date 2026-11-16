@@ -382,7 +382,7 @@
     "majorityWarning": "読み取れない行の方が多いです。マッピング(列の割り当てや日付の書式)が合っているか確認してください。"
   },
   "keywordTab": {
-    "add": "+ キーワードを追加",
+    "add": "キーワードを追加",
     "search": "キーワードを検索",
     "searchPlaceholder": "キーワード・取引先・科目で検索",
     "colPattern": "キーワード",
@@ -407,7 +407,13 @@
       "targetRequired": "取引先か相手科目のどちらかを指定してください",
       "counterpartyNeedsPlAccount": "取引先と相手科目を両方指定できるのは、相手科目が収益・費用のときだけです"
     },
-    "allLabel": "すべてのキーワード",
-    "deleteSelected": "選択した{{count}}件を削除"
+    "deleteSelected": "選択した{{count}}件を削除",
+    "bulk": {
+      "changeTitle": "取引先・科目の一括変更",
+      "keep": "変更しない",
+      "clearValue": "指定しない(外す)",
+      "apply": "変更を適用",
+      "deleteTitle": "削除"
+    }
   }
 }

@@ -8,8 +8,11 @@ import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { CounterpartyRepository } from '../../domain/counterparty/CounterpartyRepository'
 import type { KeywordRule } from '../../domain/keyword-rule/KeywordRule'
 import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
+import { KeywordBulkPanel } from './KeywordBulkPanel'
 import {
   nextSortState,
+  planBulkChange,
+  type BulkChoice,
   sortKeywordRules,
   toStoredKeyword,
   validateKeywordRuleInput,
@@ -146,10 +149,38 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
     cells: [counterpartyName(rule.counterpartyId), accountName(rule.accountId)],
   }))
 
+  const checkedRuleIds = checkedIds.map(ruleIdOf)
+  const checkedRules = rules.filter((r) => checkedRuleIds.includes(r.id))
+  /** 2件以上チェックしたら、編集パネルの代わりに一括操作パネルを出す(科目・プロジェクトタブと同じ) */
+  const bulkOpen = checkedRules.length >= 2
+
+  const applyBulk = async (change: { counterparty: BulkChoice; account: BulkChoice }) => {
+    const plan = planBulkChange({ rules, checkedIds: checkedRuleIds, change, accounts })
+    if (!plan.ok) {
+      setError(t(`keywordTab.errors.${plan.error}`))
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      for (const update of plan.updates) {
+        await Promise.resolve(
+          keywordRuleRepository.update(update.id, { counterpartyId: update.counterpartyId, accountId: update.accountId }),
+        )
+      }
+      setCheckedIds([])
+      await load()
+    } catch {
+      setError(t('keywordTab.saveError'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const removeChecked = async () => {
     setBusy(true)
     try {
-      for (const id of checkedIds) await Promise.resolve(keywordRuleRepository.delete(ruleIdOf(id)))
+      for (const id of checkedRuleIds) await Promise.resolve(keywordRuleRepository.delete(id))
       setCheckedIds([])
       setDraft(null)
       setError('')
@@ -177,11 +208,6 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
           >
             {t('keywordTab.add')}
           </button>
-          {checkedIds.length > 0 && (
-            <button type="button" className="master-btn master-btn--danger" disabled={busy} onClick={() => void removeChecked()}>
-              {t('keywordTab.deleteSelected', { count: checkedIds.length })}
-            </button>
-          )}
           <input
             className="master-field__control"
             aria-label={t('keywordTab.search')}
@@ -195,7 +221,8 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
           <p className="master-note">{t('keywordTab.empty')}</p>
         ) : (
           <TreeTable
-            categories={[{ key: 'all', name: t('keywordTab.allLabel') }]}
+            categories={[{ key: 'all', name: '' }]}
+            showCategoryRows={false}
             nodes={nodes}
             columns={[t('keywordTab.colCounterparty'), t('keywordTab.colAccount')]}
             nameColumn={t('keywordTab.colPattern')}
@@ -216,7 +243,22 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
         )}
         <p className="master-note">{t('keywordTab.sortHint')}</p>
       </div>
-      {draft && (
+      {bulkOpen && (
+        <KeywordBulkPanel
+          rules={checkedRules}
+          counterparties={counterparties}
+          accounts={accounts}
+          busy={busy}
+          error={error}
+          onApply={(change) => void applyBulk(change)}
+          onDelete={() => void removeChecked()}
+          onClear={() => {
+            setCheckedIds([])
+            setError('')
+          }}
+        />
+      )}
+      {!bulkOpen && draft && (
         <section className="master-panel" aria-label={title}>
           <h2 className="master-panel__title">{title}</h2>
           <div className="master-field">

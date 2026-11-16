@@ -34,6 +34,8 @@ export interface TreeTableProps {
    */
   sort?: { column: 'name' | number; direction: 'asc' | 'desc' }
   onSortChange?: (column: 'name' | number) => void
+  /** falseにすると区分の見出し行(区分名と件数)を出さない。区分が1つしかない平らな一覧向け(計画Issue #219)。既定はtrue */
+  showCategoryRows?: boolean
   /** falseにすると行をドラッグできない(並び順を持たない平らな一覧向け)。既定はtrue */
   draggable?: boolean
 }
@@ -61,6 +63,7 @@ export function TreeTable({
   sort,
   onSortChange,
   draggable = true,
+  showCategoryRows = true,
 }: TreeTableProps) {
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(new Set())
   const { dragOver, endDrag, handleDragStart, handleNodeDragOver, handleCategoryDragOver, handleDrop } = useTreeDrag({
@@ -84,6 +87,12 @@ export function TreeTable({
     onCheckedChange(checkedIds.includes(id) ? checkedIds.filter((x) => x !== id) : [...checkedIds, id])
 
   const colSpan = columns.length + 2
+
+  /** ヘッダーの「すべて選択」の対象: 表示中(折りたたみで隠れていない)の全行 */
+  const visibleIds = rows.flatMap((row) => (row.type === 'node' ? [row.node.id] : []))
+  const checkedVisibleCount = visibleIds.filter((id) => checkedIds.includes(id)).length
+  const allChecked = visibleIds.length > 0 && checkedVisibleCount === visibleIds.length
+  const toggleAll = () => onCheckedChange(allChecked ? [] : visibleIds)
 
   /** 列見出し。sortを渡したときだけ押せるボタンにし、並び替え中の列に小さい▲▼を付ける */
   const renderHeader = (column: 'name' | number, label: string) => {
@@ -109,7 +118,15 @@ export function TreeTable({
         <thead>
           <tr>
             <th className="tree-table__check-head">
-              <span className="tree-table__sr-only">選択</span>
+              <input
+                type="checkbox"
+                aria-label="すべて選択"
+                checked={allChecked}
+                ref={(element) => {
+                  if (element) element.indeterminate = checkedVisibleCount > 0 && !allChecked
+                }}
+                onChange={toggleAll}
+              />
             </th>
             {renderHeader('name', nameColumn)}
             {columns.map((column, index) => renderHeader(index, column))}
@@ -118,6 +135,7 @@ export function TreeTable({
         <tbody>
           {rows.map((row) => {
             if (row.type === 'category') {
+              if (!showCategoryRows) return null
               const id = `${CATEGORY_ID_PREFIX}${row.key}`
               return (
                 <tr

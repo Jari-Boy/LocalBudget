@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Account } from '../../domain/account/Account'
 import type { KeywordRule } from '../../domain/keyword-rule/KeywordRule'
-import { nextSortState, sortKeywordRules, validateKeywordRuleInput } from './keywordRuleForm'
+import { nextSortState, planBulkChange, sortKeywordRules, validateKeywordRuleInput } from './keywordRuleForm'
 
 const account = (id: number, category: Account['category']): Pick<Account, 'id' | 'category'> => ({ id, category })
 const rule = (id: number, pattern: string, counterpartyId: number | null, accountId: number | null): KeywordRule => ({
@@ -77,3 +77,52 @@ describe('sortKeywordRules / nextSortState', () => {
     expect(nextSortState({ key: 'pattern', direction: 'desc' }, 'account')).toEqual({ key: 'account', direction: 'asc' })
   })
 })
+
+describe('planBulkChange(選んだ複数のルールの取引先・科目の一括変更)', () => {
+  const accounts = [account(10, 'asset'), account(20, 'expense'), account(21, 'expense')]
+  const rules = [rule(1, 'ATM', null, 10), rule(2, 'AEON', 5, 20), rule(3, 'SEVEN', 6, 20)]
+
+  it('「変更しない」の項目は元の値のまま、変更する項目だけを差し替える', () => {
+    const plan = planBulkChange({ rules, checkedIds: [2, 3], change: { counterparty: 'keep', account: 21 }, accounts })
+
+    expect(plan).toEqual({
+      ok: true,
+      updates: [
+        { id: 2, counterpartyId: 5, accountId: 21 },
+        { id: 3, counterpartyId: 6, accountId: 21 },
+      ],
+    })
+  })
+
+  it('取引先を「指定しない」にすると、取引先を外す', () => {
+    const plan = planBulkChange({ rules, checkedIds: [2], change: { counterparty: null, account: 'keep' }, accounts })
+
+    expect(plan).toEqual({ ok: true, updates: [{ id: 2, counterpartyId: null, accountId: 20 }] })
+  })
+
+  it('取引先と資産・負債の科目の併記になる変更は、1件でもあれば全体を拒否する', () => {
+    const plan = planBulkChange({ rules, checkedIds: [2, 3], change: { counterparty: 'keep', account: 10 }, accounts })
+
+    expect(plan).toEqual({ ok: false, error: 'counterpartyNeedsPlAccount' })
+  })
+
+  it('取引先も科目も無くなる変更は拒否する', () => {
+    const plan = planBulkChange({ rules, checkedIds: [2], change: { counterparty: null, account: null }, accounts })
+
+    expect(plan).toEqual({ ok: false, error: 'targetRequired' })
+  })
+
+  it('変更後に、選んでいないルールや選んだ別のルールと同じキーワード・同じ対象になるなら拒否する', () => {
+    const dup = [rule(1, 'ATM', null, 10), rule(2, 'ATM', null, 11), rule(3, 'ATM', null, 11)]
+
+    const plan = planBulkChange({
+      rules: dup,
+      checkedIds: [1, 2],
+      change: { counterparty: 'keep', account: 11 },
+      accounts: [account(10, 'asset'), account(11, 'asset')],
+    })
+
+    expect(plan).toEqual({ ok: false, error: 'duplicate' })
+  })
+})
+

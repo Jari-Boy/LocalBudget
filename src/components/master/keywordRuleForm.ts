@@ -69,3 +69,46 @@ export function sortKeywordRules(
     return sign * x.localeCompare(y, 'ja') || a.id - b.id
   })
 }
+
+/** 一括変更で、取引先・科目のそれぞれを「変更しない('keep')」「外す(null)」「このidにする」から選ぶ */
+export type BulkChoice = 'keep' | null | number
+
+export type BulkPlan =
+  | { ok: true; updates: Array<{ id: number; counterpartyId: number | null; accountId: number | null }> }
+  | { ok: false; error: KeywordRuleError }
+
+/**
+ * 選んだ複数のルールの取引先・科目を一括で変える計画を作る(キーワードタブの一括操作パネル、計画Issue #219)。
+ * 変更後の全ルールを、1件ずつ validateKeywordRuleInput と同じ検証にかけ(併記の制約・対象の必須・
+ * 重複)、1件でも問題があれば何も変えずに最初の問題を返す。重複は、選んでいないルールと、変更後の
+ * ほかの選んだルールとの間で判定する。
+ */
+export function planBulkChange(params: {
+  rules: readonly KeywordRule[]
+  checkedIds: readonly number[]
+  change: { counterparty: BulkChoice; account: BulkChoice }
+  accounts: ReadonlyArray<Pick<Account, 'id' | 'category'>>
+}): BulkPlan {
+  const checked = new Set(params.checkedIds)
+  const apply = (current: number | null, choice: BulkChoice) => (choice === 'keep' ? current : choice)
+  const changed = params.rules
+    .filter((r) => checked.has(r.id))
+    .map((r) => ({
+      ...r,
+      counterpartyId: apply(r.counterpartyId, params.change.counterparty),
+      accountId: apply(r.accountId, params.change.account),
+    }))
+  const untouched = params.rules.filter((r) => !checked.has(r.id))
+
+  for (const rule of changed) {
+    const problem = validateKeywordRuleInput({
+      pattern: rule.pattern,
+      counterpartyId: rule.counterpartyId,
+      accountId: rule.accountId,
+      account: params.accounts.find((a) => a.id === rule.accountId) ?? null,
+      siblings: [...untouched, ...changed.filter((other) => other.id !== rule.id)],
+    })
+    if (problem) return { ok: false, error: problem }
+  }
+  return { ok: true, updates: changed.map((r) => ({ id: r.id, counterpartyId: r.counterpartyId, accountId: r.accountId })) }
+}

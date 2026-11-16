@@ -50,7 +50,7 @@ function renderTab() {
 }
 
 /** 一覧のキーワードの行(世帯メンバー・取引先タブと同じツリー表。区分の見出し行・ヘッダー行は除く) */
-const dataRows = () => screen.getAllByRole('row').filter((row) => within(row).queryByRole('checkbox') !== null && within(row).queryByRole('button') !== null)
+const dataRows = () => screen.getAllByRole('row').filter((row) => within(row).queryByLabelText(/を選択$/) !== null)
 const patternsInOrder = () => dataRows().map((row) => within(row).getAllByRole('button')[0].textContent)
 
 describe('KeywordMasterTab', () => {
@@ -63,7 +63,7 @@ describe('KeywordMasterTab', () => {
 
     expect(patternsInOrder()).toEqual(['AEON', 'VISA'])
     expect(within(dataRows()[0]).getByText('イオン')).toBeInTheDocument()
-    expect(screen.getByText('すべてのキーワード')).toBeInTheDocument()
+    expect(screen.queryByText('すべてのキーワード')).not.toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /キーワード/ })).toHaveAttribute('aria-sort', 'ascending')
   })
 
@@ -85,7 +85,7 @@ describe('KeywordMasterTab', () => {
     renderTab()
     await screen.findByRole('table')
 
-    fireEvent.click(screen.getByRole('button', { name: /^キーワード/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'キーワード' }))
 
     expect(patternsInOrder()).toEqual(['VISA', 'ATM'])
     expect(screen.getByRole('columnheader', { name: /キーワード/ })).toHaveAttribute('aria-sort', 'descending')
@@ -93,7 +93,7 @@ describe('KeywordMasterTab', () => {
 
   it('キーワードと相手科目を入力して追加でき、全角は正規化して保存する', async () => {
     renderTab()
-    fireEvent.click(await screen.findByRole('button', { name: '+ キーワードを追加' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'キーワードを追加' }))
 
     fireEvent.change(screen.getByLabelText(/^キーワード\(摘要/), { target: { value: 'ａｔｍ' } })
     fireEvent.change(screen.getByLabelText(/^相手科目/), { target: { value: String(cashId) } })
@@ -105,7 +105,7 @@ describe('KeywordMasterTab', () => {
 
   it('相手科目に資産・負債の科目を選ぶと、取引先は選べなくなる', async () => {
     renderTab()
-    fireEvent.click(await screen.findByRole('button', { name: '+ キーワードを追加' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'キーワードを追加' }))
 
     fireEvent.change(screen.getByLabelText(/^相手科目/), { target: { value: String(cashId) } })
 
@@ -114,7 +114,7 @@ describe('KeywordMasterTab', () => {
 
   it('取引先も相手科目も指定しないと保存できず、理由を表示する', async () => {
     renderTab()
-    fireEvent.click(await screen.findByRole('button', { name: '+ キーワードを追加' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'キーワードを追加' }))
     fireEvent.change(screen.getByLabelText(/^キーワード\(摘要/), { target: { value: 'XYZ' } })
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
@@ -126,7 +126,7 @@ describe('KeywordMasterTab', () => {
   it('空のキーワード、同じ対象の重複は、共通の検証で拒否される', async () => {
     rules.create({ pattern: 'ATM', accountId: cashId })
     renderTab()
-    fireEvent.click(await screen.findByRole('button', { name: '+ キーワードを追加' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'キーワードを追加' }))
     fireEvent.change(screen.getByLabelText(/^相手科目/), { target: { value: String(cashId) } })
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
@@ -163,17 +163,75 @@ describe('KeywordMasterTab', () => {
     expect(patternsInOrder()).toEqual(['AEON'])
   })
 
-  it('行のチェックを入れると「選択した件数を削除」が出て、まとめて削除できる', async () => {
+  it('ヘッダーの「すべて選択」で全行をチェックでき、2件以上チェックすると右に一括操作パネルが開く', async () => {
+    rules.create({ pattern: 'ATM', accountId: cashId })
+    rules.create({ pattern: 'AEON', counterpartyId: aeonId })
+    renderTab()
+    await screen.findByRole('table')
+
+    fireEvent.click(screen.getByLabelText('すべて選択'))
+
+    expect(screen.getByRole('region', { name: '一括操作' })).toBeInTheDocument()
+    expect(screen.getByText('2件を選択中')).toBeInTheDocument()
+  })
+
+  it('一括操作パネルで、選んだルールの科目をまとめて変更できる(取引先は変更しない)', async () => {
+    const card = new SqlJsAccountRepository(db).create({ category: 'liability', name: '未払金', isReconcilable: false })
+    rules.create({ pattern: 'ATM', accountId: cashId })
+    rules.create({ pattern: 'VISA', accountId: cashId })
+    renderTab()
+    await screen.findByRole('table')
+    fireEvent.click(screen.getByLabelText('ATMを選択'))
+    fireEvent.click(screen.getByLabelText('VISAを選択'))
+
+    const panel = within(screen.getByRole('region', { name: '一括操作' }))
+    fireEvent.change(panel.getByLabelText('科目'), { target: { value: String(card.id) } })
+    fireEvent.click(panel.getByRole('button', { name: '変更を適用' }))
+
+    await waitFor(() => expect(rules.findAll().map((r) => r.accountId)).toEqual([card.id, card.id]))
+  })
+
+  it('一括変更で併記できない組み合わせ(取引先+資産の科目)になるときは、理由を表示して何も変えない', async () => {
+    rules.create({ pattern: 'AEON', counterpartyId: aeonId, accountId: foodId })
+    rules.create({ pattern: 'AMAZON', counterpartyId: aeonId, accountId: foodId })
+    renderTab()
+    await screen.findByRole('table')
+    fireEvent.click(screen.getByLabelText('すべて選択'))
+
+    const panel = within(screen.getByRole('region', { name: '一括操作' }))
+    fireEvent.change(panel.getByLabelText('科目'), { target: { value: String(cashId) } })
+    fireEvent.click(panel.getByRole('button', { name: '変更を適用' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('取引先と相手科目を両方指定できるのは')
+    expect(rules.findAll().map((r) => r.accountId)).toEqual([foodId, foodId])
+  })
+
+  it('一括操作パネルの「削除」は2回押すと、選んだルールをまとめて削除する', async () => {
     rules.create({ pattern: 'ATM', accountId: cashId })
     rules.create({ pattern: 'VISA', accountId: cashId })
     rules.create({ pattern: 'AEON', counterpartyId: aeonId })
     renderTab()
     await screen.findByRole('table')
-
     fireEvent.click(screen.getByLabelText('ATMを選択'))
     fireEvent.click(screen.getByLabelText('VISAを選択'))
-    fireEvent.click(screen.getByRole('button', { name: '選択した2件を削除' }))
+    const panel = within(screen.getByRole('region', { name: '一括操作' }))
+
+    fireEvent.click(panel.getByRole('button', { name: '選択した2件を削除' }))
+    expect(rules.findAll()).toHaveLength(3)
+    fireEvent.click(panel.getByRole('button', { name: '本当に削除する' }))
 
     await waitFor(() => expect(rules.findAll().map((r) => r.pattern)).toEqual(['AEON']))
+  })
+
+  it('一括操作パネルの「選択を解除」で、チェックを外してパネルを閉じる', async () => {
+    rules.create({ pattern: 'ATM', accountId: cashId })
+    rules.create({ pattern: 'VISA', accountId: cashId })
+    renderTab()
+    await screen.findByRole('table')
+    fireEvent.click(screen.getByLabelText('すべて選択'))
+
+    fireEvent.click(within(screen.getByRole('region', { name: '一括操作' })).getByRole('button', { name: '選択を解除' }))
+
+    expect(screen.queryByRole('region', { name: '一括操作' })).not.toBeInTheDocument()
   })
 })
