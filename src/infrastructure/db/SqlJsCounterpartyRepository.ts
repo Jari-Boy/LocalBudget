@@ -1,7 +1,6 @@
 import type { Database } from 'sql.js'
 import type {
   Counterparty,
-  CounterpartyPattern,
   CreateCounterpartyInput,
   UpdateCounterpartyInput,
 } from '../../domain/counterparty/Counterparty'
@@ -22,14 +21,9 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
 
   create(input: CreateCounterpartyInput): Counterparty {
     this.db.run(
-      `INSERT INTO counterparties (name, default_account_id, counterparty_group_id, sort_order)
-       VALUES (?, ?, ?, ?)`,
-      [
-        input.name,
-        input.defaultAccountId ?? null,
-        input.counterpartyGroupId ?? null,
-        input.sortOrder ?? 0,
-      ],
+      `INSERT INTO counterparties (name, counterparty_group_id, sort_order)
+       VALUES (?, ?, ?)`,
+      [input.name, input.counterpartyGroupId ?? null, input.sortOrder ?? 0],
     )
     return this.findById(lastInsertRowId(this.db))!
   }
@@ -52,14 +46,11 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
       throw new Error(`counterparty not found: ${id}`)
     }
 
-    const defaultAccountId =
-      input.defaultAccountId === undefined ? current.defaultAccountId : input.defaultAccountId
     this.db.run(
       `UPDATE counterparties
-       SET name = ?, default_account_id = ?, counterparty_group_id = ?, sort_order = ? WHERE id = ?`,
+       SET name = ?, counterparty_group_id = ?, sort_order = ? WHERE id = ?`,
       [
         input.name ?? current.name,
-        defaultAccountId,
         input.counterpartyGroupId === undefined
           ? current.counterpartyGroupId
           : input.counterpartyGroupId,
@@ -82,32 +73,6 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
   activate(id: number): Counterparty {
     this.db.run('UPDATE counterparties SET is_active = 1 WHERE id = ?', [id])
     return this.findById(id)!
-  }
-
-  addPattern(counterpartyId: number, pattern: string): CounterpartyPattern {
-    this.db.run('INSERT INTO keyword_rules (counterparty_id, pattern) VALUES (?, ?)', [
-      counterpartyId,
-      pattern,
-    ])
-    return this.findPatternById(lastInsertRowId(this.db))!
-  }
-
-  findPatternsByCounterparty(counterpartyId: number): CounterpartyPattern[] {
-    const [result] = this.db.exec(
-      'SELECT * FROM keyword_rules WHERE counterparty_id = ? ORDER BY id',
-      [counterpartyId],
-    )
-    if (!result) return []
-    return result.values.map((values) => mapRowToCounterpartyPattern(result.columns, values))
-  }
-
-  updatePattern(patternId: number, pattern: string): CounterpartyPattern {
-    this.db.run('UPDATE keyword_rules SET pattern = ? WHERE id = ?', [pattern, patternId])
-    return this.findPatternById(patternId)!
-  }
-
-  deletePattern(patternId: number): void {
-    this.db.run('DELETE FROM keyword_rules WHERE id = ?', [patternId])
   }
 
   merge(targetId: number, sourceIds: number[]): void {
@@ -161,12 +126,6 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
     }
   }
 
-  private findPatternById(id: number): CounterpartyPattern | null {
-    const [result] = this.db.exec('SELECT * FROM keyword_rules WHERE id = ?', [id])
-    if (!result) return null
-    return mapRowToCounterpartyPattern(result.columns, result.values[0])
-  }
-
   private countRows(table: string, column: string, value: number): number {
     const [result] = this.db.exec(`SELECT COUNT(*) AS count FROM ${table} WHERE ${column} = ?`, [
       value,
@@ -188,21 +147,10 @@ function mapRowToCounterparty(columns: string[], values: unknown[]): Counterpart
   return {
     id: get<number>('id'),
     name: get<string>('name'),
-    defaultAccountId: get<number | null>('default_account_id'),
     counterpartyGroupId: get<number | null>('counterparty_group_id'),
     sortOrder: get<number>('sort_order'),
     isActive: sqlToBool(get<number>('is_active')),
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),
-  }
-}
-
-function mapRowToCounterpartyPattern(columns: string[], values: unknown[]): CounterpartyPattern {
-  const get = <T,>(name: string): T => values[columns.indexOf(name)] as T
-  return {
-    id: get<number>('id'),
-    counterpartyId: get<number>('counterparty_id'),
-    pattern: get<string>('pattern'),
-    createdAt: get<string>('created_at'),
   }
 }

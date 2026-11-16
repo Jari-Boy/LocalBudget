@@ -281,6 +281,7 @@ export function AppRoutes() {
         element={
           <CounterpartyMasterTab
             counterpartyRepository={counterpartyRepository}
+            keywordRuleRepository={keywordRuleRepository}
             counterpartyGroupRepository={counterpartyGroupRepository}
             accountRepository={accountRepository}
             journalEntryRepository={journalEntryRepository}

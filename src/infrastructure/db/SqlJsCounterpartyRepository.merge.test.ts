@@ -40,7 +40,7 @@ describe('merge', () => {
   it('統合元に紐づくキーワードルール(keyword_rules)を統合先へ付け替える', () => {
     const target = repository.create({ name: 'ローソン' })
     const source = repository.create({ name: 'ローソン 東京日本橋店' })
-    repository.addPattern(source.id, 'LAWSON NIHONBASHI')
+    new SqlJsKeywordRuleRepository(db).create({ pattern: 'LAWSON NIHONBASHI', counterpartyId: source.id })
 
     repository.merge(target.id, [source.id])
 
@@ -52,12 +52,13 @@ describe('merge', () => {
   it('付け替えで統合先と同じキーワードが重複したルールは、1件にまとめる', () => {
     const target = repository.create({ name: 'ローソン' })
     const source = repository.create({ name: 'ローソン 東京日本橋店' })
-    repository.addPattern(target.id, 'LAWSON')
-    repository.addPattern(source.id, 'LAWSON')
+    const rules = new SqlJsKeywordRuleRepository(db)
+    rules.create({ pattern: 'LAWSON', counterpartyId: target.id })
+    rules.create({ pattern: 'LAWSON', counterpartyId: source.id })
 
     repository.merge(target.id, [source.id])
 
-    expect(repository.findPatternsByCounterparty(target.id)).toHaveLength(1)
+    expect(new SqlJsKeywordRuleRepository(db).findByCounterparty(target.id)).toHaveLength(1)
   })
 
   it('統合元→統合先のペアごとにcounterparty_merge_logへ1行記録する', () => {
@@ -66,7 +67,7 @@ describe('merge', () => {
     const accountId = insertAccount(db, 'expense', '食費')
     const entryId = insertJournalEntry(db)
     insertJournalLine(db, entryId, accountId, source.id)
-    repository.addPattern(source.id, 'LAWSON NIHONBASHI')
+    new SqlJsKeywordRuleRepository(db).create({ pattern: 'LAWSON NIHONBASHI', counterpartyId: source.id })
 
     repository.merge(target.id, [source.id])
 

@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
-import type { Counterparty, CounterpartyPattern } from '../../domain/counterparty/Counterparty'
+import type { Counterparty } from '../../domain/counterparty/Counterparty'
+import type { KeywordRule } from '../../domain/keyword-rule/KeywordRule'
+import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
 import type { CounterpartyRepository } from '../../domain/counterparty/CounterpartyRepository'
 import type { CounterpartyGroup } from '../../domain/counterparty-group/CounterpartyGroup'
 import type { CounterpartyGroupRepository } from '../../domain/counterparty-group/CounterpartyGroupRepository'
@@ -31,13 +33,11 @@ export interface CounterpartyMasterTabProps {
       | 'delete'
       | 'deactivate'
       | 'activate'
-      | 'addPattern'
-      | 'updatePattern'
-      | 'deletePattern'
-      | 'findPatternsByCounterparty'
       | 'merge'
     >
   >
+  /** 取引先のキーワード(ルール)の表示・編集(計画Issue #219) */
+  keywordRuleRepository: MaybeAsync<Pick<KeywordRuleRepository, 'findByCounterparty' | 'create' | 'update' | 'delete'>>
   counterpartyGroupRepository: MaybeAsync<
     Pick<CounterpartyGroupRepository, 'findAll' | 'create' | 'update' | 'delete'>
   >
@@ -54,7 +54,7 @@ interface LoadedData {
   entries: JournalEntry[]
   rules: RecurringTransactionRule[]
   batches: SettlementBatch[]
-  patternsById: Map<number, CounterpartyPattern[]>
+  rulesById: Map<number, KeywordRule[]>
 }
 
 const LEAF_LABEL = '取引先'
@@ -68,6 +68,7 @@ const LEAF_LABEL = '取引先'
  */
 export function CounterpartyMasterTab({
   counterpartyRepository,
+  keywordRuleRepository,
   counterpartyGroupRepository,
   accountRepository,
   journalEntryRepository,
@@ -88,9 +89,7 @@ export function CounterpartyMasterTab({
       recurringTransactionRuleRepository.findAll(),
       settlementBatchRepository.findAll(),
     ])
-    const patternLists = await Promise.all(
-      counterparties.map((c) => counterpartyRepository.findPatternsByCounterparty(c.id)),
-    )
+    const ruleLists = await Promise.all(counterparties.map((c) => keywordRuleRepository.findByCounterparty(c.id)))
     setData({
       counterparties,
       groups,
@@ -98,10 +97,11 @@ export function CounterpartyMasterTab({
       entries,
       rules,
       batches,
-      patternsById: new Map(counterparties.map((c, i) => [c.id, patternLists[i]])),
+      rulesById: new Map(counterparties.map((c, i) => [c.id, ruleLists[i]])),
     })
   }, [
     counterpartyRepository,
+    keywordRuleRepository,
     counterpartyGroupRepository,
     accountRepository,
     journalEntryRepository,
@@ -119,8 +119,7 @@ export function CounterpartyMasterTab({
         ? buildCounterpartyTree({
             groups: data.groups,
             counterparties: data.counterparties,
-            accountNameById: new Map(data.accounts.map((a) => [a.id, a.name])),
-            patternCountById: new Map([...data.patternsById].map(([id, list]) => [id, list.length])),
+            patternCountById: new Map([...data.rulesById].map(([id, list]) => [id, list.length])),
           })
         : null,
     [data],
@@ -186,7 +185,7 @@ export function CounterpartyMasterTab({
   return (
     <GroupedMasterTab
       tree={tree}
-      columns={['既定の科目', '状態']}
+      columns={['キーワード', '状態']}
       leafLabel={LEAF_LABEL}
       actions={actions}
       isLeafActive={(id) => data.counterparties.find((c) => c.id === id)?.isActive ?? true}
@@ -201,8 +200,8 @@ export function CounterpartyMasterTab({
           <CounterpartyExtra
             counterparty={counterparty}
             accounts={data.accounts}
-            patterns={data.patternsById.get(id) ?? []}
-            repository={counterpartyRepository}
+            rules={data.rulesById.get(id) ?? []}
+            repository={keywordRuleRepository}
             reload={reload}
             busy={busy}
           />
@@ -226,36 +225,46 @@ export function CounterpartyMasterTab({
 interface CounterpartyExtraProps {
   counterparty: Counterparty
   accounts: readonly Account[]
-  patterns: readonly CounterpartyPattern[]
-  repository: CounterpartyMasterTabProps['counterpartyRepository']
+  /** この取引先のキーワードルール */
+  rules: readonly KeywordRule[]
+  repository: CounterpartyMasterTabProps['keywordRuleRepository']
   reload: () => Promise<void>
   busy: boolean
 }
 
-/** 取引先の右パネルに足す欄: 既定の科目(選ぶとすぐ保存)と、登録済みパターンの管理 */
-function CounterpartyExtra({ counterparty, accounts, patterns, repository, reload, busy }: CounterpartyExtraProps) {
+/**
+ * 取引先の右パネルに足す欄: この取引先のキーワード(ルール)の管理(計画Issue #219)。キーワードごとに
+ * 科目(費用・収益)を選べる。「既定の科目」の欄は無い(科目の対応はキーワードマスタに一本化した)。
+ * 追加・編集・削除はキーワードタブ・勘定科目タブと共通の検証(keywordRuleForm)を通る。
+ */
+function CounterpartyExtra({ counterparty, accounts, rules, repository, reload, busy }: CounterpartyExtraProps) {
   const { t } = useTranslation('master')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [newPattern, setNewPattern] = useState('')
+  const [newAccountId, setNewAccountId] = useState<number | null>(null)
+  /** 「+ キーワードを追加」を押すと、入力欄(キーワードと科目)が出る(計画Issue #219) */
+  const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
 
+  /** 取引先を持てる科目(費用・収益)。有効なもの、およびすでにキーワードに選ばれているもの */
+  const usedAccountIds = new Set(rules.flatMap((r) => (r.accountId === null ? [] : [r.accountId])))
   const options = accounts.filter(
-    (a) =>
-      (a.category === 'expense' || a.category === 'revenue') && (a.isActive || a.id === counterparty.defaultAccountId),
+    (a) => (a.category === 'expense' || a.category === 'revenue') && (a.isActive || usedAccountIds.has(a.id)),
   )
   const trimmedNew = newPattern.trim()
   const trimmedEdit = editDraft.trim()
+  const accountOf = (id: number | null) => (id === null ? null : (accounts.find((a) => a.id === id) ?? null))
 
   /** キーワードタブ・勘定科目タブと共通の検証(keywordRuleForm)。問題があれば理由を表示して保存しない */
-  const validate = (text: string, selfId: number | null): boolean => {
+  const validate = (text: string, accountId: number | null, selfId: number | null): boolean => {
     const problem = validateKeywordRuleInput({
       pattern: text,
       counterpartyId: counterparty.id,
-      accountId: null,
-      account: null,
-      siblings: patterns.filter((p) => p.id !== selfId).map((p) => ({ ...p, accountId: null })),
+      accountId,
+      account: accountOf(accountId),
+      siblings: rules.filter((r) => r.id !== selfId),
     })
     setError(problem === null ? '' : t(`keywordTab.errors.${problem}`))
     return problem === null
@@ -275,94 +284,92 @@ function CounterpartyExtra({ counterparty, accounts, patterns, repository, reloa
   }
   const disabled = busy || working
 
-  return (
-    <>
-      <div className="master-field">
-        <label className="master-field__label" htmlFor="counterparty-default-account">
-          {t('counterpartyTab.defaultAccount')}
-        </label>
-        <select
-          id="counterparty-default-account"
-          className="master-field__control"
-          disabled={disabled}
-          value={counterparty.defaultAccountId === null ? '' : String(counterparty.defaultAccountId)}
-          onChange={(event) =>
-            void run(() =>
-              repository.update(counterparty.id, {
-                defaultAccountId: event.target.value === '' ? null : Number(event.target.value),
-              }),
-            )
-          }
-        >
-          <option value="">{t('counterpartyTab.defaultAccountNone')}</option>
-          {options.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-      </div>
+  const accountSelect = (label: string, value: number | null, onChange: (accountId: number | null) => void) => (
+    <select
+      className="master-field__control"
+      aria-label={label}
+      disabled={disabled}
+      value={value === null ? '' : String(value)}
+      onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))}
+    >
+      <option value="">{t('counterpartyTab.accountNone')}</option>
+      {options.map((a) => (
+        <option key={a.id} value={a.id}>
+          {a.name}
+        </option>
+      ))}
+    </select>
+  )
 
-      <section className="master-subsection" aria-label={t('counterpartyTab.patternsTitle', { count: patterns.length })}>
-        <h3 className="master-subsection__title">{t('counterpartyTab.patternsTitle', { count: patterns.length })}</h3>
-        <p className="master-note">{t('counterpartyTab.patternsNote')}</p>
-        {patterns.length === 0 && <p className="master-note">{t('counterpartyTab.patternsEmpty')}</p>}
-        <ul className="master-list">
-          {patterns.map((p) =>
-            editingId === p.id ? (
-              <li key={p.id} className="master-list__item">
-                <input
-                  className="master-field__control"
-                  aria-label={t('counterpartyTab.patternInput')}
-                  value={editDraft}
-                  onChange={(event) => setEditDraft(event.target.value)}
-                />
-                <button
-                  type="button"
-                  className="master-btn master-btn--primary"
-                  disabled={disabled || trimmedEdit === ''}
-                  onClick={() =>
-                    void run(async () => {
-                      if (!validate(trimmedEdit, p.id)) return
-                      await repository.updatePattern(p.id, toStoredKeyword(trimmedEdit))
-                      setEditingId(null)
-                    })
-                  }
-                >
-                  {t('counterpartyTab.patternSave')}
-                </button>
-                <button type="button" className="master-btn" onClick={() => setEditingId(null)}>
-                  {t('counterpartyTab.patternCancel')}
-                </button>
-              </li>
-            ) : (
-              <li key={p.id} className="master-list__item">
-                <span className="master-list__text">{p.pattern}</span>
-                <button
-                  type="button"
-                  className="master-btn"
-                  disabled={disabled}
-                  aria-label={t('counterpartyTab.patternEditLabel', { pattern: p.pattern })}
-                  onClick={() => {
-                    setEditingId(p.id)
-                    setEditDraft(p.pattern)
-                  }}
-                >
-                  {t('counterpartyTab.patternEdit')}
-                </button>
-                <button
-                  type="button"
-                  className="master-btn"
-                  disabled={disabled}
-                  aria-label={t('counterpartyTab.patternDeleteLabel', { pattern: p.pattern })}
-                  onClick={() => void run(() => repository.deletePattern(p.id))}
-                >
-                  {t('counterpartyTab.patternDelete')}
-                </button>
-              </li>
-            ),
-          )}
-        </ul>
+  return (
+    <section className="master-subsection" aria-label={t('counterpartyTab.patternsTitle', { count: rules.length })}>
+      <h3 className="master-subsection__title">{t('counterpartyTab.patternsTitle', { count: rules.length })}</h3>
+      <p className="master-note">{t('counterpartyTab.patternsNote')}</p>
+      {rules.length === 0 && <p className="master-note">{t('counterpartyTab.patternsEmpty')}</p>}
+      <ul className="master-list">
+        {rules.map((rule) =>
+          editingId === rule.id ? (
+            <li key={rule.id} className="master-list__item">
+              <input
+                className="master-field__control"
+                aria-label={t('counterpartyTab.patternInput')}
+                value={editDraft}
+                onChange={(event) => setEditDraft(event.target.value)}
+              />
+              <button
+                type="button"
+                className="master-btn master-btn--primary"
+                disabled={disabled || trimmedEdit === ''}
+                onClick={() =>
+                  void run(async () => {
+                    if (!validate(trimmedEdit, rule.accountId, rule.id)) return
+                    await repository.update(rule.id, { pattern: toStoredKeyword(trimmedEdit) })
+                    setEditingId(null)
+                  })
+                }
+              >
+                {t('counterpartyTab.patternSave')}
+              </button>
+              <button type="button" className="master-btn" onClick={() => setEditingId(null)}>
+                {t('counterpartyTab.patternCancel')}
+              </button>
+            </li>
+          ) : (
+            <li key={rule.id} className="master-list__item">
+              <span className="master-list__text">{rule.pattern}</span>
+              {accountSelect(t('counterpartyTab.patternAccountLabel', { pattern: rule.pattern }), rule.accountId, (accountId) =>
+                void run(async () => {
+                  if (!validate(rule.pattern, accountId, rule.id)) return
+                  await repository.update(rule.id, { accountId })
+                }),
+              )}
+              <button
+                type="button"
+                className="master-btn"
+                disabled={disabled}
+                aria-label={t('counterpartyTab.patternEditLabel', { pattern: rule.pattern })}
+                onClick={() => {
+                  setEditingId(rule.id)
+                  setEditDraft(rule.pattern)
+                  setError('')
+                }}
+              >
+                {t('counterpartyTab.patternEdit')}
+              </button>
+              <button
+                type="button"
+                className="master-btn"
+                disabled={disabled}
+                aria-label={t('counterpartyTab.patternDeleteLabel', { pattern: rule.pattern })}
+                onClick={() => void run(() => repository.delete(rule.id))}
+              >
+                {t('counterpartyTab.patternDelete')}
+              </button>
+            </li>
+          ),
+        )}
+      </ul>
+      {adding ? (
         <div className="master-list__item">
           <input
             className="master-field__control"
@@ -371,28 +378,58 @@ function CounterpartyExtra({ counterparty, accounts, patterns, repository, reloa
             value={newPattern}
             onChange={(event) => setNewPattern(event.target.value)}
           />
+          {accountSelect(t('counterpartyTab.patternNewAccountLabel'), newAccountId, setNewAccountId)}
           <button
             type="button"
-            className="master-btn"
+            className="master-btn master-btn--primary"
             disabled={disabled || trimmedNew === ''}
             onClick={() =>
               void run(async () => {
-                if (!validate(trimmedNew, null)) return
-                await repository.addPattern(counterparty.id, toStoredKeyword(trimmedNew))
+                if (!validate(trimmedNew, newAccountId, null)) return
+                await repository.create({ pattern: toStoredKeyword(trimmedNew), counterpartyId: counterparty.id, accountId: newAccountId })
                 setNewPattern('')
+                setNewAccountId(null)
+                setAdding(false)
               })
             }
+          >
+            {t('counterpartyTab.patternAddSubmit')}
+          </button>
+          <button
+            type="button"
+            className="master-btn"
+            onClick={() => {
+              setAdding(false)
+              setNewPattern('')
+              setNewAccountId(null)
+              setError('')
+            }}
+          >
+            {t('counterpartyTab.patternCancel')}
+          </button>
+        </div>
+      ) : (
+        <div className="master-actions">
+          <button
+            type="button"
+            className="master-btn"
+            disabled={disabled}
+            onClick={() => {
+              setAdding(true)
+              setEditingId(null)
+              setError('')
+            }}
           >
             {t('counterpartyTab.patternAdd')}
           </button>
         </div>
-        {error && (
-          <p role="alert" className="master-error">
-            {error}
-          </p>
-        )}
-      </section>
-    </>
+      )}
+      {error && (
+        <p role="alert" className="master-error">
+          {error}
+        </p>
+      )}
+    </section>
   )
 }
 

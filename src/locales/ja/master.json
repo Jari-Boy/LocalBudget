@@ -159,10 +159,8 @@
     "allLabel": "すべての{{leaf}}"
   },
   "counterpartyTab": {
-    "defaultAccount": "既定の科目",
-    "defaultAccountNone": "指定なし",
     "patternsTitle": "登録済みキーワード({{count}}件)",
-    "patternsNote": "CSV取込で取引先を手動で選んだときに学習した摘要と、ここで追加した文字列です。摘要に部分一致すると、この取引先を自動で設定します。",
+    "patternsNote": "明細の摘要にこの文字列が含まれると、この取引先と、右の科目が選ばれます。科目はキーワードごとに決めます。",
     "patternsEmpty": "登録済みのキーワードはありません。",
     "patternInput": "キーワード",
     "patternSave": "キーワードを保存",
@@ -182,7 +180,11 @@
     "mergeRun": "統合を実行",
     "mergeConfirm": "「{{sources}}」を「{{target}}」に統合します。元に戻せません。よろしいですか?",
     "mergeDone": "「{{sources}}」を「{{target}}」に統合しました。",
-    "mergeError": "統合に失敗しました。もう一度お試しください。"
+    "mergeError": "統合に失敗しました。もう一度お試しください。",
+    "accountNone": "指定しない",
+    "patternAccountLabel": "{{pattern}}の科目",
+    "patternNewAccountLabel": "追加するキーワードの科目",
+    "patternAddSubmit": "追加"
   },
   "memberTab": {
     "edit": "世帯メンバーの編集",

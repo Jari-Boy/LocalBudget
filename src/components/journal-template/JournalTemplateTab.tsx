@@ -156,7 +156,6 @@ export function JournalTemplateTab(props: JournalTemplateTabProps) {
     const counterpartyTree = buildCounterpartyTree({
       groups: data.counterpartyGroups,
       counterparties: data.counterparties,
-      accountNameById: new Map(),
       patternCountById: new Map(),
     })
     const projectTree = buildProjectTree({ groups: data.projectGroups, projects: data.projects })

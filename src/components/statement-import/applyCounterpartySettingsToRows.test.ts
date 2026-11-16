@@ -40,11 +40,10 @@ function state(overrides: Partial<ImportRowState> = {}): ImportRowState {
   return { ...createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [] }), ...overrides }
 }
 
-/** 新聞販売店Aのキーワード「新聞販売店A」を持つ設定(相手科目の初期値は指定がなければなし) */
-const settingsWith = (defaultAccountId: number | null = null, keywords: string[] = ['新聞販売店A']): CounterpartySettings => ({
+/** 新聞販売店Aのキーワード「新聞販売店A」を持つ設定(キーワードの科目は指定がなければなし。計画Issue #219) */
+const settingsWith = (accountId: number | null = null, keywords: string[] = ['新聞販売店A']): CounterpartySettings => ({
   counterpartyId: NEWS_SHOP,
-  keywords,
-  defaultAccountId,
+  keywords: keywords.map((text) => ({ text, accountId })),
 })
 
 function run(params: {
@@ -124,15 +123,15 @@ describe('取引先の設定(キーワード)', () => {
   })
 })
 
-describe('相手科目の初期値', () => {
-  it('同じ取引先を持ち、相手科目を手で選んでいない行にだけ、初期値の科目を設定する', () => {
+describe('キーワードの科目(計画Issue #219)', () => {
+  it('キーワードに一致し、同じ取引先を持ち、相手科目を手で選んでいない行にだけ、そのキーワードの科目を設定する', () => {
     const untouched = state({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: FOOD.id })
     const touched = state({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: FOOD.id, counterAccountTouched: true })
     const otherShop = state({ counterpartyId: OTHER_SHOP, initialCounterpartyId: OTHER_SHOP, counterAccountId: FOOD.id })
 
     const result = run({
       rows: [untouched, touched, otherShop],
-      descriptions: ['x', 'x', 'x'],
+      descriptions: ['新聞販売店A', '新聞販売店A', '新聞販売店A'],
       settings: settingsWith(NEWS.id),
     })
 
@@ -140,35 +139,55 @@ describe('相手科目の初期値', () => {
     expect(result.applied).toBe(1)
   })
 
-  it('取引先を新しく設定した行にも、初期値の科目が入る。科目は手で選んだ扱いにならない', () => {
+  it('取引先を新しく設定した行にも、そのキーワードの科目が入る。科目は手で選んだ扱いにならない', () => {
     const result = run({ rows: [state()], descriptions: ['新聞販売店A'], settings: settingsWith(NEWS.id) })
 
     expect(result.states[0]).toMatchObject({ counterpartyId: NEWS_SHOP, counterAccountId: NEWS.id, counterAccountTouched: false })
     expect(result.applied).toBe(1)
   })
 
-  it('取引先が違う行・取引先が未設定のままの行は、初期値の科目を入れない', () => {
+  it('キーワードに一致しない行は、同じ取引先を持っていても科目を変えない(キーワードに紐づくものだけを入れる)', () => {
+    const row = state({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: FOOD.id })
+
+    expect(run({ rows: [row], descriptions: ['別の店B'], settings: settingsWith(NEWS.id) }).applied).toBe(0)
+  })
+
+  it('取引先が違う行・取引先が未設定のままの行は、科目を入れない', () => {
     const result = run({ rows: [state({ counterAccountId: FOOD.id })], descriptions: ['別の店B'], settings: settingsWith(NEWS.id) })
 
     expect(result.states[0].counterAccountId).toBe(FOOD.id)
   })
 
-  it('初期値が未設定の下書きでは、相手科目を変えない', () => {
+  it('キーワードの科目が未設定なら、相手科目を変えない', () => {
     const row = state({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: FOOD.id })
 
-    expect(run({ rows: [row], descriptions: ['x'], settings: settingsWith(null) }).applied).toBe(0)
+    expect(run({ rows: [row], descriptions: ['新聞販売店A'], settings: settingsWith(null) }).applied).toBe(0)
   })
 
-  it('初期値の科目が費用・収益でない(取引先を持てない)場合は、設定しない', () => {
+  it('キーワードの科目が費用・収益でない(取引先を持てない)場合は、設定しない', () => {
     const row = state({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: FOOD.id })
 
-    expect(run({ rows: [row], descriptions: ['x'], settings: settingsWith(BANK.id) }).applied).toBe(0)
+    expect(run({ rows: [row], descriptions: ['新聞販売店A'], settings: settingsWith(BANK.id) }).applied).toBe(0)
   })
 
-  it('すでに初期値と同じ科目の行は、設定した件数に数えない', () => {
+  it('すでにキーワードの科目と同じ行は、設定した件数に数えない', () => {
     const row = state({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: NEWS.id })
 
-    expect(run({ rows: [row], descriptions: ['x'], settings: settingsWith(NEWS.id) }).applied).toBe(0)
+    expect(run({ rows: [row], descriptions: ['新聞販売店A'], settings: settingsWith(NEWS.id) }).applied).toBe(0)
+  })
+
+  it('複数のキーワードに一致する行は、最も長いキーワードの科目を使う', () => {
+    const settings: CounterpartySettings = {
+      counterpartyId: NEWS_SHOP,
+      keywords: [
+        { text: '新聞', accountId: FOOD.id },
+        { text: '新聞販売店A', accountId: NEWS.id },
+      ],
+    }
+
+    const result = run({ rows: [state()], descriptions: ['新聞販売店A 引落'], settings })
+
+    expect(result.states[0]).toMatchObject({ counterpartyId: NEWS_SHOP, counterAccountId: NEWS.id })
   })
 })
 

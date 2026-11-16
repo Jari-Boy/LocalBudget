@@ -149,7 +149,6 @@ describe('buildCounterpartyTree', () => {
   const counterparty = (
     overrides: Partial<Counterparty> & Pick<Counterparty, 'id' | 'name'>,
   ): Counterparty => ({
-    defaultAccountId: null,
     counterpartyGroupId: null,
     sortOrder: 0,
     isActive: true,
@@ -157,32 +156,29 @@ describe('buildCounterpartyTree', () => {
     ...overrides,
   })
 
-  it('区分は「すべての取引先」の1つだけで、既定の科目名と状態を列に出す', () => {
+  it('区分は「すべての取引先」の1つだけで、キーワードの件数と状態を列に出す(既定の科目の列は無い)', () => {
     const { categories, nodes } = buildCounterpartyTree({
       groups: [group({ id: 1, name: 'スーパー' })],
-      counterparties: [counterparty({ id: 2, name: 'イオン', defaultAccountId: 9, counterpartyGroupId: 1 })],
-      accountNameById: new Map([[9, '食費']]),
-      patternCountById: new Map(),
+      counterparties: [counterparty({ id: 2, name: 'イオン', counterpartyGroupId: 1 })],
+      patternCountById: new Map([[2, 3]]),
     })
 
     expect(categories).toEqual([{ key: 'counterparty', name: 'すべての取引先' }])
     expect(nodes.find((n) => n.id === leafNodeId(2))).toMatchObject({
       category: 'counterparty',
       parentId: groupNodeId(1),
-      cells: ['食費', '有効'],
+      cells: ['3件', '有効'],
     })
   })
 
-  it('登録済みキーワードがあれば、名称の横の補足に件数を出す', () => {
+  it('キーワードが無い取引先は、キーワードの列を空にする', () => {
     const { nodes } = buildCounterpartyTree({
       groups: [],
-      counterparties: [counterparty({ id: 2, name: 'イオン' }), counterparty({ id: 3, name: 'Amazon' })],
-      accountNameById: new Map(),
-      patternCountById: new Map([[2, 3]]),
+      counterparties: [counterparty({ id: 2, name: 'イオン' })],
+      patternCountById: new Map(),
     })
 
-    expect(nodes.find((n) => n.id === leafNodeId(2))!.note).toBe('キーワード3件')
-    expect(nodes.find((n) => n.id === leafNodeId(3))!.note).toBeUndefined()
+    expect(nodes.find((n) => n.id === leafNodeId(2))!.cells).toEqual(['', '有効'])
   })
 })
 

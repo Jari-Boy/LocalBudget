@@ -3,7 +3,7 @@
  * sql.js(SQLite WASM)をNode上で実際に動かし、docs/domain/counterparties.md・
  * docs/schema/counterparties.sql に定義された取引先のライフサイクル(作成・参照・
  * 更新・削除・非アクティブ化)と、DDL側のトリガーが期待通り機能することを検証する。
- * パターン管理(addPattern等)は SqlJsCounterpartyRepository.pattern.test.ts、
+ * キーワードルールの管理は SqlJsKeywordRuleRepository.test.ts、
  * 統合(merge)は SqlJsCounterpartyRepository.merge.test.ts で扱う。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
@@ -23,7 +23,7 @@ beforeEach(async () => {
 })
 
 describe('create / findById', () => {
-  it('defaultAccountId省略時はnullで作成する', () => {
+  it('取引先を作成して取得できる', () => {
     const created = repository.create({ name: 'イオン' })
 
     const found = repository.findById(created.id)
@@ -31,17 +31,16 @@ describe('create / findById', () => {
     expect(found).toMatchObject({
       id: created.id,
       name: 'イオン',
-      defaultAccountId: null,
       isActive: true,
     })
   })
 
-  it('defaultAccountIdを指定して作成する', () => {
-    const accountId = insertAccount(db, 'expense', '食費')
+  it('取引先は既定の科目(default_account_id)を持たない(科目はキーワードルールが持つ、計画Issue #219)', () => {
+    const created = repository.create({ name: 'イオン' })
 
-    const created = repository.create({ name: 'イオン', defaultAccountId: accountId })
-
-    expect(created.defaultAccountId).toBe(accountId)
+    expect(created).not.toHaveProperty('defaultAccountId')
+    const columns = db.exec('PRAGMA table_info(counterparties)')[0].values.map((row) => row[1])
+    expect(columns).not.toContain('default_account_id')
   })
 
   it('存在しないidに対してはnullを返す', () => {
@@ -67,24 +66,6 @@ describe('update', () => {
     const updated = repository.update(created.id, { name: 'イオン(改名)' })
 
     expect(updated.name).toBe('イオン(改名)')
-  })
-
-  it('defaultAccountIdを変更する(常に変更可能、accounts.categoryのような不可変制約はない)', () => {
-    const created = repository.create({ name: 'イオン' })
-    const accountId = insertAccount(db, 'expense', '食費')
-
-    const updated = repository.update(created.id, { defaultAccountId: accountId })
-
-    expect(updated.defaultAccountId).toBe(accountId)
-  })
-
-  it('defaultAccountIdにnullを指定すると初期値をクリアできる', () => {
-    const accountId = insertAccount(db, 'expense', '食費')
-    const created = repository.create({ name: 'イオン', defaultAccountId: accountId })
-
-    const updated = repository.update(created.id, { defaultAccountId: null })
-
-    expect(updated.defaultAccountId).toBeNull()
   })
 
   it('updated_atが更新される', () => {

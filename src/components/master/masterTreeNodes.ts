@@ -121,12 +121,10 @@ export function buildAccountTree({
 export function buildCounterpartyTree({
   groups,
   counterparties,
-  accountNameById,
   patternCountById,
 }: {
   groups: readonly CounterpartyGroup[]
   counterparties: readonly Counterparty[]
-  accountNameById: ReadonlyMap<number, string>
   patternCountById: ReadonlyMap<number, number>
 }): MasterTreeData {
   const category = 'counterparty'
@@ -152,8 +150,7 @@ export function buildCounterpartyTree({
           category,
           parentId: c.counterpartyGroupId === null ? null : groupNodeId(c.counterpartyGroupId),
           name: c.name,
-          cells: [c.defaultAccountId === null ? '' : (accountNameById.get(c.defaultAccountId) ?? ''), stateText(c)],
-          ...(patternCount > 0 ? { note: `キーワード${patternCount}件` } : {}),
+          cells: [patternCount > 0 ? `${patternCount}件` : '', stateText(c)],
         },
       }
     }),

@@ -47,14 +47,35 @@ describe('estimateKeywordRule', () => {
     expect(result).toEqual({ counterpartyId: 5, accountId: 20, ambiguous: false })
   })
 
-  it('別々の取引先に解決される複数のルールは曖昧とし、何も推定しない', () => {
-    const result = estimateKeywordRule('AEON AMAZON', lookup([rule(1, 'AEON', 5, null), rule(2, 'AMAZON', 6, null)]))
+  it('複数のルールが一致したときは、最も長いキーワードのルールを採用し、短いキーワードの取引先・科目は使わない', () => {
+    const result = estimateKeywordRule(
+      'AMAZON PRIME AMAZON',
+      lookup([rule(1, 'AMAZON', 5, 20), rule(2, 'AMAZON PRIME', 6, 21)]),
+    )
+
+    expect(result).toEqual({ counterpartyId: 6, accountId: 21, ambiguous: false })
+  })
+
+  it('採用したルールが持たない方(取引先だけ・科目だけ)は、短いルールから補わず空のままにする', () => {
+    const result = estimateKeywordRule('セブン銀行ATM', lookup([rule(1, 'ATM', null, 10), rule(2, 'セブン銀行', 5, null)]))
+
+    expect(result).toEqual({ counterpartyId: 5, accountId: null, ambiguous: false })
+  })
+
+  it('長さの比較は、正規化後の文字数で行う(全角・空白を除いた長さ)', () => {
+    const result = estimateKeywordRule('ATM VISA', lookup([rule(1, 'ＡＴＭ', null, 10), rule(2, 'V I S A', null, 11)]))
+
+    expect(result).toEqual({ counterpartyId: null, accountId: 11, ambiguous: false })
+  })
+
+  it('最長のキーワードが同じ長さで複数あり、別々の取引先に解決されるときだけ曖昧とし、何も推定しない', () => {
+    const result = estimateKeywordRule('AEON AMZN', lookup([rule(1, 'AEON', 5, null), rule(2, 'AMZN', 6, null)]))
 
     expect(result).toEqual({ counterpartyId: null, accountId: null, ambiguous: true })
   })
 
-  it('別々の科目に解決される複数のルールは曖昧とし、何も推定しない', () => {
-    const result = estimateKeywordRule('ATM VISA', lookup([rule(1, 'ATM', null, 10), rule(2, 'VISA', null, 11)]))
+  it('最長のキーワードが同じ長さで複数あり、別々の科目に解決されるときも曖昧とする', () => {
+    const result = estimateKeywordRule('ATM VISA', lookup([rule(1, 'ATM1', null, 10), rule(2, 'VIS2', null, 11)]))
 
     expect(result).toEqual({ counterpartyId: null, accountId: null, ambiguous: true })
   })

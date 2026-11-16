@@ -102,7 +102,6 @@
   "patternErrorEmpty": "キーワードを入力してください。消す場合は削除を押してください",
   "patternErrorDuplicate": "同じキーワードがあります",
   "patternErrorNotInDescription": "この文字列は摘要に含まれないため登録できません",
-  "defaultAccountLabel": "相手科目の初期値",
   "defaultAccountNone": "指定なし",
   "groupUnclassified": "未分類",
   "createGroup": "グループを新規追加",
@@ -114,9 +113,9 @@
   "useRowAccountLabel": "この行の科目「{{account}}」を初期値にする",
   "applyToOtherRows": "ほかの行にも適用",
   "applyToOtherRowsOption": "ほかの行にも適用する",
-  "applyToOtherRowsNote": "キーワードを含み、取引先が未設定の行に、この取引先と相手科目の初期値を入れます(画面上のみ。確定するまで保存されません)。",
+  "applyToOtherRowsNote": "キーワードを含み、取引先が未設定の行に、この取引先とキーワードの科目を入れます(画面上のみ。確定するまで保存されません)。",
   "applyDone": "{{count}}行に適用しました",
-  "defaultAccountFollowed": "{{count}}行の相手科目を新しい初期値にしました",
+  "defaultAccountFollowed": "{{count}}行の相手科目をキーワードの科目にしました",
   "applyNone": "適用できる行はありませんでした",
   "confirmCount": "{{count}} 件を「{{account}}」に確定",
   "confirmDone": "確定しました。{{learned}}続けて次のCSVを取り込めます。",
@@ -169,5 +168,10 @@
   "viewExistingEntry": "取り込み済みの仕訳を見る",
   "existingEntrySummary": "仕訳 #{{id}} ・ {{date}} ・ {{memo}} ・ {{amount}}",
   "existingEntryImportedAt": "{{date}} に明細取込で登録",
-  "unreadableRowInFile": "{{fileName}} ・ {{row}}行目"
+  "unreadableRowInFile": "{{fileName}} ・ {{row}}行目",
+  "patternAccountLabel": "キーワード{{index}}の科目",
+  "patternAccountNone": "指定しない",
+  "patternAccountLockedTitle": "摘要の提案の科目は、この行の相手科目が使われます",
+  "keywordAccountLabel": "科目(上のキーワードに紐づける)",
+  "keywordAccountNote": "空のまま追加すると、キーワードは取引先だけに結び付きます。"
 }

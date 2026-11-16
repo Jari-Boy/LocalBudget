@@ -41,3 +41,9 @@ export function anyKeywordMatches(texts: readonly string[], description: string)
     return normalized.length > 0 && normalizedDescription.includes(normalized)
   })
 }
+
+/** キーワード1件が摘要に含まれるか(正規化して部分一致)。空のキーワードは含まれないものとする */
+export function matchesKeyword(text: string, description: string): boolean {
+  const normalized = normalizeDescriptionForMatching(text)
+  return normalized.length > 0 && normalizeDescriptionForMatching(description).includes(normalized)
+}

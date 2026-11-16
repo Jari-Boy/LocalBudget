@@ -40,7 +40,6 @@ END;
 CREATE TABLE counterparties (
   id                  INTEGER PRIMARY KEY,
   name                TEXT NOT NULL,
-  default_account_id  INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
   counterparty_group_id INTEGER REFERENCES counterparty_groups(id),
   sort_order          INTEGER NOT NULL DEFAULT 0,
   is_active           BOOLEAN NOT NULL DEFAULT TRUE,

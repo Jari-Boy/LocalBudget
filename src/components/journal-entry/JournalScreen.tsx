@@ -339,7 +339,6 @@ export function JournalScreen(props: JournalScreenProps) {
       buildCounterpartyTree({
         groups: data.counterpartyGroups,
         counterparties: data.counterparties,
-        accountNameById: new Map(),
         patternCountById: new Map(),
       }),
       inactiveIds(data.counterparties),

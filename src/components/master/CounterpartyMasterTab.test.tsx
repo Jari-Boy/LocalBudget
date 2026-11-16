@@ -20,6 +20,7 @@ import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepo
 import { SqlJsCounterpartyGroupRepository } from '../../infrastructure/db/SqlJsCounterpartyGroupRepository'
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
+import { SqlJsKeywordRuleRepository } from '../../infrastructure/db/SqlJsKeywordRuleRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../../infrastructure/db/SqlJsRecurringTransactionRuleRepository'
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
@@ -27,6 +28,7 @@ import { CounterpartyMasterTab } from './CounterpartyMasterTab'
 
 let db: Database
 let counterparties: SqlJsCounterpartyRepository
+let rules: SqlJsKeywordRuleRepository
 let accounts: SqlJsAccountRepository
 let expenseId: number
 let cashId: number
@@ -36,6 +38,7 @@ beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
   counterparties = new SqlJsCounterpartyRepository(db)
+  rules = new SqlJsKeywordRuleRepository(db)
   accounts = new SqlJsAccountRepository(db)
   expenseId = accounts.create({ category: 'expense', name: '食費', isReconcilable: null }).id
   cashId = accounts.create({ category: 'asset', name: '現金', isReconcilable: false }).id
@@ -49,6 +52,7 @@ function renderTab() {
     <I18nextProvider i18n={i18n}>
       <CounterpartyMasterTab
         counterpartyRepository={counterparties}
+        keywordRuleRepository={rules}
         counterpartyGroupRepository={new SqlJsCounterpartyGroupRepository(db)}
         accountRepository={accounts}
         journalEntryRepository={new SqlJsJournalEntryRepository(db)}
@@ -63,57 +67,102 @@ const panel = (name: string) => within(screen.getByRole('region', { name }))
 const open = async (name: string) => fireEvent.click(await screen.findByRole('button', { name }))
 
 describe('CounterpartyMasterTab', () => {
-  it('「すべての取引先」の下に取引先が並び、既定の科目の列とキーワードの件数が表示される', async () => {
-    const aeon = counterparties.create({ name: 'イオン', defaultAccountId: expenseId })
-    counterparties.addPattern(aeon.id, 'イオン')
-    counterparties.addPattern(aeon.id, 'ｲｵﾝ')
+  it('「すべての取引先」の下に取引先が並び、キーワードの件数が表示される(既定の科目の列は無い)', async () => {
+    const aeon = counterparties.create({ name: 'イオン' })
+    rules.create({ pattern: 'イオン', counterpartyId: aeon.id, accountId: expenseId })
+    rules.create({ pattern: 'ｲｵﾝ', counterpartyId: aeon.id })
 
     renderTab()
 
     expect(await screen.findByText('すべての取引先')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'イオン' })).toBeInTheDocument()
-    expect(screen.getByText('食費')).toBeInTheDocument()
-    expect(screen.getByText('キーワード2件')).toBeInTheDocument()
+    expect(screen.getByText('2件', { selector: 'td' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: '既定の科目' })).not.toBeInTheDocument()
   })
 
-  it('右パネルで既定の科目を選ぶと、すぐにDBへ反映される', async () => {
+  it('右パネルに「既定の科目」の欄は無く、キーワードごとに科目を選べる(計画Issue #219)', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
+    rules.create({ pattern: 'イオン', counterpartyId: aeon.id })
     renderTab()
     await open('イオン')
 
-    fireEvent.change(panel('取引先の編集').getByLabelText('既定の科目'), { target: { value: String(expenseId) } })
-
-    await waitFor(() => expect(counterparties.findById(aeon.id)!.defaultAccountId).toBe(expenseId))
+    expect(panel('取引先の編集').queryByLabelText('既定の科目')).not.toBeInTheDocument()
+    expect(panel('取引先の編集').getByLabelText('イオンの科目')).toBeInTheDocument()
   })
 
-  it('既定の科目の選択肢は、費用・収益の科目だけである', async () => {
-    counterparties.create({ name: 'イオン' })
+  it('キーワードの科目を選ぶと、そのルールだけに、すぐDBへ反映される(同じ取引先の別のキーワードは変わらない)', async () => {
+    const aeon = counterparties.create({ name: 'イオン' })
+    const first = rules.create({ pattern: 'イオン', counterpartyId: aeon.id })
+    const second = rules.create({ pattern: 'AEON', counterpartyId: aeon.id, accountId: expenseId })
     renderTab()
     await open('イオン')
 
-    const select = panel('取引先の編集').getByLabelText('既定の科目')
+    fireEvent.change(panel('取引先の編集').getByLabelText('イオンの科目'), { target: { value: String(expenseId) } })
+
+    await waitFor(() => expect(rules.findById(first.id)!.accountId).toBe(expenseId))
+    expect(rules.findById(second.id)!.accountId).toBe(expenseId)
+  })
+
+  it('科目の選択肢は、費用・収益の科目だけである(取引先を持てるため)', async () => {
+    const aeon = counterparties.create({ name: 'イオン' })
+    rules.create({ pattern: 'イオン', counterpartyId: aeon.id })
+    renderTab()
+    await open('イオン')
+
+    const select = panel('取引先の編集').getByLabelText('イオンの科目')
 
     expect(within(select).getByRole('option', { name: '食費' })).toBeInTheDocument()
     expect(within(select).queryByRole('option', { name: '現金' })).not.toBeInTheDocument()
   })
 
+  it('キーワードの入力欄・科目の欄は、「+ キーワードを追加」を押すまで出ない。キャンセルで閉じる(計画Issue #219)', async () => {
+    const aeon = counterparties.create({ name: 'イオン' })
+    rules.create({ pattern: 'イオン', counterpartyId: aeon.id })
+    renderTab()
+    await open('イオン')
+    expect(panel('取引先の編集').queryByLabelText('追加するキーワード')).not.toBeInTheDocument()
+    expect(panel('取引先の編集').queryByLabelText('追加するキーワードの科目')).not.toBeInTheDocument()
+
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: '+ キーワードを追加' }))
+
+    expect(panel('取引先の編集').getByLabelText('追加するキーワード')).toBeInTheDocument()
+    expect(panel('取引先の編集').getByLabelText('追加するキーワードの科目')).toBeInTheDocument()
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'キャンセル' }))
+    expect(panel('取引先の編集').queryByLabelText('追加するキーワード')).not.toBeInTheDocument()
+    expect(panel('取引先の編集').getByRole('button', { name: '+ キーワードを追加' })).toBeInTheDocument()
+  })
+
+  it('追加するキーワードに科目を選んで追加でき、その取引先と科目のルールとして保存される', async () => {
+    const aeon = counterparties.create({ name: 'イオン' })
+    renderTab()
+    await open('イオン')
+
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: '+ キーワードを追加' }))
+    fireEvent.change(panel('取引先の編集').getByLabelText('追加するキーワード'), { target: { value: 'AEON' } })
+    fireEvent.change(panel('取引先の編集').getByLabelText('追加するキーワードの科目'), { target: { value: String(expenseId) } })
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: '追加' }))
+
+    await waitFor(() => expect(rules.findByCounterparty(aeon.id).map((r) => [r.pattern, r.accountId])).toEqual([['AEON', expenseId]]))
+  })
+
   it('登録済みキーワードが一覧され、文字列を追加できる', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
-    counterparties.addPattern(aeon.id, 'イオン')
+    rules.create({ pattern: 'イオン', counterpartyId: aeon.id })
     renderTab()
     await open('イオン')
 
     const editor = panel('取引先の編集')
     expect(editor.getByText('イオン', { selector: 'span' })).toBeInTheDocument()
-    fireEvent.change(editor.getByLabelText('追加するキーワード'), { target: { value: 'AEON' } })
     fireEvent.click(editor.getByRole('button', { name: '+ キーワードを追加' }))
+    fireEvent.change(editor.getByLabelText('追加するキーワード'), { target: { value: 'AEON' } })
+    fireEvent.click(editor.getByRole('button', { name: '追加' }))
 
-    await waitFor(() => expect(counterparties.findPatternsByCounterparty(aeon.id)).toHaveLength(2))
+    await waitFor(() => expect(rules.findByCounterparty(aeon.id)).toHaveLength(2))
   })
 
   it('キーワードを編集して保存すると、DBの文字列が変わる', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
-    const pattern = counterparties.addPattern(aeon.id, 'イオン')
+    const pattern = rules.create({ pattern: 'イオン', counterpartyId: aeon.id })
     renderTab()
     await open('イオン')
 
@@ -122,7 +171,7 @@ describe('CounterpartyMasterTab', () => {
     fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'キーワードを保存' }))
 
     await waitFor(() =>
-      expect(counterparties.findPatternsByCounterparty(aeon.id).find((p) => p.id === pattern.id)!.pattern).toBe(
+      expect(rules.findByCounterparty(aeon.id).find((p) => p.id === pattern.id)!.pattern).toBe(
         'イオンモール',
       ),
     )
@@ -130,36 +179,37 @@ describe('CounterpartyMasterTab', () => {
 
   it('追加するキーワードは正規化して保存し、正規化後に同じものは共通の検証で拒否して理由を表示する(計画Issue #219)', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
-    counterparties.addPattern(aeon.id, 'AEON')
+    rules.create({ pattern: 'AEON', counterpartyId: aeon.id })
     renderTab()
     await open('イオン')
 
-    fireEvent.change(panel('取引先の編集').getByLabelText('追加するキーワード'), { target: { value: 'ａｅｏｎ' } })
     fireEvent.click(panel('取引先の編集').getByRole('button', { name: '+ キーワードを追加' }))
+    fireEvent.change(panel('取引先の編集').getByLabelText('追加するキーワード'), { target: { value: 'ａｅｏｎ' } })
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: '追加' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('同じキーワードがすでにあります')
-    expect(counterparties.findPatternsByCounterparty(aeon.id)).toHaveLength(1)
+    expect(rules.findByCounterparty(aeon.id)).toHaveLength(1)
 
     fireEvent.change(panel('取引先の編集').getByLabelText('追加するキーワード'), { target: { value: 'ｉｏｎ モール' } })
-    fireEvent.click(panel('取引先の編集').getByRole('button', { name: '+ キーワードを追加' }))
-    await waitFor(() => expect(counterparties.findPatternsByCounterparty(aeon.id).map((p) => p.pattern)).toEqual(['AEON', 'IONモール']))
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: '追加' }))
+    await waitFor(() => expect(rules.findByCounterparty(aeon.id).map((p) => p.pattern)).toEqual(['AEON', 'IONモール']))
   })
 
   it('キーワードの「削除」を押すと、確認なしでDBから削除される', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
-    counterparties.addPattern(aeon.id, 'イオン')
+    rules.create({ pattern: 'イオン', counterpartyId: aeon.id })
     renderTab()
     await open('イオン')
 
     fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'イオンを削除' }))
 
-    await waitFor(() => expect(counterparties.findPatternsByCounterparty(aeon.id)).toHaveLength(0))
+    await waitFor(() => expect(rules.findByCounterparty(aeon.id)).toHaveLength(0))
   })
 
   it('2件以上チェックすると統合の欄が出て、確認を経て統合先に統合される', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
     const aeonMall = counterparties.create({ name: 'イオンモール' })
-    counterparties.addPattern(aeonMall.id, 'イオンモール')
+    rules.create({ pattern: 'イオンモール', counterpartyId: aeonMall.id })
     renderTab()
     await screen.findByRole('button', { name: 'イオン' })
     expect(screen.queryByRole('region', { name: '取引先の統合' })).not.toBeInTheDocument()
@@ -169,13 +219,13 @@ describe('CounterpartyMasterTab', () => {
     const merge = within(await screen.findByRole('region', { name: '取引先の統合' }))
     fireEvent.change(merge.getByLabelText('統合先'), { target: { value: String(aeon.id) } })
     fireEvent.click(merge.getByRole('button', { name: '統合する' }))
-    expect(counterparties.findPatternsByCounterparty(aeonMall.id)).toHaveLength(1)
+    expect(rules.findByCounterparty(aeonMall.id)).toHaveLength(1)
     fireEvent.click(await merge.findByRole('button', { name: '統合を実行' }))
 
     await waitFor(() =>
-      expect(counterparties.findPatternsByCounterparty(aeon.id).map((p) => p.pattern)).toContain('イオンモール'),
+      expect(rules.findByCounterparty(aeon.id).map((p) => p.pattern)).toContain('イオンモール'),
     )
-    expect(counterparties.findPatternsByCounterparty(aeonMall.id)).toHaveLength(0)
+    expect(rules.findByCounterparty(aeonMall.id)).toHaveLength(0)
     expect(await screen.findByText(/「イオンモール」を「イオン」に統合しました/)).toBeInTheDocument()
   })
 
@@ -251,7 +301,7 @@ describe('CounterpartyMasterTab', () => {
   })
 
   it('検索欄に入れた文字列で、名称・列の値に一致する取引先だけに絞り込める(計画Issue #219)', async () => {
-    counterparties.create({ name: 'イオン', defaultAccountId: expenseId })
+    counterparties.create({ name: 'イオン' })
     counterparties.create({ name: 'Amazon' })
     renderTab()
     await screen.findByRole('button', { name: 'イオン' })

@@ -1,4 +1,4 @@
-import type { CounterpartyPattern, Counterparty, CreateCounterpartyInput, UpdateCounterpartyInput } from './Counterparty'
+import type { Counterparty, CreateCounterpartyInput, UpdateCounterpartyInput } from './Counterparty'
 
 /**
  * 取引先(counterparties)の永続化を担うRepositoryのポート(インターフェース)。
@@ -14,22 +14,6 @@ export interface CounterpartyRepository {
   delete(id: number): void
   deactivate(id: number): Counterparty
   activate(id: number): Counterparty
-
-  /**
-   * 取引先のキーワード(パターン)の追加・列挙・更新・削除は、キーワードルール(keyword_rules)のうち
-   * この取引先に紐づく行の表示・編集ビューである。摘要との照合はKeywordRuleRepository.findMatchingが担う
-   * (計画Issue #219、docs/decisions.md 2026-11-16)。CSV摘要文字列とのマッチング用パターンを取引先に追加する
-   */
-  addPattern(counterpartyId: number, pattern: string): CounterpartyPattern
-
-  /** 指定した取引先に紐づく全パターンを列挙する(取引先管理画面でのパターン一覧表示用) */
-  findPatternsByCounterparty(counterpartyId: number): CounterpartyPattern[]
-
-  /** パターン文字列を更新する(誤学習の是正用) */
-  updatePattern(patternId: number, pattern: string): CounterpartyPattern
-
-  /** パターンを物理削除する(不要になったパターンの是正用、参照制約は無いため単純削除でよい) */
-  deletePattern(patternId: number): void
 
   /**
    * sourceIds(統合元、複数可)に紐づくjournal_lines・keyword_rules(取引先のキーワードルール)をtargetId(統合先)へ
