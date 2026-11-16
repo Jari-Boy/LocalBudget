@@ -6,7 +6,7 @@
  * 自然なため、仕訳画面の「定期仕訳」タブに移した)。
  * 設定(計画Issue #173)は日々の記帳の領域ではないため、区切り線の後ろ(サイドナビの一番下)に置く。
  */
-export type AreaKey = 'journal' | 'master' | 'import' | 'split' | 'analysis' | 'history' | 'glossary' | 'settings'
+export type AreaKey = 'journal' | 'master' | 'split' | 'analysis' | 'history' | 'glossary' | 'settings'
 
 export interface AreaTab {
   /** common.jsonのnav.tab.*のキー */
@@ -23,10 +23,13 @@ export interface Area {
   separated?: boolean
 }
 
-/** サイドナビの並び順は、仕訳・マスタ・明細取込・割勘・精算・分析、区切って設定。 */
+/**
+ * サイドナビの並び順は、仕訳・マスタ・割勘・精算・分析、区切って設定。明細取込(計画Issue #214)はサイドナビから外し、
+ * 仕訳画面の「明細から起票」から入る。明細取込の画面は「仕訳」の領域に属する(開いている間も「仕訳」が強調される)。
+ */
 export const AREAS: Area[] = [
   // 仕訳領域の「仕訳一覧」「下書き」「承認待ち」「定期仕訳」は、画面内のタブにした(計画Issue #152・#180)
-  { key: 'journal', to: '/journal/entries', prefixes: ['/journal/entries'], tabs: [] },
+  { key: 'journal', to: '/journal/entries', prefixes: ['/journal/entries', '/journal/create/import'], tabs: [] },
   {
     key: 'master',
     to: '/master/accounts',
@@ -39,7 +42,6 @@ export const AREAS: Area[] = [
       { labelKey: 'mappings', to: '/master/mappings' },
     ],
   },
-  { key: 'import', to: '/journal/create/import', prefixes: ['/journal/create/import'], tabs: [] },
   // 割勘・精算の「割勘」「精算」は、画面内のタブにした(計画Issue #153)
   { key: 'split', to: '/journal/splitting', prefixes: ['/journal/splitting'], tabs: [] },
   { key: 'analysis', to: '/reports/analysis', prefixes: ['/reports'], tabs: [] },

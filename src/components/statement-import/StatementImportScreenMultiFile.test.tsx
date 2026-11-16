@@ -31,6 +31,7 @@ import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepo
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
 import { StatementImportScreen } from './StatementImportScreen'
+import { setPendingImportFiles } from './pendingImportFiles'
 
 let db: Database
 let entries: SqlJsJournalEntryRepository
@@ -60,6 +61,7 @@ beforeEach(async () => {
   })
   // jsdomにはscrollIntoViewが無い
   Element.prototype.scrollIntoView = vi.fn()
+  setPendingImportFiles([])
 })
 
 afterEach(cleanup)
@@ -275,5 +277,30 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     expect(screen.queryByRole('list', { name: '取り込むCSV' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: /取り込めなかったファイル/ })).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getByLabelText('誰の明細か(必須)')).toBeInTheDocument())
+  })
+})
+
+describe('StatementImportScreen: 仕訳画面から渡されたCSV(計画Issue #214)', () => {
+  const asFile = (f: { name: string; body: string }) => new File([f.body], f.name, { type: 'text/csv' })
+
+  it('仕訳画面で選んだCSVが渡されていれば、画面を開いた時点でそのCSVを読み込む(「CSVを選択」の開始状態を出さない)', async () => {
+    setPendingImportFiles([asFile(OCT), asFile(NOV)])
+
+    renderScreen()
+
+    await screen.findByText(/2ファイルを読み込み済み/)
+    expect(screen.queryByRole('region', { name: 'CSVの選択' })).not.toBeInTheDocument()
+  })
+
+  it('渡されたCSVは1回だけ使い、画面を開き直したときは開始状態に戻る(リロード後と同じ)', async () => {
+    setPendingImportFiles([asFile(OCT)])
+    renderScreen()
+    await screen.findByText(/oct\.csv を読み込み済み/)
+    cleanup()
+
+    renderScreen()
+
+    expect(await screen.findByRole('button', { name: 'CSVを選択' })).toBeInTheDocument()
+    expect(screen.queryByText(/読み込み済み/)).not.toBeInTheDocument()
   })
 })

@@ -69,6 +69,7 @@ import type { KeywordListItem } from './KeywordList'
 import { buildGroupSelectCategories } from '../common/tree-select/groupSelectCategories'
 import { mappingFormToInput } from '../master/mappingForm'
 import { QuickCreateDialog } from './QuickCreateDialog'
+import { takePendingImportFiles } from './pendingImportFiles'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import './StatementImportScreen.css'
 
@@ -277,6 +278,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     householdMemberRepository,
     settlementBatchRepository,
   ])
+
+  // 仕訳画面の「明細から起票」で選んだCSVが渡されていれば、データの読み込み後に1回だけ読み込む(計画Issue #214)
+  const pendingTaken = useRef(false)
+  useEffect(() => {
+    if (data === null || pendingTaken.current) return
+    pendingTaken.current = true
+    void loadFiles(takePendingImportFiles())
+  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const targetAccount = data?.accounts.find((a) => a.id === targetAccountId) ?? null
   /**
@@ -702,9 +711,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     if (initial) await buildSession(initial, next, everyFile)
   }
 
-  async function handleFile(event: ChangeEvent<HTMLInputElement>) {
+  function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(event.target.files ?? [])
     event.target.value = ''
+    void loadFiles(picked)
+  }
+
+  async function loadFiles(picked: File[]) {
     if (picked.length === 0) return
     setBusy(true)
     setError('')
@@ -1079,7 +1092,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
       {error && <p role="alert" className="import-error">{error}</p>}
 
-      <input ref={fileInputRef} type="file" accept=".csv" multiple hidden aria-label={t('chooseCsv')} disabled={busy} onChange={(e) => void handleFile(e)} />
+      <input ref={fileInputRef} type="file" accept=".csv" multiple hidden aria-label={t('chooseCsv')} disabled={busy} onChange={handleFile} />
       {!csv && (
         <section aria-label={t('csvStartLabel')} className="import-start">
           {chooseCsvButton('import-btn import-btn--primary import-btn--large')}
