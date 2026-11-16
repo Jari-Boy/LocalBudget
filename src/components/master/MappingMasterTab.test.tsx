@@ -591,4 +591,17 @@ describe('MappingMasterTab 未保存の編集の警告(計画Issue #190)', () =>
     expect(dialog()).not.toBeInTheDocument()
     expect(panel().getByLabelText('表示名')).toHaveValue('楽天銀行(確定)')
   })
+
+  it('検索欄に入れた文字列で、表示名・金融機関名・対応する科目に一致する定義だけに絞り込める(計画Issue #219)', async () => {
+    makeMapping()
+    makeMapping({ label: '楽天銀行', formatGroupId: '楽天銀行', isSettled: null, accountIds: [bankId] })
+    renderTab()
+    await screen.findByRole('button', { name: /楽天カード\(確定\)/ })
+
+    fireEvent.change(screen.getByLabelText('マッピングを検索'), { target: { value: '楽天銀行' } })
+
+    expect(screen.queryByRole('button', { name: /楽天カード\(確定\)/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^楽天銀行/ })).toBeInTheDocument()
+  })
 })
+

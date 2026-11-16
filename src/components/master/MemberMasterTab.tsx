@@ -12,6 +12,8 @@ import type { RecurringTransactionRule } from '../../domain/recurring-transactio
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import { describeDeletionBlocks } from './describeDeletionBlocks'
 import type { MaybeAsync } from './maybeAsync'
+import { TreeSearchInput } from '../common/tree-table/TreeSearchInput'
+import { matchesSearch } from '../common/tree-table/filterTreeNodes'
 import { uniqueName } from './uniqueName'
 import './master.css'
 
@@ -61,6 +63,8 @@ export function MemberMasterTab({
   const { t: tCommon } = useTranslation('common')
   const [data, setData] = useState<LoadedData | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  /** 検索欄の文字列(計画Issue #219)。名称・種類に一致する行だけを出す */
+  const [query, setQuery] = useState('')
   const [armed, setArmed] = useState(false)
   const [flash, setFlash] = useState('')
   const [error, setError] = useState('')
@@ -153,6 +157,7 @@ export function MemberMasterTab({
           <button type="button" className="master-btn" disabled={busy} onClick={() => guarded(() => void add(true))}>
             {t('memberTab.addGroup')}
           </button>
+          <TreeSearchInput value={query} onChange={setQuery} leafLabel={t('memberTab.searchLeaf')} />
         </div>
         <div className="master-table-wrap">
           <table className="master-table">
@@ -164,7 +169,7 @@ export function MemberMasterTab({
               </tr>
             </thead>
             <tbody>
-              {data.members.map((m) => (
+              {data.members.filter((m) => matchesSearch(query, m.name, typeText(m))).map((m) => (
                 <tr key={m.id} className={m.id === selectedId ? 'master-table__row--selected' : undefined}>
                   <td>
                     <button

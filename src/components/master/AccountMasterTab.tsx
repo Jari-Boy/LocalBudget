@@ -33,6 +33,8 @@ import { AccountMergePanel } from './AccountMergePanel'
 import { BulkSelectionPanel } from './BulkSelectionPanel'
 import { AccountReconciliationSection, type ReconciliationRepository } from './AccountReconciliationSection'
 import { AccountMappingSection, AccountRegistrationInfo } from './AccountRegistrationSections'
+import { TreeSearchInput } from '../common/tree-table/TreeSearchInput'
+import { filterTreeNodes } from '../common/tree-table/filterTreeNodes'
 import { AccountKeywordSection } from './AccountKeywordSection'
 import { DefaultMemberChangeDialog } from './DefaultMemberChangeDialog'
 import { buildAccountTree, groupNodeId, leafNodeId, parseNodeId } from './masterTreeNodes'
@@ -120,6 +122,8 @@ export function AccountMasterTab({
     initialAccountId === undefined ? null : leafNodeId(initialAccountId),
   )
   const [checkedIds, setCheckedIds] = useState<readonly string[]>([])
+  /** 検索欄の文字列(計画Issue #219)。空でなければ一覧を絞り込み、その間はドラッグを無効にする */
+  const [query, setQuery] = useState('')
   const [creating, setCreating] = useState<AccountCategory | null>(null)
   const [armedId, setArmedId] = useState<string | null>(null)
   const [flash, setFlash] = useState('')
@@ -255,6 +259,8 @@ export function AccountMasterTab({
 
   // 消えた行のチェックは捨てる
   const liveCheckedIds = checkedIds.filter((id) => tree.nodes.some((n) => n.id === id))
+  const searching = query.trim() !== ''
+  const shownNodes = filterTreeNodes(tree.nodes, query)
   const selected = selectedId ? tree.nodes.find((n) => n.id === selectedId) : undefined
   const selectedAccount =
     selected?.kind === 'leaf' ? data.accounts.find((a) => a.id === parseNodeId(selected.id).id) : undefined
@@ -263,9 +269,21 @@ export function AccountMasterTab({
   return (
     <div className="master-split">
       <div className="master-split__main">
+        <div className="master-actions">
+          <TreeSearchInput
+            value={query}
+            onChange={(next) => {
+              setQuery(next)
+              // 絞り込みで隠れた行が一括操作の対象に残らないよう、チェックを外す
+              setCheckedIds([])
+            }}
+            leafLabel={t('accountTab.searchLeaf')}
+          />
+        </div>
         <TreeTable
           categories={tree.categories}
-          nodes={tree.nodes}
+          nodes={shownNodes}
+          draggable={!searching}
           columns={['名義', '状態']}
           checkedIds={liveCheckedIds}
           selectedId={selectedId}

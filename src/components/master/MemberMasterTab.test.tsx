@@ -279,4 +279,17 @@ describe('MemberMasterTab 未保存の編集の警告(計画Issue #190)', () => 
     expect(dialog()).not.toBeInTheDocument()
     expect(panel().getByLabelText('名称')).toHaveValue('妻')
   })
+
+  it('検索欄に入れた文字列で、名称に一致する世帯メンバーだけに絞り込める(計画Issue #219)', async () => {
+    members.create({ name: '夫' })
+    members.create({ name: '妻' })
+    renderTab()
+    await screen.findByRole('button', { name: '夫' })
+
+    fireEvent.change(screen.getByLabelText('世帯メンバーを検索'), { target: { value: '妻' } })
+
+    expect(screen.queryByRole('button', { name: '夫' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '妻' })).toBeInTheDocument()
+  })
 })
+

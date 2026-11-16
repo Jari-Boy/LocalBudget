@@ -73,7 +73,8 @@
     "mergeBlockDifferentReconcilability": "照合できる科目とできない科目は統合できません。",
     "keywordsTitle": "キーワード({{count}}件)",
     "keywordsNote": "明細の摘要にこの文字列が含まれると、相手科目が「{{account}}」と推定されます。",
-    "keywordsPlOnlyNote": "資産・負債の科目だけ、この欄が出ます。収益・費用の科目のキーワードは、取引先タブ(またはキーワードタブ)で編集します。"
+    "keywordsPlOnlyNote": "資産・負債の科目だけ、この欄が出ます。収益・費用の科目のキーワードは、取引先タブ(またはキーワードタブ)で編集します。",
+    "searchLeaf": "科目"
   },
   "reconcile": {
     "title": "残高の照合",
@@ -197,7 +198,8 @@
     "typeFixed": "種類(作成後は変更できません)",
     "groupMembers": "構成メンバー",
     "active": "有効",
-    "inactive": "無効"
+    "inactive": "無効",
+    "searchLeaf": "世帯メンバー"
   },
   "ruleTab": {
     "add": "定期仕訳を追加",
@@ -379,7 +381,8 @@
     "reasonHeaderRowsInvalid": "見出しまでの行数は0以上の整数にしてください",
     "reasonColumnNeedsHeader": "見出しの行がないときは、列を番号で指定してください",
     "skipNote": "読み取れない行は、取り込まれません(保存はできます)。",
-    "majorityWarning": "読み取れない行の方が多いです。マッピング(列の割り当てや日付の書式)が合っているか確認してください。"
+    "majorityWarning": "読み取れない行の方が多いです。マッピング(列の割り当てや日付の書式)が合っているか確認してください。",
+    "searchLeaf": "マッピング"
   },
   "keywordTab": {
     "add": "キーワードを追加",
@@ -415,5 +418,10 @@
       "apply": "変更を適用",
       "deleteTitle": "削除"
     }
+  },
+  "treeSearch": {
+    "label": "{{leaf}}を検索",
+    "placeholder": "名称・列の値で検索",
+    "none": "一致する項目がありません"
   }
 }

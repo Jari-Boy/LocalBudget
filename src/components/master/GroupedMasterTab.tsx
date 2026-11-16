@@ -4,6 +4,8 @@ import { computeTreeNodeUpdates, type TreeNodeUpdate } from '../common/tree-tabl
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import { TreeCardList, type TreeCardContent } from '../common/tree-table/TreeCardList'
 import { TreeTable } from '../common/tree-table/TreeTable'
+import { TreeSearchInput } from '../common/tree-table/TreeSearchInput'
+import { filterTreeNodes } from '../common/tree-table/filterTreeNodes'
 import { BulkSelectionPanel } from './BulkSelectionPanel'
 import { CATEGORY_ID_PREFIX, resolveTreeMove, type TreeTableNode } from '../common/tree-table/treeTableModel'
 import { groupNodeId, leafNodeId, parseNodeId, type MasterTreeData } from './masterTreeNodes'
@@ -93,6 +95,8 @@ export function GroupedMasterTab({
   const { t } = useTranslation('master')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [checkedIds, setCheckedIds] = useState<readonly string[]>([])
+  /** 検索欄の文字列(計画Issue #219)。空でなければ一覧を絞り込み、その間はドラッグを無効にする */
+  const [query, setQuery] = useState('')
   const [armedId, setArmedId] = useState<string | null>(null)
   const [flash, setFlash] = useState('')
   const [error, setError] = useState('')
@@ -102,6 +106,8 @@ export function GroupedMasterTab({
 
   // 統合・削除などで消えた行のチェックは捨てる
   const liveCheckedIds = checkedIds.filter((id) => tree.nodes.some((n) => n.id === id))
+  const searching = query.trim() !== ''
+  const shownNodes = filterTreeNodes(tree.nodes, query)
   const categoryKey = tree.categories[0].key
   const topId = `${CATEGORY_ID_PREFIX}${categoryKey}`
   const selected = selectedId ? tree.nodes.find((n) => n.id === selectedId) : undefined
@@ -170,6 +176,17 @@ export function GroupedMasterTab({
           <button type="button" className="master-btn" disabled={busy} onClick={() => guarded(() => void create('leaf', null))}>
             {t('groupedTab.addLeaf', { leaf: leafLabel })}
           </button>
+          {renderCard === undefined && (
+            <TreeSearchInput
+              value={query}
+              onChange={(next) => {
+                setQuery(next)
+                // 絞り込みで隠れた行が一括操作の対象に残らないよう、チェックを外す
+                setCheckedIds([])
+              }}
+              leafLabel={leafLabel}
+            />
+          )}
         </div>
         {renderCard !== undefined ? (
           <TreeCardList
@@ -184,8 +201,9 @@ export function GroupedMasterTab({
         ) : (
           <TreeTable
             categories={tree.categories}
-            nodes={tree.nodes}
+            nodes={shownNodes}
             columns={columns}
+            draggable={!searching}
             checkedIds={liveCheckedIds}
             selectedId={selectedId}
             onSelect={(id) => guarded(() => select(id))}

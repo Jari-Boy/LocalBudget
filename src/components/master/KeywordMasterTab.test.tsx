@@ -216,6 +216,8 @@ describe('KeywordMasterTab', () => {
     fireEvent.click(screen.getByLabelText('VISAを選択'))
     const panel = within(screen.getByRole('region', { name: '一括操作' }))
 
+    // 削除ボタンは、押す前から赤(危険な操作)で表示する
+    expect(panel.getByRole('button', { name: '選択した2件を削除' })).toHaveClass('master-btn--danger')
     fireEvent.click(panel.getByRole('button', { name: '選択した2件を削除' }))
     expect(rules.findAll()).toHaveLength(3)
     fireEvent.click(panel.getByRole('button', { name: '本当に削除する' }))

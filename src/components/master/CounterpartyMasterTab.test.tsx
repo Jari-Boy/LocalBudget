@@ -249,4 +249,28 @@ describe('CounterpartyMasterTab', () => {
 
     await waitFor(() => expect(counterparties.findById(aeon.id)).toBeNull())
   })
+
+  it('検索欄に入れた文字列で、名称・列の値に一致する取引先だけに絞り込める(計画Issue #219)', async () => {
+    counterparties.create({ name: 'イオン', defaultAccountId: expenseId })
+    counterparties.create({ name: 'Amazon' })
+    renderTab()
+    await screen.findByRole('button', { name: 'イオン' })
+
+    fireEvent.change(screen.getByLabelText('取引先を検索'), { target: { value: 'amazon' } })
+
+    expect(screen.queryByRole('button', { name: 'イオン' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Amazon' })).toBeInTheDocument()
+  })
+
+  it('検索で絞り込み中は、行をドラッグできない(隠れた行を含む並び替えを防ぐ)', async () => {
+    counterparties.create({ name: 'イオン' })
+    counterparties.create({ name: 'Amazon' })
+    renderTab()
+    await screen.findByRole('button', { name: 'イオン' })
+
+    fireEvent.change(screen.getByLabelText('取引先を検索'), { target: { value: 'amazon' } })
+
+    expect(screen.getByRole('button', { name: 'Amazon' }).closest('tr')).toHaveAttribute('draggable', 'false')
+  })
 })
+

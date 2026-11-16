@@ -103,7 +103,7 @@ export function KeywordBulkPanel({ rules, counterparties, accounts, busy, error,
         <div className="master-actions">
           <button
             type="button"
-            className={`master-btn${armed ? ' master-btn--danger' : ''}`}
+            className="master-btn master-btn--danger"
             disabled={busy}
             onClick={() => (armed ? onDelete() : setArmed(true))}
           >

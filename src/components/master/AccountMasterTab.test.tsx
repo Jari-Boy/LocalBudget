@@ -1088,4 +1088,19 @@ describe('AccountMasterTab: 残高の照合欄(計画Issue #205)', () => {
       await waitFor(() => expect(keywordRules.findByAccount(cash.id)).toHaveLength(0))
     })
   })
+
+  it('検索欄に入れた文字列で、名称に一致する科目と、その科目を持つグループだけに絞り込める(計画Issue #219)', async () => {
+    const group = groups.create({ name: '普通預金', category: 'asset' })
+    accounts.create({ category: 'asset', name: '楽天銀行', isReconcilable: true, accountGroupId: group.id })
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    renderTab()
+    await screen.findByRole('button', { name: '食費' })
+
+    fireEvent.change(screen.getByLabelText('科目を検索'), { target: { value: '楽天' } })
+
+    expect(screen.queryByRole('button', { name: '食費' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '楽天銀行' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '普通預金' })).toBeInTheDocument()
+  })
 })
+
