@@ -138,17 +138,6 @@
   background: var(--color-accent);
 }
 
-.onboarding__link {
-  padding: 0 4px;
-  border: 0;
-  background: none;
-  color: var(--color-accent);
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-
 /* 初期設定 */
 .onboarding h2 {
   font-size: 17px;

@@ -5,7 +5,7 @@
  * 初期設定は、世帯メンバーの名前(必須)・保存先・科目テンプレートを1画面で決め、「この設定で始める」で確定する。
  * フォルダ保存を選んだときは、フォルダを先に選び(ブラウザは操作の直後にしか選ばせない)、設定を確定してから、
  * 保存先を切り替えてページを再読み込みする。
- * スキップでき、用語集を開いて戻れる。外部依存: なし(Worker側のAPI・フォルダ選択・再読み込みは偽物を渡す)。
+ * ウェルカム画面は「初期設定へ進む」だけを置く(用語集・スキップのボタンは無い)。外部依存: なし(Worker側のAPI・フォルダ選択・再読み込みは偽物を渡す)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -26,7 +26,6 @@ function setup(overrides: Partial<OnboardingGateProps> & { completed?: boolean }
   const onboarding = {
     getStatus: vi.fn(async () => ({ completed })),
     complete: vi.fn(async () => {}),
-    skip: vi.fn(async () => {}),
   }
   const storage = { moveToFolder: vi.fn(async () => {}) }
   const folderPicker = {
@@ -75,14 +74,14 @@ describe('OnboardingGate', () => {
     expect(screen.queryByText('アプリ本体')).not.toBeInTheDocument()
   })
 
-  it('ウェルカムは、前提・データの置き場所(消えるリスク)・最初に入るものを示す', async () => {
+  it('ウェルカムは、前提とデータの置き場所(消えるリスク)だけを示し、「最初に入るもの」は出さない', async () => {
     setup()
     await screen.findByRole('button', { name: '初期設定へ進む' })
 
     expect(screen.getByText('前提')).toBeInTheDocument()
     expect(screen.getByText('データの置き場所')).toBeInTheDocument()
     expect(screen.getByText(/バックアップは自分で取る必要があります/)).toBeInTheDocument()
-    expect(screen.getByText('最初に入るもの')).toBeInTheDocument()
+    expect(screen.queryByText('最初に入るもの')).not.toBeInTheDocument()
   })
 
   it('「初期設定へ進む」で、名前・保存先・科目テンプレートの初期設定画面へ移る', async () => {
@@ -182,24 +181,13 @@ describe('OnboardingGate', () => {
     expect(screen.getByRole('button', { name: '初期設定へ進む' })).toBeInTheDocument()
   })
 
-  it('ウェルカムの「あとで設定する」で、何も変えずにスキップし、アプリ本体へ進む', async () => {
-    const { onboarding } = setup()
-
-    fireEvent.click(await screen.findByRole('button', { name: 'あとで設定する' }))
-
-    expect(await screen.findByText('アプリ本体')).toBeInTheDocument()
-    expect(onboarding.skip).toHaveBeenCalledTimes(1)
-    expect(onboarding.complete).not.toHaveBeenCalled()
-  })
-
-  it('ウェルカムから用語集を開き、「戻る」でウェルカムへ戻る', async () => {
+  it('ウェルカムには「初期設定へ進む」だけを置き、「用語集を見る」「あとで設定する」のボタンも、「設定はあとから変更できます」の但し書きも無い', async () => {
     setup()
+    await screen.findByRole('button', { name: '初期設定へ進む' })
 
-    fireEvent.click(await screen.findByRole('button', { name: '用語集を見る' }))
-    expect(screen.getByRole('heading', { level: 1, name: '用語集' })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '戻る' }))
-    expect(screen.getByRole('button', { name: '初期設定へ進む' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '用語集を見る' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'あとで設定する' })).not.toBeInTheDocument()
+    expect(screen.queryByText('設定はあとから変更できます')).not.toBeInTheDocument()
   })
 })
 

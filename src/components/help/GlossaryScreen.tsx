@@ -26,17 +26,12 @@ const CATEGORY_TAG_CLASS: Record<(typeof GLOSSARY_CATEGORIES)[number], string> =
   storage: 'neutral',
 }
 
-export interface GlossaryScreenProps {
-  /** 渡されたときだけ「戻る」ボタンを出す(初回セットアップの画面から開いたとき。サイドナビからは不要) */
-  onBack?: () => void
-}
-
 /**
  * 用語集画面(計画Issue #177、承認済みモックアップ④)。LocalBudget特有の言葉を、区分のタブ(「すべて」は無い)で
  * 切り替えて読む。検索語があるときは区分に関わらず全区分から探す。精算バッチの項目からは、旅行代を友人と
  * 折半する例の詳細(SettlementBatchWalkthrough)を折りたたみで開ける。簿記の一般用語は載せない。
  */
-export function GlossaryScreen({ onBack }: GlossaryScreenProps) {
+export function GlossaryScreen() {
   const { t } = useTranslation('help')
   const [category, setCategory] = useState<string>(GLOSSARY_CATEGORIES[0])
   const [query, setQuery] = useState('')
@@ -60,16 +55,9 @@ export function GlossaryScreen({ onBack }: GlossaryScreenProps) {
 
   return (
     <section className="glossary" aria-labelledby="glossary-title">
-      <div className="glossary__head">
-        <h1 id="glossary-title" className="glossary__title">
-          {t('glossary.title')}
-        </h1>
-        {onBack && (
-          <button type="button" className="glossary__button" onClick={onBack}>
-            {t('glossary.back')}
-          </button>
-        )}
-      </div>
+      <h1 id="glossary-title" className="glossary__title">
+        {t('glossary.title')}
+      </h1>
       <p className="glossary__lead">{t('glossary.lead')}</p>
 
       <div className="glossary__tools">

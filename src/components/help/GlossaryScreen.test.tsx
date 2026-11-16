@@ -9,16 +9,16 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import i18n from '../../infrastructure/i18n/i18n'
 import { GlossaryScreen } from './GlossaryScreen'
 
 afterEach(cleanup)
 
-function setup(props: { onBack?: () => void } = {}) {
+function setup() {
   render(
     <I18nextProvider i18n={i18n}>
-      <GlossaryScreen {...props} />
+      <GlossaryScreen />
     </I18nextProvider>,
   )
 }
@@ -104,20 +104,5 @@ describe('GlossaryScreen', () => {
 
     expect(balance().getByText('0')).toBeInTheDocument()
     expect(screen.getByText('精算済み')).toBeInTheDocument()
-  })
-
-  it('「戻る」が渡されたときだけ戻るボタンを出し、押すと呼ばれる', () => {
-    const onBack = vi.fn()
-    setup({ onBack })
-
-    fireEvent.click(screen.getByRole('button', { name: '戻る' }))
-
-    expect(onBack).toHaveBeenCalledTimes(1)
-  })
-
-  it('「戻る」が渡されないとき(サイドナビから開いたとき)は、戻るボタンを出さない', () => {
-    setup()
-
-    expect(screen.queryByRole('button', { name: '戻る' })).not.toBeInTheDocument()
   })
 })

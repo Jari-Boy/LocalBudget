@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import type { OnboardingRpcApi, OnboardingStatus } from '../../infrastructure/rpc/createOnboardingApi'
 import type { StorageRpcApi } from '../../infrastructure/rpc/createStorageApi'
 import type { FolderPicker } from '../../infrastructure/storage/browserFolderPicker'
-import { GlossaryScreen } from '../help/GlossaryScreen'
 import { SetupScreen, type SetupValues } from './SetupScreen'
 import { WelcomeScreen } from './WelcomeScreen'
 import './onboarding.css'
@@ -13,7 +12,6 @@ export interface OnboardingGateProps {
   onboarding: {
     getStatus(): Promise<OnboardingStatus>
     complete: (input: Parameters<OnboardingRpcApi['complete']>[0]) => Promise<void>
-    skip: () => Promise<void>
   }
   /** フォルダ保存に切り替えるWorker側API(設定画面と同じ) */
   storage: Pick<StorageRpcApi, 'moveToFolder'>
@@ -23,11 +21,12 @@ export interface OnboardingGateProps {
   children: ReactNode
 }
 
-type View = 'checking' | 'welcome' | 'setup' | 'glossary' | 'folderFailed' | 'ready'
+type View = 'checking' | 'welcome' | 'setup' | 'folderFailed' | 'ready'
 
 /**
  * 初回セットアップのゲート(計画Issue #177)。Workerの完了済みの印(DBの状態。保存先を切り替えても食い違わない)を見て、
- * 完了済み(既存の利用者を含む)ならアプリ本体を出し、未完了のときだけウェルカム → 初期設定の順に出す。
+ * 完了済み(既存の利用者を含む)ならアプリ本体を出し、未完了のときだけウェルカム → 初期設定の順に出す
+ * (スキップの導線は無い。初期設定の確定が、完了の印を付ける唯一の経路)。
  * StorageGate(保存先が開けるかの確認)を通ったあと、DbClientProviderの内側に置くので、起動時の他の表示
  * (保存先の再接続・更新バナー・iOSの案内)と競合しない。
  * フォルダ保存を選んだときは、ユーザー操作の中でフォルダを先に選び(ブラウザはフォルダ選択を操作の直後にしか許さない)、
@@ -56,15 +55,6 @@ export function OnboardingGate({ onboarding, storage, folderPicker, reload, chil
       cancelled = true
     }
   }, [onboarding])
-
-  async function handleSkip() {
-    try {
-      await onboarding.skip()
-    } catch {
-      // 印を付けられなくても、このセッションの利用は妨げない(次回また案内される)
-    }
-    setView('ready')
-  }
 
   async function handleSubmit(values: SetupValues) {
     setSubmitting(true)
@@ -107,7 +97,6 @@ export function OnboardingGate({ onboarding, storage, folderPicker, reload, chil
 
   if (view === 'checking') return <p role="status">{tc('loading')}</p>
   if (view === 'ready') return <>{children}</>
-  if (view === 'glossary') return <GlossaryScreen onBack={() => setView('welcome')} />
   if (view === 'setup') {
     return (
       <SetupScreen
@@ -135,11 +124,5 @@ export function OnboardingGate({ onboarding, storage, folderPicker, reload, chil
       </div>
     )
   }
-  return (
-    <WelcomeScreen
-      onNext={() => setView('setup')}
-      onOpenGlossary={() => setView('glossary')}
-      onSkip={() => void handleSkip()}
-    />
-  )
+  return <WelcomeScreen onNext={() => setView('setup')} />
 }
