@@ -67,11 +67,16 @@ describe('KeywordMasterTab', () => {
     expect(screen.getByRole('columnheader', { name: /キーワード/ })).toHaveAttribute('aria-sort', 'ascending')
   })
 
-  it('取引先だけのルールは、取引先の既定の科目を「取引先の既定(食費)」と灰色で示す', async () => {
+  it('科目の列にはルールに指定した科目名だけを出し、取引先だけのルールは空にする(「取引先の既定」は出さない)', async () => {
     rules.create({ pattern: 'AEON', counterpartyId: aeonId })
+    rules.create({ pattern: 'ATM', accountId: cashId })
     renderTab()
+    await screen.findByRole('table')
 
-    expect(await screen.findByText('取引先の既定(食費)')).toBeInTheDocument()
+    expect(screen.queryByText(/取引先の既定/)).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '科目' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /相手科目/ })).not.toBeInTheDocument()
+    expect(within(dataRows()[1]).getByText('現金')).toBeInTheDocument()
   })
 
   it('列見出しを押すと、その列で昇順と降順が入れ替わる', async () => {

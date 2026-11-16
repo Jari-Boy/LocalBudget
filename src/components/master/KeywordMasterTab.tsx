@@ -74,18 +74,6 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
 
   const counterpartyName = useCallback((id: number | null) => counterparties.find((c) => c.id === id)?.name ?? '', [counterparties])
   const accountName = useCallback((id: number | null) => accounts.find((a) => a.id === id)?.name ?? '', [accounts])
-  /** 相手科目の列の表示: 科目を持てばその名前、取引先だけなら取引先の既定の科目(灰色) */
-  const accountCell = useCallback(
-    (rule: KeywordRule) => {
-      if (rule.accountId !== null) return { text: accountName(rule.accountId), muted: false }
-      const fallback = counterparties.find((c) => c.id === rule.counterpartyId)?.defaultAccountId ?? null
-      return fallback === null
-        ? { text: '', muted: true }
-        : { text: t('keywordTab.fromCounterpartyDefault', { account: accountName(fallback) }), muted: true }
-    },
-    [accountName, counterparties, t],
-  )
-
   const visibleRules = useMemo(() => {
     const keyword = toStoredKeyword(query)
     const filtered =
@@ -155,7 +143,7 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
     category: 'all',
     parentId: null,
     name: rule.pattern,
-    cells: [counterpartyName(rule.counterpartyId), accountCell(rule).text],
+    cells: [counterpartyName(rule.counterpartyId), accountName(rule.accountId)],
   }))
 
   const removeChecked = async () => {
