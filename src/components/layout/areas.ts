@@ -6,7 +6,7 @@
  * 自然なため、仕訳画面の「定期仕訳」タブに移した)。
  * 設定(計画Issue #173)は日々の記帳の領域ではないため、区切り線の後ろ(サイドナビの一番下)に置く。
  */
-export type AreaKey = 'journal' | 'master' | 'import' | 'split' | 'analysis' | 'history' | 'settings'
+export type AreaKey = 'journal' | 'master' | 'import' | 'split' | 'analysis' | 'history' | 'glossary' | 'settings'
 
 export interface AreaTab {
   /** common.jsonのnav.tab.*のキー */
@@ -45,6 +45,8 @@ export const AREAS: Area[] = [
   { key: 'analysis', to: '/reports/analysis', prefixes: ['/reports'], tabs: [] },
   // 操作履歴(計画Issue #202)は日々の記帳ではなく取り消しの道具なので、設定と並べて区切り線の後ろに置く
   { key: 'history', to: '/history', prefixes: ['/history'], tabs: [], separated: true },
+  // 用語集(計画Issue #177)は、LocalBudget特有の言葉を調べる場所なので、操作履歴・設定と並べて区切り線の後ろに置く
+  { key: 'glossary', to: '/glossary', prefixes: ['/glossary'], tabs: [] },
   { key: 'settings', to: '/settings', prefixes: ['/settings'], tabs: [] },
 ]
 

@@ -7,6 +7,7 @@ import { seedBalanceAdjustmentAccount } from '../db/seedBalanceAdjustmentAccount
 import { seedBuiltInMappingDefinitions } from '../db/seedBuiltInMappingDefinitions'
 import { seedDefaultAccounts } from '../db/seedDefaultAccounts'
 import { seedInitialBalanceAccount } from '../db/seedInitialBalanceAccount'
+import { seedOnboardingMarker, skipOnboarding } from '../db/onboarding'
 import { seedDefaultHouseholdMember } from '../db/seedDefaultHouseholdMember'
 import { seedDevSampleDataIfDev } from '../db/seedDevSampleDataIfDev'
 import { seedSettlementAdjustmentAccounts } from '../db/seedSettlementAdjustmentAccounts'
@@ -109,6 +110,10 @@ async function main(): Promise<void> {
   seedSettlementAdjustmentAccounts(db)
   seedStandardAccountGroups(db)
   seedDevSampleDataIfDev(db)
+  // 初回セットアップを出すかの判定(計画Issue #177)。サンプルデータの投入後に呼ぶので、開発モードでは完了済みになる。
+  // E2E(VITE_DISABLE_ONBOARDING)は、クリーンな初期状態から画面を操作するため、セットアップを出さない
+  if (import.meta.env.VITE_DISABLE_ONBOARDING === 'true') skipOnboarding(db)
+  else seedOnboardingMarker(db)
   const autoSaveController = withAutoSave(db, storageAdapter)
 
   const storageApi = createStorageApi({

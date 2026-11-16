@@ -37,7 +37,7 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
 ]
 
 const DIRECTIONS: { key: SettlementDirection; label: string; sub: string }[] = [
-  { key: 'advance', label: '立替金を減らす', sub: '相手から受け取る' },
+  { key: 'advance', label: '未収金を減らす', sub: '相手から受け取る' },
   { key: 'payable', label: '未払金を減らす', sub: '相手へ支払う' },
 ]
 
@@ -321,7 +321,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
           <thead>
             <tr>
               <th>バッチ名</th>
-              <th className="split-settle__num">立替金</th>
+              <th className="split-settle__num">未収金</th>
               <th className="split-settle__num">未払金</th>
             </tr>
           </thead>
@@ -412,7 +412,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
 
         {!summary.hasLines && <p className="split-settle__note">このバッチが付いた明細はまだありません。</p>}
         {summary.isSettled && (
-          <p className="split-settle__settled">精算済みです。立替金と未払金の残高はどちらも0です。</p>
+          <p className="split-settle__settled">精算済みです。未収金と未払金の残高はどちらも0です。</p>
         )}
 
         {!summary.isSettled && (

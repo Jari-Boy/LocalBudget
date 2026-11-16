@@ -35,7 +35,7 @@ test.describe('Web Worker + RPC層', () => {
       const accounts = await client.account.findAll()
       return {
         names: accounts.map((account) => account.name).sort(),
-        // 立替金(資産)・未払金(負債)がそれぞれ1件ずつ投入される(seedAdvanceAccounts、計画Issue #139)
+        // 未収金(精算バッチ)・未払金(精算バッチ)がそれぞれ1件ずつ投入される(seedAdvanceAccounts、計画Issue #139)
         expectedNames: [
           ...DEFAULT_REVENUE_ACCOUNT_NAMES,
           ...DEFAULT_EXPENSE_ACCOUNT_NAMES,

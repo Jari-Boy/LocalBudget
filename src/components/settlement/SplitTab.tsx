@@ -39,7 +39,7 @@ export interface SplitTabProps {
 
 const ERROR_TEXT: Record<SubmitExpenseSplitError, string> = {
   expenseAccountNotFound: '費用の行がある仕訳を選んでください',
-  requiredFieldMissing: '立替金の科目が見つかりません',
+  requiredFieldMissing: '未収金(精算バッチ)の科目が見つかりません',
   advanceLiabilityAccountRequired: '未払金の科目が見つかりません',
   counterpartyTargetRequired: '分担相手を選んでください',
   noRecipient: '相手の負担額が0円です。割合や金額を確認してください',

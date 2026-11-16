@@ -2,24 +2,29 @@ import type { Database } from 'sql.js'
 import type { AccountCategory } from '../../domain/account/Account'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 
-/** e2eテスト(worker-rpc.spec.ts等)がWorker起動直後の科目一覧を検証する際にも再利用する */
-export const ADVANCE_ASSET_ACCOUNT_NAME = '立替金'
 /**
- * 負債側のみ資産側と異なる名前にする(計画Issue #139)。精算画面(SettlementScreen)の
- * 「科目」選択が「立替金(資産)」「未払金(負債)」という表示ラベルを使っており、裏付けとなる
- * 科目の実名も同じ言葉で区別できる方がわかりやすいという、実機レビューでのユーザー指摘への
- * 対応(詳細はdocs/decisions.md参照)。計画Issue #40時点では資産・負債とも同名の「立替金」
- * だったが、これを機に分離した。
+ * 割勘の一時勘定の科目名(精算バッチを付けられる、システム管理の資産・負債の2科目)。
+ * 計画Issue #177の実機確認で、「立替金」「未払金」から「未収金(精算バッチ)」「未払金(精算バッチ)」に改めた
+ * (精算バッチ専用の科目だと一目で分かり、利用者が自分で作る未払金・未収金と区別できるため。
+ * 用語集・初期設定のプレビューの表示に合わせた)。科目はシステム管理の印(is_system_managed)で探しており、
+ * 名前には依存しないので、この名前を変えても既存のDBの動作は変わらない(既存のDBの科目名は変わらない)。
+ * e2eテスト(worker-rpc.spec.ts等)がWorker起動直後の科目一覧を検証する際にも再利用する
  */
-export const ADVANCE_LIABILITY_ACCOUNT_NAME = '未払金'
+export const ADVANCE_ASSET_ACCOUNT_NAME = '未収金(精算バッチ)'
+/**
+ * 負債側のみ資産側と異なる名前にする(計画Issue #139)。精算画面の「科目」選択が資産側・負債側を
+ * 別の言葉で表示しており、裏付けとなる科目の実名も同じ言葉で区別できる方がわかりやすいという、
+ * 実機レビューでのユーザー指摘への対応(詳細はdocs/decisions.md参照)。
+ */
+export const ADVANCE_LIABILITY_ACCOUNT_NAME = '未払金(精算バッチ)'
 
 /**
- * 割勘の一時勘定(立替金/未払金)科目を自動投入する(docs/domain/expense-splitting.md 1.2節、
+ * 割勘の一時勘定(未収金(精算バッチ)/未払金(精算バッチ))科目を自動投入する(docs/domain/expense-splitting.md 1.2節、
  * 計画Issue #40の人間レビューでの追加指摘、計画Issue #139で資産側・負債側の科目名を分離)。
  * 「科目自体は割勘のたびに新規作成しない。恒久的な汎用科目として1組だけ用意し、以降の
  * すべての割勘で使い回す」という方針を実現するため、asset・liability区分それぞれについて、
- * is_system_managed = trueの科目が1件も存在しなければ、資産側は「立替金」・負債側は
- * 「未払金」を1件投入する(区分ごとに独立して冪等に判定する、seedDefaultAccountsと同じ
+ * is_system_managed = trueの科目が1件も存在しなければ、資産側は「未収金(精算バッチ)」・負債側は
+ * 「未払金(精算バッチ)」を1件投入する(区分ごとに独立して冪等に判定する、seedDefaultAccountsと同じ
  * 考え方)。判定をis_system_managedの有無に絞ることで、ユーザーが作成した無関係な資産・負債
  * 科目(現金・クレジットカード等)がいくつあっても投入をスキップしない。is_system_managed =
  * trueで作成することで、DBスキーマのトリガー(docs/schema/accounts.sql)により削除・区分

@@ -204,7 +204,7 @@ describe('JournalLineBulkBar', () => {
       unmount()
       render(<Harness selected={[sel(e2, 21), sel(e2, 22)]} />)
       expect(screen.getByLabelText('一括編集の精算バッチ')).toBeDisabled()
-      expect(screen.getByText('立替金・未払金の行のみ')).toBeInTheDocument()
+      expect(screen.getByText('未収金・未払金(精算バッチ)の行のみ')).toBeInTheDocument()
     })
 
     it('既定の世帯メンバーがある科目に変えようとしているとき、世帯メンバーは選べない', () => {

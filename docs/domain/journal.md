@@ -71,7 +71,7 @@
 >
 > **判定は仕訳全体で行う**: 軸の間はAND、軸の内側(複数選択、同じ軸の項目指定とグループ指定の併用を含む)はOR。互換用の単一指定(`accountId`等)だけは従来どおりANDのまま。各軸は仕訳内のどの明細行で満たしてもよく、複数の軸を別々の明細行で満たしてもヒットする(例: クレジットカードの行と食費の行を持つ仕訳が「楽天カードで払った食費」にヒットする)。空配列は絞り込みなしとして扱う。
 >
-> **精算の候補だけは固定条件を別に持つ**: 精算画面(精算タブ)の「消込む仕訳を選ぶ」候補(`findUnassignedAdvanceEntriesForTarget`)は、「対象の立替金科目かつ対象者」を**同じ明細行**で満たし、精算バッチが未設定の行を持つ仕訳に限る。この固定条件は仕訳全体の検索条件では置き換えられないため、`filterJournalEntries`で先に仕訳を絞り込んだうえで(省略可の`search`引数)、行単位の固定条件を重ねる。精算の候補と関連仕訳の追加は従来から`filterJournalEntries`を使っておらず、今回も関連仕訳の追加には手を入れていない(既存の挙動を崩さないため)。
+> **精算の候補だけは固定条件を別に持つ**: 精算画面(精算タブ)の「消込む仕訳を選ぶ」候補(`findUnassignedAdvanceEntriesForTarget`)は、「対象の未収金(精算バッチ)科目かつ対象者」を**同じ明細行**で満たし、精算バッチが未設定の行を持つ仕訳に限る。この固定条件は仕訳全体の検索条件では置き換えられないため、`filterJournalEntries`で先に仕訳を絞り込んだうえで(省略可の`search`引数)、行単位の固定条件を重ねる。精算の候補と関連仕訳の追加は従来から`filterJournalEntries`を使っておらず、今回も関連仕訳の追加には手を入れていない(既存の挙動を崩さないため)。
 >
 > 既存の仕訳一覧と割勘の対象選択は、従来の単一指定のまま動作が変わらない。
 
@@ -124,7 +124,7 @@
 
 **物理削除は常に許可する**([GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)で決着)。反対仕訳を挟むことは強制しない。日常的な訂正では関連仕訳グループを作らず、物理削除・直接編集のみで完結させる。
 
-**`JournalEntryRepository.deleteByProjectId(projectId)`で、あるプロジェクト([projects.md 1章](./projects.md#1-プロジェクト))にタグ付けされた仕訳をまとめて物理削除できる**([GitHub Issue #52](https://github.com/Jari-Boy/LocalBudget/issues/52)で決着)。誤って投入した割勘バッチ([expense-splitting.md 1.2 一時勘定(立替金/未払金)](./expense-splitting.md#12-一時勘定立替金未払金)参照、割勘バッチは立替金行にタグ付けられた`project_id`で識別される)を1件ずつ`delete(id)`で消す代わりに、対象`project_id`が`journal_lines.project_id`にタグ付けされた`journal_entries`を一括で取り消せる。`SqlJsJournalEntryRepository`の実装は、単一のDBトランザクション(BEGIN〜COMMIT)内で対象仕訳をまとめてDELETEするall-or-nothing方式であり、`journal_lines`・`journal_entry_link_group_memberships`への波及は既存の`ON DELETE CASCADE`([2.3](#23-関連仕訳グループマスタjournal_entry_link_groups))にすべて委ねる。上記の「物理削除は常に許可する」方針をそのまま踏襲するため、削除対象に精算済み仕訳が混在していてもガードしない。対象`project_id`を持つ仕訳が0件の場合は何もせず正常終了する([expense-splitting.md 1.5 割勘の履歴と取り消し](./expense-splitting.md#15-割勘の履歴と取り消し)も参照)。
+**`JournalEntryRepository.deleteByProjectId(projectId)`で、あるプロジェクト([projects.md 1章](./projects.md#1-プロジェクト))にタグ付けされた仕訳をまとめて物理削除できる**([GitHub Issue #52](https://github.com/Jari-Boy/LocalBudget/issues/52)で決着)。誤って投入した割勘バッチ([expense-splitting.md 1.2 一時勘定(立替金/未払金)](./expense-splitting.md#12-一時勘定立替金未払金)参照、割勘バッチは未収金(精算バッチ)行にタグ付けられた`project_id`で識別される)を1件ずつ`delete(id)`で消す代わりに、対象`project_id`が`journal_lines.project_id`にタグ付けされた`journal_entries`を一括で取り消せる。`SqlJsJournalEntryRepository`の実装は、単一のDBトランザクション(BEGIN〜COMMIT)内で対象仕訳をまとめてDELETEするall-or-nothing方式であり、`journal_lines`・`journal_entry_link_group_memberships`への波及は既存の`ON DELETE CASCADE`([2.3](#23-関連仕訳グループマスタjournal_entry_link_groups))にすべて委ねる。上記の「物理削除は常に許可する」方針をそのまま踏襲するため、削除対象に精算済み仕訳が混在していてもガードしない。対象`project_id`を持つ仕訳が0件の場合は何もせず正常終了する([expense-splitting.md 1.5 割勘の履歴と取り消し](./expense-splitting.md#15-割勘の履歴と取り消し)も参照)。
 
 [accounts.md 2.1](./accounts.md#21-操作ルール)の「別科目への実質変更」は反対仕訳([1.8](#18-関連仕訳グループjournal_entry_link_groups)の`reverses`)で扱う。これは科目マスタ側の大量の過去仕訳を一括付け替えする特殊な操作の文脈である。1件の仕訳を日常的に編集・削除する場面にまで同じ重さを求めると、入力ミスの訂正が煩雑になり、[domain.md 1.1 基本方針](../domain.md#11-基本方針)の「会計知識のない一般ユーザーにも使える」という方針に反する。[1.8](#18-関連仕訳グループjournal_entry_link_groups)の通り、フィールド単位の変更履歴(何をいつ変更したか)は引き続き持たない。
 
@@ -144,7 +144,7 @@
 |---|---|
 | `manual` | 手入力(既定値) |
 | `external_import` | 外部明細取込のレビュー確定を経て作成された。通常の取引・消込のどちらも含む |
-| `recurring_generated` | 定期仕訳([recurring-transactions.md](./recurring-transactions.md))の提案をレビュー確認(承認)して作成された。ルールの行(2行でも3行以上でも)が仕訳の明細行になり、ルールの行に精算バッチが設定されていれば、立替金・未払金の行にそのバッチのタグが付く(計画Issue #180)。起票者はルール単位、行の世帯メンバーは 科目の既定 > 行 > 起票者 の順で決まる |
+| `recurring_generated` | 定期仕訳([recurring-transactions.md](./recurring-transactions.md))の提案をレビュー確認(承認)して作成された。ルールの行(2行でも3行以上でも)が仕訳の明細行になり、ルールの行に精算バッチが設定されていれば、未収金・未払金(精算バッチ)の行にそのバッチのタグが付く(計画Issue #180)。起票者はルール単位、行の世帯メンバーは 科目の既定 > 行 > 起票者 の順で決まる |
 | `auto_balance_adjustment` | 残高の基準点に合わせて自動で入る調整仕訳(元手=初期残高を含む、計画Issue #205)。科目ごとの計算で導出されるデータで、利用者は編集・削除・関連付けできない([reconciliation.md 1.6](./reconciliation.md#16-原因不明差異への残高調整)、[accounts.md 4.3](./accounts.md#43-初期残高最初の基準点の自動仕訳))。一覧には「自動調整」のタグで表示する |
 | `initial_balance` | (旧)口座/カード開設時の初期残高仕訳。計画Issue #205で「初期残高」の入力を最初の基準点に統合したため新規には作らない。旧データの表示用に値だけ残す |
 | `balance_adjustment` | (旧)残高調整。計画Issue #205の自動調整仕訳(`auto_balance_adjustment`)に置き換えた。旧データの表示用に値だけ残す |
@@ -222,7 +222,7 @@
 > `memo`(摘要)は「何の取引か」を表す取引の要約であり、明細取込では取込元の`description`が初期値になる。`comment`はそれとは別に、ユーザーが仕訳ごとに残せる自由な補足(理由・経緯など)である。履歴は持たず、上書きで更新する。手入力フォーム・下書き・仕訳詳細の更新・明細取込のレビュー確定の各経路で保存・表示できる。
 >
 > **`journal_lines.settlement_batch_id`は一時勘定の行にのみ設定できる(計画Issue #144)**
-> 割勘の一時勘定(システム管理の立替金・未払金)の行以外にはタグを設定できない(計画Issue #167で、`is_reconcilable = false`の資産・負債科目から絞り込んだ)。ドメイン判定`isSettlementBatchTaggableAccount`と専用エラー`SettlementBatchOnNonAdvanceAccountError`を使い、`JournalEntryRepository`のcreate/updateが書き込み前に検証する([settlement.md 1.7](./settlement.md#17-タグ付き一時勘定の消込settlement_batch_idによるタグ付け)参照)。仕訳画面では精算バッチ欄を立替金・未払金の行にだけ出し、タグ付きの行の科目をそれ以外へ変えると欄と一緒にタグも外す(立替金⇔未払金の変更ではタグを維持する。[settlement.md 1.8](./settlement.md#18-タグの編集について)参照)。
+> 割勘の一時勘定(システム管理の未収金・未払金(精算バッチ))の行以外にはタグを設定できない(計画Issue #167で、`is_reconcilable = false`の資産・負債科目から絞り込んだ)。ドメイン判定`isSettlementBatchTaggableAccount`と専用エラー`SettlementBatchOnNonAdvanceAccountError`を使い、`JournalEntryRepository`のcreate/updateが書き込み前に検証する([settlement.md 1.7](./settlement.md#17-タグ付き一時勘定の消込settlement_batch_idによるタグ付け)参照)。仕訳画面では精算バッチ欄を未収金・未払金(精算バッチ)の行にだけ出し、タグ付きの行の科目をそれ以外へ変えると欄と一緒にタグも外す(未収金⇔未払金(精算バッチ)の変更ではタグを維持する。[settlement.md 1.8](./settlement.md#18-タグの編集について)参照)。
 >
 > 明細行自体には`updated_at`を持たせない。明細の変更は「仕訳ヘッダー配下の行構成をまるごと差し替える」操作としてRepository層が扱い、変更の痕跡は親である`journal_entries.updated_at`側に集約する([1.5](#15-仕訳の編集削除)参照)。
 >

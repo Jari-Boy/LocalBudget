@@ -49,7 +49,7 @@ CREATE TABLE journal_lines (
   counterparty_id       INTEGER
     REFERENCES counterparties(id),
   -- 精算バッチのタグ(計画Issue #133)。project_idとは独立したカラムであり、1行に
-  -- 両方を同時に設定できる(例: 割勘仕訳の費用行はproject_id(イベント)、立替金行は
+  -- 両方を同時に設定できる(例: 割勘仕訳の費用行はproject_id(イベント)、未収金(精算バッチ)行は
   -- settlement_batch_id(精算バッチ)をそれぞれ持つ)。未精算残高は
   -- (settlement_batch_id, account_id, household_member_id/counterparty_id)の
   -- 集計で算出する(docs/domain/settlement.md参照)。

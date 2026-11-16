@@ -177,7 +177,7 @@ export function JournalLineBulkBar({
               </option>
             ))}
           </select>
-          {note(rules.batchAllowed, '立替金・未払金の行のみ')}
+          {note(rules.batchAllowed, '未収金・未払金(精算バッチ)の行のみ')}
         </div>
         <div className="journal-line-bulk__field">
           <span className="journal-line-bulk__label">世帯メンバー</span>

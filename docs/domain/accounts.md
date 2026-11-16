@@ -52,7 +52,7 @@
 | 区分 | コード | 所属 | 勘定科目の例 |
 |---|---|---|---|
 | 資産 | `asset` | BS | 現金/普通預金/定期預金/電子マネー/証券口座/未収金(一時勘定) |
-| 負債 | `liability` | BS | クレジットカード未払金(カードごと、`is_reconcilable = false`)/未払金(一時勘定)/ローン/立替金 |
+| 負債 | `liability` | BS | クレジットカード未払金(カードごと、`is_reconcilable = false`)/未払金(一時勘定)/ローン/未払金(精算バッチ)(割勘の一時勘定) |
 | 純資産 | `equity` | BS | 初期残高(単一の科目、システム管理、計画Issue #143) |
 | 収益 | `revenue` | PL | 給与収入/副業収入/謝礼収入 |
 | 費用 | `expense` | PL | 食費/住居費/水道光熱費/娯楽費/残高調整(システム管理) … |
@@ -60,7 +60,9 @@
 > **収益・費用の標準科目は初回起動時に自動投入される(計画Issue #96)**
 > 上表の収益・費用の勘定科目の例は説明用の例示に留まらない。`seedDefaultAccounts`(`src/infrastructure/db/seedDefaultAccounts.ts`、Worker起動時に`runMigrations`直後で呼び出す)が、標準科目一式(収益3件:給与収入/副業収入/謝礼収入、費用12件:食費/住居費/水道光熱費/通信費/交通費/日用品費/被服費/医療費/教育費/交際費/保険料/娯楽費、`src/infrastructure/db/defaultAccountSeedData.ts`)を実際に自動投入する。revenue・expense区分それぞれについて、その区分の科目が1件も存在しない場合にのみ投入する(区分ごとに独立して冪等に判定し、既存の科目が1件でもあれば部分投入はしない)。投入される科目は`is_system_managed = false`・`account_group_id = NULL`・`household_member_id = NULL`・`is_reconcilable = NULL`で作成され、投入後は通常のユーザー作成科目と同様に編集・削除・非アクティブ化できる(投入されたことによる特別扱いは無い)。asset/liability/equity区分の科目、および`is_system_managed = true`の「残高調整」科目はこのシードの対象外。同じ「Worker起動時の冪等シード」という設計は`seedDefaultHouseholdMember`(計画Issue #88)・`seedBuiltInMappingDefinitions`([statement-import.md 2.3](./statement-import.md#23-組み込み定義とユーザー定義)参照)で既に採用されている。
 >
-> asset区分のうち「立替金」だけは例外的に、`seedDefaultAccounts`とは別の`seedAdvanceAccounts`(計画Issue #40)が`is_system_managed = true`の科目として自動投入する。詳細は[expense-splitting.md 1.2](./expense-splitting.md#12-一時勘定立替金未払金)参照。
+> 資産の「未収金(精算バッチ)」・負債の「未払金(精算バッチ)」(割勘の一時勘定)だけは例外的に、`seedDefaultAccounts`とは別の`seedAdvanceAccounts`(計画Issue #40)が`is_system_managed = true`の科目として自動投入する。詳細は[expense-splitting.md 1.2](./expense-splitting.md#12-一時勘定立替金未払金)参照。
+
+> **初回セットアップでの調整(計画Issue #177)**: 新規DBでは、初回セットアップの確定(`completeOnboarding`、`src/infrastructure/db/onboarding.ts`)が、選んだテンプレート(最小/標準/簿記寄り、`src/domain/onboarding/accountTemplates.ts`)に合わせて自動投入済みの収益・費用の科目を整える(雑収入・雑損失は残す)。また、資産「現金」(外部明細なし、標準グループ「現金・電子マネー」)をこのときに入れる。銀行・カードの口座は外部明細の有無や名義が口座ごとに違うためテンプレートに入れず、利用者が登録する。
 
 > **資産振替は費用ではない**
 > 貯蓄・投資は、現金という資産が別の資産へ形を変える資産→資産の振替である。したがって費用ではない。PLには影響しない。
@@ -384,7 +386,7 @@
 
 | 機能 | UI上の扱い |
 |---|---|
-| 一覧表示 | 資産/負債/収益/費用の4セクション(`category`ごと)の見出し直下に、そのセクションに属する最上位グループをツリー表示する(展開/折りたたみ可能)。`buildAccountGroupForest`(純粋関数、[3.3](#33-勘定科目グループマスタaccount_groups)「実装状況」参照)が、サブグループ+直属科目を`sortOrder`の昇順で1つの表示順に混在させたツリーを組み立てる(セクション分けはUI層の責務)。`account_group_id = NULL`の未分類科目は、同`category`の最上位グループと同じ「入れ物」として扱われ、ツリーの最上位階層に兄弟として表示される(未分類科目の可視化・選択・グループへの割り当てを可能にするための設計拡張、計画Issue #129の実機確認で発覚した「グループ0件時に未分類科目が一切表示されない」不具合の修正を経て確定)。`is_system_managed`科目(初期残高科目・割勘用の立替金等)はツリー・選択・ドラッグいずれの対象からも常に除外する(`account_group_id`の変更自体がDDLトリガー`prevent_non_name_change_on_system_managed_account`で禁止されているため、旧実装の`isEligibleForAssignmentPanel`と同じ趣旨の除外) |
+| 一覧表示 | 資産/負債/収益/費用の4セクション(`category`ごと)の見出し直下に、そのセクションに属する最上位グループをツリー表示する(展開/折りたたみ可能)。`buildAccountGroupForest`(純粋関数、[3.3](#33-勘定科目グループマスタaccount_groups)「実装状況」参照)が、サブグループ+直属科目を`sortOrder`の昇順で1つの表示順に混在させたツリーを組み立てる(セクション分けはUI層の責務)。`account_group_id = NULL`の未分類科目は、同`category`の最上位グループと同じ「入れ物」として扱われ、ツリーの最上位階層に兄弟として表示される(未分類科目の可視化・選択・グループへの割り当てを可能にするための設計拡張、計画Issue #129の実機確認で発覚した「グループ0件時に未分類科目が一切表示されない」不具合の修正を経て確定)。`is_system_managed`科目(初期残高科目・割勘用の未収金・未払金(精算バッチ)等)はツリー・選択・ドラッグいずれの対象からも常に除外する(`account_group_id`の変更自体がDDLトリガー`prevent_non_name_change_on_system_managed_account`で禁止されているため、旧実装の`isEligibleForAssignmentPanel`と同じ趣旨の除外) |
 | 作成 | 各セクション見出しの「+グループを追加」から名称のみを指定して作成する。作成されるグループの`category`はそのセクションのcategoryに自動的に確定し、以後変更できない([3.3](#33-勘定科目グループマスタaccount_groups)参照)。作成フォームに`category`選択欄・親グループ選択欄・子グループ一括指定チェックボックスは無い(親子関係の指定は下記のドラッグ&ドロップ/チェックボックス移動に一本化、旧UXとの違いは本節末尾の経緯を参照) |
 | 改名 | グループ名をダブルクリック、またはフォーカスしてEnter/Spaceキーでインライン編集になる。保存/キャンセルボタンで確定・破棄する |
 | 削除 | 紐づく勘定科目・子グループがともに0件のグループにのみ削除ボタンを表示する([3.3](#33-勘定科目グループマスタaccount_groups)のライフサイクル表と同じ判定基準、`prevent_delete_account_group_with_accounts`/`prevent_delete_account_group_with_children`トリガーが最終防御線) |
@@ -408,7 +410,7 @@
 
 | 操作 | 扱い |
 |---|---|
-| 名称・名義・所属グループ・並び順の変更 | 常に可。システム管理の科目(初期残高・立替金等)も、名称・グループ・並び順は変えられる。区分の変更と削除はできない |
+| 名称・名義・所属グループ・並び順の変更 | 常に可。システム管理の科目(初期残高・未収金(精算バッチ)等)も、名称・グループ・並び順は変えられる。区分の変更と削除はできない |
 | 移動 | ドラッグ、複数選択、右パネルの「所属グループ」のどれでも同じ判定(`resolveTreeMove`)で、区分をまたぐ移動と自分の配下への移動(循環参照)は拒否する。移動結果は`computeTreeNodeUpdates`が親グループと並び順の差分に変換して書き戻す |
 | 新規登録 | 区分の見出しの「科目を追加」で、右パネルに登録フォーム(`AccountCreateForm`)が開く。項目は区分→名称→所属グループ→[資産・負債のみ]外部明細(CSV)の有無→[CSVありのみ]残高情報の有無→名義(CSVありは必須、なしは「全員」も可)→[取引後残高のあるCSVの科目以外]最初の残高の記録(日付と金額、任意。計画Issue #205)。収益・費用は区分・名称・所属グループだけ。資本は作成できない |
 | 外部明細の情報の確認(計画Issue #189) | 資産・負債の科目の右パネルに「外部明細の情報」を**表示のみ**で、外部明細・残高情報の順に横並びで出す(`AccountRegistrationInfo`、値は`summarizeAccountRegistration`)。外部明細は`has_external_statement`(登録時の回答)、残高情報は`is_reconcilable`。初期残高は「残高の照合」欄の表の最後の行(元手)に統合した(計画Issue #205)。回答を保存する前に作られた行(`has_external_statement`がNULL)は、照合可否から推定する(`resolveHasExternalStatement`: 照合する科目は外部明細あり、それ以外はなし)。収益・費用・資本の科目とグループには出さない。`is_reconcilable`・`has_external_statement`・区分はこの画面から変更できない |

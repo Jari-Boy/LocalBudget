@@ -46,7 +46,7 @@ CREATE TABLE recurring_transaction_rules (
 -- 2行のルールも3行以上のルールも同じ表で表す。貸借の一致(借方合計=貸方合計・2行以上)はDBで強制せず、
 -- 仕訳と同じ検証(assertJournalBalance)をRepositoryが書き込み前に行う(journal.md 1.3と同じ使い分け)。
 -- 世帯メンバーはNULLなら「行では決めない」で、確定時に 科目の既定メンバー > 起票者 の順で決まる。
--- 精算バッチは、システム管理の立替金・未払金の科目の行にだけ設定できる(Repositoryが検証、journal_linesと同じ)
+-- 精算バッチは、システム管理の未収金・未払金(精算バッチ)の科目の行にだけ設定できる(Repositoryが検証、journal_linesと同じ)
 CREATE TABLE recurring_transaction_rule_lines (
   id                   INTEGER PRIMARY KEY,
   rule_id              INTEGER NOT NULL REFERENCES recurring_transaction_rules(id) ON DELETE CASCADE,

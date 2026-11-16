@@ -49,6 +49,7 @@ import {
   type OperationHistory,
   type UndoPreview,
 } from '../history/OperationHistory'
+import { createOnboardingApi, type OnboardingRpcApi } from './createOnboardingApi'
 import {
   createRecurringTransactionProposalApi,
   type RecurringTransactionProposalRpcApi,
@@ -146,6 +147,8 @@ export interface RepositoryRegistry {
   storage: StorageRpcApi
   /** 操作履歴の一覧・影響範囲の確認・取消(計画Issue #202) */
   history: HistoryRpcApi
+  /** 初回セットアップの状態の取得・確定・スキップ(計画Issue #177)。操作履歴には記録しない */
+  onboarding: OnboardingRpcApi
 }
 
 /**
@@ -227,5 +230,6 @@ export function createRepositoryRegistry(
       beginGroup: (label) => history.beginGroup(label),
       endGroup: () => history.endGroup(),
     },
+    onboarding: createOnboardingApi(db),
   }
 }

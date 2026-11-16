@@ -9,6 +9,8 @@ import recurringTransaction from '../../locales/ja/recurringTransaction.json'
 import analysis from '../../locales/ja/analysis.json'
 import settings from '../../locales/ja/settings.json'
 import history from '../../locales/ja/history.json'
+import help from '../../locales/ja/help.json'
+import onboarding from '../../locales/ja/onboarding.json'
 
 /**
  * ドメイン別の名前空間(account.json等)は、それぞれのUI実装Issue(D1〜D10、
@@ -25,6 +27,7 @@ import history from '../../locales/ja/history.json'
  * analysis名前空間は計画Issue #155(分析画面の刷新)で追加した。
  * settings名前空間は計画Issue #173(設定画面とバックアップの書き出し・読み込み)で追加した。
  * history名前空間は計画Issue #202(操作履歴・ロールバック)で追加した。
+ * help名前空間は計画Issue #177(用語集)で、onboarding名前空間は同(初回セットアップ)で追加した。
  */
 void i18n.use(initReactI18next).init({
   lng: 'ja',
@@ -41,6 +44,8 @@ void i18n.use(initReactI18next).init({
       analysis,
       settings,
       history,
+      help,
+      onboarding,
     },
   },
   interpolation: {

@@ -154,6 +154,8 @@ function setup(
     drafts: JournalEntryDraft[]
     initialFilter: JournalEntryFilter
     rulesPanel: ReactNode
+    /** 見出しとタブの間に出す案内(はじめのチェックリスト、計画Issue #177) */
+    banner: ReactNode
     /** 渡すと「テンプレートから起票」が使える(計画Issue #201) */
     templates: JournalTemplate[]
     templateGroups: JournalTemplateGroup[]
@@ -316,6 +318,7 @@ function setup(
     onOpenAccountReconciliation: overrides.onOpenAccountReconciliation,
     initialFilter: overrides.initialFilter,
     rulesPanel: overrides.rulesPanel,
+    banner: overrides.banner,
     templatesPanel: overrides.templatesPanel,
     journalTemplateRepository: overrides.templates === undefined ? undefined : { findAll: vi.fn(async () => [...overrides.templates!]) },
     journalTemplateGroupRepository:
@@ -461,6 +464,15 @@ describe('JournalScreen', () => {
     expect(screen.queryByRole('region', { name: '仕訳の詳細' })).not.toBeInTheDocument()
   })
 
+  it('banner を渡すと、見出しの下・タブの上に出す(はじめのチェックリスト、計画Issue #177)。渡さなければ何も出さない', async () => {
+    setup({ banner: <p>はじめのチェックリスト</p> })
+    await ready()
+
+    const banner = screen.getByText('はじめのチェックリスト')
+    const tablist = screen.getByRole('tablist', { name: '仕訳の種類' })
+    expect(banner.compareDocumentPosition(tablist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('rulesPanel を渡さないときは、定期仕訳のタブを出さない', async () => {
     setup()
     await ready()
@@ -505,12 +517,12 @@ describe('JournalScreen', () => {
     expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
   })
 
-  it('精算バッチを付けられない科目だとRepositoryに拒否されたら、立替金・未払金のままにするよう表示する(計画Issue #167)', async () => {
+  it('精算バッチを付けられない科目だとRepositoryに拒否されたら、未収金・未払金(精算バッチ)のままにするよう表示する(計画Issue #167)', async () => {
     const props = setup()
     await ready()
     props.journalEntryRepository.update.mockRejectedValueOnce(new SettlementBatchOnNonAdvanceAccountError(1))
     fireEvent.click(within(detail()).getByRole('button', { name: '保存' }))
-    expect(await within(detail()).findByText('精算バッチのタグが付いた明細の科目は、立替金・未払金のままにしてください。')).toBeInTheDocument()
+    expect(await within(detail()).findByText('精算バッチのタグが付いた明細の科目は、未収金・未払金(精算バッチ)のままにしてください。')).toBeInTheDocument()
   })
 
   it('削除は2回押して確定し、確認中は影響を表示して、削除後は次の仕訳を選ぶ', async () => {

@@ -31,7 +31,7 @@ beforeEach(async () => {
 })
 
 describe('seedAdvanceAccounts', () => {
-  it('is_system_managedの資産・負債科目が0件の場合、立替金(資産)・未払金(負債)をそれぞれ1件ずつ投入する', () => {
+  it('is_system_managedの資産・負債科目が0件の場合、未収金(精算バッチ)・未払金(精算バッチ)をそれぞれ1件ずつ投入する', () => {
     seedAdvanceAccounts(db)
 
     const accounts = repository.findAll()
@@ -39,8 +39,8 @@ describe('seedAdvanceAccounts', () => {
     const advanceLiability = accounts.find(
       (account) => account.category === 'liability' && account.isSystemManaged,
     )
-    expect(advanceAsset).toMatchObject({ name: '立替金', isReconcilable: false, isSystemManaged: true })
-    expect(advanceLiability).toMatchObject({ name: '未払金', isReconcilable: false, isSystemManaged: true })
+    expect(advanceAsset).toMatchObject({ name: '未収金(精算バッチ)', isReconcilable: false, isSystemManaged: true })
+    expect(advanceLiability).toMatchObject({ name: '未払金(精算バッチ)', isReconcilable: false, isSystemManaged: true })
   })
 
   it('通常のユーザー作成科目(is_system_managed = false)がいくつあっても、is_system_managedの立替金は独立して投入される', () => {
@@ -57,7 +57,7 @@ describe('seedAdvanceAccounts', () => {
   })
 
   it('資産側だけ既に投入済みの場合、負債側のみ独立して投入される(区分ごとの独立判定)', () => {
-    repository.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
+    repository.create({ category: 'asset', name: '未収金(精算バッチ)', isReconcilable: false, isSystemManaged: true })
 
     seedAdvanceAccounts(db)
 
@@ -77,26 +77,26 @@ describe('seedAdvanceAccounts', () => {
   })
 
   it('既に同名(is_system_managed = false)の資産科目が存在する場合、UNIQUE制約違反で例外を投げずに投入をスキップする(Review Attempt 5対応、Worker起動全体のクラッシュを防ぐ)', () => {
-    const existing = repository.create({ category: 'asset', name: '立替金', isReconcilable: false })
+    const existing = repository.create({ category: 'asset', name: '未収金(精算バッチ)', isReconcilable: false })
 
     expect(() => seedAdvanceAccounts(db)).not.toThrow()
 
     const accounts = repository.findAll()
-    const assetAccounts = accounts.filter((account) => account.category === 'asset' && account.name === '立替金')
+    const assetAccounts = accounts.filter((account) => account.category === 'asset' && account.name === '未収金(精算バッチ)')
     // 既存の科目が意図せず書き換えられたり、同名の重複が作られたりしていないことを確認する
     expect(assetAccounts).toEqual([expect.objectContaining({ id: existing.id, isSystemManaged: false })])
     // 資産側が衝突してスキップされても、負債側は独立して投入される
     expect(accounts.some((account) => account.category === 'liability' && account.isSystemManaged)).toBe(true)
   })
 
-  it('既に同名(is_system_managed = false)の負債科目「未払金」が存在する場合、UNIQUE制約違反で例外を投げずに投入をスキップする(計画Issue #139、資産側と同じ安全策を負債側にも適用)', () => {
-    const existing = repository.create({ category: 'liability', name: '未払金', isReconcilable: false })
+  it('既に同名(is_system_managed = false)の負債科目「未払金(精算バッチ)」が存在する場合、UNIQUE制約違反で例外を投げずに投入をスキップする(計画Issue #139、資産側と同じ安全策を負債側にも適用)', () => {
+    const existing = repository.create({ category: 'liability', name: '未払金(精算バッチ)', isReconcilable: false })
 
     expect(() => seedAdvanceAccounts(db)).not.toThrow()
 
     const accounts = repository.findAll()
     const liabilityAccounts = accounts.filter(
-      (account) => account.category === 'liability' && account.name === '未払金',
+      (account) => account.category === 'liability' && account.name === '未払金(精算バッチ)',
     )
     expect(liabilityAccounts).toEqual([expect.objectContaining({ id: existing.id, isSystemManaged: false })])
     // 負債側が衝突してスキップされても、資産側は独立して投入される
