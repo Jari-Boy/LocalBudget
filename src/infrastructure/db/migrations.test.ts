@@ -36,7 +36,7 @@ describe('runMigrations', () => {
         'household_member_group_memberships',
         'projects',
         'counterparties',
-        'counterparty_patterns',
+        'keyword_rules',
         'counterparty_merge_log',
         'settlement_batches',
         'journal_entries',

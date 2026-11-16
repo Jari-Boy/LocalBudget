@@ -21,6 +21,7 @@ import { seedInitialBalanceAccount } from '../../infrastructure/db/seedInitialBa
 import { SqlJsAccountGroupRepository } from '../../infrastructure/db/SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsCounterpartyGroupRepository } from '../../infrastructure/db/SqlJsCounterpartyGroupRepository'
+import { SqlJsKeywordRuleRepository } from '../../infrastructure/db/SqlJsKeywordRuleRepository'
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import { SqlJsExternalTransactionRefRepository } from '../../infrastructure/db/SqlJsExternalTransactionRefRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
@@ -77,6 +78,7 @@ function renderScreen() {
           externalTransactionRefRepository={new SqlJsExternalTransactionRefRepository(db)}
           journalEntryRepository={entries}
           counterpartyRepository={new SqlJsCounterpartyRepository(db)}
+          keywordRuleRepository={new SqlJsKeywordRuleRepository(db)}
           counterpartyGroupRepository={new SqlJsCounterpartyGroupRepository(db)}
           projectRepository={new SqlJsProjectRepository(db)}
           projectGroupRepository={new SqlJsProjectGroupRepository(db)}

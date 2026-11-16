@@ -39,6 +39,7 @@ export const AREAS: Area[] = [
       { labelKey: 'counterparties', to: '/master/counterparties' },
       { labelKey: 'householdMembers', to: '/master/household-members' },
       { labelKey: 'projects', to: '/master/projects' },
+      { labelKey: 'keywords', to: '/master/keywords' },
       { labelKey: 'mappings', to: '/master/mappings' },
     ],
   },

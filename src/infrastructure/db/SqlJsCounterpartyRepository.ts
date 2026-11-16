@@ -1,7 +1,6 @@
 import type { Database } from 'sql.js'
 import type {
   Counterparty,
-  CounterpartyPattern,
   CreateCounterpartyInput,
   UpdateCounterpartyInput,
 } from '../../domain/counterparty/Counterparty'
@@ -22,14 +21,9 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
 
   create(input: CreateCounterpartyInput): Counterparty {
     this.db.run(
-      `INSERT INTO counterparties (name, default_account_id, counterparty_group_id, sort_order)
-       VALUES (?, ?, ?, ?)`,
-      [
-        input.name,
-        input.defaultAccountId ?? null,
-        input.counterpartyGroupId ?? null,
-        input.sortOrder ?? 0,
-      ],
+      `INSERT INTO counterparties (name, counterparty_group_id, sort_order)
+       VALUES (?, ?, ?)`,
+      [input.name, input.counterpartyGroupId ?? null, input.sortOrder ?? 0],
     )
     return this.findById(lastInsertRowId(this.db))!
   }
@@ -52,14 +46,11 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
       throw new Error(`counterparty not found: ${id}`)
     }
 
-    const defaultAccountId =
-      input.defaultAccountId === undefined ? current.defaultAccountId : input.defaultAccountId
     this.db.run(
       `UPDATE counterparties
-       SET name = ?, default_account_id = ?, counterparty_group_id = ?, sort_order = ? WHERE id = ?`,
+       SET name = ?, counterparty_group_id = ?, sort_order = ? WHERE id = ?`,
       [
         input.name ?? current.name,
-        defaultAccountId,
         input.counterpartyGroupId === undefined
           ? current.counterpartyGroupId
           : input.counterpartyGroupId,
@@ -84,41 +75,6 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
     return this.findById(id)!
   }
 
-  addPattern(counterpartyId: number, pattern: string): CounterpartyPattern {
-    this.db.run('INSERT INTO counterparty_patterns (counterparty_id, pattern) VALUES (?, ?)', [
-      counterpartyId,
-      pattern,
-    ])
-    return this.findPatternById(lastInsertRowId(this.db))!
-  }
-
-  findByPattern(text: string): CounterpartyPattern[] {
-    const [result] = this.db.exec(
-      `SELECT * FROM counterparty_patterns WHERE ? LIKE '%' || pattern || '%' ORDER BY id`,
-      [text],
-    )
-    if (!result) return []
-    return result.values.map((values) => mapRowToCounterpartyPattern(result.columns, values))
-  }
-
-  findPatternsByCounterparty(counterpartyId: number): CounterpartyPattern[] {
-    const [result] = this.db.exec(
-      'SELECT * FROM counterparty_patterns WHERE counterparty_id = ? ORDER BY id',
-      [counterpartyId],
-    )
-    if (!result) return []
-    return result.values.map((values) => mapRowToCounterpartyPattern(result.columns, values))
-  }
-
-  updatePattern(patternId: number, pattern: string): CounterpartyPattern {
-    this.db.run('UPDATE counterparty_patterns SET pattern = ? WHERE id = ?', [pattern, patternId])
-    return this.findPatternById(patternId)!
-  }
-
-  deletePattern(patternId: number): void {
-    this.db.run('DELETE FROM counterparty_patterns WHERE id = ?', [patternId])
-  }
-
   merge(targetId: number, sourceIds: number[]): void {
     this.db.run('BEGIN')
     try {
@@ -134,15 +90,24 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
         }
 
         const lineCount = this.countRows('journal_lines', 'counterparty_id', sourceId)
-        const patternCount = this.countRows('counterparty_patterns', 'counterparty_id', sourceId)
+        const patternCount = this.countRows('keyword_rules', 'counterparty_id', sourceId)
 
         this.db.run('UPDATE journal_lines SET counterparty_id = ? WHERE counterparty_id = ?', [
           targetId,
           sourceId,
         ])
         this.db.run(
-          'UPDATE counterparty_patterns SET counterparty_id = ? WHERE counterparty_id = ?',
+          'UPDATE keyword_rules SET counterparty_id = ? WHERE counterparty_id = ?',
           [targetId, sourceId],
+        )
+        // 付け替えで、統合先と同じキーワード・同じ科目になったルールは1件にまとめる(最初のものを残す)
+        this.db.run(
+          `DELETE FROM keyword_rules
+           WHERE counterparty_id = ?
+             AND id NOT IN (
+               SELECT MIN(id) FROM keyword_rules WHERE counterparty_id = ?
+               GROUP BY pattern, COALESCE(account_id, 0))`,
+          [targetId, targetId],
         )
         this.db.run(
           `INSERT INTO counterparty_merge_log
@@ -159,12 +124,6 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
       this.db.run('ROLLBACK')
       throw error
     }
-  }
-
-  private findPatternById(id: number): CounterpartyPattern | null {
-    const [result] = this.db.exec('SELECT * FROM counterparty_patterns WHERE id = ?', [id])
-    if (!result) return null
-    return mapRowToCounterpartyPattern(result.columns, result.values[0])
   }
 
   private countRows(table: string, column: string, value: number): number {
@@ -188,21 +147,10 @@ function mapRowToCounterparty(columns: string[], values: unknown[]): Counterpart
   return {
     id: get<number>('id'),
     name: get<string>('name'),
-    defaultAccountId: get<number | null>('default_account_id'),
     counterpartyGroupId: get<number | null>('counterparty_group_id'),
     sortOrder: get<number>('sort_order'),
     isActive: sqlToBool(get<number>('is_active')),
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),
-  }
-}
-
-function mapRowToCounterpartyPattern(columns: string[], values: unknown[]): CounterpartyPattern {
-  const get = <T,>(name: string): T => values[columns.indexOf(name)] as T
-  return {
-    id: get<number>('id'),
-    counterpartyId: get<number>('counterparty_id'),
-    pattern: get<string>('pattern'),
-    createdAt: get<string>('created_at'),
   }
 }

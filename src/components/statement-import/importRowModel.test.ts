@@ -13,6 +13,7 @@ import {
   createInitialRowState,
   isRowEdited,
   rowStatus,
+  shouldOfferAccountLearn,
   shouldOfferLearn,
   type ImportRowState,
 } from './importRowModel'
@@ -184,5 +185,39 @@ describe('isRowEdited', () => {
 
   it('入力の記録(相手科目を手で選んだか)だけが違っても、値が同じなら編集とみなさない', () => {
     expect(isRowEdited({ ...initial, counterAccountTouched: true }, initial)).toBe(false)
+  })
+})
+
+describe('shouldOfferAccountLearn(資産・負債の相手科目を手で選んだ行は、摘要を科目のキーワードにする提案を出す。計画Issue #219)', () => {
+  const record = { isExactDuplicate: false, approximateCandidates: [] } as never
+  const accounts = [FOOD, SECURITIES]
+  const base = createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [] })
+  const picked = (counterAccountId: number | null, overrides: Partial<ImportRowState> = {}): ImportRowState => ({
+    ...base,
+    counterAccountId,
+    counterAccountTouched: true,
+    ...overrides,
+  })
+
+  it('取引先が無く、資産・負債の相手科目を手で選んだ行は、提案を出す', () => {
+    expect(shouldOfferAccountLearn(record, picked(SECURITIES.id), accounts)).toBe(true)
+  })
+
+  it('相手科目を手で選んでいない(推定・未選択の)行は、提案を出さない', () => {
+    expect(shouldOfferAccountLearn(record, picked(SECURITIES.id, { counterAccountTouched: false }), accounts)).toBe(false)
+  })
+
+  it('収益・費用の相手科目の行は、提案を出さない(取引先のキーワードで扱う)', () => {
+    expect(shouldOfferAccountLearn(record, picked(FOOD.id), accounts)).toBe(false)
+  })
+
+  it('取引先がある行は、提案を出さない', () => {
+    expect(shouldOfferAccountLearn(record, picked(SECURITIES.id, { counterpartyId: 5 }), accounts)).toBe(false)
+  })
+
+  it('取り込み済みの重複で対象外の行は、提案を出さない', () => {
+    const duplicate = { isExactDuplicate: true, approximateCandidates: [] } as never
+
+    expect(shouldOfferAccountLearn(duplicate, picked(SECURITIES.id), accounts)).toBe(false)
   })
 })

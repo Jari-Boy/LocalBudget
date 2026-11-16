@@ -5,6 +5,7 @@ import type { AccountGroupRepository } from '../../domain/account-group/AccountG
 import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
 import type { BudgetRepository } from '../../domain/budget/BudgetRepository'
 import type { CounterpartyRepository } from '../../domain/counterparty/CounterpartyRepository'
+import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
 import type { CounterpartyGroupRepository } from '../../domain/counterparty-group/CounterpartyGroupRepository'
 import type { ExternalTransactionRefRepository } from '../../domain/reconciliation/ExternalTransactionRefRepository'
 import type { HouseholdMemberRepository } from '../../domain/household-member/HouseholdMemberRepository'
@@ -28,6 +29,7 @@ import { SqlJsAccountBalanceRecordRepository } from '../db/SqlJsAccountBalanceRe
 import { SqlJsAccountGroupRepository } from '../db/SqlJsAccountGroupRepository'
 import { SqlJsBudgetRepository } from '../db/SqlJsBudgetRepository'
 import { SqlJsCounterpartyRepository } from '../db/SqlJsCounterpartyRepository'
+import { SqlJsKeywordRuleRepository } from '../db/SqlJsKeywordRuleRepository'
 import { SqlJsCounterpartyGroupRepository } from '../db/SqlJsCounterpartyGroupRepository'
 import { SqlJsExternalTransactionRefRepository } from '../db/SqlJsExternalTransactionRefRepository'
 import { SqlJsHouseholdMemberRepository } from '../db/SqlJsHouseholdMemberRepository'
@@ -112,6 +114,7 @@ export interface RepositoryRegistry {
   counterparty: CounterpartyRepository
   /** 取引先グループ(計画Issue #143)。表示専用、集計には関与しない */
   counterpartyGroup: CounterpartyGroupRepository
+  keywordRule: KeywordRuleRepository
   externalTransactionRef: ExternalTransactionRefRepository
   householdMember: HouseholdMemberRepository
   importMappingDefinition: ImportMappingDefinitionRepository
@@ -193,6 +196,7 @@ export function createRepositoryRegistry(
     budget: recorded('budget', new SqlJsBudgetRepository(db)),
     counterparty: recorded('counterparty', new SqlJsCounterpartyRepository(db)),
     counterpartyGroup: recorded('counterpartyGroup', new SqlJsCounterpartyGroupRepository(db)),
+    keywordRule: recorded('keywordRule', new SqlJsKeywordRuleRepository(db)),
     externalTransactionRef: recorded('externalTransactionRef', new SqlJsExternalTransactionRefRepository(db)),
     householdMember: recorded('householdMember', new SqlJsHouseholdMemberRepository(db)),
     importMappingDefinition: recorded('importMappingDefinition', new SqlJsImportMappingDefinitionRepository(db)),

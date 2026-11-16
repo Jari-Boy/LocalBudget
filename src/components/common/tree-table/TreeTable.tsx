@@ -26,6 +26,18 @@ export interface TreeTableProps {
   onMoveRejected?: (reason: string) => void
   /** 区分の見出し行の右側に差し込む操作(例: 「+ グループ」)。引数は区分のkey */
   renderCategoryActions?: (categoryKey: string) => ReactNode
+  /** 先頭の列(既定は「名称」)の見出し。例: キーワードタブでは「キーワード」(計画Issue #219) */
+  nameColumn?: string
+  /**
+   * 渡すと、列見出しが押せるボタンになり、現在の並び替えの列(名称列は'name'、他はcolumnsの番号)に
+   * aria-sortと小さい▲▼を付ける。並び替えそのものは呼び出し側が行い、押した列をonSortChangeで通知する
+   */
+  sort?: { column: 'name' | number; direction: 'asc' | 'desc' }
+  onSortChange?: (column: 'name' | number) => void
+  /** falseにすると区分の見出し行(区分名と件数)を出さない。区分が1つしかない平らな一覧向け(計画Issue #219)。既定はtrue */
+  showCategoryRows?: boolean
+  /** falseにすると行をドラッグできない(並び順を持たない平らな一覧向け)。既定はtrue */
+  draggable?: boolean
 }
 
 /**
@@ -47,6 +59,11 @@ export function TreeTable({
   onMove,
   onMoveRejected,
   renderCategoryActions,
+  nameColumn = '名称',
+  sort,
+  onSortChange,
+  draggable = true,
+  showCategoryRows = true,
 }: TreeTableProps) {
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(new Set())
   const { dragOver, endDrag, handleDragStart, handleNodeDragOver, handleCategoryDragOver, handleDrop } = useTreeDrag({
@@ -71,23 +88,54 @@ export function TreeTable({
 
   const colSpan = columns.length + 2
 
+  /** ヘッダーの「すべて選択」の対象: 表示中(折りたたみで隠れていない)の全行 */
+  const visibleIds = rows.flatMap((row) => (row.type === 'node' ? [row.node.id] : []))
+  const checkedVisibleCount = visibleIds.filter((id) => checkedIds.includes(id)).length
+  const allChecked = visibleIds.length > 0 && checkedVisibleCount === visibleIds.length
+  const toggleAll = () => onCheckedChange(allChecked ? [] : visibleIds)
+
+  /** 列見出し。sortを渡したときだけ押せるボタンにし、並び替え中の列に小さい▲▼を付ける */
+  const renderHeader = (column: 'name' | number, label: string) => {
+    if (!sort) return <th key={String(column)}>{label}</th>
+    const active = sort.column === column
+    return (
+      <th key={String(column)} aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>
+        <button type="button" className="tree-table__sort" onClick={() => onSortChange?.(column)}>
+          {label}
+          {active && (
+            <span aria-hidden="true" className="tree-table__sort-mark">
+              {sort.direction === 'asc' ? '▲' : '▼'}
+            </span>
+          )}
+        </button>
+      </th>
+    )
+  }
+
   return (
     <div className="tree-table">
       <table className="tree-table__table">
         <thead>
           <tr>
             <th className="tree-table__check-head">
-              <span className="tree-table__sr-only">選択</span>
+              <input
+                type="checkbox"
+                aria-label="すべて選択"
+                checked={allChecked}
+                ref={(element) => {
+                  if (element) element.indeterminate = checkedVisibleCount > 0 && !allChecked
+                }}
+                onChange={toggleAll}
+              />
             </th>
-            <th>名称</th>
-            {columns.map((column) => (
-              <th key={column}>{column}</th>
-            ))}
+            {renderHeader('name', nameColumn)}
+            {columns.map((column, index) => renderHeader(index, column))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => {
             if (row.type === 'category') {
+              if (!showCategoryRows) return null
               const id = `${CATEGORY_ID_PREFIX}${row.key}`
               return (
                 <tr
@@ -113,7 +161,7 @@ export function TreeTable({
             return (
               <tr
                 key={node.id}
-                draggable
+                draggable={draggable}
                 className={`tree-table__row${isSelected ? ' tree-table__row--selected' : ''}`}
                 aria-current={isSelected ? 'true' : undefined}
                 data-drop-zone={dragOver?.id === node.id ? dragOver.zone : undefined}

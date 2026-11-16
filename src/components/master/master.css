@@ -35,6 +35,9 @@
 .master-field__control {
   font: inherit;
   font-size: var(--font-size-base);
+  /* font: inheritで画面全体の行間(大きめ)を引き継ぐと、入力欄とボタンだけが<select>より高くなり、横に並べたときに縦がずれる。
+   * 行間を固定して、高さをmin-heightだけで決める */
+  line-height: 1.3;
   min-height: 36px;
   padding: 0 10px;
   box-sizing: border-box;
@@ -77,6 +80,8 @@
 .master-btn {
   font: inherit;
   font-size: var(--font-size-base);
+  /* 入力欄・<select>と同じ高さにそろえるため、画面全体の行間を引き継がず固定する(.master-field__controlと同じ理由) */
+  line-height: 1.3;
   min-height: 36px;
   padding: 0 14px;
   border: 1px solid var(--color-border-strong);
@@ -215,8 +220,23 @@ label.master-btn {
   min-width: 0;
 }
 
+/* 一覧の行と「追加」の入力行で、列が縦にそろうようにする(キーワードの行の編集/削除と、追加/キャンセル。計画Issue #219)。
+ * 文字・入力欄は残りの幅を使い、科目の選択欄とボタンは幅を固定する */
+.master-list__item > input.master-field__control {
+  flex: 1 1 0;
+}
+
+.master-list__item > select.master-field__control {
+  flex: 0 0 160px;
+}
+
+.master-list__item > .master-btn {
+  flex: 0 0 96px;
+  padding-inline: 0;
+}
+
 .master-list__text {
-  flex: 1 1 120px;
+  flex: 1 1 0;
   min-width: 0;
   font-size: var(--font-size-base);
   overflow-wrap: anywhere;
@@ -458,6 +478,11 @@ label.master-btn {
 }
 
 .master-checklist__legend {
+  /* fieldsetのlegendは、そのまま置くと上の区切り線の上に乗り、線が文字の真ん中を通ってずれて見える。
+   * floatで通常の要素として扱い、区切り線の下(文字の上側に線が来る位置)に置く */
+  float: left;
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -585,3 +610,5 @@ label.master-btn {
   visibility: visible;
   opacity: 1;
 }
+
+

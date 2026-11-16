@@ -1,20 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { TreeSelect } from '../common/tree-select/TreeSelect'
-import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
-import { KeywordList, type KeywordListItem } from './KeywordList'
+import { KeywordList, type KeywordAccountOption, type KeywordListItem } from './KeywordList'
 
 export interface CounterpartySettingsPopupProps {
+  /** 取引先のキーワード(既定)か、資産・負債の科目のキーワード(計画Issue #219)か。リンク・タイトルの文言と、科目の選択欄の有無が変わる */
+  kind?: 'counterparty' | 'account'
   isOpen: boolean
   onToggle: () => void
   onClose: () => void
   counterpartyName: string
   /** 取引先の登録済みキーワードを読み込み中はnull */
   items: readonly KeywordListItem[] | null
-  defaultAccountId: number | null
-  /** 相手科目の初期値に選べる科目(取引先を持てる費用・収益の科目) */
-  accountCategories: readonly TreeSelectCategory[]
+  /** キーワードの科目に選べる科目(取引先を持てる費用・収益の科目) */
+  accountOptions?: readonly KeywordAccountOption[]
   /** この行の摘要(リンクの名前に使う) */
   rowDescription: string
   /** 「ほかの行にも適用」を押した結果の表示 */
@@ -25,20 +24,21 @@ export interface CounterpartySettingsPopupProps {
   onCommit: (key: string) => void
   onDelete: (key: string) => void
   onAdd: () => void
-  onDefaultAccountChange: (accountId: number | null) => void
+  onAccountChange: (key: string, accountId: number | null) => void
   onApply: () => void
 }
 
-const POPUP_WIDTH = 420
+const POPUP_WIDTH = 520
 
 /**
  * 取引先セルの下に置く「取引先の設定」のリンクと、押すと開くポップアップ(計画Issue #207)。
- * 取引先のキーワードの編集・削除・追加と、相手科目の初期値の変更、ほかの行への適用ができる。
+ * 取引先のキーワードの編集・削除・追加と、キーワードごとの科目の変更、ほかの行への適用ができる(計画Issue #219)。
  * 変更は操作した時点で保存される(「新規」のキーワードだけは、行を確定したときに登録される)。
  * ポップアップはTreeSelectと同じく画面に固定して描画し、表のoverflowで見切れないようにする。
  */
 export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps) {
-  const { isOpen, onToggle, onClose, counterpartyName, items, defaultAccountId, accountCategories, rowDescription, message, saveError } = props
+  const kind = props.kind ?? 'counterparty'
+  const { isOpen, onToggle, onClose, counterpartyName, items, accountOptions, rowDescription, message, saveError } = props
   const { t } = useTranslation('statementImport')
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
@@ -97,10 +97,10 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
         className="import-link import-marker"
         aria-haspopup="dialog"
         aria-expanded={isOpen}
-        aria-label={t('settingsLinkLabel', { desc: rowDescription })}
+        aria-label={kind === 'account' ? t('settingsLinkAccountLabel', { desc: rowDescription }) : t('settingsLinkLabel', { desc: rowDescription })}
         onClick={onToggle}
       >
-        {t('settingsLink')} <span aria-hidden="true">▾</span>
+        {kind === 'account' ? t('settingsLinkAccount') : t('settingsLink')} <span aria-hidden="true">▾</span>
       </button>
       {isOpen &&
         createPortal(
@@ -108,11 +108,14 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
             ref={popupRef}
             style={popupStyle}
             role="dialog"
-            aria-label={t('settingsTitle', { name: counterpartyName })}
+            aria-label={kind === 'account' ? t('settingsTitleAccount', { name: counterpartyName }) : t('settingsTitle', { name: counterpartyName })}
             className="tree-select__popup import-settings"
             onKeyDown={handleKeyDown}
           >
-            <p className="import-settings__title">{t('settingsTitle', { name: counterpartyName })}</p>
+            <p className="import-settings__title">
+              {kind === 'account' ? t('settingsTitleAccount', { name: counterpartyName }) : t('settingsTitle', { name: counterpartyName })}
+            </p>
+            {kind === 'account' && <p className="import-note">{t('settingsNoteAccount', { name: counterpartyName })}</p>}
             {items === null ? (
               <p className="import-note" role="status">
                 {t('settingsLoading')}
@@ -125,21 +128,10 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
                   onCommit={props.onCommit}
                   onDelete={props.onDelete}
                   onAdd={props.onAdd}
+                  accountOptions={accountOptions}
+                  label={kind === 'account' ? t('settingsPatternsLabelAccount') : undefined}
+                  onAccountChange={props.onAccountChange}
                 />
-
-                <div className="import-field import-settings__section">
-                  <span className="import-field__label">{t('defaultAccountLabel')}</span>
-                  <div className="import-settings__row">
-                    <TreeSelect
-                      label={t('defaultAccountLabel')}
-                      categories={accountCategories}
-                      value={defaultAccountId === null ? '' : String(defaultAccountId)}
-                      emptyLabel={t('defaultAccountNone')}
-                      placeholder={t('defaultAccountNone')}
-                      onChange={(v) => props.onDefaultAccountChange(v === '' ? null : Number(v))}
-                    />
-                  </div>
-                </div>
 
                 {saveError !== '' && (
                   <span className="import-error" role="alert">

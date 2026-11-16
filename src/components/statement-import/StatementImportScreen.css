@@ -123,7 +123,14 @@
 }
 
 .import-bulk__count {
+  /* 画面全体の文字(大きめ)を引き継がず、ほかの入力・ボタンと同じ大きさにする */
+  font-size: var(--font-size-base);
   font-weight: 600;
+}
+
+/* 「選択を解除」は、設定のボタンと離して右端に寄せる */
+.import-bulk__clear {
+  margin-left: auto;
 }
 
 .import-bulk__message {
@@ -495,10 +502,11 @@
   justify-content: flex-end;
 }
 
-/* 登録済み・新規のタグ。同じ形で色だけ変える */
+/* 登録済み・新規のタグ。同じ形で色だけ変える。文字数が違っても入力欄の左端が縦にそろうよう、幅を固定する
+   (最も長い「登録済み」が収まる幅) */
 .import-tag {
   flex: none;
-  min-width: 44px;
+  width: 60px;
   padding: 0 6px;
   box-sizing: border-box;
   font-size: 11px;

@@ -19,6 +19,7 @@ import { runMigrations } from '../db/migrations'
 import { SqlJsAccountRepository } from '../db/SqlJsAccountRepository'
 import { SqlJsAccountGroupRepository } from '../db/SqlJsAccountGroupRepository'
 import { SqlJsCounterpartyGroupRepository } from '../db/SqlJsCounterpartyGroupRepository'
+import { SqlJsKeywordRuleRepository } from '../db/SqlJsKeywordRuleRepository'
 import { SqlJsProjectGroupRepository } from '../db/SqlJsProjectGroupRepository'
 import { SqlJsJournalTemplateRepository } from '../db/SqlJsJournalTemplateRepository'
 import { SqlJsJournalTemplateGroupRepository } from '../db/SqlJsJournalTemplateGroupRepository'
@@ -87,6 +88,7 @@ describe('createRepositoryRegistry', () => {
     expect(registry.budget).toBeInstanceOf(SqlJsBudgetRepository)
     expect(registry.counterparty).toBeInstanceOf(SqlJsCounterpartyRepository)
     expect(registry.counterpartyGroup).toBeInstanceOf(SqlJsCounterpartyGroupRepository)
+    expect(registry.keywordRule).toBeInstanceOf(SqlJsKeywordRuleRepository)
     expect(registry.projectGroup).toBeInstanceOf(SqlJsProjectGroupRepository)
     expect(registry.externalTransactionRef).toBeInstanceOf(
       SqlJsExternalTransactionRefRepository,

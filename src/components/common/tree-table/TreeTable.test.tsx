@@ -234,3 +234,110 @@ describe('TreeTable(ドラッグ移動)', () => {
     expect(within(screen.getByRole('table')).getAllByRole('row').length).toBeGreaterThan(4)
   })
 })
+
+describe('列見出しの並び替え・見出しの名称・ドラッグ無効(キーワードタブ、計画Issue #219)', () => {
+  const flatNodes: TreeTableNode[] = [node('a', 'leaf', 'expense', null, ['x', 'y']), node('b', 'leaf', 'expense', null, ['x', 'y'])]
+  const renderFlat = (extra: Partial<Parameters<typeof TreeTable>[0]> = {}) => {
+    const onSortChange = vi.fn()
+    render(
+      <TreeTable
+        categories={[{ key: 'expense', name: 'すべて' }]}
+        nodes={flatNodes}
+        columns={['属性', '状態']}
+        nameColumn="キーワード"
+        sort={{ column: 'name', direction: 'asc' }}
+        onSortChange={onSortChange}
+        draggable={false}
+        checkedIds={[]}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onCheckedChange={vi.fn()}
+        onMove={vi.fn()}
+        {...extra}
+      />,
+    )
+    return { onSortChange }
+  }
+
+  it('nameColumnを渡すと、先頭の列見出しが「名称」の代わりにその文字列になる', () => {
+    renderFlat()
+
+    expect(screen.getByRole('columnheader', { name: /キーワード/ })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: '名称' })).not.toBeInTheDocument()
+  })
+
+  it('sortを渡すと見出しが押せるボタンになり、押した列(名称列は文字列のname、他は列番号)を通知する', () => {
+    const { onSortChange } = renderFlat()
+
+    fireEvent.click(screen.getByRole('button', { name: /^属性/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^キーワード/ }))
+
+    expect(onSortChange.mock.calls).toEqual([[0], ['name']])
+  })
+
+  it('並び替え中の列にだけaria-sortと小さい▲▼が付く', () => {
+    renderFlat({ sort: { column: 0, direction: 'desc' } })
+
+    expect(screen.getByRole('columnheader', { name: /属性/ })).toHaveAttribute('aria-sort', 'descending')
+    expect(screen.getByRole('columnheader', { name: /属性/ })).toHaveTextContent('▼')
+    expect(screen.getByRole('columnheader', { name: /キーワード/ })).not.toHaveAttribute('aria-sort')
+  })
+
+  it('draggable={false}の行はドラッグできない', () => {
+    renderFlat()
+
+    expect(screen.getByRole('button', { name: 'a' }).closest('tr')).not.toHaveAttribute('draggable', 'true')
+  })
+})
+
+describe('全選択のヘッダー・区分の見出し行の非表示(計画Issue #219)', () => {
+  const flatNodes: TreeTableNode[] = [node('a', 'leaf', 'all', null), node('b', 'leaf', 'all', null)]
+  const renderFlat = (checkedIds: readonly string[], extra: Partial<Parameters<typeof TreeTable>[0]> = {}) => {
+    const onCheckedChange = vi.fn()
+    render(
+      <TreeTable
+        categories={[{ key: 'all', name: 'すべて' }]}
+        nodes={flatNodes}
+        columns={[]}
+        checkedIds={checkedIds}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onCheckedChange={onCheckedChange}
+        onMove={vi.fn()}
+        {...extra}
+      />,
+    )
+    return { onCheckedChange }
+  }
+
+  it('ヘッダーの「すべて選択」を押すと、表示中の全行をチェックする', () => {
+    const { onCheckedChange } = renderFlat([])
+
+    fireEvent.click(screen.getByLabelText('すべて選択'))
+
+    expect(onCheckedChange).toHaveBeenCalledWith(['a', 'b'])
+  })
+
+  it('全行がチェック済みのときにヘッダーを押すと、チェックをすべて外す', () => {
+    const { onCheckedChange } = renderFlat(['a', 'b'])
+
+    expect(screen.getByLabelText('すべて選択')).toBeChecked()
+    fireEvent.click(screen.getByLabelText('すべて選択'))
+
+    expect(onCheckedChange).toHaveBeenCalledWith([])
+  })
+
+  it('一部だけチェックしているときは、ヘッダーが中間状態(indeterminate)になる', () => {
+    renderFlat(['a'])
+
+    expect((screen.getByLabelText('すべて選択') as HTMLInputElement).indeterminate).toBe(true)
+  })
+
+  it('showCategoryRows={false}なら、区分の見出し行(名前と件数)を出さない', () => {
+    renderFlat([], { showCategoryRows: false })
+
+    expect(screen.queryByText('すべて')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'a' })).toBeInTheDocument()
+  })
+})
+

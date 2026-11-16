@@ -87,7 +87,7 @@
     "account_balance_records": "残高の基準点",
     "counterparties": "取引先",
     "counterparty_groups": "取引先グループ",
-    "counterparty_patterns": "取引先のキーワード",
+    "keyword_rules": "キーワードルール",
     "counterparty_merge_log": "取引先統合の記録",
     "household_members": "世帯メンバー",
     "projects": "プロジェクト",

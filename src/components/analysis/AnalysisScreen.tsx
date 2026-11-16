@@ -160,7 +160,6 @@ export function AnalysisScreen({ repositories, today, onOpenJournal }: AnalysisS
         buildCounterpartyTree({
           groups: data.counterpartyGroups,
           counterparties: data.counterparties,
-          accountNameById: new Map(),
           patternCountById: new Map(),
         }),
         inactive(data.counterparties),

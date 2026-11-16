@@ -5,6 +5,7 @@ import type { AccountRepository } from '../domain/account/AccountRepository'
 import type { AccountGroupRepository } from '../domain/account-group/AccountGroupRepository'
 import type { BudgetRepository } from '../domain/budget/BudgetRepository'
 import type { RecurringTransactionRuleRepository } from '../domain/recurring-transaction/RecurringTransactionRuleRepository'
+import type { KeywordRuleRepository } from '../domain/keyword-rule/KeywordRuleRepository'
 import type { CounterpartyRepository } from '../domain/counterparty/CounterpartyRepository'
 import type { CounterpartyGroupRepository } from '../domain/counterparty-group/CounterpartyGroupRepository'
 import type { JournalEntryRepository } from '../domain/journal/JournalEntryRepository'
@@ -35,6 +36,7 @@ import { CounterpartyMasterTab } from '../components/master/CounterpartyMasterTa
 import { MemberMasterTab } from '../components/master/MemberMasterTab'
 import { ProjectMasterTab } from '../components/master/ProjectMasterTab'
 import { MappingMasterTab } from '../components/master/MappingMasterTab'
+import { KeywordMasterTab } from '../components/master/KeywordMasterTab'
 import { RuleMasterTab } from '../components/master/RuleMasterTab'
 import { JournalTemplateTab } from '../components/journal-template/JournalTemplateTab'
 import { HistoryScreen } from '../components/history/HistoryScreen'
@@ -122,6 +124,7 @@ export function AppRoutes() {
     settlementBatchRepository,
     counterpartyRepository,
     counterpartyGroupRepository,
+    keywordRuleRepository,
     projectGroupRepository,
     journalEntryDraftRepository,
     importMappingDefinitionRepository,
@@ -152,6 +155,7 @@ export function AppRoutes() {
       counterpartyRepository: client.counterparty as unknown as Comlink.Remote<CounterpartyRepository>,
       counterpartyGroupRepository:
         client.counterpartyGroup as unknown as Comlink.Remote<CounterpartyGroupRepository>,
+      keywordRuleRepository: client.keywordRule as unknown as Comlink.Remote<KeywordRuleRepository>,
       projectGroupRepository: client.projectGroup as unknown as Comlink.Remote<ProjectGroupRepository>,
       journalEntryDraftRepository:
         client.journalEntryDraft as unknown as Comlink.Remote<JournalEntryDraftRpcApi>,
@@ -267,6 +271,7 @@ export function AppRoutes() {
             budgetRepository={budgetRepository}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
             importMappingDefinitionRepository={importMappingDefinitionRepository}
+            keywordRuleRepository={keywordRuleRepository}
             accountBalanceRecordRepository={accountBalanceRecordRepository}
           />
         }
@@ -276,6 +281,7 @@ export function AppRoutes() {
         element={
           <CounterpartyMasterTab
             counterpartyRepository={counterpartyRepository}
+            keywordRuleRepository={keywordRuleRepository}
             counterpartyGroupRepository={counterpartyGroupRepository}
             accountRepository={accountRepository}
             journalEntryRepository={journalEntryRepository}
@@ -308,6 +314,16 @@ export function AppRoutes() {
         }
       />
       <Route
+        path="/master/keywords"
+        element={
+          <KeywordMasterTab
+            keywordRuleRepository={keywordRuleRepository}
+            counterpartyRepository={counterpartyRepository}
+            accountRepository={accountRepository}
+          />
+        }
+      />
+      <Route
         path="/master/mappings"
         element={
           <MappingMasterTab
@@ -329,6 +345,7 @@ export function AppRoutes() {
             externalTransactionRefRepository={externalTransactionRefRepository}
             journalEntryRepository={journalEntryRepository}
             counterpartyRepository={counterpartyRepository}
+            keywordRuleRepository={keywordRuleRepository}
             counterpartyGroupRepository={counterpartyGroupRepository}
             projectRepository={projectRepository}
             projectGroupRepository={projectGroupRepository}

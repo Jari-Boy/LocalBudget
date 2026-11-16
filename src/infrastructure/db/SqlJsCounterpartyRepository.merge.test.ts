@@ -12,6 +12,7 @@ import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
 import { SqlJsCounterpartyRepository } from './SqlJsCounterpartyRepository'
+import { SqlJsKeywordRuleRepository } from './SqlJsKeywordRuleRepository'
 
 let db: Database
 let repository: SqlJsCounterpartyRepository
@@ -36,16 +37,28 @@ describe('merge', () => {
     expect(counterpartyId).toBe(target.id)
   })
 
-  it('統合元に紐づくcounterparty_patternsを統合先へ付け替える', () => {
+  it('統合元に紐づくキーワードルール(keyword_rules)を統合先へ付け替える', () => {
     const target = repository.create({ name: 'ローソン' })
     const source = repository.create({ name: 'ローソン 東京日本橋店' })
-    repository.addPattern(source.id, 'LAWSON NIHONBASHI')
+    new SqlJsKeywordRuleRepository(db).create({ pattern: 'LAWSON NIHONBASHI', counterpartyId: source.id })
 
     repository.merge(target.id, [source.id])
 
-    const matches = repository.findByPattern('LAWSON NIHONBASHI TEN')
+    const matches = new SqlJsKeywordRuleRepository(db).findMatching('LAWSON NIHONBASHI TEN')
     expect(matches).toHaveLength(1)
     expect(matches[0].counterpartyId).toBe(target.id)
+  })
+
+  it('付け替えで統合先と同じキーワードが重複したルールは、1件にまとめる', () => {
+    const target = repository.create({ name: 'ローソン' })
+    const source = repository.create({ name: 'ローソン 東京日本橋店' })
+    const rules = new SqlJsKeywordRuleRepository(db)
+    rules.create({ pattern: 'LAWSON', counterpartyId: target.id })
+    rules.create({ pattern: 'LAWSON', counterpartyId: source.id })
+
+    repository.merge(target.id, [source.id])
+
+    expect(new SqlJsKeywordRuleRepository(db).findByCounterparty(target.id)).toHaveLength(1)
   })
 
   it('統合元→統合先のペアごとにcounterparty_merge_logへ1行記録する', () => {
@@ -54,7 +67,7 @@ describe('merge', () => {
     const accountId = insertAccount(db, 'expense', '食費')
     const entryId = insertJournalEntry(db)
     insertJournalLine(db, entryId, accountId, source.id)
-    repository.addPattern(source.id, 'LAWSON NIHONBASHI')
+    new SqlJsKeywordRuleRepository(db).create({ pattern: 'LAWSON NIHONBASHI', counterpartyId: source.id })
 
     repository.merge(target.id, [source.id])
 

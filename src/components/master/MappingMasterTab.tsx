@@ -29,6 +29,8 @@ import {
 } from './mappingForm'
 import './master.css'
 import { collectFinancialInstitutionNames } from '../../domain/statement-import/financialInstitution'
+import { TreeSearchInput } from '../common/tree-table/TreeSearchInput'
+import { matchesSearch } from '../common/tree-table/filterTreeNodes'
 import { groupMappingDefinitionsByInstitution } from '../../domain/statement-import/groupMappingDefinitionsByInstitution'
 
 export interface MappingMasterTabProps {
@@ -88,6 +90,8 @@ export function MappingMasterTab({
   const { t: tCommon } = useTranslation('common')
   const [data, setData] = useState<LoadedData | null>(null)
   const [mode, setMode] = useState<number | 'create' | null>(null)
+  /** 検索欄の文字列(計画Issue #219)。表示名・金融機関名・対応する科目に一致する定義だけを出す */
+  const [query, setQuery] = useState('')
   const [draft, setDraft] = useState<Draft | null>(null)
   const [draftSeq, setDraftSeq] = useState(0)
   const [armed, setArmed] = useState(false)
@@ -191,9 +195,14 @@ export function MappingMasterTab({
               onChange={(event) => void startFromCsv(event)}
             />
           </label>
+          <TreeSearchInput value={query} onChange={setQuery} leafLabel={t('mappingTab.searchLeaf')} />
         </div>
         <ul className="master-list">
-          {groupMappingDefinitionsByInstitution(data.definitions).map((group) => (
+          {groupMappingDefinitionsByInstitution(
+            data.definitions.filter((d) =>
+              matchesSearch(query, d.label, d.formatGroupId, ...d.accountIds.map((id) => accountNameById.get(id) ?? '')),
+            ),
+          ).map((group) => (
             <li key={group.name} role="group" aria-labelledby={`map-group-${group.name}`} className="master-list__group">
               <h3 id={`map-group-${group.name}`} className="master-list__group-title">
                 {group.name}

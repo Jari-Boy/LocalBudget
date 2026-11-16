@@ -169,3 +169,20 @@
 .tree-table__bulk-select:hover {
   border-color: var(--color-border-strong);
 }
+
+/* 列見出しを押して並び替えるとき(キーワードタブ、計画Issue #219)。▲▼は並び替え中の列だけに小さく出す */
+.tree-table__sort {
+  font: inherit;
+  font-weight: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tree-table__sort-mark {
+  font-size: 8px;
+  margin-left: 3px;
+}

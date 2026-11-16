@@ -24,6 +24,7 @@
       "counterparties": "取引先",
       "householdMembers": "世帯メンバー",
       "projects": "プロジェクト",
+      "keywords": "キーワード",
       "recurringRules": "定期仕訳",
       "mappings": "明細マッピング"
     }

@@ -4,6 +4,7 @@ import householdMembersSql from '../../../docs/schema/household_members.sql?raw'
 import accountsSql from '../../../docs/schema/accounts.sql?raw'
 import projectsSql from '../../../docs/schema/projects.sql?raw'
 import counterpartiesSql from '../../../docs/schema/counterparties.sql?raw'
+import keywordRulesSql from '../../../docs/schema/keyword_rules.sql?raw'
 import settlementBatchesSql from '../../../docs/schema/settlement_batches.sql?raw'
 import journalSql from '../../../docs/schema/journal.sql?raw'
 import budgetsSql from '../../../docs/schema/budgets.sql?raw'
@@ -13,6 +14,7 @@ import statementImportSql from '../../../docs/schema/statement_import.sql?raw'
 import journalTemplatesSql from '../../../docs/schema/journal_templates.sql?raw'
 import seedMarkersSql from '../../../docs/schema/seed_markers.sql?raw'
 
+import { convertLegacyCounterpartyPatterns } from './legacyKeywordRules'
 import { MigrationFailedError, SchemaTooNewError } from './migrationErrors'
 
 /**
@@ -45,6 +47,7 @@ const LATEST_SCHEMA_SQL: readonly string[] = [
   accountsSql,
   projectsSql,
   counterpartiesSql,
+  keywordRulesSql,
   settlementBatchesSql,
   journalSql,
   budgetsSql,
@@ -108,7 +111,11 @@ export function runMigrations(db: Database, plan: MigrationPlan = SCHEMA_PLAN): 
     return
   }
 
-  if (currentVersion === plan.latestVersion) return
+  if (currentVersion === plan.latestVersion) {
+    // 旧形式(counterparty_patterns)のDB・バックアップを変換する凍結前の暫定処理(計画Issue #219)
+    convertLegacyCounterpartyPatterns(db)
+    return
+  }
   if (currentVersion === 0) {
     throw new MigrationFailedError('database has tables but no schema version (user_version = 0)')
   }

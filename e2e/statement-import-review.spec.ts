@@ -108,15 +108,16 @@ async function setupAccountsAndMapping(
         })
       }
       for (const counterpartyInput of counterparties) {
-        const created = await client.counterparty.create({
-          name: counterpartyInput.name,
-          defaultAccountId:
-            counterpartyInput.defaultAccountIndex === undefined
-              ? undefined
-              : ids[counterpartyInput.defaultAccountIndex],
-        })
+        const created = await client.counterparty.create({ name: counterpartyInput.name })
         for (const pattern of counterpartyInput.patterns ?? []) {
-          await client.counterparty.addPattern(created.id, pattern)
+          await client.keywordRule.create({
+            pattern,
+            counterpartyId: created.id,
+            accountId:
+              counterpartyInput.defaultAccountIndex === undefined
+                ? undefined
+                : ids[counterpartyInput.defaultAccountIndex],
+          })
         }
       }
       await client.autoSave.flush()
