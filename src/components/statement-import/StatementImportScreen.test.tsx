@@ -241,6 +241,24 @@ describe('StatementImportScreen', () => {
     expect(rowOf(/スーパー/).getByText('要確認')).toBeInTheDocument()
   })
 
+  it('一括設定のバナー: コメントのボタンは「コメントを適用」で、「選択を解除」は右端に寄せ、ほかの入力・ボタンと同じ高さの部品を使う', async () => {
+    makeMapping()
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+    fireEvent.click(screen.getByLabelText('スーパーを選択'))
+
+    const bulk = within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
+
+    expect(bulk.getByRole('button', { name: 'コメントを適用' })).toBeInTheDocument()
+    expect(bulk.queryByRole('button', { name: 'コメントを設定' })).not.toBeInTheDocument()
+    // 件数の見出しは本文と同じ大きさの専用クラス、「選択を解除」は右寄せの専用クラス、ボタンは入力欄と同じ高さ(small ではない)
+    expect(bulk.getByText('1件に一括設定')).toHaveClass('import-bulk__count')
+    expect(bulk.getByRole('button', { name: '選択を解除' })).toHaveClass('import-bulk__clear')
+    expect(bulk.getByRole('button', { name: 'コメントを適用' })).not.toHaveClass('import-btn--small')
+    expect(bulk.getByRole('button', { name: '選択を解除' })).not.toHaveClass('import-btn--small')
+  })
+
   it('選択した行に一括設定でき、設定できなかった行は対象外の件数で伝える', async () => {
     makeMapping()
     const trip = projects.create({ name: '沖縄旅行' })

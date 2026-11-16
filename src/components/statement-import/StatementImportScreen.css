@@ -123,7 +123,14 @@
 }
 
 .import-bulk__count {
+  /* 画面全体の文字(大きめ)を引き継がず、ほかの入力・ボタンと同じ大きさにする */
+  font-size: var(--font-size-base);
   font-weight: 600;
+}
+
+/* 「選択を解除」は、設定のボタンと離して右端に寄せる */
+.import-bulk__clear {
+  margin-left: auto;
 }
 
 .import-bulk__message {

@@ -70,7 +70,7 @@
   "bulkBatch": "精算バッチを一括設定",
   "bulkBatchPlaceholder": "精算バッチを設定",
   "bulkCommentLabel": "一括で設定するコメント",
-  "bulkCommentApply": "コメントを設定",
+  "bulkCommentApply": "コメントを適用",
   "bulkClearSelection": "選択を解除",
   "bulkApplied": "{{count}}件に設定しました",
   "bulkAppliedWithSkipped": "{{count}}件に設定しました({{skipped}}件は対象外)",

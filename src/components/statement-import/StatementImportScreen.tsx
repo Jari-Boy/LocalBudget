@@ -1551,10 +1551,17 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 value={bulkComment}
                 onChange={(e) => setBulkComment(e.target.value)}
               />
-              <button type="button" className="import-btn import-btn--small" onClick={() => applyBulk({ field: 'comment', value: bulkComment })}>
+              <button type="button" className="import-btn" onClick={() => applyBulk({ field: 'comment', value: bulkComment })}>
                 {t('bulkCommentApply')}
               </button>
-              <button type="button" className="import-btn import-btn--small" onClick={() => { setSelected(new Set()); setBulkMessage('') }}>
+              <button
+                type="button"
+                className="import-btn import-bulk__clear"
+                onClick={() => {
+                  setSelected(new Set())
+                  setBulkMessage('')
+                }}
+              >
                 {t('bulkClearSelection')}
               </button>
               {bulkMessage && (
