@@ -220,8 +220,23 @@ label.master-btn {
   min-width: 0;
 }
 
+/* 一覧の行と「追加」の入力行で、列が縦にそろうようにする(キーワードの行の編集/削除と、追加/キャンセル。計画Issue #219)。
+ * 文字・入力欄は残りの幅を使い、科目の選択欄とボタンは幅を固定する */
+.master-list__item > input.master-field__control {
+  flex: 1 1 0;
+}
+
+.master-list__item > select.master-field__control {
+  flex: 0 0 160px;
+}
+
+.master-list__item > .master-btn {
+  flex: 0 0 96px;
+  padding-inline: 0;
+}
+
 .master-list__text {
-  flex: 1 1 120px;
+  flex: 1 1 0;
   min-width: 0;
   font-size: var(--font-size-base);
   overflow-wrap: anywhere;

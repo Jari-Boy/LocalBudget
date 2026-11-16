@@ -25,7 +25,7 @@ export function AccountKeywordSection({ account, repository, busy }: AccountKeyw
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [newPattern, setNewPattern] = useState('')
-  /** 「+ キーワードを追加」を押すと、入力欄が出る(計画Issue #219) */
+  /** 「キーワードを追加」を押すと、入力欄が出る(計画Issue #219) */
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)

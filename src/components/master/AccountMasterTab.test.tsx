@@ -1049,11 +1049,11 @@ describe('AccountMasterTab: 残高の照合欄(計画Issue #205)', () => {
       expect(screen.queryByRole('heading', { name: /^キーワード/ })).not.toBeInTheDocument()
     })
 
-    it('キーワードの入力欄は、「+ キーワードを追加」を押すまで出ない。キャンセルで閉じる(計画Issue #219)', async () => {
+    it('キーワードの入力欄は、「キーワードを追加」を押すまで出ない。キャンセルで閉じる(計画Issue #219)', async () => {
       accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
       renderTab()
       await open('現金')
-      const add = await panel('科目の編集').findByRole('button', { name: '+ キーワードを追加' })
+      const add = await panel('科目の編集').findByRole('button', { name: 'キーワードを追加' })
       expect(panel('科目の編集').queryByLabelText('追加するキーワード')).not.toBeInTheDocument()
 
       fireEvent.click(add)
@@ -1068,7 +1068,7 @@ describe('AccountMasterTab: 残高の照合欄(計画Issue #205)', () => {
       renderTab()
       await open('現金')
 
-      fireEvent.click(await panel('科目の編集').findByRole('button', { name: '+ キーワードを追加' }))
+      fireEvent.click(await panel('科目の編集').findByRole('button', { name: 'キーワードを追加' }))
       fireEvent.change(panel('科目の編集').getByLabelText('追加するキーワード'), { target: { value: 'ａｔｍ' } })
       fireEvent.click(panel('科目の編集').getByRole('button', { name: '追加' }))
 
@@ -1081,7 +1081,7 @@ describe('AccountMasterTab: 残高の照合欄(計画Issue #205)', () => {
       renderTab()
       await open('現金')
 
-      fireEvent.click(await panel('科目の編集').findByRole('button', { name: '+ キーワードを追加' }))
+      fireEvent.click(await panel('科目の編集').findByRole('button', { name: 'キーワードを追加' }))
       fireEvent.change(panel('科目の編集').getByLabelText('追加するキーワード'), { target: { value: 'atm' } })
       fireEvent.click(panel('科目の編集').getByRole('button', { name: '追加' }))
 

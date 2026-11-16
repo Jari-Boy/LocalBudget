@@ -243,7 +243,7 @@ function CounterpartyExtra({ counterparty, accounts, rules, repository, reload, 
   const [editDraft, setEditDraft] = useState('')
   const [newPattern, setNewPattern] = useState('')
   const [newAccountId, setNewAccountId] = useState<number | null>(null)
-  /** 「+ キーワードを追加」を押すと、入力欄(キーワードと科目)が出る(計画Issue #219) */
+  /** 「キーワードを追加」を押すと、入力欄(キーワードと科目)が出る(計画Issue #219) */
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)

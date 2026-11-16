@@ -171,7 +171,7 @@
     "patternDeleteLabel": "{{pattern}}を削除",
     "patternNewInput": "追加するキーワード",
     "patternPlaceholder": "摘要に含まれる文字列",
-    "patternAdd": "+ キーワードを追加",
+    "patternAdd": "キーワードを追加",
     "patternError": "キーワードの更新に失敗しました。もう一度お試しください。",
     "mergeRegion": "取引先の統合",
     "mergeTarget": "統合先",

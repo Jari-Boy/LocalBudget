@@ -115,7 +115,7 @@ describe('CounterpartyMasterTab', () => {
     expect(within(select).queryByRole('option', { name: '現金' })).not.toBeInTheDocument()
   })
 
-  it('キーワードの入力欄・科目の欄は、「+ キーワードを追加」を押すまで出ない。キャンセルで閉じる(計画Issue #219)', async () => {
+  it('キーワードの入力欄・科目の欄は、「キーワードを追加」を押すまで出ない。キャンセルで閉じる(計画Issue #219)', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
     rules.create({ pattern: 'イオン', counterpartyId: aeon.id })
     renderTab()
@@ -123,13 +123,13 @@ describe('CounterpartyMasterTab', () => {
     expect(panel('取引先の編集').queryByLabelText('追加するキーワード')).not.toBeInTheDocument()
     expect(panel('取引先の編集').queryByLabelText('追加するキーワードの科目')).not.toBeInTheDocument()
 
-    fireEvent.click(panel('取引先の編集').getByRole('button', { name: '+ キーワードを追加' }))
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'キーワードを追加' }))
 
     expect(panel('取引先の編集').getByLabelText('追加するキーワード')).toBeInTheDocument()
     expect(panel('取引先の編集').getByLabelText('追加するキーワードの科目')).toBeInTheDocument()
     fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'キャンセル' }))
     expect(panel('取引先の編集').queryByLabelText('追加するキーワード')).not.toBeInTheDocument()
-    expect(panel('取引先の編集').getByRole('button', { name: '+ キーワードを追加' })).toBeInTheDocument()
+    expect(panel('取引先の編集').getByRole('button', { name: 'キーワードを追加' })).toBeInTheDocument()
   })
 
   it('追加するキーワードに科目を選んで追加でき、その取引先と科目のルールとして保存される', async () => {
@@ -137,7 +137,7 @@ describe('CounterpartyMasterTab', () => {
     renderTab()
     await open('イオン')
 
-    fireEvent.click(panel('取引先の編集').getByRole('button', { name: '+ キーワードを追加' }))
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'キーワードを追加' }))
     fireEvent.change(panel('取引先の編集').getByLabelText('追加するキーワード'), { target: { value: 'AEON' } })
     fireEvent.change(panel('取引先の編集').getByLabelText('追加するキーワードの科目'), { target: { value: String(expenseId) } })
     fireEvent.click(panel('取引先の編集').getByRole('button', { name: '追加' }))
@@ -153,7 +153,7 @@ describe('CounterpartyMasterTab', () => {
 
     const editor = panel('取引先の編集')
     expect(editor.getByText('イオン', { selector: 'span' })).toBeInTheDocument()
-    fireEvent.click(editor.getByRole('button', { name: '+ キーワードを追加' }))
+    fireEvent.click(editor.getByRole('button', { name: 'キーワードを追加' }))
     fireEvent.change(editor.getByLabelText('追加するキーワード'), { target: { value: 'AEON' } })
     fireEvent.click(editor.getByRole('button', { name: '追加' }))
 
@@ -183,7 +183,7 @@ describe('CounterpartyMasterTab', () => {
     renderTab()
     await open('イオン')
 
-    fireEvent.click(panel('取引先の編集').getByRole('button', { name: '+ キーワードを追加' }))
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'キーワードを追加' }))
     fireEvent.change(panel('取引先の編集').getByLabelText('追加するキーワード'), { target: { value: 'ａｅｏｎ' } })
     fireEvent.click(panel('取引先の編集').getByRole('button', { name: '追加' }))
 
