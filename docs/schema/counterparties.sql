@@ -1,4 +1,4 @@
--- counterparties / counterparty_patterns のDDL
+-- counterparties のDDL(摘要キーワードは keyword_rules.sql。計画Issue #219)
 -- ドメイン定義・各制約の設計判断は docs/domain/counterparties.md を参照
 
 -- 取引先グループ(計画Issue #143)。勘定科目グループ(account_groups)と同じ仕様:
@@ -57,17 +57,6 @@ WHEN EXISTS (SELECT 1 FROM counterparties WHERE counterparty_group_id = OLD.id)
 BEGIN
   SELECT RAISE(ABORT, 'cannot delete counterparty group with counterparties');
 END;
-
-CREATE TABLE counterparty_patterns (
-  id               INTEGER PRIMARY KEY,
-  counterparty_id  INTEGER NOT NULL
-    REFERENCES counterparties(id) ON DELETE CASCADE,
-  pattern          TEXT NOT NULL,
-  created_at       TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX idx_counterparty_patterns_counterparty
-  ON counterparty_patterns(counterparty_id);
 
 -- 仕訳明細が紐づく取引先の物理削除を禁止
 CREATE TRIGGER prevent_delete_counterparty_with_journal_lines

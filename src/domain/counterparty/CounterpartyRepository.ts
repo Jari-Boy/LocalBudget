@@ -31,7 +31,7 @@ export interface CounterpartyRepository {
   deletePattern(patternId: number): void
 
   /**
-   * sourceIds(統合元、複数可)に紐づくjournal_lines・counterparty_patternsをtargetId(統合先)へ
+   * sourceIds(統合元、複数可)に紐づくjournal_lines・keyword_rules(取引先のキーワードルール)をtargetId(統合先)へ
    * 付け替え、統合元→統合先のペアごとにcounterparty_merge_logへ1行記録する
    * (docs/domain/counterparties.md 1.5a参照)。
    */

@@ -36,7 +36,7 @@ describe('merge', () => {
     expect(counterpartyId).toBe(target.id)
   })
 
-  it('統合元に紐づくcounterparty_patternsを統合先へ付け替える', () => {
+  it('統合元に紐づくキーワードルール(keyword_rules)を統合先へ付け替える', () => {
     const target = repository.create({ name: 'ローソン' })
     const source = repository.create({ name: 'ローソン 東京日本橋店' })
     repository.addPattern(source.id, 'LAWSON NIHONBASHI')
@@ -46,6 +46,17 @@ describe('merge', () => {
     const matches = repository.findByPattern('LAWSON NIHONBASHI TEN')
     expect(matches).toHaveLength(1)
     expect(matches[0].counterpartyId).toBe(target.id)
+  })
+
+  it('付け替えで統合先と同じキーワードが重複したルールは、1件にまとめる', () => {
+    const target = repository.create({ name: 'ローソン' })
+    const source = repository.create({ name: 'ローソン 東京日本橋店' })
+    repository.addPattern(target.id, 'LAWSON')
+    repository.addPattern(source.id, 'LAWSON')
+
+    repository.merge(target.id, [source.id])
+
+    expect(repository.findPatternsByCounterparty(target.id)).toHaveLength(1)
   })
 
   it('統合元→統合先のペアごとにcounterparty_merge_logへ1行記録する', () => {

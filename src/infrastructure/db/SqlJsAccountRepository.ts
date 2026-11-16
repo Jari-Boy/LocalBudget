@@ -164,6 +164,16 @@ export class SqlJsAccountRepository implements AccountRepository {
         const lineCount = result.values[0][0] as number
 
         this.db.run('UPDATE journal_lines SET account_id = ? WHERE account_id = ?', [targetId, sourceId])
+        // 統合元の科目を指すキーワードルールを統合先へ付け替え、同じキーワード・同じ取引先のルールは1件にまとめる
+        this.db.run('UPDATE keyword_rules SET account_id = ? WHERE account_id = ?', [targetId, sourceId])
+        this.db.run(
+          `DELETE FROM keyword_rules
+           WHERE account_id = ?
+             AND id NOT IN (
+               SELECT MIN(id) FROM keyword_rules WHERE account_id = ?
+               GROUP BY pattern, COALESCE(counterparty_id, 0))`,
+          [targetId, targetId],
+        )
         this.db.run(
           `INSERT INTO account_merge_log
              (target_account_id, target_account_name, source_account_id, source_account_name, line_count)

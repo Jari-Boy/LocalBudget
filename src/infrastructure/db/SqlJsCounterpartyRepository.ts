@@ -85,7 +85,7 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
   }
 
   addPattern(counterpartyId: number, pattern: string): CounterpartyPattern {
-    this.db.run('INSERT INTO counterparty_patterns (counterparty_id, pattern) VALUES (?, ?)', [
+    this.db.run('INSERT INTO keyword_rules (counterparty_id, pattern) VALUES (?, ?)', [
       counterpartyId,
       pattern,
     ])
@@ -94,7 +94,7 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
 
   findByPattern(text: string): CounterpartyPattern[] {
     const [result] = this.db.exec(
-      `SELECT * FROM counterparty_patterns WHERE ? LIKE '%' || pattern || '%' ORDER BY id`,
+      `SELECT * FROM keyword_rules WHERE ? LIKE '%' || pattern || '%' ORDER BY id`,
       [text],
     )
     if (!result) return []
@@ -103,7 +103,7 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
 
   findPatternsByCounterparty(counterpartyId: number): CounterpartyPattern[] {
     const [result] = this.db.exec(
-      'SELECT * FROM counterparty_patterns WHERE counterparty_id = ? ORDER BY id',
+      'SELECT * FROM keyword_rules WHERE counterparty_id = ? ORDER BY id',
       [counterpartyId],
     )
     if (!result) return []
@@ -111,12 +111,12 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
   }
 
   updatePattern(patternId: number, pattern: string): CounterpartyPattern {
-    this.db.run('UPDATE counterparty_patterns SET pattern = ? WHERE id = ?', [pattern, patternId])
+    this.db.run('UPDATE keyword_rules SET pattern = ? WHERE id = ?', [pattern, patternId])
     return this.findPatternById(patternId)!
   }
 
   deletePattern(patternId: number): void {
-    this.db.run('DELETE FROM counterparty_patterns WHERE id = ?', [patternId])
+    this.db.run('DELETE FROM keyword_rules WHERE id = ?', [patternId])
   }
 
   merge(targetId: number, sourceIds: number[]): void {
@@ -134,15 +134,24 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
         }
 
         const lineCount = this.countRows('journal_lines', 'counterparty_id', sourceId)
-        const patternCount = this.countRows('counterparty_patterns', 'counterparty_id', sourceId)
+        const patternCount = this.countRows('keyword_rules', 'counterparty_id', sourceId)
 
         this.db.run('UPDATE journal_lines SET counterparty_id = ? WHERE counterparty_id = ?', [
           targetId,
           sourceId,
         ])
         this.db.run(
-          'UPDATE counterparty_patterns SET counterparty_id = ? WHERE counterparty_id = ?',
+          'UPDATE keyword_rules SET counterparty_id = ? WHERE counterparty_id = ?',
           [targetId, sourceId],
+        )
+        // 付け替えで、統合先と同じキーワード・同じ科目になったルールは1件にまとめる(最初のものを残す)
+        this.db.run(
+          `DELETE FROM keyword_rules
+           WHERE counterparty_id = ?
+             AND id NOT IN (
+               SELECT MIN(id) FROM keyword_rules WHERE counterparty_id = ?
+               GROUP BY pattern, COALESCE(account_id, 0))`,
+          [targetId, targetId],
         )
         this.db.run(
           `INSERT INTO counterparty_merge_log
@@ -162,7 +171,7 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
   }
 
   private findPatternById(id: number): CounterpartyPattern | null {
-    const [result] = this.db.exec('SELECT * FROM counterparty_patterns WHERE id = ?', [id])
+    const [result] = this.db.exec('SELECT * FROM keyword_rules WHERE id = ?', [id])
     if (!result) return null
     return mapRowToCounterpartyPattern(result.columns, result.values[0])
   }

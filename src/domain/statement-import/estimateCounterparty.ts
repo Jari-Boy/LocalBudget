@@ -1,7 +1,7 @@
 import type { CounterpartyPattern } from '../counterparty/Counterparty'
 
 /**
- * CSV摘要文字列とcounterparty_patternsのマッチング用に正規化する
+ * CSV摘要文字列とkeyword_rulesのマッチング用に正規化する
  * (docs/domain/counterparties.md 1.3 手順1: 全角半角統一・大文字小文字統一・空白除去)。
  */
 export function normalizeDescriptionForMatching(text: string): string {

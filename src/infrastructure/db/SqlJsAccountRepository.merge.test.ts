@@ -14,6 +14,7 @@ import { seedInitialBalanceAccount } from './seedInitialBalanceAccount'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
+import { SqlJsKeywordRuleRepository } from './SqlJsKeywordRuleRepository'
 
 let db: Database
 let repository: SqlJsAccountRepository
@@ -204,5 +205,21 @@ describe('merge', () => {
     repository.deactivate(target.id)
 
     expect(() => repository.merge(target.id, [bus.id])).toThrow()
+  })
+})
+
+describe('キーワードルールの付け替え(計画Issue #219)', () => {
+  it('統合元の科目を指すルールを統合先へ付け替え、同じキーワードの重複は1件にまとめる', () => {
+    const target = repository.create({ category: 'asset', name: '現金A', isReconcilable: false })
+    const source = repository.create({ category: 'asset', name: '現金B', isReconcilable: false })
+    const rules = new SqlJsKeywordRuleRepository(db)
+    rules.create({ pattern: 'ATM', accountId: target.id })
+    rules.create({ pattern: 'ATM', accountId: source.id })
+    rules.create({ pattern: 'コンビニATM', accountId: source.id })
+
+    repository.merge(target.id, [source.id])
+
+    expect(rules.findByAccount(target.id).map((r) => r.pattern).sort()).toEqual(['ATM', 'コンビニATM'])
+    expect(rules.findByAccount(source.id)).toEqual([])
   })
 })

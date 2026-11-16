@@ -6,7 +6,7 @@ const MASTER_TABLES: ReadonlySet<string> = new Set([
   'account_groups',
   'counterparties',
   'counterparty_groups',
-  'counterparty_patterns',
+  'keyword_rules',
   'household_members',
   'household_member_group_memberships',
   'projects',
