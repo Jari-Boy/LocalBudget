@@ -20,6 +20,7 @@ import {
 } from '../../domain/account/summarizeAccountRegistration'
 import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
 import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
+import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
 import { computeTreeNodeUpdates } from '../common/tree-table/computeTreeNodeUpdates'
 import { TreeTable } from '../common/tree-table/TreeTable'
 import {
@@ -32,6 +33,7 @@ import { AccountMergePanel } from './AccountMergePanel'
 import { BulkSelectionPanel } from './BulkSelectionPanel'
 import { AccountReconciliationSection, type ReconciliationRepository } from './AccountReconciliationSection'
 import { AccountMappingSection, AccountRegistrationInfo } from './AccountRegistrationSections'
+import { AccountKeywordSection } from './AccountKeywordSection'
 import { DefaultMemberChangeDialog } from './DefaultMemberChangeDialog'
 import { buildAccountTree, groupNodeId, leafNodeId, parseNodeId } from './masterTreeNodes'
 import type { MaybeAsync } from './maybeAsync'
@@ -50,6 +52,8 @@ export interface AccountMasterTabProps {
   importMappingDefinitionRepository: MaybeAsync<
     Pick<ImportMappingDefinitionRepository, 'findAll' | 'linkAccount' | 'unlinkAccount'>
   >
+  /** 資産・負債科目のキーワード(その科目を相手科目に指定したキーワードルール、計画Issue #219)。省略時はキーワードの欄を出さない */
+  keywordRuleRepository?: MaybeAsync<Pick<KeywordRuleRepository, 'findByAccount' | 'create' | 'update' | 'delete'>>
   /** 手で記録した残高(基準点)の操作(計画Issue #205)。省略時は「残高の照合」欄と最初の残高の欄を出さない */
   accountBalanceRecordRepository?: ReconciliationRepository
   /** 最初から選んでおく科目のid(仕訳の詳細の「科目の照合を見る」から開くとき、計画Issue #205) */
@@ -104,6 +108,7 @@ export function AccountMasterTab({
   budgetRepository,
   recurringTransactionRuleRepository,
   importMappingDefinitionRepository,
+  keywordRuleRepository,
   accountBalanceRecordRepository,
   initialAccountId,
   today,
@@ -394,6 +399,7 @@ export function AccountMasterTab({
               ? summarizeAccountRegistration(selectedAccount)
               : null
           }
+          keywordRuleRepository={keywordRuleRepository}
           definitions={data.definitions}
           onLinkDefinition={(definitionId) =>
             run(
@@ -589,6 +595,8 @@ interface EditPanelProps {
     onToggleAutoAdjust: (next: boolean) => Promise<boolean>
     onChanged: () => Promise<void>
   } | null
+  /** 資産・負債科目のキーワード欄の保存先。渡さなければ欄を出さない */
+  keywordRuleRepository: AccountMasterTabProps['keywordRuleRepository']
   definitions: readonly ImportMappingDefinition[]
   onLinkDefinition: (definitionId: number) => void
   onUnlinkDefinition: (definitionId: number) => void
@@ -745,6 +753,9 @@ function EditPanel(props: EditPanelProps) {
               onLink={props.onLinkDefinition}
               onUnlink={props.onUnlinkDefinition}
             />
+          )}
+          {props.keywordRuleRepository && !account.isSystemManaged && (
+            <AccountKeywordSection account={account} repository={props.keywordRuleRepository} busy={busy} />
           )}
         </>
       )}

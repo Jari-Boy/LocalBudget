@@ -128,6 +128,23 @@ describe('CounterpartyMasterTab', () => {
     )
   })
 
+  it('追加するキーワードは正規化して保存し、正規化後に同じものは共通の検証で拒否して理由を表示する(計画Issue #219)', async () => {
+    const aeon = counterparties.create({ name: 'イオン' })
+    counterparties.addPattern(aeon.id, 'AEON')
+    renderTab()
+    await open('イオン')
+
+    fireEvent.change(panel('取引先の編集').getByLabelText('追加するキーワード'), { target: { value: 'ａｅｏｎ' } })
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: '+ キーワードを追加' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('同じキーワードがすでにあります')
+    expect(counterparties.findPatternsByCounterparty(aeon.id)).toHaveLength(1)
+
+    fireEvent.change(panel('取引先の編集').getByLabelText('追加するキーワード'), { target: { value: 'ｉｏｎ モール' } })
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: '+ キーワードを追加' }))
+    await waitFor(() => expect(counterparties.findPatternsByCounterparty(aeon.id).map((p) => p.pattern)).toEqual(['AEON', 'IONモール']))
+  })
+
   it('キーワードの「削除」を押すと、確認なしでDBから削除される', async () => {
     const aeon = counterparties.create({ name: 'イオン' })
     counterparties.addPattern(aeon.id, 'イオン')

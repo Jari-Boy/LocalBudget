@@ -36,6 +36,7 @@ import { CounterpartyMasterTab } from '../components/master/CounterpartyMasterTa
 import { MemberMasterTab } from '../components/master/MemberMasterTab'
 import { ProjectMasterTab } from '../components/master/ProjectMasterTab'
 import { MappingMasterTab } from '../components/master/MappingMasterTab'
+import { KeywordMasterTab } from '../components/master/KeywordMasterTab'
 import { RuleMasterTab } from '../components/master/RuleMasterTab'
 import { JournalTemplateTab } from '../components/journal-template/JournalTemplateTab'
 import { HistoryScreen } from '../components/history/HistoryScreen'
@@ -270,6 +271,7 @@ export function AppRoutes() {
             budgetRepository={budgetRepository}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
             importMappingDefinitionRepository={importMappingDefinitionRepository}
+            keywordRuleRepository={keywordRuleRepository}
             accountBalanceRecordRepository={accountBalanceRecordRepository}
           />
         }
@@ -307,6 +309,16 @@ export function AppRoutes() {
             projectGroupRepository={projectGroupRepository}
             journalEntryRepository={journalEntryRepository}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
+          />
+        }
+      />
+      <Route
+        path="/master/keywords"
+        element={
+          <KeywordMasterTab
+            keywordRuleRepository={keywordRuleRepository}
+            counterpartyRepository={counterpartyRepository}
+            accountRepository={accountRepository}
           />
         }
       />

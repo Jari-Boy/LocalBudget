@@ -113,7 +113,7 @@ describe('AppShell', () => {
     expect(screen.queryByRole('navigation', { name: '領域内のタブ' })).not.toBeInTheDocument()
   })
 
-  it('マスタ領域のタブ帯に、勘定科目・取引先・世帯メンバー・プロジェクト・明細マッピングの5つが並ぶ(定期仕訳は仕訳画面のタブへ移した、計画Issue #180)', () => {
+  it('マスタ領域のタブ帯に、勘定科目・取引先・世帯メンバー・プロジェクト・キーワード・明細マッピングの6つが並ぶ(定期仕訳は仕訳画面のタブへ移した、計画Issue #180)', () => {
     renderShell('/master/accounts')
     const tabs = screen.getByRole('navigation', { name: '領域内のタブ' })
     expect(within(tabs).getAllByRole('link').map((a) => a.textContent)).toEqual([
@@ -121,6 +121,7 @@ describe('AppShell', () => {
       '取引先',
       '世帯メンバー',
       'プロジェクト',
+      'キーワード',
       '明細マッピング',
     ])
     expect(within(tabs).getByRole('link', { name: '勘定科目' })).toHaveAttribute('aria-current', 'page')

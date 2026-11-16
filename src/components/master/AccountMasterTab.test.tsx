@@ -29,6 +29,7 @@ import { SqlJsBudgetRepository } from '../../infrastructure/db/SqlJsBudgetReposi
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsImportMappingDefinitionRepository } from '../../infrastructure/db/SqlJsImportMappingDefinitionRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
+import { SqlJsKeywordRuleRepository } from '../../infrastructure/db/SqlJsKeywordRuleRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../../infrastructure/db/SqlJsRecurringTransactionRuleRepository'
 import { seedInitialBalanceAccount } from '../../infrastructure/db/seedInitialBalanceAccount'
 import { AccountMasterTab } from './AccountMasterTab'
@@ -39,6 +40,7 @@ let accounts: SqlJsAccountRepository
 let groups: SqlJsAccountGroupRepository
 let entries: SqlJsJournalEntryRepository
 let mappings: SqlJsImportMappingDefinitionRepository
+let keywordRules: SqlJsKeywordRuleRepository
 let memberId: number
 let balanceRecords: SqlJsAccountBalanceRecordRepository
 
@@ -52,6 +54,7 @@ beforeEach(async () => {
   groups = new SqlJsAccountGroupRepository(db)
   entries = new SqlJsJournalEntryRepository(db)
   mappings = new SqlJsImportMappingDefinitionRepository(db)
+  keywordRules = new SqlJsKeywordRuleRepository(db)
   memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '夫' }).id
 })
 
@@ -72,6 +75,7 @@ function renderTab(options: { initialAccountId?: number } = {}) {
           budgetRepository={new SqlJsBudgetRepository(db)}
           recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
           importMappingDefinitionRepository={mappings}
+          keywordRuleRepository={keywordRules}
           accountBalanceRecordRepository={balanceRecords}
           initialAccountId={options.initialAccountId}
           today="2026-11-07"
@@ -1021,5 +1025,67 @@ describe('AccountMasterTab: 残高の照合欄(計画Issue #205)', () => {
 
     const row = await section().findByRole('row', { name: /2026-02-28/ })
     expect(within(row).getByText('ずれ −¥3,000')).toBeInTheDocument()
+  })
+
+  describe('キーワード(資産・負債の科目だけ、計画Issue #219)', () => {
+    it('資産の科目の右パネルに、その科目を相手科目に指定したキーワードが一覧される', async () => {
+      const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
+      keywordRules.create({ pattern: 'ATM', accountId: cash.id })
+      renderTab()
+
+      await open('現金')
+
+      expect(await panel('科目の編集').findByRole('heading', { name: 'キーワード(1件)' })).toBeInTheDocument()
+      expect(panel('科目の編集').getByText('ATM')).toBeInTheDocument()
+    })
+
+    it('収益・費用の科目の右パネルには、キーワードの欄が出ない', async () => {
+      const food = accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+      keywordRules.create({ pattern: 'ATM', accountId: food.id })
+      renderTab()
+
+      await open('食費')
+
+      expect(screen.queryByRole('heading', { name: /^キーワード/ })).not.toBeInTheDocument()
+    })
+
+    it('キーワードを追加すると、正規化して科目のルールとして保存される', async () => {
+      const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
+      renderTab()
+      await open('現金')
+
+      fireEvent.change(panel('科目の編集').getByLabelText('追加するキーワード'), { target: { value: 'ａｔｍ' } })
+      fireEvent.click(panel('科目の編集').getByRole('button', { name: '+ キーワードを追加' }))
+
+      await waitFor(() => expect(keywordRules.findByAccount(cash.id).map((r) => r.pattern)).toEqual(['ATM']))
+    })
+
+    it('正規化後に同じキーワードは、共通の検証で拒否され理由が表示される', async () => {
+      const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
+      keywordRules.create({ pattern: 'ATM', accountId: cash.id })
+      renderTab()
+      await open('現金')
+
+      fireEvent.change(panel('科目の編集').getByLabelText('追加するキーワード'), { target: { value: 'atm' } })
+      fireEvent.click(panel('科目の編集').getByRole('button', { name: '+ キーワードを追加' }))
+
+      expect(await screen.findByText('同じ取引先・科目に、同じキーワードがすでにあります')).toBeInTheDocument()
+      expect(keywordRules.findByAccount(cash.id)).toHaveLength(1)
+    })
+
+    it('キーワードを編集して保存でき、削除もできる', async () => {
+      const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
+      const rule = keywordRules.create({ pattern: 'ATM', accountId: cash.id })
+      renderTab()
+      await open('現金')
+
+      fireEvent.click(await panel('科目の編集').findByRole('button', { name: 'ATMを編集' }))
+      fireEvent.change(panel('科目の編集').getByLabelText('キーワード'), { target: { value: 'セブン銀行' } })
+      fireEvent.click(panel('科目の編集').getByRole('button', { name: 'キーワードを保存' }))
+      await waitFor(() => expect(keywordRules.findById(rule.id)?.pattern).toBe('セブン銀行'))
+
+      fireEvent.click(await panel('科目の編集').findByRole('button', { name: 'セブン銀行を削除' }))
+      await waitFor(() => expect(keywordRules.findByAccount(cash.id)).toHaveLength(0))
+    })
   })
 })

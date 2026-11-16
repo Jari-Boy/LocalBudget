@@ -17,6 +17,7 @@ import { describeDeletionBlocks } from './describeDeletionBlocks'
 import { GroupedMasterTab, type GroupedMasterActions } from './GroupedMasterTab'
 import { buildCounterpartyTree, parseNodeId } from './masterTreeNodes'
 import type { MaybeAsync } from './maybeAsync'
+import { toStoredKeyword, validateKeywordRuleInput } from './keywordRuleForm'
 import { uniqueName } from './uniqueName'
 import './master.css'
 
@@ -247,6 +248,19 @@ function CounterpartyExtra({ counterparty, accounts, patterns, repository, reloa
   const trimmedNew = newPattern.trim()
   const trimmedEdit = editDraft.trim()
 
+  /** キーワードタブ・勘定科目タブと共通の検証(keywordRuleForm)。問題があれば理由を表示して保存しない */
+  const validate = (text: string, selfId: number | null): boolean => {
+    const problem = validateKeywordRuleInput({
+      pattern: text,
+      counterpartyId: counterparty.id,
+      accountId: null,
+      account: null,
+      siblings: patterns.filter((p) => p.id !== selfId).map((p) => ({ ...p, accountId: null })),
+    })
+    setError(problem === null ? '' : t(`keywordTab.errors.${problem}`))
+    return problem === null
+  }
+
   const run = async (action: () => unknown) => {
     setWorking(true)
     setError('')
@@ -309,7 +323,8 @@ function CounterpartyExtra({ counterparty, accounts, patterns, repository, reloa
                   disabled={disabled || trimmedEdit === ''}
                   onClick={() =>
                     void run(async () => {
-                      await repository.updatePattern(p.id, trimmedEdit)
+                      if (!validate(trimmedEdit, p.id)) return
+                      await repository.updatePattern(p.id, toStoredKeyword(trimmedEdit))
                       setEditingId(null)
                     })
                   }
@@ -359,10 +374,11 @@ function CounterpartyExtra({ counterparty, accounts, patterns, repository, reloa
           <button
             type="button"
             className="master-btn"
-            disabled={disabled || trimmedNew === '' || patterns.some((p) => p.pattern === trimmedNew)}
+            disabled={disabled || trimmedNew === ''}
             onClick={() =>
               void run(async () => {
-                await repository.addPattern(counterparty.id, trimmedNew)
+                if (!validate(trimmedNew, null)) return
+                await repository.addPattern(counterparty.id, toStoredKeyword(trimmedNew))
                 setNewPattern('')
               })
             }

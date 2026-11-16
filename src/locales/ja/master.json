@@ -70,7 +70,10 @@
     "mergeError": "統合に失敗しました。もう一度お試しください。",
     "mergeBlockSystemManaged": "システム管理の科目は統合できません。",
     "mergeBlockDifferentCategory": "区分が異なる科目は統合できません。",
-    "mergeBlockDifferentReconcilability": "照合できる科目とできない科目は統合できません。"
+    "mergeBlockDifferentReconcilability": "照合できる科目とできない科目は統合できません。",
+    "keywordsTitle": "キーワード({{count}}件)",
+    "keywordsNote": "明細の摘要にこの文字列が含まれると、相手科目が「{{account}}」と推定されます。",
+    "keywordsPlOnlyNote": "資産・負債の科目だけ、この欄が出ます。収益・費用の科目のキーワードは、取引先タブ(またはキーワードタブ)で編集します。"
   },
   "reconcile": {
     "title": "残高の照合",
@@ -377,5 +380,33 @@
     "reasonColumnNeedsHeader": "見出しの行がないときは、列を番号で指定してください",
     "skipNote": "読み取れない行は、取り込まれません(保存はできます)。",
     "majorityWarning": "読み取れない行の方が多いです。マッピング(列の割り当てや日付の書式)が合っているか確認してください。"
+  },
+  "keywordTab": {
+    "add": "+ キーワードを追加",
+    "search": "キーワードを検索",
+    "searchPlaceholder": "キーワード・取引先・科目で検索",
+    "colPattern": "キーワード",
+    "colCounterparty": "取引先",
+    "colAccount": "相手科目",
+    "fromCounterpartyDefault": "取引先の既定({{account}})",
+    "empty": "登録済みのキーワードはありません。",
+    "sortHint": "列の見出しを押すと、その列で昇順と降順を切り替えます。取引先・相手科目のどちらかは必須です。取引先と科目を両方指定できるのは、科目が収益・費用のときだけです。",
+    "editTitle": "キーワードの編集",
+    "newTitle": "キーワードの追加",
+    "patternLabel": "キーワード(摘要に含まれる文字列)",
+    "counterpartyLabel": "取引先(任意)",
+    "accountLabel": "相手科目(任意)",
+    "none": "指定しない",
+    "counterpartyDisabledNote": "相手科目が資産・負債のときは、取引先を指定できません",
+    "save": "保存",
+    "delete": "削除",
+    "cancel": "キャンセル",
+    "saveError": "保存に失敗しました。もう一度お試しください。",
+    "errors": {
+      "empty": "キーワードが空です",
+      "duplicate": "同じ取引先・科目に、同じキーワードがすでにあります",
+      "targetRequired": "取引先か相手科目のどちらかを指定してください",
+      "counterpartyNeedsPlAccount": "取引先と相手科目を両方指定できるのは、相手科目が収益・費用のときだけです"
+    }
   }
 }
