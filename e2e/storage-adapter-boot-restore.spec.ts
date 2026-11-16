@@ -8,7 +8,7 @@
  * (docs/architecture.md 10章)。デバウンス自体の詳細な検証は
  * e2e/storage-adapter-debounce.spec.tsで行う。seedDefaultAccounts(計画Issue #96)により
  * Worker起動時点でrevenue/expense区分の標準科目が、seedAdvanceAccounts(計画Issue #40)
- * によりasset/liability区分の「立替金」が既に存在するため、作成する科目名はこれらの
+ * によりasset/liability区分の「未収金(精算バッチ)」が既に存在するため、作成する科目名はこれらの
  * シードのリスト(defaultAccountSeedData.ts・seedAdvanceAccounts.ts)と衝突しない名前を使う。
  */
 import { test, expect } from '@playwright/test'

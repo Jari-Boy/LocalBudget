@@ -22,7 +22,7 @@ interface BaseData {
  * `settlement_batches`)を1つのWorker内でまとめて作成し、flush()で即座にIndexedDBへ
  * 永続化してからreloadする(journal-entry.spec.tsのsetupAccountsAndReloadと同じ、
  * 別Workerの後勝ち上書きを避ける方針)。既定の世帯メンバー(seedDefaultHouseholdMemberで
- * 1件自動作成済み)はfromMemberとして使う。立替金(資産/負債)科目はWorker起動時に
+ * 1件自動作成済み)はfromMemberとして使う。未収金(精算バッチ)・未払金(精算バッチ)科目はWorker起動時に
  * seedAdvanceAccountsが自動投入するため、ここでは作成しない(手動で同名の科目を作成すると
  * 科目名の一意制約に反する)。
  */
@@ -264,7 +264,7 @@ test.describe('精算タブ', () => {
     await row.getByRole('button', { name: '精算テストの食事代の割勘' }).click()
 
     const panel = page.getByRole('region', { name: '選択中の精算バッチ' })
-    for (const direction of ['立替金を減らす', '未払金を減らす']) {
+    for (const direction of ['未収金を減らす', '未払金を減らす']) {
       await panel.getByRole('group', { name: '精算の方向' }).getByRole('button', { name: new RegExp(direction) }).click()
       await panel.getByRole('button', { name: '+ 精算の仕訳を起票' }).click()
       await chooseFromTree(page, /^相手科目/, '割勘用現金')
@@ -273,7 +273,7 @@ test.describe('精算タブ', () => {
       await expect(panel.getByText('仕訳を起票してバッチに紐付けました').or(panel.getByText('精算済みです'))).toBeVisible()
     }
 
-    await expect(panel.getByText('精算済みです。立替金と未払金の残高はどちらも0です。')).toBeVisible()
+    await expect(panel.getByText('精算済みです。未収金と未払金の残高はどちらも0です。')).toBeVisible()
     await waitForJournalEntryCount(page, 4)
 
     // 残高が0になったバッチは精算済みの一覧に移り、そのまま精算済みとして表示される
@@ -298,7 +298,7 @@ test.describe('精算タブ', () => {
     await chooseFromTree(page, /^相手科目/, '割勘用現金')
     await panel.getByRole('button', { name: '起票してバッチに紐付け' }).click()
     await expect(panel.getByText('仕訳を起票してバッチに紐付けました')).toBeVisible()
-    await expect(row).toContainText(/[¥￥]0[¥￥]500/) // 立替金は0、未払金は残る
+    await expect(row).toContainText(/[¥￥]0[¥￥]500/) // 未収金は0、未払金は残る
 
     await panel.getByRole('button', { name: /の紐づけを解除$/ }).click()
     await panel.getByRole('button', { name: '本当に解除する' }).click()

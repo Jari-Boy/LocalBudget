@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * 精算タブ(SettleTab、計画Issue #153)のコンポーネントテスト。承認済みモックアップの構成で、
- * 精算バッチを先に選び、一覧に立替金と未払金の残高が別々に出ること、「未精算」「精算済み」「すべて」の
- * 切り替え、方向のカード(立替金を減らす/未払金を減らす)、候補の仕訳の選択と一致・不一致の操作
+ * 精算バッチを先に選び、一覧に未収金と未払金の残高が別々に出ること、「未精算」「精算済み」「すべて」の
+ * 切り替え、方向のカード(未収金を減らす/未払金を減らす)、候補の仕訳の選択と一致・不一致の操作
  * (精算完了・未精算として残す・差額の計上)、候補の有無によらない精算の仕訳の起票、バッチ名と
  * 世帯外の相手の編集を、インメモリの偽Repository(vi.fn)で検証する。
  */
@@ -196,7 +196,7 @@ const selected = () => screen.getByRole('region', { name: '選択中の精算バ
 const yen = (n: number) => formatCurrency(n, 'JPY')
 
 describe('SettleTab: 精算バッチの一覧', () => {
-  it('既定では未精算のバッチだけを、立替金と未払金の残高を別々の列で出す(明細が無い方は「-」)', () => {
+  it('既定では未精算のバッチだけを、未収金と未払金の残高を別々の列で出す(明細が無い方は「-」)', () => {
     setup()
 
     const row = within(batchList()).getByRole('button', { name: '10月分 割勘(妻)' }).closest('tr')!
@@ -215,7 +215,7 @@ describe('SettleTab: 精算バッチの一覧', () => {
 
     expect(within(batchList()).getByRole('button', { name: '9月分 割勘(妻)' })).toBeInTheDocument()
     expect(within(batchList()).queryByRole('button', { name: '10月分 割勘(妻)' })).not.toBeInTheDocument()
-    expect(within(selected()).getByText('精算済みです。立替金と未払金の残高はどちらも0です。')).toBeInTheDocument()
+    expect(within(selected()).getByText('精算済みです。未収金と未払金の残高はどちらも0です。')).toBeInTheDocument()
   })
 
   it('精算済みのバッチでは、紐づく仕訳を閲覧でき、仕訳をクリックすると仕訳画面へ移動せずダイアログで開く', () => {
@@ -257,16 +257,16 @@ describe('SettleTab: 精算バッチの一覧', () => {
 
     expect(screen.getByRole('button', { name: '精算済み 2' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(batchList()).getByRole('button', { name: '10月分 割勘(妻)' })).toBeInTheDocument()
-    expect(within(selected()).getByText('精算済みです。立替金と未払金の残高はどちらも0です。')).toBeInTheDocument()
+    expect(within(selected()).getByText('精算済みです。未収金と未払金の残高はどちらも0です。')).toBeInTheDocument()
   })
 })
 
 describe('SettleTab: 選んだバッチ', () => {
-  it('立替金を減らす・未払金を減らすの2枚のカードに残高と内訳を出し、方向を切り替えられる', () => {
+  it('未収金を減らす・未払金を減らすの2枚のカードに残高と内訳を出し、方向を切り替えられる', () => {
     setup()
 
     const cards = within(selected()).getByRole('group', { name: '精算の方向' })
-    const advance = within(cards).getByRole('button', { name: /立替金を減らす/ })
+    const advance = within(cards).getByRole('button', { name: /未収金を減らす/ })
     const payable = within(cards).getByRole('button', { name: /未払金を減らす/ })
     expect(advance).toHaveAttribute('aria-pressed', 'true')
     expect(advance).toHaveTextContent(yen(6000))
@@ -425,7 +425,7 @@ describe('SettleTab: 精算バッチの削除', () => {
 })
 
 describe('SettleTab: 候補の仕訳で精算する', () => {
-  it('選んだ方向(立替金を減らす=立替金の貸方)の未割当の明細だけを候補にする', () => {
+  it('選んだ方向(未収金を減らす=未収金の貸方)の未割当の明細だけを候補にする', () => {
     setup()
 
     const table = within(selected()).getByRole('table', { name: '精算の候補' })
