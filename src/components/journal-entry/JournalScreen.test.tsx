@@ -1907,7 +1907,8 @@ describe('JournalScreen: 起票の入口のボタン(計画Issue #214)', () => {
     const buttons = names.map((name) => screen.getByRole('button', { name }))
 
     expect(buttons.map((b) => b.className)).toEqual(Array(3).fill('journal-screen__button'))
-    expect(screen.queryByRole('button', { name: '新規仕訳' })).not.toBeInTheDocument()
+    // 同じ枠の中に、この順で並ぶ
     expect(new Set(buttons.map((b) => b.parentElement)).size).toBe(1)
+    expect(Array.from(buttons[0].parentElement!.querySelectorAll('button')).map((b) => b.textContent)).toEqual(names)
   })
 })

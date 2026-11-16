@@ -304,3 +304,100 @@ describe('StatementImportScreen: 仕訳画面から渡されたCSV(計画Issue #
     expect(screen.queryByText(/読み込み済み/)).not.toBeInTheDocument()
   })
 })
+
+describe('StatementImportScreen: 複数CSVの残高照合(計画Issue #214)', () => {
+  const HEADER_B = '日付,摘要,金額,残高\n'
+  const withBalance = (name: string, rows: string[]) => ({ name, body: HEADER_B + rows.map((r) => r + '\n').join('') })
+
+  beforeEach(() => {
+    // 残高の列がある定義にする(取込先の普通預金は残高の照合対象)
+    const repo = new SqlJsImportMappingDefinitionRepository(db)
+    repo.update(repo.findAll()[0].id, { balanceColumn: '残高' })
+  })
+
+  it('期間が空く複数ファイルでも、選んだ順に関係なく日付順に残高をつなげ、合っていれば「一致している」と出す', async () => {
+    renderScreen()
+    const sep = withBalance('sep.csv', ['2025/09/05,Spotify,-980,99020'])
+    const oct = withBalance('oct.csv', ['2025/10/03,コンビニ,-420,98600', '2025/10/26,Amazon,-2980,95620'])
+
+    await chooseCsvs([oct, sep], /2ファイルを読み込み済み/)
+
+    expect(await screen.findByText(/帳簿と明細の残高は一致しています/)).toBeInTheDocument()
+  })
+
+  it('ファイルの境目で残高が合わないときは、そのずれた期間を示す', async () => {
+    renderScreen()
+    const sep = withBalance('sep.csv', ['2025/09/05,Spotify,-980,99020'])
+    // 10/03の98600まではつながるが、10/26は95620のはずが90000(ずれ)
+    const oct = withBalance('oct.csv', ['2025/10/03,コンビニ,-420,98600', '2025/10/26,Amazon,-2980,90000'])
+
+    await chooseCsvs([sep, oct], /2ファイルを読み込み済み/)
+
+    expect(await screen.findByText(/帳簿と明細の残高が合わない期間があります/)).toBeInTheDocument()
+    expect(screen.getByText(/2025-10-04〜2025-10-26/)).toBeInTheDocument()
+  })
+
+  it('期間が重なるファイルでは、ファイル間の重複行を残高の照合から除き、二重に数えて崩れない', async () => {
+    renderScreen()
+    const oct = withBalance('oct.csv', ['2025/10/03,コンビニ,-420,99580', '2025/10/26,Amazon,-2980,96600'])
+    const nov = withBalance('nov.csv', ['2025/10/26,Amazon,-2980,96600', '2025/11/03,書店,-1500,95100'])
+
+    await chooseCsvs([oct, nov], /2ファイルを読み込み済み/)
+
+    expect(await screen.findByText(/帳簿と明細の残高は一致しています/)).toBeInTheDocument()
+  })
+})
+
+describe('StatementImportScreen: 複数CSVの未保存の警告(計画Issue #214)', () => {
+  const dialog = () => screen.queryByRole('dialog', { name: '未保存の変更があります' })
+  const novCheckbox = () => screen.getByRole('checkbox', { name: 'nov.csvを取り込む' })
+
+  it('入力を変えていないときは、ファイルのチェックを外しても警告を出さずに作り直す', async () => {
+    renderScreen()
+    await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+
+    fireEvent.click(novCheckbox())
+
+    expect(dialog()).not.toBeInTheDocument()
+    await screen.findByText(/oct\.csv を読み込み済み/)
+  })
+
+  it('行を編集した状態でファイルのチェックを外すと警告が出て、「キャンセル」では一覧・チェック・編集内容が保たれる', async () => {
+    renderScreen()
+    await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+    pick(rowOf(/コンビニ/), '相手科目', '食費')
+
+    fireEvent.click(novCheckbox())
+    expect(dialog()).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+
+    expect(dialog()).not.toBeInTheDocument()
+    expect(novCheckbox()).toBeChecked()
+    expect(rowOf(/書店/)).toBeDefined()
+    expect(rowOf(/コンビニ/).getByRole('button', { name: /^相手科目: 食費/ })).toBeInTheDocument()
+  })
+
+  it('行を編集した状態でファイルのチェックを外し「破棄して移動」を選ぶと、そのファイルを除いて一覧を作り直す(編集内容は破棄)', async () => {
+    renderScreen()
+    await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+    pick(rowOf(/コンビニ/), '相手科目', '食費')
+
+    fireEvent.click(novCheckbox())
+    fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
+
+    await screen.findByText(/oct\.csv を読み込み済み/)
+    expect(novCheckbox()).not.toBeChecked()
+    expect(screen.queryByText('書店')).not.toBeInTheDocument()
+    expect(rowOf(/コンビニ/).queryByRole('button', { name: /^相手科目: 食費/ })).not.toBeInTheDocument()
+  })
+
+  it('行を編集した状態で新しいCSVを選び直そうとしても警告が出る(複数ファイルの取込中)', async () => {
+    renderScreen()
+    await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+    pick(rowOf(/コンビニ/), '相手科目', '食費')
+
+    fireEvent.click(screen.getByRole('button', { name: 'CSVを選択' }))
+
+    expect(dialog()).toBeInTheDocument()
+  })
+})
