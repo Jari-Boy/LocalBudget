@@ -127,7 +127,7 @@
 - **起票者と行の世帯メンバーを分ける**: 以前のルールの`household_member_id`は「起票者」と「各行の世帯メンバー」を兼ねていた。今は、起票者はルール単位の`bookkeeper_household_member_id`(空なら確定時に選ぶ)、世帯メンバーは各行の`household_member_id`(行単位、`NULL`なら「行では決めない」)で別に持つ。確定時の行の世帯メンバーは、**科目の既定メンバー > 行の世帯メンバー > 起票者**の順で決まる([household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方)、計画Issue #169。実装: `createLineHouseholdMemberResolver`)。
 - **取引先はPL科目の行だけ**: `counterparty_id`は[counterparties.md 1.2](./counterparties.md#12-紐づけ対象)の通りPL科目(収益・費用)の行にのみ設定可能で、`recurring_transaction_rule_lines`にも`journal_lines`と同じTRIGGER(`prevent_counterparty_on_non_pl_rule_line_*`)があり、DBが強制する。生成時もPL区分の行以外には取引先を設定しない。
 - **プロジェクト**: 各行が持つ(全区分の行に設定できる、[projects.md 1.2](./projects.md#12-紐づけ対象))。以前のように両行へ同じ値を写すことはしない。
-- **精算バッチ**: 仕訳エディタと同じく、システム管理の立替金・未払金の科目の行にだけ設定できる(`isSettlementBatchTaggableAccount`。Repositoryが書き込み前に検証し、`SettlementBatchOnNonAdvanceAccountError`)。確定して生成した仕訳の行にも、そのバッチのタグが付く(タグが付くのは立替金・未払金の行だけで、それ以外の行には付かない)。
+- **精算バッチ**: 仕訳エディタと同じく、システム管理の未収金・未払金(精算バッチ)の科目の行にだけ設定できる(`isSettlementBatchTaggableAccount`。Repositoryが書き込み前に検証し、`SettlementBatchOnNonAdvanceAccountError`)。確定して生成した仕訳の行にも、そのバッチのタグが付く(タグが付くのは未収金・未払金(精算バッチ)の行だけで、それ以外の行には付かない)。
 - **金額0の行は仕訳に含めない**: 金額表で利息が0の回などの、金額0の行は、確認パネルにも出さず、生成する仕訳にも含めない(`buildRecurringTransactionJournalEntryInput`)。
 
 > **実装状況(計画Issue #39、#180で更新)**
@@ -259,7 +259,7 @@
 | `project_id` | プロジェクト | FK、任意。全区分の行に設定可([1.4](#14-ルールの仕訳構成スコープ)参照) |
 | `household_member_id` | 世帯メンバー | FK、任意。`NULL`なら行では決めず、確定時に 科目の既定メンバー > 起票者 の順で決まる |
 | `counterparty_id` | 取引先 | FK、任意。PL科目(収益・費用)の行にだけ設定できる(TRIGGERで強制) |
-| `settlement_batch_id` | 精算バッチ | FK、任意。システム管理の立替金・未払金の科目の行にだけ設定できる(Repositoryが検証)。生成した仕訳の行にも付く |
+| `settlement_batch_id` | 精算バッチ | FK、任意。システム管理の未収金・未払金(精算バッチ)の科目の行にだけ設定できる(Repositoryが検証)。生成した仕訳の行にも付く |
 
 貸借の一致(借方合計=貸方合計・2行以上)はDBで強制せず、仕訳と同じ検証(`assertJournalBalance`)をRepositoryが書き込み前に行う([journal.md 1.3](./journal.md#13-貸借バランスの検証)と同じ使い分け)。
 
