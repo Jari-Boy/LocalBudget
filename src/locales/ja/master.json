@@ -407,6 +407,8 @@
       "duplicate": "同じ取引先・科目に、同じキーワードがすでにあります",
       "targetRequired": "取引先か相手科目のどちらかを指定してください",
       "counterpartyNeedsPlAccount": "取引先と相手科目を両方指定できるのは、相手科目が収益・費用のときだけです"
-    }
+    },
+    "allLabel": "すべてのキーワード",
+    "deleteSelected": "選択した{{count}}件を削除"
   }
 }

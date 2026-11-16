@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { TreeTable } from '../common/tree-table/TreeTable'
+import type { TreeTableNode } from '../common/tree-table/treeTableModel'
 import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
@@ -11,7 +13,6 @@ import {
   sortKeywordRules,
   toStoredKeyword,
   validateKeywordRuleInput,
-  type KeywordSortKey,
   type KeywordSortState,
 } from './keywordRuleForm'
 import type { MaybeAsync } from './maybeAsync'
@@ -30,6 +31,9 @@ interface Draft {
   counterpartyId: number | null
   accountId: number | null
 }
+
+const nodeId = (ruleId: number) => `kw:${ruleId}`
+const ruleIdOf = (id: string) => Number(id.slice(3))
 
 const NEW_DRAFT: Draft = { id: null, pattern: '', counterpartyId: null, accountId: null }
 
@@ -51,6 +55,7 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
   const [draft, setDraft] = useState<Draft | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [checkedIds, setCheckedIds] = useState<readonly string[]>([])
 
   const load = useCallback(async () => {
     const [nextRules, nextCounterparties, nextAccounts] = await Promise.all([
@@ -138,20 +143,34 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
     }
   }
 
-  const header = (key: KeywordSortKey, label: string) => {
-    const active = sort.key === key
-    return (
-      <th scope="col" aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>
-        <button type="button" className="master-table__sort" onClick={() => setSort(nextSortState(sort, key))}>
-          {label}
-          {active && (
-            <span aria-hidden="true" className="master-table__sort-mark">
-              {sort.direction === 'asc' ? '▲' : '▼'}
-            </span>
-          )}
-        </button>
-      </th>
-    )
+  /** TreeTableの並び替えの列(名称列='name'、取引先=0、相手科目=1)と、キーワードタブの並び替えのキーの対応 */
+  const sortColumn = sort.key === 'pattern' ? 'name' : sort.key === 'counterparty' ? 0 : 1
+  const pressSortColumn = (column: 'name' | number) =>
+    setSort(nextSortState(sort, column === 'name' ? 'pattern' : column === 0 ? 'counterparty' : 'account'))
+
+  /** 世帯メンバー・取引先タブと同じツリー表で出すためのノード(区分は1つ、グループなし) */
+  const nodes: TreeTableNode[] = visibleRules.map((rule) => ({
+    id: nodeId(rule.id),
+    kind: 'leaf',
+    category: 'all',
+    parentId: null,
+    name: rule.pattern,
+    cells: [counterpartyName(rule.counterpartyId), accountCell(rule).text],
+  }))
+
+  const removeChecked = async () => {
+    setBusy(true)
+    try {
+      for (const id of checkedIds) await Promise.resolve(keywordRuleRepository.delete(ruleIdOf(id)))
+      setCheckedIds([])
+      setDraft(null)
+      setError('')
+      await load()
+    } catch {
+      setError(t('keywordTab.saveError'))
+    } finally {
+      setBusy(false)
+    }
   }
 
   const title = draft?.id === null ? t('keywordTab.newTitle') : t('keywordTab.editTitle')
@@ -170,9 +189,15 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
           >
             {t('keywordTab.add')}
           </button>
+          {checkedIds.length > 0 && (
+            <button type="button" className="master-btn master-btn--danger" disabled={busy} onClick={() => void removeChecked()}>
+              {t('keywordTab.deleteSelected', { count: checkedIds.length })}
+            </button>
+          )}
           <input
             className="master-field__control"
             aria-label={t('keywordTab.search')}
+            style={{ flex: '1 1 220px' }}
             placeholder={t('keywordTab.searchPlaceholder')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -181,40 +206,25 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
         {rules.length === 0 ? (
           <p className="master-note">{t('keywordTab.empty')}</p>
         ) : (
-          <div className="master-table-wrap">
-            <table className="master-table">
-              <thead>
-                <tr>
-                  {header('pattern', t('keywordTab.colPattern'))}
-                  {header('counterparty', t('keywordTab.colCounterparty'))}
-                  {header('account', t('keywordTab.colAccount'))}
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRules.map((rule) => {
-                  const cell = accountCell(rule)
-                  return (
-                    <tr key={rule.id} className={draft?.id === rule.id ? 'master-table__row--selected' : undefined}>
-                      <td>
-                        <button
-                          type="button"
-                          className="master-list__button"
-                          onClick={() => {
-                            setDraft({ id: rule.id, pattern: rule.pattern, counterpartyId: rule.counterpartyId, accountId: rule.accountId })
-                            setError('')
-                          }}
-                        >
-                          {rule.pattern}
-                        </button>
-                      </td>
-                      <td>{counterpartyName(rule.counterpartyId)}</td>
-                      <td className={cell.muted ? 'master-note' : undefined}>{cell.text}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <TreeTable
+            categories={[{ key: 'all', name: t('keywordTab.allLabel') }]}
+            nodes={nodes}
+            columns={[t('keywordTab.colCounterparty'), t('keywordTab.colAccount')]}
+            nameColumn={t('keywordTab.colPattern')}
+            sort={{ column: sortColumn, direction: sort.direction }}
+            onSortChange={pressSortColumn}
+            draggable={false}
+            checkedIds={checkedIds}
+            selectedId={draft?.id == null ? null : nodeId(draft.id)}
+            onSelect={(id) => {
+              const rule = rules.find((r) => r.id === ruleIdOf(id))
+              if (!rule) return
+              setDraft({ id: rule.id, pattern: rule.pattern, counterpartyId: rule.counterpartyId, accountId: rule.accountId })
+              setError('')
+            }}
+            onCheckedChange={setCheckedIds}
+            onMove={() => undefined}
+          />
         )}
         <p className="master-note">{t('keywordTab.sortHint')}</p>
       </div>

@@ -26,6 +26,16 @@ export interface TreeTableProps {
   onMoveRejected?: (reason: string) => void
   /** 区分の見出し行の右側に差し込む操作(例: 「+ グループ」)。引数は区分のkey */
   renderCategoryActions?: (categoryKey: string) => ReactNode
+  /** 先頭の列(既定は「名称」)の見出し。例: キーワードタブでは「キーワード」(計画Issue #219) */
+  nameColumn?: string
+  /**
+   * 渡すと、列見出しが押せるボタンになり、現在の並び替えの列(名称列は'name'、他はcolumnsの番号)に
+   * aria-sortと小さい▲▼を付ける。並び替えそのものは呼び出し側が行い、押した列をonSortChangeで通知する
+   */
+  sort?: { column: 'name' | number; direction: 'asc' | 'desc' }
+  onSortChange?: (column: 'name' | number) => void
+  /** falseにすると行をドラッグできない(並び順を持たない平らな一覧向け)。既定はtrue */
+  draggable?: boolean
 }
 
 /**
@@ -47,6 +57,10 @@ export function TreeTable({
   onMove,
   onMoveRejected,
   renderCategoryActions,
+  nameColumn = '名称',
+  sort,
+  onSortChange,
+  draggable = true,
 }: TreeTableProps) {
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(new Set())
   const { dragOver, endDrag, handleDragStart, handleNodeDragOver, handleCategoryDragOver, handleDrop } = useTreeDrag({
@@ -71,6 +85,24 @@ export function TreeTable({
 
   const colSpan = columns.length + 2
 
+  /** 列見出し。sortを渡したときだけ押せるボタンにし、並び替え中の列に小さい▲▼を付ける */
+  const renderHeader = (column: 'name' | number, label: string) => {
+    if (!sort) return <th key={String(column)}>{label}</th>
+    const active = sort.column === column
+    return (
+      <th key={String(column)} aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>
+        <button type="button" className="tree-table__sort" onClick={() => onSortChange?.(column)}>
+          {label}
+          {active && (
+            <span aria-hidden="true" className="tree-table__sort-mark">
+              {sort.direction === 'asc' ? '▲' : '▼'}
+            </span>
+          )}
+        </button>
+      </th>
+    )
+  }
+
   return (
     <div className="tree-table">
       <table className="tree-table__table">
@@ -79,10 +111,8 @@ export function TreeTable({
             <th className="tree-table__check-head">
               <span className="tree-table__sr-only">選択</span>
             </th>
-            <th>名称</th>
-            {columns.map((column) => (
-              <th key={column}>{column}</th>
-            ))}
+            {renderHeader('name', nameColumn)}
+            {columns.map((column, index) => renderHeader(index, column))}
           </tr>
         </thead>
         <tbody>
@@ -113,7 +143,7 @@ export function TreeTable({
             return (
               <tr
                 key={node.id}
-                draggable
+                draggable={draggable}
                 className={`tree-table__row${isSelected ? ' tree-table__row--selected' : ''}`}
                 aria-current={isSelected ? 'true' : undefined}
                 data-drop-zone={dragOver?.id === node.id ? dragOver.zone : undefined}

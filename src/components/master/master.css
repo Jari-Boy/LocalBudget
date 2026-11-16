@@ -586,19 +586,4 @@ label.master-btn {
   opacity: 1;
 }
 
-/* キーワードタブ(計画Issue #219)の列見出し。押すとその列で並び替える。▲▼は並び替え中の列だけに小さく出す */
-.master-table__sort {
-  font: inherit;
-  font-weight: inherit;
-  color: inherit;
-  background: none;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  text-align: left;
-}
 
-.master-table__sort-mark {
-  font-size: 8px;
-  margin-left: 3px;
-}

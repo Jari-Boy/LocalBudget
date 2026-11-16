@@ -49,12 +49,9 @@ function renderTab() {
   )
 }
 
-/** 一覧の行(ヘッダー行を除く)のキーワード列の文字列 */
-const patternsInOrder = () =>
-  screen
-    .getAllByRole('row')
-    .slice(1)
-    .map((row) => within(row).getAllByRole('cell')[0].textContent)
+/** 一覧のキーワードの行(世帯メンバー・取引先タブと同じツリー表。区分の見出し行・ヘッダー行は除く) */
+const dataRows = () => screen.getAllByRole('row').filter((row) => within(row).queryByRole('checkbox') !== null && within(row).queryByRole('button') !== null)
+const patternsInOrder = () => dataRows().map((row) => within(row).getAllByRole('button')[0].textContent)
 
 describe('KeywordMasterTab', () => {
   it('登録済みのルールを、キーワード・取引先・相手科目の列で一覧し、既定はキーワードの昇順', async () => {
@@ -65,7 +62,8 @@ describe('KeywordMasterTab', () => {
     await screen.findByRole('table')
 
     expect(patternsInOrder()).toEqual(['AEON', 'VISA'])
-    expect(within(screen.getAllByRole('row')[1]).getByText('イオン')).toBeInTheDocument()
+    expect(within(dataRows()[0]).getByText('イオン')).toBeInTheDocument()
+    expect(screen.getByText('すべてのキーワード')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /キーワード/ })).toHaveAttribute('aria-sort', 'ascending')
   })
 
@@ -158,5 +156,19 @@ describe('KeywordMasterTab', () => {
     fireEvent.change(screen.getByLabelText('キーワードを検索'), { target: { value: 'イオン' } })
 
     expect(patternsInOrder()).toEqual(['AEON'])
+  })
+
+  it('行のチェックを入れると「選択した件数を削除」が出て、まとめて削除できる', async () => {
+    rules.create({ pattern: 'ATM', accountId: cashId })
+    rules.create({ pattern: 'VISA', accountId: cashId })
+    rules.create({ pattern: 'AEON', counterpartyId: aeonId })
+    renderTab()
+    await screen.findByRole('table')
+
+    fireEvent.click(screen.getByLabelText('ATMを選択'))
+    fireEvent.click(screen.getByLabelText('VISAを選択'))
+    fireEvent.click(screen.getByRole('button', { name: '選択した2件を削除' }))
+
+    await waitFor(() => expect(rules.findAll().map((r) => r.pattern)).toEqual(['AEON']))
   })
 })
