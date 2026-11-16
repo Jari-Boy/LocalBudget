@@ -1,6 +1,7 @@
 /**
  * SqlJsCounterpartyRepository のパターン管理機能
- * (addPattern/findByPattern/findPatternsByCounterparty/updatePattern/deletePattern)の統合テスト。
+ * (addPattern/findPatternsByCounterparty/updatePattern/deletePattern。取引先から見たキーワードルールの表示・編集ビュー)と、
+ * 取引先のルールに対するKeywordRuleRepository.findMatchingの照合の統合テスト。
  * docs/domain/counterparties.md 1.3に定義された、CSV摘要文字列と登録済みパターンとの
  * 部分一致マッチング(LIKE '%pattern%')に加え、計画Issue #85で追加した
  * 取引先ごとのパターン列挙・パターン文字列の更新・削除が期待通り機能することを検証する。
@@ -13,14 +14,17 @@ import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
 import { SqlJsCounterpartyRepository } from './SqlJsCounterpartyRepository'
+import { SqlJsKeywordRuleRepository } from './SqlJsKeywordRuleRepository'
 
 let db: Database
 let repository: SqlJsCounterpartyRepository
+let rules: SqlJsKeywordRuleRepository
 
 beforeEach(async () => {
   db = await createTestDatabase()
   runMigrations(db)
   repository = new SqlJsCounterpartyRepository(db)
+  rules = new SqlJsKeywordRuleRepository(db)
 })
 
 describe('addPattern', () => {
@@ -36,12 +40,12 @@ describe('addPattern', () => {
   })
 })
 
-describe('findByPattern', () => {
+describe('findMatching(キーワードルールの照合)', () => {
   it('登録済みパターンがCSV摘要文字列に部分一致する場合、そのパターンを返す', () => {
     const counterparty = repository.create({ name: 'Amazon' })
     repository.addPattern(counterparty.id, 'AMAZON')
 
-    const matches = repository.findByPattern('AMAZON CO JP TOKYO')
+    const matches = rules.findMatching('AMAZON CO JP TOKYO')
 
     expect(matches).toHaveLength(1)
     expect(matches[0]).toMatchObject({ counterpartyId: counterparty.id, pattern: 'AMAZON' })
@@ -51,7 +55,7 @@ describe('findByPattern', () => {
     const counterparty = repository.create({ name: 'Amazon' })
     repository.addPattern(counterparty.id, 'AMAZON')
 
-    const matches = repository.findByPattern('イオン○○店')
+    const matches = rules.findMatching('イオン○○店')
 
     expect(matches).toEqual([])
   })
@@ -62,7 +66,7 @@ describe('findByPattern', () => {
     repository.addPattern(aeon.id, 'イオン')
     repository.addPattern(aeonMall.id, 'イオンモール')
 
-    const matches = repository.findByPattern('イオンモール○○店')
+    const matches = rules.findMatching('イオンモール○○店')
 
     expect(matches).toHaveLength(2)
   })
@@ -108,14 +112,14 @@ describe('updatePattern', () => {
     expect(updated).toMatchObject({ id: pattern.id, counterpartyId: counterparty.id, pattern: 'AEON MALL' })
   })
 
-  it('更新後にfindByPatternで新しい文字列がマッチする', () => {
+  it('更新後にfindMatchingで新しい文字列がマッチする', () => {
     const counterparty = repository.create({ name: 'イオン' })
     const pattern = repository.addPattern(counterparty.id, 'AEON')
 
     repository.updatePattern(pattern.id, 'AEON MALL')
 
-    expect(repository.findByPattern('AEON MALL TOKYO')).toHaveLength(1)
-    expect(repository.findByPattern('AEON TOKYO')).toEqual([])
+    expect(rules.findMatching('AEON MALL TOKYO')).toHaveLength(1)
+    expect(rules.findMatching('AEON TOKYO')).toEqual([])
   })
 })
 
@@ -129,12 +133,12 @@ describe('deletePattern', () => {
     expect(repository.findPatternsByCounterparty(counterparty.id)).toEqual([])
   })
 
-  it('削除後は該当パターンがfindByPatternで一致しなくなる', () => {
+  it('削除後は該当パターンがfindMatchingで一致しなくなる', () => {
     const counterparty = repository.create({ name: 'イオン' })
     const pattern = repository.addPattern(counterparty.id, 'AEON')
 
     repository.deletePattern(pattern.id)
 
-    expect(repository.findByPattern('AEON TOKYO')).toEqual([])
+    expect(rules.findMatching('AEON TOKYO')).toEqual([])
   })
 })

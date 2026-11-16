@@ -92,15 +92,6 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
     return this.findPatternById(lastInsertRowId(this.db))!
   }
 
-  findByPattern(text: string): CounterpartyPattern[] {
-    const [result] = this.db.exec(
-      `SELECT * FROM keyword_rules WHERE ? LIKE '%' || pattern || '%' ORDER BY id`,
-      [text],
-    )
-    if (!result) return []
-    return result.values.map((values) => mapRowToCounterpartyPattern(result.columns, values))
-  }
-
   findPatternsByCounterparty(counterpartyId: number): CounterpartyPattern[] {
     const [result] = this.db.exec(
       'SELECT * FROM keyword_rules WHERE counterparty_id = ? ORDER BY id',

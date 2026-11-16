@@ -3,7 +3,7 @@
  * sql.js(SQLite WASM)をNode上で実際に動かし、docs/domain/counterparties.md・
  * docs/schema/counterparties.sql に定義された取引先のライフサイクル(作成・参照・
  * 更新・削除・非アクティブ化)と、DDL側のトリガーが期待通り機能することを検証する。
- * パターン管理(addPattern/findByPattern)は SqlJsCounterpartyRepository.pattern.test.ts、
+ * パターン管理(addPattern等)は SqlJsCounterpartyRepository.pattern.test.ts、
  * 統合(merge)は SqlJsCounterpartyRepository.merge.test.ts で扱う。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */

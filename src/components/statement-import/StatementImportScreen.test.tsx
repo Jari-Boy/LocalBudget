@@ -29,6 +29,7 @@ import { SqlJsExternalTransactionRefRepository } from '../../infrastructure/db/S
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
 import { SqlJsImportMappingDefinitionRepository } from '../../infrastructure/db/SqlJsImportMappingDefinitionRepository'
 import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJournalEntryRepository'
+import { SqlJsKeywordRuleRepository } from '../../infrastructure/db/SqlJsKeywordRuleRepository'
 import { SqlJsProjectGroupRepository } from '../../infrastructure/db/SqlJsProjectGroupRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
@@ -39,6 +40,7 @@ let db: Database
 let accounts: SqlJsAccountRepository
 let entries: SqlJsJournalEntryRepository
 let counterparties: SqlJsCounterpartyRepository
+let keywordRules: SqlJsKeywordRuleRepository
 let projects: SqlJsProjectRepository
 let mappings: SqlJsImportMappingDefinitionRepository
 let batches: SqlJsSettlementBatchRepository
@@ -62,6 +64,7 @@ beforeEach(async () => {
   accounts = new SqlJsAccountRepository(db)
   entries = new SqlJsJournalEntryRepository(db)
   counterparties = new SqlJsCounterpartyRepository(db)
+  keywordRules = new SqlJsKeywordRuleRepository(db)
   projects = new SqlJsProjectRepository(db)
   mappings = new SqlJsImportMappingDefinitionRepository(db)
   batches = new SqlJsSettlementBatchRepository(db)
@@ -88,6 +91,7 @@ function renderScreen(
         externalTransactionRefRepository={new SqlJsExternalTransactionRefRepository(db)}
         journalEntryRepository={entries}
         counterpartyRepository={counterpartyRepository}
+        keywordRuleRepository={keywordRules}
         counterpartyGroupRepository={new SqlJsCounterpartyGroupRepository(db)}
         projectRepository={projects}
         projectGroupRepository={new SqlJsProjectGroupRepository(db)}
@@ -186,6 +190,47 @@ describe('StatementImportScreen', () => {
     expect(await row.findByRole('button', { name: /^相手科目: 食費/ })).toBeInTheDocument()
     expect(row.getByRole('button', { name: /^取引先: セブン/ })).toBeInTheDocument()
     expect(row.getByText('新規')).toBeInTheDocument()
+  })
+
+  it('資産・負債の科目を指すキーワードルールに一致した行は、相手科目がその科目で初期入力される(計画Issue #219)', async () => {
+    makeMapping()
+    const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
+    keywordRules.create({ pattern: 'ATM', accountId: cash.id })
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,ATM引出 新宿,-10000,90000
+`)
+
+    const row = rowOf(/ATM引出/)
+    expect(await row.findByRole('button', { name: /^相手科目: 現金/ })).toBeInTheDocument()
+  })
+
+  it('別々の科目に解決される複数のキーワードルールに一致した行は、自動確定せず相手科目を空のままにする(計画Issue #219)', async () => {
+    makeMapping()
+    const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const card = accounts.create({ category: 'liability', name: '未払金', isReconcilable: false })
+    keywordRules.create({ pattern: 'ATM', accountId: cash.id })
+    keywordRules.create({ pattern: 'VISA', accountId: card.id })
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,ATM VISA,-10000,90000
+`)
+
+    expect(await rowOf(/ATM VISA/).findByText('要確認')).toBeInTheDocument()
+  })
+
+  it('取引先を付けず資産・負債の相手科目を手で選んだ行は、確定時にその摘要を科目のキーワードルールとして登録する(計画Issue #219)', async () => {
+    makeMapping()
+    const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,ATM引出,-10000,90000
+`)
+    pick(rowOf(/ATM引出/), '相手科目', '現金')
+
+    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+    await screen.findByText(/確定しました/)
+
+    expect(keywordRules.findByAccount(cash.id).map((r) => r.pattern)).toEqual(['ATM引出'])
   })
 
   it('重複の行は入力欄も選択も出ず「対象外」と表示され、「取り込む」で新規に戻せる', async () => {
@@ -568,7 +613,7 @@ describe('StatementImportScreen', () => {
 
     expect(await screen.findByText(/キーワードを1件登録しました/)).toBeInTheDocument()
     // 空白を除いた形で保存するので、次回以降の取引先の推定(正規化した摘要への部分一致)に当たる
-    expect(counterparties.findByPattern('スーパー新宿店').map((p) => p.counterpartyId)).toEqual([cp.id])
+    expect(keywordRules.findMatching('スーパー新宿店').map((p) => p.counterpartyId)).toEqual([cp.id])
   })
 
   describe('取引先の設定(計画Issue #207)', () => {

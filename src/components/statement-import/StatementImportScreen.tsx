@@ -4,7 +4,7 @@ import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { AccountGroupRepository } from '../../domain/account-group/AccountGroupRepository'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
-import type { Counterparty, CounterpartyPattern } from '../../domain/counterparty/Counterparty'
+import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { CounterpartyRepository } from '../../domain/counterparty/CounterpartyRepository'
 import type { CounterpartyGroup } from '../../domain/counterparty-group/CounterpartyGroup'
 import type { CounterpartyGroupRepository } from '../../domain/counterparty-group/CounterpartyGroupRepository'
@@ -31,7 +31,10 @@ import {
 } from '../../domain/statement-import/buildMultiFileStatementImportReview'
 import { collectUnreferencedTransactions } from '../../domain/statement-import/collectUnreferencedTransactions'
 import type { ApproximateDuplicateSearchOptions } from '../../domain/statement-import/duplicateDetection'
-import { estimateCounterparty, normalizeDescriptionForMatching, type CounterpartyPatternLookup } from '../../domain/statement-import/estimateCounterparty'
+import { normalizeDescriptionForMatching } from '../../domain/statement-import/estimateCounterparty'
+import { estimateKeywordRule, type KeywordRuleLookup } from '../../domain/statement-import/estimateKeywordRule'
+import type { KeywordRule } from '../../domain/keyword-rule/KeywordRule'
+import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
 import { resolveMultiFileMappingCandidates, type MultiFileMappingMatch } from '../../domain/statement-import/resolveMultiFileMappingCandidates'
 import { suggestCounterpartyAccount, type CounterpartyLookup } from '../../domain/statement-import/suggestCounterpartyAccount'
 import { runInHistoryGroup, type HistoryGroupApi } from '../../infrastructure/history/historyGroupRunner'
@@ -99,7 +102,6 @@ export interface StatementImportScreenProps {
     Pick<
       CounterpartyRepository,
       | 'findAll'
-      | 'findByPattern'
       | 'addPattern'
       | 'create'
       | 'update'
@@ -108,6 +110,8 @@ export interface StatementImportScreenProps {
       | 'deletePattern'
     >
   >
+  /** 摘要のキーワードルール(計画Issue #219)。取引先・相手科目の推定と、確定時の科目ルールの学習に使う */
+  keywordRuleRepository: MaybeAsync<Pick<KeywordRuleRepository, 'findMatching' | 'findByAccount' | 'create'>>
   counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll' | 'create'>>
   projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll' | 'create'>>
   projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll' | 'create'>>
@@ -202,6 +206,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     journalEntryRepository,
     accountBalanceRecordRepository,
     counterpartyRepository,
+    keywordRuleRepository,
     counterpartyGroupRepository,
     projectRepository,
     projectGroupRepository,
@@ -648,19 +653,23 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     accounts: readonly Account[],
   ): Promise<ImportRowState[]> {
     const normalizedList = [...new Set(review.records.map((r) => normalizeDescriptionForMatching(r.record.description)))]
-    const patternsByText = new Map<string, CounterpartyPattern[]>(
+    const rulesByText = new Map<string, KeywordRule[]>(
       await Promise.all(
-        normalizedList.map(async (text) => [text, await Promise.resolve(counterpartyRepository.findByPattern(text))] as const),
+        normalizedList.map(async (text) => [text, await Promise.resolve(keywordRuleRepository.findMatching(text))] as const),
       ),
     )
-    const patternLookup: CounterpartyPatternLookup = { findByPattern: (text) => patternsByText.get(text) ?? [] }
+    const ruleLookup: KeywordRuleLookup = { findMatching: (text) => rulesByText.get(text) ?? [] }
     const lookup: CounterpartyLookup = { findById: (id) => counterparties.find((c) => c.id === id) ?? null }
     return review.records.map((r) => {
-      const counterpartyId = estimateCounterparty(r.record.description, patternLookup)
-      const counterAccountId = suggestCounterpartyAccount(counterpartyId, lookup)
+      const estimate = estimateKeywordRule(r.record.description, ruleLookup)
+      const counterpartyId = estimate.counterpartyId
+      // 相手科目は、ルールが科目を持てばその科目、なければ取引先の既定の科目(docs/domain/statement-import.md 1.5)
+      const counterAccountId = estimate.accountId ?? suggestCounterpartyAccount(counterpartyId, lookup)
       const candidates = [
         ...new Set(
-          (patternsByText.get(normalizeDescriptionForMatching(r.record.description)) ?? []).map((p) => p.counterpartyId),
+          (rulesByText.get(normalizeDescriptionForMatching(r.record.description)) ?? []).flatMap((rule) =>
+            rule.counterpartyId === null ? [] : [rule.counterpartyId],
+          ),
         ),
       ]
       return createInitialRowState({
@@ -1056,7 +1065,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         succeeded.add(index)
 
         // 摘要の提案(「取引先の設定」で「新規」と出ているキーワード)は、この行を確定したときに登録する(計画Issue #207)。
-        // パターンは正規化して保存する。取引先の推定(findByPattern)は正規化した摘要にSQLのLIKEで照合するため、
+        // パターンは正規化して保存する。取引先の推定(KeywordRuleRepository.findMatching)は正規化した摘要にSQLのLIKEで照合するため、
         // 空白や小文字を含んだまま保存すると、次回以降の推定に当たらない。
         // 摘要だけでは取引先が決まらなかった行(既定でオフ)や、消した提案は登録しない
         if (shouldOfferLearn(records[index], state) && state.counterpartyId !== null && state.learnOn) {
@@ -1067,6 +1076,23 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               learned++
             } catch {
               // 同じキーワードが登録済みなど。確定自体は成功しているので無視する
+            }
+          }
+        }
+
+        // 取引先を持てない(資産・負債)科目を相手科目に手で選んだ行は、摘要をその科目のキーワードルールとして
+        // 学習する(次回から摘要だけで相手科目が推定される。計画Issue #219、docs/decisions.md 2026-11-16 決定5)
+        if (state.counterpartyId === null && state.counterAccountTouched && state.counterAccountId !== null) {
+          const counterAccount = accountList.find((a) => a.id === state.counterAccountId)
+          const keyword = keywordOf(record.description)
+          if ((counterAccount?.category === 'asset' || counterAccount?.category === 'liability') && keyword !== '') {
+            try {
+              const existing = await Promise.resolve(keywordRuleRepository.findByAccount(counterAccount.id))
+              if (!existing.some((rule) => rule.pattern === keyword)) {
+                await Promise.resolve(keywordRuleRepository.create({ pattern: keyword, accountId: counterAccount.id }))
+              }
+            } catch {
+              // 確定自体は成功しているので、ルールの登録に失敗しても無視する
             }
           }
         }

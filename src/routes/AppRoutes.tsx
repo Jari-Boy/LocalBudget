@@ -5,6 +5,7 @@ import type { AccountRepository } from '../domain/account/AccountRepository'
 import type { AccountGroupRepository } from '../domain/account-group/AccountGroupRepository'
 import type { BudgetRepository } from '../domain/budget/BudgetRepository'
 import type { RecurringTransactionRuleRepository } from '../domain/recurring-transaction/RecurringTransactionRuleRepository'
+import type { KeywordRuleRepository } from '../domain/keyword-rule/KeywordRuleRepository'
 import type { CounterpartyRepository } from '../domain/counterparty/CounterpartyRepository'
 import type { CounterpartyGroupRepository } from '../domain/counterparty-group/CounterpartyGroupRepository'
 import type { JournalEntryRepository } from '../domain/journal/JournalEntryRepository'
@@ -122,6 +123,7 @@ export function AppRoutes() {
     settlementBatchRepository,
     counterpartyRepository,
     counterpartyGroupRepository,
+    keywordRuleRepository,
     projectGroupRepository,
     journalEntryDraftRepository,
     importMappingDefinitionRepository,
@@ -152,6 +154,7 @@ export function AppRoutes() {
       counterpartyRepository: client.counterparty as unknown as Comlink.Remote<CounterpartyRepository>,
       counterpartyGroupRepository:
         client.counterpartyGroup as unknown as Comlink.Remote<CounterpartyGroupRepository>,
+      keywordRuleRepository: client.keywordRule as unknown as Comlink.Remote<KeywordRuleRepository>,
       projectGroupRepository: client.projectGroup as unknown as Comlink.Remote<ProjectGroupRepository>,
       journalEntryDraftRepository:
         client.journalEntryDraft as unknown as Comlink.Remote<JournalEntryDraftRpcApi>,
@@ -329,6 +332,7 @@ export function AppRoutes() {
             externalTransactionRefRepository={externalTransactionRefRepository}
             journalEntryRepository={journalEntryRepository}
             counterpartyRepository={counterpartyRepository}
+            keywordRuleRepository={keywordRuleRepository}
             counterpartyGroupRepository={counterpartyGroupRepository}
             projectRepository={projectRepository}
             projectGroupRepository={projectGroupRepository}

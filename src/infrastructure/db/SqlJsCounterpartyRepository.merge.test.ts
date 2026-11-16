@@ -12,6 +12,7 @@ import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { runMigrations } from './migrations'
 import { SqlJsCounterpartyRepository } from './SqlJsCounterpartyRepository'
+import { SqlJsKeywordRuleRepository } from './SqlJsKeywordRuleRepository'
 
 let db: Database
 let repository: SqlJsCounterpartyRepository
@@ -43,7 +44,7 @@ describe('merge', () => {
 
     repository.merge(target.id, [source.id])
 
-    const matches = repository.findByPattern('LAWSON NIHONBASHI TEN')
+    const matches = new SqlJsKeywordRuleRepository(db).findMatching('LAWSON NIHONBASHI TEN')
     expect(matches).toHaveLength(1)
     expect(matches[0].counterpartyId).toBe(target.id)
   })

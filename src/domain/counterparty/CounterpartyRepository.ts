@@ -15,11 +15,12 @@ export interface CounterpartyRepository {
   deactivate(id: number): Counterparty
   activate(id: number): Counterparty
 
-  /** CSV摘要文字列とのマッチング用パターンを取引先に追加する(docs/domain/counterparties.md 1.3参照) */
+  /**
+   * 取引先のキーワード(パターン)の追加・列挙・更新・削除は、キーワードルール(keyword_rules)のうち
+   * この取引先に紐づく行の表示・編集ビューである。摘要との照合はKeywordRuleRepository.findMatchingが担う
+   * (計画Issue #219、docs/decisions.md 2026-11-16)。CSV摘要文字列とのマッチング用パターンを取引先に追加する
+   */
   addPattern(counterpartyId: number, pattern: string): CounterpartyPattern
-
-  /** textに部分一致(LIKE '%pattern%')するパターンを検索する(docs/domain/counterparties.md 1.3参照) */
-  findByPattern(text: string): CounterpartyPattern[]
 
   /** 指定した取引先に紐づく全パターンを列挙する(取引先管理画面でのパターン一覧表示用) */
   findPatternsByCounterparty(counterpartyId: number): CounterpartyPattern[]
