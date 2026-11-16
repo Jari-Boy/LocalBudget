@@ -6,7 +6,8 @@ CREATE TABLE keyword_rules (
   id               INTEGER PRIMARY KEY,
   pattern          TEXT NOT NULL,
   counterparty_id  INTEGER REFERENCES counterparties(id) ON DELETE CASCADE,
-  account_id       INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+  -- 科目の削除時の扱いは、下の prepare_keyword_rules_on_account_delete トリガーで決める(決定16)
+  account_id       INTEGER REFERENCES accounts(id),
   created_at       TEXT NOT NULL DEFAULT (datetime('now')),
   -- 取引先か相手科目の少なくとも一方は必須
   CHECK (counterparty_id IS NOT NULL OR account_id IS NOT NULL)
@@ -31,4 +32,14 @@ WHEN NEW.counterparty_id IS NOT NULL AND NEW.account_id IS NOT NULL
   AND (SELECT category FROM accounts WHERE id = NEW.account_id) NOT IN ('revenue', 'expense')
 BEGIN
   SELECT RAISE(ABORT, 'keyword rule with counterparty requires a revenue/expense account');
+END;
+
+-- 科目を物理削除するとき: 科目だけのルールはその科目と一緒に消し、取引先付きのルールは消さずに科目だけを外す
+-- (取引先の推定を失わない。旧 counterparties.default_account_id の ON DELETE SET NULL と同じ考え方。計画Issue #219 決定16)。
+-- 外部キー(account_id)は、このトリガーが先に片付けるので参照が残らない
+CREATE TRIGGER prepare_keyword_rules_on_account_delete
+BEFORE DELETE ON accounts
+BEGIN
+  DELETE FROM keyword_rules WHERE account_id = OLD.id AND counterparty_id IS NULL;
+  UPDATE keyword_rules SET account_id = NULL WHERE account_id = OLD.id;
 END;

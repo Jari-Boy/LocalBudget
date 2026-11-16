@@ -19,6 +19,8 @@ async function createLegacyDatabase(): Promise<{ db: Database; aeonId: number }>
   const db = await createTestDatabase()
   runMigrations(db)
   const aeonId = new SqlJsCounterpartyRepository(db).create({ name: 'イオン' }).id
+  // 旧形式には、キーワードルールの表も、科目削除時のトリガー(決定16)も無い
+  db.run('DROP TRIGGER prepare_keyword_rules_on_account_delete')
   db.run('DROP TABLE keyword_rules')
   db.run(`CREATE TABLE counterparty_patterns (
     id INTEGER PRIMARY KEY,

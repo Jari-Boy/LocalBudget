@@ -108,7 +108,7 @@
 | 非アクティブ化 | 任意 | 過去集計はそのまま表示、新規仕訳では選択不可。 |
 
 > **なぜ予算・定期取引ルールも削除条件に含めるか**
-> `budgets.account_id`・`recurring_transaction_rules.debit_account_id`/`credit_account_id`はいずれも`accounts`への参照を持つが、`ON DELETE`アクションを持たないFKである。これらを削除条件でチェックせずに科目を物理削除できてしまうと、予算や定期取引ルールが存在しない科目を指す壊れた参照を残すことになる。一方[counterparties.md 2.1](./counterparties.md#21-フィールド定義)の`keyword_rules.account_id`(旧`default_account_id`、計画Issue #219で廃止)は強制力のない初期値に過ぎず、科目の削除と一緒にルールも消えるため([counterparties.md 1.4](./counterparties.md#14-勘定科目のデフォルトサジェスト)参照)、削除条件には含めず`ON DELETE SET NULL`で対応する([counterparties.md 2.2 DDL](./counterparties.md#22-ddl)参照)。両者の違いは、参照先の科目IDが「その値でなければ意味をなさない構造的な参照」か「後から変更されても実害のない初期値」かにある。
+> `budgets.account_id`・`recurring_transaction_rules.debit_account_id`/`credit_account_id`はいずれも`accounts`への参照を持つが、`ON DELETE`アクションを持たないFKである。これらを削除条件でチェックせずに科目を物理削除できてしまうと、予算や定期取引ルールが存在しない科目を指す壊れた参照を残すことになる。一方[counterparties.md 2.1](./counterparties.md#21-フィールド定義)の`keyword_rules.account_id`(摘要から相手科目を推定するキーワードの科目。旧`counterparties.default_account_id`は計画Issue #219で廃止)は強制力のない推定の材料に過ぎないため、削除条件には含めない。科目を物理削除するときは、DDLのトリガーで、科目だけのルールはその科目と一緒に消し、取引先付きのルールは消さずに科目だけを外す(取引先の推定を失わない。docs/decisions.md 2026-11-16 決定16)。
 
 ### 2.2 過去仕訳の付け替え
 

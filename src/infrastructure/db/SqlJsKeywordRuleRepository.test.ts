@@ -109,6 +109,37 @@ describe('delete', () => {
   })
 })
 
+describe('科目の削除(計画Issue #219 決定16)', () => {
+  it('科目だけのルールは、その科目と一緒に消える', () => {
+    const cash = account('現金', 'asset')
+    const rule = rules.create({ pattern: 'ATM', accountId: cash.id })
+
+    accounts.delete(cash.id)
+
+    expect(rules.findById(rule.id)).toBeNull()
+  })
+
+  it('取引先付きのルールは消えず、科目だけが外れて取引先のキーワードとして残る(取引先の推定を失わない)', () => {
+    const aeon = counterparties.create({ name: 'イオン' })
+    const food = account('食費', 'expense')
+    const rule = rules.create({ pattern: 'AEON', counterpartyId: aeon.id, accountId: food.id })
+
+    accounts.delete(food.id)
+
+    expect(rules.findById(rule.id)).toMatchObject({ pattern: 'AEON', counterpartyId: aeon.id, accountId: null })
+  })
+
+  it('ほかの科目のルールは変わらない', () => {
+    const cash = account('現金', 'asset')
+    const card = account('未払金', 'liability')
+    const kept = rules.create({ pattern: 'VISA', accountId: card.id })
+
+    accounts.delete(cash.id)
+
+    expect(rules.findById(kept.id)).toMatchObject({ accountId: card.id })
+  })
+})
+
 describe('findAll / findByCounterparty / findByAccount', () => {
   it('全件・取引先別・科目別に列挙できる', () => {
     const aeon = counterparties.create({ name: 'イオン' })
