@@ -43,6 +43,26 @@ describe('createOnboardingApi', () => {
     expect(api.getStatus()).toEqual({ completed: false })
   })
 
+  it('completeのあと、getChecklistは表示する状態と各項目の達成を返し、dismissChecklistで消える', async () => {
+    const { api } = await setup()
+    api.complete({ memberName: '太郎', template: 'standard' })
+
+    expect(api.getChecklist()).toMatchObject({ visible: true, memberName: '太郎' })
+
+    api.dismissChecklist()
+
+    expect(api.getChecklist().visible).toBe(false)
+  })
+
+  it('markBackupDoneで、チェックリストのバックアップの項目が済みになる', async () => {
+    const { api } = await setup()
+    api.complete({ memberName: '太郎', template: 'standard' })
+
+    api.markBackupDone()
+
+    expect(api.getChecklist().steps.backup).toBe(true)
+  })
+
   it('skipは名前を変えず、完了済みにする', async () => {
     const { db, api } = await setup()
 

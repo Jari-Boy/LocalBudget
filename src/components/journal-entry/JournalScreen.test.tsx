@@ -154,6 +154,8 @@ function setup(
     drafts: JournalEntryDraft[]
     initialFilter: JournalEntryFilter
     rulesPanel: ReactNode
+    /** 見出しとタブの間に出す案内(はじめのチェックリスト、計画Issue #177) */
+    banner: ReactNode
     /** 渡すと「テンプレートから起票」が使える(計画Issue #201) */
     templates: JournalTemplate[]
     templateGroups: JournalTemplateGroup[]
@@ -316,6 +318,7 @@ function setup(
     onOpenAccountReconciliation: overrides.onOpenAccountReconciliation,
     initialFilter: overrides.initialFilter,
     rulesPanel: overrides.rulesPanel,
+    banner: overrides.banner,
     templatesPanel: overrides.templatesPanel,
     journalTemplateRepository: overrides.templates === undefined ? undefined : { findAll: vi.fn(async () => [...overrides.templates!]) },
     journalTemplateGroupRepository:
@@ -459,6 +462,15 @@ describe('JournalScreen', () => {
 
     expect(await screen.findByText('ルールの管理画面')).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '仕訳の詳細' })).not.toBeInTheDocument()
+  })
+
+  it('banner を渡すと、見出しの下・タブの上に出す(はじめのチェックリスト、計画Issue #177)。渡さなければ何も出さない', async () => {
+    setup({ banner: <p>はじめのチェックリスト</p> })
+    await ready()
+
+    const banner = screen.getByText('はじめのチェックリスト')
+    const tablist = screen.getByRole('tablist', { name: '仕訳の種類' })
+    expect(banner.compareDocumentPosition(tablist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('rulesPanel を渡さないときは、定期仕訳のタブを出さない', async () => {

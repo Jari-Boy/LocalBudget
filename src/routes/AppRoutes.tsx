@@ -38,6 +38,8 @@ import { RuleMasterTab } from '../components/master/RuleMasterTab'
 import { JournalTemplateTab } from '../components/journal-template/JournalTemplateTab'
 import { HistoryScreen } from '../components/history/HistoryScreen'
 import { GlossaryScreen } from '../components/help/GlossaryScreen'
+import { OnboardingChecklist } from '../components/onboarding/OnboardingChecklist'
+import type { OnboardingRpcApi } from '../infrastructure/rpc/createOnboardingApi'
 import { SettingsScreen, type BackupApi } from '../components/settings/SettingsScreen'
 import { ExternalChangeBanner } from '../components/settings/ExternalChangeBanner'
 import { ReadOnlyBanner } from '../components/settings/ReadOnlyBanner'
@@ -131,6 +133,7 @@ export function AppRoutes() {
     backupApi,
     storageApi,
     historyApi,
+    onboardingApi,
   } = useMemo(
     () => ({
       accountRepository: client.account as unknown as Comlink.Remote<AccountRepository>,
@@ -167,6 +170,7 @@ export function AppRoutes() {
       backupApi: client.backup as unknown as Comlink.Remote<BackupApi>,
       storageApi: client.storage as unknown as Comlink.Remote<StorageApi>,
       historyApi: client.history as unknown as Comlink.Remote<HistoryRpcApi>,
+      onboardingApi: client.onboarding as unknown as Comlink.Remote<OnboardingRpcApi>,
     }),
     [client],
   )
@@ -212,6 +216,9 @@ export function AppRoutes() {
       settlementBatchRepository={settlementBatchRepository}
     />
   )
+
+  /** はじめのチェックリスト(計画Issue #177)。初回セットアップを済ませた利用者の仕訳画面の見出しの下に出す */
+  const checklist = <OnboardingChecklist api={onboardingApi} onOpen={(path) => navigate(path)} />
 
   return (
     <>
@@ -350,6 +357,7 @@ export function AppRoutes() {
             recurringTransactionProposalApi={recurringTransactionProposalApi}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
             rulesPanel={rulesPanel}
+            banner={checklist}
             templatesPanel={templatesPanel}
             journalTemplateRepository={journalTemplateRepository}
             journalTemplateGroupRepository={journalTemplateGroupRepository}
@@ -376,6 +384,7 @@ export function AppRoutes() {
             recurringTransactionProposalApi={recurringTransactionProposalApi}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
             rulesPanel={rulesPanel}
+            banner={checklist}
             templatesPanel={templatesPanel}
             journalTemplateRepository={journalTemplateRepository}
             journalTemplateGroupRepository={journalTemplateGroupRepository}

@@ -147,6 +147,8 @@ export interface JournalScreenProps {
    * 受け持つため、呼び出し側(ルート)が組み立てて渡す。省略時はタブを出さない
    */
   rulesPanel?: React.ReactNode
+  /** 見出し(と操作ボタン)の下、タブの上に出す案内(はじめのチェックリスト、計画Issue #177)。省略時は何も出さない */
+  banner?: React.ReactNode
   /**
    * 「テンプレート」タブ(仕訳テンプレートの管理、計画Issue #201)の中身。一覧・作成・編集は専用の画面部品が
    * 受け持つため、呼び出し側(ルート)が組み立てて渡す。省略時はタブを出さない
@@ -1189,6 +1191,8 @@ export function JournalScreen(props: JournalScreenProps) {
           </button>
         </div>
       </div>
+
+      {props.banner}
 
       <div role="tablist" aria-label="仕訳の種類" className="journal-screen__tabs">
         {tabs.map((item) => (

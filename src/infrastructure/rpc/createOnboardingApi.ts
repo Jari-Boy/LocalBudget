@@ -1,9 +1,13 @@
 import type { Database } from 'sql.js'
 import {
   completeOnboarding,
+  dismissOnboardingChecklist,
+  getOnboardingChecklist,
   isOnboardingCompleted,
+  markChecklistBackupDone,
   skipOnboarding,
   type CompleteOnboardingInput,
+  type OnboardingChecklist,
 } from '../db/onboarding'
 
 export interface OnboardingStatus {
@@ -20,6 +24,12 @@ export interface OnboardingRpcApi {
   getStatus(): OnboardingStatus
   complete(input: CompleteOnboardingInput): void
   skip(): void
+  /** 「はじめのチェックリスト」の表示と各項目の達成(DBの状態から求める) */
+  getChecklist(): OnboardingChecklist
+  /** チェックリストを閉じる */
+  dismissChecklist(): void
+  /** チェックリストの「バックアップを1度取る」を、利用者が済みにする */
+  markBackupDone(): void
 }
 
 export function createOnboardingApi(db: Database): OnboardingRpcApi {
@@ -27,5 +37,8 @@ export function createOnboardingApi(db: Database): OnboardingRpcApi {
     getStatus: () => ({ completed: isOnboardingCompleted(db) }),
     complete: (input) => completeOnboarding(db, input),
     skip: () => skipOnboarding(db),
+    getChecklist: () => getOnboardingChecklist(db),
+    dismissChecklist: () => dismissOnboardingChecklist(db),
+    markBackupDone: () => markChecklistBackupDone(db),
   }
 }

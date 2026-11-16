@@ -14,6 +14,11 @@ import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository
 /** seed_markersに残す、初回セットアップ(オンボーディング)が済んだことの印の名前(計画Issue #177) */
 export const ONBOARDING_MARKER = 'onboarding_completed'
 
+/** 初回セットアップを済ませた利用者に「はじめのチェックリスト」を出すことの印(計画Issue #177)。閉じる・全項目の達成で消す */
+export const ONBOARDING_CHECKLIST_MARKER = 'onboarding_checklist'
+/** チェックリストの「バックアップを1度取る」を、利用者が済みにしたことの印 */
+const ONBOARDING_BACKUP_MARKER = 'onboarding_backup_done'
+
 /** 「現金」が所属する標準グループの名前(seedStandardAccountGroups) */
 const CASH_GROUP_NAME = '現金・電子マネー'
 
@@ -29,9 +34,19 @@ export function isOnboardingCompleted(db: Database): boolean {
   return marked !== undefined
 }
 
-function markCompleted(db: Database): void {
+function hasMarker(db: Database, name: string): boolean {
   db.run(seedMarkersSql)
-  db.run('INSERT OR IGNORE INTO seed_markers (name) VALUES (?)', [ONBOARDING_MARKER])
+  const [marked] = db.exec('SELECT 1 FROM seed_markers WHERE name = ?', [name])
+  return marked !== undefined
+}
+
+function putMarker(db: Database, name: string): void {
+  db.run(seedMarkersSql)
+  db.run('INSERT OR IGNORE INTO seed_markers (name) VALUES (?)', [name])
+}
+
+function markCompleted(db: Database): void {
+  putMarker(db, ONBOARDING_MARKER)
 }
 
 /**
@@ -79,6 +94,8 @@ export function completeOnboarding(db: Database, input: CompleteOnboardingInput)
   applyMemberName(db, memberName)
   applyTemplate(db, input.template)
   ensureCashAccount(db)
+  // チェックリストの印は、完了の印より先に付ける(途中で失敗しても、完了の印が無ければやり直せる)
+  putMarker(db, ONBOARDING_CHECKLIST_MARKER)
   markCompleted(db)
 }
 
@@ -124,4 +141,79 @@ function ensureCashAccount(db: Database): void {
     hasExternalStatement: false,
     accountGroupId: group?.id ?? null,
   })
+}
+
+export interface OnboardingChecklist {
+  /** 表示するか。セットアップを済ませた利用者のうち、閉じていない・必須の項目が残っている間だけtrue */
+  visible: boolean
+  /** 最初の世帯メンバーの名前(「いまは○○の1名です」の表示用) */
+  memberName: string | null
+  /** 入った収益・費用の科目の件数(システムが常に入れる雑収入・雑損失・残高調整は除く) */
+  accountCounts: { revenue: number; expense: number }
+  steps: {
+    /** 「現金」以外の資産・負債の科目(口座・クレジットカード)を登録した */
+    registerAccount: boolean
+    /** 個人の世帯メンバーを追加した(任意の項目) */
+    addMember: boolean
+    /** 手入力・明細取込などの仕訳を記録した(口座の最初の残高から自動で入る仕訳は数えない) */
+    firstEntry: boolean
+    /** バックアップを取ったと、利用者が済みにした */
+    backup: boolean
+  }
+}
+
+/** 自動で入る仕訳(口座の最初の残高と残高調整)。「最初の仕訳を記録」には数えない */
+const AUTOMATIC_SOURCE_TYPES = ['initial_balance', 'balance_adjustment']
+
+/**
+ * 「はじめのチェックリスト」の表示と各項目の達成を、DBの状態から求める(計画Issue #177、承認済みモックアップ③)。
+ * 表示するのは、初回セットアップを済ませた(スキップしていない)利用者が、まだ閉じておらず、必須の項目
+ * (口座の科目の登録・最初の仕訳・バックアップ)が残っている間だけ。世帯メンバーの追加は任意なので、
+ * 済んでいなくても表示の判定には使わない。
+ */
+export function getOnboardingChecklist(db: Database): OnboardingChecklist {
+  const accounts = new SqlJsAccountRepository(db).findAll()
+  const members = new SqlJsHouseholdMemberRepository(db).findAll()
+
+  const registerAccount = accounts.some(
+    (account) =>
+      !account.isSystemManaged &&
+      (account.category === 'asset' || account.category === 'liability') &&
+      account.name !== CASH_ACCOUNT_NAME,
+  )
+  const individuals = members.filter((member) => !member.isGroup)
+  const placeholders = AUTOMATIC_SOURCE_TYPES.map(() => '?').join(', ')
+  const [entry] = db.exec(
+    `SELECT 1 FROM journal_entries WHERE source_type NOT IN (${placeholders}) LIMIT 1`,
+    AUTOMATIC_SOURCE_TYPES,
+  )
+  const steps = {
+    registerAccount,
+    addMember: individuals.length > 1,
+    firstEntry: entry !== undefined,
+    backup: hasMarker(db, ONBOARDING_BACKUP_MARKER),
+  }
+  const countOf = (category: 'revenue' | 'expense') =>
+    accounts.filter(
+      (account) => account.category === category && !PROTECTED_REVENUE_EXPENSE_NAMES.includes(account.name) && account.name !== '残高調整',
+    ).length
+
+  return {
+    visible:
+      hasMarker(db, ONBOARDING_CHECKLIST_MARKER) && !(steps.registerAccount && steps.firstEntry && steps.backup),
+    memberName: individuals[0]?.name ?? null,
+    accountCounts: { revenue: countOf('revenue'), expense: countOf('expense') },
+    steps,
+  }
+}
+
+/** 「チェックリストを閉じる」。以後は表示しない。 */
+export function dismissOnboardingChecklist(db: Database): void {
+  db.run(seedMarkersSql)
+  db.run('DELETE FROM seed_markers WHERE name = ?', [ONBOARDING_CHECKLIST_MARKER])
+}
+
+/** 「バックアップを1度取る」を、利用者が済みにする。 */
+export function markChecklistBackupDone(db: Database): void {
+  putMarker(db, ONBOARDING_BACKUP_MARKER)
 }
