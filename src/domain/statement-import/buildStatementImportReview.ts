@@ -4,7 +4,7 @@ import { MappingColumnNotFoundError } from './MappingColumnNotFoundError'
 import { previewMappingRows, type MappingPreviewRow } from './previewMappingRows'
 import { resolveExternalIds } from './resolveExternalIds'
 import {
-  findApproximateDuplicateCandidates,
+  assignApproximateDuplicateCandidates,
   partitionByExternalIdDuplicate,
   type ApproximateDuplicateSearchOptions,
   type ExistingTransactionSummary,
@@ -65,15 +65,17 @@ export function buildStatementImportReview(
   const { duplicateIndices } = partitionByExternalIdDuplicate(externalIds, existingExternalIds)
   const duplicateIndexSet = new Set(duplicateIndices)
 
+  // 完全一致の重複の行は確定版候補を持たない。1件の既存明細は最も近い1行にだけ紐づける
+  const candidates = assignApproximateDuplicateCandidates(
+    records.map((record, index) => (duplicateIndexSet.has(index) ? null : record)),
+    existingTransactions,
+    approximateDuplicateOptions,
+  )
   const reviewRecords = records.map((record, index) => ({
     record,
     externalId: externalIds[index],
     isExactDuplicate: duplicateIndexSet.has(index),
-    approximateCandidates: findApproximateDuplicateCandidates(
-      record,
-      existingTransactions,
-      approximateDuplicateOptions,
-    ),
+    approximateCandidates: candidates[index],
   }))
 
   return {

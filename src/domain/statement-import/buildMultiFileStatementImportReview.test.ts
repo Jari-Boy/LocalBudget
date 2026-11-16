@@ -37,7 +37,7 @@ function definition(): ImportMappingDefinition {
 }
 
 const HEADER = ['日付', '摘要', '金額']
-const OPTIONS = { maxDateDiffDays: 3, maxAmountDiff: 100 }
+const OPTIONS = { maxDateDiffDays: 3, maxAmountDiffRate: 0.03 }
 
 function build(files: Array<{ fileName: string; rows: string[][] }>, existingExternalIds: ReadonlySet<string> = new Set()) {
   return buildMultiFileStatementImportReview({
@@ -138,6 +138,69 @@ describe('buildMultiFileStatementImportReview', () => {
     const result = build([a, b])
 
     expect(new Set(result.records.map((r) => r.externalId)).size).toBe(2)
+  })
+
+  it('中身が同じコピーのファイルを同時に取り込むと、片方の全行がファイル間の重複になり、もう片方の全行が新規として残る', () => {
+    const rows = [HEADER, ['2025/10/01', 'A', '-100'], ['2025/10/05', 'B', '-200'], ['2025/10/09', 'C', '-300']]
+
+    const result = build([
+      { fileName: 'detail202610(5220).csv', rows },
+      { fileName: 'detail202610(5220)-コピー.csv', rows },
+    ])
+
+    const originals = result.records.filter((r) => r.crossFileDuplicateOf === null)
+    const duplicates = result.records.filter((r) => r.crossFileDuplicateOf !== null)
+    expect(originals).toHaveLength(3)
+    expect(duplicates).toHaveLength(3)
+    expect(new Set(originals.map((r) => r.fileName)).size).toBe(1)
+    expect(new Set(duplicates.map((r) => r.fileName)).size).toBe(1)
+    expect(duplicates.every((r) => r.isExactDuplicate)).toBe(true)
+  })
+
+  it('ファイル名の違いは重複判定に影響せず、選択順を入れ替えても残るのは同じ名前のファイルになる', () => {
+    const rows = [HEADER, ['2025/10/01', 'A', '-100']]
+    const original = { fileName: 'a.csv', rows }
+    const copy = { fileName: 'b-コピー.csv', rows }
+
+    const forward = build([original, copy])
+    const reversed = build([copy, original])
+
+    expect(forward.records.find((r) => r.crossFileDuplicateOf === null)?.fileName).toBe('a.csv')
+    expect(reversed.records.find((r) => r.crossFileDuplicateOf === null)?.fileName).toBe('b-コピー.csv')
+    expect(forward.records.filter((r) => r.isExactDuplicate)).toHaveLength(1)
+    expect(reversed.records.filter((r) => r.isExactDuplicate)).toHaveLength(1)
+  })
+
+  it('同日・同額・同摘要の行を複数含むファイルのコピーでも、コピー側の全行がファイル間の重複になる', () => {
+    const rows = [HEADER, ['2025/10/28', 'セブン', '-420'], ['2025/10/28', 'セブン', '-420'], ['2025/10/29', 'D', '-50']]
+
+    const result = build([
+      { fileName: 'a.csv', rows },
+      { fileName: 'a-コピー.csv', rows },
+    ])
+
+    expect(result.records.filter((r) => r.crossFileDuplicateOf === null)).toHaveLength(3)
+    expect(result.records.filter((r) => r.crossFileDuplicateOf !== null)).toHaveLength(3)
+    expect(new Set(result.records.map((r) => r.externalId)).size).toBe(6)
+  })
+
+  it('ファイル間の重複の行は確定版候補を持たず、似た既存明細は残った(重複でない)行に紐づく', () => {
+    const rows = [HEADER, ['2025/10/20', 'コーヒー', '-480']]
+    const result = buildMultiFileStatementImportReview({
+      files: [
+        { fileName: 'a.csv', rows },
+        { fileName: 'b-コピー.csv', rows },
+      ],
+      definition: definition(),
+      existingExternalIds: new Set(),
+      existingTransactions: [{ journalEntryId: 9, entryDate: '2025-10-20', amount: -480, isSettled: null }],
+      approximateDuplicateOptions: OPTIONS,
+    })
+
+    const original = result.records.find((r) => r.crossFileDuplicateOf === null)!
+    const duplicate = result.records.find((r) => r.crossFileDuplicateOf !== null)!
+    expect(original.approximateCandidates.map((c) => c.journalEntryId)).toEqual([9])
+    expect(duplicate.approximateCandidates).toEqual([])
   })
 
   it('取込済みの外部取引IDと一致する行は、ファイル間の重複とは別にisExactDuplicateになる', () => {

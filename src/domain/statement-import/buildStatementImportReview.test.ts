@@ -36,7 +36,7 @@ createdAt: '2026-01-01T00:00:00.000Z',
   }
 }
 
-const APPROXIMATE_OPTIONS = { maxDateDiffDays: 3, maxAmountDiff: 100 }
+const APPROXIMATE_OPTIONS = { maxDateDiffDays: 3, maxAmountDiffRate: 0.03 }
 
 describe('buildStatementImportReview', () => {
   it('rowsをImportedRecordへ変換し、各レコードに外部取引IDと重複判定結果を付与する', () => {
@@ -110,6 +110,54 @@ describe('buildStatementImportReview', () => {
     })
 
     expect(result.records[0].approximateCandidates).toEqual([existing])
+  })
+
+  it('似た明細が続くCSVでも、1件の既存明細は最も近い1行にだけ確定版候補として紐づく', () => {
+    const rows = [
+      ['日付', '摘要', '金額', '残高'],
+      ['2026/07/19', 'コーヒー', '-480', '1000'],
+      ['2026/07/20', 'コーヒー', '-480', '520'],
+      ['2026/07/21', 'コーヒー', '-480', '40'],
+    ]
+    const existing: ExistingTransactionSummary = { journalEntryId: 7, entryDate: '2026-07-20', amount: -480, isSettled: null }
+
+    const result = buildStatementImportReview({
+      rows,
+      definition: definition({ externalIdColumn: null }),
+      existingExternalIds: new Set(),
+      existingTransactions: [existing],
+      approximateDuplicateOptions: APPROXIMATE_OPTIONS,
+    })
+
+    expect(result.records.map((r) => r.approximateCandidates.map((c) => c.journalEntryId))).toEqual([[], [7], []])
+  })
+
+  it('取り込み済みと完全一致する行は、確定版候補を持たず、既存明細を取り合わない', () => {
+    const rows = [
+      ['日付', '摘要', '金額', '残高'],
+      ['2026/07/20', 'コーヒー', '-480', '520'],
+      ['2026/07/21', 'コーヒー', '-480', '40'],
+    ]
+    const existing: ExistingTransactionSummary = { journalEntryId: 7, entryDate: '2026/07/20'.replaceAll('/', '-'), amount: -480, isSettled: null }
+    const first = buildStatementImportReview({
+      rows,
+      definition: definition({ externalIdColumn: null }),
+      existingExternalIds: new Set(),
+      existingTransactions: [],
+      approximateDuplicateOptions: APPROXIMATE_OPTIONS,
+    })
+
+    const result = buildStatementImportReview({
+      rows,
+      definition: definition({ externalIdColumn: null }),
+      existingExternalIds: new Set([first.records[0].externalId]),
+      existingTransactions: [existing],
+      approximateDuplicateOptions: APPROXIMATE_OPTIONS,
+    })
+
+    expect(result.records[0].isExactDuplicate).toBe(true)
+    expect(result.records[0].approximateCandidates).toEqual([])
+    expect(result.records[1].approximateCandidates.map((c) => c.journalEntryId)).toEqual([7])
   })
 
   it('列構成が定義と一致しない場合はMappingColumnNotFoundErrorをそのまま伝播する', () => {

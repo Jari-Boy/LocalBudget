@@ -59,7 +59,7 @@ export function applyCounterpartySettingsToRows(params: {
   const nextInitials = [...initialStates]
 
   const nextStates = states.map((state, index) => {
-    if (done.has(index) || rowStatus(records[index], state) === 'duplicate') return state
+    if (done.has(index) || ['duplicate', 'skipped'].includes(rowStatus(records[index], state))) return state
     let next = state
 
     if (

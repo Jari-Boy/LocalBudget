@@ -558,28 +558,192 @@ describe('StatementImportScreen', () => {
     expect(userEntries()).toHaveLength(0)
   })
 
-  it('確定版の可能性がある行は、「これは確定版です」を選ぶと既存の仕訳を置き換える', async () => {
-    makeMapping()
-    const manual = entries.create({
-      householdMemberId: memberId,
-      entryDate: '2026-10-05',
-      sourceType: 'manual',
-      lines: [
-        { householdMemberId: memberId, accountId: food.id, side: 'debit', amount: 3000 },
-        { householdMemberId: memberId, accountId: bank.id, side: 'credit', amount: 3000 },
-      ],
+  describe('似た取引がある行(日付3日以内・金額3%以内の登録済みの取引)', () => {
+    /** 食費と普通預金の手入力の仕訳(摘要=memo)を作る */
+    function manualEntry(entryDate: string, amount: number, memo: string) {
+      return entries.create({
+        householdMemberId: memberId,
+        entryDate,
+        memo,
+        sourceType: 'manual',
+        lines: [
+          { householdMemberId: memberId, accountId: food.id, side: 'debit', amount },
+          { householdMemberId: memberId, accountId: bank.id, side: 'credit', amount },
+        ],
+      })
+    }
+    const radio = (name: string) => screen.findByRole('radio', { name })
+
+    it('警告に、似た取引の出どころ・日付・摘要・金額を出し、既定は「別の取引なので追加する」で、確定すると登録済みを残して追加する', async () => {
+      makeMapping()
+      manualEntry('2026-10-04', 3000, 'スーパー(手入力)')
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+
+      const warning = within(await screen.findByRole('group', { name: 'スーパーの似た取引の確認' }))
+      expect(warning.getByText('似た取引が登録済みです。二重ではありませんか?')).toBeInTheDocument()
+      expect(warning.getByText('手入力')).toBeInTheDocument()
+      expect(warning.getByText('2026/10/04')).toBeInTheDocument()
+      expect(warning.getByText('スーパー(手入力)')).toBeInTheDocument()
+      expect(warning.getByText('-¥3,000')).toBeInTheDocument()
+      expect(await radio('別の取引なので追加する')).toBeChecked()
+
+      fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+
+      await screen.findByText(/確定しました/)
+      expect(userEntries().map((e) => e.sourceType).sort()).toEqual(['external_import', 'manual'])
     })
-    renderScreen()
-    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
-    pick(rowOf(/スーパー/), '相手科目', '食費')
-    fireEvent.click(await screen.findByLabelText('これは確定版です'))
 
-    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+    it('「同じ取引なので、登録済みを削除して置き換える」を選ぶと、登録済みの仕訳を削除してこの取引で置き換える', async () => {
+      makeMapping()
+      const manual = manualEntry('2026-10-05', 3000, 'スーパー')
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+      fireEvent.click(await radio('同じ取引なので、登録済みを削除して置き換える'))
 
-    await screen.findByText(/確定しました/)
-    // 削除した仕訳のIDは新しい仕訳に再利用されうるので、手入力の仕訳が残っていないことを起源で確認する
-    expect(manual.sourceType).toBe('manual')
-    expect(userEntries().map((e) => e.sourceType)).toEqual(['external_import'])
+      fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+
+      await screen.findByText(/確定しました/)
+      // 削除した仕訳のIDは新しい仕訳に再利用されうるので、手入力の仕訳が残っていないことを起源で確認する
+      expect(manual.sourceType).toBe('manual')
+      expect(userEntries().map((e) => e.sourceType)).toEqual(['external_import'])
+    })
+
+    it('「この取引を保存しない」を選ぶと行がグレーになって編集できず、確定の対象から外れる。選び直すと編集できる', async () => {
+      makeMapping()
+      manualEntry('2026-10-05', 3000, 'スーパー')
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+2026/10/06,ランチ,-800,96200
+`)
+      const comment = () => screen.getByLabelText('スーパーのコメント')
+      expect(comment()).toBeEnabled()
+
+      fireEvent.click(await radio('この取引を保存しない'))
+
+      expect(comment()).toBeDisabled()
+      expect(rowOf(/スーパー/).getByText('保存しない')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ })).toBeInTheDocument()
+
+      fireEvent.click(await radio('別の取引なので追加する'))
+
+      expect(comment()).toBeEnabled()
+      expect(screen.getByRole('button', { name: /^2 件を「普通預金」に確定$/ })).toBeInTheDocument()
+    })
+
+    it('一覧は「似た取引あり」→「問題なし」の順にグループ分けして並べ、見出しに件数を出す', async () => {
+      makeMapping()
+      manualEntry('2026-10-06', 800, 'ランチ')
+      renderScreen()
+      // CSVでは問題なしの行(スーパー)が先、似た取引がある行(ランチ)が後
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+2026/10/06,ランチ,-800,96200
+`)
+
+      const similar = await screen.findByText('似た取引あり')
+      const clean = screen.getByText('問題なし')
+      expect(similar.compareDocumentPosition(clean) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      const lunch = screen.getAllByRole('row', { name: /ランチ/ })[0]
+      const supermarket = screen.getAllByRole('row', { name: /スーパー/ })[0]
+      expect(lunch.compareDocumentPosition(supermarket) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(screen.getAllByText('1件')).toHaveLength(2)
+      expect(screen.getByText(/似た取引あり 1 件/)).toBeInTheDocument()
+    })
+
+    it('似た取引が複数あるときは、近い1件だけを出して「ほか N 件を見る」で開き、置き換えるなら削除する1件を選ぶまで確定できない', async () => {
+      makeMapping()
+      const keep = manualEntry('2026-10-04', 3000, '近い方')
+      const other = manualEntry('2026-10-03', 3060, '遠い方')
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+      const warning = within(await screen.findByRole('group', { name: 'スーパーの似た取引の確認' }))
+      expect(warning.getByText('近い方')).toBeInTheDocument()
+      expect(warning.queryByText('遠い方')).not.toBeInTheDocument()
+
+      fireEvent.click(warning.getByRole('button', { name: 'ほか 1 件を見る' }))
+
+      expect(warning.getByText('遠い方')).toBeInTheDocument()
+      fireEvent.click(await radio('同じ取引なので、登録済みを削除して置き換える'))
+      expect(rowOf(/スーパー/).getByText('要確認')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+      expect(await screen.findByText(/削除する登録済みの仕訳が未選択です/)).toBeInTheDocument()
+      expect(userEntries()).toHaveLength(2)
+
+      fireEvent.change(screen.getByLabelText('削除する登録済みの仕訳'), { target: { value: String(other.id) } })
+      fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+
+      await screen.findByText(/確定しました/)
+      expect(userEntries().map((e) => e.memo)).toContain('近い方')
+      expect(userEntries().map((e) => e.memo)).not.toContain('遠い方')
+      expect(keep.sourceType).toBe('manual')
+    })
+
+    it('残高照合の見込みは、「置き換える」を選んだ行の登録済みの仕訳を除き、「追加する」のままなら二重に数えてずれを知らせる', async () => {
+      makeMapping()
+      manualEntry('2026-10-05', 3000, 'スーパー')
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,-3000\n`)
+
+      expect(await screen.findByText(/帳簿と明細の残高が合わない期間があります/)).toBeInTheDocument()
+
+      fireEvent.click(await radio('同じ取引なので、登録済みを削除して置き換える'))
+
+      expect(await screen.findByText(/帳簿と明細の残高は一致しています/)).toBeInTheDocument()
+    })
+
+    it('候補が複数あるとき、残高照合の見込みから除くのは削除先に選んだ1件だけ(選んでいないほうは帳簿に残る)', async () => {
+      makeMapping()
+      const keep = manualEntry('2026-10-04', 3000, '近い方')
+      const other = manualEntry('2026-10-03', 3060, '遠い方')
+      renderScreen()
+      // 最初の基準点(10/02の100,000円)は元手になり、差異にならない。2つ目の基準点(10/05)で、帳簿とずれるかを見る。
+      // 「遠い方」だけを除くと 100,000 - 3,000(近い方) - 3,000(この取引) = 94,000 で一致する。
+      // どちらも除かない(90,940)・両方を除く(97,000)・「近い方」を取り違えて除く(93,940)なら一致しない
+      await chooseCsv(`${HEADER}2026/10/02,コンビニ,-100,100000
+2026/10/05,スーパー,-3000,94000
+`)
+      fireEvent.click(await radio('同じ取引なので、登録済みを削除して置き換える'))
+      expect(await screen.findByText(/帳簿と明細の残高が合わない期間があります/)).toBeInTheDocument()
+
+      fireEvent.change(screen.getByLabelText('削除する登録済みの仕訳'), { target: { value: String(keep.id) } })
+      expect(await screen.findByText(/帳簿と明細の残高が合わない期間があります/)).toBeInTheDocument()
+
+      fireEvent.change(screen.getByLabelText('削除する登録済みの仕訳'), { target: { value: String(other.id) } })
+      expect(await screen.findByText(/帳簿と明細の残高は一致しています/)).toBeInTheDocument()
+    })
+
+    it('「この取引を保存しない」を選んだ行は、取り込む行として残高照合の見込みに数えない', async () => {
+      makeMapping()
+      manualEntry('2026-10-05', 3000, 'スーパー')
+      renderScreen()
+      // 保存しない行(-3,000)を数えると -6,800 になり、数えなければ登録済み(-3,000)とランチ(-800)で -3,800 に一致する
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,-3000\n2026/10/06,ランチ,-800,-3800\n`)
+      expect(await screen.findByText(/帳簿と明細の残高が合わない期間があります/)).toBeInTheDocument()
+
+      fireEvent.click(await radio('この取引を保存しない'))
+
+      expect(await screen.findByText(/帳簿と明細の残高は一致しています/)).toBeInTheDocument()
+    })
+
+    it('似た明細が続くCSVでも、1件の登録済みの取引は最も近い1行にだけ警告が出る', async () => {
+      makeMapping()
+      manualEntry('2026-10-05', 480, 'コーヒー')
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/04,コーヒー,-480,100
+2026/10/05,コーヒー,-480,100
+2026/10/06,コーヒー,-480,100
+`)
+
+      await screen.findByText('似た取引あり')
+
+      expect(screen.getAllByText('似た取引が登録済みです。二重ではありませんか?')).toHaveLength(1)
+    })
   })
 
   it('残高が照合対象の取込先では、基準点(取引後残高)と帳簿が合わない期間を、自動調整が入ることとあわせて表示する(計画Issue #205)', async () => {
