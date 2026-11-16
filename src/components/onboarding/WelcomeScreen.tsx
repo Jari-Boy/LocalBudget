@@ -15,14 +15,25 @@ export interface WelcomeScreenProps {
 export function WelcomeScreen({ onNext }: WelcomeScreenProps) {
   const { t } = useTranslation('onboarding')
   const { t: tc } = useTranslation()
+  // 文ごとに1行にする(文の途中で折り返さず、「。」で改行する)
+  const lead = t('welcome.lead', { returnObjects: true }) as string[]
+  const warning = t('welcome.warning', { returnObjects: true }) as string[]
 
   return (
     <div className="onboarding">
       <section className="onboarding__card">
         <div>
           <div className="onboarding__brand">{tc('appName')}</div>
-          <p className="onboarding__lead">{t('welcome.lead')}</p>
-          <p className="onboarding__warn">{t('welcome.warning')}</p>
+          <div className="onboarding__lead">
+            {lead.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+          <div className="onboarding__warn">
+            {warning.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
         </div>
         <div className="onboarding__actions">
           <button type="button" className="onboarding__button onboarding__button--primary" onClick={onNext}>

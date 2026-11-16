@@ -74,13 +74,22 @@ describe('OnboardingGate', () => {
     expect(screen.queryByText('アプリ本体')).not.toBeInTheDocument()
   })
 
-  it('ウェルカムは、リード文に「複式簿記で記帳する・サーバーを持たない・データの置き場所」をまとめ、データが消えるリスクの注意書きを添える', async () => {
+  it('ウェルカムは、リード文に「複式簿記で記帳する・サーバーを持たない・データの置き場所」をまとめ、データが消えるリスクの注意書きを添える。文ごとに改行する', async () => {
     setup()
     await screen.findByRole('button', { name: '初期設定へ進む' })
 
-    expect(screen.getByText(/複式簿記で記帳する、サーバーを持たない家計簿です。/)).toBeInTheDocument()
-    expect(screen.getByText(/家計データは、この端末のブラウザ内か、選んだフォルダにだけ保存されます。サーバーには送りません。/)).toBeInTheDocument()
-    expect(screen.getByText(/バックアップは自分で取る必要があります/)).toBeInTheDocument()
+    const lines = [
+      '複式簿記で記帳する、サーバーを持たない家計簿です。',
+      '家計データは、この端末のブラウザ内か、選んだフォルダにだけ保存されます。',
+      'サーバーには送りません。',
+      'ブラウザのデータ削除や端末の故障で、データは戻せなくなります。',
+      'バックアップは自分で取る必要があります。',
+    ]
+    for (const line of lines) expect(screen.getByText(line)).toBeInTheDocument()
+    const positions = lines.map((line) => screen.getByText(line))
+    for (let i = 1; i < positions.length; i += 1) {
+      expect(positions[i - 1].compareDocumentPosition(positions[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
   })
 
   it('ウェルカムには「前提」「データの置き場所」「最初に入るもの」の見出し(項目)を出さない', async () => {
