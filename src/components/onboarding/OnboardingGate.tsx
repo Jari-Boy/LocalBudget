@@ -12,6 +12,8 @@ export interface OnboardingGateProps {
   onboarding: {
     getStatus(): Promise<OnboardingStatus>
     complete: (input: Parameters<OnboardingRpcApi['complete']>[0]) => Promise<void>
+    /** 確定に失敗したときの逃げ道(何も変えずに、初回セットアップを済んだことにする) */
+    skip: () => Promise<void>
   }
   /** フォルダ保存に切り替えるWorker側API(設定画面と同じ) */
   storage: Pick<StorageRpcApi, 'moveToFolder'>
@@ -26,7 +28,8 @@ type View = 'checking' | 'welcome' | 'setup' | 'folderFailed' | 'ready'
 /**
  * 初回セットアップのゲート(計画Issue #177)。Workerの完了済みの印(DBの状態。保存先を切り替えても食い違わない)を見て、
  * 完了済み(既存の利用者を含む)ならアプリ本体を出し、未完了のときだけウェルカム → 初期設定の順に出す
- * (スキップの導線は無い。初期設定の確定が、完了の印を付ける唯一の経路。既存のデータを開く場合は、開いた先のDBの印で決まる)。
+ * (ウェルカムにスキップの導線は無い。完了の印を付けるのは、初期設定の確定と、確定に失敗したときだけ出す
+ * 「設定せずに始める」。既存のデータを開く場合は、開いた先のDBの印で決まる)。
  * StorageGate(保存先が開けるかの確認)を通ったあと、DbClientProviderの内側に置くので、起動時の他の表示
  * (保存先の再接続・更新バナー・iOSの案内)と競合しない。
  * フォルダは、ブラウザが操作の直後にしか選ばせないため、選ぶ操作(ウェルカムの「既存のデータを開く」、初期設定で
@@ -97,6 +100,16 @@ export function OnboardingGate({ onboarding, storage, folderPicker, reload, chil
     reload()
   }
 
+  /** 確定に失敗したときの逃げ道。何も変えずに済んだことにして、アプリ本体へ進む(記録に失敗しても、このセッションは進める) */
+  async function handleSkipAfterFailure() {
+    try {
+      await onboarding.skip()
+    } catch {
+      // 印を付けられなくても、利用は妨げない(次回また初期設定が出る)
+    }
+    setView('ready')
+  }
+
   async function handleSubmit(values: SetupValues) {
     setSubmitting(true)
     setError(null)
@@ -134,6 +147,7 @@ export function OnboardingGate({ onboarding, storage, folderPicker, reload, chil
         error={error}
         onChooseFolder={chooseFolder}
         onLoadFolder={loadExistingFolder}
+        onSkip={() => void handleSkipAfterFailure()}
         onSubmit={(values) => void handleSubmit(values)}
         onBack={() => setView('welcome')}
       />

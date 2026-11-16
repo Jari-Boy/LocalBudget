@@ -36,6 +36,8 @@ export interface SetupScreenProps {
   onChooseFolder: () => Promise<FolderChoice | null>
   /** すでにデータがあるフォルダを、上書きせずそのまま読み込む(成功すると再読み込みされる)。失敗は例外 */
   onLoadFolder: (folder: FileSystemDirectoryHandle) => Promise<void>
+  /** 確定に失敗したときだけ出す「設定せずに始める」(逃げ道) */
+  onSkip: () => void
   onSubmit: (values: SetupValues) => void
   onBack: () => void
 }
@@ -64,6 +66,7 @@ export function SetupScreen({
   error,
   onChooseFolder,
   onLoadFolder,
+  onSkip,
   onSubmit,
   onBack,
 }: SetupScreenProps) {
@@ -294,6 +297,11 @@ export function SetupScreen({
         {error && (
           <div role="alert" className="onboarding__error-box">
             {error}
+            <div className="onboarding__actions">
+              <button type="button" className="onboarding__button" disabled={submitting} onClick={onSkip}>
+                {t('setup.skip')}
+              </button>
+            </div>
           </div>
         )}
         <div className="onboarding__actions">

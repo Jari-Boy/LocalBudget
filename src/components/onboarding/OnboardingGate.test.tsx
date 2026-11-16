@@ -27,6 +27,7 @@ function setup(overrides: Partial<OnboardingGateProps> & { completed?: boolean }
   const onboarding = {
     getStatus: vi.fn(async () => ({ completed })),
     complete: vi.fn(async () => {}),
+    skip: vi.fn(async () => {}),
   }
   const storage = { moveToFolder: vi.fn(async () => {}) }
   const folderPicker = {
@@ -187,6 +188,33 @@ describe('OnboardingGate', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('設定を保存できませんでした')
     expect(screen.queryByText('アプリ本体')).not.toBeInTheDocument()
+  })
+
+  it('確定が失敗しても、アプリに入れなくならない。失敗したときだけ「設定せずに始める」が出て、押すと何も変えずスキップしてアプリ本体へ進む', async () => {
+    const { onboarding } = setup()
+    onboarding.complete.mockRejectedValue(new Error('失敗'))
+    await openSetup()
+    fireEvent.change(nameInput(), { target: { value: '太郎' } })
+    expect(screen.queryByRole('button', { name: '設定せずに始める' })).not.toBeInTheDocument()
+
+    fireEvent.click(startButton())
+    fireEvent.click(await screen.findByRole('button', { name: '設定せずに始める' }))
+
+    expect(await screen.findByText('アプリ本体')).toBeInTheDocument()
+    expect(onboarding.skip).toHaveBeenCalledTimes(1)
+  })
+
+  it('「設定せずに始める」の記録に失敗しても、このセッションはアプリ本体へ進める(次回また初期設定が出る)', async () => {
+    const { onboarding } = setup()
+    onboarding.complete.mockRejectedValue(new Error('失敗'))
+    onboarding.skip.mockRejectedValue(new Error('失敗'))
+    await openSetup()
+    fireEvent.change(nameInput(), { target: { value: '太郎' } })
+    fireEvent.click(startButton())
+
+    fireEvent.click(await screen.findByRole('button', { name: '設定せずに始める' }))
+
+    expect(await screen.findByText('アプリ本体')).toBeInTheDocument()
   })
 
   it('初期設定の「戻る」で、ウェルカムへ戻る', async () => {

@@ -1,7 +1,7 @@
 import type { Database } from 'sql.js'
 import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
 
-const DEFAULT_HOUSEHOLD_MEMBER_NAME = '自分'
+export const DEFAULT_HOUSEHOLD_MEMBER_NAME = '自分'
 
 /**
  * household_membersが1件も登録されていない状態でデフォルトメンバーを1件自動投入する

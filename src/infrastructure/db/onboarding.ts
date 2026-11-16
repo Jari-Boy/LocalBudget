@@ -7,6 +7,8 @@ import {
 } from '../../domain/onboarding/accountTemplates'
 import type { AccountCategory } from '../../domain/account/Account'
 import seedMarkersSql from '../../../docs/schema/seed_markers.sql?raw'
+import { DEFAULT_EXPENSE_ACCOUNT_NAMES, DEFAULT_REVENUE_ACCOUNT_NAMES } from './defaultAccountSeedData'
+import { DEFAULT_HOUSEHOLD_MEMBER_NAME } from './seedDefaultHouseholdMember'
 import { SqlJsAccountGroupRepository } from './SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
 import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
@@ -53,25 +55,68 @@ function markCompleted(db: Database): void {
 }
 
 /**
+ * 利用者が作った・変えたデータが、1つでもあるか。ある(=既存の利用者)DBには、初回セットアップを出さず、
+ * 確定でも何も書き換えない(利用者の科目の削除や、世帯メンバーの名前の上書きを避けるため。評価の指摘)。
+ * 起動時の自動投入(「自分」1人・標準の収益/費用科目・システム管理科目・標準グループ)は、利用者のデータとみなさない。
+ * 次のいずれかがあれば、利用者のデータとする。
+ * - 仕訳・下書き・予算・取引先・プロジェクト・仕訳テンプレート・定期取引・精算バッチ・残高の基準点・各グループの行
+ * - システム管理でない資産・負債の科目(口座・カード)
+ * - 標準でない収益・費用の科目(追加したもの、標準科目の改名後の名前)
+ * - 世帯メンバーが「自分」1人でない(追加した・名前を変えた・グループにした)
+ */
+function hasUserData(db: Database): boolean {
+  for (const table of USER_DATA_TABLES) {
+    const [row] = db.exec(`SELECT 1 FROM ${table} LIMIT 1`)
+    if (row !== undefined) return true
+  }
+
+  const hasCustomAccount = new SqlJsAccountRepository(db).findAll().some((account) => {
+    if (account.isSystemManaged) return false
+    if (account.category === 'asset' || account.category === 'liability') return true
+    if (account.category === 'revenue' || account.category === 'expense') return !AUTO_SEEDED_ACCOUNT_NAMES.has(account.name)
+    return false
+  })
+  if (hasCustomAccount) return true
+
+  const members = new SqlJsHouseholdMemberRepository(db).findAll()
+  return members.length !== 1 || members[0].name !== DEFAULT_HOUSEHOLD_MEMBER_NAME || members[0].isGroup
+}
+
+/** 利用者が作った行があれば、既存の利用者とみなす表(自動投入が行を入れない表だけ) */
+const USER_DATA_TABLES = [
+  'journal_entries',
+  'journal_entry_drafts',
+  'journal_entry_link_groups',
+  'budgets',
+  'counterparties',
+  'counterparty_groups',
+  'projects',
+  'project_groups',
+  'journal_templates',
+  'journal_template_groups',
+  'recurring_transaction_rules',
+  'settlement_batches',
+  'account_balance_records',
+] as const
+
+/** 起動時に自動投入する収益・費用の科目名(標準科目と、精算画面が使う雑収入・雑損失)。これ以外は利用者が作った科目 */
+const AUTO_SEEDED_ACCOUNT_NAMES: ReadonlySet<string> = new Set([
+  ...DEFAULT_REVENUE_ACCOUNT_NAMES,
+  ...DEFAULT_EXPENSE_ACCOUNT_NAMES,
+  ...PROTECTED_REVENUE_EXPENSE_NAMES,
+])
+
+/**
  * Worker起動時に、初回セットアップを出すかどうかを一度だけ判定する(計画Issue #177)。
- * 利用者が登録した資産・負債の科目か、仕訳が既にあるDBは「既存の利用者」なので、完了済みの印を付けて
- * セットアップを出さない。どちらも無い新規DBは印を付けず、初回セットアップの対象にする。
- * 起動時の自動投入(世帯メンバー・標準科目・システム管理科目)は、利用者のデータとはみなさない。
+ * 利用者のデータが1つでもあるDB(`hasUserData`)は「既存の利用者」なので、完了済みの印を付けてセットアップを出さない。
+ * 何も無い新規DBは印を付けず、初回セットアップの対象にする。
  * 印は一度付いたら消えない(あとでデータが無くなっても、セットアップは出さない)。
  * 開発用サンプルデータ(seedDevSampleDataIfDev)を入れた後に呼ぶと、開発モードでは完了済みになる。
  */
 export function seedOnboardingMarker(db: Database): void {
   db.run(seedMarkersSql)
   if (isOnboardingCompleted(db)) return
-
-  const hasUserBalanceSheetAccount = new SqlJsAccountRepository(db)
-    .findAll()
-    .some(
-      (account) =>
-        !account.isSystemManaged && (account.category === 'asset' || account.category === 'liability'),
-    )
-  const [journalCount] = db.exec('SELECT 1 FROM journal_entries LIMIT 1')
-  if (hasUserBalanceSheetAccount || journalCount !== undefined) markCompleted(db)
+  if (hasUserData(db)) markCompleted(db)
 }
 
 /** 何も変えずに、初回セットアップを済んだことにする(「スキップ」)。 */
@@ -88,12 +133,17 @@ export function skipOnboarding(db: Database): void {
  *    雑収入・雑損失は残す。この時点では仕訳が無いので削除できる)
  * 3. 資産の「現金」を入れる(外部明細なし・標準グループ「現金・電子マネー」)
  * 4. 完了済みの印を付ける
- * 既に完了済みなら何もしない(あとから名前や科目を書き換えない)。
+ * 既に完了済みなら何もしない(あとから名前や科目を書き換えない)。確定の時点で利用者のデータがあるとき
+ * (判定のあとに、別のタブなどでデータが増えた場合)も、何も書き換えず、完了済みの印だけを付ける。
  */
 export function completeOnboarding(db: Database, input: CompleteOnboardingInput): void {
   const memberName = input.memberName.trim()
   if (memberName === '') throw new Error('世帯メンバーの名前が空です')
   if (isOnboardingCompleted(db)) return
+  if (hasUserData(db)) {
+    markCompleted(db)
+    return
+  }
 
   applyMemberName(db, memberName)
   applyTemplate(db, input.template)
@@ -122,7 +172,13 @@ function applyTemplate(db: Database, key: AccountTemplateKey): void {
     const existing = accounts.findAll().filter((account) => account.category === category)
     for (const account of existing) {
       if (account.isSystemManaged || PROTECTED_REVENUE_EXPENSE_NAMES.includes(account.name)) continue
-      if (!names.includes(account.name)) accounts.delete(account.id)
+      // 消してよいのは、起動時に自動投入した標準科目(テンプレートに無いもの)だけ。利用者が作った科目には触れない
+      if (!AUTO_SEEDED_ACCOUNT_NAMES.has(account.name) || names.includes(account.name)) continue
+      try {
+        accounts.delete(account.id)
+      } catch {
+        // 何かに参照されていて消せない科目は残す(セットアップ全体は失敗させない)
+      }
     }
     const remaining = new Set(accounts.findAll().filter((a) => a.category === category).map((a) => a.name))
     for (const name of names) {

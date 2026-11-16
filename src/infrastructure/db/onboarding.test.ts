@@ -5,6 +5,8 @@
  * - completeOnboarding: 入力した名前で最初の世帯メンバーを直し、テンプレートに合わせて収益・費用の科目を整え、
  *   資産の「現金」を入れて、完了の印を付ける
  * - skipOnboarding: 何も変えず、完了の印だけ付ける
+ * 既存の利用者の判定は、仕訳・口座の科目だけでなく、予算・取引先・プロジェクト・仕訳テンプレート・定期取引、
+ * 追加の世帯メンバー・改名したメンバー、標準以外の収益・費用科目のいずれかがあれば、完了済みにする(利用者のデータを壊さないため)。
  * 外部依存: sql.js(ネットワークアクセスなし)。起動時のseedはdb.worker.tsと同じ順で呼ぶ。
  */
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -20,6 +22,11 @@ import {
 } from './onboarding'
 import { SqlJsAccountGroupRepository } from './SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from './SqlJsAccountRepository'
+import { SqlJsBudgetRepository } from './SqlJsBudgetRepository'
+import { SqlJsCounterpartyRepository } from './SqlJsCounterpartyRepository'
+import { SqlJsJournalTemplateRepository } from './SqlJsJournalTemplateRepository'
+import { SqlJsProjectRepository } from './SqlJsProjectRepository'
+import { SqlJsRecurringTransactionRuleRepository } from './SqlJsRecurringTransactionRuleRepository'
 import { SqlJsHouseholdMemberRepository } from './SqlJsHouseholdMemberRepository'
 import { SqlJsJournalEntryRepository } from './SqlJsJournalEntryRepository'
 import { seedAdvanceAccounts } from './seedAdvanceAccounts'
@@ -201,6 +208,121 @@ describe('completeOnboarding', () => {
     expect(isOnboardingCompleted(db)).toBe(true)
     expect(members.findAll().map((m) => m.name)).toEqual(['太郎'])
     expect(namesOf('expense')).toContain('医療費')
+  })
+})
+
+describe('seedOnboardingMarker: 利用者のデータがある既存のDBを、新規と誤判定しない(評価の指摘、計画Issue #177)', () => {
+  /** 新規DBの状態に、利用者が作ったデータを1つだけ足してから判定する */
+  function expectExistingUser(addUserData: () => void) {
+    seedLikeStartup(db)
+    addUserData()
+    seedOnboardingMarker(db)
+    expect(isOnboardingCompleted(db)).toBe(true)
+  }
+
+  const standardAccount = (name: string) => accounts.findAll().find((a) => a.name === name)!
+
+  it('予算があるDBは、既存の利用者として完了済みにする', () => {
+    expectExistingUser(() => {
+      new SqlJsBudgetRepository(db).create({ accountId: standardAccount('食費').id, yearMonth: '2026-11', amount: 30000 })
+    })
+  })
+
+  it('取引先があるDBは、既存の利用者として完了済みにする', () => {
+    expectExistingUser(() => {
+      new SqlJsCounterpartyRepository(db).create({ name: 'スーパー' })
+    })
+  })
+
+  it('プロジェクトがあるDBは、既存の利用者として完了済みにする', () => {
+    expectExistingUser(() => {
+      new SqlJsProjectRepository(db).create({ name: '旅行' })
+    })
+  })
+
+  it('仕訳テンプレートがあるDBは、既存の利用者として完了済みにする', () => {
+    expectExistingUser(() => {
+      new SqlJsJournalTemplateRepository(db).create({
+        name: '家賃',
+        lines: [
+          { side: 'debit', accountId: standardAccount('住居費').id, amount: 80000 },
+          { side: 'credit', accountId: null, amount: 80000 },
+        ],
+      })
+    })
+  })
+
+  it('定期取引のルールがあるDBは、既存の利用者として完了済みにする', () => {
+    expectExistingUser(() => {
+      const memberId = members.findAll()[0].id
+      // 口座の科目の判定に当たらないよう、システム管理の負債(割勘の未払金)を相手に使う
+      const liability = accounts.findAll().find((a) => a.category === 'liability' && a.isSystemManaged)!
+      new SqlJsRecurringTransactionRuleRepository(db).create({
+        name: '家賃',
+        bookkeeperHouseholdMemberId: memberId,
+        lines: [
+          { side: 'debit', accountId: standardAccount('住居費').id, amount: 80000 },
+          { side: 'credit', accountId: liability.id, amount: 80000 },
+        ],
+        frequency: 'monthly',
+        dayOfMonth: 25,
+      })
+    })
+  })
+
+  it('世帯メンバーが2人以上いるDBは、既存の利用者として完了済みにする', () => {
+    expectExistingUser(() => {
+      members.create({ name: '花子' })
+    })
+  })
+
+  it('最初の世帯メンバーの名前が既定の「自分」から変わっているDBは、既存の利用者として完了済みにする', () => {
+    expectExistingUser(() => {
+      members.update(members.findAll()[0].id, { name: '太郎' })
+    })
+  })
+
+  it('標準以外の収益科目(利用者が追加したもの)があるDBは、既存の利用者として完了済みにする', () => {
+    expectExistingUser(() => {
+      accounts.create({ category: 'revenue', name: '配当金', isReconcilable: null })
+    })
+  })
+
+  it('標準以外の費用科目(利用者が追加したもの)があるDBは、既存の利用者として完了済みにする', () => {
+    expectExistingUser(() => {
+      accounts.create({ category: 'expense', name: '趣味の道具', isReconcilable: null })
+    })
+  })
+
+  it('標準科目を改名したDBは、既存の利用者(標準の構成を変えた人)として完了済みにする', () => {
+    expectExistingUser(() => {
+      accounts.update(standardAccount('娯楽費').id, { name: '遊興費' })
+    })
+  })
+
+  it('何も足していない新規DBは、これまでどおり未完了のままにする', () => {
+    seedLikeStartup(db)
+
+    seedOnboardingMarker(db)
+
+    expect(isOnboardingCompleted(db)).toBe(false)
+  })
+})
+
+describe('completeOnboarding: 利用者のデータを壊さない(評価の指摘、計画Issue #177)', () => {
+  beforeEach(() => {
+    seedLikeStartup(db)
+  })
+
+  it('確定の時点で、すでに利用者のデータがあるときは、名前も科目も変えず、完了済みにだけする', () => {
+    // 判定のあとに(別のタブなどで)データが増えた場合に備える
+    accounts.create({ category: 'expense', name: '趣味の道具', isReconcilable: null })
+
+    completeOnboarding(db, { memberName: '太郎', template: 'minimal' })
+
+    expect(isOnboardingCompleted(db)).toBe(true)
+    expect(members.findAll().map((m) => m.name)).toEqual(['自分'])
+    expect(namesOf('expense')).toEqual(expect.arrayContaining(['趣味の道具', '医療費']))
   })
 })
 
