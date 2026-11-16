@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { KeywordList, type KeywordAccountOption, type KeywordListItem } from './KeywordList'
 
 export interface CounterpartySettingsPopupProps {
+  /** 取引先のキーワード(既定)か、資産・負債の科目のキーワード(計画Issue #219)か。リンク・タイトルの文言と、科目の選択欄の有無が変わる */
+  kind?: 'counterparty' | 'account'
   isOpen: boolean
   onToggle: () => void
   onClose: () => void
@@ -11,7 +13,7 @@ export interface CounterpartySettingsPopupProps {
   /** 取引先の登録済みキーワードを読み込み中はnull */
   items: readonly KeywordListItem[] | null
   /** キーワードの科目に選べる科目(取引先を持てる費用・収益の科目) */
-  accountOptions: readonly KeywordAccountOption[]
+  accountOptions?: readonly KeywordAccountOption[]
   /** この行の摘要(リンクの名前に使う) */
   rowDescription: string
   /** 「ほかの行にも適用」を押した結果の表示 */
@@ -35,6 +37,7 @@ const POPUP_WIDTH = 520
  * ポップアップはTreeSelectと同じく画面に固定して描画し、表のoverflowで見切れないようにする。
  */
 export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps) {
+  const kind = props.kind ?? 'counterparty'
   const { isOpen, onToggle, onClose, counterpartyName, items, accountOptions, rowDescription, message, saveError } = props
   const { t } = useTranslation('statementImport')
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -94,10 +97,10 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
         className="import-link import-marker"
         aria-haspopup="dialog"
         aria-expanded={isOpen}
-        aria-label={t('settingsLinkLabel', { desc: rowDescription })}
+        aria-label={kind === 'account' ? t('settingsLinkAccountLabel', { desc: rowDescription }) : t('settingsLinkLabel', { desc: rowDescription })}
         onClick={onToggle}
       >
-        {t('settingsLink')} <span aria-hidden="true">▾</span>
+        {kind === 'account' ? t('settingsLinkAccount') : t('settingsLink')} <span aria-hidden="true">▾</span>
       </button>
       {isOpen &&
         createPortal(
@@ -105,11 +108,14 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
             ref={popupRef}
             style={popupStyle}
             role="dialog"
-            aria-label={t('settingsTitle', { name: counterpartyName })}
+            aria-label={kind === 'account' ? t('settingsTitleAccount', { name: counterpartyName }) : t('settingsTitle', { name: counterpartyName })}
             className="tree-select__popup import-settings"
             onKeyDown={handleKeyDown}
           >
-            <p className="import-settings__title">{t('settingsTitle', { name: counterpartyName })}</p>
+            <p className="import-settings__title">
+              {kind === 'account' ? t('settingsTitleAccount', { name: counterpartyName }) : t('settingsTitle', { name: counterpartyName })}
+            </p>
+            {kind === 'account' && <p className="import-note">{t('settingsNoteAccount', { name: counterpartyName })}</p>}
             {items === null ? (
               <p className="import-note" role="status">
                 {t('settingsLoading')}
@@ -123,6 +129,7 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
                   onDelete={props.onDelete}
                   onAdd={props.onAdd}
                   accountOptions={accountOptions}
+                  label={kind === 'account' ? t('settingsPatternsLabelAccount') : undefined}
                   onAccountChange={props.onAccountChange}
                 />
 

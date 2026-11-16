@@ -34,6 +34,8 @@ export interface KeywordListProps {
   onAccountChange?: (key: string, accountId: number | null) => void
   /** 科目の欄を自前の部品で描く(取引先の追加ダイアログ。科目の新規登録つきの選択部品を使うため)。渡すとaccountOptionsの選択欄より優先する */
   renderAccount?: (item: KeywordListItem, index: number) => ReactNode
+  /** 一覧の見出し(既定は「取引先のキーワード」)。科目のキーワードでは「キーワード」 */
+  label?: string
 }
 
 /**
@@ -41,14 +43,14 @@ export interface KeywordListProps {
  * 取引先の追加ダイアログで同じものを使う。各行は「登録済み」「新規」のタグ・入力欄・含む行の数・削除、
  * 末尾に「キーワードを追加」。
  */
-export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, accountOptions, onAccountChange, renderAccount }: KeywordListProps) {
+export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, accountOptions, onAccountChange, renderAccount, label }: KeywordListProps) {
   const { t } = useTranslation('statementImport')
   const errorText = (error: KeywordError) =>
     error === 'empty' ? t('patternErrorEmpty') : error === 'duplicate' ? t('patternErrorDuplicate') : t('patternErrorNotInDescription')
 
   return (
     <div className="import-field">
-      <span className="import-field__label">{t('settingsPatternsLabel')}</span>
+      <span className="import-field__label">{label ?? t('settingsPatternsLabel')}</span>
       {items.map((item, index) => (
         <div key={item.key} className="import-settings__pattern">
           <div className="import-settings__row">

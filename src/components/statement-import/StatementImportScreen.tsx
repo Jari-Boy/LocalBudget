@@ -54,6 +54,7 @@ import {
   isTaggableAccountId,
   resolveEligibleCounterpartyId,
   rowStatus,
+  shouldOfferAccountLearn,
   shouldOfferLearn,
   withCounterAccount,
   type ApproximateDecision,
@@ -64,6 +65,7 @@ import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFor
 import { collectFinancialInstitutionNames } from '../../domain/statement-import/financialInstitution'
 import { MappingCreateDialog } from './MappingCreateDialog'
 import { CounterpartySettingsPopup } from './CounterpartySettingsPopup'
+import { applyAccountKeywordsToRows } from './applyAccountKeywordsToRows'
 import { applyCounterpartySettingsToRows } from './applyCounterpartySettingsToRows'
 import { CounterpartyCreateDialog, type CounterpartyCreateInput } from './CounterpartyCreateDialog'
 import { countRowsContaining, validateKeyword, type KeywordError } from './counterpartyKeywordModel'
@@ -151,7 +153,10 @@ interface ImportSession {
 /** 「取引先の設定」のポップアップの状態。操作した時点でDBに保存する(摘要の提案だけは行の状態に持ち、確定時に登録する) */
 interface SettingsView {
   index: number
-  counterpartyId: number
+  /** 取引先のキーワードを開いているときの取引先(科目のキーワードを開いているときはnull) */
+  counterpartyId: number | null
+  /** 資産・負債の科目のキーワードを開いているときの科目(取引先のキーワードを開いているときはnull。計画Issue #219) */
+  accountId: number | null
   loaded: boolean
   /** 保存済みのキーワード。textは入力中の文字列、savedTextは保存済みの文字列 */
   registered: { key: string; id: number; text: string; savedText: string; accountId: number | null }[]
@@ -396,6 +401,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   const keywordOf = (text: string) => normalizeDescriptionForMatching(text)
   /** 取引先を持てる(費用・収益の)科目か。キーワードに紐づける科目はこの科目だけ */
+  /** 取引先を持てない(資産・負債の)科目か。その科目のキーワードの設定を出す対象(計画Issue #219) */
+  const isNonPlAccountId = (accountId: number | null): accountId is number => {
+    const category = accountList.find((a) => a.id === accountId)?.category
+    return category === 'asset' || category === 'liability'
+  }
   const isPlAccountId = (accountId: number | null): accountId is number => {
     const category = accountList.find((a) => a.id === accountId)?.category
     return category !== undefined && isCounterpartyEligibleCategory(category)
@@ -414,9 +424,12 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     const rowState = session.rows[view.index]
     const description = records[view.index].record.description
     const descriptions = visibleIndices.map((i) => records[i].record.description)
-    const suggestion =
-      shouldOfferLearn(records[view.index], rowState) && rowState.learnOn ? (rowState.learnPattern ?? description.trim()) : null
-    const suggestionAccountId = isPlAccountId(rowState.counterAccountId) ? rowState.counterAccountId : null
+    const accountKind = view.accountId !== null
+    const offered = accountKind
+      ? shouldOfferAccountLearn(records[view.index], rowState, accountList)
+      : shouldOfferLearn(records[view.index], rowState)
+    const suggestion = offered && rowState.learnOn ? (rowState.learnPattern ?? description.trim()) : null
+    const suggestionAccountId = accountKind ? view.accountId : isPlAccountId(rowState.counterAccountId) ? rowState.counterAccountId : null
     const entries: {
       key: string
       kind: 'registered' | 'new'
@@ -461,31 +474,39 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     }))
   }
 
-  /** 「取引先の設定」を開く。登録済みのキーワードをDBから読み込む */
+  /**
+   * 「取引先の設定」「キーワードの設定」を開く。登録済みのキーワードをDBから読み込む。取引先を持つ行は取引先のキーワード、
+   * 取引先を持たず資産・負債の相手科目を持つ行は、その科目のキーワード(計画Issue #219)
+   */
   async function toggleSettings(index: number) {
     if (!session) return
-    const counterpartyId = session.rows[index].counterpartyId
-    // 開いている取引先の設定が、いまの行の取引先のものなら閉じる。行の取引先を変えたあとの古い設定が残っていても、
-    // 1回の操作で新しい取引先の設定が開く
-    if (settings?.index === index && settings.counterpartyId === counterpartyId) {
+    const state = session.rows[index]
+    const counterpartyId = state.counterpartyId
+    const accountId = counterpartyId === null && isNonPlAccountId(state.counterAccountId) ? state.counterAccountId : null
+    // 開いている設定が、いまの行の取引先・科目のものなら閉じる。行の取引先を変えたあとの古い設定が残っていても、
+    // 1回の操作で新しい設定が開く
+    if (settings?.index === index && settings.counterpartyId === counterpartyId && settings.accountId === accountId) {
       setSettings(null)
       return
     }
-    if (counterpartyId === null) return
+    if (counterpartyId === null && accountId === null) return
     setSettingsMessage('')
     setSettingsSaveError('')
     setSettings({
       index,
       counterpartyId,
+      accountId,
       loaded: false,
       registered: [],
       typing: [],
       errors: {},
       nextKey: 0,
     })
-    const registered = await Promise.resolve(keywordRuleRepository.findByCounterparty(counterpartyId))
+    const registered = await Promise.resolve(
+      counterpartyId !== null ? keywordRuleRepository.findByCounterparty(counterpartyId) : keywordRuleRepository.findByAccount(accountId!),
+    )
     setSettings((prev) =>
-      prev && prev.index === index && prev.counterpartyId === counterpartyId
+      prev && prev.index === index && prev.counterpartyId === counterpartyId && prev.accountId === accountId
         ? {
             ...prev,
             loaded: true,
@@ -559,7 +580,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           keywordRuleRepository.create({
             pattern: keywordOf(text),
             counterpartyId: view.counterpartyId,
-            accountId: typing?.accountId ?? null,
+            // 科目のキーワードは、開いている科目に結び付ける
+            accountId: view.counterpartyId === null ? view.accountId : (typing?.accountId ?? null),
           }),
         )
         // 保存できたら「登録済み」にする
@@ -606,7 +628,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
    * 科目も一緒に保存する。摘要の提案の科目は、この行の相手科目が使われるので変えられない。
    */
   async function changeKeywordAccount(key: string, accountId: number | null) {
-    if (!settings || !session || key === SUGGESTION_KEY) return
+    if (!settings || !session || settings.counterpartyId === null || key === SUGGESTION_KEY) return
+    const counterpartyId = settings.counterpartyId
     const typing = settings.typing.find((k) => k.key === key)
     if (typing) {
       withSettings((view) => ({ ...view, typing: view.typing.map((k) => (k.key === key ? { ...k, accountId } : k)) }))
@@ -622,7 +645,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       withSettings((view) => ({ ...view, registered: view.registered.map((r) => (r.key === key ? { ...r, accountId } : r)) }))
       // キーワードの科目は、そのキーワードに一致し、この取引先を持ち相手科目を手で選んでいない行(適用済みの行を含む)にも
       // 再適用なしで反映する(計画Issue #218・#219)。保存を待つ間に行が変わりうるので、状態はその時点の最新のものに対して計算する
-      const followSettings = { counterpartyId: settings.counterpartyId, keywords: [{ text: registered.text, accountId }] }
+      const followSettings = { counterpartyId, keywords: [{ text: registered.text, accountId }] }
       const descriptions = records.map((r) => r.record.description)
       setSession((prev) => {
         if (prev === null) return prev
@@ -659,6 +682,22 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
    */
   function applySettingsToOtherRows() {
     if (!session || !settings) return
+    if (settings.counterpartyId === null) {
+      // 資産・負債の科目のキーワード: キーワードを含み、相手科目が未設定の行にその科目を入れる(計画Issue #219)
+      if (settings.accountId === null) return
+      const accountResult = applyAccountKeywordsToRows({
+        states: session.rows,
+        initialStates: session.initialRows,
+        records,
+        descriptions: records.map((r) => r.record.description),
+        done: session.done,
+        settings: { accountId: settings.accountId, keywords: settingsItems(settings).map((item) => item.text) },
+        accounts: accountList,
+      })
+      setSession({ ...session, rows: accountResult.states, initialRows: accountResult.initialStates })
+      setSettingsMessage(accountResult.applied > 0 ? t('applyDone', { count: accountResult.applied }) : t('applyNone'))
+      return
+    }
     const result = applyCounterpartySettingsToRows({
       states: session.rows,
       initialStates: session.initialRows,
@@ -1034,7 +1073,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     // 摘要から入るキーワード(「新規」)を直して不正にしたまま確定すると、気付かないまま登録が抜けるので、確定する前に止める
     const hasInvalidSuggestion = importable.some((index) => {
       const state = session.rows[index]
-      if (!shouldOfferLearn(records[index], state) || state.counterpartyId === null || !state.learnOn || state.learnPattern === null) return false
+      const offered =
+        (shouldOfferLearn(records[index], state) && state.counterpartyId !== null) || shouldOfferAccountLearn(records[index], state, accountList)
+      if (!offered || !state.learnOn || state.learnPattern === null) return false
       return validateKeyword({ text: state.learnPattern, otherTexts: [], sourceDescription: records[index].record.description }) !== null
     })
     if (hasInvalidSuggestion) {
@@ -1115,16 +1156,18 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           }
         }
 
-        // 取引先を持てない(資産・負債)科目を相手科目に手で選んだ行は、摘要をその科目のキーワードルールとして
-        // 学習する(次回から摘要だけで相手科目が推定される。計画Issue #219、docs/decisions.md 2026-11-16 決定5)
-        if (state.counterpartyId === null && state.counterAccountTouched && state.counterAccountId !== null) {
-          const counterAccount = accountList.find((a) => a.id === state.counterAccountId)
-          const keyword = keywordOf(record.description)
-          if ((counterAccount?.category === 'asset' || counterAccount?.category === 'liability') && keyword !== '') {
+        // 取引先を持てない(資産・負債)科目を相手科目に手で選んだ行は、摘要の提案(「キーワードの設定」で「新規」と出ているもの)を
+        // その科目のキーワードルールとして、この行を確定したときに登録する(次回から摘要だけで相手科目が推定される。
+        // 計画Issue #219、docs/decisions.md 2026-11-16 決定13)。消した提案は登録しない
+        if (shouldOfferAccountLearn(records[index], state, accountList) && state.counterAccountId !== null && state.learnOn) {
+          const suggestion = (state.learnPattern ?? record.description).trim()
+          const keyword = keywordOf(suggestion)
+          if (validateKeyword({ text: suggestion, otherTexts: [], sourceDescription: record.description }) === null) {
             try {
-              const existing = await Promise.resolve(keywordRuleRepository.findByAccount(counterAccount.id))
+              const existing = await Promise.resolve(keywordRuleRepository.findByAccount(state.counterAccountId))
               if (!existing.some((rule) => rule.pattern === keyword)) {
-                await Promise.resolve(keywordRuleRepository.create({ pattern: keyword, accountId: counterAccount.id }))
+                await Promise.resolve(keywordRuleRepository.create({ pattern: keyword, accountId: state.counterAccountId }))
+                learned++
               }
             } catch {
               // 確定自体は成功しているので、ルールの登録に失敗しても無視する
@@ -1558,7 +1601,20 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                   const defaultMemberId = defaultMemberIdOf(state.counterAccountId, accountList)
                   const taggable = isTaggableAccountId(state.counterAccountId, accountList)
                   const offerLearn = !isDup && shouldOfferLearn(reviewRecord, state) && state.counterpartyId !== null
-                  const settingsView = settings !== null && settings.index === index && settings.counterpartyId === state.counterpartyId ? settings : null
+                  const settingsView =
+                    settings !== null && settings.index === index && settings.counterpartyId === state.counterpartyId && settings.accountId === null
+                      ? settings
+                      : null
+                  // 取引先を持たず、資産・負債の相手科目を持つ行には、その科目のキーワードの設定を出す(計画Issue #219)
+                  const accountSettingsId = !isDup && state.counterpartyId === null && isNonPlAccountId(state.counterAccountId) ? state.counterAccountId : null
+                  const accountSettingsView =
+                    accountSettingsId !== null &&
+                    settings !== null &&
+                    settings.index === index &&
+                    settings.counterpartyId === null &&
+                    settings.accountId === accountSettingsId
+                      ? settings
+                      : null
                   const setCounterAccount = (id: number | null) =>
                     updateRow(index, (s) => withCounterAccount(s, id, accountList))
                   const statusText = status === 'new' ? t('statusNew') : status === 'duplicate' ? t('statusDuplicate') : t('statusCheck')
@@ -1647,6 +1703,25 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                 onCreate={() => setCreateTarget({ kind: 'counterAccount', apply: (id) => setCounterAccount(id) })}
                                 createLabel={t('createCounterAccount')}
                               />
+                              {accountSettingsId !== null && (
+                                <CounterpartySettingsPopup
+                                  kind="account"
+                                  isOpen={accountSettingsView !== null}
+                                  onToggle={() => void toggleSettings(index)}
+                                  onClose={() => setSettings(null)}
+                                  counterpartyName={account?.name ?? ''}
+                                  items={accountSettingsView === null || !accountSettingsView.loaded ? null : settingsItems(accountSettingsView)}
+                                  rowDescription={desc}
+                                  message={settingsMessage}
+                                  saveError={settingsSaveError}
+                                  onTextChange={changeKeywordText}
+                                  onCommit={(key) => void commitKeyword(key)}
+                                  onDelete={(key) => void deleteKeyword(key)}
+                                  onAdd={addKeyword}
+                                  onAccountChange={() => undefined}
+                                  onApply={applySettingsToOtherRows}
+                                />
+                              )}
                             </td>
                             <td>
                               <div className="import-stack">

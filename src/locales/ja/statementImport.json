@@ -171,5 +171,10 @@
   "unreadableRowInFile": "{{fileName}} ・ {{row}}行目",
   "patternAccountLabel": "キーワード{{index}}の科目",
   "patternAccountNone": "指定しない",
-  "patternAccountLockedTitle": "摘要の提案の科目は、この行の相手科目が使われます"
+  "patternAccountLockedTitle": "摘要の提案の科目は、この行の相手科目が使われます",
+  "settingsLinkAccount": "キーワードの設定",
+  "settingsLinkAccountLabel": "{{desc}}のキーワードの設定",
+  "settingsTitleAccount": "キーワードの設定: {{name}}",
+  "settingsNoteAccount": "摘要にキーワードが含まれると、相手科目が「{{name}}」になります。",
+  "settingsPatternsLabelAccount": "キーワード"
 }

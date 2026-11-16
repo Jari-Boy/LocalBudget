@@ -213,3 +213,15 @@ export function shouldOfferLearn(record: RowRecord, state: ImportRowState): bool
   if (record.isExactDuplicate && !state.includeDuplicate) return false
   return state.counterpartyId !== null && state.counterpartyId !== state.initialCounterpartyId
 }
+
+/**
+ * 取引先を持てない(資産・負債の)相手科目を手で選んだ行は、摘要をその科目のキーワードにする提案の候補になる
+ * (計画Issue #219、docs/decisions.md 2026-11-16 決定13)。候補の行には、取引先の設定と同じ「キーワードの設定」の
+ * リンクを出し、確定時に摘要を新しい科目のキーワードとして登録する。取り込み済みで対象外の重複の行は対象にしない。
+ */
+export function shouldOfferAccountLearn(record: RowRecord, state: ImportRowState, accounts: readonly Account[]): boolean {
+  if (record.isExactDuplicate && !state.includeDuplicate) return false
+  if (state.counterpartyId !== null || !state.counterAccountTouched) return false
+  const category = findAccount(accounts, state.counterAccountId)?.category
+  return category === 'asset' || category === 'liability'
+}

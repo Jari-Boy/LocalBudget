@@ -1095,6 +1095,131 @@ describe('StatementImportScreen', () => {
     })
   })
 
+  describe('資産・負債の相手科目のキーワードの設定(計画Issue #219)', () => {
+    /** 相手科目に資産の「現金」を手で選んだ行を作る(取引先は付かない) */
+    async function setupCashRow(
+      description = 'ATM引出 新宿',
+      extra: (cashId: number) => void = () => undefined,
+      keywordRepository: SqlJsKeywordRuleRepository = keywordRules,
+    ) {
+      makeMapping()
+      const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
+      extra(cash.id)
+      renderScreen(undefined, undefined, keywordRepository)
+      await chooseCsv(`${HEADER}2026/10/05,${description},-10000,90000\n`)
+      pick(rowOf(new RegExp(description)), '相手科目', '現金')
+      return cash
+    }
+    const openAccountSettings = async (desc: string) => {
+      fireEvent.click(rowOf(new RegExp(desc)).getByRole('button', { name: `${desc}のキーワードの設定` }))
+      await screen.findByRole('dialog', { name: /^キーワードの設定: / })
+    }
+    const accountSettings = () => within(screen.getByRole('dialog', { name: /^キーワードの設定: / }))
+    const cashKeywords = (cashId: number) => keywordRules.findByAccount(cashId).map((r) => r.pattern)
+
+    it('相手科目が資産・負債の行には「キーワードの設定」のリンクが出る。収益・費用の行には出ない', async () => {
+      await setupCashRow('ATM引出 新宿')
+
+      expect(rowOf(/ATM引出/).getByRole('button', { name: 'ATM引出 新宿のキーワードの設定' })).toBeInTheDocument()
+      pick(rowOf(/ATM引出/), '相手科目', '食費')
+      expect(rowOf(/ATM引出/).queryByRole('button', { name: /のキーワードの設定$/ })).not.toBeInTheDocument()
+    })
+
+    it('開くと「キーワードの設定: 現金」に、科目の登録済みキーワードと、摘要の提案(新規)が並び、科目の選択欄は出ない', async () => {
+      await setupCashRow('ATM引出 新宿', (cashId) => keywordRules.create({ pattern: 'セブン銀行', accountId: cashId }))
+
+      await openAccountSettings('ATM引出 新宿')
+
+      await waitFor(() => expect(accountSettings().getByLabelText('キーワード1')).toHaveValue('セブン銀行'))
+      expect(accountSettings().getByLabelText('キーワード2')).toHaveValue('ATM引出 新宿')
+      expect(accountSettings().getByText('登録済み')).toBeInTheDocument()
+      expect(accountSettings().getByText('新規')).toBeInTheDocument()
+      expect(accountSettings().queryByLabelText('キーワード1の科目')).not.toBeInTheDocument()
+    })
+
+    it('新しいキーワードを入力して入力を終えると、その科目のキーワード(ルール)として保存される', async () => {
+      const cash = await setupCashRow('ATM引出 新宿')
+      await openAccountSettings('ATM引出 新宿')
+      fireEvent.click(accountSettings().getByRole('button', { name: 'キーワードを追加' }))
+
+      fireEvent.change(accountSettings().getByLabelText('キーワード2'), { target: { value: 'ATM' } })
+      fireEvent.blur(accountSettings().getByLabelText('キーワード2'))
+
+      await waitFor(() => expect(cashKeywords(cash.id)).toEqual(['ATM']))
+      expect(keywordRules.findByAccount(cash.id)[0].counterpartyId).toBeNull()
+    })
+
+    it('登録済みのキーワードは、削除できる', async () => {
+      const cash = await setupCashRow('ATM引出 新宿', (cashId) => keywordRules.create({ pattern: 'セブン銀行', accountId: cashId }))
+      await openAccountSettings('ATM引出 新宿')
+      await waitFor(() => expect(accountSettings().getByLabelText('キーワード1')).toHaveValue('セブン銀行'))
+
+      fireEvent.click(accountSettings().getByRole('button', { name: 'キーワード1を削除' }))
+
+      await waitFor(() => expect(cashKeywords(cash.id)).toEqual([]))
+    })
+
+    it('摘要の提案(新規)は、確定時に科目のキーワードとして登録される。消すと登録しない', async () => {
+      const cash = await setupCashRow('ATM引出 新宿')
+      await openAccountSettings('ATM引出 新宿')
+      fireEvent.click(accountSettings().getByRole('button', { name: 'キーワード1を削除' }))
+      fireEvent.click(accountSettings().getByRole('button', { name: '閉じる' }))
+
+      fireEvent.click(confirmButton(1))
+
+      await waitFor(() => expect(userEntries()).toHaveLength(1))
+      expect(cashKeywords(cash.id)).toEqual([])
+    })
+
+    it('摘要の提案を不正な文字列に直したまま確定しようとすると、確定せずにその旨を出す', async () => {
+      await setupCashRow('ATM引出 新宿')
+      await openAccountSettings('ATM引出 新宿')
+      fireEvent.change(accountSettings().getByLabelText('キーワード1'), { target: { value: 'ローソン' } })
+      fireEvent.click(accountSettings().getByRole('button', { name: '閉じる' }))
+
+      fireEvent.click(confirmButton(1))
+
+      expect(await screen.findByText('摘要から入るキーワードに問題があります。「取引先の設定」で直すか、削除してください。')).toBeInTheDocument()
+      expect(userEntries()).toHaveLength(0)
+    })
+
+    it('「ほかの行にも適用」は、キーワードを含み、相手科目が未設定で手で触っていない行にだけ、その科目を入れる(DBには書かない)', async () => {
+      makeMapping()
+      const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
+      renderScreen()
+      await chooseCsv(
+        `${HEADER}2026/10/05,ATM引出 新宿,-10000,90000\n2026/10/06,ATM引出 渋谷,-5000,85000\n2026/10/07,別の店,-500,84500\n`,
+      )
+      pick(rowOf(/ATM引出 新宿/), '相手科目', '現金')
+      await openAccountSettings('ATM引出 新宿')
+      fireEvent.change(accountSettings().getByLabelText('キーワード1'), { target: { value: 'ATM引出' } })
+
+      fireEvent.click(accountSettings().getByRole('button', { name: 'ほかの行にも適用' }))
+
+      expect(accountSettings().getByText('1行に適用しました')).toBeInTheDocument()
+      expect(rowOf(/ATM引出 渋谷/).getByRole('button', { name: /^相手科目: 現金/ })).toBeInTheDocument()
+      expect(rowOf(/別の店/).queryByRole('button', { name: /^相手科目: 現金/ })).not.toBeInTheDocument()
+      expect(cashKeywords(cash.id)).toEqual([])
+    })
+
+    it('新しいキーワードを保存できなかったら、ポップアップ内にエラーを出し、「新規」のまま入力を残す', async () => {
+      const failingRules = Object.assign(Object.create(keywordRules), {
+        create: () => {
+          throw new Error('保存の失敗')
+        },
+      }) as typeof keywordRules
+      await setupCashRow('ATM引出 新宿', () => undefined, failingRules)
+      await openAccountSettings('ATM引出 新宿')
+      fireEvent.click(accountSettings().getByRole('button', { name: 'キーワードを追加' }))
+
+      fireEvent.change(accountSettings().getByLabelText('キーワード2'), { target: { value: 'ATM' } })
+      fireEvent.blur(accountSettings().getByLabelText('キーワード2'))
+
+      expect(await accountSettings().findByText('保存できませんでした。もう一度お試しください。')).toBeInTheDocument()
+      expect(accountSettings().getByLabelText('キーワード2')).toHaveValue('ATM')
+    })
+  })
+
   describe('取引先の追加ダイアログの改善(計画Issue #218)', () => {
     const openCounterpartyDialog = (desc: RegExp) => {
       fireEvent.click(rowOf(desc).getByRole('button', { name: /^取引先/ }))
