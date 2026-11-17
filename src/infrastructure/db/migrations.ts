@@ -16,6 +16,7 @@ import seedMarkersSql from '../../../docs/schema/seed_markers.sql?raw'
 
 import { convertLegacyCounterpartyPatterns } from './legacyKeywordRules'
 import { MigrationFailedError, SchemaTooNewError } from './migrationErrors'
+import { MIGRATION_V2_SYSTEM_ROLE } from './migrationV2SystemRole'
 
 /**
  * 最新スキーマと差分の2本立て(計画Issue #42、docs/decisions.md)。
@@ -35,14 +36,14 @@ export interface MigrationPlan {
   diffs: Readonly<Record<number, readonly MigrationStep[]>>
 }
 
-export const LATEST_SCHEMA_VERSION = 1
+export const LATEST_SCHEMA_VERSION = 2
 
 // household_members → accounts(household_membersを参照) → projects/counterparties
 // → settlement_batches(counterpartiesを参照) → journal(accounts/projects/counterparties/
 // settlement_batchesを参照) → budgets(accountsを参照)
 // → recurring_transactions(accounts等を参照しjournal_entriesにALTER TABLEを追加するためjournalより後)
 // → reconciliation/statement_import(accounts/journal_entriesを参照) → journal_templates の順で適用する。
-const LATEST_SCHEMA_SQL: readonly string[] = [
+export const LATEST_SCHEMA_SQL: readonly string[] = [
   householdMembersSql,
   accountsSql,
   projectsSql,
@@ -67,7 +68,10 @@ export const SCHEMA_PLAN: MigrationPlan = {
   },
   // 本番前(凍結前)は差分を足さず、DDLを直接修正する。初回の本番デプロイの直前に、その時点のスキーマを
   // バージョン1として凍結する(docs/guides/schema-migration.md)。凍結後のスキーマ変更は、ここに差分を足す
-  diffs: {},
+  diffs: {
+    // v2(計画Issue #223): accounts.system_role(システム管理科目の役割)の追加
+    2: MIGRATION_V2_SYSTEM_ROLE,
+  },
 }
 
 export function getUserVersion(db: Database): number {

@@ -201,7 +201,7 @@ interface StorageAdapter {
 
 **旧バックアップの取込(計画Issue #169・#42)**: 凍結前(本番運用の開始前)は、`journal_lines.household_member_id`をNOT NULLにした際のように、DDLを直接修正して開発用DBを作り直す。そのため、NULL許容の旧スキーマのバックアップは、取込時のスキーマ検証(`assertValidDatabaseSchema`)が`InvalidBackupFileError`で拒否する。この検査は、初回の本番デプロイの直前の凍結時に外す(`docs/guides/schema-migration.md`)。凍結後は、本番で公開したバージョン以降のバックアップを必ず読み込める(読み込み時の検証で、使い捨てのDBに差分を流して確かめ、保存するのは元のバイト列。起動時に改めて差分が流れる)。アプリより新しい`user_version`のバックアップは、起動時と同じ理由(消えた列を読んで画面が壊れるおそれ)で、`InvalidBackupFileError`で拒否する。
 
-**スキーマのバージョン番号(計画Issue #201・#42)**: 仕訳テンプレートの追加(計画Issue #201)では一度`user_version`を2にして差分で追加したが、本番運用の前なので、計画Issue #42でバージョン1に戻し、仕訳テンプレートの表も最新スキーマ(`docs/schema/journal_templates.sql`)の一部として新規DBにそのまま作る形にした(差分は0件)。`journal_templates`系のテーブルは`assertValidDatabaseSchema`の必須テーブルには加えていない(凍結後に表を足す差分を書いても、旧バックアップの取込を止めないため)。差分の仕組みと凍結は`docs/guides/schema-migration.md`。
+**スキーマのバージョン番号(計画Issue #201・#42)**: 仕訳テンプレートの追加(計画Issue #201)では一度`user_version`を2にして差分で追加したが、本番運用の前なので、計画Issue #42でバージョン1に戻し、仕訳テンプレートの表も最新スキーマ(`docs/schema/journal_templates.sql`)の一部として新規DBにそのまま作る形にした(その時点で差分は0件)。その後、計画Issue #223の`accounts.system_role`の追加では、既存DBを起動できなくしないため、`user_version`を2にして差分(`src/infrastructure/db/migrationV2SystemRole.ts`、`accounts`の作り直し)を足した(現在の`LATEST_SCHEMA_VERSION`は2)。`journal_templates`系のテーブルは`assertValidDatabaseSchema`の必須テーブルには加えていない(凍結後に表を足す差分を書いても、旧バックアップの取込を止めないため)。差分の仕組みと凍結は`docs/guides/schema-migration.md`。
 
 ## 9. 既知の制約・将来課題
 

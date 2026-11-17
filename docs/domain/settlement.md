@@ -241,7 +241,9 @@ Bからの振込CSV(1:N):        (借) 資産・普通預金        50,000
 
 同じ「選択合計がバッチ残高より多い/少ない」という条件でも、資産/負債で損益の向きが反転する点に注意(資産側は相手からの受取額、負債側は自分からの支払額という向きの違いによる)。`resolveSettlementAdjustment`は、この判定と、`buildSettlementJournalEntryInput`の既存の借方/貸方ロジックをそのまま再利用するための実効区分(科目自体の区分を変更するものではない)を1つの純粋関数として提供する。
 
-「雑収入」・「雑損失」は`is_system_managed`ではない通常のデフォルト科目として、Worker起動時に`seedSettlementAdjustmentAccounts`が科目名の有無で判定して冪等シードする(`seedDefaultAccounts`/`seedAdvanceAccounts`と同様のパターン)。ユーザーが生成された調整仕訳の科目を後から変更・削除したい場合は、通常の仕訳編集・科目管理操作で変更できる(削除された場合は次回のWorker起動時に本関数が再投入する)。
+「雑収入」・「雑損失」は、`is_system_managed = true`のシステム管理科目で、役割`system_role`(雑収入=`settlement_gain`・収益、雑損失=`settlement_loss`・費用)を持つ([accounts.md 3.1](./accounts.md#31-フィールド定義)参照、計画Issue #223)。Worker起動時に`seedSettlementAdjustmentAccounts`が`ensureSystemRoleAccount`で冪等にシードする。精算画面(`SettleTab`)の差額の計上先は、科目名ではなく役割で引く。そのため名前を変えても計上先は変わらず、改名後に再投入されることもない。役割の無い旧データ(スキーマv1のDB)には、スキーマv2の差分(`migrationV2SystemRole.ts`)が、名前が一致する通常科目に役割を付与する。一致する科目が無い(改名済み等の)ときは差分では何もせず、起動時のシードが新規に投入する。名前の変更のみ可能で、削除・統合・区分変更・非アクティブ化はできない。システム管理科目なので、手入力の仕訳・キーワードルール・明細取込の選択欄には出ない(残高調整と同じ扱い)。精算画面の差額計上(`createSettlementEntry`)は影響を受けない。
+
+旧データ(役割の無い、同名の通常科目の「雑収入」・「雑損失」)は、起動時のシードがその科目に役割を付与して引き継ぐ。同名の科目が非アクティブなときは触れず、新規に投入する。判断の記録は[decisions.md](../decisions.md)の2026-11-17を参照。
 
 ---
 

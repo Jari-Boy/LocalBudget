@@ -3,6 +3,7 @@ import type {
   Account,
   AccountCategory,
   CreateAccountInput,
+  SystemRole,
   UpdateAccountInput,
   UpdateAccountOptions,
 } from '../../domain/account/Account'
@@ -25,15 +26,16 @@ export class SqlJsAccountRepository implements AccountRepository {
   create(input: CreateAccountInput): Account {
     this.db.run(
       `INSERT INTO accounts
-        (category, name, is_reconcilable, has_external_statement, is_system_managed,
+        (category, name, is_reconcilable, has_external_statement, is_system_managed, system_role,
          household_member_id, account_group_id, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.category,
         input.name,
         boolToSql(input.isReconcilable),
         boolToSql(resolveHasExternalStatement(input)),
         boolToSql(input.isSystemManaged ?? false),
+        input.systemRole ?? null,
         input.householdMemberId ?? null,
         input.accountGroupId ?? null,
         input.sortOrder ?? 0,
@@ -221,6 +223,7 @@ function mapRowToAccount(columns: string[], values: unknown[]): Account {
     hasExternalStatement: sqlToBool(get<number | null>('has_external_statement')),
     isActive: sqlToBool(get<number>('is_active')) as boolean,
     isSystemManaged: sqlToBool(get<number>('is_system_managed')) as boolean,
+    systemRole: get<SystemRole | null>('system_role'),
     autoBalanceAdjustment: sqlToBool(get<number>('auto_balance_adjustment')) as boolean,
     householdMemberId: get<number | null>('household_member_id'),
     accountGroupId: get<number | null>('account_group_id'),
