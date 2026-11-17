@@ -52,17 +52,17 @@ async function createV1Database(options: { withRoleNames?: boolean } = {}): Prom
 }
 
 describe('スキーマ v1 → v2(accounts.system_role の追加)', () => {
-  it('最新のスキーマのバージョンは2である', () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(2)
+  it('最新のスキーマのバージョンは2以上である(v3以降の差分は別のテストで確かめる)', () => {
+    expect(LATEST_SCHEMA_VERSION).toBeGreaterThanOrEqual(2)
   })
 
-  it('v1のDBに差分を流すと、最新スキーマからの新規作成と定義レベルで一致し、バージョンが2になる', async () => {
+  it('v1のDBに差分を流すと、最新スキーマからの新規作成と定義レベルで一致し、バージョンが最新になる', async () => {
     const migrated = await createV1Database()
     runMigrations(migrated)
     const fresh = await createTestDatabase()
     runMigrations(fresh)
 
-    expect(getUserVersion(migrated)).toBe(2)
+    expect(getUserVersion(migrated)).toBe(LATEST_SCHEMA_VERSION)
     expect(findSchemaDifferences(migrated, fresh)).toEqual([])
   })
 

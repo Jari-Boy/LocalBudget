@@ -17,6 +17,8 @@ import seedMarkersSql from '../../../docs/schema/seed_markers.sql?raw'
 import { convertLegacyCounterpartyPatterns } from './legacyKeywordRules'
 import { MigrationFailedError, SchemaTooNewError } from './migrationErrors'
 import { MIGRATION_V2_SYSTEM_ROLE } from './migrationV2SystemRole'
+import { MIGRATION_V3_NORMALIZE_KEYWORDS } from './migrationV3NormalizeKeywords'
+import { MIGRATION_V4_NORMALIZE_DESCRIPTIONS } from './migrationV4NormalizeDescriptions'
 
 /**
  * 最新スキーマと差分の2本立て(計画Issue #42、docs/decisions.md)。
@@ -36,7 +38,7 @@ export interface MigrationPlan {
   diffs: Readonly<Record<number, readonly MigrationStep[]>>
 }
 
-export const LATEST_SCHEMA_VERSION = 2
+export const LATEST_SCHEMA_VERSION = 4
 
 // household_members → accounts(household_membersを参照) → projects/counterparties
 // → settlement_batches(counterpartiesを参照) → journal(accounts/projects/counterparties/
@@ -71,6 +73,10 @@ export const SCHEMA_PLAN: MigrationPlan = {
   diffs: {
     // v2(計画Issue #223): accounts.system_role(システム管理科目の役割)の追加
     2: MIGRATION_V2_SYSTEM_ROLE,
+    // v3: キーワードマスタ(keyword_rules.pattern)の標準化(NFKC・大文字化・空白除去)。表の形は変えない
+    3: MIGRATION_V3_NORMALIZE_KEYWORDS,
+    // v4: 取り込み済みの仕訳の摘要の標準化と、キーワードのハイフンの標準化(表の形は変えない)
+    4: MIGRATION_V4_NORMALIZE_DESCRIPTIONS,
   },
 }
 
