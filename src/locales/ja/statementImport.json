@@ -115,7 +115,7 @@
   "defaultAccountFollowed": "{{count}}行の相手科目をキーワードの科目にしました",
   "applyNone": "適用できる行はありませんでした",
   "confirmCount": "{{count}} 件を「{{account}}」に確定",
-  "confirmDone": "確定しました。{{learned}}続けて次のCSVを取り込めます。",
+  "confirmDone": "確定しました。{{learned}}続けて明細を選択してください。",
   "confirmLearned": "キーワードを{{count}}件登録しました。",
   "targetAccountLabel": "科目",
   "statementOwnerLabel": "誰の明細か(必須)",

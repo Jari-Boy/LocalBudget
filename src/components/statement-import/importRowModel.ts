@@ -41,6 +41,13 @@ export interface ImportRowState {
   learnOn: boolean
   /** 提案の文字列。nullなら摘要そのまま */
   learnPattern: string | null
+  /**
+   * 摘要の提案の科目を、ダイアログで選んだか。trueの間は提案の科目(learnAccountId)を使い、行の相手科目を変えても追従しない。
+   * falseの間は、行の相手科目(取引先を持てる科目のとき)が提案の科目になる
+   */
+  learnAccountTouched: boolean
+  /** ダイアログで選んだ提案の科目(learnAccountTouchedがtrueのときだけ意味を持つ。「指定しない」はnull) */
+  learnAccountId: number | null
 }
 
 export type RowStatus = 'new' | 'duplicate' | 'check' | 'skipped'
@@ -69,6 +76,8 @@ export function createInitialRowState(params: {
     // 摘要だけでは取引先が決まらなかった行は、既定でキーワードを登録しない(誤った学習を避ける)
     learnOn: params.candidateCounterpartyIds.length < 2,
     learnPattern: null,
+    learnAccountTouched: false,
+    learnAccountId: null,
   }
 }
 
@@ -91,7 +100,9 @@ export function isRowEdited(state: ImportRowState, initial: ImportRowState): boo
     state.approximateDecision !== initial.approximateDecision ||
     state.replacementTargetId !== initial.replacementTargetId ||
     state.learnOn !== initial.learnOn ||
-    state.learnPattern !== initial.learnPattern
+    state.learnPattern !== initial.learnPattern ||
+    state.learnAccountTouched !== initial.learnAccountTouched ||
+    state.learnAccountId !== initial.learnAccountId
   )
 }
 

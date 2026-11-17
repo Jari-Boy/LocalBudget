@@ -70,7 +70,8 @@ import { CounterpartySettingsPopup } from './CounterpartySettingsPopup'
 import { applyAccountKeywordsToRows } from './applyAccountKeywordsToRows'
 import { applyCounterpartySettingsToRows } from './applyCounterpartySettingsToRows'
 import { CounterpartyCreateDialog, type CounterpartyCreateInput } from './CounterpartyCreateDialog'
-import { countRowsContaining, validateKeyword, type KeywordError } from './counterpartyKeywordModel'
+import { formatDescriptionForDisplay } from '../../domain/statement-import/formatDescriptionForDisplay'
+import { countRowsContaining, matchesKeyword, validateKeyword, type KeywordError } from './counterpartyKeywordModel'
 import type { KeywordListItem } from './KeywordList'
 import { buildGroupSelectCategories } from '../common/tree-select/groupSelectCategories'
 import { mappingFormToInput } from '../master/mappingForm'
@@ -263,6 +264,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [settingsSaveError, setSettingsSaveError] = useState('')
   /** 保存中のキーワード(入力を終えたときのフォーカス外れとEnterで二重に保存しないため) */
   const savingKeys = useRef(new Set<string>())
+  /**
+   * ファイルのチェックを切り替えて一覧を作り直すとき、入力済みの内容を引き継ぐための記憶(外部取引ID → 行の状態)。
+   * 外したファイルの行の内容も覚えておき、チェックを戻すと元に戻る。CSVを選び直す・取込先を変えると捨てる
+   */
+  const rowMemory = useRef(new Map<string, { state: ImportRowState; initial: ImportRowState }>())
   /** 残高の照合に使う、取込先の既存の明細行と突合マスタ(計画Issue #205) */
   const [pastData, setPastData] = useState<{ lines: ImportPreviewLine[]; refs: ImportPreviewRef[] } | null>(null)
 
@@ -414,6 +420,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     const category = accountList.find((a) => a.id === accountId)?.category
     return category !== undefined && isCounterpartyEligibleCategory(category)
   }
+  /** 摘要の提案の科目。ダイアログで選んでいればその科目、選んでいなければ行の相手科目(取引先を持てる科目のときだけ) */
+  const learnAccountIdOf = (state: ImportRowState): number | null =>
+    state.learnAccountTouched ? state.learnAccountId : isPlAccountId(state.counterAccountId) ? state.counterAccountId : null
   /** キーワードの科目に選べる科目(取引先を持てる費用・収益の科目) */
   const keywordAccountOptions = accountList
     .filter((a) => isCounterpartyEligibleCategory(a.category))
@@ -432,8 +441,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     const offered = accountKind
       ? shouldOfferAccountLearn(records[view.index], rowState, accountList)
       : shouldOfferLearn(records[view.index], rowState)
-    const suggestion = offered && rowState.learnOn ? (rowState.learnPattern ?? description.trim()) : null
-    const suggestionAccountId = accountKind ? view.accountId : isPlAccountId(rowState.counterAccountId) ? rowState.counterAccountId : null
+    const suggestion = offered && rowState.learnOn ? (rowState.learnPattern ?? formatDescriptionForDisplay(description)) : null
+    const suggestionAccountId = accountKind ? view.accountId : learnAccountIdOf(rowState)
     const entries: {
       key: string
       kind: 'registered' | 'new'
@@ -451,9 +460,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               kind: 'new' as const,
               text: suggestion,
               sourceDescription: description,
-              // 摘要の提案の科目は、この行の相手科目が使われる(取引先を持てる科目のときだけ)
+              // 摘要の提案の科目は、ダイアログで選ぶまでは、この行の相手科目(取引先を持てる科目のときだけ)。
+              // 科目のキーワードの提案は、開いている科目に固定
               accountId: suggestionAccountId,
-              accountLocked: true,
+              accountLocked: accountKind,
             },
           ]),
       ...view.typing.map((k) => ({ key: k.key, kind: 'new' as const, text: k.text, sourceDescription: description, accountId: k.accountId })),
@@ -629,14 +639,37 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   /**
    * キーワードの科目を選んだ時点で保存する(計画Issue #219)。入力中のキーワードは、入力を終えて保存するときに
-   * 科目も一緒に保存する。摘要の提案の科目は、この行の相手科目が使われるので変えられない。
+   * 科目も一緒に保存する。摘要の提案の科目は、この行に覚えておき、確定時のキーワード登録に使う
+   * (選んだあとは、行の相手科目を変えても追従しない)。
    */
   async function changeKeywordAccount(key: string, accountId: number | null) {
-    if (!settings || !session || settings.counterpartyId === null || key === SUGGESTION_KEY) return
+    if (!settings || !session || settings.counterpartyId === null) return
+    // ダイアログを開いた行には、選んだ科目をその行の相手科目にも入れる(手で選んだ科目でも置き換える。
+    // 行の相手科目を後から変えても、キーワード側の科目は変えない)
+    const originIndex = settings.index
+    const reflectToOriginRow = (text: string, syncInitial: boolean) => {
+      if (accountId === null || !isPlAccountId(accountId) || !matchesKeyword(text, records[originIndex].record.description)) return
+      setSession((prev) => {
+        if (prev === null || prev.rows[originIndex].counterAccountId === accountId) return prev
+        // 科目を手で選んだ扱いにはしない(キーワードの科目が変わればまた追従できるように)
+        const next = { ...withCounterAccount(prev.rows[originIndex], accountId, accountList), counterAccountTouched: false }
+        const rows = prev.rows.map((state, i) => (i === originIndex ? next : state))
+        if (!syncInitial) return { ...prev, rows }
+        const initial = { ...prev.initialRows[originIndex], counterAccountId: next.counterAccountId, counterpartyId: next.counterpartyId, initialCounterpartyId: next.counterpartyId, settlementBatchId: next.settlementBatchId, householdMemberId: next.householdMemberId }
+        return { ...prev, rows, initialRows: prev.initialRows.map((state, i) => (i === originIndex ? initial : state)) }
+      })
+    }
+    if (key === SUGGESTION_KEY) {
+      const suggestionText = session.rows[originIndex].learnPattern ?? formatDescriptionForDisplay(records[originIndex].record.description)
+      updateRow(originIndex, (s) => ({ ...s, learnAccountTouched: true, learnAccountId: accountId }))
+      reflectToOriginRow(suggestionText, false)
+      return
+    }
     const counterpartyId = settings.counterpartyId
     const typing = settings.typing.find((k) => k.key === key)
     if (typing) {
       withSettings((view) => ({ ...view, typing: view.typing.map((k) => (k.key === key ? { ...k, accountId } : k)) }))
+      reflectToOriginRow(typing.text, false)
       return
     }
     const registered = settings.registered.find((r) => r.key === key)
@@ -647,6 +680,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     try {
       await Promise.resolve(keywordRuleRepository.update(registered.id, { accountId }))
       withSettings((view) => ({ ...view, registered: view.registered.map((r) => (r.key === key ? { ...r, accountId } : r)) }))
+      reflectToOriginRow(registered.text, true)
       // キーワードの科目は、そのキーワードに一致し、この取引先を持ち相手科目を手で選んでいない行(適用済みの行を含む)にも
       // 再適用なしで反映する(計画Issue #218・#219)。保存を待つ間に行が変わりうるので、状態はその時点の最新のものに対して計算する
       const followSettings = { counterpartyId, keywords: [{ text: registered.text, accountId }] }
@@ -754,7 +788,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   /** 取込先とチェックしたファイルから、取り込む一覧を作る。チェックしたファイルが無ければ一覧は出さない */
-  async function buildSession(account: Account, next: MultiFileMappingMatch, checked: ReadonlySet<string>) {
+  async function buildSession(account: Account, next: MultiFileMappingMatch, checked: ReadonlySet<string>, restoreRows = false) {
     const files = next.files.filter((f) => checked.has(f.fileName))
     if (files.length === 0) {
       setSession(null)
@@ -780,7 +814,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       existingTransactions,
       approximateDuplicateOptions: approximateDuplicateOptions ?? DEFAULT_APPROXIMATE_DUPLICATE_OPTIONS,
     })
-    const rows = await computeInitialRows(review, data!.accounts)
+    const computedRows = await computeInitialRows(review, data!.accounts)
+    // ファイルのチェックを切り替えた作り直しでは、入力済みの内容を外部取引IDで引き継ぐ
+    const remembered = (i: number) => (restoreRows ? rowMemory.current.get(review.records[i].externalId) : undefined)
+    const rows = computedRows.map((row, i) => remembered(i)?.state ?? row)
+    const initialRows = computedRows.map((row, i) => remembered(i)?.initial ?? row)
     setSession({
       fileName: files.map((f) => f.fileName).join('、'),
       targetAccount: account,
@@ -794,7 +832,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       ),
       existingEntries: new Map(all.map((entry) => [entry.id, entry])),
       rows,
-      initialRows: rows,
+      initialRows,
       done: new Set(),
     })
     setSelected(new Set())
@@ -804,7 +842,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setSettingsSaveError('')
   }
 
-  /** 定義が決まったら、紐づく科目(取込先に選べるもの)の先頭を初期値にして取り込む。無ければ選ばせる */
+  /** 定義が決まったら、紐づく科目(取込先に選べるもの)が1つならそれを取込先にして取り込む。無い・複数なら選ばせる */
   async function selectMatch(next: MultiFileMappingMatch) {
     setMatch(next)
     setSession(null)
@@ -823,7 +861,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     const linked = next.definition.accountIds
       .map((id) => data!.accounts.find((a) => a.id === id))
       .filter((a): a is Account => a !== undefined && isStatementImportEligibleAccount(a))
-    const initial = linked[0] ?? null
+    // 紐づく科目が1つのときだけ自動で決める。複数あるときは、どれの明細かを利用者に選ばせる
+    const initial = linked.length === 1 ? linked[0] : null
     setTargetAccountId(initial?.id ?? null)
     if (initial) await buildSession(initial, next, everyFile)
   }
@@ -840,6 +879,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setError('')
     setDoneMessage('')
     setFailures([])
+    rowMemory.current.clear()
     setSession(null)
     setMatch(null)
     setCandidates([])
@@ -891,6 +931,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   /** 取込先を選び直す。重複・確定版の候補・残高照合は取込先ごとなので、一覧を作り直す */
   async function changeTargetAccount(id: number | null) {
     setTargetAccountId(id)
+    rowMemory.current.clear()
     setSession(null)
     const account = data!.accounts.find((a) => a.id === id)
     if (!account || !match || !csv) return
@@ -904,9 +945,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     }
   }
 
-  /** ファイルのチェックを切り替える。外したファイルは選ばなかったものとして一覧を作り直す(入力済みの内容は失われるので警告を通す) */
+  /** ファイルのチェックを切り替える。外したファイルは選ばなかったものとして一覧を作り直す(入力済みの内容は引き継ぐので警告は出さない) */
   function toggleFile(fileName: string) {
-    guarded(() => void applyFileToggle(fileName))
+    void applyFileToggle(fileName)
   }
 
   async function applyFileToggle(fileName: string) {
@@ -918,9 +959,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       setCheckedFiles(next)
       const account = data!.accounts.find((a) => a.id === targetAccountId)
       if (!account) return
+      // いまの一覧の行の内容を覚えてから作り直す
+      if (session) {
+        session.review.records.forEach((r, i) => rowMemory.current.set(r.externalId, { state: session.rows[i], initial: session.initialRows[i] }))
+      }
       setBusy(true)
       try {
-        await buildSession(account, match, next)
+        await buildSession(account, match, next, true)
       } catch {
         setError(t('uploadError'))
       } finally {
@@ -1164,7 +1209,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         // 空白や小文字を含んだまま保存すると、次回以降の推定に当たらない。
         // 摘要だけでは取引先が決まらなかった行(既定でオフ)や、消した提案は登録しない
         if (shouldOfferLearn(records[index], state) && state.counterpartyId !== null && state.learnOn) {
-          const suggestion = (state.learnPattern ?? record.description).trim()
+          const suggestion = (state.learnPattern ?? formatDescriptionForDisplay(record.description)).trim()
           if (validateKeyword({ text: suggestion, otherTexts: [], sourceDescription: record.description }) === null) {
             try {
               // 取引先と、この行の相手科目(取引先を持てる科目のときだけ)を1つのルールにまとめて登録する
@@ -1172,7 +1217,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 keywordRuleRepository.create({
                   pattern: keywordOf(suggestion),
                   counterpartyId: state.counterpartyId,
-                  accountId: isPlAccountId(state.counterAccountId) ? state.counterAccountId : null,
+                  accountId: learnAccountIdOf(state),
                 }),
               )
               learned++
@@ -1186,7 +1231,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         // その科目のキーワードルールとして、この行を確定したときに登録する(次回から摘要だけで相手科目が推定される。
         // 計画Issue #219、docs/decisions.md 2026-11-16 決定13)。消した提案は登録しない
         if (shouldOfferAccountLearn(records[index], state, accountList) && state.counterAccountId !== null && state.learnOn) {
-          const suggestion = (state.learnPattern ?? record.description).trim()
+          const suggestion = (state.learnPattern ?? formatDescriptionForDisplay(record.description)).trim()
           const keyword = keywordOf(suggestion)
           if (validateKeyword({ text: suggestion, otherTexts: [], sourceDescription: record.description }) === null) {
             try {
@@ -1209,8 +1254,23 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       // 選んで取り込んだ定義を、取込先の科目に紐づける(次回から候補の先頭に出る)
       await Promise.resolve(importMappingDefinitionRepository.linkAccount(session.definition.id, account.id))
     }
-    setSession({ ...session, done: new Set([...session.done, ...succeeded]) })
     setSelected(new Set())
+    if (failed.length === 0) {
+      // 全件確定できたら、画面を取り込み前の状態に戻し、続けて明細を選ぶよう促す
+      rowMemory.current.clear()
+      setSettings(null)
+      setSession(null)
+      setCsv(null)
+      setCsvs([])
+      setMatch(null)
+      setCandidates([])
+      setNoMatch(false)
+      setTargetAccountId(null)
+      setCheckedFiles(new Set())
+      setFileSummaries([])
+    } else {
+      setSession({ ...session, done: new Set([...session.done, ...succeeded]) })
+    }
     setFailures(failed)
     setDoneMessage(
       failed.length === 0
@@ -1628,7 +1688,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                   const reviewRecord = records[index]
                   const state = session.rows[index]
                   const status = statusOf(index)
-                  const desc = reviewRecord.record.description
+                  const desc = formatDescriptionForDisplay(reviewRecord.record.description)
                   const isDup = status === 'duplicate'
                   const isSkipped = status === 'skipped'
                   const group = rowGroup(reviewRecord)
@@ -1822,6 +1882,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                     counterpartyName={data.counterparties.find((c) => c.id === state.counterpartyId)?.name ?? ''}
                                     items={settingsView === null || !settingsView.loaded ? null : settingsItems(settingsView)}
                                     accountOptions={keywordAccountOptions}
+                                    accountCategories={categories.defaultAccounts}
                                     rowDescription={desc}
                                     message={settingsMessage}
                                     saveError={settingsSaveError}
@@ -2085,7 +2146,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
       {createTarget?.kind === 'counterparty' && session && (
         <CounterpartyCreateDialog
-          rowDescription={records[createTarget.rowIndex].record.description}
+          rowDescription={formatDescriptionForDisplay(records[createTarget.rowIndex].record.description)}
           rowAccountId={(() => {
             // 取引先を持てない科目の行は、相手科目の初期値を未設定にする
             const rowAccount = accountList.find((a) => a.id === session.rows[createTarget.rowIndex].counterAccountId)
