@@ -24,7 +24,13 @@ const PAYABLE = 4
 const GAIN = 6
 const LOSS = 7
 
-function account(id: number, name: string, category: Account['category'], isSystemManaged = false): Account {
+function account(
+  id: number,
+  name: string,
+  category: Account['category'],
+  isSystemManaged = false,
+  systemRole: Account['systemRole'] = null,
+): Account {
   return {
     id,
     category,
@@ -33,6 +39,7 @@ function account(id: number, name: string, category: Account['category'], isSyst
     hasExternalStatement: null,
     isActive: true,
     isSystemManaged,
+    systemRole,
     autoBalanceAdjustment: true,
     householdMemberId: null,
     accountGroupId: null,
@@ -48,8 +55,8 @@ const accounts = [
   account(ADVANCE, '立替金', 'asset', true),
   account(PAYABLE, '未払金', 'liability', true),
   account(5, '給与', 'revenue'),
-  account(GAIN, '雑収入', 'revenue'),
-  account(LOSS, '雑損失', 'expense'),
+  account(GAIN, '雑収入', 'revenue', true, 'settlement_gain'),
+  account(LOSS, '雑損失', 'expense', true, 'settlement_loss'),
 ]
 
 function line(
@@ -474,6 +481,36 @@ describe('SettleTab: 候補の仕訳で精算する', () => {
     await waitFor(() => expect(repositories.journalEntryRepository.create).toHaveBeenCalledTimes(1))
     const created = (repositories.journalEntryRepository.create.mock.calls as unknown as [{ lines: JournalLine[] }][])[0][0]
     expect(created.lines.some((l) => l.accountId === GAIN && l.amount === 150)).toBe(true)
+  })
+
+  it('差額の計上先を改名していても、役割で見つけて、その名前の科目に計上する', async () => {
+    const renamed = makeData().accounts.map((a) =>
+      a.id === GAIN ? { ...a, name: 'その他の収入' } : a,
+    )
+    const { repositories } = setup({ ...makeData(), accounts: renamed })
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '妻から振込(端数あり)を選択' }))
+    expect(within(selected()).getByText(/その他の収入に計上して/)).toBeInTheDocument()
+    fireEvent.click(within(selected()).getByRole('button', { name: '精算完了' }))
+
+    await waitFor(() => expect(repositories.journalEntryRepository.create).toHaveBeenCalledTimes(1))
+    const created = (repositories.journalEntryRepository.create.mock.calls as unknown as [{ lines: JournalLine[] }][])[0][0]
+    expect(created.lines.some((l) => l.accountId === GAIN && l.amount === 150)).toBe(true)
+  })
+
+  it('同じ名前の通常科目があっても、役割を持つ科目に計上する(名前では引かない)', async () => {
+    const decoy = account(99, '雑収入', 'revenue')
+    const data = makeData()
+    const renamed = data.accounts.map((a) => (a.id === GAIN ? { ...a, name: 'その他の収入' } : a))
+    const { repositories } = setup({ ...data, accounts: [decoy, ...renamed] })
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '妻から振込(端数あり)を選択' }))
+    fireEvent.click(within(selected()).getByRole('button', { name: '精算完了' }))
+
+    await waitFor(() => expect(repositories.journalEntryRepository.create).toHaveBeenCalledTimes(1))
+    const created = (repositories.journalEntryRepository.create.mock.calls as unknown as [{ lines: JournalLine[] }][])[0][0]
+    expect(created.lines.some((l) => l.accountId === GAIN)).toBe(true)
+    expect(created.lines.some((l) => l.accountId === 99)).toBe(false)
   })
 
   it('候補があっても、「+ 精算の仕訳を起票」から仕訳を起票してバッチに紐づけられる', async () => {

@@ -19,14 +19,12 @@ import { countActiveConditions } from '../common/journal-filter/journalFilterMod
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { SplitSettleData, SplitSettleDerived, SplitSettleRepositories } from './splitSettleData'
 import { EntryDetailDialog } from './EntryDetailDialog'
+import { findAccountBySystemRole } from '../../domain/account/findAccountBySystemRole'
 import { createLineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
 import { runInHistoryGroup } from '../../infrastructure/history/historyGroupRunner'
 import { createSettlementEntry, tagCandidatesToBatch } from './submitSettlement'
 import './SplitSettleScreen.css'
 
-/** 差額損益計上先の科目名(infrastructure/db/seedSettlementAdjustmentAccounts.tsの同名の定数と一致させる) */
-const GAIN_ACCOUNT_NAME = '雑収入'
-const LOSS_ACCOUNT_NAME = '雑損失'
 
 type StatusFilter = 'open' | 'settled' | 'all'
 
@@ -149,13 +147,15 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
   const matched = total > 0 && diff === 0
   const mismatched = total > 0 && diff !== 0
 
-  const accountIdByName = (name: string) => data.accounts.find((a) => a.name === name)?.id ?? null
-  const gainId = accountIdByName(GAIN_ACCOUNT_NAME)
-  const lossId = accountIdByName(LOSS_ACCOUNT_NAME)
+  // 差額の計上先は名前ではなく役割で引く(計画Issue #223)。改名されていても見つかり、表示も今の名前になる
+  const gainAccount = findAccountBySystemRole(data.accounts, 'settlement_gain')
+  const lossAccount = findAccountBySystemRole(data.accounts, 'settlement_loss')
+  const gainId = gainAccount?.id ?? null
+  const lossId = lossAccount?.id ?? null
   const adjustAccountName = mismatched
     ? resolveSettlementAdjustment(diff, category).isGain
-      ? GAIN_ACCOUNT_NAME
-      : LOSS_ACCOUNT_NAME
+      ? (gainAccount?.name ?? '雑収入')
+      : (lossAccount?.name ?? '雑損失')
     : ''
 
   const taggedEntries = data.entries.filter((e) => e.lines.some((l) => l.settlementBatchId === batch.id))
