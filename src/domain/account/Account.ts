@@ -1,5 +1,14 @@
 export type AccountCategory = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense'
 
+/**
+ * システム管理科目の「役割」(計画Issue #223)。科目を名前や「区分+システム管理」の推測ではなく役割で
+ * 識別するための印で、改名されても科目を見つけられる。1つの役割につき科目は1件。
+ * - settlement_gain: 精算の差額の計上先(収益「雑収入」)
+ * - settlement_loss: 精算の差額の計上先(費用「雑損失」)
+ * - balance_adjustment: 自動調整仕訳の相手科目(費用「残高調整」)
+ */
+export type SystemRole = 'settlement_gain' | 'settlement_loss' | 'balance_adjustment'
+
 export interface Account {
   id: number
   category: AccountCategory
@@ -14,6 +23,11 @@ export interface Account {
   hasExternalStatement: boolean | null
   isActive: boolean
   isSystemManaged: boolean
+  /**
+   * システム管理科目の役割(計画Issue #223)。役割を持つのはシステム管理科目だけで、付与後は変更できない。
+   * 役割のない科目はnull(旧来のテスト用リテラルなどで省略された場合はundefinedもnullと同じに扱う)
+   */
+  systemRole?: SystemRole | null
   /** 残高の基準点に合うように自動で調整仕訳を入れるか(計画Issue #205)。初期値はオン */
   autoBalanceAdjustment: boolean
   householdMemberId: number | null
@@ -34,6 +48,8 @@ export interface CreateAccountInput {
    */
   hasExternalStatement?: boolean | null
   isSystemManaged?: boolean
+  /** システム管理科目にだけ指定できる役割(計画Issue #223) */
+  systemRole?: SystemRole | null
   householdMemberId?: number | null
   accountGroupId?: number | null
   sortOrder?: number

@@ -13,6 +13,12 @@ CREATE TABLE accounts (
   has_external_statement BOOLEAN,
   is_active           BOOLEAN NOT NULL DEFAULT TRUE,
   is_system_managed    BOOLEAN NOT NULL DEFAULT FALSE,
+  -- システム管理科目の役割(計画Issue #223)。科目を名前や「区分+システム管理」の推測ではなく役割で引くための印で、
+  -- 改名されても見つけられる。役割を持てるのはシステム管理科目だけで、役割と区分は対応する(下のCHECK)。
+  -- 同じ役割の科目は1件(idx_accounts_unique_system_role)。付与後は変更できない
+  -- (prevent_non_name_change_on_system_managed_account)。役割のない科目はNULL
+  system_role          TEXT
+    CHECK (system_role IN ('settlement_gain','settlement_loss','balance_adjustment')),
   -- 残高の基準点に合うように自動で調整仕訳を入れるか(計画Issue #205、docs/domain/reconciliation.md 1.6)。
   -- 資産・負債だけが使う。オフでも最初の基準点(元手)の仕訳は作る。開発用のDBは作り直す前提でマイグレーションは行わない
   auto_balance_adjustment BOOLEAN NOT NULL DEFAULT TRUE,
@@ -29,8 +35,20 @@ CREATE TABLE accounts (
   -- その場合はis_reconcilableから推定する(照合する科目は外部明細あり、それ以外はなし)
   CHECK (category IN ('asset','liability') OR has_external_statement IS NULL),
   -- 外部明細の残高で照合する科目は、外部明細があることが前提
-  CHECK (NOT (is_reconcilable = TRUE AND has_external_statement = FALSE))
+  CHECK (NOT (is_reconcilable = TRUE AND has_external_statement = FALSE)),
+  -- 役割を持てるのはシステム管理科目だけ。役割と区分は対応する(精算の差益=収益、差損・残高調整=費用)
+  CHECK (
+    system_role IS NULL OR (
+      is_system_managed = TRUE AND
+      category = CASE system_role WHEN 'settlement_gain' THEN 'revenue' ELSE 'expense' END
+    )
+  )
 );
+
+-- 同じ役割の科目は1件だけ
+CREATE UNIQUE INDEX idx_accounts_unique_system_role
+ON accounts(system_role)
+WHERE system_role IS NOT NULL;
 
 CREATE INDEX idx_accounts_group ON accounts(account_group_id);
 
@@ -88,7 +106,8 @@ WHEN OLD.is_system_managed = TRUE
     NEW.is_active IS NOT OLD.is_active OR
     NEW.household_member_id IS NOT OLD.household_member_id OR
     NEW.is_reconcilable IS NOT OLD.is_reconcilable OR
-    NEW.is_system_managed IS NOT OLD.is_system_managed
+    NEW.is_system_managed IS NOT OLD.is_system_managed OR
+    (OLD.system_role IS NOT NULL AND NEW.system_role IS NOT OLD.system_role)
   )
 BEGIN
   SELECT RAISE(ABORT, 'system-managed accounts can only change name');

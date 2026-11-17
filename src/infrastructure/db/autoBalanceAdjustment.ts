@@ -211,20 +211,31 @@ function insertEntry(db: Database, account: AccountRow, entry: DesiredEntry): vo
   insertLine(counter.id, counterSide, counter.householdMemberId ?? entryMemberId)
 }
 
-/** 元手は純資産のシステム管理科目「初期残高」、それ以外は費用のシステム管理科目「残高調整」 */
+/**
+ * 元手は純資産のシステム管理科目「初期残高」、それ以外は費用のシステム管理科目「残高調整」。
+ * 「残高調整」は名前や区分ではなく役割(balance_adjustment、計画Issue #223)で引く。費用のシステム管理科目には
+ * 精算の雑損失もあり、「費用のシステム管理の最初の1件」では取り違えるため。
+ */
 function findCounterAccount(
   db: Database,
   kind: PlannedAdjustment['kind'],
 ): { id: number; householdMemberId: number | null } {
-  const category = kind === 'capital' ? 'equity' : 'expense'
-  const [result] = db.exec(
-    `SELECT id, household_member_id FROM accounts
-     WHERE category = ? AND is_system_managed = 1 ORDER BY id LIMIT 1`,
-    [category],
-  )
+  const [result] =
+    kind === 'capital'
+      ? db.exec(
+          `SELECT id, household_member_id FROM accounts
+           WHERE category = 'equity' AND is_system_managed = 1 ORDER BY id LIMIT 1`,
+        )
+      : db.exec(
+          `SELECT id, household_member_id FROM accounts WHERE system_role = 'balance_adjustment' LIMIT 1`,
+        )
   const row = result?.values[0]
   if (!row) {
-    throw new Error(`system-managed ${category} account for auto balance adjustment is missing`)
+    throw new Error(
+      kind === 'capital'
+        ? 'system-managed equity account for auto balance adjustment is missing'
+        : 'balance adjustment account (system_role = balance_adjustment) for auto balance adjustment is missing',
+    )
   }
   return { id: row[0] as number, householdMemberId: row[1] as number | null }
 }
