@@ -260,7 +260,7 @@ test.describe('明細取込画面', () => {
     await expect(rowOf(page, /スーパー/)).toBeVisible()
   })
 
-  test('確定版の可能性がある行で「これは確定版です」を選ぶと、旧仕訳を残高照合から除外して二重計上しない', async ({ page }) => {
+  test('似た取引がある行で「同じ取引なので、登録済みを削除して置き換える」を選ぶと、旧仕訳を残高照合から除外して二重計上しない', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING, [
@@ -285,8 +285,8 @@ test.describe('明細取込画面', () => {
 
     await startImport(page, '普通預金', '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,-3000\n')
 
-    await expect(page.getByText(/確定版の可能性があります/)).toBeVisible()
-    await page.getByLabel('これは確定版です').check()
+    await expect(page.getByText('似た取引が登録済みです。二重ではありませんか?')).toBeVisible()
+    await page.getByLabel('同じ取引なので、登録済みを削除して置き換える').check()
     await expect(page.getByRole('status').filter({ hasText: '一致しています' })).toBeVisible()
   })
 

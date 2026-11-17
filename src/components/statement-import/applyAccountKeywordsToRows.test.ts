@@ -16,7 +16,7 @@ const CASH = account(1, { name: '現金' })
 const FOOD = account(2, { category: 'expense', name: '食費', isReconcilable: null })
 const ACCOUNTS = [CASH, FOOD]
 
-const record = (overrides: Partial<{ isExactDuplicate: boolean }> = {}) =>
+const record = (overrides: Partial<{ isExactDuplicate: boolean; approximateCandidates: unknown[] }> = {}) =>
   ({ isExactDuplicate: false, approximateCandidates: [], ...overrides }) as never
 
 const state = (overrides: Partial<ImportRowState> = {}): ImportRowState => ({
@@ -67,6 +67,17 @@ describe('applyAccountKeywordsToRows', () => {
       descriptions: ['ATM', 'ATM'],
       done: [0],
       records: [record(), record({ isExactDuplicate: true })],
+    })
+
+    expect(result.applied).toBe(0)
+  })
+
+  it('「この取引を保存しない」を選んだ行は変えない', () => {
+    const similar = record({ approximateCandidates: [{ journalEntryId: 1 }] } as never)
+    const result = run({
+      rows: [state({ approximateDecision: 'skip' })],
+      descriptions: ['ATM'],
+      records: [similar],
     })
 
     expect(result.applied).toBe(0)

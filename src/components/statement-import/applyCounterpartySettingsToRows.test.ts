@@ -33,7 +33,7 @@ const ACCOUNTS = [FOOD, NEWS, BANK]
 const NEWS_SHOP = 100
 const OTHER_SHOP = 200
 
-const record = (overrides: Partial<{ isExactDuplicate: boolean }> = {}) =>
+const record = (overrides: Partial<{ isExactDuplicate: boolean; approximateCandidates: unknown[] }> = {}) =>
   ({ isExactDuplicate: false, approximateCandidates: [], ...overrides }) as never
 
 function state(overrides: Partial<ImportRowState> = {}): ImportRowState {
@@ -109,6 +109,17 @@ describe('取引先の設定(キーワード)', () => {
     })
 
     expect(result.states.map((s) => s.counterpartyId)).toEqual([null, null])
+  })
+
+  it('「この取引を保存しない」を選んだ行は変えない', () => {
+    const similar = record({ approximateCandidates: [{ journalEntryId: 1 }] } as never)
+    const result = run({
+      rows: [state({ approximateDecision: 'skip' })],
+      descriptions: ['新聞販売店A'],
+      records: [similar],
+    })
+
+    expect(result.states[0].counterpartyId).toBeNull()
   })
 
   it('相手科目が費用・収益でない行には、取引先を持てないので設定しない', () => {

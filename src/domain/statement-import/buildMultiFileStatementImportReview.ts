@@ -4,7 +4,7 @@ import { MappingColumnNotFoundError } from './MappingColumnNotFoundError'
 import { previewMappingRows, type MappingPreviewRow } from './previewMappingRows'
 import { resolveExternalIds } from './resolveExternalIds'
 import {
-  findApproximateDuplicateCandidates,
+  assignApproximateDuplicateCandidates,
   type ApproximateDuplicateSearchOptions,
   type ExistingTransactionSummary,
 } from './duplicateDetection'
@@ -147,11 +147,17 @@ export function buildMultiFileStatementImportReview(
   const sorted = files.length > 1 ? [...pending].sort((a, b) => compareDates(a.record.entryDate, b.record.entryDate)) : pending
   const finalIndexOf = new Map(sorted.map((p, index) => [p.tempId, index]))
 
-  const records: MultiFileReviewRecord[] = sorted.map((p) => ({
+  // 重複(取込済みとの完全一致・ファイル間の重複)の行は確定版候補を持たない。1件の既存明細は最も近い1行にだけ紐づける
+  const candidates = assignApproximateDuplicateCandidates(
+    sorted.map((p) => (p.isExactDuplicate ? null : p.record)),
+    existingTransactions,
+    approximateDuplicateOptions,
+  )
+  const records: MultiFileReviewRecord[] = sorted.map((p, index) => ({
     record: p.record,
     externalId: p.externalId,
     isExactDuplicate: p.isExactDuplicate,
-    approximateCandidates: findApproximateDuplicateCandidates(p.record, existingTransactions, approximateDuplicateOptions),
+    approximateCandidates: candidates[index],
     fileName: p.fileName,
     sourceRowNumber: p.sourceRowNumber,
     crossFileDuplicateOf: p.duplicateOfTempId === null ? null : (finalIndexOf.get(p.duplicateOfTempId) ?? null),

@@ -10,7 +10,11 @@ import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFor
  * DB・DOM非依存の純粋関数。
  */
 
-export type ApproximateDecision = 'unresolved' | 'confirmed_replacement' | 'different_transaction'
+/**
+ * 似た取引(確定版の可能性)がある行の扱い。既定は「別の取引なので、登録済みを残したまま追加する」。
+ * 「置き換える」は登録済みの仕訳を1件削除してこの取引で置き換え、「保存しない」はこの行を取り込まない。
+ */
+export type ApproximateDecision = 'different_transaction' | 'confirmed_replacement' | 'skip'
 
 export interface ImportRowState {
   counterpartyId: number | null
@@ -28,6 +32,8 @@ export interface ImportRowState {
   /** 取り込み済みと完全一致する行を、それでも取り込むか */
   includeDuplicate: boolean
   approximateDecision: ApproximateDecision
+  /** 「置き換える」で削除する登録済みの仕訳。候補が複数あるときに選ぶ(候補が1件なら選ばなくてもその1件) */
+  replacementTargetId: number | null
   /**
    * 摘要の提案(確定時のキーワード登録、計画Issue #207)を残すか。ポップアップで「新規」として一覧に出る。
    * 消すとfalseになり、確定時にも登録しない
@@ -37,7 +43,10 @@ export interface ImportRowState {
   learnPattern: string | null
 }
 
-export type RowStatus = 'new' | 'duplicate' | 'check'
+export type RowStatus = 'new' | 'duplicate' | 'check' | 'skipped'
+
+/** 一覧の3グループ。取り込んだときの内容で決まり、操作しても動かない */
+export type RowGroup = 'duplicate' | 'similar' | 'clean'
 
 export function createInitialRowState(params: {
   counterpartyId: number | null
@@ -55,7 +64,8 @@ export function createInitialRowState(params: {
     settlementBatchId: null,
     comment: '',
     includeDuplicate: false,
-    approximateDecision: 'unresolved',
+    approximateDecision: 'different_transaction',
+    replacementTargetId: null,
     // 摘要だけでは取引先が決まらなかった行は、既定でキーワードを登録しない(誤った学習を避ける)
     learnOn: params.candidateCounterpartyIds.length < 2,
     learnPattern: null,
@@ -79,6 +89,7 @@ export function isRowEdited(state: ImportRowState, initial: ImportRowState): boo
     state.comment !== initial.comment ||
     state.includeDuplicate !== initial.includeDuplicate ||
     state.approximateDecision !== initial.approximateDecision ||
+    state.replacementTargetId !== initial.replacementTargetId ||
     state.learnOn !== initial.learnOn ||
     state.learnPattern !== initial.learnPattern
   )
@@ -86,9 +97,32 @@ export function isRowEdited(state: ImportRowState, initial: ImportRowState): boo
 
 export function rowStatus(record: RowRecord, state: ImportRowState): RowStatus {
   if (record.isExactDuplicate && !state.includeDuplicate) return 'duplicate'
-  if (record.approximateCandidates.length > 0 && state.approximateDecision === 'unresolved') return 'check'
+  if (record.approximateCandidates.length > 0 && state.approximateDecision === 'skip') return 'skipped'
+  if (needsReplacementTarget(record, state)) return 'check'
   if (state.counterAccountId === null) return 'check'
   return 'new'
+}
+
+/** 「置き換える」を選んだのに、削除する登録済みの仕訳が決まっていない(候補が複数で未選択) */
+function needsReplacementTarget(record: RowRecord, state: ImportRowState): boolean {
+  return state.approximateDecision === 'confirmed_replacement' && record.approximateCandidates.length > 1 && replacementTargetOf(record, state) === null
+}
+
+/**
+ * 「置き換える」で削除する登録済みの仕訳のid。「置き換える」以外では削除しないのでnull。
+ * 候補が1件ならその1件、複数なら選んだ1件(選んでいない・候補に無い値はnull)。
+ */
+export function replacementTargetOf(record: RowRecord, state: ImportRowState): number | null {
+  if (state.approximateDecision !== 'confirmed_replacement') return null
+  if (record.approximateCandidates.length === 1) return record.approximateCandidates[0].journalEntryId
+  const chosen = record.approximateCandidates.find((c) => c.journalEntryId === state.replacementTargetId)
+  return chosen === undefined ? null : chosen.journalEntryId
+}
+
+/** 一覧のグループ。重複(取込済みとの完全一致)→似た取引あり→問題なしの順に並べて見せる */
+export function rowGroup(record: RowRecord): RowGroup {
+  if (record.isExactDuplicate) return 'duplicate'
+  return record.approximateCandidates.length > 0 ? 'similar' : 'clean'
 }
 
 const findAccount = (accounts: readonly Account[], id: number | null) =>
@@ -142,12 +176,12 @@ export interface BulkResult {
   states: ImportRowState[]
   /** 設定した行数 */
   applied: number
-  /** 選択されていたが対象外だった行数(重複の行、項目を持てない科目の行) */
+  /** 選択されていたが対象外だった行数(重複の行、保存しない行、項目を持てない科目の行) */
   skipped: number
 }
 
 /**
- * 選択した行に一括で設定する。重複の行(対象外)や、その項目を持てない科目の行は変えず、件数で返す。
+ * 選択した行に一括で設定する。重複の行・保存しない行(対象外)や、その項目を持てない科目の行は変えず、件数で返す。
  */
 export function applyBulkSetting(params: {
   states: readonly ImportRowState[]
@@ -162,7 +196,8 @@ export function applyBulkSetting(params: {
 
   const next = states.map((state, index) => {
     if (!selected.has(index)) return state
-    if (rowStatus(records[index], state) === 'duplicate') {
+    const status = rowStatus(records[index], state)
+    if (status === 'duplicate' || status === 'skipped') {
       skipped++
       return state
     }

@@ -9,7 +9,7 @@ import { rowStatus, withCounterAccount, type ImportRowState } from './importRowM
  *
  * - 科目のキーワードのどれか1つでも摘要に含み、取引先が無く、相手科目が未設定で手で触っていない行にだけ、その科目を入れる。
  *   別の科目が推定された行・手で選んだ行・取引先がある行は、自動確定しない原則(docs/domain/counterparties.md 1.3)により変えない。
- * - 確定済みの行と、取り込み済みで対象外の重複の行は変えない。
+ * - 確定済みの行と、取り込み済みで対象外の重複の行、「この取引を保存しない」を選んだ行は変えない。
  * - 反映した行は初期状態にも反映し、未保存の警告の誤検知を避ける。反映の対象でない項目(コメントなど)を
  *   手で編集していれば、その編集は未保存のまま残る。
  */
@@ -46,7 +46,7 @@ export function applyAccountKeywordsToRows(params: {
   const nextInitials = [...initialStates]
 
   const nextStates = states.map((state, index) => {
-    if (done.has(index) || rowStatus(records[index], state) === 'duplicate') return state
+    if (done.has(index) || ['duplicate', 'skipped'].includes(rowStatus(records[index], state))) return state
     if (
       state.counterpartyId !== null ||
       state.counterAccountId !== null ||

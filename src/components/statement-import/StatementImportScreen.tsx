@@ -52,7 +52,9 @@ import {
   defaultMemberIdOf,
   isRowEdited,
   isTaggableAccountId,
+  replacementTargetOf,
   resolveEligibleCounterpartyId,
+  rowGroup,
   rowStatus,
   shouldOfferAccountLearn,
   shouldOfferLearn,
@@ -79,12 +81,12 @@ import './StatementImportScreen.css'
 
 /**
  * 確定版候補(近似重複)探索の既定閾値。金融機関によって速報/確定のズレ方が異なるため
- * ドメイン層では規定されていない(docs/domain/statement-import.md 1.6)。日付は2週間、
- * 金額は1,000円までの差を許容する保守的な既定値とする。
+ * ドメイン層では規定されていない(docs/domain/statement-import.md 1.6)。警告が多すぎないよう、
+ * 日付は3日以内、金額は取込側の金額の3%以内に絞る(速報と確定で3%を超えて動く取引は候補にしない)。
  */
 const DEFAULT_APPROXIMATE_DUPLICATE_OPTIONS: ApproximateDuplicateSearchOptions = {
-  maxDateDiffDays: 14,
-  maxAmountDiff: 1000,
+  maxDateDiffDays: 3,
+  maxAmountDiffRate: 0.03,
 }
 
 export interface StatementImportScreenProps {
@@ -220,6 +222,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const { t: tMaster } = useTranslation('master')
 
   const [data, setData] = useState<LoadedData | null>(null)
+  /** 似た取引の「もっと見る」を開いている行 */
+  const [openMore, setOpenMore] = useState<ReadonlySet<number>>(new Set())
   const [csv, setCsv] = useState<LoadedCsv | null>(null)
   /** 実パースが通った定義の候補(2件以上のときだけ表示名で選ばせる) */
   const [candidates, setCandidates] = useState<MultiFileMappingMatch[]>([])
@@ -937,10 +941,29 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   const records = session?.review.records ?? []
-  const visibleIndices = session ? records.map((_, i) => i).filter((i) => !session.done.has(i)) : []
+  // 一覧は「重複」→「似た取引あり」→「問題なし」の順に並べる(グループの中は取り込んだ順のまま)。保存時の並び(rowOrder)は元の順を使う
+  const GROUP_ORDER = ['duplicate', 'similar', 'clean'] as const
+  const visibleIndices = session
+    ? records
+        .map((_, i) => i)
+        .filter((i) => !session.done.has(i))
+        .sort((a, b) => GROUP_ORDER.indexOf(rowGroup(records[a])) - GROUP_ORDER.indexOf(rowGroup(records[b])) || a - b)
+    : []
   const statusOf = (i: number) => rowStatus(records[i], session!.rows[i])
-  const importable = visibleIndices.filter((i) => statusOf(i) !== 'duplicate')
-  const dupCount = visibleIndices.length - importable.length
+  const importable = visibleIndices.filter((i) => statusOf(i) !== 'duplicate' && statusOf(i) !== 'skipped')
+  const skippedCount = visibleIndices.filter((i) => statusOf(i) === 'skipped').length
+  const dupCount = visibleIndices.length - importable.length - skippedCount
+  const similarCount = importable.filter((i) => rowGroup(records[i]) === 'similar').length
+  const groupCounts = { duplicate: 0, similar: 0, clean: 0 }
+  for (const i of visibleIndices) groupCounts[rowGroup(records[i])]++
+  /** 取込済み(突合マスタ)の仕訳のid。似た取引の出どころ(外部明細)の判定に使う */
+  const externalEntryIds = new Set([...(session?.existingRefs.values() ?? [])].map((ref) => ref.journalEntryId))
+  const sourceLabelOf = (journalEntryId: number) =>
+    externalEntryIds.has(journalEntryId)
+      ? t('sourceExternal')
+      : session?.existingEntries.get(journalEntryId)?.sourceType === 'recurring_generated'
+        ? t('sourceRecurring')
+        : t('sourceManual')
   const crossFileDupCount = visibleIndices.filter(
     (i) => statusOf(i) === 'duplicate' && records[i].crossFileDuplicateOf !== null,
   ).length
@@ -1094,19 +1117,22 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     const importedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
 
     for (const index of importable) {
-      const { record, externalId, approximateCandidates } = records[index]
+      const { record, externalId } = records[index]
       const state = session.rows[index]
       if (state.counterAccountId === null) {
         failed.push({ index, message: t('counterAccountRequiredError') })
         continue
       }
+      // 「置き換える」を選んだのに、削除する登録済みの仕訳が決まっていない行は、何も削除せず取り込まない
+      const replacementTargetId = replacementTargetOf(records[index], state)
+      if (state.approximateDecision === 'confirmed_replacement' && replacementTargetId === null) {
+        failed.push({ index, message: t('replacementTargetRequiredError') })
+        continue
+      }
       try {
-        if (state.approximateDecision === 'confirmed_replacement') {
-          for (const candidate of approximateCandidates) {
-            if (deleted.has(candidate.journalEntryId)) continue
-            await Promise.resolve(journalEntryRepository.delete(candidate.journalEntryId))
-            deleted.add(candidate.journalEntryId)
-          }
+        if (replacementTargetId !== null && !deleted.has(replacementTargetId)) {
+          await Promise.resolve(journalEntryRepository.delete(replacementTargetId))
+          deleted.add(replacementTargetId)
         }
         // 起票者: 「誰の明細か」(科目の名義、無ければ利用者が選んだ人。計画Issue #193)
         const entryHouseholdMemberId = statementOwnerId
@@ -1197,11 +1223,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   // 残高照合(docs/domain/reconciliation.md 1.5)。確定版として置き換える旧仕訳と、取り込まない行は除く
   const replacedIds = new Set(
-    visibleIndices.flatMap((i) =>
-      session!.rows[i].approximateDecision === 'confirmed_replacement'
-        ? records[i].approximateCandidates.map((c) => c.journalEntryId)
-        : [],
-    ),
+    visibleIndices.flatMap((i) => {
+      const target = replacementTargetOf(records[i], session!.rows[i])
+      return target === null ? [] : [target]
+    }),
   )
   const reconciliation =
     session && session.targetAccount.isReconcilable === true && pastData !== null && hasStatementBalance && importable.length > 0
@@ -1462,6 +1487,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                   checkCount,
                 })
               : t('loadedSummary', { fileName: session.fileName, newCount: importable.length, dupCount, checkCount })}
+            {similarCount > 0 && t('summarySimilar', { count: similarCount })}
+            {skippedCount > 0 && t('summarySkipped', { count: skippedCount })}
           </p>
 
           {reconciliation && reconciliation.gaps.length === 0 && (
@@ -1597,23 +1624,26 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 </tr>
               </thead>
               <tbody>
-                {visibleIndices.map((index) => {
+                {visibleIndices.map((index, position) => {
                   const reviewRecord = records[index]
                   const state = session.rows[index]
                   const status = statusOf(index)
                   const desc = reviewRecord.record.description
                   const isDup = status === 'duplicate'
+                  const isSkipped = status === 'skipped'
+                  const group = rowGroup(reviewRecord)
+                  const startsGroup = position === 0 || rowGroup(records[visibleIndices[position - 1]]) !== group
                   const account = accountList.find((a) => a.id === state.counterAccountId)
                   const showCounterparty = account === undefined || isCounterpartyEligibleCategory(account.category)
                   const defaultMemberId = defaultMemberIdOf(state.counterAccountId, accountList)
                   const taggable = isTaggableAccountId(state.counterAccountId, accountList)
-                  const offerLearn = !isDup && shouldOfferLearn(reviewRecord, state) && state.counterpartyId !== null
+                  const offerLearn = !isDup && !isSkipped && shouldOfferLearn(reviewRecord, state) && state.counterpartyId !== null
                   const settingsView =
                     settings !== null && settings.index === index && settings.counterpartyId === state.counterpartyId && settings.accountId === null
                       ? settings
                       : null
                   // 取引先を持たず、資産・負債の相手科目を持つ行には、その科目のキーワードの設定を出す(計画Issue #219)
-                  const accountSettingsId = !isDup && state.counterpartyId === null && isNonPlAccountId(state.counterAccountId) ? state.counterAccountId : null
+                  const accountSettingsId = !isDup && !isSkipped && state.counterpartyId === null && isNonPlAccountId(state.counterAccountId) ? state.counterAccountId : null
                   const accountSettingsView =
                     accountSettingsId !== null &&
                     settings !== null &&
@@ -1624,13 +1654,34 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                       : null
                   const setCounterAccount = (id: number | null) =>
                     updateRow(index, (s) => withCounterAccount(s, id, accountList))
-                  const statusText = status === 'new' ? t('statusNew') : status === 'duplicate' ? t('statusDuplicate') : t('statusCheck')
+                  const statusText =
+                    status === 'new' ? t('statusNew') : status === 'duplicate' ? t('statusDuplicate') : status === 'skipped' ? t('statusSkipped') : t('statusCheck')
 
                   return (
                     <Fragment key={reviewRecord.externalId + index}>
+                      {startsGroup && (
+                        <tr className="import-group">
+                          <td colSpan={showFileColumn ? 11 : 10}>
+                            <div className="import-group__head">
+                              <span className="import-group__title">{t(`group_${group}`)}</span>
+                              <span className="import-group__count">{t('groupCount', { count: groupCounts[group] })}</span>
+                              <span className="import-group__note">{t(`group_${group}_note`)}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                       <tr
                         id={`import-row-${index}`}
-                        className={[isDup ? 'import-row--dup' : '', flashIndex === index ? 'import-row--flash' : ''].filter(Boolean).join(' ') || undefined}
+                        className={
+                          [
+                            isDup ? 'import-row--dup' : '',
+                            group === 'similar' ? 'import-row--similar' : '',
+                            isSkipped ? 'import-row--skipped' : '',
+                            flashIndex === index ? 'import-row--flash' : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ') || undefined
+                        }
                       >
                         {showFileColumn && (
                           <td className="import-file-col" title={reviewRecord.fileName}>
@@ -1643,6 +1694,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                               type="checkbox"
                               aria-label={t('selectRow', { desc })}
                               checked={selected.has(index)}
+                              disabled={isSkipped}
                               onChange={() => toggleSelected(index)}
                             />
                           )}
@@ -1706,6 +1758,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                 categories={categories.counterAccounts}
                                 value={treeValue(state.counterAccountId)}
                                 placeholder={t('chooseDefinition')}
+                                disabled={isSkipped}
                                 onChange={(v) => setCounterAccount(toId(v))}
                                 onCreate={() => setCreateTarget({ kind: 'counterAccount', apply: (id) => setCounterAccount(id) })}
                                 createLabel={t('createCounterAccount')}
@@ -1735,6 +1788,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                 {showCounterparty && (
                                   <TreeSelect
                                     label={t('counterpartyLabel')}
+                                    disabled={isSkipped}
                                     categories={categories.counterparties}
                                     value={treeValue(state.counterpartyId)}
                                     emptyLabel={t('noCounterpartyOption')}
@@ -1784,6 +1838,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                     className="import-control import-control--small"
                                     aria-label={t('rowBatch', { desc })}
                                     value={state.settlementBatchId ?? ''}
+                                    disabled={isSkipped}
                                     onChange={(e) => updateRow(index, (s) => ({ ...s, settlementBatchId: toId(e.target.value) }))}
                                   >
                                     <option value="">{t('noBatch')}</option>
@@ -1799,6 +1854,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                             <td>
                               <TreeSelect
                                 label={t('projectLabel')}
+                                disabled={isSkipped}
                                 categories={categories.projects}
                                 value={treeValue(state.projectId)}
                                 emptyLabel={t('noProjectOption')}
@@ -1815,7 +1871,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                 className="import-control import-control--small"
                                 aria-label={t('rowMember', { desc })}
                                 value={defaultMemberId ?? state.householdMemberId ?? ''}
-                                disabled={defaultMemberId !== null}
+                                disabled={isSkipped || defaultMemberId !== null}
                                 onChange={(e) => updateRow(index, (s) => ({ ...s, householdMemberId: toId(e.target.value) }))}
                               >
                                 <option value="">{t('memberNone')}</option>
@@ -1830,6 +1886,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                               <input
                                 className="import-control import-control--small"
                                 aria-label={t('rowComment', { desc })}
+                                disabled={isSkipped}
                                 placeholder={t('commentPlaceholder')}
                                 value={state.comment}
                                 onChange={(e) => updateRow(index, (s) => ({ ...s, comment: e.target.value }))}
@@ -1839,6 +1896,18 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                         )}
                         <td className={`import-status import-status--${status}`}>
                           {statusText}
+                          {reviewRecord.isExactDuplicate && state.includeDuplicate && (
+                            <>
+                              <br />
+                              <button
+                                type="button"
+                                className="import-link"
+                                onClick={() => updateRow(index, (s) => ({ ...s, includeDuplicate: false }))}
+                              >
+                                {t('excludeAgain')}
+                              </button>
+                            </>
+                          )}
                           {firstDuplicateOf.has(index) && (
                             <>
                               <br />
@@ -1850,30 +1919,104 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                         </td>
                       </tr>
                       {!isDup && reviewRecord.approximateCandidates.length > 0 && (
-                        <tr className="import-sub">
-                          <td colSpan={showFileColumn ? 5 : 4} />
-                          <td colSpan={6}>
-                            <div role="group" className="import-sub__body">
-                              <span>{t('approximateDuplicateWarning')}</span>
-                              {(
-                                [
-                                  ['unresolved', 'approximateDuplicateUnresolved'],
-                                  ['confirmed_replacement', 'approximateDuplicateConfirmedReplacement'],
-                                  ['different_transaction', 'approximateDuplicateDifferentTransaction'],
-                                ] as [ApproximateDecision, string][]
-                              ).map(([value, key]) => (
-                                <label key={value} className="import-check">
-                                  <input
-                                    type="radio"
-                                    name={`approximate-${index}`}
-                                    checked={state.approximateDecision === value}
-                                    onChange={() => updateRow(index, (s) => ({ ...s, approximateDecision: value }))}
-                                  />
-                                  {t(key)}
-                                </label>
-                              ))}
+                        <tr className="import-sub import-sub--similar">
+                          <td />
+                          <td colSpan={showFileColumn ? 10 : 9}>
+                            <div role="group" aria-label={t('similarGroupLabel', { desc })} className="import-similar">
+                              <div className="import-similar__line">
+                                <span className="import-similar__title">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="M12 3l10 18H2z" />
+                                    <path d="M12 10v5M12 18.5v.01" />
+                                  </svg>
+                                  {t('similarTitle')}
+                                </span>
+                                {reviewRecord.approximateCandidates.length > 1 && (
+                                  <button
+                                    type="button"
+                                    className="import-link"
+                                    onClick={() =>
+                                      setOpenMore((prev) => {
+                                        const next = new Set(prev)
+                                        if (next.has(index)) next.delete(index)
+                                        else next.add(index)
+                                        return next
+                                      })
+                                    }
+                                  >
+                                    {openMore.has(index) ? t('similarMoreClose') : t('similarMore', { count: reviewRecord.approximateCandidates.length - 1 })}
+                                  </button>
+                                )}
+                              </div>
+                              <div role="list" className="import-similar__list">
+                                {(openMore.has(index) ? reviewRecord.approximateCandidates : reviewRecord.approximateCandidates.slice(0, 1)).map((candidate) => {
+                                  const entry = session.existingEntries.get(candidate.journalEntryId)
+                                  return (
+                                    <div role="listitem" key={candidate.journalEntryId} className="import-similar__item">
+                                      <span className="import-tag import-tag--registered">{sourceLabelOf(candidate.journalEntryId)}</span>
+                                      <span className="import-nowrap">{candidate.entryDate.replaceAll('-', '/')}</span>
+                                      <span className="import-similar__memo">{entry?.memo ?? ''}</span>
+                                      <span className="import-similar__amount">{signedYen(candidate.amount)}</span>
+                                      <details className="import-detail import-similar__open">
+                                        <summary className="import-link">{t('openEntry')}</summary>
+                                        <div className="import-detail__body">
+                                          <span>
+                                            {t('existingEntrySummary', {
+                                              id: candidate.journalEntryId,
+                                              date: candidate.entryDate.replaceAll('-', '/'),
+                                              memo: entry?.memo ?? '',
+                                              amount: signedYen(candidate.amount),
+                                            })}
+                                          </span>
+                                        </div>
+                                      </details>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                              <div role="radiogroup" aria-label={t('similarChoiceLabel', { desc })} className="import-similar__choices">
+                                {(
+                                  [
+                                    ['different_transaction', 'similarAdd'],
+                                    ['confirmed_replacement', 'similarReplace'],
+                                    ['skip', 'similarSkip'],
+                                  ] as [ApproximateDecision, string][]
+                                ).map(([value, key]) => (
+                                  <Fragment key={value}>
+                                    <label className={`import-check${state.approximateDecision === value ? ' import-check--on' : ''}`}>
+                                      <input
+                                        type="radio"
+                                        name={`approximate-${index}`}
+                                        checked={state.approximateDecision === value}
+                                        onChange={() => updateRow(index, (s) => ({ ...s, approximateDecision: value }))}
+                                      />
+                                      {t(key)}
+                                    </label>
+                                    {value === 'confirmed_replacement' &&
+                                      state.approximateDecision === 'confirmed_replacement' &&
+                                      reviewRecord.approximateCandidates.length > 1 && (
+                                        <select
+                                          className="import-control import-control--tiny"
+                                          aria-label={t('replacementTargetLabel')}
+                                          value={state.replacementTargetId ?? ''}
+                                          onChange={(e) => updateRow(index, (s) => ({ ...s, replacementTargetId: toId(e.target.value) }))}
+                                        >
+                                          <option value="">{t('replacementTargetPlaceholder')}</option>
+                                          {reviewRecord.approximateCandidates.map((candidate) => (
+                                            <option key={candidate.journalEntryId} value={candidate.journalEntryId}>
+                                              {`[${sourceLabelOf(candidate.journalEntryId)}]  ${candidate.entryDate.replaceAll('-', '/')}  ${
+                                                session.existingEntries.get(candidate.journalEntryId)?.memo ?? ''
+                                              }  ${signedYen(candidate.amount)}`}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      )}
+                                  </Fragment>
+                                ))}
+                              </div>
                             </div>
                           </td>
+                          <td />
                         </tr>
                       )}
                     </Fragment>

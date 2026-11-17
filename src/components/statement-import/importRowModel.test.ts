@@ -2,7 +2,8 @@
  * importRowModel(明細取込画面の1行ごとの入力状態、計画Issue #151)のユニットテスト。
  * 行の状態(新規・重複・要確認)の判定、選択した行への一括設定(対象外の行の件数を返す。取引先は
  * 費用・収益の行だけ、精算バッチは一時勘定の行だけ、既定の世帯メンバーを持つ科目の行は世帯メンバーを
- * 変えない)、パターン登録の提案(取引先の設定のリンクを出す行、計画Issue #207)を検証する。
+ * 変えない)、似た取引がある行の選び方(追加する・置き換える・保存しない)と、一覧の3グループ(重複・似た取引あり・
+ * 問題なし)への分類、パターン登録の提案(取引先の設定のリンクを出す行、計画Issue #207)を検証する。
  * 初期状態からの編集の有無(isRowEdited、未保存警告の判定、計画Issue #193)も検証する。
  * DB・DOM非依存、外部依存なし。
  */
@@ -12,6 +13,8 @@ import {
   applyBulkSetting,
   createInitialRowState,
   isRowEdited,
+  replacementTargetOf,
+  rowGroup,
   rowStatus,
   shouldOfferAccountLearn,
   shouldOfferLearn,
@@ -55,14 +58,65 @@ describe('rowStatus', () => {
     expect(rowStatus(record({ isExactDuplicate: true }), state({ includeDuplicate: true }))).toBe('new')
   })
 
-  it('確定版の可能性の候補があり未判断の行、相手科目が未選択の行は「要確認」', () => {
-    expect(rowStatus(record({ approximateCandidates: [{}] }), state())).toBe('check')
-    expect(rowStatus(record({ approximateCandidates: [{}] }), state({ approximateDecision: 'different_transaction' }))).toBe('new')
+  it('似た取引がある行は、既定の「別の取引なので追加する」では「新規」で、確定を止めない', () => {
+    expect(state().approximateDecision).toBe('different_transaction')
+    expect(rowStatus(record({ approximateCandidates: [{ journalEntryId: 1 }] }), state())).toBe('new')
+  })
+
+  it('「この取引を保存しない」を選んだ行は「保存しない」になり、相手科目が未選択でも要確認にならない', () => {
+    const similar = record({ approximateCandidates: [{ journalEntryId: 1 }] })
+
+    expect(rowStatus(similar, state({ approximateDecision: 'skip' }))).toBe('skipped')
+    expect(rowStatus(similar, state({ approximateDecision: 'skip', counterAccountId: null }))).toBe('skipped')
+  })
+
+  it('候補が複数あるのに「置き換える」の削除先を選んでいない行は「要確認」、1件なら選ばなくても「新規」', () => {
+    const many = record({ approximateCandidates: [{ journalEntryId: 1 }, { journalEntryId: 2 }] })
+    const one = record({ approximateCandidates: [{ journalEntryId: 1 }] })
+
+    expect(rowStatus(many, state({ approximateDecision: 'confirmed_replacement' }))).toBe('check')
+    expect(rowStatus(many, state({ approximateDecision: 'confirmed_replacement', replacementTargetId: 2 }))).toBe('new')
+    expect(rowStatus(one, state({ approximateDecision: 'confirmed_replacement' }))).toBe('new')
+  })
+
+  it('相手科目が未選択の行は「要確認」', () => {
     expect(rowStatus(record(), state({ counterAccountId: null }))).toBe('check')
   })
 
   it('それ以外は「新規」', () => {
     expect(rowStatus(record(), state())).toBe('new')
+  })
+})
+
+describe('replacementTargetOf(置き換えで削除する登録済みの仕訳)', () => {
+  const many = record({ approximateCandidates: [{ journalEntryId: 1 }, { journalEntryId: 2 }] })
+  const one = record({ approximateCandidates: [{ journalEntryId: 5 }] })
+
+  it('「置き換える」以外を選んでいる行は、何も削除しない(null)', () => {
+    expect(replacementTargetOf(one, state())).toBeNull()
+    expect(replacementTargetOf(one, state({ approximateDecision: 'skip' }))).toBeNull()
+  })
+
+  it('候補が1件なら、選ばなくてもその1件。複数なら、選んだ1件だけ(未選択はnull)', () => {
+    expect(replacementTargetOf(one, state({ approximateDecision: 'confirmed_replacement' }))).toBe(5)
+    expect(replacementTargetOf(many, state({ approximateDecision: 'confirmed_replacement' }))).toBeNull()
+    expect(replacementTargetOf(many, state({ approximateDecision: 'confirmed_replacement', replacementTargetId: 2 }))).toBe(2)
+  })
+
+  it('選んだ削除先が、いまの候補に無いとき(候補が変わった後など)はnull', () => {
+    expect(replacementTargetOf(many, state({ approximateDecision: 'confirmed_replacement', replacementTargetId: 99 }))).toBeNull()
+  })
+})
+
+describe('rowGroup(一覧の3グループ)', () => {
+  it('取り込み済みと完全一致する行は「重複」、似た取引がある行は「似た取引あり」、それ以外は「問題なし」', () => {
+    expect(rowGroup(record({ isExactDuplicate: true }))).toBe('duplicate')
+    expect(rowGroup(record({ approximateCandidates: [{ journalEntryId: 1 }] }))).toBe('similar')
+    expect(rowGroup(record())).toBe('clean')
+  })
+
+  it('分類は取り込んだときの内容で決まり、「取り込む」を選んでも重複のグループのまま動かない', () => {
+    expect(rowGroup(record({ isExactDuplicate: true }))).toBe('duplicate')
   })
 })
 
@@ -86,6 +140,17 @@ describe('applyBulkSetting', () => {
 
     expect(result.states[0].counterpartyId).toBe(5)
     expect(result.states[1].counterpartyId).toBeNull()
+    expect(result).toMatchObject({ applied: 1, skipped: 1 })
+  })
+
+  it('「この取引を保存しない」を選んだ行には一括設定を掛けず、対象外の件数に数える', () => {
+    const similar = record({ approximateCandidates: [{ journalEntryId: 1 }] })
+    const states = [state({ approximateDecision: 'skip' }), state()]
+
+    const result = applyBulkSetting({ states, records: [similar, rows[1]], selected: new Set([0, 1]), accounts: ACCOUNTS, change: { field: 'comment', value: 'メモ' } })
+
+    expect(result.states[0].comment).toBe('')
+    expect(result.states[1].comment).toBe('メモ')
     expect(result).toMatchObject({ applied: 1, skipped: 1 })
   })
 
@@ -177,6 +242,8 @@ describe('isRowEdited', () => {
     const changes: Array<Partial<ImportRowState>> = [
       { includeDuplicate: true },
       { approximateDecision: 'confirmed_replacement' },
+      { approximateDecision: 'skip' },
+      { replacementTargetId: 3 },
       { learnOn: !initial.learnOn },
       { learnPattern: 'スーパー' },
     ]

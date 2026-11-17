@@ -198,6 +198,11 @@
   opacity: 0.75;
 }
 
+/* 重複の行は、ファイル名・日付・摘要・金額・案内・リンクで文字の大きさが違うため、先頭の行の文字の基準線をそろえる */
+.import-row--dup td {
+  vertical-align: baseline;
+}
+
 .import-dup-note {
   font-size: 13px;
   color: var(--color-text-muted);
@@ -238,6 +243,142 @@
   display: inline-flex;
   gap: 5px;
   align-items: center;
+}
+
+/* 一覧の3グループ(重複・似た取引あり・問題なし)の見出し行(計画Issue #219 の続き) */
+.import-group td {
+  padding: 10px 8px;
+  background: var(--color-field-subtle);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.import-group__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+}
+
+.import-group__title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+.import-group__count {
+  padding: 0 8px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+
+.import-group__note {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* 似た取引がある行と、その下の確認(警告)の行は、まとめて薄い黄色にして、どの行の確認かを分かるようにする */
+.import-row--similar td,
+.import-sub--similar td {
+  background: #fffaf0;
+}
+
+.import-row--similar td {
+  border-bottom: 0;
+}
+
+/* 「この取引を保存しない」の行はグレーにして、選び直すまで編集できない(確認の行の選択だけは操作できる) */
+.import-row--skipped td {
+  background: var(--color-field-subtle);
+}
+
+.import-row--skipped td:not(:last-child) {
+  opacity: 0.45;
+}
+
+.import-similar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 0 4px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.import-similar__line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  align-items: center;
+}
+
+.import-similar__title {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  font-weight: 600;
+  color: var(--color-warning-text);
+}
+
+/* 出どころ・日付・摘要・金額の縦をそろえる(候補が増えてもそろう) */
+.import-similar__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 4px 19px;
+}
+
+.import-similar__item {
+  display: grid;
+  grid-template-columns: 64px 80px 170px 72px auto;
+  column-gap: 12px;
+  align-items: center;
+  justify-content: start;
+}
+
+.import-similar__memo {
+  overflow: hidden;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-similar__amount {
+  font-weight: 600;
+  text-align: right;
+  color: var(--color-text);
+}
+
+.import-similar__open {
+  margin-left: 0;
+}
+
+.import-similar__open summary {
+  padding: 0;
+}
+
+.import-similar__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  align-items: center;
+}
+
+.import-similar__choices .import-check {
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.import-check--on {
+  font-weight: 600;
+}
+
+.import-control--tiny {
+  min-height: 26px;
+  padding: 0 6px;
+  font-size: var(--font-size-xs);
 }
 
 /* マッピング作成ダイアログの「金額の符号を反転する」(計画Issue #192)・取引先の追加ダイアログの「ほかの行にも適用する」(計画Issue #218): 他の入力項目と同じ文字の大きさにそろえる */
@@ -592,8 +733,13 @@
 
 .import-detail {
   display: inline-block;
-  vertical-align: top;
+  vertical-align: baseline;
   margin-left: 14px;
+}
+
+/* 開いたときは、中身が下に伸びて基準線がずれないよう、上にそろえる */
+.import-detail[open] {
+  vertical-align: top;
 }
 
 .import-detail summary {
