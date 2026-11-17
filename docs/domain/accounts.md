@@ -54,15 +54,15 @@
 | 資産 | `asset` | BS | 現金/普通預金/定期預金/電子マネー/証券口座/未収金(一時勘定) |
 | 負債 | `liability` | BS | クレジットカード未払金(カードごと、`is_reconcilable = false`)/未払金(一時勘定)/ローン/未払金(精算バッチ)(割勘の一時勘定) |
 | 純資産 | `equity` | BS | 初期残高(単一の科目、システム管理、計画Issue #143) |
-| 収益 | `revenue` | PL | 給与収入/副業収入/謝礼収入 |
-| 費用 | `expense` | PL | 食費/住居費/水道光熱費/娯楽費/残高調整(システム管理) … |
+| 収益 | `revenue` | PL | 給与収入/副業収入/謝礼収入/雑収入(システム管理、役割付き) |
+| 費用 | `expense` | PL | 食費/住居費/水道光熱費/娯楽費/残高調整・雑損失(システム管理、役割付き) … |
 
 > **収益・費用の標準科目は初回起動時に自動投入される(計画Issue #96)**
-> 上表の収益・費用の勘定科目の例は説明用の例示に留まらない。`seedDefaultAccounts`(`src/infrastructure/db/seedDefaultAccounts.ts`、Worker起動時に`runMigrations`直後で呼び出す)が、標準科目一式(収益3件:給与収入/副業収入/謝礼収入、費用12件:食費/住居費/水道光熱費/通信費/交通費/日用品費/被服費/医療費/教育費/交際費/保険料/娯楽費、`src/infrastructure/db/defaultAccountSeedData.ts`)を実際に自動投入する。revenue・expense区分それぞれについて、その区分の科目が1件も存在しない場合にのみ投入する(区分ごとに独立して冪等に判定し、既存の科目が1件でもあれば部分投入はしない)。投入される科目は`is_system_managed = false`・`account_group_id = NULL`・`household_member_id = NULL`・`is_reconcilable = NULL`で作成され、投入後は通常のユーザー作成科目と同様に編集・削除・非アクティブ化できる(投入されたことによる特別扱いは無い)。asset/liability/equity区分の科目、および`is_system_managed = true`の「残高調整」科目はこのシードの対象外。同じ「Worker起動時の冪等シード」という設計は`seedDefaultHouseholdMember`(計画Issue #88)・`seedBuiltInMappingDefinitions`([statement-import.md 2.3](./statement-import.md#23-組み込み定義とユーザー定義)参照)で既に採用されている。
+> 上表の収益・費用の勘定科目の例は説明用の例示に留まらない。`seedDefaultAccounts`(`src/infrastructure/db/seedDefaultAccounts.ts`、Worker起動時に`runMigrations`直後で呼び出す)が、標準科目一式(収益3件:給与収入/副業収入/謝礼収入、費用12件:食費/住居費/水道光熱費/通信費/交通費/日用品費/被服費/医療費/教育費/交際費/保険料/娯楽費、`src/infrastructure/db/defaultAccountSeedData.ts`)を実際に自動投入する。revenue・expense区分それぞれについて、その区分の科目が1件も存在しない場合にのみ投入する(区分ごとに独立して冪等に判定し、既存の科目が1件でもあれば部分投入はしない)。投入される科目は`is_system_managed = false`・`account_group_id = NULL`・`household_member_id = NULL`・`is_reconcilable = NULL`で作成され、投入後は通常のユーザー作成科目と同様に編集・削除・非アクティブ化できる(投入されたことによる特別扱いは無い)。asset/liability/equity区分の科目、および`is_system_managed = true`の「残高調整」「雑収入」「雑損失」科目はこのシードの対象外(別のシードが役割付きで投入する、[3.1](#31-フィールド定義)の`system_role`参照)。同じ「Worker起動時の冪等シード」という設計は`seedDefaultHouseholdMember`(計画Issue #88)・`seedBuiltInMappingDefinitions`([statement-import.md 2.3](./statement-import.md#23-組み込み定義とユーザー定義)参照)で既に採用されている。
 >
 > 資産の「未収金(精算バッチ)」・負債の「未払金(精算バッチ)」(割勘の一時勘定)だけは例外的に、`seedDefaultAccounts`とは別の`seedAdvanceAccounts`(計画Issue #40)が`is_system_managed = true`の科目として自動投入する。詳細は[expense-splitting.md 1.2](./expense-splitting.md#12-一時勘定立替金未払金)参照。
 
-> **初回セットアップでの調整(計画Issue #177)**: 新規DBでは、初回セットアップの確定(`completeOnboarding`、`src/infrastructure/db/onboarding.ts`)が、選んだテンプレート(最小/標準/簿記寄り、`src/domain/onboarding/accountTemplates.ts`)に合わせて自動投入済みの収益・費用の科目を整える(雑収入・雑損失は残す)。また、資産「現金」(外部明細なし、標準グループ「現金・電子マネー」)をこのときに入れる。銀行・カードの口座は外部明細の有無や名義が口座ごとに違うためテンプレートに入れず、利用者が登録する。
+> **初回セットアップでの調整(計画Issue #177)**: 新規DBでは、初回セットアップの確定(`completeOnboarding`、`src/infrastructure/db/onboarding.ts`)が、選んだテンプレート(最小/標準/簿記寄り、`src/domain/onboarding/accountTemplates.ts`)に合わせて自動投入済みの収益・費用の科目を整える(システム管理科目の雑収入・雑損失は対象外で、そのまま残る)。また、資産「現金」(外部明細なし、標準グループ「現金・電子マネー」)をこのときに入れる。銀行・カードの口座は外部明細の有無や名義が口座ごとに違うためテンプレートに入れず、利用者が登録する。
 
 > **資産振替は費用ではない**
 > 貯蓄・投資は、現金という資産が別の資産へ形を変える資産→資産の振替である。したがって費用ではない。PLには影響しない。
@@ -162,7 +162,8 @@
 | `is_reconcilable` | 照合可否 | 資産・負債科目は`NOT NULL`、他区分は`NULL`必須(CHECK制約で強制)。「自身の外部明細だけで残高が完結するか」が基準([reconciliation.md 1.1](./reconciliation.md#11-位置づけ)参照)。詳細は[4.2](#42-外部明細と残高情報による照合可否の自動決定)・[4.5](#45-なぜis_reconcilable--falseにするか)参照 |
 | `has_external_statement` | 外部明細(CSV)の有無 | 登録時の「外部明細(CSV)はありますか?」の回答(計画Issue #189)。`is_reconcilable`は「外部明細あり・残高情報なし」と「外部明細なし」の両方がfalseになるため、回答そのものを保存する。資産・負債はtrue/false、他区分は`NULL`。`is_reconcilable = true`なのに`false`の組み合わせはCHECK制約で拒否する。資産・負債で`NULL`なのは回答を保存する前に作られた行(未記録)だけで、照合可否から推定する。作成後は変更しない。明細マッピングの紐づけ先・明細取込の取込先になれるのは、外部明細がある科目だけ |
 | `is_active` | 有効/非アクティブ | falseにしても過去仕訳・過去FSに影響なし |
-| `is_system_managed` | システム管理科目か | 初期残高科目(純資産)・残高調整(費用、自動調整仕訳の相手科目で`seedBalanceAdjustmentAccount`が投入)など、削除・区分変更・非アクティブ化を禁止。`name`(ラベル)に加え、表示専用の`account_group_id`・`sort_order`のみ変更可(計画Issue #143) |
+| `is_system_managed` | システム管理科目か | 初期残高科目(純資産)・残高調整(費用、自動調整仕訳の相手科目で`seedBalanceAdjustmentAccount`が投入)・雑収入(収益)・雑損失(費用)(精算の差額の計上先)など、削除・統合・区分変更・非アクティブ化を禁止。`name`(ラベル)に加え、表示専用の`account_group_id`・`sort_order`のみ変更可(計画Issue #143)。手入力の仕訳・キーワードルール・明細取込の選択欄には出ない |
+| `system_role` | システム管理科目の役割 | 任意(計画Issue #223)。`settlement_gain`(収益「雑収入」)・`settlement_loss`(費用「雑損失」)・`balance_adjustment`(費用「残高調整」)のいずれか、または`NULL`。システム管理科目だけが持て、役割と区分は対応する(CHECK制約)。同じ役割は1件(部分UNIQUEインデックス)。付与後は変更できない。精算画面の差額計上先と自動調整仕訳の相手科目(`findCounterAccount`)は、名前や区分ではなくこの役割で引く。役割の無い旧データには、起動時の`ensureSystemRoleAccount`が、同名の通常科目(雑収入・雑損失)と費用のシステム管理科目(残高調整)に付与する(無ければ新規投入。非アクティブな同名科目には触れず新規投入) |
 | `auto_balance_adjustment` | 基準点に合わせて自動で調整仕訳を入れるか | 資産・負債だけが使う。初期値はオン(計画Issue #205)。オフでも最初の基準点(元手=初期残高)の仕訳は作る。詳細は[reconciliation.md 1.6](./reconciliation.md#16-原因不明差異への残高調整) |
 | `household_member_id` | 既定の名義 | FK、任意。NULL=口座自体には既定の名義が無い(この科目の明細行は指定されたメンバー、無ければ起票者の世帯メンバーを持つ。[household-members.md 1.2](./household-members.md#12-紐づけ対象と明細行の世帯メンバーの決め方)参照) |
 | `account_group_id` | 表示用グループ | FK、任意。0または1個のグループに属する(単一所属、[1.3](#13-グルーピング表示用)参照)。NULL=未分類 |
