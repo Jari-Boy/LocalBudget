@@ -250,3 +250,20 @@ describe('精算バッチとコメントの設定(計画Issue #144)', () => {
     }
   })
 })
+
+describe('摘要(memo)の標準化', () => {
+  it('仕訳の摘要は、半角カナ・全角英数・ハイフンを標準化した形で保存し、突合用の記録(external_transaction_ref)にはCSVの摘要を残す', () => {
+    const input = buildConfirmedJournalEntryInput({
+      record: record({ description: 'ﾌｧﾐﾘ-ﾏ-ﾄ Ｓｕｉｃａ' }),
+      externalId: 'HASH-001',
+      targetAccountId: 1,
+      targetAccountCategory: 'asset',
+      counterAccountId: 2,
+      entryHouseholdMemberId: 99,
+      resolveLineHouseholdMemberId,
+    })
+
+    expect(input.memo).toBe('ファミリーマート Suica')
+    expect(input.externalTransactionRef?.description).toBe('ﾌｧﾐﾘ-ﾏ-ﾄ Ｓｕｉｃａ')
+  })
+})
