@@ -198,6 +198,49 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     expect(screen.getAllByRole('row', { name: /Amazon/ })[0]).toHaveClass('import-row--flash')
   })
 
+  describe('グループの折りたたみ(計画Issue #231 フェーズ1)', () => {
+    const groupToggle = (title: string) => screen.getByRole('button', { name: new RegExp(`^${title}\\s*\\d+件`) })
+
+    it('重複元の行のグループが折りたたまれていると、「重複元の行へ移動」で自動で開いてから強調する', async () => {
+      renderScreen()
+      await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+      fireEvent.click(groupToggle('問題なし'))
+      expect(screen.getAllByRole('row', { name: /Amazon/ })).toHaveLength(1)
+
+      fireEvent.click(rowOf(/Amazon/).getByRole('button', { name: '重複元の行へ移動' }))
+
+      expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'true')
+      const rows = screen.getAllByRole('row', { name: /Amazon/ })
+      expect(rows).toHaveLength(2)
+      expect(rows[1]).toHaveClass('import-row--flash')
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
+    })
+
+    it('重複した行のグループが折りたたまれていると、「重複した行へ移動」で自動で開いてから強調する', async () => {
+      renderScreen()
+      await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+      const original = rowsOf(/Amazon/)[1]
+      fireEvent.click(groupToggle('重複'))
+      expect(screen.getAllByRole('row', { name: /Amazon/ })).toHaveLength(1)
+
+      fireEvent.click(original.getByRole('button', { name: '重複した行へ移動' }))
+
+      expect(groupToggle('重複')).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getAllByRole('row', { name: /Amazon/ })[0]).toHaveClass('import-row--flash')
+    })
+
+    it('取り込むファイルのチェックを切り替えて一覧を作り直しても、折りたたみの状態は保たれる', async () => {
+      renderScreen()
+      await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+      fireEvent.click(groupToggle('問題なし'))
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'nov.csvを取り込む' }))
+
+      await screen.findByText(/oct\.csv を読み込み済み/)
+      expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'false')
+    })
+  })
+
   it('ファイル間の重複行の「取り込む」を押すと、新規として戻せる', async () => {
     renderScreen()
     await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
