@@ -195,7 +195,7 @@ test.describe('明細取込画面', () => {
     await pickTree(page, row, '相手科目', 'テスト費目')
     await page.getByRole('button', { name: '1 件を「普通預金」に確定' }).click()
 
-    await expect(page.getByText('確定しました。続けて次のCSVを取り込めます。')).toBeVisible()
+    await expect(page.getByText('確定しました。続けて明細を選択してください。')).toBeVisible()
     await expect(page.getByRole('row', { name: /スーパー/ })).toHaveCount(0)
   })
 

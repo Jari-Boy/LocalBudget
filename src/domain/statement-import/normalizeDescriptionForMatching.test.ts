@@ -10,4 +10,13 @@ describe('normalizeDescriptionForMatching', () => {
   it('全角を半角にそろえ、小文字を大文字にし、空白(全角含む)を取り除く', () => {
     expect(normalizeDescriptionForMatching('ａｍａｚｏｎ．ｃｏ．ｊｐ 東京')).toBe('AMAZON.CO.JP東京')
   })
+
+  it('カタカナにつづくハイフン類は長音にそろえ、表記ゆれ(半角カナ・ハイフン)があっても同じ文字列になる', () => {
+    expect(normalizeDescriptionForMatching('ﾌｧﾐﾘ-ﾏ-ﾄ')).toBe('ファミリーマート')
+    expect(normalizeDescriptionForMatching('ファミリ－マ－ト')).toBe('ファミリーマート')
+  })
+
+  it('カタカナにつづかないハイフンは残す', () => {
+    expect(normalizeDescriptionForMatching('abc-123')).toBe('ABC-123')
+  })
 })

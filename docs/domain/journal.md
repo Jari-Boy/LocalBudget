@@ -219,7 +219,7 @@
 | `created_at`          | 作成日時          |                                                                                 |
 
 > **`comment`と`memo`の違い(計画Issue #144)**
-> `memo`(摘要)は「何の取引か」を表す取引の要約であり、明細取込では取込元の`description`が初期値になる。`comment`はそれとは別に、ユーザーが仕訳ごとに残せる自由な補足(理由・経緯など)である。履歴は持たず、上書きで更新する。手入力フォーム・下書き・仕訳詳細の更新・明細取込のレビュー確定の各経路で保存・表示できる。
+> `memo`(摘要)は「何の取引か」を表す取引の要約であり、明細取込では取込元の`description`を標準化した形(NFKC、空白の連続を1つに、カタカナにつづくハイフン・ダッシュ類を長音「ー」に。`formatDescriptionForDisplay`)が初期値になり、仕訳の`memo`にはその形で保存する(2026-11-18。突合用の`external_transaction_refs.description`と`external_id`はCSVの値のまま。取り込み済みの既存の仕訳はスキーマv4の差分で同じ形に変換した)。`comment`はそれとは別に、ユーザーが仕訳ごとに残せる自由な補足(理由・経緯など)である。履歴は持たず、上書きで更新する。手入力フォーム・下書き・仕訳詳細の更新・明細取込のレビュー確定の各経路で保存・表示できる。
 >
 > **`journal_lines.settlement_batch_id`は一時勘定の行にのみ設定できる(計画Issue #144)**
 > 割勘の一時勘定(システム管理の未収金・未払金(精算バッチ))の行以外にはタグを設定できない(計画Issue #167で、`is_reconcilable = false`の資産・負債科目から絞り込んだ)。ドメイン判定`isSettlementBatchTaggableAccount`と専用エラー`SettlementBatchOnNonAdvanceAccountError`を使い、`JournalEntryRepository`のcreate/updateが書き込み前に検証する([settlement.md 1.7](./settlement.md#17-タグ付き一時勘定の消込settlement_batch_idによるタグ付け)参照)。仕訳画面では精算バッチ欄を未収金・未払金(精算バッチ)の行にだけ出し、タグ付きの行の科目をそれ以外へ変えると欄と一緒にタグも外す(未収金⇔未払金(精算バッチ)の変更ではタグを維持する。[settlement.md 1.8](./settlement.md#18-タグの編集について)参照)。

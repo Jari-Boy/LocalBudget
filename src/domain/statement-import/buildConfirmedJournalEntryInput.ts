@@ -1,6 +1,7 @@
 import type { AccountCategory } from '../account/Account'
 import type { CreateJournalEntryInput, JournalLineSide } from '../journal/JournalEntry'
 import type { LineHouseholdMemberResolver } from '../journal/resolveLineHouseholdMemberId'
+import { formatDescriptionForDisplay } from './formatDescriptionForDisplay'
 import type { ImportedRecord } from './ImportedRecord'
 
 export interface BuildConfirmedJournalEntryInputParams {
@@ -69,7 +70,8 @@ export function buildConfirmedJournalEntryInput(
 
   return {
     entryDate: record.entryDate,
-    memo: record.description,
+    // 仕訳の摘要は標準化した形で保存する。突合用の記録(下のexternalTransactionRef)にはCSVの摘要をそのまま残す
+    memo: formatDescriptionForDisplay(record.description),
     ...(comment === null ? {} : { comment }),
     sourceType: 'external_import',
     householdMemberId: params.entryHouseholdMemberId,

@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
+import { TreeSelect } from '../common/tree-select/TreeSelect'
+import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 import { KeywordList, type KeywordAccountOption, type KeywordListItem } from './KeywordList'
 
 export interface CounterpartySettingsPopupProps {
@@ -14,6 +16,8 @@ export interface CounterpartySettingsPopupProps {
   items: readonly KeywordListItem[] | null
   /** キーワードの科目に選べる科目(取引先を持てる費用・収益の科目) */
   accountOptions?: readonly KeywordAccountOption[]
+  /** 渡すと、キーワードの科目を、科目グループごとにまとめて選ぶ部品(TreeSelect)で出す。accountOptionsの平らな選択欄より優先する */
+  accountCategories?: readonly TreeSelectCategory[]
   /** この行の摘要(リンクの名前に使う) */
   rowDescription: string
   /** 「ほかの行にも適用」を押した結果の表示 */
@@ -38,7 +42,7 @@ const POPUP_WIDTH = 520
  */
 export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps) {
   const kind = props.kind ?? 'counterparty'
-  const { isOpen, onToggle, onClose, counterpartyName, items, accountOptions, rowDescription, message, saveError } = props
+  const { isOpen, onToggle, onClose, counterpartyName, items, accountOptions, accountCategories, rowDescription, message, saveError } = props
   const { t } = useTranslation('statementImport')
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
@@ -129,6 +133,21 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
                   onDelete={props.onDelete}
                   onAdd={props.onAdd}
                   accountOptions={accountOptions}
+                  renderAccount={
+                    accountCategories === undefined
+                      ? undefined
+                      : (item, index) => (
+                          <TreeSelect
+                            label={t('patternAccountLabel', { index: index + 1 })}
+                            categories={accountCategories}
+                            value={item.accountId == null ? '' : String(item.accountId)}
+                            emptyLabel={t('defaultAccountNone')}
+                            placeholder={t('defaultAccountNone')}
+                            disabled={item.accountLocked === true}
+                            onChange={(v) => props.onAccountChange(item.key, v === '' ? null : Number(v))}
+                          />
+                        )
+                  }
                   label={kind === 'account' ? t('settingsPatternsLabelAccount') : undefined}
                   onAccountChange={props.onAccountChange}
                 />
