@@ -134,6 +134,7 @@ export function JournalLinesEditor({
                           <TreeSelect
                             label="科目"
                             categories={master.accountCategories}
+                            favoriteKind="account"
                             value={line.accountId === null ? '' : String(line.accountId)}
                             placeholder="未選択"
                             onChange={(v) => changeAccount(key, v === '' ? null : Number(v))}
@@ -168,6 +169,7 @@ export function JournalLinesEditor({
                           <TreeSelect
                             label="取引先"
                             categories={master.counterpartyCategories}
+                            favoriteKind="counterparty"
                             value={line.counterpartyId === null ? '' : String(line.counterpartyId)}
                             emptyLabel="取引先なし"
                             placeholder="取引先なし"
@@ -214,6 +216,7 @@ export function JournalLinesEditor({
                         <TreeSelect
                           label="プロジェクト"
                           categories={master.projectCategories}
+                          favoriteKind="project"
                           value={line.projectId === null ? '' : String(line.projectId)}
                           emptyLabel="プロジェクトなし"
                           placeholder="プロジェクトなし"

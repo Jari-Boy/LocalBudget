@@ -372,6 +372,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
             <TreeSelect
               label="世帯外の相手"
               categories={derived.counterpartyCategories}
+              favoriteKind="counterparty"
               value={batch.counterpartyId === null ? '' : String(batch.counterpartyId)}
               emptyLabel="なし(世帯内)"
               placeholder="なし(世帯内)"
@@ -559,6 +560,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
                   <TreeSelect
                     label="相手科目"
                     categories={derived.accountCategories}
+                    favoriteKind="account"
                     value={draftAccount}
                     onChange={setDraftAccount}
                     placeholder="科目を選ぶ"

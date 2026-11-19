@@ -45,6 +45,8 @@ CREATE TABLE projects (
   project_group_id INTEGER REFERENCES project_groups(id),
   sort_order  INTEGER NOT NULL DEFAULT 0,
   is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+  -- お気に入り(計画Issue #231 フェーズ4)。選択欄の先頭の「★ お気に入り」に固定表示する。表示専用で、集計・照合には関与しない
+  is_favorite BOOLEAN NOT NULL DEFAULT FALSE,
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );

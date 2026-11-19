@@ -121,6 +121,7 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount, hid
             <TreeSelect
               label="科目"
               categories={options.accountCategories}
+              favoriteKind="account"
               multiple
               values={getTreeValues(filter, 'account')}
               onValuesChange={(values) => onChange(setTreeValues(filter, 'account', values))}
@@ -134,6 +135,7 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount, hid
             <TreeSelect
               label="取引先"
               categories={options.counterpartyCategories}
+              favoriteKind="counterparty"
               multiple
               values={getTreeValues(filter, 'counterparty')}
               onValuesChange={(values) => onChange(setTreeValues(filter, 'counterparty', values))}
@@ -147,6 +149,7 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount, hid
             <TreeSelect
               label="プロジェクト"
               categories={options.projectCategories}
+              favoriteKind="project"
               multiple
               values={getTreeValues(filter, 'project')}
               onValuesChange={(values) => onChange(setTreeValues(filter, 'project', values))}

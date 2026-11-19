@@ -465,6 +465,7 @@ function MappingPanel(props: MappingPanelProps) {
         <TreeSelect
           label={t('mappingTab.accounts')}
           categories={props.accountCategories}
+          favoriteKind="account"
           value=""
           onChange={addAccount}
           placeholder={t('mappingTab.addAccount')}

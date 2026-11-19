@@ -8,13 +8,15 @@
 import { describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
+import { toSchemaV5 } from './schemaV5ForTests'
 import { LATEST_SCHEMA_SQL, LATEST_SCHEMA_VERSION, getUserVersion, runMigrations } from './migrations'
 import { findSchemaDifferences } from './schemaDifferences'
 
 /** v4 のDB(一時保存の表が無く、user_version = 4)を作り、既存のデータを入れる */
 async function createV4Database(): Promise<Database> {
   const db = await createTestDatabase()
-  for (const sql of LATEST_SCHEMA_SQL) db.run(sql)
+  // v6(計画Issue #231 フェーズ4)で足したお気に入りの列は、このバージョンには無いので取り除く
+  for (const sql of LATEST_SCHEMA_SQL) db.run(toSchemaV5(sql))
   db.run('DROP TABLE statement_import_draft_files')
   db.run('DROP TABLE statement_import_drafts')
   db.run('PRAGMA user_version = 4')

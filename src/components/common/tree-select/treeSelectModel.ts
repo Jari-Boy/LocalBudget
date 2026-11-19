@@ -53,6 +53,10 @@ export interface TreeSelectItemRow {
   isSelected: boolean
   /** 選択中のグループの配下であるため対象になっている(項目自体の選択とは別、計画Issue #203) */
   isViaGroup: boolean
+  /** 先頭の「★ お気に入り」のセクションの行か、従来のツリーの行か(同じ項目が両方に出るので、行の区別に使う、計画Issue #231 フェーズ4) */
+  section: 'favorite' | 'tree'
+  /** お気に入りか(★の状態) */
+  isFavorite: boolean
 }
 
 export type TreeSelectRow = TreeSelectCategoryRow | TreeSelectGroupRow | TreeSelectItemRow
@@ -66,7 +70,15 @@ export interface BuildTreeSelectRowsInput {
   query: string
   /** グループIDごとの開閉の操作。なければ「選択中の項目を含むか」で決める */
   openOverrides: Readonly<Record<string, boolean>>
+  /**
+   * お気に入りの項目の値(計画Issue #231 フェーズ4)。表示できる項目が1件でもあれば、先頭に「★ お気に入り」のセクションを
+   * (グループ無しで、ツリーの表示順に)出す。ツリーの側にも、本来の位置に従来どおり出す
+   */
+  favoriteValues?: ReadonlySet<string>
 }
+
+/** お気に入りのセクションの見出し */
+export const FAVORITES_CATEGORY_NAME = '★ お気に入り'
 
 /** グループ値の接頭辞 */
 export const GROUP_VALUE_PREFIX = 'g:'
@@ -82,6 +94,7 @@ export function buildTreeSelectRows({
   selectedValues,
   query,
   openOverrides,
+  favoriteValues,
 }: BuildTreeSelectRowsInput): TreeSelectRow[] {
   const q = query.trim()
   const selected = new Set(selectedValues ?? (selectedValue === '' ? [] : [selectedValue]))
@@ -92,6 +105,31 @@ export function buildTreeSelectRows({
     nodes.flatMap((node) =>
       node.kind === 'group' ? visibleItemsOf(node.children) : isVisibleItem(node) ? [node] : [],
     )
+
+  const isFavorite = (value: string) => favoriteValues?.has(value) ?? false
+
+  /** お気に入りのセクションの行。グループの開閉に関係なく、表示できる項目すべてを、ツリーの表示順に集める */
+  const collectFavorites = (nodes: readonly TreeSelectNode[], viaGroup: boolean): TreeSelectItemRow[] =>
+    nodes.flatMap((node): TreeSelectItemRow[] => {
+      if (node.kind === 'group') {
+        const isGroupSelected = selected.has(`${GROUP_VALUE_PREFIX}${node.id}`)
+        return collectFavorites(node.children, viaGroup || isGroupSelected)
+      }
+      return isVisibleItem(node) && isFavorite(node.value)
+        ? [
+            {
+              type: 'item',
+              value: node.value,
+              name: node.name,
+              indent: BASE_INDENT,
+              isSelected: selected.has(node.value),
+              isViaGroup: viaGroup,
+              section: 'favorite',
+              isFavorite: true,
+            },
+          ]
+        : []
+    })
 
   const walk = (nodes: readonly TreeSelectNode[], depth: number, viaGroup: boolean): TreeSelectRow[] =>
     nodes.flatMap((node): TreeSelectRow[] => {
@@ -106,6 +144,8 @@ export function buildTreeSelectRows({
                 indent: indent + ITEM_MARK_INDENT,
                 isSelected: selected.has(node.value),
                 isViaGroup: viaGroup,
+                section: 'tree',
+                isFavorite: isFavorite(node.value),
               },
             ]
           : []
@@ -130,9 +170,15 @@ export function buildTreeSelectRows({
       ]
     })
 
-  return categories.flatMap((category) => {
+  const favoriteRows = categories.flatMap((category) => collectFavorites(category.nodes, false))
+  // お気に入りのセクションがあるときは、区分が1つだけでも、従来のツリーの先頭に区分の見出しを出して、お気に入りと区別できるようにする
+  const showCategoryNames = categories.length > 1 || favoriteRows.length > 0
+
+  const treeRows = categories.flatMap((category) => {
     const rows = walk(category.nodes, 0, false)
     if (rows.length === 0) return []
-    return categories.length > 1 ? [{ type: 'category' as const, name: category.name }, ...rows] : rows
+    return showCategoryNames ? [{ type: 'category' as const, name: category.name }, ...rows] : rows
   })
+  if (favoriteRows.length === 0) return treeRows
+  return [{ type: 'category' as const, name: FAVORITES_CATEGORY_NAME }, ...favoriteRows, ...treeRows]
 }

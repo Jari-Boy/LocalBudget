@@ -466,6 +466,37 @@ test.describe('明細取込画面', () => {
     await expect(page.getByRole('region', { name: '一時保存した取込' })).toHaveCount(0)
   })
 
+  test('マスタ画面で付けたお気に入り(★)が、読み込み直しても残り、選択欄の先頭に出る。選択欄でも付け外しできる(計画Issue #231 フェーズ4)', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
+    await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING)
+
+    // マスタ画面(科目)の★でお気に入りに付ける
+    await page.goto('/#/master/accounts')
+    await page.getByRole('button', { name: 'テスト費目をお気に入りに追加' }).click()
+    await expect(page.getByRole('button', { name: 'テスト費目をお気に入りから外す' })).toHaveAttribute('aria-pressed', 'true')
+    // DBの永続化は遅延つき(withAutoSaveのデバウンス)なので、既存のE2Eと同じく既知の待機時間を置いてから読み込み直す
+    await page.waitForTimeout(2500)
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'テスト費目をお気に入りから外す' })).toHaveAttribute('aria-pressed', 'true')
+
+    // 明細取込画面の相手科目の選択欄の先頭に、「★ お気に入り」として出る
+    await startImport(page, '普通預金', '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n')
+    const row = rowOf(page, /スーパー/)
+    await row.getByRole('button', { name: /^相手科目/ }).click()
+    const popup = page.getByRole('dialog', { name: '相手科目' })
+    await expect(popup.getByText('★ お気に入り')).toBeVisible()
+
+    // 選択欄の★でも付け外しできる(外すと、セクションが消える)。★を押しても項目は選ばず、閉じない
+    await popup.getByRole('button', { name: 'テスト費目をお気に入りから外す' }).first().click()
+    await expect(popup.getByText('★ お気に入り')).toHaveCount(0)
+    await expect(popup).toBeVisible()
+
+    // 項目の選択は、従来どおり
+    await popup.getByRole('button', { name: 'テスト費目', exact: true }).click()
+    await expect(row.getByRole('button', { name: /^相手科目: テスト費目/ })).toBeVisible()
+  })
+
   test('マスタの「明細マッピング」タブで定義の表示名を編集して保存できる(「マッピングを編集」からも移動できる)', async ({
     page,
   }) => {

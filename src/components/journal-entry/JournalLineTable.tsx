@@ -322,6 +322,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
         key="account"
         label={`${sideName}の科目`}
         categories={master.accountCategories}
+        favoriteKind="account"
         value={line.accountId === null ? '' : String(line.accountId)}
         placeholder="未選択"
         onChange={(v) => changeAccount(key, v === '' ? null : Number(v))}
@@ -335,6 +336,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
         key="project"
         label={`${sideName}のプロジェクト`}
         categories={master.projectCategories}
+        favoriteKind="project"
         value={line.projectId === null ? '' : String(line.projectId)}
         emptyLabel="プロジェクトなし"
         placeholder="なし"
@@ -351,6 +353,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
           key="partner"
           label={`${sideName}の取引先`}
           categories={master.counterpartyCategories}
+          favoriteKind="counterparty"
           value={line.counterpartyId === null ? '' : String(line.counterpartyId)}
           emptyLabel="取引先なし"
           placeholder="取引先なし"

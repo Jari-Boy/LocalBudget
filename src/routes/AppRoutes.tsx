@@ -1,6 +1,7 @@
 import type * as Comlink from 'comlink'
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
+import { FavoritesProvider } from '../components/common/favorites/FavoritesContext'
 import type { AccountRepository } from '../domain/account/AccountRepository'
 import type { AccountGroupRepository } from '../domain/account-group/AccountGroupRepository'
 import type { BudgetRepository } from '../domain/budget/BudgetRepository'
@@ -184,6 +185,11 @@ export function AppRoutes() {
   )
 
   const location = useLocation()
+  // お気に入りの読み書きだけを渡す(clientのプロキシは、メモ化済みのものを使う)
+  const favoriteRepositories = useMemo(
+    () => ({ account: accountRepository, counterparty: counterpartyRepository, project: projectRepository }),
+    [accountRepository, counterpartyRepository, projectRepository],
+  )
   // 仕訳画面で提案を確定・見送りしたときに、サイドナビのバッジの件数を取り直す
   const [proposalRefreshKey, setProposalRefreshKey] = useState(0)
   const pendingProposalCount = usePendingProposalCount(
@@ -239,6 +245,8 @@ export function AppRoutes() {
       download={downloadDatabaseBackup}
       reload={() => window.location.reload()}
     />
+    {/* お気に入り(計画Issue #231 フェーズ4)。選択欄とマスタ画面の★が同じ状態を見る。画面を移るたびに読み直して、統合・削除などの変更に追従する */}
+    <FavoritesProvider repositories={favoriteRepositories} refreshKey={location.pathname}>
     <Routes>
       {/* 中継(ハブ)画面とホーム画面は廃止した。旧URLは各領域の入口画面へリダイレクトする */}
       <Route path="/" element={<Navigate to="/journal/entries" replace />} />
@@ -478,6 +486,7 @@ export function AppRoutes() {
 
       <Route path="*" element={<Navigate to="/journal/entries" replace />} />
     </Routes>
+    </FavoritesProvider>
     </>
   )
 }

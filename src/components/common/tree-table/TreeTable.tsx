@@ -38,6 +38,11 @@ export interface TreeTableProps {
   showCategoryRows?: boolean
   /** falseにすると行をドラッグできない(並び順を持たない平らな一覧向け)。既定はtrue */
   draggable?: boolean
+  /**
+   * 葉の行(グループの行ではない)の名称の左に差し込む操作。マスタ画面のお気に入りの★に使う(計画Issue #231 フェーズ4)。
+   * 差し込む側が、押しても行の選択を起こさないボタンにする。表示用の汎用ノード型だけを渡す
+   */
+  renderLeafLeading?: (node: TreeTableNode) => ReactNode
 }
 
 /**
@@ -64,6 +69,7 @@ export function TreeTable({
   onSortChange,
   draggable = true,
   showCategoryRows = true,
+  renderLeafLeading,
 }: TreeTableProps) {
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(new Set())
   const { dragOver, endDrag, handleDragStart, handleNodeDragOver, handleCategoryDragOver, handleDrop } = useTreeDrag({
@@ -191,6 +197,7 @@ export function TreeTable({
                         {isOpen ? '▾' : '▸'}
                       </button>
                     )}
+                    {!isGroup && renderLeafLeading?.(node)}
                     <button
                       type="button"
                       className={`tree-table__link${isGroup ? ' tree-table__link--group' : ''}`}

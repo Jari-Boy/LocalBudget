@@ -130,6 +130,7 @@ export function JournalLineBulkBar({
           <TreeSelect
             label="一括編集の科目"
             categories={master.accountCategories}
+            favoriteKind="account"
             value={pick.accountId === null ? '' : String(pick.accountId)}
             emptyLabel={KEEP_LABEL}
             placeholder={KEEP_LABEL}
@@ -141,6 +142,7 @@ export function JournalLineBulkBar({
           <TreeSelect
             label="一括編集のプロジェクト"
             categories={withClearOption(master.projectCategories)}
+            favoriteKind="project"
             value={changeToValue(pick.project)}
             emptyLabel={KEEP_LABEL}
             placeholder={KEEP_LABEL}
@@ -152,6 +154,7 @@ export function JournalLineBulkBar({
           <TreeSelect
             label="一括編集の取引先"
             categories={withClearOption(master.counterpartyCategories)}
+            favoriteKind="counterparty"
             value={changeToValue(pick.counterparty)}
             emptyLabel={KEEP_LABEL}
             placeholder={KEEP_LABEL}
