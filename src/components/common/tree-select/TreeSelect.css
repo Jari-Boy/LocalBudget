@@ -191,3 +191,57 @@
   color: var(--color-accent);
   font-weight: 700;
 }
+
+/* お気に入り(計画Issue #231 フェーズ4): 項目の行は、項目のボタンと★のボタンを横に並べる */
+.tree-select__item-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tree-select__item-row > .tree-select__item {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.tree-select__star {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.tree-select__star:hover {
+  background: var(--color-hover);
+}
+
+.tree-select__star:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.tree-select__star svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+
+.tree-select__star--on {
+  color: var(--color-star, #a8620b);
+}
+
+.tree-select__star--on svg {
+  fill: currentColor;
+}

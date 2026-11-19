@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { useFavorites, type FavoriteKind } from '../favorites/FavoritesContext'
 import {
   buildTreeSelectRows,
   GROUP_VALUE_PREFIX,
@@ -24,6 +25,12 @@ interface TreeSelectBaseProps {
   createLabel?: string
   /** trueのとき、現在の値は表示したまま押せなくする(読み取り専用の表示、計画Issue #164) */
   disabled?: boolean
+  /**
+   * お気に入り(計画Issue #231 フェーズ4)にできる種類。渡すと、項目の値を、その種類のidとして、
+   * 先頭の「★ お気に入り」のセクションと、各項目の★のボタン(付け外し)を出す。お気に入りの状態は、
+   * FavoritesProviderが画面全体で持つ(プロバイダーが無いときは、渡しても何も出さない)
+   */
+  favoriteKind?: FavoriteKind
 }
 
 /** 単一選択(従来の動き)。項目を選ぶと閉じる */
@@ -103,8 +110,15 @@ export function TreeSelect(props: TreeSelectProps) {
     onCreate,
     createLabel = '新規追加',
     disabled = false,
+    favoriteKind,
   } = props
   const isMulti = props.multiple === true
+  const favorites = useFavorites()
+  const toggleFavorite = favoriteKind !== undefined ? favorites.toggle : undefined
+  const favoriteValues = useMemo(
+    () => (favoriteKind !== undefined && toggleFavorite !== undefined ? new Set([...favorites.ids[favoriteKind]].map(String)) : undefined),
+    [favoriteKind, toggleFavorite, favorites.ids],
+  )
   const selectedValues = useMemo<readonly string[]>(
     () => (props.multiple === true ? props.values : props.value === '' ? [] : [props.value]),
     [props],
@@ -129,8 +143,9 @@ export function TreeSelect(props: TreeSelectProps) {
         selectedValues: isMulti ? selectedValues : undefined,
         query,
         openOverrides,
+        favoriteValues,
       }),
-    [categories, value, isMulti, selectedValues, query, openOverrides],
+    [categories, value, isMulti, selectedValues, query, openOverrides, favoriteValues],
   )
 
   const selectedNames = useMemo(
@@ -226,7 +241,8 @@ export function TreeSelect(props: TreeSelectProps) {
     event.preventDefault()
     const focusables: HTMLElement[] = [
       ...(searchRef.current ? [searchRef.current] : []),
-      ...Array.from(listRef.current?.querySelectorAll<HTMLElement>('button') ?? []),
+      // ★のボタンはたどらない(項目の行だけをたどる。★はTabで届く)
+      ...Array.from(listRef.current?.querySelectorAll<HTMLElement>('button:not([data-favorite-toggle])') ?? []),
     ]
     const index = focusables.indexOf(document.activeElement as HTMLElement)
     const next = event.key === 'ArrowDown' ? index + 1 : index - 1
@@ -335,23 +351,39 @@ export function TreeSelect(props: TreeSelectProps) {
                 )
               }
               return (
-                <button
-                  key={`i:${row.value}`}
-                  type="button"
-                  className={`tree-select__item${row.isSelected ? ' tree-select__item--selected' : ''}${isMulti ? ' tree-select__item--multi' : ''}`}
-                  style={{ paddingLeft: row.indent }}
-                  aria-current={!isMulti && row.isSelected ? 'true' : undefined}
-                  aria-pressed={isMulti ? row.isSelected : undefined}
-                  data-via-group={isMulti && row.isViaGroup ? 'true' : undefined}
-                  onClick={() => choose(row.value)}
-                >
-                  <span>{row.name}</span>
-                  {isMulti && (row.isSelected || row.isViaGroup) && (
-                    <span aria-hidden="true" className="tree-select__check">
-                      ✓
-                    </span>
+                <div key={`i:${row.section}:${row.value}`} className="tree-select__item-row">
+                  <button
+                    type="button"
+                    className={`tree-select__item${row.isSelected ? ' tree-select__item--selected' : ''}${isMulti ? ' tree-select__item--multi' : ''}`}
+                    style={{ paddingLeft: row.indent }}
+                    aria-current={!isMulti && row.isSelected ? 'true' : undefined}
+                    aria-pressed={isMulti ? row.isSelected : undefined}
+                    data-via-group={isMulti && row.isViaGroup ? 'true' : undefined}
+                    onClick={() => choose(row.value)}
+                  >
+                    <span>{row.name}</span>
+                    {isMulti && (row.isSelected || row.isViaGroup) && (
+                      <span aria-hidden="true" className="tree-select__check">
+                        ✓
+                      </span>
+                    )}
+                  </button>
+                  {favoriteKind !== undefined && toggleFavorite !== undefined && (
+                    // ★は項目の選択とは別のボタン(押しても選ばず、閉じない)。計画Issue #231 フェーズ4
+                    <button
+                      type="button"
+                      className={`tree-select__star${row.isFavorite ? ' tree-select__star--on' : ''}`}
+                      data-favorite-toggle="true"
+                      aria-pressed={row.isFavorite}
+                      aria-label={`${row.name}をお気に入り${row.isFavorite ? 'から外す' : 'に追加'}`}
+                      onClick={() => void toggleFavorite(favoriteKind, Number(row.value))}
+                    >
+                      <svg viewBox="0 0 20 20" aria-hidden="true">
+                        <path d="M10 2.5l2.3 4.9 5.2.7-3.8 3.7.9 5.3L10 14.5l-4.6 2.6.9-5.3L2.5 8.1l5.2-.7z" />
+                      </svg>
+                    </button>
                   )}
-                </button>
+                </div>
               )
             })}
             {rows.length === 0 && <p className="tree-select__empty">該当する項目がありません</p>}
