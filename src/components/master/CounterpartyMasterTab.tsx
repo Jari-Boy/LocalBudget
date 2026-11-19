@@ -114,6 +114,7 @@ export function CounterpartyMasterTab({
     keywordRuleRepository,
     counterpartyGroupRepository,
     accountRepository,
+    accountGroupRepository,
     journalEntryRepository,
     recurringTransactionRuleRepository,
     settlementBatchRepository,
@@ -310,7 +311,8 @@ function CounterpartyExtra({ counterparty, accounts, accountGroups, rules, repos
       value={value === null ? '' : String(value)}
       emptyLabel={t('counterpartyTab.accountNone')}
       onChange={(next) => onChange(next === '' ? null : Number(next))}
-    />  )
+    />
+  )
 
   return (
     <section className="master-subsection" aria-label={t('counterpartyTab.patternsTitle', { count: rules.length })}>
