@@ -196,7 +196,7 @@
 
 ## 手動で起動した`npm run dev`を残したままPlaywrightを流すと、開発用のサンプルデータが入った状態のサーバーが再利用され、E2Eが失敗する(計画Issue #207)
 
-**内容**: `playwright.config.ts`の`webServer`は`reuseExistingServer: !process.env.CI`のため、5173番ですでに開発サーバーが動いていると、それをそのまま使う。手動で起動した`npm run dev`には、E2Eのためのダミーデータ投入の抑制(`VITE_DISABLE_DEV_SEED`、`webServer.env`でだけ付く)が効いていないので、開発用のサンプルデータ(口座・仕訳)が入った状態になる。E2Eは「口座・仕訳が0件」のクリーンな初期状態を前提にしているため、`UNIQUE constraint failed: accounts.category, accounts.name`や、同名のボタンが2つ見つかる`strict mode violation`で失敗する。実機の画面確認で開発サーバーを起動したあとにE2Eを流すときは、先に5173番の待ち受けを止める(`Get-NetTCPConnection -LocalPort 5173 -State Listen`で見つけて停止する)。落ちた原因がテストの不具合かを疑う前に、まずこれを確認する。
+**内容**: `playwright.config.ts`の`webServer`は`reuseExistingServer: !process.env.CI`のため、5173番ですでに開発サーバーが動いていると、それをそのまま使う。手動で起動した`npm run dev`には、E2Eのためのダミーデータ投入の抑制(`VITE_DISABLE_DEV_SEED`、`webServer.env`でだけ付く)が効いていないので、開発用のサンプルデータ(口座・仕訳)が入った状態になる。E2Eは「口座・仕訳が0件」のクリーンな初期状態を前提にしているため、`UNIQUE constraint failed: accounts.category, accounts.name`や、同名のボタンが2つ見つかる`strict mode violation`で失敗する。実機の画面確認で開発サーバーを起動したあとにE2Eを流すときは、先に5173番の待ち受けを止める(`Get-NetTCPConnection -LocalPort 5173 -State Listen`で見つけて停止する)。落ちた原因がテストの不具合かを疑う前に、まずこれを確認する。どうしても5173番の開発サーバーを止められないときは、別ポート(例: 5199)で`webServer`を起動する一時的なplaywright設定を作って流すと、`VITE_DISABLE_DEV_SEED`が効いたまま既存のE2Eも通る(計画Issue #231 フェーズ2で採用、設定ファイルはコミットしない)。
 Issue #187(`e2e/journal-entry.spec.ts`の「ランチ代」の`UNIQUE constraint failed`)も同じ原因だった(計画Issue #211で確認)。5173番が空きの状態では5件が連続2回とも通り、E2E全体も99件が通る。サンプルデータ入りの`npm run dev`を起動したまま実行すると、`UNIQUE constraint failed: accounts.category, accounts.name`で同スペックの4件が失敗して再現する。テストデータの重複・状態の持ち越し・アプリ側の不具合ではない。
 
 **参考**: `playwright.config.ts`、`docs/decisions.md`(開発サンプルデータの投入、計画Issue #101)、Issue #207
