@@ -16,12 +16,6 @@ export interface KeywordListItem {
   accountLocked?: boolean
 }
 
-/** キーワードに紐づけられる科目(取引先を持てる費用・収益の科目) */
-export interface KeywordAccountOption {
-  id: number
-  name: string
-}
-
 export interface KeywordListProps {
   items: readonly KeywordListItem[]
   onTextChange: (key: string, text: string) => void
@@ -29,10 +23,7 @@ export interface KeywordListProps {
   onCommit: (key: string) => void
   onDelete: (key: string) => void
   onAdd: () => void
-  /** 渡すと、各キーワードの行に科目の選択欄を出す(キーワードごとに取引先と科目を結び付ける。計画Issue #219) */
-  accountOptions?: readonly KeywordAccountOption[]
-  onAccountChange?: (key: string, accountId: number | null) => void
-  /** 科目の欄を自前の部品で描く(取引先の追加ダイアログ。科目の新規登録つきの選択部品を使うため)。渡すとaccountOptionsの選択欄より優先する */
+  /** 科目の欄を自前の部品で描く(取引先の追加ダイアログ。科目の新規登録つきの選択部品を使うため)。渡さなければ科目の欄は出さない */
   renderAccount?: (item: KeywordListItem, index: number) => ReactNode
   /** 一覧の見出し(既定は「取引先のキーワード」)。科目のキーワードでは「キーワード」 */
   label?: string
@@ -43,7 +34,7 @@ export interface KeywordListProps {
  * 取引先の追加ダイアログで同じものを使う。各行は「登録済み」「新規」のタグ・入力欄・含む行の数・削除、
  * 末尾に「キーワードを追加」。
  */
-export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, accountOptions, onAccountChange, renderAccount, label }: KeywordListProps) {
+export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, renderAccount, label }: KeywordListProps) {
   const { t } = useTranslation('statementImport')
   const errorText = (error: KeywordError) =>
     error === 'empty' ? t('patternErrorEmpty') : error === 'duplicate' ? t('patternErrorDuplicate') : t('patternErrorNotInDescription')
@@ -71,28 +62,7 @@ export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, ac
                 onCommit(item.key)
               }}
             />
-            {renderAccount ? (
-              renderAccount(item, index)
-            ) : (
-              accountOptions &&
-              onAccountChange && (
-              <select
-                className="import-control import-control--small"
-                aria-label={t('patternAccountLabel', { index: index + 1 })}
-                disabled={item.accountLocked === true}
-                title={item.accountLocked === true ? t('patternAccountLockedTitle') : undefined}
-                value={item.accountId == null ? '' : String(item.accountId)}
-                onChange={(e) => onAccountChange(item.key, e.target.value === '' ? null : Number(e.target.value))}
-              >
-                <option value="">{t('patternAccountNone')}</option>
-                {accountOptions.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-              )
-            )}
+            {renderAccount?.(item, index)}
             <span className="import-note import-nowrap" title={t('patternRowsTitle')}>
               {t('patternRows', { count: item.count })}
             </span>

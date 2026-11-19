@@ -137,6 +137,26 @@ describe('AccountSelect', () => {
     expect(onChange).toHaveBeenCalledWith('__clear')
   })
 
+  it('pinnedを渡すと、該当する科目を、階層ではなく先頭の見出しの下にまとめて出す(階層のほうには出さない)', () => {
+    render(
+      <AccountSelect
+        label="科目"
+        accounts={accounts}
+        accountGroups={groups}
+        value=""
+        onChange={vi.fn()}
+        pinned={{ name: '紐づけ済みの科目', filter: (a) => a.id === 11 }}
+      />,
+    )
+    open()
+    const names = screen.getAllByRole('button').map((b) => b.textContent)
+    expect(screen.getByText('紐づけ済みの科目')).toBeInTheDocument()
+    expect(names.filter((n) => n === '食材')).toHaveLength(1)
+    // 階層のほうは検索で開いても、固定した科目を重ねて出さない
+    fireEvent.change(screen.getByLabelText('科目を検索'), { target: { value: '食' } })
+    expect(screen.getAllByRole('button', { name: '食材' })).toHaveLength(1)
+  })
+
   it('disabledのときは、押せない', () => {
     render(<AccountSelect label="科目" accounts={accounts} accountGroups={groups} value="" onChange={vi.fn()} disabled />)
     expect(screen.getByRole('button', { name: /^科目/ })).toBeDisabled()

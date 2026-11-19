@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
-import { KeywordList, type KeywordAccountOption, type KeywordListItem } from './KeywordList'
+import { KeywordList, type KeywordListItem } from './KeywordList'
 
 export interface CounterpartySettingsPopupProps {
   /** 取引先のキーワード(既定)か、資産・負債の科目のキーワード(計画Issue #219)か。リンク・タイトルの文言と、科目の選択欄の有無が変わる */
@@ -14,9 +14,7 @@ export interface CounterpartySettingsPopupProps {
   counterpartyName: string
   /** 取引先の登録済みキーワードを読み込み中はnull */
   items: readonly KeywordListItem[] | null
-  /** キーワードの科目に選べる科目(取引先を持てる費用・収益の科目) */
-  accountOptions?: readonly KeywordAccountOption[]
-  /** 渡すと、キーワードの科目を、科目グループごとにまとめて選ぶ部品(TreeSelect)で出す。accountOptionsの平らな選択欄より優先する */
+  /** 渡すと、キーワードの科目を、科目グループごとにまとめて選ぶ部品(TreeSelect)で出す。渡さなければ科目の欄は出さない */
   accountCategories?: readonly TreeSelectCategory[]
   /** この行の摘要(リンクの名前に使う) */
   rowDescription: string
@@ -42,7 +40,7 @@ const POPUP_WIDTH = 520
  */
 export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps) {
   const kind = props.kind ?? 'counterparty'
-  const { isOpen, onToggle, onClose, counterpartyName, items, accountOptions, accountCategories, rowDescription, message, saveError } = props
+  const { isOpen, onToggle, onClose, counterpartyName, items, accountCategories, rowDescription, message, saveError } = props
   const { t } = useTranslation('statementImport')
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
@@ -132,7 +130,6 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
                   onCommit={props.onCommit}
                   onDelete={props.onDelete}
                   onAdd={props.onAdd}
-                  accountOptions={accountOptions}
                   renderAccount={
                     accountCategories === undefined
                       ? undefined
@@ -150,7 +147,6 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
                         )
                   }
                   label={kind === 'account' ? t('settingsPatternsLabelAccount') : undefined}
-                  onAccountChange={props.onAccountChange}
                 />
 
                 {saveError !== '' && (
