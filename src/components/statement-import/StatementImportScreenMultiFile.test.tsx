@@ -241,6 +241,75 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     })
   })
 
+  describe('ヘッダーでの並び替え(計画Issue #231 フェーズ2)', () => {
+    it('取り込むファイルのチェックを切り替えて一覧を作り直しても、並び替えの状態は保たれる', async () => {
+      renderScreen()
+      await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+      fireEvent.click(within(screen.getByRole('columnheader', { name: '金額' })).getByRole('button'))
+      expect(screen.getByRole('columnheader', { name: '金額' })).toHaveAttribute('aria-sort', 'ascending')
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'nov.csvを取り込む' }))
+
+      await screen.findByText(/oct\.csv を読み込み済み/)
+      expect(screen.getByRole('columnheader', { name: '金額' })).toHaveAttribute('aria-sort', 'ascending')
+      // 金額の昇順: Amazon(-2,980) が コンビニ(-420) より先
+      expect(rowsOf(/Amazon/)).toHaveLength(1)
+      expect(
+        rowOf(/Amazon/).getByText('-¥2,980').closest('tr')!.compareDocumentPosition(rowOf(/コンビニ/).getByText('-¥420').closest('tr')!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
+    const header = (name: string) => screen.getByRole('columnheader', { name })
+    const sortButton = (name: string) => within(header(name)).getByRole('button')
+    const isBefore = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+
+    it('完全重複の行は入力済みの色にならず、「取り込む」に戻して相手科目を決めると入力済みの色になる', async () => {
+      renderScreen()
+      await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+      const duplicateRow = () => screen.getAllByRole('row', { name: /Amazon/ })[0]
+      expect(duplicateRow()).not.toHaveClass('import-row--done')
+      expect(duplicateRow()).toHaveClass('import-row--dup')
+
+      fireEvent.click(within(duplicateRow()).getByRole('button', { name: '取り込む' }))
+      expect(duplicateRow()).not.toHaveClass('import-row--done')
+
+      pick(within(duplicateRow()), '相手科目', '食費')
+      expect(duplicateRow()).toHaveClass('import-row--done')
+    })
+
+    it('並び替えたあとでも、「重複元の行へ移動」「重複した行へ移動」は正しい行へ移り、その行を強調する', async () => {
+      renderScreen()
+      await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+      // 日付の降順(コンビニ 10/03 と Amazon 10/26 が入れ替わる)
+      fireEvent.click(sortButton('日付'))
+      fireEvent.click(sortButton('日付'))
+      expect(header('日付')).toHaveAttribute('aria-sort', 'descending')
+      const convenience = screen.getAllByRole('row', { name: /コンビニ/ })[0]
+      const original = screen.getAllByRole('row', { name: /Amazon/ })[1]
+      expect(isBefore(original, convenience)).toBe(true)
+
+      fireEvent.click(within(screen.getAllByRole('row', { name: /Amazon/ })[0]).getByRole('button', { name: '重複元の行へ移動' }))
+
+      // 重複元はoct.csvのAmazonの行(nov.csvの重複した行ではない)
+      const flashed = screen.getAllByRole('row', { name: /Amazon/ }).filter((r) => r.classList.contains('import-row--flash'))
+      expect(flashed).toHaveLength(1)
+      expect(within(flashed[0]).getByText('oct.csv')).toBeInTheDocument()
+
+      fireEvent.click(within(screen.getAllByRole('row', { name: /Amazon/ })[1]).getByRole('button', { name: '重複した行へ移動' }))
+
+      const flashedBack = screen.getAllByRole('row', { name: /Amazon/ }).filter((r) => r.classList.contains('import-row--flash'))
+      expect(flashedBack).toHaveLength(1)
+      expect(within(flashedBack[0]).getByText('nov.csv')).toBeInTheDocument()
+    })
+
+    it('複数のファイルを取り込んでいるときは、「ファイル」列も並び替えられる', async () => {
+      renderScreen()
+      await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+      expect(within(screen.getByRole('columnheader', { name: 'ファイル' })).getByRole('button')).toBeInTheDocument()
+    })
+  })
+
   it('ファイル間の重複行の「取り込む」を押すと、新規として戻せる', async () => {
     renderScreen()
     await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)

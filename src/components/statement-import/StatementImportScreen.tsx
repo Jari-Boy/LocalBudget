@@ -65,6 +65,7 @@ import {
   type ImportRowState,
 } from './importRowModel'
 import { countUncheckedByGroup, expandGroup, toggleCollapsedGroup, type CollapsedGroups } from './groupCollapse'
+import { compareBySort, cycleSort, type ImportSort, type SortKey, type SortableRow } from './importRowSort'
 import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFormLine'
 import { collectFinancialInstitutionNames } from '../../domain/statement-import/financialInstitution'
 import { MappingCreateDialog } from './MappingCreateDialog'
@@ -244,6 +245,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
    * ファイルのチェックの切り替えによる作り直し・確定後の続きの選択では保ち、CSVの選び直し・取込先の変更では初期化する。
    */
   const [collapsedGroups, setCollapsedGroups] = useState<CollapsedGroups>(new Set())
+  /**
+   * ヘッダーでの並び替え(計画Issue #231 フェーズ2)。グループの中だけを並べ、ヘッダーを押した時点の値で並びを決めて入力では動かさない。
+   * 折りたたみと同じく、ファイルのチェックの切り替えによる作り直しでは保ち、CSVの選び直し・取込先の変更では解除する。
+   */
+  const [sort, setSort] = useState<ImportSort | null>(null)
   const [noMatch, setNoMatch] = useState(false)
   const [showMappingDialog, setShowMappingDialog] = useState(false)
   const [institutionNames, setInstitutionNames] = useState<string[]>([])
@@ -798,7 +804,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   async function buildSession(account: Account, next: MultiFileMappingMatch, checked: ReadonlySet<string>, restoreRows = false) {
     const files = next.files.filter((f) => checked.has(f.fileName))
     // ファイルのチェックの切り替えによる作り直し(restoreRows)では、折りたたみの状態を保つ。それ以外は新しい取込なので初期化する
-    if (!restoreRows) setCollapsedGroups(new Set())
+    if (!restoreRows) {
+      setCollapsedGroups(new Set())
+      setSort(null)
+    }
     if (files.length === 0) {
       setSession(null)
       return
@@ -995,13 +1004,19 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   const records = session?.review.records ?? []
-  // 一覧は「重複」→「似た取引あり」→「問題なし」の順に並べる(グループの中は取り込んだ順のまま)。保存時の並び(rowOrder)は元の順を使う
+  // 一覧は「重複」→「似た取引あり」→「問題なし」の順に並べる。グループの中は、ヘッダーで並び替えていなければ取り込んだ順のまま、
+  // 並び替えていればヘッダーを押した時点の値の順(計画Issue #231 フェーズ2)。保存時の並び(rowOrder)は、どちらでも元の順を使う
   const GROUP_ORDER = ['duplicate', 'similar', 'clean'] as const
   const visibleIndices = session
     ? records
         .map((_, i) => i)
         .filter((i) => !session.done.has(i))
-        .sort((a, b) => GROUP_ORDER.indexOf(rowGroup(records[a])) - GROUP_ORDER.indexOf(rowGroup(records[b])) || a - b)
+        .sort(
+          (a, b) =>
+            GROUP_ORDER.indexOf(rowGroup(records[a])) - GROUP_ORDER.indexOf(rowGroup(records[b])) ||
+            compareBySort(sort, records[a], records[b]) ||
+            a - b,
+        )
     : []
   const statusOf = (i: number) => rowStatus(records[i], session!.rows[i])
   const importable = visibleIndices.filter((i) => statusOf(i) !== 'duplicate' && statusOf(i) !== 'skipped')
@@ -1031,6 +1046,39 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   records.forEach((r, i) => {
     if (r.crossFileDuplicateOf !== null && !firstDuplicateOf.has(r.crossFileDuplicateOf)) firstDuplicateOf.set(r.crossFileDuplicateOf, i)
   })
+  /** ヘッダーを押した時点の表示対象の行から、並び替えの値を作る(押したあとに入力を変えても並びは動かない) */
+  const toSortableRows = (): SortableRow[] =>
+    visibleIndices.map((i) => {
+      const state = session!.rows[i]
+      return {
+        externalId: records[i].externalId,
+        fileName: records[i].fileName,
+        entryDate: records[i].record.entryDate,
+        description: formatDescriptionForDisplay(records[i].record.description),
+        amount: records[i].record.amount,
+        counterAccountName: accountList.find((a) => a.id === state.counterAccountId)?.name ?? '',
+        counterpartyName: data.counterparties.find((c) => c.id === state.counterpartyId)?.name ?? '',
+        status: statusOf(i),
+      }
+    })
+  /** 並び替えできる列の見出し。ボタンで 昇順→降順→解除 を切り替え、aria-sort で今の状態を伝える */
+  const sortHeader = (key: SortKey, label: string, className?: string) => {
+    const direction = sort?.key === key ? sort.direction : null
+    return (
+      <th className={className} aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}>
+        <button
+          type="button"
+          className={`import-sort${direction !== null ? ' import-sort--on' : ''}`}
+          onClick={() => setSort((prev) => cycleSort(prev, key, toSortableRows()))}
+        >
+          <span>{label}</span>
+          <svg className="import-sort__mark" viewBox="0 0 12 12" aria-hidden="true">
+            <path d={direction === 'asc' ? 'M2.5 8L6 4l3.5 4' : direction === 'desc' ? 'M2.5 4L6 8l3.5-4' : 'M3.5 4.5L6 2l2.5 2.5M3.5 7.5L6 10l2.5-2.5'} />
+          </svg>
+        </button>
+      </th>
+    )
+  }
   const jumpToRow = (index: number) => {
     // 移動先のグループが折りたたまれていたら、先に開いて描画してからスクロールする
     flushSync(() => setCollapsedGroups((prev) => expandGroup(prev, rowGroup(records[index]))))
@@ -1678,7 +1726,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             <table className="import-table" aria-label={t('tableLabel')}>
               <thead>
                 <tr>
-                  {showFileColumn && <th>{t('colFile')}</th>}
+                  {showFileColumn && sortHeader('file', t('colFile'))}
                   <th style={{ width: 24 }}>
                     <input
                       type="checkbox"
@@ -1687,15 +1735,16 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                       onChange={() => { setBulkMessage(''); setSelected(allSelected ? new Set() : new Set(importable)) }}
                     />
                   </th>
-                  <th>{t('colDate')}</th>
-                  <th>{t('colDescription')}</th>
-                  <th className="import-num">{t('colAmount')}</th>
-                  <th>{t('colCounterAccount')}</th>
-                  <th>{t('colCounterpartyBatch')}</th>
+                  {sortHeader('date', t('colDate'))}
+                  {sortHeader('description', t('colDescription'))}
+                  {sortHeader('amount', t('colAmount'), 'import-num')}
+                  {sortHeader('counterAccount', t('colCounterAccount'))}
+                  {sortHeader('counterparty', t('colCounterpartyBatch'))}
+                  {/* プロジェクト・メンバー・コメントは入力欄の列なので、並び替えの対象にしない */}
                   <th>{t('colProject')}</th>
                   <th>{t('colMember')}</th>
                   <th>{t('colComment')}</th>
-                  <th>{t('colStatus')}</th>
+                  {sortHeader('status', t('colStatus'))}
                 </tr>
               </thead>
               <tbody>
@@ -1770,6 +1819,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                           [
                             isDup ? 'import-row--dup' : '',
                             group === 'similar' ? 'import-row--similar' : '',
+                            // 入力済み(相手科目が決まっている)の行。重複・保存しない行は色分けの対象外(計画Issue #231 フェーズ2)
+                            status === 'new' ? 'import-row--done' : '',
                             isSkipped ? 'import-row--skipped' : '',
                             flashIndex === index ? 'import-row--flash' : '',
                           ]
@@ -1990,6 +2041,17 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                           </>
                         )}
                         <td className={`import-status import-status--${status}`}>
+                          {/* 色だけに頼らないよう、入力済み(新規)には✓、未入力(要確認)には破線の丸を添える。読み上げは文字のまま */}
+                          {status === 'new' && (
+                            <svg className="import-status__mark import-status__mark--done" viewBox="0 0 14 14" aria-hidden="true">
+                              <path d="M2.5 7.5l3 3 6-6.5" />
+                            </svg>
+                          )}
+                          {status === 'check' && (
+                            <svg className="import-status__mark import-status__mark--todo" viewBox="0 0 14 14" aria-hidden="true">
+                              <circle cx="7" cy="7" r="4.5" />
+                            </svg>
+                          )}
                           {statusText}
                           {reviewRecord.isExactDuplicate && state.includeDuplicate && (
                             <>
@@ -2014,7 +2076,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                         </td>
                       </tr>
                       {!isDup && reviewRecord.approximateCandidates.length > 0 && (
-                        <tr className="import-sub import-sub--similar">
+                        <tr className={`import-sub import-sub--similar${status === 'new' ? ' import-sub--done' : ''}`}>
                           <td />
                           <td colSpan={showFileColumn ? 10 : 9}>
                             <div role="group" aria-label={t('similarGroupLabel', { desc })} className="import-similar">

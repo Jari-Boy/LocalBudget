@@ -385,6 +385,42 @@ test.describe('明細取込画面', () => {
       .toBe(-10500)
   })
 
+  test('一覧のヘッダーの並び替えとグループの折りたたみは、キーボード(Tab・Enter・Space)で操作できる(計画Issue #231)', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
+    await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING)
+    await startImport(
+      page,
+      '普通預金',
+      '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n2026/07/21,ランチ,-800,96200\n2026/07/22,家賃,-50000,46200\n',
+    )
+    await expect(page.getByText(/statement\.csv を読み込み済み。新規 3 件/)).toBeVisible()
+
+    // ヘッダーのボタンにフォーカスし、Enterで昇順、Spaceで降順に切り替わる
+    const amountHeader = page.getByRole('columnheader', { name: '金額' })
+    const amountSort = amountHeader.getByRole('button')
+    await amountSort.focus()
+    await expect(amountSort).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(amountHeader).toHaveAttribute('aria-sort', 'ascending')
+    await page.keyboard.press('Space')
+    await expect(amountHeader).toHaveAttribute('aria-sort', 'descending')
+    // 切り替えてもフォーカスは残り、Tabで次の並び替えのボタン(相手科目)へ移る
+    await expect(amountSort).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(page.getByRole('columnheader', { name: '相手科目' }).getByRole('button')).toBeFocused()
+
+    // グループの見出しも、EnterとSpaceで折りたたみ・展開できる
+    const group = page.getByRole('button', { name: /^問題なし\s*\d+件/ })
+    await group.focus()
+    await page.keyboard.press('Enter')
+    await expect(group).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByRole('row', { name: /スーパー/ })).toHaveCount(0)
+    await page.keyboard.press('Space')
+    await expect(group).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByRole('row', { name: /スーパー/ })).toHaveCount(1)
+  })
+
   test('マスタの「明細マッピング」タブで定義の表示名を編集して保存できる(「マッピングを編集」からも移動できる)', async ({
     page,
   }) => {
