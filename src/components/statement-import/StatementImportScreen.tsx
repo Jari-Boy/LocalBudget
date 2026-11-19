@@ -66,6 +66,15 @@ import {
 } from './importRowModel'
 import { countUncheckedByGroup, expandGroup, toggleCollapsedGroup, type CollapsedGroups } from './groupCollapse'
 import { compareBySort, cycleSort, type ImportSort, type SortKey, type SortableRow } from './importRowSort'
+import { ConfirmDialog } from '../common/confirm-dialog/ConfirmDialog'
+import type {
+  StatementImportDraft,
+  StatementImportDraftRowInput,
+  StatementImportDraftSummary,
+} from '../../domain/statement-import/StatementImportDraft'
+import type { StatementImportDraftRepository } from '../../domain/statement-import/StatementImportDraftRepository'
+import { applyDraftRowInput, collectDraftRowInputs } from './draftRowInputs'
+import { formatDraftSavedAt } from './draftDisplay'
 import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFormLine'
 import { collectFinancialInstitutionNames } from '../../domain/statement-import/financialInstitution'
 import { MappingCreateDialog } from './MappingCreateDialog'
@@ -79,7 +88,6 @@ import type { KeywordListItem } from './KeywordList'
 import { buildGroupSelectCategories } from '../common/tree-select/groupSelectCategories'
 import { mappingFormToInput } from '../master/mappingForm'
 import { QuickCreateDialog } from './QuickCreateDialog'
-import { takePendingImportFiles } from './pendingImportFiles'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import './StatementImportScreen.css'
 
@@ -121,6 +129,10 @@ export interface StatementImportScreenProps {
   projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll' | 'create'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
   settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll'>>
+  /** 明細取込の一時保存(計画Issue #231 フェーズ3)。取込先の科目ごとに1つ。CSVの生データと、初期値から変えた行の入力を保存する */
+  statementImportDraftRepository: MaybeAsync<
+    Pick<StatementImportDraftRepository, 'findSummaries' | 'findById' | 'findByAccountId' | 'save' | 'delete'>
+  >
   /** 「マッピングを編集」を押したときの移動(マスタの明細マッピングタブへ) */
   onEditMappings: () => void
   /** テスト用に近似重複判定の閾値を注入できる */
@@ -196,6 +208,12 @@ interface ConfirmFailure {
 }
 
 /**
+ * 確定の結果(計画Issue #231 フェーズ3)。blocked=確定の前提を満たせず何もしなかった、done=全件を確定した、
+ * partial=一部だけ確定した(doneは確定済みになった行の番号を含む、確定後の全体)
+ */
+type ConfirmOutcome = { status: 'blocked' } | { status: 'done' } | { status: 'partial'; done: Set<number> }
+
+/**
  * 明細取込画面(計画Issue #151)。旧アップロード画面とレビュー画面を1画面にまとめ、取込先とCSVを
  * 選ぶと同じ画面に1件1行で並べる。取引先の推定・相手科目のサジェスト・重複防止・確定版の候補・
  * 残高照合(docs/domain/statement-import.md 1.5・1.6)は従来どおり。選んだ行へ一括設定でき、
@@ -218,6 +236,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     projectGroupRepository,
     householdMemberRepository,
     settlementBatchRepository,
+    statementImportDraftRepository,
     onEditMappings,
     approximateDuplicateOptions,
   } = props
@@ -250,6 +269,24 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
    * 折りたたみと同じく、ファイルのチェックの切り替えによる作り直しでは保ち、CSVの選び直し・取込先の変更では解除する。
    */
   const [sort, setSort] = useState<ImportSort | null>(null)
+  /** 開始状態に出す一時保存の一覧(計画Issue #231 フェーズ3)。取込先の科目ごとに1つ */
+  const [drafts, setDrafts] = useState<StatementImportDraftSummary[]>([])
+  /** いま開いている取込が、再開した(または保存した)一時保存のid。同じ取込先への保存し直しは、これなら確認なしで上書きする */
+  const [currentDraftId, setCurrentDraftId] = useState<number | null>(null)
+  /** 「一時保存しました」の通知 */
+  const [draftMessage, setDraftMessage] = useState('')
+  /** 再開した直後の通知。保存日時と、削除された参照先などで戻せなかった行の数 */
+  const [draftNotice, setDraftNotice] = useState<{ savedAt: string; dropped: number } | null>(null)
+  /** 保存時のマッピング定義で読めなかった一時保存。定義を作り直すと、保存した取込先・入力を戻して続ける */
+  const [staleDraft, setStaleDraft] = useState<StatementImportDraft | null>(null)
+  /** 一時保存の上書き・破棄の確認 */
+  const [draftDialog, setDraftDialog] = useState<
+    { kind: 'overwrite'; accountName: string; savedAt: string; resolve: (ok: boolean) => void } | { kind: 'discard'; id: number } | null
+  >(null)
+  /** 再開した一時保存の、行ごとの入力(外部取引ID → 保存した入力)。チェックを戻して現れた行にも重ねる */
+  const draftInputsRef = useRef<Record<string, StatementImportDraftRowInput>>({})
+  /** 一時保存した時点の行の状態(外部取引ID → 状態)。これと同じ状態の行は、未保存の編集とみなさない */
+  const draftSavedStates = useRef(new Map<string, ImportRowState>())
   const [noMatch, setNoMatch] = useState(false)
   const [showMappingDialog, setShowMappingDialog] = useState(false)
   const [institutionNames, setInstitutionNames] = useState<string[]>([])
@@ -311,13 +348,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     settlementBatchRepository,
   ])
 
-  // 仕訳画面の「明細から起票」で選んだCSVが渡されていれば、データの読み込み後に1回だけ読み込む(計画Issue #214)
-  const pendingTaken = useRef(false)
+  // 開始状態に出す一時保存の一覧(計画Issue #231 フェーズ3)
   useEffect(() => {
-    if (data === null || pendingTaken.current) return
-    pendingTaken.current = true
-    void loadFiles(takePendingImportFiles())
-  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
+    void refreshDrafts()
+  }, [statementImportDraftRepository]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const targetAccount = data?.accounts.find((a) => a.id === targetAccountId) ?? null
   /**
@@ -367,10 +401,37 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   // 未保存の警告(計画Issue #193)。取り込んだ行の入力を初期状態から変えて、まだ確定していないとき。
   // 「保存して移動」は、確定できる行を確定する(確定できない行が残るときは移動しない)
+  // 一時保存した状態と同じ行は、失うものが無いので未保存の編集とみなさない(計画Issue #231 フェーズ3)
   const hasUnsavedEdits =
     session !== null &&
-    session.rows.some((state, index) => !session.done.has(index) && isRowEdited(state, session.initialRows[index]))
-  const unsavedDialog = useUnsavedEditGuard({ dirty: hasUnsavedEdits, save: () => handleConfirm() })
+    session.rows.some(
+      (state, index) =>
+        !session.done.has(index) &&
+        isRowEdited(state, session.initialRows[index]) &&
+        draftSavedStates.current.get(session.review.records[index].externalId) !== state,
+    )
+  // 警告の説明に出す件数: 取り込み対象の全件と、そのうち確定できる(入力済みの)件数
+  const guardCounts = { ready: 0, total: 0 }
+  if (session) {
+    session.review.records.forEach((record, index) => {
+      if (session.done.has(index)) return
+      const status = rowStatus(record, session.rows[index])
+      if (status === 'duplicate' || status === 'skipped') return
+      guardCounts.total++
+      if (status === 'new') guardCounts.ready++
+    })
+  }
+  const unsavedDialog = useUnsavedEditGuard({
+    dirty: hasUnsavedEdits,
+    // 「保存して移動」: 入力済みの行を確定し、確定できない行は一時保存してから移動する(計画Issue #231 フェーズ3)
+    save: () => confirmAndSaveDraft(),
+    description:
+      guardCounts.total > guardCounts.ready
+        ? t('draftGuardDescription', { ready: guardCounts.ready, rest: guardCounts.total - guardCounts.ready, total: guardCounts.total })
+        : t('draftGuardDescriptionAllReady', { ready: guardCounts.ready, total: guardCounts.total }),
+    // 「一時保存して移動」: 何も確定せず、すべての入力を一時保存してから移動する
+    extraAction: { label: t('draftSaveAndLeave'), run: () => saveDraft() },
+  })
   const guarded = useGuardedAction()
 
   const categories = useMemo(() => {
@@ -800,8 +861,18 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     })
   }
 
-  /** 取込先とチェックしたファイルから、取り込む一覧を作る。チェックしたファイルが無ければ一覧は出さない */
-  async function buildSession(account: Account, next: MultiFileMappingMatch, checked: ReadonlySet<string>, restoreRows = false) {
+  /**
+   * 取込先とチェックしたファイルから、取り込む一覧を作る。チェックしたファイルが無ければ一覧は出さない。
+   * resumeを渡すと、一時保存の再開(計画Issue #231 フェーズ3): いまの帳簿で重複・似た取引・残高を計算し直した初期値の上に、
+   * 保存した入力(外部取引IDごと)を重ねる
+   */
+  async function buildSession(
+    account: Account,
+    next: MultiFileMappingMatch,
+    checked: ReadonlySet<string>,
+    restoreRows = false,
+    resume?: { savedAt: string },
+  ) {
     const files = next.files.filter((f) => checked.has(f.fileName))
     // ファイルのチェックの切り替えによる作り直し(restoreRows)では、折りたたみの状態を保つ。それ以外は新しい取込なので初期化する
     if (!restoreRows) {
@@ -835,7 +906,26 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     const computedRows = await computeInitialRows(review, data!.accounts)
     // ファイルのチェックを切り替えた作り直しでは、入力済みの内容を外部取引IDで引き継ぐ
     const remembered = (i: number) => (restoreRows ? rowMemory.current.get(review.records[i].externalId) : undefined)
-    const rows = computedRows.map((row, i) => remembered(i)?.state ?? row)
+    // 再開した一時保存の入力(draftInputsRef)を、記憶の無い行に重ねる。削除された参照先を指す入力は戻さず、戻せなかった行を数える
+    const selectableAccounts = data!.accounts.filter(
+      (a) => a.isActive && a.id !== account.id && isStatementImportCounterAccountEligible(a),
+    )
+    const valid = {
+      accountIds: new Set(selectableAccounts.map((a) => a.id)),
+      counterpartyIds: new Set(data!.counterparties.filter((c) => c.isActive).map((c) => c.id)),
+      projectIds: new Set(data!.projects.filter((p) => p.isActive).map((p) => p.id)),
+      memberIds: new Set(data!.members.map((m) => m.id)),
+      batchIds: new Set(data!.batches.map((b) => b.id)),
+    }
+    let droppedRows = 0
+    const overlaid = (row: ImportRowState, i: number): ImportRowState => {
+      const saved = restoreRows || resume ? draftInputsRef.current[review.records[i].externalId] : undefined
+      if (saved === undefined) return row
+      const applied = applyDraftRowInput({ computed: row, saved, record: review.records[i], accounts: data!.accounts, valid })
+      if (applied.dropped) droppedRows++
+      return applied.state
+    }
+    const rows = computedRows.map((row, i) => remembered(i)?.state ?? overlaid(row, i))
     const initialRows = computedRows.map((row, i) => remembered(i)?.initial ?? row)
     setSession({
       fileName: files.map((f) => f.fileName).join('、'),
@@ -853,11 +943,195 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       initialRows,
       done: new Set(),
     })
+    if (resume) {
+      // 再開した直後の入力は保存済みなので、未保存の編集とみなさない。再開した旨と、戻せなかった行の数を知らせる
+      draftSavedStates.current = new Map(review.records.map((r, i) => [r.externalId, rows[i]]))
+      setDraftNotice({ savedAt: resume.savedAt, dropped: droppedRows })
+    }
     setSelected(new Set())
     setBulkMessage('')
     setSettings(null)
     setSettingsMessage('')
     setSettingsSaveError('')
+  }
+
+  /** 一時保存に関する画面の状態を、取込の始め直し(CSVの選び直し・取込先の変更・確定の完了)で初期に戻す */
+  function resetDraftState() {
+    setCurrentDraftId(null)
+    setDraftMessage('')
+    setDraftNotice(null)
+    setStaleDraft(null)
+    draftInputsRef.current = {}
+    draftSavedStates.current = new Map()
+  }
+
+  /** 開始状態の一時保存の一覧を、DBから読み直す */
+  async function refreshDrafts() {
+    setDrafts(await Promise.resolve(statementImportDraftRepository.findSummaries()))
+  }
+
+  /** ファイルごとの期間・件数(チェックの有無によらず、期間の早い順) */
+  function summarizeFiles(next: MultiFileMappingMatch): MultiFileSummary[] {
+    return buildMultiFileStatementImportReview({
+      files: next.files,
+      definition: next.definition,
+      existingExternalIds: new Set(),
+      existingTransactions: [],
+      approximateDuplicateOptions: approximateDuplicateOptions ?? DEFAULT_APPROXIMATE_DUPLICATE_OPTIONS,
+    }).files
+  }
+
+  /**
+   * 一時保存を保存する(計画Issue #231 フェーズ3)。CSVの生データ・定義・取込先・取り込むファイルのチェック・誰の明細か・
+   * 初期値から変えた行の入力を、取込先の科目ごとの一時保存へ書く。確定はしない。
+   * 別の取込の一時保存が同じ取込先にあるときは、上書きの確認を出す(再開した一時保存への保存は確認なし)。
+   * 保存できたときだけtrueを返す。doneは、直前に確定した行(まだ画面の状態に反映前)を除くための指定
+   */
+  async function saveDraft(options: { done?: ReadonlySet<number> } = {}): Promise<boolean> {
+    if (!session) return false
+    const done = options.done ?? session.done
+    const account = session.targetAccount
+    try {
+      const existing = await Promise.resolve(statementImportDraftRepository.findByAccountId(account.id))
+      if (existing !== null && existing.id !== currentDraftId) {
+        const confirmed = await new Promise<boolean>((resolve) =>
+          setDraftDialog({ kind: 'overwrite', accountName: account.name, savedAt: existing.updatedAt, resolve }),
+        )
+        setDraftDialog(null)
+        if (!confirmed) return false
+      }
+      setBusy(true)
+      const remaining = visibleIndices.filter((i) => !done.has(i) && statusOf(i) !== 'duplicate' && statusOf(i) !== 'skipped')
+      const saved = await Promise.resolve(
+        statementImportDraftRepository.save({
+          targetAccountId: account.id,
+          definitionId: session.definition.id,
+          ownerMemberId: ownerChoice?.accountId === account.id ? ownerChoice.memberId : null,
+          files: csvs.map((c) => ({ fileName: c.fileName, bytes: c.bytes, isChecked: checkedFiles.has(c.fileName) })),
+          rowInputs: collectDraftRowInputs({
+            externalIds: session.review.records.map((r) => r.externalId),
+            rows: session.rows,
+            initialRows: session.initialRows,
+            done,
+            memory: rowMemory.current,
+          }),
+          totalRows: remaining.length,
+          filledRows: remaining.filter((i) => statusOf(i) === 'new').length,
+        }),
+      )
+      setCurrentDraftId(saved.id)
+      draftSavedStates.current = new Map(session.review.records.map((r, i) => [r.externalId, session.rows[i]]))
+      setDraftMessage(t('draftSaved', { time: formatDraftSavedAt(saved.updatedAt), account: account.name }))
+      setError('')
+      await refreshDrafts()
+      return true
+    } catch {
+      setError(t('draftSaveError'))
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * 未保存の警告の「保存して移動」(計画Issue #231 フェーズ3)。入力済みの行を確定し、確定できない行が残るときは、
+   * それを一時保存してから移動する。確定の前提(誰の明細か・キーワードの入力)を満たせないときは、何も保存せず移動しない
+   */
+  async function confirmAndSaveDraft(): Promise<boolean> {
+    const outcome = await handleConfirm()
+    if (outcome.status === 'blocked') return false
+    if (outcome.status === 'done') return true
+    return saveDraft({ done: outcome.done })
+  }
+
+  /** 保存した取込先・入力で続ける。保存時の定義で読めたときと、定義を作り直したときの、共通の続き */
+  async function continueFromDraft(next: MultiFileMappingMatch, draft: StatementImportDraft) {
+    const account = data!.accounts.find((a) => a.id === draft.targetAccountId)
+    if (!account) throw new Error('target account of the draft is missing')
+    const checked = new Set(
+      draft.files.filter((f) => f.isChecked && next.files.some((n) => n.fileName === f.fileName)).map((f) => f.fileName),
+    )
+    setMatch(next)
+    setCheckedFiles(checked)
+    setFileSummaries(summarizeFiles(next))
+    setTargetAccountId(account.id)
+    if (draft.ownerMemberId !== null && account.householdMemberId === null) {
+      setOwnerChoice({ accountId: account.id, memberId: draft.ownerMemberId })
+    }
+    setCurrentDraftId(draft.id)
+    setStaleDraft(null)
+    draftInputsRef.current = draft.rowInputs
+    await buildSession(account, next, checked, false, { savedAt: draft.updatedAt })
+  }
+
+  /** 開始状態の一覧から、一時保存を再開する。CSVは選び直さず、保存したCSVを読み込み直す */
+  async function resumeDraft(id: number) {
+    const draft = await Promise.resolve(statementImportDraftRepository.findById(id))
+    if (draft === null || draft.files.length === 0) {
+      setError(t('draftNotFound'))
+      await refreshDrafts()
+      return
+    }
+    setBusy(true)
+    setError('')
+    setDoneMessage('')
+    setFailures([])
+    rowMemory.current.clear()
+    resetDraftState()
+    setSession(null)
+    setMatch(null)
+    setCandidates([])
+    setNoMatch(false)
+    setTargetAccountId(null)
+    try {
+      const loaded: LoadedCsv[] = draft.files.map((f) => ({ fileName: f.fileName, bytes: f.bytes }))
+      setCsvs(loaded)
+      setCsv(loaded[0])
+      const definitions = await Promise.resolve(importMappingDefinitionRepository.findAll())
+      setInstitutionNames(collectFinancialInstitutionNames(definitions.map((d) => d.formatGroupId)))
+      setAllDefinitions(definitions)
+      const definition = definitions.find((d) => d.id === draft.definitionId)
+      const matches = definition ? resolveMultiFileMappingCandidates(loaded, [definition]) : []
+      if (matches.length === 0) {
+        // 保存時の定義が削除・編集されて読めない。CSVと入力は一時保存に残し、定義の作り直しへ案内する
+        setNoMatch(true)
+        setStaleDraft(draft)
+        setCurrentDraftId(draft.id)
+        return
+      }
+      await continueFromDraft(matches[0], draft)
+    } catch {
+      setError(t('uploadError'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 一時保存を破棄する(確認のあと)。開いていたものなら、画面は開始状態に戻る */
+  async function discardDraft(id: number) {
+    try {
+      await Promise.resolve(statementImportDraftRepository.delete(id))
+      if (currentDraftId === id || staleDraft?.id === id) clearImportScreen()
+      await refreshDrafts()
+    } catch {
+      setError(t('draftSaveError'))
+    }
+  }
+
+  /** 画面を取り込み前の状態(CSVの選択)に戻す。全件を確定したとき・開いていた一時保存を破棄したときに使う */
+  function clearImportScreen() {
+    rowMemory.current.clear()
+    resetDraftState()
+    setSettings(null)
+    setSession(null)
+    setCsv(null)
+    setCsvs([])
+    setMatch(null)
+    setCandidates([])
+    setNoMatch(false)
+    setTargetAccountId(null)
+    setCheckedFiles(new Set())
+    setFileSummaries([])
   }
 
   /** 定義が決まったら、紐づく科目(取込先に選べるもの)が1つならそれを取込先にして取り込む。無い・複数なら選ばせる */
@@ -867,15 +1141,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     const everyFile = new Set(next.files.map((f) => f.fileName))
     setCheckedFiles(everyFile)
     // ファイルの期間・件数(チェックの有無によらず、期間の早い順)
-    setFileSummaries(
-      buildMultiFileStatementImportReview({
-        files: next.files,
-        definition: next.definition,
-        existingExternalIds: new Set(),
-        existingTransactions: [],
-        approximateDuplicateOptions: approximateDuplicateOptions ?? DEFAULT_APPROXIMATE_DUPLICATE_OPTIONS,
-      }).files,
-    )
+    setFileSummaries(summarizeFiles(next))
     const linked = next.definition.accountIds
       .map((id) => data!.accounts.find((a) => a.id === id))
       .filter((a): a is Account => a !== undefined && isStatementImportEligibleAccount(a))
@@ -898,6 +1164,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setDoneMessage('')
     setFailures([])
     rowMemory.current.clear()
+    resetDraftState()
     setSession(null)
     setMatch(null)
     setCandidates([])
@@ -950,6 +1217,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   async function changeTargetAccount(id: number | null) {
     setTargetAccountId(id)
     rowMemory.current.clear()
+    resetDraftState()
     setSession(null)
     const account = data!.accounts.find((a) => a.id === id)
     if (!account || !match || !csv) return
@@ -1000,6 +1268,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     if (matches.length === 0) throw new Error('created mapping does not parse the csv')
     setShowMappingDialog(false)
     setNoMatch(false)
+    // 一時保存の再開で定義が読めなかったときは、作り直した定義で、保存した取込先と入力を戻して続ける(計画Issue #231 フェーズ3)
+    if (staleDraft !== null) {
+      await continueFromDraft(matches[0], staleDraft)
+      return
+    }
     await selectMatch(matches[0])
   }
 
@@ -1103,6 +1376,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         file.periodStart! <= other.periodEnd,
     )
   const checkCount = visibleIndices.filter((i) => statusOf(i) === 'check').length
+  /** いま投入できる件数。取り込み対象(全件)のうち、相手科目などが決まっていて確定できる行(ステータスが「新規」)。確定ボタンに「N / 全件」で出す */
+  const readyCount = importable.filter((i) => statusOf(i) === 'new').length
 
   const applyBulk = (change: BulkChange) => {
     if (!session) return
@@ -1195,12 +1470,12 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   /** 確定(docs/domain/statement-import.md 1.5手順7)。1件が失敗しても残りの確定を続ける(継続処理方式) */
-  async function handleConfirm(): Promise<boolean> {
+  async function handleConfirm(): Promise<ConfirmOutcome> {
     return runInHistoryGroup(history, 'statementImport.confirm', confirmImpl)
   }
 
-  async function confirmImpl(): Promise<boolean> {
-    if (!session || statementOwnerId === null) return false
+  async function confirmImpl(): Promise<ConfirmOutcome> {
+    if (!session || statementOwnerId === null) return { status: 'blocked' }
     // 摘要から入るキーワード(「新規」)を直して不正にしたまま確定すると、気付かないまま登録が抜けるので、確定する前に止める
     const hasInvalidSuggestion = importable.some((index) => {
       const state = session.rows[index]
@@ -1211,7 +1486,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     })
     if (hasInvalidSuggestion) {
       setError(t('suggestionInvalidError'))
-      return false
+      return { status: 'blocked' }
     }
     setBusy(true)
     setError('')
@@ -1318,21 +1593,21 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       await Promise.resolve(importMappingDefinitionRepository.linkAccount(session.definition.id, account.id))
     }
     setSelected(new Set())
+    const nextDone = new Set([...session.done, ...succeeded])
     if (failed.length === 0) {
-      // 全件確定できたら、画面を取り込み前の状態に戻し、続けて明細を選ぶよう促す
-      rowMemory.current.clear()
-      setSettings(null)
-      setSession(null)
-      setCsv(null)
-      setCsvs([])
-      setMatch(null)
-      setCandidates([])
-      setNoMatch(false)
-      setTargetAccountId(null)
-      setCheckedFiles(new Set())
-      setFileSummaries([])
+      // 全件確定できたら、画面を取り込み前の状態に戻し、続けて明細を選ぶよう促す。再開していた一時保存は、CSVの生データごと削除する
+      const finishedDraftId = currentDraftId
+      clearImportScreen()
+      if (finishedDraftId !== null) {
+        try {
+          await Promise.resolve(statementImportDraftRepository.delete(finishedDraftId))
+        } catch {
+          // 確定は成功しているので、一時保存の削除に失敗しても確定の結果は変えない(開始状態の一覧に残る)
+        }
+        await refreshDrafts()
+      }
     } else {
-      setSession({ ...session, done: new Set([...session.done, ...succeeded]) })
+      setSession({ ...session, done: nextDone })
     }
     setFailures(failed)
     setDoneMessage(
@@ -1341,7 +1616,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         : t('confirmResultSummary', { successCount: succeeded.size, failureCount: failed.length }),
     )
     setBusy(false)
-    return failed.length === 0
+    return failed.length === 0 ? { status: 'done' } : { status: 'partial', done: nextDone }
   }
 
   // 残高照合(docs/domain/reconciliation.md 1.5)。確定版として置き換える旧仕訳と、取り込まない行は除く
@@ -1384,10 +1659,37 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   return (
     <div className="import-screen">
       {unsavedDialog}
+      {draftDialog?.kind === 'overwrite' && (
+        <ConfirmDialog
+          title={t('draftOverwriteTitle')}
+          message={t('draftOverwriteMessage', { account: draftDialog.accountName, time: formatDraftSavedAt(draftDialog.savedAt) })}
+          confirmLabel={t('draftOverwriteConfirm')}
+          onConfirm={() => draftDialog.resolve(true)}
+          onCancel={() => draftDialog.resolve(false)}
+        />
+      )}
+      {draftDialog?.kind === 'discard' && (
+        <ConfirmDialog
+          title={t('draftDiscardTitle')}
+          message={t('draftDiscardMessage')}
+          confirmLabel={t('draftDiscardConfirm')}
+          onConfirm={() => {
+            const { id } = draftDialog
+            setDraftDialog(null)
+            void discardDraft(id)
+          }}
+          onCancel={() => setDraftDialog(null)}
+        />
+      )}
       <div className="import-screen__head">
         <h1 className="import-screen__title">{t('screenTitle')}</h1>
         <div className="import-screen__controls">
           {csv && chooseCsvButton('import-btn')}
+          {session && (
+            <button type="button" className="import-btn" disabled={busy} onClick={() => void saveDraft()}>
+              {t('draftSave')}
+            </button>
+          )}
           <button type="button" className="import-btn" onClick={() => guarded(onEditMappings)}>
             {t('editMappings')}
           </button>
@@ -1395,6 +1697,21 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       </div>
 
       {error && <p role="alert" className="import-error">{error}</p>}
+      {draftMessage && (
+        <p role="status" className="import-notice import-notice--info">
+          {draftMessage}
+        </p>
+      )}
+      {draftNotice && (
+        <p role="status" className="import-notice import-notice--info">
+          {t('draftResumed', { time: formatDraftSavedAt(draftNotice.savedAt) })}
+        </p>
+      )}
+      {draftNotice !== null && draftNotice.dropped > 0 && (
+        <p role="status" className="import-notice import-notice--warn">
+          {t('draftDropped', { count: draftNotice.dropped })}
+        </p>
+      )}
 
       <input ref={fileInputRef} type="file" accept=".csv" multiple hidden aria-label={t('chooseCsv')} disabled={busy} onChange={handleFile} />
       {!csv && (
@@ -1404,7 +1721,74 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         </section>
       )}
 
-      {csv && noMatch && (
+      {!csv && drafts.length > 0 && (
+        <section aria-label={t('draftListLabel')} className="import-panel">
+          <h2 className="import-panel__title">{t('draftListTitle')}</h2>
+          <ul className="import-drafts">
+            {drafts.map((draft) => {
+              const accountName = data.accounts.find((a) => a.id === draft.targetAccountId)?.name ?? ''
+              return (
+                <li key={draft.id} className="import-drafts__item">
+                  <span className="import-drafts__account">{accountName}</span>
+                  <span className="import-drafts__files" title={draft.fileNames.join('、')}>
+                    {draft.fileNames.length > 1
+                      ? t('draftFilesMulti', { names: draft.fileNames.join('、'), count: draft.fileNames.length })
+                      : draft.fileNames[0]}
+                  </span>
+                  <span className="import-nowrap">{t('draftFilled', { filled: draft.filledRows, total: draft.totalRows })}</span>
+                  <span className="import-nowrap">{formatDraftSavedAt(draft.updatedAt)}</span>
+                  <span className="import-drafts__actions">
+                    <button
+                      type="button"
+                      className="import-btn import-btn--small import-btn--primary"
+                      disabled={busy}
+                      aria-label={t('draftResumeLabel', { account: accountName })}
+                      onClick={() => void resumeDraft(draft.id)}
+                    >
+                      {t('draftResume')}
+                    </button>
+                    <button
+                      type="button"
+                      className="import-link import-link--danger"
+                      disabled={busy}
+                      aria-label={t('draftDiscardLabel', { account: accountName })}
+                      onClick={() => setDraftDialog({ kind: 'discard', id: draft.id })}
+                    >
+                      {t('draftDiscard')}
+                    </button>
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
+
+      {csv && noMatch && staleDraft !== null && (
+        <section
+          role="alert"
+          aria-label={t('draftStaleTitle', { files: staleDraft.files.map((f) => f.fileName).join('、') })}
+          className="import-panel"
+        >
+          <p className="import-panel__title import-error">
+            {t('draftStaleTitle', { files: staleDraft.files.map((f) => f.fileName).join('、') })}
+          </p>
+          <p className="import-note">{t('draftStaleBody')}</p>
+          <div className="import-panel__actions">
+            <button type="button" className="import-btn import-btn--primary" onClick={() => setShowMappingDialog(true)}>
+              {t('createMappingFromCsv')}
+            </button>
+            <button type="button" className="import-btn" onClick={() => guarded(onEditMappings)}>
+              {t('editMappings')}
+            </button>
+            <button type="button" className="import-btn" onClick={() => setDraftDialog({ kind: 'discard', id: staleDraft.id })}>
+              {t('draftDiscardStale')}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {csv && noMatch && staleDraft === null && (
         <section role="alert" aria-label={noMatchTitle} className="import-panel">
           <p className="import-panel__title import-error">{noMatchTitle}</p>
           <p className="import-note">{t('noMatchBody')}</p>
@@ -2224,6 +2608,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       {(session || doneMessage) && (
         <div className="import-footer">
           {doneMessage && <span role="status" className="import-summary">{doneMessage}</span>}
+          {session && visibleIndices.length > 0 && (
+            <button type="button" className="import-btn" disabled={busy} onClick={() => void saveDraft()}>
+              {t('draftSave')}
+            </button>
+          )}
           {session && importable.length > 0 && (
             <button
               type="button"
@@ -2231,7 +2620,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               disabled={busy || statementOwnerId === null}
               onClick={() => void handleConfirm()}
             >
-              {t('confirmCount', { count: importable.length, account: session.targetAccount.name })}
+              {t('confirmCount', { ready: readyCount, count: importable.length, account: session.targetAccount.name })}
             </button>
           )}
           {session && importable.length > 0 && statementOwnerId === null && (

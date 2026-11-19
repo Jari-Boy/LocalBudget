@@ -14,13 +14,13 @@
 
 本番運用が始まるまでは、これまでどおり **DDLを直接修正してよい**(`docs/schema/*.sql` を編集し、差分は足さない。開発用DBは作り直す)。固定データ(フィクスチャ)が1件も無いので、差分の書き忘れを検出するテストは実際のスキーマには効かない。
 
-> 補足: 計画Issue #42の時点では、本番前の `LATEST_SCHEMA_VERSION` は 1、差分は0件だった。その後、計画Issue #223(`accounts.system_role` の追加)で、既存DBが起動できなくなるのを避けるため、スキーマv2の差分(`src/infrastructure/db/migrationV2SystemRole.ts`、`LATEST_SCHEMA_VERSION` = 2)を足した。その後、表の形を変えないデータ変換として、v3(`migrationV3NormalizeKeywords.ts`。`keyword_rules.pattern`を照合用の正規化に揃える)とv4(`migrationV4NormalizeDescriptions.ts`。取り込み済みの仕訳の摘要`journal_entries.memo`を表示用の標準化に変換し、キーワードをハイフンの標準化を加えた規則で再正規化する)を足した(`LATEST_SCHEMA_VERSION` = 4。2026-11-18、計画Issueなし・不具合対応。決定は`docs/decisions.md`の同日の項)。したがって現在は、差分が3件(v1→v2→v3→v4)あり、DDLの直接修正だけでは済まない変更があった実績がある。差分は凍結されたバージョンの記録なので、v3・v4は表示・照合用の関数を呼ばず、その時点の規則を差分の中に写して持つ(後で規則が変わっても、過去の差分の結果が変わらないように)。凍結は「その時点の最新バージョン」を凍結する汎用の作りなので、凍結の際は、どのバージョンで凍結するか(v2〜v4の差分を残すか、1に戻すか)を、その時点で決めて確かめる。凍結の実施有無はこの文書では扱わない。
+> 補足: 計画Issue #42の時点では、本番前の `LATEST_SCHEMA_VERSION` は 1、差分は0件だった。その後、計画Issue #223(`accounts.system_role` の追加)で、既存DBが起動できなくなるのを避けるため、スキーマv2の差分(`src/infrastructure/db/migrationV2SystemRole.ts`、`LATEST_SCHEMA_VERSION` = 2)を足した。その後、表の形を変えないデータ変換として、v3(`migrationV3NormalizeKeywords.ts`。`keyword_rules.pattern`を照合用の正規化に揃える)とv4(`migrationV4NormalizeDescriptions.ts`。取り込み済みの仕訳の摘要`journal_entries.memo`を表示用の標準化に変換し、キーワードをハイフンの標準化を加えた規則で再正規化する)を足した(`LATEST_SCHEMA_VERSION` = 4。2026-11-18、計画Issueなし・不具合対応。決定は`docs/decisions.md`の同日の項)。その後、計画Issue #231 フェーズ3で、明細取込の一時保存の表(`statement_import_drafts`・`statement_import_draft_files`)を足すv5(`migrationV5StatementImportDrafts.ts`、`LATEST_SCHEMA_VERSION` = 5。2026-11-19)を足した。したがって現在は、差分が4件(v1→v2→v3→v4→v5)あり、DDLの直接修正だけでは済まない変更があった実績がある。差分は凍結されたバージョンの記録なので、v3・v4は表示・照合用の関数を呼ばず、その時点の規則を差分の中に写して持つ(後で規則が変わっても、過去の差分の結果が変わらないように)。凍結は「その時点の最新バージョン」を凍結する汎用の作りなので、凍結の際は、どのバージョンで凍結するか(v2〜v5の差分を残すか、1に戻すか)を、その時点で決めて確かめる。凍結の実施有無はこの文書では扱わない。
 
 ## 3. 凍結(初回の本番デプロイの直前に、手作業で行う)
 
 デプロイの仕組みが無いため、凍結は手作業とする。**初回の本番デプロイの直前に、次の手順を必ず行う**(忘れると、以後の差分の書き忘れをCIが検出できない)。
 
-1. `main` が最新で、`npx vitest run` が通ることと、`LATEST_SCHEMA_VERSION` が凍結するバージョンであることを確認する(v2〜v4の差分を足したため、現在は4。1から始めたい場合は、v2〜v4の差分の扱いを先に決める)。
+1. `main` が最新で、`npx vitest run` が通ることと、`LATEST_SCHEMA_VERSION` が凍結するバージョンであることを確認する(v2〜v5の差分を足したため、現在は5。1から始めたい場合は、v2〜v5の差分の扱いを先に決める)。
 2. `npm run schema:freeze` を実行する。`src/infrastructure/db/schemaFixtures/v{N}.sql`(N = `LATEST_SCHEMA_VERSION`。スキーマと、起動時の初期投入データ)が作られる。凍結済みのバージョンのファイルは上書きしない(公開済みスキーマの記録は不変)。
 3. 生成された `v{N}.sql` を確認してコミットする。
 4. 次の「凍結時の後片付け」を行う。

@@ -33,6 +33,9 @@ async function createV1Database(options: { withRoleNames?: boolean } = {}): Prom
   const db = await createTestDatabase()
   const v1AccountsSql = toV1AccountsSql(accountsSql)
   for (const sql of LATEST_SCHEMA_SQL) db.run(sql === accountsSql ? v1AccountsSql : sql)
+  // v5(計画Issue #231 フェーズ3)で足した一時保存の表は、このバージョンには無いので取り除く
+  db.run('DROP TABLE statement_import_draft_files')
+  db.run('DROP TABLE statement_import_drafts')
   db.run('PRAGMA user_version = 1')
   db.run("INSERT INTO household_members (id, name) VALUES (1, '自分')")
   db.run("INSERT INTO account_groups (id, name, category) VALUES (1, '日常', 'expense')")

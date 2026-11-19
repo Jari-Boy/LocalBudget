@@ -360,3 +360,46 @@ describe('取消の影響範囲(プレビュー)', () => {
     expect(() => history.previewUndoTo(1)).toThrow(OperationNotFoundError)
   })
 })
+
+describe('記録しない書き込み(untracked、計画Issue #231 フェーズ3)', () => {
+  it('untracked の中の書き込みは、操作として履歴に残らない', () => {
+    history.untracked(() => createEntry(1000))
+
+    expect(history.list()).toEqual([])
+    expect(scalar('SELECT COUNT(*) FROM journal_entries')).toBe(1)
+  })
+
+  it('untracked の書き込みは、あとの操作に混ざらない(その操作を取り消しても、untracked の書き込みは残る)', () => {
+    history.untracked(() => createEntry(1000))
+    history.record('journalEntry.create', () => createEntry(2000))
+
+    history.undoTo(history.list()[0].id)
+
+    expect(scalar('SELECT COUNT(*) FROM journal_entries')).toBe(1)
+    expect(scalar('SELECT amount FROM journal_lines LIMIT 1')).toBe(1000)
+  })
+
+  it('グループの途中の untracked の書き込みは、グループの操作に含まれない', () => {
+    history.beginGroup('statementImport.confirm')
+    history.record('journalEntry.create', () => createEntry(1000))
+    history.untracked(() => createEntry(2000))
+    history.endGroup()
+
+    const [operation] = history.list()
+    expect(history.list()).toHaveLength(1)
+    expect(operation.changes.find((c) => c.table === 'journal_entries')?.inserted).toBe(1)
+  })
+
+  it('untracked の戻り値をそのまま返し、中で例外が起きても、そのあとの書き込みは記録される', () => {
+    expect(history.untracked(() => 42)).toBe(42)
+    expect(() =>
+      history.untracked(() => {
+        throw new Error('失敗')
+      }),
+    ).toThrow('失敗')
+
+    history.record('journalEntry.create', () => createEntry(500))
+
+    expect(history.list()).toHaveLength(1)
+  })
+})

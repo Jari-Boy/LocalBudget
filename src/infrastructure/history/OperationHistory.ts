@@ -49,6 +49,12 @@ export interface OperationHistory {
   previewUndoTo(operationId: number): UndoPreview
   /** 選んだ操作とそれ以降を新しい順に戻す。全体で1トランザクション。戻した操作数を返す */
   undoTo(operationId: number): number
+  /**
+   * 履歴に記録しない書き込みを行う(計画Issue #231 フェーズ3)。中の書き込みは、トリガーが取消用の記録を残さないので、
+   * 操作として履歴に残らず、グループやあとの操作にも混ざらない。明細取込の一時保存のように、取り消す意味が無く、
+   * 大きなデータ(CSVの生データ)を含む書き込みに使う。中で例外が起きても、記録の有効・無効は元に戻る。
+   */
+  untracked<T>(fn: () => T): T
   clear(): void
 }
 
@@ -236,6 +242,17 @@ export function createOperationHistory(
       }
       operations.splice(index)
       return undone
+    },
+
+    untracked<T>(fn: () => T): T {
+      ensureInstalled()
+      const previous = db.exec(`SELECT suppress FROM temp.${CTL_TABLE}`)[0].values[0][0] as number
+      db.exec(`UPDATE temp.${CTL_TABLE} SET suppress = 1`)
+      try {
+        return fn()
+      } finally {
+        db.exec(`UPDATE temp.${CTL_TABLE} SET suppress = ${previous}`)
+      }
     },
 
     clear(): void {

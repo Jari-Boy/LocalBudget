@@ -1,6 +1,6 @@
 /**
  * 明細取込画面(計画Issue #76・#77・#78の基盤を計画Issue #151で1画面に統合)のE2Eテスト。
- * 実ブラウザ(Chromium)で、仕訳画面の「明細から起票」から取込先とCSVを選び、Web Worker + RPC層を
+ * 実ブラウザ(Chromium)で、仕訳画面の「明細から起票」から明細取込画面を開いて取込先とCSVを選び、Web Worker + RPC層を
  * 経由して、候補定義への実パース試行による絞り込み、一致する定義が無い場合のエラー表示、
  * 完全一致重複の行(対象外)、確定版の候補の置き換えと残高照合、取引先推定・一括設定・確定の
  * 一連のフロー、マスタの「明細マッピング」タブでの編集を検証する。細かい入力規則は
@@ -151,13 +151,20 @@ function csvFile(content: string) {
   return { name: 'statement.csv', mimeType: 'text/csv', buffer: Buffer.from(content, 'utf-8') }
 }
 
+/** 仕訳画面の「明細から起票」を押して、明細取込画面(開始状態)を開く(計画Issue #231。CSVは明細取込画面で選ぶ) */
+async function openImportScreen(page: Page) {
+  await page.getByRole('link', { name: /^仕訳/ }).click()
+  await page.getByRole('button', { name: '明細から起票' }).click()
+  await expect(page.getByRole('region', { name: 'CSVの選択' })).toBeVisible()
+}
+
 /**
- * 仕訳画面の「明細から起票」でCSVを選ぶ(計画Issue #214)。取込先は、マッピング定義に紐づく科目が初期値になる
+ * 明細取込画面を開いて、CSVを選ぶ(計画Issue #214・#231)。取込先は、マッピング定義に紐づく科目が初期値になる
  * (accountNameはその初期値の確認に使う)。紐づく科目が無い定義では取込先が未選択のまま。
  */
 async function startImport(page: Page, accountName: string | null, csv: string) {
-  await page.getByRole('link', { name: /^仕訳/ }).click()
-  await page.getByLabel('明細のCSVを選択').setInputFiles(csvFile(csv))
+  await openImportScreen(page)
+  await page.getByLabel('CSVを選択', { exact: true }).setInputFiles(csvFile(csv))
   if (accountName !== null) {
     await expect(page.getByLabel('科目', { exact: true }).locator('option:checked')).toHaveText(accountName)
     await chooseOwner(page)
@@ -193,7 +200,7 @@ test.describe('明細取込画面', () => {
     await expect(row).toContainText('2026/07/20')
     await expect(row).toContainText('-¥3,000')
     await pickTree(page, row, '相手科目', 'テスト費目')
-    await page.getByRole('button', { name: '1 件を「普通預金」に確定' }).click()
+    await page.getByRole('button', { name: /^1 \/ 1 件を「普通預金」に確定$/ }).click()
 
     await expect(page.getByText('確定しました。続けて明細を選択してください。')).toBeVisible()
     await expect(page.getByRole('row', { name: /スーパー/ })).toHaveCount(0)
@@ -362,7 +369,7 @@ test.describe('明細取込画面', () => {
     await pickTree(page, bulk, '一括の相手科目', 'エンタメ費')
     await expect(bulk).toContainText('2件に設定しました')
 
-    await page.getByRole('button', { name: '3 件を「普通預金」に確定' }).click()
+    await page.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }).click()
     await expect(page.getByText('確定しました。', { exact: false })).toBeVisible()
 
     // 仕訳が永続化され、普通預金の残高に反映されている。withAutoSaveのtrailing debounce(2秒)を
@@ -421,6 +428,44 @@ test.describe('明細取込画面', () => {
     await expect(page.getByRole('row', { name: /スーパー/ })).toHaveCount(1)
   })
 
+  test('一時保存したあとにページを読み込み直しても、開始状態の一覧から再開でき、確定すると一時保存が消える(CSVの生データをWorker越しに保存・復元、計画Issue #231)', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
+    await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING)
+    await startImport(page, '普通預金', '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n2026/07/21,ランチ,-800,96200\n')
+    await expect(page.getByText(/statement\.csv を読み込み済み。新規 2 件/)).toBeVisible()
+    await pickTree(page, rowOf(page, /スーパー/), '相手科目', 'テスト費目')
+
+    await page.getByRole('button', { name: '一時保存' }).first().click()
+    await expect(page.getByText(/一時保存しました/)).toBeVisible()
+
+    // DBの永続化は遅延つき(withAutoSaveのデバウンス)なので、既存のE2Eと同じく既知の待機時間を置いてから読み込み直す
+    await page.waitForTimeout(2500)
+    // ページを読み込み直し(別の日に開いた場面)、仕訳画面の「明細から起票」から明細取込画面を開くと、開始状態に一時保存の一覧が出る
+    await page.reload()
+    await openImportScreen(page)
+    const list = page.getByRole('region', { name: '一時保存した取込' })
+    await expect(list).toBeVisible()
+    await expect(list).toContainText('普通預金')
+    await expect(list).toContainText('statement.csv')
+    await expect(list).toContainText('1 / 2 件')
+
+    // 再開すると、CSVを選び直さずに一覧が開き、保存した入力が戻る
+    await page.getByRole('button', { name: '普通預金の一時保存を再開' }).click()
+    await expect(page.getByText(/から再開しました/)).toBeVisible()
+    await expect(rowOf(page, /スーパー/).getByRole('button', { name: /^相手科目/ })).toContainText('テスト費目')
+    await expect(page.getByRole('button', { name: /^1 \/ 2 件を「普通預金」に確定$/ })).toBeEnabled()
+
+    // 残りの行も入力して全行を確定すると、一時保存は消える(読み込み直しても一覧に出ない)
+    await pickTree(page, rowOf(page, /ランチ/), '相手科目', 'テスト費目')
+    await page.getByRole('button', { name: /^2 \/ 2 件を「普通預金」に確定$/ }).click()
+    await expect(page.getByText(/確定しました。続けて明細を選択してください。/)).toBeVisible()
+    await page.waitForTimeout(2500)
+    await page.reload()
+    await expect(page.getByRole('region', { name: 'CSVの選択' })).toBeVisible()
+    await expect(page.getByRole('region', { name: '一時保存した取込' })).toHaveCount(0)
+  })
+
   test('マスタの「明細マッピング」タブで定義の表示名を編集して保存できる(「マッピングを編集」からも移動できる)', async ({
     page,
   }) => {
@@ -428,8 +473,8 @@ test.describe('明細取込画面', () => {
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING)
 
-    await page.getByRole('link', { name: /^仕訳/ }).click()
-    await page.getByLabel('明細のCSVを選択').setInputFiles(csvFile(['x,y', '1,2', ''].join('\n')))
+    await openImportScreen(page)
+    await page.getByLabel('CSVを選択', { exact: true }).setInputFiles(csvFile(['x,y', '1,2', ''].join('\n')))
     await page.getByRole('button', { name: 'マッピングを編集' }).click()
 
     await expect(page).toHaveURL(/\/master\/mappings$/)

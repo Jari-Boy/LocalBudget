@@ -23,8 +23,18 @@ function Where() {
   return <div data-testid="where">{useLocation().pathname}</div>
 }
 
-function Panel({ dirty, save }: { dirty: boolean; save: () => Promise<boolean> }) {
-  const dialog = useUnsavedEditGuard({ dirty, save })
+function Panel({
+  dirty,
+  save,
+  description,
+  extraAction,
+}: {
+  dirty: boolean
+  save: () => Promise<boolean>
+  description?: string
+  extraAction?: { label: string; run: () => Promise<boolean> }
+}) {
+  const dialog = useUnsavedEditGuard({ dirty, save, description, extraAction })
   return <>{dialog}</>
 }
 
@@ -37,13 +47,19 @@ function Row({ onSelect }: { onSelect: () => void }) {
   )
 }
 
-function renderScreen(props: { dirty: boolean; save?: () => Promise<boolean>; onSelect?: () => void }) {
+function renderScreen(props: {
+  dirty: boolean
+  save?: () => Promise<boolean>
+  onSelect?: () => void
+  description?: string
+  extraAction?: { label: string; run: () => Promise<boolean> }
+}) {
   const save = props.save ?? (async () => true)
   const onSelect = props.onSelect ?? (() => {})
   return render(
     <MemoryRouter initialEntries={['/a']}>
       <UnsavedChangesGuardProvider>
-        <Panel dirty={props.dirty} save={save} />
+        <Panel dirty={props.dirty} save={save} description={props.description} extraAction={props.extraAction} />
         <Row onSelect={onSelect} />
         <GuardedLink to="/b">b</GuardedLink>
         <Where />
@@ -179,5 +195,64 @@ describe('useGuardedAction(画面内の操作)', () => {
     render(<Row onSelect={onSelect} />)
     fireEvent.click(screen.getByRole('button', { name: '行' }))
     expect(onSelect).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('useUnsavedEditGuard: 説明文と追加の保存操作(計画Issue #231 フェーズ3)', () => {
+  it('追加の操作を渡さないときは、これまでどおり3つのボタン(キャンセル・破棄して移動・保存して移動)だけを出す', () => {
+    renderScreen({ dirty: true })
+    fireEvent.click(screen.getByRole('link', { name: 'b' }))
+
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['キャンセル', '破棄して移動', '保存して移動', '行'])
+  })
+
+  it('説明文を渡すと、既定の文言のあとに出す', () => {
+    renderScreen({ dirty: true, description: '入力済みの1件を確定します。' })
+    fireEvent.click(screen.getByRole('link', { name: 'b' }))
+
+    expect(screen.getByText('保存が完了していない変更があります。')).toBeInTheDocument()
+    expect(screen.getByText('入力済みの1件を確定します。')).toBeInTheDocument()
+  })
+
+  it('追加の操作を渡すと、「破棄して移動」と「保存して移動」の間にそのボタンを出し、押すとその操作を実行して、成功したら移動する', async () => {
+    const run = vi.fn(async () => true)
+    const save = vi.fn(async () => true)
+    renderScreen({ dirty: true, save, extraAction: { label: '一時保存して移動', run } })
+    fireEvent.click(screen.getByRole('link', { name: 'b' }))
+
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['キャンセル', '破棄して移動', '一時保存して移動', '保存して移動', '行'])
+    fireEvent.click(screen.getByRole('button', { name: '一時保存して移動' }))
+
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/b'))
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('追加の操作が失敗(false)したときは、移動せずダイアログを閉じる', async () => {
+    renderScreen({ dirty: true, extraAction: { label: '一時保存して移動', run: async () => false } })
+    fireEvent.click(screen.getByRole('link', { name: 'b' }))
+
+    fireEvent.click(screen.getByRole('button', { name: '一時保存して移動' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByTestId('where')).toHaveTextContent('/a')
+  })
+
+  it('追加の操作が例外を投げたときも、移動せずダイアログを閉じる', async () => {
+    renderScreen({
+      dirty: true,
+      extraAction: {
+        label: '一時保存して移動',
+        run: async () => {
+          throw new Error('保存に失敗')
+        },
+      },
+    })
+    fireEvent.click(screen.getByRole('link', { name: 'b' }))
+
+    fireEvent.click(screen.getByRole('button', { name: '一時保存して移動' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByTestId('where')).toHaveTextContent('/a')
   })
 })

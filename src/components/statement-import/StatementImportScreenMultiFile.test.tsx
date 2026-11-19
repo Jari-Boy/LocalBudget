@@ -30,9 +30,9 @@ import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJourna
 import { SqlJsProjectGroupRepository } from '../../infrastructure/db/SqlJsProjectGroupRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
+import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/SqlJsStatementImportDraftRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
 import { StatementImportScreen } from './StatementImportScreen'
-import { setPendingImportFiles } from './pendingImportFiles'
 
 let db: Database
 let entries: SqlJsJournalEntryRepository
@@ -62,7 +62,6 @@ beforeEach(async () => {
   })
   // jsdomにはscrollIntoViewが無い
   Element.prototype.scrollIntoView = vi.fn()
-  setPendingImportFiles([])
 })
 
 afterEach(cleanup)
@@ -84,6 +83,7 @@ function renderScreen() {
           projectGroupRepository={new SqlJsProjectGroupRepository(db)}
           householdMemberRepository={new SqlJsHouseholdMemberRepository(db)}
           settlementBatchRepository={new SqlJsSettlementBatchRepository(db)}
+          statementImportDraftRepository={new SqlJsStatementImportDraftRepository(db)}
           onEditMappings={vi.fn()}
         />
       </UnsavedGuardHarness>
@@ -323,14 +323,14 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     renderScreen()
     await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
     fireEvent.click(rowsOf(/Amazon/)[0].getByRole('button', { name: '取り込む' }))
-    expect(screen.getByRole('button', { name: /^4 件を「普通預金」に確定$/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^\d+ \/ 4 件を「普通預金」に確定$/ })).toBeInTheDocument()
 
     fireEvent.click(rowsOf(/Amazon/)[0].getByRole('button', { name: '取り込まない' }))
 
     const duplicate = rowsOf(/Amazon/)[0]
     expect(duplicate.getByText('ファイル「oct.csv」の同じ明細と重複のため対象外です')).toBeInTheDocument()
     expect(duplicate.queryByRole('button', { name: '取り込まない' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ })).toBeInTheDocument()
   })
 
   it('別の形式のファイルが混ざっていても、そのファイルだけを「取り込めなかったファイル」に理由つきで出し、残りを取り込める', async () => {
@@ -351,7 +351,7 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     for (const text of [/コンビニ/, /書店/]) pick(rowOf(text), '相手科目', '食費')
     pick(rowsOf(/Amazon/)[1], '相手科目', '食費')
 
-    fireEvent.click(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
 
     await screen.findByText(/確定しました/)
     expect(entries.findAll().filter((e) => e.sourceType === 'external_import')).toHaveLength(3)
@@ -365,7 +365,7 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     pick(rowsOf(/Amazon/)[0], '相手科目', '食費')
     pick(rowsOf(/Amazon/)[1], '相手科目', '食費')
 
-    fireEvent.click(screen.getByRole('button', { name: /^4 件を「普通預金」に確定$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 4 件を「普通預金」に確定$/ }))
 
     await screen.findByText(/確定しました/)
     expect(entries.findAll().filter((e) => e.sourceType === 'external_import')).toHaveLength(4)
@@ -375,7 +375,7 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     renderScreen()
     await chooseCsvs([SEP], /sep\.csv を読み込み済み/)
     pick(rowOf(/Spotify/), '相手科目', '食費')
-    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
     await screen.findByText(/確定しました/)
 
     await chooseCsvs([SEP, OCT], /2ファイルを読み込み済み/)
@@ -409,27 +409,12 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
   })
 })
 
-describe('StatementImportScreen: 仕訳画面から渡されたCSV(計画Issue #214)', () => {
-  const asFile = (f: { name: string; body: string }) => new File([f.body], f.name, { type: 'text/csv' })
-
-  it('仕訳画面で選んだCSVが渡されていれば、画面を開いた時点でそのCSVを読み込む(「CSVを選択」の開始状態を出さない)', async () => {
-    setPendingImportFiles([asFile(OCT), asFile(NOV)])
-
+describe('StatementImportScreen: 開いた直後の開始状態(計画Issue #214・#231)', () => {
+  it('仕訳画面の「明細から起票」から開いた直後は、CSVを読み込まず、「CSVを選択」の開始状態を出す(CSVはこの画面で選ぶ)', async () => {
     renderScreen()
 
-    await screen.findByText(/2ファイルを読み込み済み/)
-    expect(screen.queryByRole('region', { name: 'CSVの選択' })).not.toBeInTheDocument()
-  })
-
-  it('渡されたCSVは1回だけ使い、画面を開き直したときは開始状態に戻る(リロード後と同じ)', async () => {
-    setPendingImportFiles([asFile(OCT)])
-    renderScreen()
-    await screen.findByText(/oct\.csv を読み込み済み/)
-    cleanup()
-
-    renderScreen()
-
-    expect(await screen.findByRole('button', { name: 'CSVを選択' })).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'CSVの選択' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'CSVを選択' }).length).toBeGreaterThan(0)
     expect(screen.queryByText(/読み込み済み/)).not.toBeInTheDocument()
   })
 })

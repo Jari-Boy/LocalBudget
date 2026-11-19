@@ -9,15 +9,20 @@ export interface UnsavedChangesDialogProps {
   onDiscard: () => void
   /** 編集中の内容を保存して移動する */
   onSave: () => void
+  /** 既定の文言のあとに出す説明(「保存して移動」で何が起きるかなど。計画Issue #231 フェーズ3) */
+  description?: string
+  /** 「破棄して移動」と「保存して移動」の間に出す、もう1つの保存操作(例: 一時保存して移動) */
+  extraAction?: { label: string; onClick: () => void }
 }
 
 /** 保存が完了していない変更があるまま画面を移動しようとしたときの、保存・破棄・キャンセルの確認 */
-export function UnsavedChangesDialog({ saving = false, onCancel, onDiscard, onSave }: UnsavedChangesDialogProps) {
+export function UnsavedChangesDialog({ saving = false, onCancel, onDiscard, onSave, description, extraAction }: UnsavedChangesDialogProps) {
   return (
     <div className="unsaved-dialog__backdrop">
       <div role="dialog" aria-modal="true" aria-label="未保存の変更があります" className="unsaved-dialog">
         <h2 className="unsaved-dialog__title">未保存の変更があります</h2>
         <p className="unsaved-dialog__message">保存が完了していない変更があります。</p>
+        {description && <p className="unsaved-dialog__message unsaved-dialog__description">{description}</p>}
         <div className="unsaved-dialog__actions">
           <button type="button" className="unsaved-dialog__button" onClick={onCancel}>
             キャンセル
@@ -25,6 +30,11 @@ export function UnsavedChangesDialog({ saving = false, onCancel, onDiscard, onSa
           <button type="button" className="unsaved-dialog__button" disabled={saving} onClick={onDiscard}>
             破棄して移動
           </button>
+          {extraAction && (
+            <button type="button" className="unsaved-dialog__button" disabled={saving} onClick={extraAction.onClick}>
+              {extraAction.label}
+            </button>
+          )}
           <button
             type="button"
             className="unsaved-dialog__button unsaved-dialog__button--primary"

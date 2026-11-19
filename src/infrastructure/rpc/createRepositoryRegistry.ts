@@ -10,6 +10,7 @@ import type { CounterpartyGroupRepository } from '../../domain/counterparty-grou
 import type { ExternalTransactionRefRepository } from '../../domain/reconciliation/ExternalTransactionRefRepository'
 import type { HouseholdMemberRepository } from '../../domain/household-member/HouseholdMemberRepository'
 import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
+import type { StatementImportDraftRepository } from '../../domain/statement-import/StatementImportDraftRepository'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type {
   CreateJournalEntryDraftInput,
@@ -34,6 +35,7 @@ import { SqlJsCounterpartyGroupRepository } from '../db/SqlJsCounterpartyGroupRe
 import { SqlJsExternalTransactionRefRepository } from '../db/SqlJsExternalTransactionRefRepository'
 import { SqlJsHouseholdMemberRepository } from '../db/SqlJsHouseholdMemberRepository'
 import { SqlJsImportMappingDefinitionRepository } from '../db/SqlJsImportMappingDefinitionRepository'
+import { SqlJsStatementImportDraftRepository } from '../db/SqlJsStatementImportDraftRepository'
 import { SqlJsJournalEntryDraftRepository } from '../db/SqlJsJournalEntryDraftRepository'
 import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsJournalEntryLinkGroupRepository } from '../db/SqlJsJournalEntryLinkGroupRepository'
@@ -118,6 +120,8 @@ export interface RepositoryRegistry {
   externalTransactionRef: ExternalTransactionRefRepository
   householdMember: HouseholdMemberRepository
   importMappingDefinition: ImportMappingDefinitionRepository
+  /** 明細取込の一時保存(計画Issue #231 フェーズ3)。取込先の科目ごとに1つ。操作履歴には記録しない(CSVの生データを含み、取り消す意味が無い) */
+  statementImportDraft: StatementImportDraftRepository
   journalEntry: JournalEntryRepository
   journalEntryDraft: JournalEntryDraftRpcApi
   /** 関連仕訳グループ(計画Issue #138)。表示専用、残高計算・消込判定には関与しない */
@@ -171,6 +175,20 @@ function recordedByHistory<T extends object>(history: OperationHistory, key: str
 }
 
 /**
+ * Repository(またはそれと同じ形のAPI)の全メソッド呼び出しを、操作履歴の外(記録しない書き込み)で実行するProxyで包む。
+ * 明細取込の一時保存のように、取り消す意味が無く、大きなデータを含む書き込みの記録(取消用のSQL)を履歴に持たせないために使う。
+ */
+function untrackedByHistory<T extends object>(history: OperationHistory, target: T): T {
+  return new Proxy(target, {
+    get(obj, prop) {
+      const value = Reflect.get(obj, prop, obj) as unknown
+      if (typeof value !== 'function') return value
+      return (...args: unknown[]) => history.untracked(() => (value as (...a: unknown[]) => unknown).apply(obj, args))
+    },
+  })
+}
+
+/**
  * Worker側で全12種のRepositoryインスタンスを生成し、1つのレジストリオブジェクトへ
  * まとめる(計画Issue #24のレジストリパターン)。新規Repositoryを追加する際は、
  * このオブジェクトへ1エントリ追加するだけでよい。呼び出し元(`db.worker.ts`)で
@@ -200,6 +218,7 @@ export function createRepositoryRegistry(
     externalTransactionRef: recorded('externalTransactionRef', new SqlJsExternalTransactionRefRepository(db)),
     householdMember: recorded('householdMember', new SqlJsHouseholdMemberRepository(db)),
     importMappingDefinition: recorded('importMappingDefinition', new SqlJsImportMappingDefinitionRepository(db)),
+    statementImportDraft: untrackedByHistory(history, new SqlJsStatementImportDraftRepository(db)),
     journalEntry: recorded('journalEntry', journalEntryRepository),
     journalEntryDraft: recorded('journalEntryDraft', {
       create: (input) => journalEntryDraftRepository.create(input),

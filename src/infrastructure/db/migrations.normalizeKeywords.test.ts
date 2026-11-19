@@ -15,6 +15,9 @@ import { LATEST_SCHEMA_SQL, runMigrations } from './migrations'
 async function createV2Database(): Promise<Database> {
   const db = await createTestDatabase()
   for (const sql of LATEST_SCHEMA_SQL) db.run(sql)
+  // v5(計画Issue #231 フェーズ3)で足した一時保存の表は、このバージョンには無いので取り除く
+  db.run('DROP TABLE statement_import_draft_files')
+  db.run('DROP TABLE statement_import_drafts')
   db.run('PRAGMA user_version = 2')
   db.run("INSERT INTO counterparties (id, name) VALUES (1, 'JR東日本'), (2, 'ファミマ')")
   db.run("INSERT INTO accounts (id, category, name, is_reconcilable) VALUES (10, 'expense', '交通費', NULL), (11, 'asset', '現金', TRUE)")

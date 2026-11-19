@@ -18,6 +18,7 @@ import type { JournalTemplateGroupRepository } from '../domain/journal-template-
 import type { SettlementBatchRepository } from '../domain/settlement-batch/SettlementBatchRepository'
 import type { ImportMappingDefinitionRepository } from '../domain/statement-import/ImportMappingDefinitionRepository'
 import type { ExternalTransactionRefRepository } from '../domain/reconciliation/ExternalTransactionRefRepository'
+import type { StatementImportDraftRepository } from '../domain/statement-import/StatementImportDraftRepository'
 import type { HistoryRpcApi, JournalEntryDraftRpcApi } from '../infrastructure/rpc/createRepositoryRegistry'
 import type { RecurringTransactionProposalRpcApi } from '../infrastructure/rpc/createRecurringTransactionProposalApi'
 import type { AccountBalanceRecordRepository } from '../domain/reconciliation/AccountBalanceRecordRepository'
@@ -29,7 +30,6 @@ import { JournalScreen, type JournalScreenProps, type JournalScreenTab } from '.
 import { SplitSettleScreen, type SplitSettleTab } from '../components/settlement/SplitSettleScreen'
 import type { SplitSettleRepositories } from '../components/settlement/splitSettleData'
 import { StatementImportScreen } from '../components/statement-import/StatementImportScreen'
-import { setPendingImportFiles } from '../components/statement-import/pendingImportFiles'
 import { AppShell } from '../components/layout/AppShell'
 import { AccountMasterTab } from '../components/master/AccountMasterTab'
 import { CounterpartyMasterTab } from '../components/master/CounterpartyMasterTab'
@@ -129,6 +129,7 @@ export function AppRoutes() {
     journalEntryDraftRepository,
     importMappingDefinitionRepository,
     externalTransactionRefRepository,
+    statementImportDraftRepository,
     budgetRepository,
     recurringTransactionRuleRepository,
     recurringTransactionProposalApi,
@@ -163,6 +164,8 @@ export function AppRoutes() {
         client.importMappingDefinition as unknown as Comlink.Remote<ImportMappingDefinitionRepository>,
       externalTransactionRefRepository:
         client.externalTransactionRef as unknown as Comlink.Remote<ExternalTransactionRefRepository>,
+      statementImportDraftRepository:
+        client.statementImportDraft as unknown as Comlink.Remote<StatementImportDraftRepository>,
       budgetRepository: client.budget as unknown as Comlink.Remote<BudgetRepository>,
       recurringTransactionRuleRepository:
         client.recurringTransactionRule as unknown as Comlink.Remote<RecurringTransactionRuleRepository>,
@@ -343,6 +346,7 @@ export function AppRoutes() {
             accountGroupRepository={accountGroupRepository}
             importMappingDefinitionRepository={importMappingDefinitionRepository}
             externalTransactionRefRepository={externalTransactionRefRepository}
+            statementImportDraftRepository={statementImportDraftRepository}
             journalEntryRepository={journalEntryRepository}
             counterpartyRepository={counterpartyRepository}
             keywordRuleRepository={keywordRuleRepository}
@@ -520,11 +524,8 @@ function JournalScreenRoute(props: JournalScreenRouteProps) {
       initialFilter={initialFilter}
       onSplit={(entry) => navigate('/journal/splitting', { state: { entryIds: [entry.id] } })}
       onOpenAccountReconciliation={(accountId) => navigate(`/master/accounts?account=${accountId}`)}
-      onStatementFilesPicked={(files) => {
-        // 選んだCSVは、受け渡し口に預けて明細取込画面へ移る(計画Issue #214)
-        setPendingImportFiles(files)
-        navigate('/journal/create/import')
-      }}
+      // CSVは、明細取込画面の開始状態で選ぶ(一時保存の再開の一覧もそこにある。計画Issue #231)
+      onStartStatementImport={() => navigate('/journal/create/import')}
     />
   )
 }
