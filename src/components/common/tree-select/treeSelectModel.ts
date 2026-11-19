@@ -1,3 +1,5 @@
+import { matchesSearch } from './normalizeForSearch'
+
 /**
  * 選択ツリーの表示行を組み立てる純粋関数(計画Issue #150)。
  * 科目・取引先・プロジェクトで共通に使うため、ドメインの型には依存せず、
@@ -9,6 +11,15 @@ export interface TreeSelectItemNode {
   value: string
   name: string
   isActive: boolean
+  /**
+   * 階層つきの項目(グループを選ぶ欄、計画Issue #233 案A)。深さ(最上位が0)。渡すと、グループ見出しを使わず、
+   * 項目だけをフラットに、深さに応じてインデントして並べる。親は直前までに並ぶ項目のparentValueで指す
+   */
+  depth?: number
+  /** 親の項目の値(最上位はnull)。検索で親が絞り落とされたとき、見出し行として残すために使う */
+  parentValue?: string | null
+  /** 「親 > 子」のパス表示名。閉じた状態で同名の項目を区別するときに使う */
+  pathName?: string
 }
 
 export interface TreeSelectGroupNode {
@@ -59,7 +70,14 @@ export interface TreeSelectItemRow {
   isFavorite: boolean
 }
 
-export type TreeSelectRow = TreeSelectCategoryRow | TreeSelectGroupRow | TreeSelectItemRow
+/** 検索で親が絞り落とされたとき、階層が追えるように残す親の見出し行(押せない、計画Issue #233) */
+export interface TreeSelectContextRow {
+  type: 'context'
+  name: string
+  indent: number
+}
+
+export type TreeSelectRow = TreeSelectCategoryRow | TreeSelectGroupRow | TreeSelectItemRow | TreeSelectContextRow
 
 export interface BuildTreeSelectRowsInput {
   categories: readonly TreeSelectCategory[]
@@ -99,7 +117,7 @@ export function buildTreeSelectRows({
   const q = query.trim()
   const selected = new Set(selectedValues ?? (selectedValue === '' ? [] : [selectedValue]))
   const isVisibleItem = (node: TreeSelectItemNode) =>
-    (q === '' || node.name.includes(q)) && (node.isActive || selected.has(node.value))
+    matchesSearch(node.name, q) && (node.isActive || selected.has(node.value))
 
   const visibleItemsOf = (nodes: readonly TreeSelectNode[]): TreeSelectItemNode[] =>
     nodes.flatMap((node) =>
@@ -131,10 +149,48 @@ export function buildTreeSelectRows({
         : []
     })
 
+  // 階層つきの項目(depth付き)。検索で親が絞り落とされたら、祖先を上から順に押せない見出し行として、1回だけ残す
+  const hierarchicalIndent = (depth: number) => BASE_INDENT + depth * LEVEL_INDENT
+  const contextEmitted = new Set<string>()
+  const emittedItems = new Set<string>()
+  const itemsByValue = new Map<string, TreeSelectItemNode>()
+  for (const category of categories) {
+    for (const node of category.nodes) if (node.kind === 'item') itemsByValue.set(node.value, node)
+  }
+  const walkHierarchicalItem = (node: TreeSelectItemNode): TreeSelectRow[] => {
+    if (!isVisibleItem(node)) return []
+    const rows: TreeSelectRow[] = []
+    if (q !== '') {
+      const missing: TreeSelectItemNode[] = []
+      let parent = node.parentValue != null ? itemsByValue.get(node.parentValue) : undefined
+      while (parent !== undefined) {
+        if (!emittedItems.has(parent.value) && !contextEmitted.has(parent.value)) missing.unshift(parent)
+        parent = parent.parentValue != null ? itemsByValue.get(parent.parentValue) : undefined
+      }
+      for (const ancestor of missing) {
+        contextEmitted.add(ancestor.value)
+        rows.push({ type: 'context', name: ancestor.name, indent: hierarchicalIndent(ancestor.depth ?? 0) })
+      }
+    }
+    emittedItems.add(node.value)
+    rows.push({
+      type: 'item',
+      value: node.value,
+      name: node.name,
+      indent: hierarchicalIndent(node.depth ?? 0),
+      isSelected: selected.has(node.value),
+      isViaGroup: false,
+      section: 'tree',
+      isFavorite: isFavorite(node.value),
+    })
+    return rows
+  }
+
   const walk = (nodes: readonly TreeSelectNode[], depth: number, viaGroup: boolean): TreeSelectRow[] =>
     nodes.flatMap((node): TreeSelectRow[] => {
       const indent = depth * LEVEL_INDENT + BASE_INDENT
       if (node.kind === 'item') {
+        if (node.depth !== undefined) return walkHierarchicalItem(node)
         return isVisibleItem(node)
           ? [
               {

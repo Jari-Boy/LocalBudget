@@ -221,3 +221,8 @@ Issue #187(`e2e/journal-entry.spec.ts`の「ランチ代」の`UNIQUE constraint
 
 **内容**: 新規DBでは初回セットアップの画面が出て他の画面に進めないため、E2Eは`playwright.config.ts`の`webServer.env`に`VITE_DISABLE_ONBOARDING=true`を渡して止める(`VITE_DISABLE_DEV_SEED`と同じく、`VITE_`付きの環境変数が`import.meta.env`から参照できる仕組み)。手動で起動した`npm run dev`を再利用するとこの変数が効かないので、上記の「手動で起動した`npm run dev`を残したまま」の項と同様に注意する。
 **参考**: `playwright.config.ts`、計画Issue #177
+
+## 日本語入力(IME)の変換確定のEnterは`keydown`でも届くため、Enterで何かを確定する処理では`isComposing`・keyCode 229を除外する(計画Issue #233)
+
+**内容**: 検索欄などで日本語を変換しているとき、変換を確定するEnterも`keydown`イベントとして届く。これをそのまま「選択の確定」やフォームの送信に使うと、変換の途中で意図せず確定される。`event.nativeEvent.isComposing`が`true`、または`event.keyCode === 229`のときは何もせずに戻る(ブラウザによっては、変換確定の`keydown`で`isComposing`がすでに`false`になるため、`keyCode`の229も併せて見る)。あわせて、検索欄のEnterは`preventDefault()`して、囲んでいるフォームの送信に使わせない。`TreeSelect`の検索欄(1件に絞れたらEnterで確定)がこの形になっている。
+**参考**: `src/components/common/tree-select/TreeSelect.tsx`、`docs/decisions.md`「選択欄は共通部品(EntitySelect)に統一し、画面ごとに実体の<select>を書かない」、計画Issue #233

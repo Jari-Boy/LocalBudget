@@ -1,7 +1,8 @@
+import { normalizeForSearch } from '../tree-select/normalizeForSearch'
 import type { TreeTableNode } from './treeTableModel'
 
-/** 検索用の正規化: 全角半角(NFKC)・大文字小文字・空白を無視する */
-export const normalizeSearch = (text: string): string => text.normalize('NFKC').toLowerCase().replace(/\s+/g, '')
+/** 検索用の正規化: 選択欄と同じ(全角半角・大文字小文字・空白・ひらがなとカタカナの違いを無視する、計画Issue #233) */
+export const normalizeSearch = normalizeForSearch
 
 /**
  * ツリー表の検索による絞り込み(計画Issue #219)。項目(葉)は名称か表示列(cells)に検索語を含むものだけ残し、

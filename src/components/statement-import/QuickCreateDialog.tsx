@@ -1,12 +1,12 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { TreeSelect } from '../common/tree-select/TreeSelect'
-import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
+import { EntitySelect, type EntityGroup } from '../common/entity-select/EntitySelect'
 
 export interface QuickCreateGroupField {
   /** グループの選択欄の名称(「取引先グループ」など) */
   label: string
-  categories: readonly TreeSelectCategory[]
+  /** 選べるグループ。候補の組み立てと階層のインデントは共通の選択欄が行う */
+  groups: readonly EntityGroup[]
   /**
    * 渡すと、選択欄の末尾に「+ グループを新規追加」を出す。名前だけで最上位のグループを作り、作ったグループのidを返す
    * (入れ子や並び順はグループ管理画面で整える)。作ったグループはそのまま選ばれる
@@ -77,13 +77,12 @@ export function QuickCreateDialog({ title, nameLabel, onSubmit, onCancel, groupF
         {groupField && (
           <div className="import-field">
             <span className="import-field__label">{groupField.label}</span>
-            <TreeSelect
+            <EntitySelect
               label={groupField.label}
-              categories={groupField.categories}
-              value={groupId === null ? '' : String(groupId)}
+              groups={groupField.groups}
+              value={groupId}
               emptyLabel={t('groupUnclassified')}
-              placeholder={t('groupUnclassified')}
-              onChange={(v) => setGroupId(v === '' ? null : Number(v))}
+              onChange={setGroupId}
               onCreate={groupField.onCreate ? () => setGroupDialogOpen(true) : undefined}
               createLabel={t('createGroup')}
             />

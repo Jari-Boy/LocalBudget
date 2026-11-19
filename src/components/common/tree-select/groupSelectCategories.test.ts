@@ -1,8 +1,9 @@
 /**
  * buildGroupSelectCategories(グループを1つ選ぶ選択欄のカテゴリ、計画Issue #207)の単体テスト。
- * 取引先・プロジェクトの追加ダイアログで「グループ」を選ぶとき、入れ子のグループを
- * 「親 / 子」の名前で並べた1つのカテゴリにする。並び順は表示順(同じ入れ物の中でsortOrder→id)、
- * 親の直後に子が来る。無効なグループは選べない印(isActive: false)を付ける。DB・DOM非依存、外部依存なし。
+ * グループを選ぶ欄で、入れ子のグループを、親の直後に子が来る順(同じ入れ物の中でsortOrder→id)の
+ * 1つのカテゴリにする。階層は名前の連結ではなく、深さ(depth)と親の値(parentValue)で表し、
+ * 表示側がインデントで示す(計画Issue #233 案A)。閉じた状態の同名の区別用に「親 > 子」のpathNameも持つ。
+ * 無効なグループは選べない印(isActive: false)を付ける。DB・DOM非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import { buildGroupSelectCategories } from './groupSelectCategories'
@@ -20,7 +21,7 @@ describe('buildGroupSelectCategories', () => {
     expect(buildGroupSelectCategories([])).toEqual([])
   })
 
-  it('入れ子のグループを「親 / 子」の名前で、親の直後に子が来る順に1つのカテゴリへ並べる', () => {
+  it('入れ子のグループを、名前はそのままで深さと親の値を付け、親の直後に子が来る順に1つのカテゴリへ並べる', () => {
     const categories = buildGroupSelectCategories([
       group(1, '食料品', null, 1),
       group(2, '日用品', null, 2),
@@ -30,10 +31,10 @@ describe('buildGroupSelectCategories', () => {
 
     expect(categories).toHaveLength(1)
     expect(categories[0].nodes).toEqual([
-      { kind: 'item', value: '1', name: '食料品', isActive: true },
-      { kind: 'item', value: '3', name: '食料品 / スーパー', isActive: true },
-      { kind: 'item', value: '4', name: '食料品 / 市場', isActive: true },
-      { kind: 'item', value: '2', name: '日用品', isActive: true },
+      { kind: 'item', value: '1', name: '食料品', isActive: true, depth: 0, parentValue: null, pathName: '食料品' },
+      { kind: 'item', value: '3', name: 'スーパー', isActive: true, depth: 1, parentValue: '1', pathName: '食料品 > スーパー' },
+      { kind: 'item', value: '4', name: '市場', isActive: true, depth: 1, parentValue: '1', pathName: '食料品 > 市場' },
+      { kind: 'item', value: '2', name: '日用品', isActive: true, depth: 0, parentValue: null, pathName: '日用品' },
     ])
   })
 
@@ -46,6 +47,35 @@ describe('buildGroupSelectCategories', () => {
   it('無効なグループには選べない印(isActive: false)を付ける', () => {
     const categories = buildGroupSelectCategories([group(1, '旧グループ', null, 0, false)])
 
-    expect(categories[0].nodes).toEqual([{ kind: 'item', value: '1', name: '旧グループ', isActive: false }])
+    expect(categories[0].nodes).toEqual([
+      { kind: 'item', value: '1', name: '旧グループ', isActive: false, depth: 0, parentValue: null, pathName: '旧グループ' },
+    ])
+  })
+
+  it('深さ3以上でも、深さと「親 > 子 > 孫」のpathNameが付く', () => {
+    const nodes = buildGroupSelectCategories([group(1, 'A', null), group(2, 'B', 1), group(3, 'C', 2)])[0].nodes
+    expect(nodes.map((n) => n.kind === 'item' && [n.depth, n.pathName])).toEqual([
+      [0, 'A'],
+      [1, 'A > B'],
+      [2, 'A > B > C'],
+    ])
+  })
+
+  it('親が渡されていない子は、最上位として並べ、候補から消さない', () => {
+    const nodes = buildGroupSelectCategories([group(2, '外食', 1), group(3, '自炊', 1)])[0].nodes
+    expect(nodes.map((n) => n.kind === 'item' && [n.value, n.depth, n.parentValue, n.pathName])).toEqual([
+      ['2', 0, null, '外食'],
+      ['3', 0, null, '自炊'],
+    ])
+  })
+
+  it('別の親の下に同名の子があっても、値と親が別々に保たれる', () => {
+    const nodes = buildGroupSelectCategories([group(1, '食費', null, 1), group(2, '住居', null, 2), group(3, 'その他', 1), group(4, 'その他', 2)])[0].nodes
+    expect(nodes.map((n) => n.kind === 'item' && [n.value, n.name, n.parentValue])).toEqual([
+      ['1', '食費', null],
+      ['3', 'その他', '1'],
+      ['2', '住居', null],
+      ['4', 'その他', '2'],
+    ])
   })
 })

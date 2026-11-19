@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from 'react'
+import { useCallback, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
 import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
+import { EntitySelect } from '../common/entity-select/EntitySelect'
 import { useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import { reconciliationAnswerToIsReconcilable } from '../account-registration/reconciliationQuestion'
 import { registerAccount, type AccountCreator, type BalanceRecordCreator } from '../account-registration/registerAccount'
@@ -93,7 +94,7 @@ export function AccountCreateForm({
   const showMember = isBalanceSheet && members.length > 0
   // 外部明細ありのときは名義が必須。「全員」は選べないので、未選択は先頭のメンバーとみなす
   const memberId = memberInput !== '' ? Number(memberInput) : csvExists ? (members[0]?.id ?? null) : null
-  const categoryGroups = groups.filter((g) => g.category === category && g.isActive)
+  const isGroupOfCategory = useCallback((g: AccountGroup) => g.category === category && g.isActive, [category])
   const defaultGroupId = resolveDefaultAccountGroupId({ category, hasExternalStatement: csvExists }, groups)
   const groupValue = groupOverride ?? (defaultGroupId === null ? '' : String(defaultGroupId))
   const openingAmount = opening.trim() === '' ? null : Number(opening)
@@ -207,22 +208,17 @@ export function AccountCreateForm({
       </div>
 
       <div className="master-field">
-        <label className="master-field__label" htmlFor="account-create-group">
-          {t('createForm.group')}
-        </label>
-        <select
-          id="account-create-group"
-          className="master-field__control"
-          value={groupValue}
-          onChange={(event) => setGroupOverride(event.target.value)}
-        >
-          <option value="">{t('createForm.groupNone')}</option>
-          {categoryGroups.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name}
-            </option>
-          ))}
-        </select>
+        <span className="master-field__label">{t('createForm.group')}</span>
+        {/* 階層をインデントで示す共通の選択欄(計画Issue #233)。同じ区分・アクティブなグループだけを候補にする */}
+        <EntitySelect
+         
+          label={t('createForm.group')}
+          groups={groups}
+          filter={isGroupOfCategory}
+          value={groupValue === '' ? null : Number(groupValue)}
+          onChange={(id) => setGroupOverride(id === null ? '' : String(id))}
+          emptyLabel={t('createForm.groupNone')}
+        />
       </div>
 
       {isBalanceSheet && (

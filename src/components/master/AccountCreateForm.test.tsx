@@ -88,7 +88,7 @@ describe('AccountCreateForm', () => {
   it('資産で外部明細があり残高情報も明細にあるときは、照合する科目として登録され、普通預金グループが初期選択される', async () => {
     renderForm('asset')
 
-    expect(screen.getByLabelText('所属グループ')).toHaveDisplayValue('普通預金')
+    expect(screen.getByRole('button', { name: '所属グループ: 普通預金' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('外部明細(CSV)はありますか?'), { target: { value: 'yes' } })
     fireEvent.change(screen.getByLabelText('残高情報は明細にありますか?'), { target: { value: 'yes' } })
     fireEvent.change(screen.getByLabelText('名義'), { target: { selectedIndex: 0 } })
@@ -107,7 +107,7 @@ describe('AccountCreateForm', () => {
     fireEvent.change(screen.getByLabelText('外部明細(CSV)はありますか?'), { target: { value: 'no' } })
 
     expect(screen.queryByLabelText('残高情報は明細にありますか?')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('所属グループ')).toHaveDisplayValue('現金・電子マネー')
+    expect(screen.getByRole('button', { name: '所属グループ: 現金・電子マネー' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: '全員' })).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '現金' } })
@@ -147,7 +147,16 @@ describe('AccountCreateForm', () => {
   it('負債を選ぶと、クレジットカードグループが初期選択される', () => {
     renderForm('liability')
 
-    expect(screen.getByLabelText('所属グループ')).toHaveDisplayValue('クレジットカード')
+    expect(screen.getByRole('button', { name: '所属グループ: クレジットカード' })).toBeInTheDocument()
+  })
+
+  it('所属グループは、親子の階層をインデントで示す共通の選択欄で選べる(計画Issue #233)', () => {
+    renderForm('asset')
+
+    fireEvent.click(screen.getByRole('button', { name: /^所属グループ/ }))
+
+    expect(screen.getByRole('searchbox', { name: '所属グループを検索' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'グループなし' })).toBeInTheDocument()
   })
 
   it('区分を変えると、所属グループの選択肢がその区分のものに切り替わる', () => {
@@ -155,8 +164,9 @@ describe('AccountCreateForm', () => {
 
     fireEvent.change(screen.getByLabelText('区分'), { target: { value: 'liability' } })
 
-    expect(screen.getByLabelText('所属グループ')).toHaveDisplayValue('クレジットカード')
-    expect(screen.queryByRole('option', { name: '普通預金' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '所属グループ: クレジットカード' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^所属グループ/ }))
+    expect(screen.queryByRole('button', { name: '普通預金' })).not.toBeInTheDocument()
   })
 
   it('外部明細がないときは「最初の残高の記録」(日付の初期値は今日)を入れられ、残高の記録と元手の仕訳が作られる(計画Issue #205)', async () => {

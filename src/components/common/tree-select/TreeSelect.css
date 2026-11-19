@@ -245,3 +245,14 @@
 .tree-select__star--on svg {
   fill: currentColor;
 }
+
+/* 検索で絞り落とされた親の見出し行(計画Issue #233)。押せない、小さい灰色の文字 */
+.tree-select__context {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  padding-right: 10px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}

@@ -38,7 +38,6 @@ import {
   ruleFormFromRule,
 } from './recurringRuleForm'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
-import { buildGroupSelectCategories } from '../common/tree-select/groupSelectCategories'
 import { AccountCreateForm } from './AccountCreateForm'
 import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
 import { RuleEditForm, type RuleStatus } from './RuleEditForm'
@@ -393,7 +392,7 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           nameLabel="取引先名"
           groupField={{
             label: '取引先グループ',
-            categories: buildGroupSelectCategories(data.counterpartyGroups),
+            groups: data.counterpartyGroups,
             onCreate: async (name) => {
               const created = await Promise.resolve(counterpartyGroupRepository.create({ name }))
               setData((prev) => (prev === null ? prev : { ...prev, counterpartyGroups: [...prev.counterpartyGroups, created] }))
@@ -435,7 +434,7 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           nameLabel="プロジェクト名"
           groupField={{
             label: 'プロジェクトグループ',
-            categories: buildGroupSelectCategories(data.projectGroups),
+            groups: data.projectGroups,
             onCreate: async (name) => {
               const created = await Promise.resolve(projectGroupRepository.create({ name }))
               setData((prev) => (prev === null ? prev : { ...prev, projectGroups: [...prev.projectGroups, created] }))

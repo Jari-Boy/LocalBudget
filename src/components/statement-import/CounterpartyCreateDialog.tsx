@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
+import type { EntityGroup } from '../common/entity-select/EntitySelect'
 import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 import { countRowsContaining, validateKeyword } from './counterpartyKeywordModel'
 import { KeywordList, type KeywordListItem } from './KeywordList'
@@ -22,7 +23,7 @@ export interface CounterpartyCreateDialogProps {
   rowAccountId: number | null
   /** 「含む行の数」の対象にする、未確定の行の摘要 */
   descriptions: readonly string[]
-  groupCategories: readonly TreeSelectCategory[]
+  groups: readonly EntityGroup[]
   /** 取引先グループをその場で作る(名前だけ、最上位)。作ったグループのidを返す */
   onCreateGroup: (name: string) => Promise<number>
   accountCategories: readonly TreeSelectCategory[]
@@ -51,7 +52,7 @@ export function CounterpartyCreateDialog(props: CounterpartyCreateDialogProps) {
     rowDescription,
     rowAccountId,
     descriptions,
-    groupCategories,
+    groups,
     onCreateGroup,
     accountCategories,
     onCreateAccount,
@@ -89,7 +90,7 @@ export function CounterpartyCreateDialog(props: CounterpartyCreateDialogProps) {
     <QuickCreateDialog
       title={t('createCounterpartyTitle')}
       nameLabel={t('createCounterpartyName')}
-      groupField={{ label: t('counterpartyGroupLabel'), categories: groupCategories, onCreate: onCreateGroup }}
+      groupField={{ label: t('counterpartyGroupLabel'), groups, onCreate: onCreateGroup }}
       validate={() => items.every((item) => item.error === null)}
       onSubmit={(name, groupId) =>
         onSubmit({
