@@ -392,10 +392,28 @@ export function TreeSelect(props: TreeSelectProps) {
               }
               return (
                 <div key={`i:${row.section}:${row.value}`} className="tree-select__item-row">
+                  {row.fold !== undefined && (
+                    // 階層つきの項目の開閉(計画Issue #234)。子を持つ項目だけが押せる。名前を押すと選択、この印を押すと開閉
+                    <span className="tree-select__fold-slot" style={{ paddingLeft: row.indent }}>
+                      {row.fold === 'leaf' ? (
+                        <span className="tree-select__fold-spacer" aria-hidden="true" />
+                      ) : (
+                        <button
+                          type="button"
+                          className="tree-select__fold"
+                          aria-label={`${row.name}を${row.fold === 'open' ? '閉じる' : '開く'}`}
+                          aria-expanded={row.fold === 'open'}
+                          onClick={() => toggleGroup(`h:${row.value}`, row.fold === 'open')}
+                        >
+                          {row.fold === 'open' ? '▾' : '▸'}
+                        </button>
+                      )}
+                    </span>
+                  )}
                   <button
                     type="button"
                     className={`tree-select__item${row.isSelected ? ' tree-select__item--selected' : ''}${isMulti ? ' tree-select__item--multi' : ''}`}
-                    style={{ paddingLeft: row.indent }}
+                    style={{ paddingLeft: row.fold !== undefined ? 4 : row.indent }}
                     aria-current={!isMulti && row.isSelected ? 'true' : undefined}
                     aria-pressed={isMulti ? row.isSelected : undefined}
                     data-via-group={isMulti && row.isViaGroup ? 'true' : undefined}

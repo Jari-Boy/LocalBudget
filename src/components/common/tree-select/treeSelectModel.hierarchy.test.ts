@@ -28,12 +28,12 @@ const categories: TreeSelectCategory[] = [
   },
 ]
 
-const rows = (query: string, selectedValue = '') =>
-  buildTreeSelectRows({ categories, selectedValue, query, openOverrides: {} })
+const rows = (query: string, selectedValue = '', openOverrides: Record<string, boolean> = {}) =>
+  buildTreeSelectRows({ categories, selectedValue, query, openOverrides })
 
 describe('buildTreeSelectRows(階層つきの項目)', () => {
-  it('検索なしでは、深さ1段ごとに16pxインデントして親子の順に並べる', () => {
-    expect(rows('').map((r) => r.type === 'item' && [r.name, r.indent])).toEqual([
+  it('検索なしでは、開いた親の下に、深さ1段ごとに16pxインデントして親子の順に並べる', () => {
+    expect(rows('', '', { 'h:1': true }).map((r) => r.type === 'item' && [r.name, r.indent])).toEqual([
       ['日用品・雑貨', 8],
       ['ドラッグストア', 24],
       ['家電', 24],

@@ -48,11 +48,14 @@ describe('EntitySelect', () => {
     expect(onChange).toHaveBeenCalledWith(2)
   })
 
-  it('親子の順に、深さに応じてインデントした項目を出す', () => {
+  it('親は最初は畳まれていて、開閉の印を押すと、子が親の下に出る', () => {
     render(<EntitySelect label="所属グループ" groups={groups} value={null} onChange={vi.fn()} />)
     open()
-    expect(screen.getByRole('button', { name: '食費' })).toHaveStyle({ paddingLeft: '8px' })
-    expect(screen.getByRole('button', { name: '外食' })).toHaveStyle({ paddingLeft: '24px' })
+    expect(screen.getByRole('button', { name: '食費' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '外食' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '食費を開く' }))
+    expect(screen.getByRole('button', { name: '外食' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '食費を閉じる' })).toHaveAttribute('aria-expanded', 'true')
   })
 
   it('filterに合わないグループは出さない', () => {
@@ -78,6 +81,7 @@ describe('EntitySelect', () => {
     const onChange = vi.fn()
     render(<EntitySelect label="所属グループ" groups={groups} value={1} onChange={onChange} emptyLabel="未分類" />)
     open()
+    fireEvent.click(screen.getByRole('button', { name: '食費を開く' }))
     fireEvent.click(screen.getByRole('button', { name: '外食' }))
     expect(onChange).toHaveBeenLastCalledWith(2)
     open()
