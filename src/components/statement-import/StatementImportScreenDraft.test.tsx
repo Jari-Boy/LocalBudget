@@ -507,6 +507,41 @@ describe('保存時の定義で読めないとき', () => {
     expect(drafts.findSummaries()).toHaveLength(1)
   })
 
+  /** 一時保存したあとに、マッピング定義を編集する(削除はしない)。画面を開き直す */
+  async function saveThenEditDefinition(sql: string) {
+    renderScreen()
+    await chooseCsv(CSV3)
+    pick(rowOf(/スーパー/), '相手科目', '食費')
+    fireEvent.click(saveButtons()[0])
+    await screen.findByText(/一時保存しました/)
+    db.run(sql)
+    restartScreen()
+  }
+
+  it('保存したあとに、定義の列名が編集されてCSVを読み取れなくなったときも、一覧は開かず、案内を出す(定義は残っていて、一時保存も残る)', async () => {
+    await saveThenEditDefinition("UPDATE import_mapping_definitions SET date_column = '存在しない列'")
+
+    fireEvent.click(await screen.findByRole('button', { name: '普通預金の一時保存を再開' }))
+
+    const panel = await screen.findByRole('alert', { name: /一時保存のCSV.*読み取れません/ })
+    expect(within(panel).getByRole('button', { name: 'このCSVでマッピングを新規作成' })).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: '一時保存を破棄' })).toBeInTheDocument()
+    expect(screen.queryByRole('row', { name: /スーパー/ })).not.toBeInTheDocument()
+    expect(mappings.findAll()).toHaveLength(1)
+    expect(drafts.findSummaries()).toHaveLength(1)
+  })
+
+  it('保存したあとに、定義の表示名だけが編集されて、CSVはいまも読めるときは、編集後の定義で再開でき、保存した入力が戻る', async () => {
+    await saveThenEditDefinition("UPDATE import_mapping_definitions SET label = '名前を変えた定義'")
+
+    fireEvent.click(await screen.findByRole('button', { name: '普通預金の一時保存を再開' }))
+
+    await screen.findByText(/から再開しました/)
+    expect(screen.queryByRole('alert', { name: /読み取れません/ })).not.toBeInTheDocument()
+    expect(rowOf(/スーパー/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
+    expect(screen.getByLabelText('科目')).toHaveValue(String(bank.id))
+  })
+
   it('「このCSVでマッピングを新規作成」で定義を作り直すと、保存した取込先と入力が戻り、続きから再開できる', async () => {
     await saveThenDeleteDefinition()
     fireEvent.click(await screen.findByRole('button', { name: '普通預金の一時保存を再開' }))
