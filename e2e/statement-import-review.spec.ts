@@ -166,7 +166,7 @@ async function startImport(page: Page, accountName: string | null, csv: string) 
   await openImportScreen(page)
   await page.getByLabel('CSVを選択', { exact: true }).setInputFiles(csvFile(csv))
   if (accountName !== null) {
-    await expect(page.getByLabel('科目', { exact: true }).locator('option:checked')).toHaveText(accountName)
+    await expect(page.getByRole('button', { name: `科目: ${accountName}`, exact: true })).toBeVisible()
     await chooseOwner(page)
   }
 }
@@ -240,7 +240,7 @@ test.describe('明細取込画面', () => {
     await startImport(page, null, '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n')
 
     await page.getByLabel('マッピング定義').selectOption({ label: 'テスト銀行 別形式' })
-    await expect(page.getByLabel('科目', { exact: true }).locator('option:checked')).toHaveText('普通預金')
+    await expect(page.getByRole('button', { name: '科目: 普通預金', exact: true })).toBeVisible()
     await expect(page.getByRole('table', { name: '明細の一覧' })).toBeVisible()
     await expect(rowOf(page, /スーパー/)).toBeVisible()
   })
@@ -262,7 +262,10 @@ test.describe('明細取込画面', () => {
     await dialog.getByRole('button', { name: '保存して取り込む' }).click()
 
     // 作った定義はどの科目にも紐づいていないので、取込先を選ぶと一覧が出る
-    await page.getByLabel('科目', { exact: true }).selectOption({ label: '普通預金' })
+    await page.getByRole('button', { name: /^科目: / }).click()
+    const targetPicker = page.getByRole('dialog', { name: '科目' })
+    await targetPicker.getByRole('searchbox').fill('普通預金')
+    await targetPicker.getByRole('button', { name: '普通預金', exact: true }).click()
     await expect(page.getByText(/statement\.csv を読み込み済み/)).toBeVisible()
     await expect(rowOf(page, /スーパー/)).toBeVisible()
   })

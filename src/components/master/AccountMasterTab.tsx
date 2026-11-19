@@ -362,6 +362,7 @@ export function AccountMasterTab({
         >
           <AccountMergePanel
             accounts={data.accounts.filter((a) => liveCheckedIds.includes(leafNodeId(a.id)))}
+            accountGroups={data.groups}
             lineCountOf={(accountId) =>
               data.entries.flatMap((e) => e.lines).filter((l) => l.accountId === accountId).length
             }

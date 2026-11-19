@@ -613,6 +613,7 @@
   min-width: 220px;
 }
 
+.import-attention .tree-select__trigger,
 .import-control--attention {
   border: 2px solid var(--color-accent);
 }

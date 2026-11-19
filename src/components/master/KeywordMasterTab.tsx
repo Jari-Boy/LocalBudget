@@ -4,10 +4,13 @@ import { TreeTable } from '../common/tree-table/TreeTable'
 import type { TreeTableNode } from '../common/tree-table/treeTableModel'
 import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
+import type { AccountGroup } from '../../domain/account-group/AccountGroup'
+import type { AccountGroupRepository } from '../../domain/account-group/AccountGroupRepository'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { CounterpartyRepository } from '../../domain/counterparty/CounterpartyRepository'
 import type { KeywordRule } from '../../domain/keyword-rule/KeywordRule'
 import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
+import { AccountSelect } from './AccountSelect'
 import { KeywordBulkPanel } from './KeywordBulkPanel'
 import {
   nextSortState,
@@ -21,10 +24,15 @@ import {
 import type { MaybeAsync } from './maybeAsync'
 import './master.css'
 
+/** キーワードの科目に選べるのは、有効で、システム管理ではない科目 */
+const isSelectableAccount = (account: Account) => account.isActive && !account.isSystemManaged
+
 export interface KeywordMasterTabProps {
   keywordRuleRepository: MaybeAsync<Pick<KeywordRuleRepository, 'findAll' | 'create' | 'update' | 'delete'>>
   counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll'>>
   accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll'>>
+  /** 科目の選択欄で、科目をグループの階層で見せるための科目グループ */
+  accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
 }
 
 interface Draft {
@@ -48,11 +56,12 @@ const isPlCategory = (account: Pick<Account, 'category'> | null | undefined) =>
  * 推定するルール(keyword_rules)を、左に一覧・右に編集パネルで扱う。列見出しを押すと、その列で昇順・降順に並べ替える。
  * 相手科目が資産・負債のときは取引先を指定できない。検証は勘定科目・取引先タブと共通(keywordRuleForm)。
  */
-export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository, accountRepository }: KeywordMasterTabProps) {
+export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository, accountRepository, accountGroupRepository }: KeywordMasterTabProps) {
   const { t } = useTranslation('master')
   const [rules, setRules] = useState<KeywordRule[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [accountGroups, setAccountGroups] = useState<AccountGroup[]>([])
   const [sort, setSort] = useState<KeywordSortState>({ key: 'pattern', direction: 'asc' })
   const [query, setQuery] = useState('')
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -61,15 +70,17 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
   const [checkedIds, setCheckedIds] = useState<readonly string[]>([])
 
   const load = useCallback(async () => {
-    const [nextRules, nextCounterparties, nextAccounts] = await Promise.all([
+    const [nextRules, nextCounterparties, nextAccounts, nextAccountGroups] = await Promise.all([
       Promise.resolve(keywordRuleRepository.findAll()),
       Promise.resolve(counterpartyRepository.findAll()),
       Promise.resolve(accountRepository.findAll()),
+      Promise.resolve(accountGroupRepository.findAll()),
     ])
     setRules(nextRules)
     setCounterparties(nextCounterparties)
     setAccounts(nextAccounts)
-  }, [keywordRuleRepository, counterpartyRepository, accountRepository])
+    setAccountGroups(nextAccountGroups)
+  }, [keywordRuleRepository, counterpartyRepository, accountRepository, accountGroupRepository])
 
   useEffect(() => {
     void load()
@@ -248,6 +259,7 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
           rules={checkedRules}
           counterparties={counterparties}
           accounts={accounts}
+          accountGroups={accountGroups}
           busy={busy}
           error={error}
           onApply={(change) => void applyBulk(change)}
@@ -295,29 +307,21 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
             {counterpartyLocked && <span className="master-note">{t('keywordTab.counterpartyDisabledNote')}</span>}
           </div>
           <div className="master-field">
-            <label className="master-field__label" htmlFor="kw-account">
-              {t('keywordTab.accountLabel')}
-            </label>
-            <select
-              id="kw-account"
-              className="master-field__control"
+            <span className="master-field__label">{t('keywordTab.accountLabel')}</span>
+            <AccountSelect
+              label={t('keywordTab.accountLabel')}
+              accounts={accounts}
+              accountGroups={accountGroups}
+              filter={isSelectableAccount}
               value={draft.accountId === null ? '' : String(draft.accountId)}
-              onChange={(e) => {
-                const accountId = e.target.value === '' ? null : Number(e.target.value)
+              emptyLabel={t('keywordTab.none')}
+              onChange={(value) => {
+                const accountId = value === '' ? null : Number(value)
                 const next = accounts.find((a) => a.id === accountId)
                 // 資産・負債の科目に変えたら、併記できない取引先は外す
                 setDraft({ ...draft, accountId, counterpartyId: next !== undefined && !isPlCategory(next) ? null : draft.counterpartyId })
               }}
-            >
-              <option value="">{t('keywordTab.none')}</option>
-              {accounts
-                .filter((a) => (a.isActive && !a.isSystemManaged) || a.id === draft.accountId)
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-            </select>
+            />
           </div>
           {error && (
             <p role="alert" className="master-error">

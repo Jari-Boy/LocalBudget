@@ -43,6 +43,7 @@ import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
 import { AccountCreateForm } from '../master/AccountCreateForm'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
+import { AccountSelect } from '../master/AccountSelect'
 import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../master/masterTreeNodes'
 import type { MappingForm } from '../master/mappingForm'
 import type { MaybeAsync } from '../master/maybeAsync'
@@ -496,10 +497,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   /** 摘要の提案の科目。ダイアログで選んでいればその科目、選んでいなければ行の相手科目(取引先を持てる科目のときだけ) */
   const learnAccountIdOf = (state: ImportRowState): number | null =>
     state.learnAccountTouched ? state.learnAccountId : isPlAccountId(state.counterAccountId) ? state.counterAccountId : null
-  /** キーワードの科目に選べる科目(取引先を持てる費用・収益の科目) */
-  const keywordAccountOptions = accountList
-    .filter((a) => isCounterpartyEligibleCategory(a.category))
-    .map((a) => ({ id: a.id, name: a.name }))
 
   /**
    * 開いている「取引先の設定」の一覧(登録済み → 摘要の提案 → 入力中)。摘要の提案は、推定と違う取引先を選んだ行で
@@ -1866,36 +1863,17 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               )
             )}
             {match && (
-              <div className="import-field">
-                <label className="import-field__label" htmlFor="import-account">
-                  {t('targetAccountLabel')}
-                </label>
-                <select
-                  id="import-account"
-                  className={`import-control import-control--wide${targetAccountId === null ? ' import-control--attention' : ''}`}
-                  value={targetAccountId ?? ''}
-                  onChange={(e) => void changeTargetAccount(toId(e.target.value))}
-                >
-                  <option value="">{t('chooseDefinition')}</option>
-                  {(() => {
-                    const linkedIds = new Set(match.definition.accountIds)
-                    const linked = eligibleTargets.filter((a) => linkedIds.has(a.id))
-                    const others = eligibleTargets.filter((a) => !linkedIds.has(a.id))
-                    const option = (a: Account) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    )
-                    return linked.length > 0 ? (
-                      <>
-                        <optgroup label={t('accountGroupLinked')}>{linked.map(option)}</optgroup>
-                        {others.length > 0 && <optgroup label={t('accountGroupOther')}>{others.map(option)}</optgroup>}
-                      </>
-                    ) : (
-                      eligibleTargets.map(option)
-                    )
-                  })()}
-                </select>
+              <div className={`import-field${targetAccountId === null ? ' import-attention' : ''}`}>
+                <span className="import-field__label">{t('targetAccountLabel')}</span>
+                <AccountSelect
+                  label={t('targetAccountLabel')}
+                  accounts={eligibleTargets}
+                  accountGroups={data.accountGroups}
+                  value={targetAccountId === null ? '' : String(targetAccountId)}
+                  emptyLabel={t('chooseDefinition')}
+                  pinned={{ name: t('accountGroupLinked'), filter: (a) => match.definition.accountIds.includes(a.id) }}
+                  onChange={(value) => void changeTargetAccount(toId(value))}
+                />
               </div>
             )}
             {match && targetAccount && (
@@ -2354,7 +2332,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                     onClose={() => setSettings(null)}
                                     counterpartyName={data.counterparties.find((c) => c.id === state.counterpartyId)?.name ?? ''}
                                     items={settingsView === null || !settingsView.loaded ? null : settingsItems(settingsView)}
-                                    accountOptions={keywordAccountOptions}
                                     accountCategories={categories.defaultAccounts}
                                     rowDescription={desc}
                                     message={settingsMessage}

@@ -34,6 +34,7 @@ import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSet
 import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/SqlJsStatementImportDraftRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
 import { StatementImportScreen } from './StatementImportScreen'
+import { expectTargetAccount } from './targetAccountTestHelpers'
 
 let db: Database
 let entries: SqlJsJournalEntryRepository
@@ -337,7 +338,7 @@ describe('再開', () => {
 
     await resume()
 
-    expect(screen.getByLabelText('科目')).toHaveValue(String(bank.id))
+    expectTargetAccount(bank.name)
     expect(rowOf(/スーパー/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
     expect(screen.getByLabelText('スーパーのコメント')).toHaveValue('週末の買い出し')
     expect(screen.getByText(/重複・似た取引・残高の照合は、いまの帳簿で計算し直しています/)).toBeInTheDocument()
@@ -539,7 +540,7 @@ describe('保存時の定義で読めないとき', () => {
     await screen.findByText(/から再開しました/)
     expect(screen.queryByRole('alert', { name: /読み取れません/ })).not.toBeInTheDocument()
     expect(rowOf(/スーパー/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
-    expect(screen.getByLabelText('科目')).toHaveValue(String(bank.id))
+    expectTargetAccount(bank.name)
   })
 
   it('「このCSVでマッピングを新規作成」で定義を作り直すと、保存した取込先と入力が戻り、続きから再開できる', async () => {
@@ -555,7 +556,7 @@ describe('保存時の定義で読めないとき', () => {
     fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
 
     await screen.findByText(/から再開しました/)
-    expect(screen.getByLabelText('科目')).toHaveValue(String(bank.id))
+    expectTargetAccount(bank.name)
     expect(rowOf(/スーパー/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
     expect(screen.queryByRole('alert', { name: /読み取れません/ })).not.toBeInTheDocument()
   })

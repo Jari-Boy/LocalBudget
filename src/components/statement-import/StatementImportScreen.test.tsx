@@ -36,6 +36,7 @@ import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSet
 import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/SqlJsStatementImportDraftRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
 import { StatementImportScreen } from './StatementImportScreen'
+import { chooseTargetAccount, expectTargetAccount, findTargetAccountButton } from './targetAccountTestHelpers'
 
 let db: Database
 let accounts: SqlJsAccountRepository
@@ -320,7 +321,7 @@ describe('StatementImportScreen', () => {
     // 画面を取り込み前の状態に戻し、明細の再選択を促す(確定ボタン・取込先などは残さない)
     expect(screen.getByRole('region', { name: 'CSVの選択' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /に確定$/ })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('科目')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^科目: / })).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('CSVを選択'), { target: { files: [csvFile(`${HEADER}2026/10/07,カフェ,-500,96700\n`, 'next.csv')] } })
     expect(await screen.findByText(/next\.csv を読み込み済み/)).toBeInTheDocument()
@@ -389,12 +390,12 @@ describe('StatementImportScreen', () => {
     makeMapping({ accountIds: [bank.id, other.id] })
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
-    fireEvent.change(await screen.findByLabelText('科目'), { target: { value: String(bank.id) } })
+    await chooseTargetAccount(bank.name)
     await screen.findByText(/statement\.csv を読み込み済み/)
     fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
     expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue(String(memberId))
 
-    fireEvent.change(screen.getByLabelText('科目'), { target: { value: String(other.id) } })
+    await chooseTargetAccount(other.name)
 
     await screen.findByText(/statement\.csv を読み込み済み/)
     expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue('')
@@ -1582,7 +1583,7 @@ describe('StatementImportScreen', () => {
       makeMapping({ accountIds: [] })
       renderScreen()
       await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
-      await screen.findByLabelText('科目')
+      await findTargetAccountButton()
 
       fireEvent.click(screen.getByRole('button', { name: '+ 科目を新規追加' }))
 
@@ -1855,7 +1856,7 @@ describe('StatementImportScreen', () => {
     expect(Array.from(select.querySelectorAll('option')).map((o) => o.textContent)).toEqual(['選択してください', '汎用の定義', '普通預金用'])
     fireEvent.change(select, { target: { value: String(linked.id) } })
     await screen.findByText(/statement\.csv を読み込み済み/)
-    expect(screen.getByLabelText('科目')).toHaveValue(String(bank.id))
+    expectTargetAccount(bank.name)
   })
 
   it('定義に紐づく科目が1つだけなら、その科目が自動で取込先になる', async () => {
@@ -1863,7 +1864,7 @@ describe('StatementImportScreen', () => {
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
 
-    expect(screen.getByLabelText('科目')).toHaveValue(String(bank.id))
+    expectTargetAccount(bank.name)
   })
 
   it('定義に紐づく科目が複数あるときは自動で決めず、取込先を選ぶまで一覧を出さない。選ぶと取り込める', async () => {
@@ -1872,11 +1873,11 @@ describe('StatementImportScreen', () => {
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
 
-    const target = await screen.findByLabelText('科目')
-    expect(target).toHaveValue('')
+    await findTargetAccountButton()
+    expectTargetAccount(null)
     expect(screen.getByText('科目を選ぶと、明細の一覧を表示します。')).toBeInTheDocument()
     expect(screen.queryByRole('row', { name: /スーパー/ })).not.toBeInTheDocument()
-    fireEvent.change(target, { target: { value: String(card.id) } })
+    await chooseTargetAccount(card.name)
     await screen.findByRole('button', { name: /^\d+ \/ 1 件を「楽天VISA」に確定$/ })
     fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
     pick(rowOf(/スーパー/), '相手科目', '食費')
@@ -1894,12 +1895,12 @@ describe('StatementImportScreen', () => {
 
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
 
-    const target = await screen.findByLabelText('科目')
-    expect(target).toHaveValue('')
+    await findTargetAccountButton()
+    expectTargetAccount(null)
     expect(screen.getByText('科目を選ぶと、明細の一覧を表示します。')).toBeInTheDocument()
     expect(screen.queryByRole('table', { name: '明細の一覧' })).not.toBeInTheDocument()
 
-    fireEvent.change(target, { target: { value: String(bank.id) } })
+    await chooseTargetAccount(bank.name)
     await screen.findByText(/statement\.csv を読み込み済み/)
     fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
     pick(rowOf(/スーパー/), '相手科目', '食費')
@@ -1933,7 +1934,7 @@ describe('StatementImportScreen', () => {
     const other = makeMapping({ formatGroupId: '別の銀行', label: '別の定義', dateColumn: '存在しない列', accountIds: [] })
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
-    await screen.findByLabelText('科目')
+    await findTargetAccountButton()
 
     fireEvent.click(screen.getByRole('button', { name: '+ 科目を新規追加' }))
 
@@ -1982,10 +1983,10 @@ describe('StatementImportScreen', () => {
     fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
 
     // 作った定義はどの科目にも紐づいていないので、取込先を選ぶ
-    const target = await screen.findByLabelText('科目')
+    await findTargetAccountButton()
     await waitFor(() => expect(mappings.findAll()).toHaveLength(1))
     expect(mappings.findAll()[0]).toMatchObject({ label: '新しい銀行', formatGroupId: 'new-bank', dateColumn: '日付' })
-    fireEvent.change(target, { target: { value: String(bank.id) } })
+    await chooseTargetAccount(bank.name)
     expect(await screen.findByText(/statement\.csv を読み込み済み/)).toBeInTheDocument()
   })
 
@@ -2091,7 +2092,7 @@ describe('StatementImportScreen', () => {
     fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
 
     // 保存した定義が、そのまま取り込みに進める(一致しないと「保存できませんでした」になる)
-    await screen.findByLabelText('科目')
+    await findTargetAccountButton()
     expect(screen.queryByText('保存できませんでした。もう一度お試しください。')).not.toBeInTheDocument()
     await waitFor(() => expect(mappings.findAll()).toHaveLength(1))
   })
@@ -2124,7 +2125,7 @@ describe('StatementImportScreen', () => {
     expect(dialog.getByRole('button', { name: '保存して取り込む' })).toBeEnabled()
     fireEvent.click(dialog.getByRole('button', { name: '保存して取り込む' }))
 
-    await screen.findByLabelText('科目')
+    await findTargetAccountButton()
     await waitFor(() => expect(mappings.findAll()).toHaveLength(1))
   })
 
@@ -2334,12 +2335,12 @@ describe('StatementImportScreen', () => {
       makeMapping({ accountIds: [bank.id, other.id] })
       renderScreen()
       await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
-      fireEvent.change(await screen.findByLabelText('科目'), { target: { value: String(bank.id) } })
+      await chooseTargetAccount(bank.name)
       await screen.findByText(/statement\.csv を読み込み済み/)
       fireEvent.click(groupToggle('問題なし'))
       expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'false')
 
-      fireEvent.change(screen.getByLabelText('科目'), { target: { value: String(other.id) } })
+      await chooseTargetAccount(other.name)
 
       await waitFor(() => expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'true'))
     })
@@ -2651,12 +2652,12 @@ describe('StatementImportScreen', () => {
         makeMapping({ accountIds: [bank.id, other.id] })
         renderScreen()
         await chooseCsv(CSV3, false)
-        fireEvent.change(await screen.findByLabelText('科目'), { target: { value: String(bank.id) } })
+        await chooseTargetAccount(bank.name)
         await screen.findByText(/statement\.csv を読み込み済み/)
         fireEvent.click(sortButton('金額'))
         expect(header('金額')).toHaveAttribute('aria-sort', 'ascending')
 
-        fireEvent.change(screen.getByLabelText('科目'), { target: { value: String(other.id) } })
+        await chooseTargetAccount(other.name)
 
         await waitFor(() => expect(header('金額')).toHaveAttribute('aria-sort', 'none'))
       })
