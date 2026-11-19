@@ -37,7 +37,7 @@ test.describe('マスタ画面', () => {
 
     await page.getByRole('button', { name: '資産に科目を追加' }).click()
     const form = page.getByRole('form', { name: '科目を登録' })
-    await expect(form.getByLabel('所属グループ')).toHaveValue(/\d+/)
+    await expect(form.getByRole('button', { name: '所属グループ: 普通預金' })).toBeVisible()
     await form.getByLabel('名称').fill('楽天銀行')
     await form.getByRole('button', { name: '登録' }).click()
 
