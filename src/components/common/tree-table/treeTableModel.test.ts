@@ -10,6 +10,7 @@ import {
   buildTreeTableRows,
   dropZoneFor,
   listMoveDestinations,
+  moveScopeOf,
   resolveTreeMove,
   type TreeTableNode,
 } from './treeTableModel'
@@ -181,5 +182,15 @@ describe('listMoveDestinations', () => {
 
   it('複数の区分にまたがる選択のときは候補を返さない', () => {
     expect(listMoveDestinations(nodes, categories, ['misc', 'salary'])).toEqual([])
+  })
+})
+
+describe('moveScopeOf', () => {
+  it('選んだ行がすべて同じ区分なら、その区分と、移動対象とその配下のidを返す', () => {
+    expect(moveScopeOf(nodes, ['living'])).toEqual({ categoryKey: 'expense', excludedIds: expect.arrayContaining(['living', 'utility', 'electric']) })
+  })
+
+  it('複数の区分にまたがる選択のときはnullを返す', () => {
+    expect(moveScopeOf(nodes, ['misc', 'salary'])).toBeNull()
   })
 })

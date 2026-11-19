@@ -274,7 +274,11 @@ describe('JournalTemplateTab: 有効/無効・削除・並び順', () => {
     renderTab()
     await open('A')
 
-    fireEvent.change(panel().getByLabelText('所属グループ'), { target: { value: `g:${group.id}` } })
+    // 所属グループの選択欄(共通の選択欄)を開き、検索で絞ってから選ぶ
+    fireEvent.click(panel().getByRole('button', { name: /^所属グループ/ }))
+    const picker = within(screen.getByRole('dialog', { name: '所属グループ' }))
+    fireEvent.change(picker.getByRole('searchbox'), { target: { value: '食事' } })
+    fireEvent.click(picker.getByRole('button', { name: '食事' }))
 
     await waitFor(() => expect(templates.findById(created.id)!.groupId).toBe(group.id))
   })

@@ -37,10 +37,8 @@ const ALLOWED: Record<string, Exception> = {
   'components/journal-entry/JournalLineTable.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
   'components/journal-entry/JournalLineBulkBar.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
   'components/journal-entry/JournalEntryEditor.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
-  'components/journal-entry/RelatedEntriesSection.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
-  'components/master/AccountMasterTab.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
-  'components/master/BulkSelectionPanel.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
-  'components/master/GroupedMasterTab.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
+  'components/journal-entry/RelatedEntriesSection.tsx': { count: 1, kind: FIXED, reason: '仕訳の関連グループ(仕訳どうしを束ねる)の選択で、マスタのグループ(実体)ではない' },
+  'components/master/AccountMasterTab.tsx': { count: 1, kind: UNMIGRATED, reason: '名義(世帯メンバー)は#234の世帯メンバーの移行で移す(グループは移行済み)' },
 }
 
 /** ソースの中の生の `<select` の数 */

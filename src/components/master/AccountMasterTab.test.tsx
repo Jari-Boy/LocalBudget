@@ -101,6 +101,14 @@ function postEntry(debitId: number, creditId: number, sourceType: 'manual' | 'in
 const panel = (name: string) => within(screen.getByRole('region', { name }))
 const open = async (name: string) => fireEvent.click(await screen.findByRole('button', { name }))
 
+/** グループの選択欄(共通の選択欄)を開き、検索で絞ってから選ぶ。labelは欄の名称、scopeは操作する範囲 */
+function chooseGroup(label: string, name: string, scope: { getByRole: typeof screen.getByRole } = screen) {
+  fireEvent.click(scope.getByRole('button', { name: new RegExp('^' + label) }))
+  const dialog = within(screen.getByRole('dialog', { name: label }))
+  fireEvent.change(dialog.getByRole('searchbox'), { target: { value: name } })
+  fireEvent.click(dialog.getByRole('button', { name }))
+}
+
 describe('AccountMasterTab', () => {
   it('区分の見出しの下に、グループと科目がツリーで表示される', async () => {
     const group = groups.create({ name: '普通預金', category: 'asset' })
@@ -126,7 +134,7 @@ describe('AccountMasterTab', () => {
     const editor = panel('科目の編集')
     expect(editor.getByLabelText('名称')).toHaveValue('楽天銀行')
     expect(editor.getByText('資産')).toBeInTheDocument()
-    expect(editor.getByLabelText('所属グループ')).toHaveDisplayValue('普通預金')
+    expect(editor.getByRole('button', { name: '所属グループ: 普通預金' })).toBeInTheDocument()
   })
 
   it('名称を変えて保存すると、DBに反映される', async () => {
@@ -244,7 +252,7 @@ describe('AccountMasterTab', () => {
     renderTab()
     await open('楽天銀行')
 
-    fireEvent.change(panel('科目の編集').getByLabelText('所属グループ'), { target: { value: `g:${cash.id}` } })
+    chooseGroup('所属グループ', '現金・電子マネー', panel('科目の編集'))
 
     await waitFor(() => expect(accounts.findById(account.id)!.accountGroupId).toBe(cash.id))
   })
@@ -256,10 +264,12 @@ describe('AccountMasterTab', () => {
     renderTab()
     await open('現金')
 
-    const select = panel('科目の編集').getByLabelText('所属グループ')
-
-    expect(within(select).getByRole('option', { name: /普通預金/ })).toBeInTheDocument()
-    expect(within(select).queryByRole('option', { name: /クレジットカード/ })).not.toBeInTheDocument()
+    fireEvent.click(panel('科目の編集').getByRole('button', { name: /^所属グループ/ }))
+    const dialog = within(screen.getByRole('dialog', { name: '所属グループ' }))
+    fireEvent.change(dialog.getByRole('searchbox'), { target: { value: '普通預金' } })
+    expect(dialog.getByRole('button', { name: '普通預金' })).toBeInTheDocument()
+    fireEvent.change(dialog.getByRole('searchbox'), { target: { value: 'クレジットカード' } })
+    expect(dialog.queryByRole('button', { name: 'クレジットカード' })).not.toBeInTheDocument()
   })
 
   it('「下へ」で並び順が入れ替わる', async () => {
@@ -669,7 +679,7 @@ describe('AccountMasterTab', () => {
       check('バス代')
       check('電車賃')
 
-      fireEvent.change(screen.getByLabelText('移動先'), { target: { value: `g:${group.id}` } })
+      chooseGroup('移動先', '交通')
 
       await waitFor(() => expect(accounts.findById(bus.id)!.accountGroupId).toBe(group.id))
       expect(accounts.findById(train.id)!.accountGroupId).toBe(group.id)
@@ -799,13 +809,13 @@ describe('AccountMasterTab 未保存の編集の警告(計画Issue #190)', () =>
   })
 
   it('所属グループの変更は選んだ時点で反映されるため、確認の対象にならない', async () => {
-    const group = groups.create({ name: '日常', category: 'expense' })
+    groups.create({ name: '日常', category: 'expense' })
     accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
     accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
     renderTab()
     await open('食費')
-    fireEvent.change(panel('科目の編集').getByLabelText('所属グループ'), { target: { value: `g:${group.id}` } })
-    await waitFor(() => expect(panel('科目の編集').getByLabelText('所属グループ')).toHaveDisplayValue('日常'))
+    chooseGroup('所属グループ', '日常', panel('科目の編集'))
+    await waitFor(() => expect(panel('科目の編集').getByRole('button', { name: '所属グループ: 日常' })).toBeInTheDocument())
     await open('交通費')
     expect(dialog()).not.toBeInTheDocument()
   })
