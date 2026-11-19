@@ -30,6 +30,7 @@ import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJourna
 import { SqlJsProjectGroupRepository } from '../../infrastructure/db/SqlJsProjectGroupRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
+import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/SqlJsStatementImportDraftRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
 import { StatementImportScreen } from './StatementImportScreen'
 import { setPendingImportFiles } from './pendingImportFiles'
@@ -84,6 +85,7 @@ function renderScreen() {
           projectGroupRepository={new SqlJsProjectGroupRepository(db)}
           householdMemberRepository={new SqlJsHouseholdMemberRepository(db)}
           settlementBatchRepository={new SqlJsSettlementBatchRepository(db)}
+          statementImportDraftRepository={new SqlJsStatementImportDraftRepository(db)}
           onEditMappings={vi.fn()}
         />
       </UnsavedGuardHarness>

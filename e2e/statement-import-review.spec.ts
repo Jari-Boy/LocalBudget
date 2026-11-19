@@ -421,6 +421,43 @@ test.describe('明細取込画面', () => {
     await expect(page.getByRole('row', { name: /スーパー/ })).toHaveCount(1)
   })
 
+  test('一時保存したあとにページを読み込み直しても、開始状態の一覧から再開でき、確定すると一時保存が消える(CSVの生データをWorker越しに保存・復元、計画Issue #231)', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
+    await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING)
+    await startImport(page, '普通預金', '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n2026/07/21,ランチ,-800,96200\n')
+    await expect(page.getByText(/statement\.csv を読み込み済み。新規 2 件/)).toBeVisible()
+    await pickTree(page, rowOf(page, /スーパー/), '相手科目', 'テスト費目')
+
+    await page.getByRole('button', { name: '一時保存' }).first().click()
+    await expect(page.getByText(/一時保存しました/)).toBeVisible()
+
+    // DBの永続化は遅延つき(withAutoSaveのデバウンス)なので、既存のE2Eと同じく既知の待機時間を置いてから読み込み直す
+    await page.waitForTimeout(2500)
+    // ページを読み込み直す(別の日に開いた場面)と、開始状態に一時保存の一覧が出る
+    await page.reload()
+    const list = page.getByRole('region', { name: '一時保存した取込' })
+    await expect(list).toBeVisible()
+    await expect(list).toContainText('普通預金')
+    await expect(list).toContainText('statement.csv')
+    await expect(list).toContainText('1 / 2 件')
+
+    // 再開すると、CSVを選び直さずに一覧が開き、保存した入力が戻る
+    await page.getByRole('button', { name: '普通預金の一時保存を再開' }).click()
+    await expect(page.getByText(/から再開しました/)).toBeVisible()
+    await expect(rowOf(page, /スーパー/).getByRole('button', { name: /^相手科目/ })).toContainText('テスト費目')
+    await expect(page.getByRole('button', { name: /^1 \/ 2 件を「普通預金」に確定$/ })).toBeEnabled()
+
+    // 残りの行も入力して全行を確定すると、一時保存は消える(読み込み直しても一覧に出ない)
+    await pickTree(page, rowOf(page, /ランチ/), '相手科目', 'テスト費目')
+    await page.getByRole('button', { name: /^2 \/ 2 件を「普通預金」に確定$/ }).click()
+    await expect(page.getByText(/確定しました。続けて明細を選択してください。/)).toBeVisible()
+    await page.waitForTimeout(2500)
+    await page.reload()
+    await expect(page.getByRole('region', { name: 'CSVの選択' })).toBeVisible()
+    await expect(page.getByRole('region', { name: '一時保存した取込' })).toHaveCount(0)
+  })
+
   test('マスタの「明細マッピング」タブで定義の表示名を編集して保存できる(「マッピングを編集」からも移動できる)', async ({
     page,
   }) => {

@@ -33,6 +33,7 @@ import { SqlJsKeywordRuleRepository } from '../../infrastructure/db/SqlJsKeyword
 import { SqlJsProjectGroupRepository } from '../../infrastructure/db/SqlJsProjectGroupRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
+import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/SqlJsStatementImportDraftRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
 import { StatementImportScreen } from './StatementImportScreen'
 
@@ -98,6 +99,7 @@ function renderScreen(
         projectGroupRepository={new SqlJsProjectGroupRepository(db)}
         householdMemberRepository={householdMemberRepository}
         settlementBatchRepository={batches}
+        statementImportDraftRepository={new SqlJsStatementImportDraftRepository(db)}
         onEditMappings={onEditMappings}
       />
       </UnsavedGuardHarness>
@@ -515,7 +517,7 @@ describe('StatementImportScreen', () => {
       expect(userEntries()).toHaveLength(1)
     })
 
-    it('確定できない行(相手科目が未選択)が残るときは、「保存して移動」でも移動しない', async () => {
+    it('確定できない行(相手科目が未選択)が残るときは、「保存して移動」で、入力済みの行を確定し、残りの行を一時保存して移動する(計画Issue #231 フェーズ3)', async () => {
       makeMapping()
       renderScreen()
       await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
@@ -526,8 +528,9 @@ describe('StatementImportScreen', () => {
       leave()
       fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
 
-      expect(await screen.findByText(/相手科目が未選択です/)).toBeInTheDocument()
-      expect(screen.getByTestId('where')).toHaveTextContent('/master/here')
+      await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/other'))
+      expect(userEntries()).toHaveLength(1)
+      expect(new SqlJsStatementImportDraftRepository(db).findSummaries()).toHaveLength(1)
     })
 
     it('「マッピングを編集」も、編集中は確認を通してから移る', async () => {

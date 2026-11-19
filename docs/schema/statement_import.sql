@@ -50,7 +50,7 @@ BEGIN
   UPDATE import_mapping_definitions SET updated_at = datetime('now') WHERE id = NEW.id;
 END;
 
--- 明細取込の一時保存(計画Issue #231 フェーズ3、docs/domain/statement-import.md 1.8)。
+-- 明細取込の一時保存(計画Issue #231 フェーズ3、docs/domain/statement-import.md 1.9)。
 -- 件数が多いCSVを1回で入力しきれないときに、取込作業を途中で中断し、後から続きを再開するために持つ。
 -- 取込先の科目ごとに1つ(UNIQUE)。同じ取込先で保存し直すと上書きする。全行を確定したとき・破棄したときに削除し、
 -- CSVの生データ(銀行明細)をDBに残さない。取込先の科目を削除すると一時保存も消える(ON DELETE CASCADE)。

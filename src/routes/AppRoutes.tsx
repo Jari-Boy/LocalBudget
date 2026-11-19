@@ -18,6 +18,7 @@ import type { JournalTemplateGroupRepository } from '../domain/journal-template-
 import type { SettlementBatchRepository } from '../domain/settlement-batch/SettlementBatchRepository'
 import type { ImportMappingDefinitionRepository } from '../domain/statement-import/ImportMappingDefinitionRepository'
 import type { ExternalTransactionRefRepository } from '../domain/reconciliation/ExternalTransactionRefRepository'
+import type { StatementImportDraftRepository } from '../domain/statement-import/StatementImportDraftRepository'
 import type { HistoryRpcApi, JournalEntryDraftRpcApi } from '../infrastructure/rpc/createRepositoryRegistry'
 import type { RecurringTransactionProposalRpcApi } from '../infrastructure/rpc/createRecurringTransactionProposalApi'
 import type { AccountBalanceRecordRepository } from '../domain/reconciliation/AccountBalanceRecordRepository'
@@ -129,6 +130,7 @@ export function AppRoutes() {
     journalEntryDraftRepository,
     importMappingDefinitionRepository,
     externalTransactionRefRepository,
+    statementImportDraftRepository,
     budgetRepository,
     recurringTransactionRuleRepository,
     recurringTransactionProposalApi,
@@ -163,6 +165,8 @@ export function AppRoutes() {
         client.importMappingDefinition as unknown as Comlink.Remote<ImportMappingDefinitionRepository>,
       externalTransactionRefRepository:
         client.externalTransactionRef as unknown as Comlink.Remote<ExternalTransactionRefRepository>,
+      statementImportDraftRepository:
+        client.statementImportDraft as unknown as Comlink.Remote<StatementImportDraftRepository>,
       budgetRepository: client.budget as unknown as Comlink.Remote<BudgetRepository>,
       recurringTransactionRuleRepository:
         client.recurringTransactionRule as unknown as Comlink.Remote<RecurringTransactionRuleRepository>,
@@ -343,6 +347,7 @@ export function AppRoutes() {
             accountGroupRepository={accountGroupRepository}
             importMappingDefinitionRepository={importMappingDefinitionRepository}
             externalTransactionRefRepository={externalTransactionRefRepository}
+            statementImportDraftRepository={statementImportDraftRepository}
             journalEntryRepository={journalEntryRepository}
             counterpartyRepository={counterpartyRepository}
             keywordRuleRepository={keywordRuleRepository}
