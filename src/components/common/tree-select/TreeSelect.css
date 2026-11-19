@@ -205,6 +205,33 @@
   min-width: 0;
 }
 
+/* 階層つきの項目の開閉(計画Issue #234)。インデントはスロットの左の余白で付け、印の幅は子を持たない項目と揃える */
+.tree-select__fold-slot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+.tree-select__fold,
+.tree-select__fold-spacer {
+  width: 22px;
+  min-height: var(--control-height);
+}
+
+.tree-select__fold {
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.tree-select__fold:hover {
+  background: var(--color-accent-soft);
+}
+
 .tree-select__star {
   flex: 0 0 auto;
   width: 30px;

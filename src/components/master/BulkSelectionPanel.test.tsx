@@ -58,7 +58,15 @@ function renderPanel(checkedIds: string[], children?: ReactNode) {
   return { onMove, onMoveRejected, onClear }
 }
 
-const destination = () => screen.getByRole('combobox', { name: '移動先' })
+const destination = () => screen.getByRole('button', { name: /^移動先/ })
+
+/** 移動先の選択欄(共通の選択欄)を開き、検索で絞ってから選ぶ */
+function chooseDestination(name: string) {
+  fireEvent.click(destination())
+  const dialog = within(screen.getByRole('dialog', { name: '移動先' }))
+  fireEvent.change(dialog.getByRole('searchbox'), { target: { value: name } })
+  fireEvent.click(dialog.getByRole('button', { name }))
+}
 
 describe('BulkSelectionPanel', () => {
   it('選択件数と、選んだ行の名称の一覧が表示される', () => {
@@ -70,13 +78,16 @@ describe('BulkSelectionPanel', () => {
 
   it('移動先には、同じ区分の最上位とグループが並び、移動する行とその配下は含まれない', () => {
     renderPanel(['food', 'misc'])
-    const labels = within(destination()).getAllByRole('option').map((o) => o.textContent)
-    expect(labels).toEqual(['選択してください', '費用の最上位'])
+    fireEvent.click(destination())
+    const dialog = within(screen.getByRole('dialog', { name: '移動先' }))
+    expect(dialog.getByRole('button', { name: '費用の最上位' })).toBeInTheDocument()
+    fireEvent.change(dialog.getByRole('searchbox'), { target: { value: 'food' } })
+    expect(dialog.queryByRole('button', { name: 'food' })).not.toBeInTheDocument()
   })
 
   it('グループを選ぶと、チェックした行がそのグループの中へ移動する', () => {
     const { onMove } = renderPanel(['misc', 'other'])
-    fireEvent.change(destination(), { target: { value: 'food' } })
+    chooseDestination('food')
     const [next, info] = onMove.mock.calls[0]
     expect(next.find((n: TreeTableNode) => n.id === 'misc').parentId).toBe('food')
     expect(next.find((n: TreeTableNode) => n.id === 'other').parentId).toBe('food')
@@ -85,22 +96,15 @@ describe('BulkSelectionPanel', () => {
 
   it('区分の最上位を選ぶと、まとめて最上位へ移動する', () => {
     const { onMove } = renderPanel(['eat-out', 'misc'])
-    fireEvent.change(destination(), { target: { value: 'cat:expense' } })
+    chooseDestination('費用の最上位')
     const [next] = onMove.mock.calls[0]
     expect(next.find((n: TreeTableNode) => n.id === 'eat-out').parentId).toBeNull()
   })
 
   it('複数の区分にまたがってチェックしているときは、移動先の欄を出さず理由を示す', () => {
     renderPanel(['misc', 'salary'])
-    expect(screen.queryByRole('combobox', { name: '移動先' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^移動先/ })).toBeNull()
     expect(screen.getByText(/区分をまたいで移動できません/)).toBeInTheDocument()
-  })
-
-  it('「選択してください」のまま(空の選択)では何も起きない', () => {
-    const { onMove, onMoveRejected } = renderPanel(['misc', 'other'])
-    fireEvent.change(destination(), { target: { value: '' } })
-    expect(onMove).not.toHaveBeenCalled()
-    expect(onMoveRejected).not.toHaveBeenCalled()
   })
 
   it('「選択を解除」で onClear が呼ばれ、固有の操作(children)が表示される', () => {

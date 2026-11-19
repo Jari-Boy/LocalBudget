@@ -252,7 +252,7 @@ describe('CounterpartyMasterTab', () => {
 
     const bulk = within(await screen.findByRole('region', { name: '一括操作' }))
     expect(bulk.getByText('2件を選択中')).toBeInTheDocument()
-    expect(bulk.getByLabelText('移動先')).toBeInTheDocument()
+    expect(bulk.getByRole('button', { name: /^移動先/ })).toBeInTheDocument()
     expect(bulk.getByRole('region', { name: '取引先の統合' })).toBeInTheDocument()
   })
 

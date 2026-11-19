@@ -37,6 +37,7 @@ import { AccountMappingSection, AccountRegistrationInfo } from './AccountRegistr
 import { TreeSearchInput } from '../common/tree-table/TreeSearchInput'
 import { filterTreeNodes } from '../common/tree-table/filterTreeNodes'
 import { AccountKeywordSection } from './AccountKeywordSection'
+import { GroupNodeSelect } from './GroupNodeSelect'
 import { DefaultMemberChangeDialog } from './DefaultMemberChangeDialog'
 import { buildAccountTree, groupNodeId, leafNodeId, parseNodeId } from './masterTreeNodes'
 import type { MaybeAsync } from './maybeAsync'
@@ -73,19 +74,6 @@ interface LoadedData {
   budgets: Budget[]
   rules: RecurringTransactionRule[]
   definitions: ImportMappingDefinition[]
-}
-
-/** 親グループの選択肢。区分の最上位は`cat:区分`、グループは`g:id`(resolveTreeMoveのtarget.idと同じ) */
-function parentOptions(
-  nodes: readonly TreeTableNode[],
-  category: string,
-  excluded: ReadonlySet<string>,
-): Array<{ value: string; label: string }> {
-  const walk = (parentId: string | null, depth: number): Array<{ value: string; label: string }> =>
-    nodes
-      .filter((n) => n.category === category && n.parentId === parentId && n.kind === 'group' && !excluded.has(n.id))
-      .flatMap((n) => [{ value: n.id, label: `${'　'.repeat(depth)}${n.name}` }, ...walk(n.id, depth + 1)])
-  return walk(null, 0)
 }
 
 /** ノードとその配下のid */
@@ -661,7 +649,7 @@ function EditPanel(props: EditPanelProps) {
   })
   const siblings = nodes.filter((n) => n.category === node.category && n.parentId === node.parentId)
   const index = siblings.findIndex((n) => n.id === node.id)
-  const options = parentOptions(nodes, node.category, new Set(isGroup ? withDescendants(nodes, node.id) : []))
+  const excludedIds = isGroup ? withDescendants(nodes, node.id) : []
   const blocked = props.deleteBlockedText !== ''
   const title = t(isGroup ? 'accountTab.editGroup' : 'accountTab.editAccount')
 
@@ -687,25 +675,18 @@ function EditPanel(props: EditPanelProps) {
       </div>
 
       <div className="master-field">
-        <label className="master-field__label" htmlFor="master-edit-parent">
-          {t(isGroup ? 'accountTab.parentGroup' : 'accountTab.group')}
-        </label>
-        <select
-          id="master-edit-parent"
-          className="master-field__control"
+        <span className="master-field__label">{t(isGroup ? 'accountTab.parentGroup' : 'accountTab.group')}</span>
+        <GroupNodeSelect
+          label={t(isGroup ? 'accountTab.parentGroup' : 'accountTab.group')}
+          nodes={nodes}
+          categoryKey={node.category}
+          excludedIds={excludedIds}
+          topId={`${CATEGORY_ID_PREFIX}${node.category}`}
+          topLabel={t(isGroup ? 'accountTab.top' : 'accountTab.groupNone')}
           value={node.parentId ?? `${CATEGORY_ID_PREFIX}${node.category}`}
           disabled={busy}
-          onChange={(event) => props.onMoveInto(event.target.value)}
-        >
-          <option value={`${CATEGORY_ID_PREFIX}${node.category}`}>
-            {t(isGroup ? 'accountTab.top' : 'accountTab.groupNone')}
-          </option>
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+          onChange={props.onMoveInto}
+        />
       </div>
 
       <div className="master-actions">

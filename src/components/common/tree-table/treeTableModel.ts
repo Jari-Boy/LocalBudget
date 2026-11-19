@@ -158,6 +158,20 @@ export interface MoveDestination {
 }
 
 /**
+ * 一括移動の対象の区分と、移動先の候補から除くノード(移動対象とその配下)。選んだ行がすべて同じ区分に属するときだけ返し、
+ * 複数の区分にまたがるときはnull(計画Issue #234。移動先を選ぶ共通の選択欄が使う)
+ */
+export function moveScopeOf(
+  nodes: readonly TreeTableNode[],
+  ids: readonly string[],
+): { categoryKey: string; excludedIds: string[] } | null {
+  const moving = nodes.filter((n) => ids.includes(n.id))
+  const movingCategories = [...new Set(moving.map((n) => n.category))]
+  if (movingCategories.length !== 1) return null
+  return { categoryKey: movingCategories[0], excludedIds: ids.flatMap((id) => [id, ...descendantIdsOf(nodes, id)]) }
+}
+
+/**
  * 「移動先を選ぶ」ための候補(ドラッグができない操作・一括移動用)。選択した行がすべて同じ区分に
  * 属するときだけ、その区分の最上位と、移動対象とその配下を除くグループを字下げ付きで返す。
  */
@@ -166,11 +180,10 @@ export function listMoveDestinations(
   categories: readonly TreeTableCategory[],
   ids: readonly string[],
 ): MoveDestination[] {
-  const moving = nodes.filter((n) => ids.includes(n.id))
-  const movingCategories = [...new Set(moving.map((n) => n.category))]
-  if (movingCategories.length !== 1) return []
-  const categoryKey = movingCategories[0]
-  const excluded = new Set(ids.flatMap((id) => [id, ...descendantIdsOf(nodes, id)]))
+  const scope = moveScopeOf(nodes, ids)
+  if (scope === null) return []
+  const categoryKey = scope.categoryKey
+  const excluded = new Set(scope.excludedIds)
   const categoryName = categories.find((c) => c.key === categoryKey)?.name ?? categoryKey
 
   const walk = (parentId: string | null, depth: number): MoveDestination[] =>

@@ -68,6 +68,11 @@ export interface TreeSelectItemRow {
   section: 'favorite' | 'tree'
   /** お気に入りか(★の状態) */
   isFavorite: boolean
+  /**
+   * 階層つきの項目の開閉(計画Issue #234)。子を持つ項目は開いている(open)か閉じている(closed)か、子を持たない項目はleaf。
+   * 階層つきではない項目と、検索中の行には付かない。開閉の操作は、openOverridesの「h:値」で持つ
+   */
+  fold?: 'open' | 'closed' | 'leaf'
 }
 
 /** 検索で親が絞り落とされたとき、階層が追えるように残す親の見出し行(押せない、計画Issue #233) */
@@ -86,7 +91,7 @@ export interface BuildTreeSelectRowsInput {
   /** 複数選択の選択中の値(項目の値と「g:グループID」の混在)。渡すとselectedValueより優先する(計画Issue #203) */
   selectedValues?: readonly string[]
   query: string
-  /** グループIDごとの開閉の操作。なければ「選択中の項目を含むか」で決める */
+  /** グループIDごとの開閉の操作(階層つきの項目は「h:値」)。なければ「選択中の項目を含むか」で決める */
   openOverrides: Readonly<Record<string, boolean>>
   /**
    * お気に入りの項目の値(計画Issue #231 フェーズ4)。表示できる項目が1件でもあれば、先頭に「★ お気に入り」のセクションを
@@ -157,8 +162,28 @@ export function buildTreeSelectRows({
   for (const category of categories) {
     for (const node of category.nodes) if (node.kind === 'item') itemsByValue.set(node.value, node)
   }
+  // 階層つきの項目の開閉。子を持つ項目の値と、選択中の項目の祖先(既定で開く)
+  const parentValues = new Set<string>()
+  for (const node of itemsByValue.values()) if (node.depth !== undefined && node.parentValue != null) parentValues.add(node.parentValue)
+  const openByDefault = new Set<string>()
+  for (const value of selected) {
+    let parent = itemsByValue.get(value)?.parentValue
+    while (parent != null && !openByDefault.has(parent)) {
+      openByDefault.add(parent)
+      parent = itemsByValue.get(parent)?.parentValue
+    }
+  }
+  const isFoldOpen = (value: string) => openOverrides[`h:${value}`] ?? openByDefault.has(value)
   const walkHierarchicalItem = (node: TreeSelectItemNode): TreeSelectRow[] => {
     if (!isVisibleItem(node)) return []
+    // 畳まれた祖先の下の項目は、検索中でなければ出さない
+    if (q === '') {
+      let parent = node.parentValue != null ? itemsByValue.get(node.parentValue) : undefined
+      while (parent !== undefined) {
+        if (!isFoldOpen(parent.value)) return []
+        parent = parent.parentValue != null ? itemsByValue.get(parent.parentValue) : undefined
+      }
+    }
     const rows: TreeSelectRow[] = []
     if (q !== '') {
       const missing: TreeSelectItemNode[] = []
@@ -182,6 +207,7 @@ export function buildTreeSelectRows({
       isViaGroup: false,
       section: 'tree',
       isFavorite: isFavorite(node.value),
+      ...(q === '' ? { fold: !parentValues.has(node.value) ? ('leaf' as const) : isFoldOpen(node.value) ? ('open' as const) : ('closed' as const) } : {}),
     })
     return rows
   }

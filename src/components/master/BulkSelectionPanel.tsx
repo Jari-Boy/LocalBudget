@@ -2,11 +2,13 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TreeTableMoveInfo } from '../common/tree-table/TreeTable'
 import {
-  listMoveDestinations,
+  CATEGORY_ID_PREFIX,
+  moveScopeOf,
   resolveTreeMove,
   type TreeTableCategory,
   type TreeTableNode,
 } from '../common/tree-table/treeTableModel'
+import { GroupNodeSelect } from './GroupNodeSelect'
 import './master.css'
 
 export interface BulkSelectionPanelProps {
@@ -40,7 +42,8 @@ export function BulkSelectionPanel({
   children,
 }: BulkSelectionPanelProps) {
   const { t } = useTranslation('master')
-  const destinations = listMoveDestinations(nodes, categories, checkedIds)
+  const scope = moveScopeOf(nodes, checkedIds)
+  const categoryName = scope === null ? '' : (categories.find((c) => c.key === scope.categoryKey)?.name ?? scope.categoryKey)
   const names = checkedIds.map((id) => nodes.find((n) => n.id === id)?.name ?? '').join('、')
 
   const moveTo = (targetId: string) => {
@@ -60,27 +63,23 @@ export function BulkSelectionPanel({
 
       <section className="master-subsection" aria-label={t('bulk.moveTitle')}>
         <h3 className="master-subsection__title">{t('bulk.moveTitle')}</h3>
-        {destinations.length === 0 ? (
+        {scope === null ? (
           <p className="master-note">{t('bulk.moveCrossCategory')}</p>
         ) : (
           <div className="master-field">
-            <label className="master-field__label" htmlFor="bulk-move-destination">
-              {t('bulk.moveDestination')}
-            </label>
-            <select
-              id="bulk-move-destination"
-              className="master-field__control"
-              disabled={busy}
+            <span className="master-field__label">{t('bulk.moveDestination')}</span>
+            <GroupNodeSelect
+              label={t('bulk.moveDestination')}
+              nodes={nodes}
+              categoryKey={scope.categoryKey}
+              excludedIds={scope.excludedIds}
+              topId={`${CATEGORY_ID_PREFIX}${scope.categoryKey}`}
+              topLabel={`${categoryName}の最上位`}
               value=""
-              onChange={(event) => moveTo(event.target.value)}
-            >
-              <option value="">{t('bulk.choose')}</option>
-              {destinations.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
+              placeholder={t('bulk.choose')}
+              disabled={busy}
+              onChange={moveTo}
+            />
           </div>
         )}
       </section>

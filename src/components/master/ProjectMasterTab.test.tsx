@@ -68,6 +68,14 @@ function renderTab() {
 const panel = (name: string) => within(screen.getByRole('region', { name }))
 const open = async (name: string) => fireEvent.click(await screen.findByRole('button', { name }))
 
+/** グループの選択欄(共通の選択欄)を開き、検索で絞ってから選ぶ。labelは欄の名称、scopeは操作する範囲 */
+function chooseGroup(label: string, name: string, scope: { getByRole: typeof screen.getByRole } = screen) {
+  fireEvent.click(scope.getByRole('button', { name: new RegExp('^' + label) }))
+  const dialog = within(screen.getByRole('dialog', { name: label }))
+  fireEvent.change(dialog.getByRole('searchbox'), { target: { value: name } })
+  fireEvent.click(dialog.getByRole('button', { name }))
+}
+
 describe('ProjectMasterTab', () => {
   it('「すべてのプロジェクト」の見出しの下に、グループとプロジェクトがツリーで表示される', async () => {
     const group = groups.create({ name: '旅行' })
@@ -87,7 +95,7 @@ describe('ProjectMasterTab', () => {
     await open('沖縄旅行')
 
     const editor = panel('プロジェクトの編集')
-    expect(editor.getByLabelText('所属グループ')).toHaveDisplayValue('旅行')
+    expect(editor.getByRole('button', { name: '所属グループ: 旅行' })).toBeInTheDocument()
     fireEvent.change(editor.getByLabelText('名称'), { target: { value: '沖縄家族旅行' } })
     fireEvent.click(editor.getByRole('button', { name: '保存' }))
 
@@ -101,7 +109,7 @@ describe('ProjectMasterTab', () => {
     renderTab()
     await open('引っ越し')
 
-    fireEvent.change(panel('プロジェクトの編集').getByLabelText('所属グループ'), { target: { value: `g:${home.id}` } })
+    chooseGroup('所属グループ', '住まい', panel('プロジェクトの編集'))
 
     await waitFor(() => expect(projects.findById(project.id)!.projectGroupId).toBe(home.id))
   })
