@@ -1103,6 +1103,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         file.periodStart! <= other.periodEnd,
     )
   const checkCount = visibleIndices.filter((i) => statusOf(i) === 'check').length
+  /** いま投入できる件数。取り込み対象(全件)のうち、相手科目などが決まっていて確定できる行(ステータスが「新規」)。確定ボタンに「N / 全件」で出す */
+  const readyCount = importable.filter((i) => statusOf(i) === 'new').length
 
   const applyBulk = (change: BulkChange) => {
     if (!session) return
@@ -2231,7 +2233,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               disabled={busy || statementOwnerId === null}
               onClick={() => void handleConfirm()}
             >
-              {t('confirmCount', { count: importable.length, account: session.targetAccount.name })}
+              {t('confirmCount', { ready: readyCount, count: importable.length, account: session.targetAccount.name })}
             </button>
           )}
           {session && importable.length > 0 && statementOwnerId === null && (

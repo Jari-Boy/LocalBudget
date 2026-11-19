@@ -323,14 +323,14 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     renderScreen()
     await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
     fireEvent.click(rowsOf(/Amazon/)[0].getByRole('button', { name: '取り込む' }))
-    expect(screen.getByRole('button', { name: /^4 件を「普通預金」に確定$/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^\d+ \/ 4 件を「普通預金」に確定$/ })).toBeInTheDocument()
 
     fireEvent.click(rowsOf(/Amazon/)[0].getByRole('button', { name: '取り込まない' }))
 
     const duplicate = rowsOf(/Amazon/)[0]
     expect(duplicate.getByText('ファイル「oct.csv」の同じ明細と重複のため対象外です')).toBeInTheDocument()
     expect(duplicate.queryByRole('button', { name: '取り込まない' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ })).toBeInTheDocument()
   })
 
   it('別の形式のファイルが混ざっていても、そのファイルだけを「取り込めなかったファイル」に理由つきで出し、残りを取り込める', async () => {
@@ -351,7 +351,7 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     for (const text of [/コンビニ/, /書店/]) pick(rowOf(text), '相手科目', '食費')
     pick(rowsOf(/Amazon/)[1], '相手科目', '食費')
 
-    fireEvent.click(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
 
     await screen.findByText(/確定しました/)
     expect(entries.findAll().filter((e) => e.sourceType === 'external_import')).toHaveLength(3)
@@ -365,7 +365,7 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     pick(rowsOf(/Amazon/)[0], '相手科目', '食費')
     pick(rowsOf(/Amazon/)[1], '相手科目', '食費')
 
-    fireEvent.click(screen.getByRole('button', { name: /^4 件を「普通預金」に確定$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 4 件を「普通預金」に確定$/ }))
 
     await screen.findByText(/確定しました/)
     expect(entries.findAll().filter((e) => e.sourceType === 'external_import')).toHaveLength(4)
@@ -375,7 +375,7 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     renderScreen()
     await chooseCsvs([SEP], /sep\.csv を読み込み済み/)
     pick(rowOf(/Spotify/), '相手科目', '食費')
-    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
     await screen.findByText(/確定しました/)
 
     await chooseCsvs([SEP, OCT], /2ファイルを読み込み済み/)

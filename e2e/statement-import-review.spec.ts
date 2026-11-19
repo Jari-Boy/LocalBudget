@@ -193,7 +193,7 @@ test.describe('明細取込画面', () => {
     await expect(row).toContainText('2026/07/20')
     await expect(row).toContainText('-¥3,000')
     await pickTree(page, row, '相手科目', 'テスト費目')
-    await page.getByRole('button', { name: '1 件を「普通預金」に確定' }).click()
+    await page.getByRole('button', { name: /^1 \/ 1 件を「普通預金」に確定$/ }).click()
 
     await expect(page.getByText('確定しました。続けて明細を選択してください。')).toBeVisible()
     await expect(page.getByRole('row', { name: /スーパー/ })).toHaveCount(0)
@@ -362,7 +362,7 @@ test.describe('明細取込画面', () => {
     await pickTree(page, bulk, '一括の相手科目', 'エンタメ費')
     await expect(bulk).toContainText('2件に設定しました')
 
-    await page.getByRole('button', { name: '3 件を「普通預金」に確定' }).click()
+    await page.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }).click()
     await expect(page.getByText('確定しました。', { exact: false })).toBeVisible()
 
     // 仕訳が永続化され、普通預金の残高に反映されている。withAutoSaveのtrailing debounce(2秒)を

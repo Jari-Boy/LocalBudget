@@ -152,7 +152,7 @@ async function openCounterpartySettingsIfClosed(desc: string) {
   if (screen.queryByRole('dialog', { name: /^取引先の設定: / }) === null) await openCounterpartySettings(desc)
 }
 const settings = () => within(screen.getByRole('dialog', { name: /^取引先の設定: / }))
-const confirmButton = (count: number) => screen.getByRole('button', { name: new RegExp(`^${count} 件を「普通預金」に確定$`) })
+const confirmButton = (count: number) => screen.getByRole('button', { name: new RegExp(`^\\d+ / ${count} 件を「普通預金」に確定$`) })
 
 /** ダイアログの金融機関名欄で「新しい金融機関名を入力…」を選び、名前を入力する */
 function enterInstitution(dialog: ReturnType<typeof within>, name: string) {
@@ -228,7 +228,7 @@ describe('StatementImportScreen', () => {
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
     pick(rowOf(/スーパー/), '相手科目', '食費')
-    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
     await screen.findByText(/確定しました/)
 
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
@@ -308,7 +308,7 @@ describe('StatementImportScreen', () => {
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.change(rowOf(/スーパー/).getByLabelText('スーパーのコメント'), { target: { value: 'まとめ買い' } })
 
-    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
 
     expect(await screen.findByText(/確定しました。続けて明細を選択してください。/)).toBeInTheDocument()
     const created = userEntries()
@@ -334,7 +334,7 @@ describe('StatementImportScreen', () => {
     expect(screen.getByText('花子(科目の名義)')).toBeInTheDocument()
     expect(screen.queryByLabelText('誰の明細か(必須)')).not.toBeInTheDocument()
     pick(rowOf(/スーパー/), '相手科目', '食費')
-    fireEvent.click(screen.getByRole('button', { name: /^1 件を「花子の口座」に確定$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「花子の口座」に確定$/ }))
 
     await screen.findByText(/確定しました/)
     expect(userEntries()[0]).toMatchObject({ householdMemberId: hanako.id })
@@ -350,7 +350,7 @@ describe('StatementImportScreen', () => {
     await screen.findByText(/statement\.csv を読み込み済み/)
     pick(rowOf(/スーパー/), '相手科目', '食費')
 
-    const confirm = screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ })
+    const confirm = screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ })
     expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue('')
     expect(confirm).toBeDisabled()
     expect(screen.getByText('誰の明細かを選ぶと確定できます')).toBeInTheDocument()
@@ -377,7 +377,7 @@ describe('StatementImportScreen', () => {
 
     const owner = screen.getByLabelText('誰の明細か(必須)')
     expect(within(owner).getAllByRole('option')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ })).toBeDisabled()
     expect(screen.getByText('誰の明細かを選ぶと確定できます')).toBeInTheDocument()
     expect(userEntries()).toHaveLength(0)
   })
@@ -563,7 +563,7 @@ describe('StatementImportScreen', () => {
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
 
-    fireEvent.click(await screen.findByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
 
     expect(await screen.findByText(/相手科目が未選択です/)).toBeInTheDocument()
     expect(userEntries()).toHaveLength(0)
@@ -601,7 +601,7 @@ describe('StatementImportScreen', () => {
       expect(warning.getByText('-¥3,000')).toBeInTheDocument()
       expect(await radio('別の取引なので追加する')).toBeChecked()
 
-      fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
 
       await screen.findByText(/確定しました/)
       expect(userEntries().map((e) => e.sourceType).sort()).toEqual(['external_import', 'manual'])
@@ -616,7 +616,7 @@ describe('StatementImportScreen', () => {
       pick(rowOf(/スーパー/), '相手科目', '食費')
       fireEvent.click(await radio('同じ取引なので、登録済みを削除して置き換える'))
 
-      fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
 
       await screen.findByText(/確定しました/)
       // 削除した仕訳のIDは新しい仕訳に再利用されうるので、手入力の仕訳が残っていないことを起源で確認する
@@ -638,12 +638,12 @@ describe('StatementImportScreen', () => {
 
       expect(comment()).toBeDisabled()
       expect(rowOf(/スーパー/).getByText('保存しない')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ })).toBeInTheDocument()
 
       fireEvent.click(await radio('別の取引なので追加する'))
 
       expect(comment()).toBeEnabled()
-      expect(screen.getByRole('button', { name: /^2 件を「普通預金」に確定$/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^\d+ \/ 2 件を「普通預金」に確定$/ })).toBeInTheDocument()
     })
 
     it('一覧は「似た取引あり」→「問題なし」の順にグループ分けして並べ、見出しに件数を出す', async () => {
@@ -682,12 +682,12 @@ describe('StatementImportScreen', () => {
       expect(warning.getByText('遠い方')).toBeInTheDocument()
       fireEvent.click(await radio('同じ取引なので、登録済みを削除して置き換える'))
       expect(rowOf(/スーパー/).getByText('要確認')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
       expect(await screen.findByText(/削除する登録済みの仕訳が未選択です/)).toBeInTheDocument()
       expect(userEntries()).toHaveLength(2)
 
       fireEvent.change(screen.getByLabelText('削除する登録済みの仕訳'), { target: { value: String(other.id) } })
-      fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
 
       await screen.findByText(/確定しました/)
       expect(userEntries().map((e) => e.memo)).toContain('近い方')
@@ -1874,10 +1874,10 @@ describe('StatementImportScreen', () => {
     expect(screen.getByText('科目を選ぶと、明細の一覧を表示します。')).toBeInTheDocument()
     expect(screen.queryByRole('row', { name: /スーパー/ })).not.toBeInTheDocument()
     fireEvent.change(target, { target: { value: String(card.id) } })
-    await screen.findByRole('button', { name: /^1 件を「楽天VISA」に確定$/ })
+    await screen.findByRole('button', { name: /^\d+ \/ 1 件を「楽天VISA」に確定$/ })
     fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
     pick(rowOf(/スーパー/), '相手科目', '食費')
-    fireEvent.click(screen.getByRole('button', { name: /^1 件を「楽天VISA」に確定$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「楽天VISA」に確定$/ }))
 
     await screen.findByText(/確定しました/)
     const accountIds = userEntries()[0].lines.map((l) => l.accountId)
@@ -1900,7 +1900,7 @@ describe('StatementImportScreen', () => {
     await screen.findByText(/statement\.csv を読み込み済み/)
     fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
     pick(rowOf(/スーパー/), '相手科目', '食費')
-    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
 
     await screen.findByText(/確定しました/)
     expect(mappings.findById(only.id)?.accountIds).toEqual([bank.id])
@@ -2048,7 +2048,7 @@ describe('StatementImportScreen', () => {
     expect(skipped.getByText(/日付を読み取れません/)).toBeInTheDocument()
 
     pick(rowOf(/スーパー/), '相手科目', '食費')
-    fireEvent.click(screen.getByRole('button', { name: /^1 件を「普通預金」に確定$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
     await screen.findByText(/確定しました/)
     expect(userEntries()).toHaveLength(1)
   })
@@ -2203,11 +2203,11 @@ describe('StatementImportScreen', () => {
       manualLunch()
       renderScreen()
       await chooseCsv(CSV)
-      expect(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ })).toBeInTheDocument()
 
       fireEvent.click(groupToggle('問題なし'))
 
-      expect(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ })).toBeInTheDocument()
       fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
       fireEvent.click(groupToggle('問題なし'))
       expect(rowOf(/スーパー/).getByRole('checkbox', { name: /スーパー/ })).toBeChecked()
@@ -2301,7 +2301,7 @@ describe('StatementImportScreen', () => {
       fireEvent.click(groupToggle('問題なし'))
 
       // ランチは相手科目が未選択なので確定できず残る(部分確定)
-      fireEvent.click(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ }))
+      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
 
       await screen.findByText('2件を確定しました(1件失敗)')
       expect(userEntries().filter((e) => e.sourceType === 'external_import')).toHaveLength(2)
@@ -2319,7 +2319,7 @@ describe('StatementImportScreen', () => {
       pick(rowOf(/家賃/), '相手科目', '食費')
       fireEvent.click(groupToggle('似た取引あり'))
 
-      fireEvent.click(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ }))
+      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
 
       await screen.findByText('2件を確定しました(1件失敗)')
       expect(groupToggle('似た取引あり')).toHaveAttribute('aria-expanded', 'false')
@@ -2548,7 +2548,7 @@ describe('StatementImportScreen', () => {
         fireEvent.click(sortButton('日付'))
         expect(descriptions()).toEqual(['家賃', 'ランチ', 'スーパー'])
 
-        fireEvent.click(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ }))
+        fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
 
         await screen.findByText(/確定しました/)
         const refs = new SqlJsExternalTransactionRefRepository(db).findByAccount(bank.id)
@@ -2630,7 +2630,7 @@ describe('StatementImportScreen', () => {
         expect(header('金額')).toHaveAttribute('aria-sort', 'ascending')
 
         // ランチは相手科目が未選択なので確定できず残る(部分確定)
-        fireEvent.click(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ }))
+        fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
 
         await screen.findByText('2件を確定しました(1件失敗)')
         expect(screen.queryByRole('row', { name: /スーパー/ })).not.toBeInTheDocument()
@@ -2657,6 +2657,86 @@ describe('StatementImportScreen', () => {
 
         await waitFor(() => expect(header('金額')).toHaveAttribute('aria-sort', 'none'))
       })
+    })
+  })
+
+  describe('確定ボタンの「いま投入できる件数 / 全件」', () => {
+    const CSV3 = `${HEADER}2026/10/05,スーパー,-3000,97000
+2026/10/06,ランチ,-800,96200
+2026/10/07,家賃,-50000,46200
+`
+    /** 確定ボタン。ready=相手科目が決まっていて、いま投入できる件数、total=取り込み対象の全件 */
+    const confirmOf = (ready: number, total: number, account = '普通預金') =>
+      screen.getByRole('button', { name: new RegExp(`^${ready} / ${total} 件を「${account}」に確定$`) })
+    function manualEntry(entryDate: string, amount: number, memo: string) {
+      return entries.create({
+        householdMemberId: memberId,
+        entryDate,
+        memo,
+        sourceType: 'manual',
+        lines: [
+          { householdMemberId: memberId, accountId: food.id, side: 'debit', amount },
+          { householdMemberId: memberId, accountId: bank.id, side: 'credit', amount },
+        ],
+      })
+    }
+
+    it('相手科目が決まった行の数を「投入できる件数」として、取り込み対象の全件とあわせて「N / M 件」と出し、入力すると増える', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(CSV3)
+      expect(confirmOf(0, 3)).toBeInTheDocument()
+
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+      expect(confirmOf(1, 3)).toBeInTheDocument()
+
+      pick(rowOf(/ランチ/), '相手科目', '食費')
+      pick(rowOf(/家賃/), '相手科目', '食費')
+      expect(confirmOf(3, 3)).toBeEnabled()
+    })
+
+    it('「この取引を保存しない」の行は、全件にも投入できる件数にも数えない', async () => {
+      makeMapping()
+      manualEntry('2026-10-06', 800, 'ランチ')
+      renderScreen()
+      await chooseCsv(CSV3)
+      pick(rowOf(/ランチ/), '相手科目', '食費')
+      expect(confirmOf(1, 3)).toBeInTheDocument()
+
+      fireEvent.click(await screen.findByRole('radio', { name: 'この取引を保存しない' }))
+
+      expect(confirmOf(0, 2)).toBeInTheDocument()
+    })
+
+    it('「置き換える」を選んだのに削除する登録済みの仕訳が決まっていない行は、投入できる件数に数えない', async () => {
+      makeMapping()
+      manualEntry('2026-10-04', 3000, '近い方')
+      const other = manualEntry('2026-10-03', 3060, '遠い方')
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+      expect(confirmOf(1, 1)).toBeInTheDocument()
+
+      fireEvent.click(await screen.findByRole('radio', { name: '同じ取引なので、登録済みを削除して置き換える' }))
+      expect(confirmOf(0, 1)).toBeInTheDocument()
+
+      fireEvent.change(screen.getByLabelText('削除する登録済みの仕訳'), { target: { value: String(other.id) } })
+      expect(confirmOf(1, 1)).toBeInTheDocument()
+    })
+
+    it('一部だけ確定すると、確定した行は全件からも外れ、残りの件数で出し直す', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(CSV3)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+      pick(rowOf(/家賃/), '相手科目', '食費')
+      expect(confirmOf(2, 3)).toBeInTheDocument()
+
+      fireEvent.click(confirmOf(2, 3))
+
+      await screen.findByText('2件を確定しました(1件失敗)')
+      expect(confirmOf(0, 1)).toBeInTheDocument()
     })
   })
 })
