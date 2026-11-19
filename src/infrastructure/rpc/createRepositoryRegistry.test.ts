@@ -27,6 +27,7 @@ import { SqlJsBudgetRepository } from '../db/SqlJsBudgetRepository'
 import { SqlJsCounterpartyRepository } from '../db/SqlJsCounterpartyRepository'
 import { SqlJsExternalTransactionRefRepository } from '../db/SqlJsExternalTransactionRefRepository'
 import { SqlJsHouseholdMemberRepository } from '../db/SqlJsHouseholdMemberRepository'
+import { SqlJsStatementImportDraftRepository } from '../db/SqlJsStatementImportDraftRepository'
 import { SqlJsImportMappingDefinitionRepository } from '../db/SqlJsImportMappingDefinitionRepository'
 import { SqlJsJournalEntryRepository } from '../db/SqlJsJournalEntryRepository'
 import { SqlJsProjectRepository } from '../db/SqlJsProjectRepository'
@@ -94,6 +95,7 @@ describe('createRepositoryRegistry', () => {
       SqlJsExternalTransactionRefRepository,
     )
     expect(registry.householdMember).toBeInstanceOf(SqlJsHouseholdMemberRepository)
+    expect(registry.statementImportDraft).toBeInstanceOf(SqlJsStatementImportDraftRepository)
     expect(registry.importMappingDefinition).toBeInstanceOf(
       SqlJsImportMappingDefinitionRepository,
     )

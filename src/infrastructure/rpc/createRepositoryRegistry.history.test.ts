@@ -126,3 +126,40 @@ describe('取消', () => {
     expect(statements).toContain('COMMIT')
   })
 })
+
+describe('一時保存(statementImportDraft、計画Issue #231 フェーズ3)は履歴に記録しない', () => {
+  it('一時保存の保存・削除は操作履歴に残らず、CSVの生データが履歴のメモリに残らない', () => {
+    const before = registry.history.list().length
+    const saved = registry.statementImportDraft.save({
+      targetAccountId: cashId,
+      definitionId: null,
+      ownerMemberId: null,
+      files: [{ fileName: 'a.csv', bytes: new Uint8Array([1, 2, 3]), isChecked: true }],
+      rowInputs: {},
+      totalRows: 1,
+      filledRows: 0,
+    })
+    registry.statementImportDraft.delete(saved.id)
+
+    expect(registry.history.list()).toHaveLength(before)
+  })
+
+  it('確定のグループの途中で一時保存を書いても、確定の操作には含まれない', () => {
+    registry.history.beginGroup('statementImport.confirm')
+    newEntry(1000)
+    registry.statementImportDraft.save({
+      targetAccountId: cashId,
+      definitionId: null,
+      ownerMemberId: null,
+      files: [{ fileName: 'a.csv', bytes: new Uint8Array([1]), isChecked: true }],
+      rowInputs: {},
+      totalRows: 1,
+      filledRows: 0,
+    })
+    registry.history.endGroup()
+
+    const [operation] = registry.history.list()
+    expect(operation.changes.map((c) => c.table)).not.toContain('statement_import_drafts')
+    expect(operation.changes.map((c) => c.table)).not.toContain('statement_import_draft_files')
+  })
+})

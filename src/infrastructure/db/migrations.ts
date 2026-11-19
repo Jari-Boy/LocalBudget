@@ -19,6 +19,7 @@ import { MigrationFailedError, SchemaTooNewError } from './migrationErrors'
 import { MIGRATION_V2_SYSTEM_ROLE } from './migrationV2SystemRole'
 import { MIGRATION_V3_NORMALIZE_KEYWORDS } from './migrationV3NormalizeKeywords'
 import { MIGRATION_V4_NORMALIZE_DESCRIPTIONS } from './migrationV4NormalizeDescriptions'
+import { MIGRATION_V5_STATEMENT_IMPORT_DRAFTS } from './migrationV5StatementImportDrafts'
 
 /**
  * 最新スキーマと差分の2本立て(計画Issue #42、docs/decisions.md)。
@@ -38,7 +39,7 @@ export interface MigrationPlan {
   diffs: Readonly<Record<number, readonly MigrationStep[]>>
 }
 
-export const LATEST_SCHEMA_VERSION = 4
+export const LATEST_SCHEMA_VERSION = 5
 
 // household_members → accounts(household_membersを参照) → projects/counterparties
 // → settlement_batches(counterpartiesを参照) → journal(accounts/projects/counterparties/
@@ -77,6 +78,8 @@ export const SCHEMA_PLAN: MigrationPlan = {
     3: MIGRATION_V3_NORMALIZE_KEYWORDS,
     // v4: 取り込み済みの仕訳の摘要の標準化と、キーワードのハイフンの標準化(表の形は変えない)
     4: MIGRATION_V4_NORMALIZE_DESCRIPTIONS,
+    // v5(計画Issue #231 フェーズ3): 明細取込の一時保存の表(statement_import_drafts・statement_import_draft_files)の追加
+    5: MIGRATION_V5_STATEMENT_IMPORT_DRAFTS,
   },
 }
 
