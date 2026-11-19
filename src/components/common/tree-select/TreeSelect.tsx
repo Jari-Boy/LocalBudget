@@ -18,6 +18,11 @@ interface TreeSelectBaseProps {
   allowGroupSelect?: boolean
   /** 渡すと、先頭に選択解除の項目(値は空文字)を出す */
   emptyLabel?: string
+  /**
+   * 実体ではない特別な選択肢(「変更しない」「未設定にする」など、計画Issue #234)。一覧の先頭に固定し、検索中も消えない。
+   * 値は実体の値と重ならない文字列にする。単一選択のときだけ使う
+   */
+  leadingOptions?: readonly { value: string; label: string }[]
   /** 未選択のときにボタンへ出す文言 */
   placeholder?: string
   /** 渡すと、一覧の末尾に「+ 新規追加」を出す。押すと閉じてから呼ぶ(追加の画面は呼び出し側が開く) */
@@ -107,6 +112,7 @@ export function TreeSelect(props: TreeSelectProps) {
     categories,
     allowGroupSelect = false,
     emptyLabel,
+    leadingOptions,
     placeholder = '指定なし',
     onCreate,
     createLabel = '新規追加',
@@ -150,8 +156,11 @@ export function TreeSelect(props: TreeSelectProps) {
   )
 
   const selectedNames = useMemo(
-    () => selectedValues.map((selectedValue) => nameOfValue(categories, selectedValue)),
-    [categories, selectedValues],
+    () =>
+      selectedValues.map(
+        (selectedValue) => leadingOptions?.find((option) => option.value === selectedValue)?.label ?? nameOfValue(categories, selectedValue),
+      ),
+    [categories, selectedValues, leadingOptions],
   )
   const selectedText =
     selectedNames.length === 0
@@ -314,6 +323,18 @@ export function TreeSelect(props: TreeSelectProps) {
             </button>
           )}
           <div className="tree-select__list" ref={listRef}>
+            {leadingOptions?.map((option) => (
+              <button
+                key={`l:${option.value}`}
+                type="button"
+                className={`tree-select__item${value === option.value ? ' tree-select__item--selected' : ''}`}
+                style={{ paddingLeft: 8 }}
+                aria-current={value === option.value ? 'true' : undefined}
+                onClick={() => choose(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
             {emptyLabel !== undefined && query.trim() === '' && (
               <button
                 type="button"
