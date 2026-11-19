@@ -8,9 +8,12 @@ import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { AccountGroupRepository } from '../../domain/account-group/AccountGroupRepository'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { CounterpartyRepository } from '../../domain/counterparty/CounterpartyRepository'
+import type { CounterpartyGroup } from '../../domain/counterparty-group/CounterpartyGroup'
+import type { CounterpartyGroupRepository } from '../../domain/counterparty-group/CounterpartyGroupRepository'
 import type { KeywordRule } from '../../domain/keyword-rule/KeywordRule'
 import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
 import { AccountSelect } from './AccountSelect'
+import { CounterpartySelect } from './CounterpartySelect'
 import { KeywordBulkPanel } from './KeywordBulkPanel'
 import {
   nextSortState,
@@ -24,12 +27,17 @@ import {
 import type { MaybeAsync } from './maybeAsync'
 import './master.css'
 
+/** キーワードの取引先に選べるのは、有効な取引先(現在の値は、無効でも残る) */
+const isActiveCounterparty = (counterparty: Counterparty) => counterparty.isActive
+
 /** キーワードの科目に選べるのは、有効で、システム管理ではない科目 */
 const isSelectableAccount = (account: Account) => account.isActive && !account.isSystemManaged
 
 export interface KeywordMasterTabProps {
   keywordRuleRepository: MaybeAsync<Pick<KeywordRuleRepository, 'findAll' | 'create' | 'update' | 'delete'>>
   counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll'>>
+  /** 取引先の選択欄で、取引先をグループの階層で見せるための取引先グループ */
+  counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll'>>
   accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll'>>
   /** 科目の選択欄で、科目をグループの階層で見せるための科目グループ */
   accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
@@ -56,12 +64,19 @@ const isPlCategory = (account: Pick<Account, 'category'> | null | undefined) =>
  * 推定するルール(keyword_rules)を、左に一覧・右に編集パネルで扱う。列見出しを押すと、その列で昇順・降順に並べ替える。
  * 相手科目が資産・負債のときは取引先を指定できない。検証は勘定科目・取引先タブと共通(keywordRuleForm)。
  */
-export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository, accountRepository, accountGroupRepository }: KeywordMasterTabProps) {
+export function KeywordMasterTab({
+  keywordRuleRepository,
+  counterpartyRepository,
+  counterpartyGroupRepository,
+  accountRepository,
+  accountGroupRepository,
+}: KeywordMasterTabProps) {
   const { t } = useTranslation('master')
   const [rules, setRules] = useState<KeywordRule[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [accountGroups, setAccountGroups] = useState<AccountGroup[]>([])
+  const [counterpartyGroups, setCounterpartyGroups] = useState<CounterpartyGroup[]>([])
   const [sort, setSort] = useState<KeywordSortState>({ key: 'pattern', direction: 'asc' })
   const [query, setQuery] = useState('')
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -70,17 +85,19 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
   const [checkedIds, setCheckedIds] = useState<readonly string[]>([])
 
   const load = useCallback(async () => {
-    const [nextRules, nextCounterparties, nextAccounts, nextAccountGroups] = await Promise.all([
+    const [nextRules, nextCounterparties, nextAccounts, nextAccountGroups, nextCounterpartyGroups] = await Promise.all([
       Promise.resolve(keywordRuleRepository.findAll()),
       Promise.resolve(counterpartyRepository.findAll()),
       Promise.resolve(accountRepository.findAll()),
       Promise.resolve(accountGroupRepository.findAll()),
+      Promise.resolve(counterpartyGroupRepository.findAll()),
     ])
     setRules(nextRules)
     setCounterparties(nextCounterparties)
     setAccounts(nextAccounts)
     setAccountGroups(nextAccountGroups)
-  }, [keywordRuleRepository, counterpartyRepository, accountRepository, accountGroupRepository])
+    setCounterpartyGroups(nextCounterpartyGroups)
+  }, [keywordRuleRepository, counterpartyRepository, counterpartyGroupRepository, accountRepository, accountGroupRepository])
 
   useEffect(() => {
     void load()
@@ -258,6 +275,7 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
         <KeywordBulkPanel
           rules={checkedRules}
           counterparties={counterparties}
+          counterpartyGroups={counterpartyGroups}
           accounts={accounts}
           accountGroups={accountGroups}
           busy={busy}
@@ -285,25 +303,17 @@ export function KeywordMasterTab({ keywordRuleRepository, counterpartyRepository
             />
           </div>
           <div className="master-field">
-            <label className="master-field__label" htmlFor="kw-counterparty">
-              {t('keywordTab.counterpartyLabel')}
-            </label>
-            <select
-              id="kw-counterparty"
-              className="master-field__control"
+            <span className="master-field__label">{t('keywordTab.counterpartyLabel')}</span>
+            <CounterpartySelect
+              label={t('keywordTab.counterpartyLabel')}
+              counterparties={counterparties}
+              counterpartyGroups={counterpartyGroups}
+              filter={isActiveCounterparty}
               disabled={counterpartyLocked}
               value={counterpartyLocked || draft.counterpartyId === null ? '' : String(draft.counterpartyId)}
-              onChange={(e) => setDraft({ ...draft, counterpartyId: e.target.value === '' ? null : Number(e.target.value) })}
-            >
-              <option value="">{t('keywordTab.none')}</option>
-              {counterparties
-                .filter((c) => c.isActive || c.id === draft.counterpartyId)
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-            </select>
+              emptyLabel={t('keywordTab.none')}
+              onChange={(value) => setDraft({ ...draft, counterpartyId: value === '' ? null : Number(value) })}
+            />
             {counterpartyLocked && <span className="master-note">{t('keywordTab.counterpartyDisabledNote')}</span>}
           </div>
           <div className="master-field">
