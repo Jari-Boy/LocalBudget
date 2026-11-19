@@ -12,6 +12,9 @@ CREATE TABLE accounts (
   -- 作成時に決まり、以後変更しない(UIに変更手段がない)。資産・負債はtrue/false、他区分はNULL
   has_external_statement BOOLEAN,
   is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+  -- お気に入り(計画Issue #231 フェーズ4、docs/domain/accounts.md)。選択欄の先頭の「★ お気に入り」に固定表示する。
+  -- 表示専用で、集計・照合には関与しない。システム管理科目は変更できない(下のprevent_non_name_change_on_system_managed_account)
+  is_favorite         BOOLEAN NOT NULL DEFAULT FALSE,
   is_system_managed    BOOLEAN NOT NULL DEFAULT FALSE,
   -- システム管理科目の役割(計画Issue #223)。科目を名前や「区分+システム管理」の推測ではなく役割で引くための印で、
   -- 改名されても見つけられる。役割を持てるのはシステム管理科目だけで、役割と区分は対応する(下のCHECK)。
@@ -104,6 +107,7 @@ BEFORE UPDATE ON accounts
 WHEN OLD.is_system_managed = TRUE
   AND (
     NEW.is_active IS NOT OLD.is_active OR
+    NEW.is_favorite IS NOT OLD.is_favorite OR
     NEW.household_member_id IS NOT OLD.household_member_id OR
     NEW.is_reconcilable IS NOT OLD.is_reconcilable OR
     NEW.is_system_managed IS NOT OLD.is_system_managed OR

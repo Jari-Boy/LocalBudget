@@ -20,6 +20,7 @@ import { MIGRATION_V2_SYSTEM_ROLE } from './migrationV2SystemRole'
 import { MIGRATION_V3_NORMALIZE_KEYWORDS } from './migrationV3NormalizeKeywords'
 import { MIGRATION_V4_NORMALIZE_DESCRIPTIONS } from './migrationV4NormalizeDescriptions'
 import { MIGRATION_V5_STATEMENT_IMPORT_DRAFTS } from './migrationV5StatementImportDrafts'
+import { MIGRATION_V6_FAVORITES } from './migrationV6Favorites'
 
 /**
  * 最新スキーマと差分の2本立て(計画Issue #42、docs/decisions.md)。
@@ -39,7 +40,7 @@ export interface MigrationPlan {
   diffs: Readonly<Record<number, readonly MigrationStep[]>>
 }
 
-export const LATEST_SCHEMA_VERSION = 5
+export const LATEST_SCHEMA_VERSION = 6
 
 // household_members → accounts(household_membersを参照) → projects/counterparties
 // → settlement_batches(counterpartiesを参照) → journal(accounts/projects/counterparties/
@@ -80,6 +81,8 @@ export const SCHEMA_PLAN: MigrationPlan = {
     4: MIGRATION_V4_NORMALIZE_DESCRIPTIONS,
     // v5(計画Issue #231 フェーズ3): 明細取込の一時保存の表(statement_import_drafts・statement_import_draft_files)の追加
     5: MIGRATION_V5_STATEMENT_IMPORT_DRAFTS,
+    // v6(計画Issue #231 フェーズ4): 科目・取引先・プロジェクトのお気に入りの列(is_favorite)の追加と、システム管理科目のトリガーの更新
+    6: MIGRATION_V6_FAVORITES,
   },
 }
 

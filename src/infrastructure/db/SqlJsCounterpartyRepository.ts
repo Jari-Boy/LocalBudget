@@ -70,6 +70,15 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
     return this.findById(id)!
   }
 
+  findFavoriteIds(): number[] {
+    const [result] = this.db.exec('SELECT id FROM counterparties WHERE is_favorite = 1 ORDER BY id')
+    return result ? result.values.map((row) => row[0] as number) : []
+  }
+
+  setFavorite(id: number, isFavorite: boolean): void {
+    this.db.run('UPDATE counterparties SET is_favorite = ? WHERE id = ?', [isFavorite ? 1 : 0, id])
+  }
+
   activate(id: number): Counterparty {
     this.db.run('UPDATE counterparties SET is_active = 1 WHERE id = ?', [id])
     return this.findById(id)!
@@ -96,6 +105,8 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
           targetId,
           sourceId,
         ])
+        // 統合元のお気に入りは引き継がず、外す(統合先の状態は変えない。意図しない固定を残さない、計画Issue #231 フェーズ4)
+        this.db.run('UPDATE counterparties SET is_favorite = 0 WHERE id = ?', [sourceId])
         this.db.run(
           'UPDATE keyword_rules SET counterparty_id = ? WHERE counterparty_id = ?',
           [targetId, sourceId],

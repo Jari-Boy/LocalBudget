@@ -10,12 +10,14 @@
 import { describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
+import { toSchemaV5 } from './schemaV5ForTests'
 import { LATEST_SCHEMA_SQL, getUserVersion, runMigrations } from './migrations'
 
 /** v3 のDB(最新のDDLを流し、user_version = 3にしたもの。v4は表の形を変えない) */
 async function createV3Database(): Promise<Database> {
   const db = await createTestDatabase()
-  for (const sql of LATEST_SCHEMA_SQL) db.run(sql)
+  // v6(計画Issue #231 フェーズ4)で足したお気に入りの列は、このバージョンには無いので取り除く
+  for (const sql of LATEST_SCHEMA_SQL) db.run(toSchemaV5(sql))
   // v5(計画Issue #231 フェーズ3)で足した一時保存の表は、このバージョンには無いので取り除く
   db.run('DROP TABLE statement_import_draft_files')
   db.run('DROP TABLE statement_import_drafts')

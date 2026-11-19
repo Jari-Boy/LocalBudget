@@ -130,6 +130,15 @@ export class SqlJsAccountRepository implements AccountRepository {
     return this.findById(id)!
   }
 
+  findFavoriteIds(): number[] {
+    const [result] = this.db.exec('SELECT id FROM accounts WHERE is_favorite = 1 ORDER BY id')
+    return result ? result.values.map((row) => row[0] as number) : []
+  }
+
+  setFavorite(id: number, isFavorite: boolean): void {
+    this.db.run('UPDATE accounts SET is_favorite = ? WHERE id = ?', [isFavorite ? 1 : 0, id])
+  }
+
   merge(targetId: number, sourceIds: number[]): void {
     this.db.run('BEGIN')
     try {
@@ -166,6 +175,8 @@ export class SqlJsAccountRepository implements AccountRepository {
         const lineCount = result.values[0][0] as number
 
         this.db.run('UPDATE journal_lines SET account_id = ? WHERE account_id = ?', [targetId, sourceId])
+        // 統合元のお気に入りは引き継がず、外す(統合先の状態は変えない。意図しない固定を残さない、計画Issue #231 フェーズ4)
+        this.db.run('UPDATE accounts SET is_favorite = 0 WHERE id = ?', [sourceId])
         // 統合元の科目を指すキーワードルールを統合先へ付け替え、同じキーワード・同じ取引先のルールは1件にまとめる
         this.db.run('UPDATE keyword_rules SET account_id = ? WHERE account_id = ?', [targetId, sourceId])
         this.db.run(

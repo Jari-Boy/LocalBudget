@@ -65,6 +65,15 @@ export class SqlJsProjectRepository implements ProjectRepository {
     this.db.run('UPDATE projects SET is_active = 1 WHERE id = ?', [id])
     return this.findById(id)!
   }
+
+  findFavoriteIds(): number[] {
+    const [result] = this.db.exec('SELECT id FROM projects WHERE is_favorite = 1 ORDER BY id')
+    return result ? result.values.map((row) => row[0] as number) : []
+  }
+
+  setFavorite(id: number, isFavorite: boolean): void {
+    this.db.run('UPDATE projects SET is_favorite = ? WHERE id = ?', [isFavorite ? 1 : 0, id])
+  }
 }
 
 function sqlToBool(value: number): boolean {

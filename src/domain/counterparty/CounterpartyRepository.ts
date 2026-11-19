@@ -14,6 +14,13 @@ export interface CounterpartyRepository {
   delete(id: number): void
   deactivate(id: number): Counterparty
   activate(id: number): Counterparty
+  /**
+   * お気に入り(計画Issue #231 フェーズ4)のidの一覧(id順)。選択欄の先頭の「★ お気に入り」に出す。
+   * 無効の取引先も、お気に入りの状態は保つ(選択欄での表示は、従来どおり、無効なものを選択中以外は出さない)
+   */
+  findFavoriteIds(): number[]
+  /** お気に入りの付け外し。表示専用で、ほかの項目は変えない。存在しないidを指定しても何も起きない */
+  setFavorite(id: number, isFavorite: boolean): void
 
   /**
    * sourceIds(統合元、複数可)に紐づくjournal_lines・keyword_rules(取引先のキーワードルール)をtargetId(統合先)へ
