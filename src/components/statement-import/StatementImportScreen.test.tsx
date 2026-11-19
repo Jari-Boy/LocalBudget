@@ -2583,6 +2583,66 @@ describe('StatementImportScreen', () => {
         expect(descriptions()).toEqual(['スーパー', 'ランチ', '家賃'])
       })
 
+      it('ヘッダーの並び替えはフォーカスできる本物のボタン(type=button)で、Enter・Spaceの操作はブラウザ標準の動きに任せる(実ブラウザでの操作はE2Eで確認)', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+
+        for (const name of ['日付', '摘要', '金額', '相手科目', '取引先・精算バッチ', '状態']) {
+          const button = sortButton(name)
+          expect(button.tagName).toBe('BUTTON')
+          expect(button).toHaveAttribute('type', 'button')
+          expect(button).not.toHaveAttribute('tabindex', '-1')
+          button.focus()
+          expect(button).toHaveFocus()
+        }
+      })
+
+      it('複数の行を選んだまま並び替えても選択は保たれ、そのあとの一括操作は選んだ行だけに反映される', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+        fireEvent.click(screen.getByLabelText('スーパーを選択'))
+        fireEvent.click(screen.getByLabelText('ランチを選択'))
+
+        fireEvent.click(sortButton('金額'))
+
+        expect(screen.getByLabelText('スーパーを選択')).toBeChecked()
+        expect(screen.getByLabelText('ランチを選択')).toBeChecked()
+        expect(screen.getByLabelText('家賃を選択')).not.toBeChecked()
+        const bulk = within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
+        expect(bulk.getByText('2件に一括設定')).toBeInTheDocument()
+        fireEvent.change(bulk.getByLabelText('一括で設定するコメント'), { target: { value: '選んだ分だけ' } })
+        fireEvent.click(bulk.getByRole('button', { name: 'コメントを適用' }))
+
+        expect(screen.getByLabelText('スーパーのコメント')).toHaveValue('選んだ分だけ')
+        expect(screen.getByLabelText('ランチのコメント')).toHaveValue('選んだ分だけ')
+        expect(screen.getByLabelText('家賃のコメント')).toHaveValue('')
+      })
+
+      it('一部だけ確定して残りを続けるとき、確定した行は一覧から消え、残りの行の色分けと並び替えの状態は保たれる', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+        pick(rowOf(/スーパー/), '相手科目', '食費')
+        pick(rowOf(/家賃/), '相手科目', '食費')
+        fireEvent.click(sortButton('金額'))
+        expect(header('金額')).toHaveAttribute('aria-sort', 'ascending')
+
+        // ランチは相手科目が未選択なので確定できず残る(部分確定)
+        fireEvent.click(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ }))
+
+        await screen.findByText('2件を確定しました(1件失敗)')
+        expect(screen.queryByRole('row', { name: /スーパー/ })).not.toBeInTheDocument()
+        expect(screen.queryByRole('row', { name: /家賃/ })).not.toBeInTheDocument()
+        // 残った行は未入力のままなので入力済みの色は付かず、入力すると付く
+        expect(rowEl(/ランチ/)).not.toHaveClass('import-row--done')
+        expect(header('金額')).toHaveAttribute('aria-sort', 'ascending')
+        pick(rowOf(/ランチ/), '相手科目', '食費')
+        expect(rowEl(/ランチ/)).toHaveClass('import-row--done')
+        expect(header('金額')).toHaveAttribute('aria-sort', 'ascending')
+      })
+
       it('取込先の科目を変えると、並び替えは解除される', async () => {
         const other = accounts.create({ category: 'asset', name: '別の預金', isReconcilable: true })
         makeMapping({ accountIds: [bank.id, other.id] })
