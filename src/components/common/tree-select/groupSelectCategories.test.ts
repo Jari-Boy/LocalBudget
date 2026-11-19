@@ -61,6 +61,14 @@ describe('buildGroupSelectCategories', () => {
     ])
   })
 
+  it('親が渡されていない子は、最上位として並べ、候補から消さない', () => {
+    const nodes = buildGroupSelectCategories([group(2, '外食', 1), group(3, '自炊', 1)])[0].nodes
+    expect(nodes.map((n) => n.kind === 'item' && [n.value, n.depth, n.parentValue, n.pathName])).toEqual([
+      ['2', 0, null, '外食'],
+      ['3', 0, null, '自炊'],
+    ])
+  })
+
   it('別の親の下に同名の子があっても、値と親が別々に保たれる', () => {
     const nodes = buildGroupSelectCategories([group(1, '食費', null, 1), group(2, '住居', null, 2), group(3, 'その他', 1), group(4, 'その他', 2)])[0].nodes
     expect(nodes.map((n) => n.kind === 'item' && [n.value, n.name, n.parentValue])).toEqual([

@@ -16,9 +16,12 @@ interface GroupLike {
  */
 export function buildGroupSelectCategories(groups: readonly GroupLike[]): TreeSelectCategory[] {
   if (groups.length === 0) return []
+  const ids = new Set(groups.map((g) => g.id))
+  // 親が渡されていない(絞り込みで外れた)グループは最上位として扱い、候補から消さない
+  const isRoot = (g: GroupLike) => g.parentGroupId === null || !ids.has(g.parentGroupId)
   const childrenOf = (parentId: number | null) =>
     groups
-      .filter((g) => g.parentGroupId === parentId)
+      .filter((g) => (parentId === null ? isRoot(g) : g.parentGroupId === parentId))
       .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
 
   const nodes: TreeSelectNode[] = []

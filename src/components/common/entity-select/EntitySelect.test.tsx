@@ -31,6 +31,23 @@ const groups = [
 const open = () => fireEvent.click(screen.getByRole('button', { name: /^所属グループ/ }))
 
 describe('EntitySelect', () => {
+  it('filterで親が外れても、条件に合う子は候補に残して選べる', () => {
+    const onChange = vi.fn()
+    render(
+      <EntitySelect
+        kind="accountGroup"
+        label="所属グループ"
+        groups={[g(1, '食費', null, 'revenue'), g(2, '外食', 1, 'expense')]}
+        filter={(x) => x.category === 'expense'}
+        value={null}
+        onChange={onChange}
+      />,
+    )
+    open()
+    fireEvent.click(screen.getByRole('button', { name: '外食' }))
+    expect(onChange).toHaveBeenCalledWith(2)
+  })
+
   it('親子の順に、深さに応じてインデントした項目を出す', () => {
     render(<EntitySelect kind="accountGroup" label="所属グループ" groups={groups} value={null} onChange={vi.fn()} />)
     open()

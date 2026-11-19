@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useCallback, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
@@ -94,7 +94,7 @@ export function AccountCreateForm({
   const showMember = isBalanceSheet && members.length > 0
   // 外部明細ありのときは名義が必須。「全員」は選べないので、未選択は先頭のメンバーとみなす
   const memberId = memberInput !== '' ? Number(memberInput) : csvExists ? (members[0]?.id ?? null) : null
-  const isGroupOfCategory = (g: AccountGroup) => g.category === category && g.isActive
+  const isGroupOfCategory = useCallback((g: AccountGroup) => g.category === category && g.isActive, [category])
   const defaultGroupId = resolveDefaultAccountGroupId({ category, hasExternalStatement: csvExists }, groups)
   const groupValue = groupOverride ?? (defaultGroupId === null ? '' : String(defaultGroupId))
   const openingAmount = opening.trim() === '' ? null : Number(opening)

@@ -41,7 +41,18 @@ export interface EntitySelectProps<G extends EntityGroup = EntityGroup> {
  * 種類とfilterだけを渡す。階層のインデント・検索(ひらがな/カタカナ等を区別しない)・矢印キー・
  * 検索1件でのEnter確定・「+ 新規追加」・非アクティブの扱い(現在の値は残す)は、部品(TreeSelect)の中で行う。
  */
+/** 種類ごとの候補の組み立て。いまは3種類とも同じグループの階層だが、種類を足したときに組み立てを分けられるよう、種類で振り分ける */
+function buildCategoriesFor(kind: EntitySelectKind, groups: readonly EntityGroup[]) {
+  switch (kind) {
+    case 'accountGroup':
+    case 'counterpartyGroup':
+    case 'projectGroup':
+      return buildGroupSelectCategories(groups)
+  }
+}
+
 export function EntitySelect<G extends EntityGroup>({
+  kind,
   label,
   groups,
   filter,
@@ -54,8 +65,8 @@ export function EntitySelect<G extends EntityGroup>({
   disabled,
 }: EntitySelectProps<G>) {
   const categories = useMemo(
-    () => buildGroupSelectCategories(filter === undefined ? groups : groups.filter((group) => filter(group) || group.id === value)),
-    [groups, filter, value],
+    () => buildCategoriesFor(kind, filter === undefined ? groups : groups.filter((group) => filter(group) || group.id === value)),
+    [kind, groups, filter, value],
   )
   return (
     <TreeSelect
