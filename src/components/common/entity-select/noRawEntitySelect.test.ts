@@ -31,8 +31,7 @@ const ALLOWED: Record<string, Exception> = {
   'components/master/AccountCreateForm.tsx': { count: 4, kind: UNMIGRATED, reason: '区分・外部明細の有無・残高情報の有無は固定の選択肢。名義(世帯メンバー)は#234で移す' },
   'components/master/RuleEditForm.tsx': { count: 2, kind: UNMIGRATED, reason: '汎用の固定選択1つ+世帯メンバー。#234で世帯メンバーを移す' },
   'components/settlement/SplitTab.tsx': { count: 2, kind: UNMIGRATED, reason: '按分の方法は固定の選択肢。精算バッチは#234で扱いを決める' },
-  'components/statement-import/StatementImportScreen.tsx': { count: 8, kind: UNMIGRATED, reason: '明細定義・科目・名義・一括/行ごとの世帯メンバー・精算バッチ・置き換え先。#234で実体ごとに移す' },
-  'components/statement-import/KeywordList.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
+  'components/statement-import/StatementImportScreen.tsx': { count: 7, kind: UNMIGRATED, reason: '明細定義・名義・一括/行ごとの世帯メンバー・精算バッチ・置き換え先(科目は移行済み)。#234で実体ごとに移す' },
   'components/journal-entry/JournalScreen.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
   'components/journal-entry/JournalLinesEditor.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
   'components/journal-entry/JournalLineTable.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
@@ -40,12 +39,11 @@ const ALLOWED: Record<string, Exception> = {
   'components/journal-entry/JournalEntryEditor.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
   'components/journal-entry/RelatedEntriesSection.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
   'components/master/AccountMasterTab.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
-  'components/master/AccountMergePanel.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
   'components/master/BulkSelectionPanel.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
   'components/master/CounterpartyMasterTab.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
   'components/master/GroupedMasterTab.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
-  'components/master/KeywordBulkPanel.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
-  'components/master/KeywordMasterTab.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
+  'components/master/KeywordBulkPanel.tsx': { count: 1, kind: UNMIGRATED, reason: '取引先は#234の取引先の移行で移す(科目は移行済み)' },
+  'components/master/KeywordMasterTab.tsx': { count: 1, kind: UNMIGRATED, reason: '取引先は#234の取引先の移行で移す(科目は移行済み)' },
 }
 
 /** ソースの中の生の `<select` の数 */
