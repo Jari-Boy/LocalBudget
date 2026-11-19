@@ -16,6 +16,7 @@ import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountGroupRepository } from '../../infrastructure/db/SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
+import { SqlJsCounterpartyGroupRepository } from '../../infrastructure/db/SqlJsCounterpartyGroupRepository'
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import { SqlJsKeywordRuleRepository } from '../../infrastructure/db/SqlJsKeywordRuleRepository'
 import { KeywordMasterTab } from './KeywordMasterTab'
@@ -44,6 +45,7 @@ function renderTab() {
       <KeywordMasterTab
         keywordRuleRepository={rules}
         counterpartyRepository={new SqlJsCounterpartyRepository(db)}
+        counterpartyGroupRepository={new SqlJsCounterpartyGroupRepository(db)}
         accountRepository={new SqlJsAccountRepository(db)}
         accountGroupRepository={new SqlJsAccountGroupRepository(db)}
       />
@@ -51,8 +53,8 @@ function renderTab() {
   )
 }
 
-/** 科目の選択欄(共通の選択欄)を開き、検索で絞ってから科目を選ぶ。scopeは編集パネルなどの範囲、labelは欄の名称 */
-function chooseAccount(label: RegExp | string, name: string, scope: { getByRole: typeof screen.getByRole } = screen) {
+/** 科目・取引先の選択欄(共通の選択欄)を開き、検索で絞ってから選ぶ。scopeは編集パネルなどの範囲、labelは欄の名称 */
+function chooseEntity(label: RegExp | string, name: string, scope: { getByRole: typeof screen.getByRole } = screen) {
   fireEvent.click(scope.getByRole('button', { name: typeof label === 'string' ? new RegExp('^' + label) : label }))
   const dialog = screen.getByRole('dialog')
   fireEvent.change(within(dialog).getByRole('searchbox'), { target: { value: name } })
@@ -106,7 +108,7 @@ describe('KeywordMasterTab', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'キーワードを追加' }))
 
     fireEvent.change(screen.getByLabelText(/^キーワード\(摘要/), { target: { value: 'ａｔｍ' } })
-    chooseAccount(/^相手科目/, '現金')
+    chooseEntity(/^相手科目/, '現金')
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(rules.findAll()).toHaveLength(1))
@@ -117,9 +119,21 @@ describe('KeywordMasterTab', () => {
     renderTab()
     fireEvent.click(await screen.findByRole('button', { name: 'キーワードを追加' }))
 
-    chooseAccount(/^相手科目/, '現金')
+    chooseEntity(/^相手科目/, '現金')
 
-    expect(screen.getByLabelText(/^取引先/)).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^取引先/ })).toBeDisabled()
+  })
+
+  it('取引先を選んで追加でき、選んだ取引先が保存される', async () => {
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: 'キーワードを追加' }))
+
+    fireEvent.change(screen.getByLabelText(/^キーワード\(摘要/), { target: { value: 'AEON' } })
+    chooseEntity(/^取引先/, 'イオン')
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(rules.findAll()).toHaveLength(1))
+    expect(rules.findAll()[0]).toMatchObject({ pattern: 'AEON', counterpartyId: aeonId, accountId: null })
   })
 
   it('取引先も相手科目も指定しないと保存できず、理由を表示する', async () => {
@@ -137,7 +151,7 @@ describe('KeywordMasterTab', () => {
     rules.create({ pattern: 'ATM', accountId: cashId })
     renderTab()
     fireEvent.click(await screen.findByRole('button', { name: 'キーワードを追加' }))
-    chooseAccount(/^相手科目/, '現金')
+    chooseEntity(/^相手科目/, '現金')
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('キーワードが空です')
@@ -195,10 +209,26 @@ describe('KeywordMasterTab', () => {
     fireEvent.click(screen.getByLabelText('VISAを選択'))
 
     const panel = within(screen.getByRole('region', { name: '一括操作' }))
-    chooseAccount('科目', '未払金', panel)
+    chooseEntity('科目', '未払金', panel)
     fireEvent.click(panel.getByRole('button', { name: '変更を適用' }))
 
     await waitFor(() => expect(rules.findAll().map((r) => r.accountId)).toEqual([card.id, card.id]))
+  })
+
+  it('一括操作パネルで、選んだルールの取引先をまとめて変更できる(科目は変更しない)', async () => {
+    rules.create({ pattern: 'ATM', accountId: foodId })
+    rules.create({ pattern: 'VISA', accountId: foodId })
+    renderTab()
+    await screen.findByRole('table')
+    fireEvent.click(screen.getByLabelText('ATMを選択'))
+    fireEvent.click(screen.getByLabelText('VISAを選択'))
+
+    const panel = within(screen.getByRole('region', { name: '一括操作' }))
+    chooseEntity('取引先', 'イオン', panel)
+    fireEvent.click(panel.getByRole('button', { name: '変更を適用' }))
+
+    await waitFor(() => expect(rules.findAll().map((r) => r.counterpartyId)).toEqual([aeonId, aeonId]))
+    expect(rules.findAll().map((r) => r.accountId)).toEqual([foodId, foodId])
   })
 
   it('一括変更で併記できない組み合わせ(取引先+資産の科目)になるときは、理由を表示して何も変えない', async () => {
@@ -209,7 +239,7 @@ describe('KeywordMasterTab', () => {
     fireEvent.click(screen.getByLabelText('すべて選択'))
 
     const panel = within(screen.getByRole('region', { name: '一括操作' }))
-    chooseAccount('科目', '現金', panel)
+    chooseEntity('科目', '現金', panel)
     fireEvent.click(panel.getByRole('button', { name: '変更を適用' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('取引先と相手科目を両方指定できるのは')

@@ -40,10 +40,7 @@ const ALLOWED: Record<string, Exception> = {
   'components/journal-entry/RelatedEntriesSection.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
   'components/master/AccountMasterTab.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
   'components/master/BulkSelectionPanel.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
-  'components/master/CounterpartyMasterTab.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
   'components/master/GroupedMasterTab.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
-  'components/master/KeywordBulkPanel.tsx': { count: 1, kind: UNMIGRATED, reason: '取引先は#234の取引先の移行で移す(科目は移行済み)' },
-  'components/master/KeywordMasterTab.tsx': { count: 1, kind: UNMIGRATED, reason: '取引先は#234の取引先の移行で移す(科目は移行済み)' },
 }
 
 /** ソースの中の生の `<select` の数 */

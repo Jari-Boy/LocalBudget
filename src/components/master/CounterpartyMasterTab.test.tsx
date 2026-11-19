@@ -17,6 +17,7 @@ import i18n from '../../infrastructure/i18n/i18n'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
+import { SqlJsAccountGroupRepository } from '../../infrastructure/db/SqlJsAccountGroupRepository'
 import { SqlJsCounterpartyGroupRepository } from '../../infrastructure/db/SqlJsCounterpartyGroupRepository'
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import { SqlJsHouseholdMemberRepository } from '../../infrastructure/db/SqlJsHouseholdMemberRepository'
@@ -55,12 +56,21 @@ function renderTab() {
         keywordRuleRepository={rules}
         counterpartyGroupRepository={new SqlJsCounterpartyGroupRepository(db)}
         accountRepository={accounts}
+        accountGroupRepository={new SqlJsAccountGroupRepository(db)}
         journalEntryRepository={new SqlJsJournalEntryRepository(db)}
         recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
         settlementBatchRepository={new SqlJsSettlementBatchRepository(db)}
       />
     </I18nextProvider>,
   )
+}
+
+/** 科目・取引先の選択欄(共通の選択欄)を開き、検索で絞ってから選ぶ。labelは欄の名称、scopeは操作する範囲 */
+function chooseEntity(label: string, name: string, scope: { getByRole: typeof screen.getByRole }) {
+  fireEvent.click(scope.getByRole('button', { name: new RegExp('^' + label) }))
+  const dialog = within(screen.getByRole('dialog', { name: label }))
+  fireEvent.change(dialog.getByRole('searchbox'), { target: { value: name } })
+  fireEvent.click(dialog.getByRole('button', { name }))
 }
 
 const panel = (name: string) => within(screen.getByRole('region', { name }))
@@ -87,7 +97,7 @@ describe('CounterpartyMasterTab', () => {
     await open('イオン')
 
     expect(panel('取引先の編集').queryByLabelText('既定の科目')).not.toBeInTheDocument()
-    expect(panel('取引先の編集').getByLabelText('イオンの科目')).toBeInTheDocument()
+    expect(panel('取引先の編集').getByRole('button', { name: /^イオンの科目/ })).toBeInTheDocument()
   })
 
   it('キーワードの科目を選ぶと、そのルールだけに、すぐDBへ反映される(同じ取引先の別のキーワードは変わらない)', async () => {
@@ -97,7 +107,7 @@ describe('CounterpartyMasterTab', () => {
     renderTab()
     await open('イオン')
 
-    fireEvent.change(panel('取引先の編集').getByLabelText('イオンの科目'), { target: { value: String(expenseId) } })
+    chooseEntity('イオンの科目', '食費', panel('取引先の編集'))
 
     await waitFor(() => expect(rules.findById(first.id)!.accountId).toBe(expenseId))
     expect(rules.findById(second.id)!.accountId).toBe(expenseId)
@@ -109,10 +119,12 @@ describe('CounterpartyMasterTab', () => {
     renderTab()
     await open('イオン')
 
-    const select = panel('取引先の編集').getByLabelText('イオンの科目')
-
-    expect(within(select).getByRole('option', { name: '食費' })).toBeInTheDocument()
-    expect(within(select).queryByRole('option', { name: '現金' })).not.toBeInTheDocument()
+    fireEvent.click(panel('取引先の編集').getByRole('button', { name: /^イオンの科目/ }))
+    const dialog = within(screen.getByRole('dialog', { name: 'イオンの科目' }))
+    fireEvent.change(dialog.getByRole('searchbox'), { target: { value: '食費' } })
+    expect(dialog.getByRole('button', { name: '食費' })).toBeInTheDocument()
+    fireEvent.change(dialog.getByRole('searchbox'), { target: { value: '現金' } })
+    expect(dialog.queryByRole('button', { name: '現金' })).not.toBeInTheDocument()
   })
 
   it('キーワードの入力欄・科目の欄は、「キーワードを追加」を押すまで出ない。キャンセルで閉じる(計画Issue #219)', async () => {
@@ -121,12 +133,12 @@ describe('CounterpartyMasterTab', () => {
     renderTab()
     await open('イオン')
     expect(panel('取引先の編集').queryByLabelText('追加するキーワード')).not.toBeInTheDocument()
-    expect(panel('取引先の編集').queryByLabelText('追加するキーワードの科目')).not.toBeInTheDocument()
+    expect(panel('取引先の編集').queryByRole('button', { name: /^追加するキーワードの科目/ })).not.toBeInTheDocument()
 
     fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'キーワードを追加' }))
 
     expect(panel('取引先の編集').getByLabelText('追加するキーワード')).toBeInTheDocument()
-    expect(panel('取引先の編集').getByLabelText('追加するキーワードの科目')).toBeInTheDocument()
+    expect(panel('取引先の編集').getByRole('button', { name: /^追加するキーワードの科目/ })).toBeInTheDocument()
     fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'キャンセル' }))
     expect(panel('取引先の編集').queryByLabelText('追加するキーワード')).not.toBeInTheDocument()
     expect(panel('取引先の編集').getByRole('button', { name: 'キーワードを追加' })).toBeInTheDocument()
@@ -139,7 +151,7 @@ describe('CounterpartyMasterTab', () => {
 
     fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'キーワードを追加' }))
     fireEvent.change(panel('取引先の編集').getByLabelText('追加するキーワード'), { target: { value: 'AEON' } })
-    fireEvent.change(panel('取引先の編集').getByLabelText('追加するキーワードの科目'), { target: { value: String(expenseId) } })
+    chooseEntity('追加するキーワードの科目', '食費', panel('取引先の編集'))
     fireEvent.click(panel('取引先の編集').getByRole('button', { name: '追加' }))
 
     await waitFor(() => expect(rules.findByCounterparty(aeon.id).map((r) => [r.pattern, r.accountId])).toEqual([['AEON', expenseId]]))
@@ -217,7 +229,7 @@ describe('CounterpartyMasterTab', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'イオンを選択' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'イオンモールを選択' }))
     const merge = within(await screen.findByRole('region', { name: '取引先の統合' }))
-    fireEvent.change(merge.getByLabelText('統合先'), { target: { value: String(aeon.id) } })
+    chooseEntity('統合先', 'イオン', merge)
     fireEvent.click(merge.getByRole('button', { name: '統合する' }))
     expect(rules.findByCounterparty(aeonMall.id)).toHaveLength(1)
     fireEvent.click(await merge.findByRole('button', { name: '統合を実行' }))

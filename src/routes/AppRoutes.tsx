@@ -295,6 +295,7 @@ export function AppRoutes() {
             keywordRuleRepository={keywordRuleRepository}
             counterpartyGroupRepository={counterpartyGroupRepository}
             accountRepository={accountRepository}
+            accountGroupRepository={accountGroupRepository}
             journalEntryRepository={journalEntryRepository}
             recurringTransactionRuleRepository={recurringTransactionRuleRepository}
             settlementBatchRepository={settlementBatchRepository}
@@ -330,6 +331,7 @@ export function AppRoutes() {
           <KeywordMasterTab
             keywordRuleRepository={keywordRuleRepository}
             counterpartyRepository={counterpartyRepository}
+            counterpartyGroupRepository={counterpartyGroupRepository}
             accountRepository={accountRepository}
             accountGroupRepository={accountGroupRepository}
           />

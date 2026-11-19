@@ -94,6 +94,7 @@ const counterpartyTab = () => (
     keywordRuleRepository={new SqlJsKeywordRuleRepository(db)}
     counterpartyGroupRepository={new SqlJsCounterpartyGroupRepository(db)}
     accountRepository={accounts}
+    accountGroupRepository={new SqlJsAccountGroupRepository(db)}
     journalEntryRepository={new SqlJsJournalEntryRepository(db)}
     recurringTransactionRuleRepository={new SqlJsRecurringTransactionRuleRepository(db)}
     settlementBatchRepository={new SqlJsSettlementBatchRepository(db)}

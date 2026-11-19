@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
+import type { AccountGroup } from '../../domain/account-group/AccountGroup'
+import type { AccountGroupRepository } from '../../domain/account-group/AccountGroupRepository'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { KeywordRule } from '../../domain/keyword-rule/KeywordRule'
 import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
@@ -15,6 +17,8 @@ import type { RecurringTransactionRule } from '../../domain/recurring-transactio
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
+import { AccountSelect } from './AccountSelect'
+import { CounterpartySelect } from './CounterpartySelect'
 import { describeDeletionBlocks } from './describeDeletionBlocks'
 import { GroupedMasterTab, type GroupedMasterActions } from './GroupedMasterTab'
 import { buildCounterpartyTree, parseNodeId } from './masterTreeNodes'
@@ -42,6 +46,8 @@ export interface CounterpartyMasterTabProps {
     Pick<CounterpartyGroupRepository, 'findAll' | 'create' | 'update' | 'delete'>
   >
   accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll'>>
+  /** キーワードの科目の選択欄で、科目をグループの階層で見せるための科目グループ */
+  accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
   journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll'>>
   recurringTransactionRuleRepository: MaybeAsync<Pick<RecurringTransactionRuleRepository, 'findAll'>>
   settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll'>>
@@ -51,6 +57,7 @@ interface LoadedData {
   counterparties: Counterparty[]
   groups: CounterpartyGroup[]
   accounts: Account[]
+  accountGroups: AccountGroup[]
   entries: JournalEntry[]
   rules: RecurringTransactionRule[]
   batches: SettlementBatch[]
@@ -71,6 +78,7 @@ export function CounterpartyMasterTab({
   keywordRuleRepository,
   counterpartyGroupRepository,
   accountRepository,
+  accountGroupRepository,
   journalEntryRepository,
   recurringTransactionRuleRepository,
   settlementBatchRepository,
@@ -81,10 +89,11 @@ export function CounterpartyMasterTab({
   const [mergeResult, setMergeResult] = useState('')
 
   const load = useCallback(async () => {
-    const [counterparties, groups, accounts, entries, rules, batches] = await Promise.all([
+    const [counterparties, groups, accounts, accountGroups, entries, rules, batches] = await Promise.all([
       counterpartyRepository.findAll(),
       counterpartyGroupRepository.findAll(),
       accountRepository.findAll(),
+      accountGroupRepository.findAll(),
       journalEntryRepository.findAll(),
       recurringTransactionRuleRepository.findAll(),
       settlementBatchRepository.findAll(),
@@ -94,6 +103,7 @@ export function CounterpartyMasterTab({
       counterparties,
       groups,
       accounts,
+      accountGroups,
       entries,
       rules,
       batches,
@@ -201,6 +211,7 @@ export function CounterpartyMasterTab({
           <CounterpartyExtra
             counterparty={counterparty}
             accounts={data.accounts}
+            accountGroups={data.accountGroups}
             rules={data.rulesById.get(id) ?? []}
             repository={keywordRuleRepository}
             reload={reload}
@@ -212,6 +223,7 @@ export function CounterpartyMasterTab({
       renderSelection={(checkedIds, { reload }) => (
         <MergePanel
           counterparties={data.counterparties.filter((c) => checkedIds.includes(c.id))}
+          counterpartyGroups={data.groups}
           repository={counterpartyRepository}
           onMerged={async (message) => {
             setMergeResult(message)
@@ -226,6 +238,8 @@ export function CounterpartyMasterTab({
 interface CounterpartyExtraProps {
   counterparty: Counterparty
   accounts: readonly Account[]
+  /** キーワードの科目の選択欄で、科目をグループの階層で見せるための科目グループ */
+  accountGroups: readonly AccountGroup[]
   /** この取引先のキーワードルール */
   rules: readonly KeywordRule[]
   repository: CounterpartyMasterTabProps['keywordRuleRepository']
@@ -238,7 +252,7 @@ interface CounterpartyExtraProps {
  * 科目(費用・収益)を選べる。「既定の科目」の欄は無い(科目の対応はキーワードマスタに一本化した)。
  * 追加・編集・削除はキーワードタブ・勘定科目タブと共通の検証(keywordRuleForm)を通る。
  */
-function CounterpartyExtra({ counterparty, accounts, rules, repository, reload, busy }: CounterpartyExtraProps) {
+function CounterpartyExtra({ counterparty, accounts, accountGroups, rules, repository, reload, busy }: CounterpartyExtraProps) {
   const { t } = useTranslation('master')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editDraft, setEditDraft] = useState('')
@@ -250,10 +264,11 @@ function CounterpartyExtra({ counterparty, accounts, rules, repository, reload, 
   const [working, setWorking] = useState(false)
 
   /** 取引先を持てる科目(費用・収益)。有効なもの、およびすでにキーワードに選ばれているもの */
-  const usedAccountIds = new Set(rules.flatMap((r) => (r.accountId === null ? [] : [r.accountId])))
-  const options = accounts.filter(
-    (a) => (a.category === 'expense' || a.category === 'revenue') && (a.isActive || usedAccountIds.has(a.id)),
-  )
+  const rulesAccountKey = rules.flatMap((r) => (r.accountId === null ? [] : [r.accountId])).join(',')
+  const isOptionAccount = useMemo(() => {
+    const usedAccountIds = new Set(rulesAccountKey === '' ? [] : rulesAccountKey.split(',').map(Number))
+    return (a: Account) => (a.category === 'expense' || a.category === 'revenue') && (a.isActive || usedAccountIds.has(a.id))
+  }, [rulesAccountKey])
   const trimmedNew = newPattern.trim()
   const trimmedEdit = editDraft.trim()
   const accountOf = (id: number | null) => (id === null ? null : (accounts.find((a) => a.id === id) ?? null))
@@ -286,21 +301,16 @@ function CounterpartyExtra({ counterparty, accounts, rules, repository, reload, 
   const disabled = busy || working
 
   const accountSelect = (label: string, value: number | null, onChange: (accountId: number | null) => void) => (
-    <select
-      className="master-field__control"
-      aria-label={label}
+    <AccountSelect
+      label={label}
+      accounts={accounts}
+      accountGroups={accountGroups}
+      filter={isOptionAccount}
       disabled={disabled}
       value={value === null ? '' : String(value)}
-      onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))}
-    >
-      <option value="">{t('counterpartyTab.accountNone')}</option>
-      {options.map((a) => (
-        <option key={a.id} value={a.id}>
-          {a.name}
-        </option>
-      ))}
-    </select>
-  )
+      emptyLabel={t('counterpartyTab.accountNone')}
+      onChange={(next) => onChange(next === '' ? null : Number(next))}
+    />  )
 
   return (
     <section className="master-subsection" aria-label={t('counterpartyTab.patternsTitle', { count: rules.length })}>
@@ -436,12 +446,14 @@ function CounterpartyExtra({ counterparty, accounts, rules, repository, reload, 
 
 interface MergePanelProps {
   counterparties: readonly Counterparty[]
+  /** 統合先の選択欄で、取引先をグループの階層で見せるための取引先グループ */
+  counterpartyGroups: readonly CounterpartyGroup[]
   repository: CounterpartyMasterTabProps['counterpartyRepository']
   onMerged: (message: string) => Promise<void>
 }
 
 /** チェックした取引先(2件以上)を1つに統合する。統合先を選び、確認を経て実行する(現行画面と同じ流れ) */
-function MergePanel({ counterparties, repository, onMerged }: MergePanelProps) {
+function MergePanel({ counterparties, counterpartyGroups, repository, onMerged }: MergePanelProps) {
   const { t } = useTranslation('master')
   const [targetId, setTargetId] = useState('')
   const [confirming, setConfirming] = useState(false)
@@ -475,25 +487,18 @@ function MergePanel({ counterparties, repository, onMerged }: MergePanelProps) {
     <section className="master-subsection" aria-label={t('counterpartyTab.mergeRegion')}>
       <h3 className="master-subsection__title">{t('bulk.mergeTitle')}</h3>
       <div className="master-field">
-        <label className="master-field__label" htmlFor="counterparty-merge-target">
-          {t('counterpartyTab.mergeTarget')}
-        </label>
-        <select
-          id="counterparty-merge-target"
-          className="master-field__control"
+        <span className="master-field__label">{t('counterpartyTab.mergeTarget')}</span>
+        <CounterpartySelect
+          label={t('counterpartyTab.mergeTarget')}
+          counterparties={counterparties}
+          counterpartyGroups={counterpartyGroups}
           value={targetId}
-          onChange={(event) => {
-            setTargetId(event.target.value)
+          emptyLabel={t('counterpartyTab.mergeChoose')}
+          onChange={(value) => {
+            setTargetId(value)
             setConfirming(false)
           }}
-        >
-          <option value="">{t('counterpartyTab.mergeChoose')}</option>
-          {counterparties.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        />
       </div>
       {confirming && target ? (
         <>
