@@ -241,6 +241,32 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     })
   })
 
+  describe('ヘッダーでの並び替え(計画Issue #231 フェーズ2)', () => {
+    it('取り込むファイルのチェックを切り替えて一覧を作り直しても、並び替えの状態は保たれる', async () => {
+      renderScreen()
+      await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+      fireEvent.click(within(screen.getByRole('columnheader', { name: '金額' })).getByRole('button'))
+      expect(screen.getByRole('columnheader', { name: '金額' })).toHaveAttribute('aria-sort', 'ascending')
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'nov.csvを取り込む' }))
+
+      await screen.findByText(/oct\.csv を読み込み済み/)
+      expect(screen.getByRole('columnheader', { name: '金額' })).toHaveAttribute('aria-sort', 'ascending')
+      // 金額の昇順: Amazon(-2,980) が コンビニ(-420) より先
+      expect(rowsOf(/Amazon/)).toHaveLength(1)
+      expect(
+        rowOf(/Amazon/).getByText('-¥2,980').closest('tr')!.compareDocumentPosition(rowOf(/コンビニ/).getByText('-¥420').closest('tr')!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
+    it('複数のファイルを取り込んでいるときは、「ファイル」列も並び替えられる', async () => {
+      renderScreen()
+      await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
+      expect(within(screen.getByRole('columnheader', { name: 'ファイル' })).getByRole('button')).toBeInTheDocument()
+    })
+  })
+
   it('ファイル間の重複行の「取り込む」を押すと、新規として戻せる', async () => {
     renderScreen()
     await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)

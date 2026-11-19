@@ -2354,4 +2354,249 @@ describe('StatementImportScreen', () => {
       await waitFor(() => expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'true'))
     })
   })
+
+  describe('入力済み/未入力の色分けとヘッダーでの並び替え(計画Issue #231 フェーズ2)', () => {
+    /** 金額の昇順は 家賃 → スーパー → ランチ、日付の昇順は スーパー → ランチ → 家賃 */
+    const CSV3 = `${HEADER}2026/10/05,スーパー,-3000,97000
+2026/10/06,ランチ,-800,96200
+2026/10/07,家賃,-50000,46200
+`
+    const rowEl = (text: RegExp) => screen.getAllByRole('row', { name: text })[0]
+    const isBefore = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    const header = (name: string) => screen.getByRole('columnheader', { name })
+    const sortButton = (name: string) => within(header(name)).getByRole('button')
+    /** 一覧の行(明細の行)を上から並べた摘要 */
+    const descriptions = () =>
+      ['スーパー', 'ランチ', '家賃']
+        .map((d) => ({ d, el: rowEl(new RegExp(d)) }))
+        .sort((a, b) => (isBefore(a.el, b.el) ? -1 : 1))
+        .map((x) => x.d)
+    const groupToggle = (title: string) => screen.getByRole('button', { name: new RegExp(`^${title}\\s*\\d+件`) })
+    function manualLunch() {
+      return entries.create({
+        householdMemberId: memberId,
+        entryDate: '2026-10-06',
+        memo: 'ランチ',
+        sourceType: 'manual',
+        lines: [
+          { householdMemberId: memberId, accountId: food.id, side: 'debit', amount: 800 },
+          { householdMemberId: memberId, accountId: bank.id, side: 'credit', amount: 800 },
+        ],
+      })
+    }
+
+    describe('色分け', () => {
+      it('相手科目が決まった行は入力済みの色(import-row--done)になり、未設定の行にはその色が付かない。状態の文字は従来どおり', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+        expect(rowEl(/スーパー/)).not.toHaveClass('import-row--done')
+        expect(within(rowEl(/スーパー/)).getByText('要確認')).toBeInTheDocument()
+
+        pick(rowOf(/スーパー/), '相手科目', '食費')
+
+        expect(rowEl(/スーパー/)).toHaveClass('import-row--done')
+        expect(within(rowEl(/スーパー/)).getByText('新規')).toBeInTheDocument()
+        expect(rowEl(/家賃/)).not.toHaveClass('import-row--done')
+      })
+
+      it('状態の文字には、色だけに頼らないよう、入力済みには✓、未入力には破線の丸のマークを添える(読み上げは文字のまま)', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+        pick(rowOf(/スーパー/), '相手科目', '食費')
+
+        expect(rowEl(/スーパー/).querySelector('.import-status__mark--done')).not.toBeNull()
+        expect(rowEl(/家賃/).querySelector('.import-status__mark--todo')).not.toBeNull()
+        expect(rowEl(/スーパー/).querySelector('.import-status svg')).toHaveAttribute('aria-hidden', 'true')
+      })
+
+      it('「似た取引あり」の行も、相手科目を決めると入力済みの色になり、直下の確認の行も同じ色になる(未入力のときは従来の黄色)', async () => {
+        makeMapping()
+        manualLunch()
+        renderScreen()
+        await chooseCsv(CSV3)
+        const confirmRow = () => screen.getByRole('group', { name: 'ランチの似た取引の確認' }).closest('tr')!
+        expect(rowEl(/ランチ/)).not.toHaveClass('import-row--done')
+        expect(confirmRow()).not.toHaveClass('import-sub--done')
+
+        pick(rowOf(/ランチ/), '相手科目', '食費')
+
+        expect(rowEl(/ランチ/)).toHaveClass('import-row--done')
+        expect(rowEl(/ランチ/)).toHaveClass('import-row--similar')
+        expect(confirmRow()).toHaveClass('import-sub--done')
+      })
+
+      it('「この取引を保存しない」の行は、相手科目があっても入力済みの色にしない(従来のグレーのまま)', async () => {
+        makeMapping()
+        manualLunch()
+        renderScreen()
+        await chooseCsv(CSV3)
+        pick(rowOf(/ランチ/), '相手科目', '食費')
+
+        fireEvent.click(await screen.findByRole('radio', { name: 'この取引を保存しない' }))
+
+        expect(rowEl(/ランチ/)).not.toHaveClass('import-row--done')
+        expect(rowEl(/ランチ/)).toHaveClass('import-row--skipped')
+      })
+    })
+
+    describe('並び替え', () => {
+      it('日付・摘要・金額・相手科目・取引先・状態のヘッダーはボタンで、チェック・プロジェクト・メンバー・コメントの列はボタンにしない', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+
+        for (const name of ['日付', '摘要', '金額', '相手科目', '取引先・精算バッチ', '状態']) {
+          expect(within(header(name)).getByRole('button')).toBeInTheDocument()
+        }
+        for (const name of ['プロジェクト', 'メンバー', 'コメント']) {
+          expect(within(header(name)).queryByRole('button')).not.toBeInTheDocument()
+        }
+      })
+
+      it('ヘッダーを押すと 昇順 → 降順 → 解除(取り込んだ順)と切り替わり、aria-sort が今の状態を伝える', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+        expect(header('金額')).toHaveAttribute('aria-sort', 'none')
+        expect(descriptions()).toEqual(['スーパー', 'ランチ', '家賃'])
+
+        fireEvent.click(sortButton('金額'))
+        expect(header('金額')).toHaveAttribute('aria-sort', 'ascending')
+        expect(descriptions()).toEqual(['家賃', 'スーパー', 'ランチ'])
+
+        fireEvent.click(sortButton('金額'))
+        expect(header('金額')).toHaveAttribute('aria-sort', 'descending')
+        expect(descriptions()).toEqual(['ランチ', 'スーパー', '家賃'])
+
+        fireEvent.click(sortButton('金額'))
+        expect(header('金額')).toHaveAttribute('aria-sort', 'none')
+        expect(descriptions()).toEqual(['スーパー', 'ランチ', '家賃'])
+      })
+
+      it('別の列を押すと、前の列の並び替えは外れて、その列の昇順になる', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+        fireEvent.click(sortButton('金額'))
+
+        fireEvent.click(sortButton('日付'))
+
+        expect(header('金額')).toHaveAttribute('aria-sort', 'none')
+        expect(header('日付')).toHaveAttribute('aria-sort', 'ascending')
+        expect(descriptions()).toEqual(['スーパー', 'ランチ', '家賃'])
+      })
+
+      it('3グループの見出しは残り、並び替えはグループの中だけで行う(グループをまたいで動かない)', async () => {
+        makeMapping()
+        manualLunch()
+        renderScreen()
+        await chooseCsv(CSV3)
+
+        // 金額の昇順では 家賃(-50,000) が先頭になるが、似た取引がある ランチ は「似た取引あり」のグループに残る
+        fireEvent.click(sortButton('金額'))
+
+        const similar = screen.getByText('似た取引あり')
+        const clean = screen.getByText('問題なし')
+        expect(isBefore(similar, rowEl(/ランチ/))).toBe(true)
+        expect(isBefore(rowEl(/ランチ/), clean)).toBe(true)
+        expect(isBefore(clean, rowEl(/家賃/))).toBe(true)
+        expect(isBefore(rowEl(/家賃/), rowEl(/スーパー/))).toBe(true)
+      })
+
+      it('並び替えたあとに行へ入力しても、行は動かない(ヘッダーを押した時点の並びを保つ)', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+        pick(rowOf(/スーパー/), '相手科目', '食費')
+
+        // 状態の昇順: 要確認(ランチ・家賃)が先、新規(スーパー)が後
+        fireEvent.click(sortButton('状態'))
+        expect(descriptions()).toEqual(['ランチ', '家賃', 'スーパー'])
+
+        // 先頭の ランチ を入力済み(新規)にしても、並びは変わらない(いま計算し直すと スーパー と ランチ が入れ替わる)
+        pick(rowOf(/ランチ/), '相手科目', '食費')
+
+        expect(descriptions()).toEqual(['ランチ', '家賃', 'スーパー'])
+      })
+
+      it('並び替えても、行の入力内容と選択は保たれる', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+        pick(rowOf(/スーパー/), '相手科目', '食費')
+        fireEvent.change(screen.getByLabelText('スーパーのコメント'), { target: { value: '買い出し' } })
+        fireEvent.click(screen.getByLabelText('スーパーを選択'))
+
+        fireEvent.click(sortButton('金額'))
+
+        expect(rowOf(/スーパー/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
+        expect(screen.getByLabelText('スーパーのコメント')).toHaveValue('買い出し')
+        expect(screen.getByLabelText('スーパーを選択')).toBeChecked()
+        expect(screen.getByLabelText('ランチを選択')).not.toBeChecked()
+      })
+
+      it('並び替えても、保存時の並び(rowOrder)は元のCSVの順のまま', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+        pick(rowOf(/スーパー/), '相手科目', '食費')
+        pick(rowOf(/ランチ/), '相手科目', '食費')
+        pick(rowOf(/家賃/), '相手科目', '食費')
+        fireEvent.click(sortButton('日付'))
+        fireEvent.click(sortButton('日付'))
+        expect(descriptions()).toEqual(['家賃', 'ランチ', 'スーパー'])
+
+        fireEvent.click(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ }))
+
+        await screen.findByText(/確定しました/)
+        const refs = new SqlJsExternalTransactionRefRepository(db).findByAccount(bank.id)
+        const orderOf = (description: string) => refs.find((r) => r.description === description)?.rowOrder
+        expect([orderOf('スーパー'), orderOf('ランチ'), orderOf('家賃')]).toEqual([0, 1, 2])
+      })
+
+      it('グループの折りたたみと併用しても、折りたたんで開き直すと並びは保たれる', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+        fireEvent.click(sortButton('金額'))
+        expect(descriptions()).toEqual(['家賃', 'スーパー', 'ランチ'])
+
+        fireEvent.click(groupToggle('問題なし'))
+        fireEvent.click(groupToggle('問題なし'))
+
+        expect(header('金額')).toHaveAttribute('aria-sort', 'ascending')
+        expect(descriptions()).toEqual(['家賃', 'スーパー', 'ランチ'])
+      })
+
+      it('新しいCSVを選び直すと、並び替えは解除される', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(CSV3)
+        fireEvent.click(sortButton('金額'))
+        expect(header('金額')).toHaveAttribute('aria-sort', 'ascending')
+
+        await chooseCsv(CSV3)
+
+        await waitFor(() => expect(header('金額')).toHaveAttribute('aria-sort', 'none'))
+        expect(descriptions()).toEqual(['スーパー', 'ランチ', '家賃'])
+      })
+
+      it('取込先の科目を変えると、並び替えは解除される', async () => {
+        const other = accounts.create({ category: 'asset', name: '別の預金', isReconcilable: true })
+        makeMapping({ accountIds: [bank.id, other.id] })
+        renderScreen()
+        await chooseCsv(CSV3, false)
+        fireEvent.change(await screen.findByLabelText('科目'), { target: { value: String(bank.id) } })
+        await screen.findByText(/statement\.csv を読み込み済み/)
+        fireEvent.click(sortButton('金額'))
+        expect(header('金額')).toHaveAttribute('aria-sort', 'ascending')
+
+        fireEvent.change(screen.getByLabelText('科目'), { target: { value: String(other.id) } })
+
+        await waitFor(() => expect(header('金額')).toHaveAttribute('aria-sort', 'none'))
+      })
+    })
+  })
 })

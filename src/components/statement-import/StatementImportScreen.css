@@ -326,6 +326,80 @@
   border-bottom: 0;
 }
 
+/*
+ * 入力済み(相手科目が決まっている)の行は薄い緑にする(計画Issue #231 フェーズ2)。未入力の行は従来の背景のまま。
+ * 「似た取引あり」の行は、入力済みになると行と下の確認の行をまとめて緑にし、1つのまとまりに見せる。
+ * 重複・「この取引を保存しない」の行は色分けの対象外。上の「似た取引あり」の黄色より後ろに書いて、入力済みの色を優先する。
+ */
+.import-row--done td,
+.import-sub--done td {
+  background: #eaf5ef;
+}
+
+/* 状態の文字に添えるマーク。色だけに頼らず、入力済みは✓、未入力は破線の丸 */
+.import-status__mark {
+  width: 14px;
+  height: 14px;
+  margin-right: 5px;
+  vertical-align: -2px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.import-status__mark--todo circle {
+  stroke-dasharray: 2.5 2;
+}
+
+/* ヘッダーでの並び替えのボタン(計画Issue #231 フェーズ2)。見出しの見た目のまま、押せることを矢印で示す */
+.import-sort {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  margin: -2px -4px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.import-sort:hover {
+  background: var(--color-field-subtle);
+}
+
+.import-sort:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.import-sort--on {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.import-sort__mark {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.45;
+}
+
+.import-sort--on .import-sort__mark {
+  stroke-width: 2;
+  opacity: 1;
+}
+
 /* 「この取引を保存しない」の行はグレーにして、選び直すまで編集できない(確認の行の選択だけは操作できる) */
 .import-row--skipped td {
   background: var(--color-field-subtle);
