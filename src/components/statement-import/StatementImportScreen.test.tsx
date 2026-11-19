@@ -2271,6 +2271,76 @@ describe('StatementImportScreen', () => {
       expect(groupToggle('問題なし')).toBeInTheDocument()
     })
 
+    it('折りたたんだ状態で一括操作をしても、折りたたんでいる行に反映され、開き直すと値が入っている', async () => {
+      makeMapping()
+      manualLunch()
+      renderScreen()
+      await chooseCsv(CSV)
+      fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
+      fireEvent.click(groupToggle('問題なし'))
+      expect(screen.queryByRole('row', { name: /スーパー/ })).not.toBeInTheDocument()
+
+      const bulk = within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
+      expect(bulk.getByText('3件に一括設定')).toBeInTheDocument()
+      fireEvent.change(bulk.getByLabelText('一括で設定するコメント'), { target: { value: 'まとめて入力' } })
+      fireEvent.click(bulk.getByRole('button', { name: 'コメントを適用' }))
+      expect(bulk.getByText('3件に設定しました')).toBeInTheDocument()
+
+      fireEvent.click(groupToggle('問題なし'))
+      expect(screen.getByLabelText('スーパーのコメント')).toHaveValue('まとめて入力')
+      expect(screen.getByLabelText('家賃のコメント')).toHaveValue('まとめて入力')
+    })
+
+    it('折りたたんだ状態で確定しても、折りたたんでいた行も仕訳として保存され、全件が確定して空になったグループの見出しは消える', async () => {
+      makeMapping()
+      manualLunch()
+      renderScreen()
+      await chooseCsv(CSV)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+      pick(rowOf(/家賃/), '相手科目', '食費')
+      fireEvent.click(groupToggle('問題なし'))
+
+      // ランチは相手科目が未選択なので確定できず残る(部分確定)
+      fireEvent.click(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ }))
+
+      await screen.findByText('2件を確定しました(1件失敗)')
+      expect(userEntries().filter((e) => e.sourceType === 'external_import')).toHaveLength(2)
+      expect(userEntries().map((e) => e.memo)).toEqual(expect.arrayContaining(['スーパー', '家賃']))
+      expect(screen.queryByRole('button', { name: /^問題なし/ })).not.toBeInTheDocument()
+      expect(groupToggle('似た取引あり')).toBeInTheDocument()
+    })
+
+    it('一部だけ確定して残りの行を続けるときは、折りたたんだグループの状態を保つ', async () => {
+      makeMapping()
+      manualLunch()
+      renderScreen()
+      await chooseCsv(CSV)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+      pick(rowOf(/家賃/), '相手科目', '食費')
+      fireEvent.click(groupToggle('似た取引あり'))
+
+      fireEvent.click(screen.getByRole('button', { name: /^3 件を「普通預金」に確定$/ }))
+
+      await screen.findByText('2件を確定しました(1件失敗)')
+      expect(groupToggle('似た取引あり')).toHaveAttribute('aria-expanded', 'false')
+      expect(screen.queryByRole('row', { name: /ランチ/ })).not.toBeInTheDocument()
+    })
+
+    it('取込先の科目を変えると、折りたたみは初期状態(すべて開く)に戻る', async () => {
+      const other = accounts.create({ category: 'asset', name: '別の預金', isReconcilable: true })
+      makeMapping({ accountIds: [bank.id, other.id] })
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
+      fireEvent.change(await screen.findByLabelText('科目'), { target: { value: String(bank.id) } })
+      await screen.findByText(/statement\.csv を読み込み済み/)
+      fireEvent.click(groupToggle('問題なし'))
+      expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'false')
+
+      fireEvent.change(screen.getByLabelText('科目'), { target: { value: String(other.id) } })
+
+      await waitFor(() => expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'true'))
+    })
+
     it('新しいCSVを選び直すと、折りたたみは初期状態(すべて開く)に戻る', async () => {
       makeMapping()
       manualLunch()
