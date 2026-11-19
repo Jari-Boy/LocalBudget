@@ -33,7 +33,6 @@ import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSet
 import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/SqlJsStatementImportDraftRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
 import { StatementImportScreen } from './StatementImportScreen'
-import { setPendingImportFiles } from './pendingImportFiles'
 
 let db: Database
 let entries: SqlJsJournalEntryRepository
@@ -63,7 +62,6 @@ beforeEach(async () => {
   })
   // jsdomにはscrollIntoViewが無い
   Element.prototype.scrollIntoView = vi.fn()
-  setPendingImportFiles([])
 })
 
 afterEach(cleanup)
@@ -411,27 +409,12 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
   })
 })
 
-describe('StatementImportScreen: 仕訳画面から渡されたCSV(計画Issue #214)', () => {
-  const asFile = (f: { name: string; body: string }) => new File([f.body], f.name, { type: 'text/csv' })
-
-  it('仕訳画面で選んだCSVが渡されていれば、画面を開いた時点でそのCSVを読み込む(「CSVを選択」の開始状態を出さない)', async () => {
-    setPendingImportFiles([asFile(OCT), asFile(NOV)])
-
+describe('StatementImportScreen: 開いた直後の開始状態(計画Issue #214・#231)', () => {
+  it('仕訳画面の「明細から起票」から開いた直後は、CSVを読み込まず、「CSVを選択」の開始状態を出す(CSVはこの画面で選ぶ)', async () => {
     renderScreen()
 
-    await screen.findByText(/2ファイルを読み込み済み/)
-    expect(screen.queryByRole('region', { name: 'CSVの選択' })).not.toBeInTheDocument()
-  })
-
-  it('渡されたCSVは1回だけ使い、画面を開き直したときは開始状態に戻る(リロード後と同じ)', async () => {
-    setPendingImportFiles([asFile(OCT)])
-    renderScreen()
-    await screen.findByText(/oct\.csv を読み込み済み/)
-    cleanup()
-
-    renderScreen()
-
-    expect(await screen.findByRole('button', { name: 'CSVを選択' })).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'CSVの選択' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'CSVを選択' }).length).toBeGreaterThan(0)
     expect(screen.queryByText(/読み込み済み/)).not.toBeInTheDocument()
   })
 })

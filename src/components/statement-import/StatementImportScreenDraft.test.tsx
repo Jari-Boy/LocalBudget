@@ -34,7 +34,6 @@ import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSet
 import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/SqlJsStatementImportDraftRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
 import { StatementImportScreen } from './StatementImportScreen'
-import { setPendingImportFiles } from './pendingImportFiles'
 
 let db: Database
 let entries: SqlJsJournalEntryRepository
@@ -63,7 +62,6 @@ beforeEach(async () => {
   accounts.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
   makeMapping()
   Element.prototype.scrollIntoView = vi.fn()
-  setPendingImportFiles([])
 })
 
 afterEach(cleanup)

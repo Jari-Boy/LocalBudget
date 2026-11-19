@@ -88,7 +88,6 @@ import type { KeywordListItem } from './KeywordList'
 import { buildGroupSelectCategories } from '../common/tree-select/groupSelectCategories'
 import { mappingFormToInput } from '../master/mappingForm'
 import { QuickCreateDialog } from './QuickCreateDialog'
-import { takePendingImportFiles } from './pendingImportFiles'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import './StatementImportScreen.css'
 
@@ -348,14 +347,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     householdMemberRepository,
     settlementBatchRepository,
   ])
-
-  // 仕訳画面の「明細から起票」で選んだCSVが渡されていれば、データの読み込み後に1回だけ読み込む(計画Issue #214)
-  const pendingTaken = useRef(false)
-  useEffect(() => {
-    if (data === null || pendingTaken.current) return
-    pendingTaken.current = true
-    void loadFiles(takePendingImportFiles())
-  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 開始状態に出す一時保存の一覧(計画Issue #231 フェーズ3)
   useEffect(() => {

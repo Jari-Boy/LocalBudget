@@ -161,8 +161,8 @@ function setup(
     templateGroups: JournalTemplateGroup[]
     templatesPanel: ReactNode
     onOpenAccountReconciliation: (accountId: number) => void
-    /** 渡すと「明細から起票」が使える(計画Issue #214) */
-    onStatementFilesPicked: (files: File[]) => void
+    /** 渡すと「明細から起票」が使える。押すと明細取込画面へ移る(計画Issue #214・#231) */
+    onStartStatementImport: () => void
     /** 取引先・プロジェクトの追加ダイアログのグループ欄に出す、すでにあるグループ(計画Issue #207) */
     counterpartyGroups: ReturnType<typeof groupOf>[]
     projectGroups: ReturnType<typeof groupOf>[]
@@ -318,7 +318,7 @@ function setup(
     onSplit: vi.fn(),
     onProposalsChanged: vi.fn(),
     onOpenAccountReconciliation: overrides.onOpenAccountReconciliation,
-    onStatementFilesPicked: overrides.onStatementFilesPicked,
+    onStartStatementImport: overrides.onStartStatementImport,
     initialFilter: overrides.initialFilter,
     rulesPanel: overrides.rulesPanel,
     banner: overrides.banner,
@@ -1826,81 +1826,65 @@ describe('JournalScreen: テンプレートから起票(計画Issue #201)', () =
   })
 })
 
-describe('JournalScreen: 明細から起票(計画Issue #214)', () => {
-  const csv = (name: string) => new File(['日付,摘要,金額\n'], name, { type: 'text/csv' })
-  const fileInput = () => screen.getByLabelText('明細のCSVを選択')
-
-  it('呼び出し側がCSVの受け渡しを渡さないときは、「明細から起票」を出さない', async () => {
+describe('JournalScreen: 明細から起票(計画Issue #214・#231)', () => {
+  it('呼び出し側が明細取込への遷移を渡さないときは、「明細から起票」を出さない', async () => {
     setup()
     await ready()
 
     expect(screen.queryByRole('button', { name: '明細から起票' })).not.toBeInTheDocument()
   })
 
-  it('右側の起票のボタンの並びに「明細から起票」が出て、CSVを複数選べる', async () => {
-    setup({ onStatementFilesPicked: vi.fn() })
+  it('右側の起票のボタンの並びに「明細から起票」が出る。ここではCSVを選ばず(ファイル選択の入力欄は持たない)、明細取込画面で選ぶ', async () => {
+    setup({ onStartStatementImport: vi.fn() })
     await ready()
 
     expect(screen.getByRole('button', { name: '明細から起票' })).toBeInTheDocument()
-    expect(fileInput()).toHaveAttribute('multiple')
-    expect(fileInput()).toHaveAttribute('accept', '.csv')
+    expect(screen.queryByLabelText('明細のCSVを選択')).not.toBeInTheDocument()
+    expect(document.querySelector('input[type="file"]')).toBeNull()
   })
 
-  it('CSVを選ぶと、選んだファイルが呼び出し側に渡る', async () => {
-    const onPicked = vi.fn()
-    setup({ onStatementFilesPicked: onPicked })
+  it('押すと、明細取込画面へ移るコールバックが1回呼ばれる(明細取込画面の開始状態から、CSVの選択や一時保存の再開ができる)', async () => {
+    const onStart = vi.fn()
+    setup({ onStartStatementImport: onStart })
     await ready()
 
-    fireEvent.change(fileInput(), { target: { files: [csv('a.csv'), csv('b.csv')] } })
+    fireEvent.click(screen.getByRole('button', { name: '明細から起票' }))
 
-    expect(onPicked).toHaveBeenCalledTimes(1)
-    expect(onPicked.mock.calls[0][0].map((f: File) => f.name)).toEqual(['a.csv', 'b.csv'])
+    expect(onStart).toHaveBeenCalledTimes(1)
+    expect(leaveDialog()).not.toBeInTheDocument()
   })
 
-  it('ファイルを選ばずに閉じたとき(空の選択)は、何も渡さない', async () => {
-    const onPicked = vi.fn()
-    setup({ onStatementFilesPicked: onPicked })
-    await ready()
-
-    fireEvent.change(fileInput(), { target: { files: [] } })
-
-    expect(onPicked).not.toHaveBeenCalled()
-  })
-
-  it('ボタンを押した時点では未保存の警告を出さず、編集中にファイルを選んだ後で出す。キャンセルすれば渡さず、編集中の内容が残る', async () => {
-    const onPicked = vi.fn()
-    setup({ onStatementFilesPicked: onPicked })
+  it('編集中に押すと、移動の前に未保存の警告が出る。キャンセルすれば移らず、編集中の内容は残る', async () => {
+    const onStart = vi.fn()
+    setup({ onStartStatementImport: onStart })
     await ready()
     editMemo('ランチ(修正中)')
 
     fireEvent.click(screen.getByRole('button', { name: '明細から起票' }))
-    expect(leaveDialog()).not.toBeInTheDocument()
-
-    fireEvent.change(fileInput(), { target: { files: [csv('a.csv')] } })
     expect(leaveDialog()).toBeInTheDocument()
-    expect(onPicked).not.toHaveBeenCalled()
+    expect(onStart).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
-    expect(onPicked).not.toHaveBeenCalled()
+    expect(onStart).not.toHaveBeenCalled()
     expect(memoInput()).toHaveValue('ランチ(修正中)')
   })
 
-  it('編集中にファイルを選んで「破棄して移動」を選ぶと、ファイルが渡る', async () => {
-    const onPicked = vi.fn()
-    setup({ onStatementFilesPicked: onPicked })
+  it('編集中に押して「破棄して移動」を選ぶと、明細取込画面へ移る', async () => {
+    const onStart = vi.fn()
+    setup({ onStartStatementImport: onStart })
     await ready()
     editMemo('ランチ(修正中)')
 
-    fireEvent.change(fileInput(), { target: { files: [csv('a.csv')] } })
+    fireEvent.click(screen.getByRole('button', { name: '明細から起票' }))
     fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
 
-    expect(onPicked).toHaveBeenCalledTimes(1)
+    expect(onStart).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('JournalScreen: 起票の入口のボタン(計画Issue #214)', () => {
   it('「明細から起票」「テンプレートから起票」「手入力で起票」は、同じ見た目(強調なし)で並ぶ', async () => {
-    setup({ onStatementFilesPicked: vi.fn(), templates: [] })
+    setup({ onStartStatementImport: vi.fn(), templates: [] })
     await ready()
 
     const names = ['明細から起票', 'テンプレートから起票', '手入力で起票']

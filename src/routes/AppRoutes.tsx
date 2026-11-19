@@ -30,7 +30,6 @@ import { JournalScreen, type JournalScreenProps, type JournalScreenTab } from '.
 import { SplitSettleScreen, type SplitSettleTab } from '../components/settlement/SplitSettleScreen'
 import type { SplitSettleRepositories } from '../components/settlement/splitSettleData'
 import { StatementImportScreen } from '../components/statement-import/StatementImportScreen'
-import { setPendingImportFiles } from '../components/statement-import/pendingImportFiles'
 import { AppShell } from '../components/layout/AppShell'
 import { AccountMasterTab } from '../components/master/AccountMasterTab'
 import { CounterpartyMasterTab } from '../components/master/CounterpartyMasterTab'
@@ -525,11 +524,8 @@ function JournalScreenRoute(props: JournalScreenRouteProps) {
       initialFilter={initialFilter}
       onSplit={(entry) => navigate('/journal/splitting', { state: { entryIds: [entry.id] } })}
       onOpenAccountReconciliation={(accountId) => navigate(`/master/accounts?account=${accountId}`)}
-      onStatementFilesPicked={(files) => {
-        // 選んだCSVは、受け渡し口に預けて明細取込画面へ移る(計画Issue #214)
-        setPendingImportFiles(files)
-        navigate('/journal/create/import')
-      }}
+      // CSVは、明細取込画面の開始状態で選ぶ(一時保存の再開の一覧もそこにある。計画Issue #231)
+      onStartStatementImport={() => navigate('/journal/create/import')}
     />
   )
 }

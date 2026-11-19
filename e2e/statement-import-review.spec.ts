@@ -1,6 +1,6 @@
 /**
  * 明細取込画面(計画Issue #76・#77・#78の基盤を計画Issue #151で1画面に統合)のE2Eテスト。
- * 実ブラウザ(Chromium)で、仕訳画面の「明細から起票」から取込先とCSVを選び、Web Worker + RPC層を
+ * 実ブラウザ(Chromium)で、仕訳画面の「明細から起票」から明細取込画面を開いて取込先とCSVを選び、Web Worker + RPC層を
  * 経由して、候補定義への実パース試行による絞り込み、一致する定義が無い場合のエラー表示、
  * 完全一致重複の行(対象外)、確定版の候補の置き換えと残高照合、取引先推定・一括設定・確定の
  * 一連のフロー、マスタの「明細マッピング」タブでの編集を検証する。細かい入力規則は
@@ -151,13 +151,20 @@ function csvFile(content: string) {
   return { name: 'statement.csv', mimeType: 'text/csv', buffer: Buffer.from(content, 'utf-8') }
 }
 
+/** 仕訳画面の「明細から起票」を押して、明細取込画面(開始状態)を開く(計画Issue #231。CSVは明細取込画面で選ぶ) */
+async function openImportScreen(page: Page) {
+  await page.getByRole('link', { name: /^仕訳/ }).click()
+  await page.getByRole('button', { name: '明細から起票' }).click()
+  await expect(page.getByRole('region', { name: 'CSVの選択' })).toBeVisible()
+}
+
 /**
- * 仕訳画面の「明細から起票」でCSVを選ぶ(計画Issue #214)。取込先は、マッピング定義に紐づく科目が初期値になる
+ * 明細取込画面を開いて、CSVを選ぶ(計画Issue #214・#231)。取込先は、マッピング定義に紐づく科目が初期値になる
  * (accountNameはその初期値の確認に使う)。紐づく科目が無い定義では取込先が未選択のまま。
  */
 async function startImport(page: Page, accountName: string | null, csv: string) {
-  await page.getByRole('link', { name: /^仕訳/ }).click()
-  await page.getByLabel('明細のCSVを選択').setInputFiles(csvFile(csv))
+  await openImportScreen(page)
+  await page.getByLabel('CSVを選択', { exact: true }).setInputFiles(csvFile(csv))
   if (accountName !== null) {
     await expect(page.getByLabel('科目', { exact: true }).locator('option:checked')).toHaveText(accountName)
     await chooseOwner(page)
@@ -434,8 +441,9 @@ test.describe('明細取込画面', () => {
 
     // DBの永続化は遅延つき(withAutoSaveのデバウンス)なので、既存のE2Eと同じく既知の待機時間を置いてから読み込み直す
     await page.waitForTimeout(2500)
-    // ページを読み込み直す(別の日に開いた場面)と、開始状態に一時保存の一覧が出る
+    // ページを読み込み直し(別の日に開いた場面)、仕訳画面の「明細から起票」から明細取込画面を開くと、開始状態に一時保存の一覧が出る
     await page.reload()
+    await openImportScreen(page)
     const list = page.getByRole('region', { name: '一時保存した取込' })
     await expect(list).toBeVisible()
     await expect(list).toContainText('普通預金')
@@ -465,8 +473,8 @@ test.describe('明細取込画面', () => {
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING)
 
-    await page.getByRole('link', { name: /^仕訳/ }).click()
-    await page.getByLabel('明細のCSVを選択').setInputFiles(csvFile(['x,y', '1,2', ''].join('\n')))
+    await openImportScreen(page)
+    await page.getByLabel('CSVを選択', { exact: true }).setInputFiles(csvFile(['x,y', '1,2', ''].join('\n')))
     await page.getByRole('button', { name: 'マッピングを編集' }).click()
 
     await expect(page).toHaveURL(/\/master\/mappings$/)
