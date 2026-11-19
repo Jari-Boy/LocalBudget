@@ -1632,3 +1632,13 @@
 - `KeywordList`にあった、科目を平らな`<select>`で出すフォールバック(`accountOptions`)は、呼び出し側が常に自前の選択欄(`renderAccount`)を渡していて使われていなかったため、移行せず削除した。
 - 取込先の未選択の強調は、`<select>`の枠線ではなく、囲みの要素のクラス(`import-attention`)で選択欄のボタンの枠線に付ける。
 **影響**: 取引先・グループ・プロジェクト・世帯メンバーは、次のPR以降で移す。構造テストの例外一覧は、科目を移した分だけ減らした。TreeSelectを直接使っている科目の欄(仕訳・定期仕訳など)は、#233のTreeSelectの改善(検索の正規化・Enter確定)が自動で効くため、このPRでは触らない。
+
+## 2026-11-19: 取引先の選択欄を共通の CounterpartySelect に移行する(計画Issue #234、1実体=1PRの2つ目)
+
+**背景**: 科目(2026-11-19、同Issue)に続き、取引先の生の`<select>`を移す。対象はキーワードマスタの編集・一括変更の取引先と、取引先の統合先。あわせて、前回の科目の移行で取りこぼしていた、取引先マスタのキーワード一覧の科目欄(`CounterpartyMasterTab`の`accountSelect`)も移した。
+**決定**:
+- 取引先は`CounterpartySelect`(`src/components/master/CounterpartySelect.tsx`)にした。置き場所・受け渡し(文字列の値、`filter`、`emptyLabel`、`leadingOptions`、`disabled`)は`AccountSelect`と同じで、取引先と取引先グループの階層をインデントで見せる。取引先は科目と違って区分(資産・負債など)が無く、グループだけの一階層なので、`pinned`は持たない。
+- 一括変更の`leadingOptions`は、取引先・科目の2つの欄で共通の配列を`useMemo`で作り、参照を安定させる(前回の評価の備考)。`filter`は、モジュールの定数の関数か、`useMemo`で作ったものを渡す(`CounterpartySelect`・`AccountSelect`の`useMemo`が毎回無効にならないように)。
+- キーワードの取引先は、科目が資産・負債のとき押せない(従来どおり、`disabled`)。値は押せないあいだも、空として見せる。
+- 取引先マスタのキーワード一覧の科目は、費用・収益の科目で、有効なもの、およびすでにキーワードに選ばれているものだけを候補にする(従来と同じ条件を、`filter`で表す)。
+**影響**: 構造テストの例外一覧から、`CounterpartyMasterTab`・`KeywordMasterTab`・`KeywordBulkPanel`を外した(取引先と科目はすべて移行済み)。次はグループ・世帯メンバー・精算バッチ。
