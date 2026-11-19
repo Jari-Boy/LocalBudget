@@ -2,13 +2,20 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
+import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import { findAccountMergeBlock } from '../../domain/account/findAccountMergeBlock'
+import { AccountSelect } from './AccountSelect'
 import type { MaybeAsync } from './maybeAsync'
 import './master.css'
+
+/** 統合先に選べるのは有効な科目だけ */
+const isActiveAccount = (account: Account) => account.isActive
 
 export interface AccountMergePanelProps {
   /** チェックされた科目(2件以上のときだけ表示する) */
   accounts: readonly Account[]
+  /** 統合先の選択欄で、科目をグループの階層で見せるための科目グループ */
+  accountGroups: readonly AccountGroup[]
   /** 統合元の科目に紐づく明細行の件数(確認の文言用) */
   lineCountOf: (accountId: number) => number
   repository: MaybeAsync<Pick<AccountRepository, 'merge'>>
@@ -21,7 +28,7 @@ export interface AccountMergePanelProps {
  * (システム管理・区分違い・照合可否違い、findAccountMergeBlock)は理由だけを表示する。
  * 統合先に選べるのは有効な科目だけ。
  */
-export function AccountMergePanel({ accounts, lineCountOf, repository, onMerged }: AccountMergePanelProps) {
+export function AccountMergePanel({ accounts, accountGroups, lineCountOf, repository, onMerged }: AccountMergePanelProps) {
   const { t } = useTranslation('master')
   const [targetId, setTargetId] = useState('')
   const [confirming, setConfirming] = useState(false)
@@ -68,27 +75,19 @@ export function AccountMergePanel({ accounts, lineCountOf, repository, onMerged 
     <section className="master-subsection" aria-label={region}>
       <h3 className="master-subsection__title">{title}</h3>
       <div className="master-field">
-        <label className="master-field__label" htmlFor="account-merge-target">
-          {t('accountTab.mergeTarget')}
-        </label>
-        <select
-          id="account-merge-target"
-          className="master-field__control"
+        <span className="master-field__label">{t('accountTab.mergeTarget')}</span>
+        <AccountSelect
+          label={t('accountTab.mergeTarget')}
+          accounts={accounts}
+          accountGroups={accountGroups}
+          filter={isActiveAccount}
           value={targetId}
-          onChange={(event) => {
-            setTargetId(event.target.value)
+          emptyLabel={t('accountTab.mergeChoose')}
+          onChange={(value) => {
+            setTargetId(value)
             setConfirming(false)
           }}
-        >
-          <option value="">{t('accountTab.mergeChoose')}</option>
-          {accounts
-            .filter((a) => a.isActive)
-            .map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-        </select>
+        />
       </div>
       {confirming && target ? (
         <>

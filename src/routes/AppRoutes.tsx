@@ -331,6 +331,7 @@ export function AppRoutes() {
             keywordRuleRepository={keywordRuleRepository}
             counterpartyRepository={counterpartyRepository}
             accountRepository={accountRepository}
+            accountGroupRepository={accountGroupRepository}
           />
         }
       />

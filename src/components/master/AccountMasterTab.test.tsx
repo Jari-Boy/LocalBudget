@@ -609,6 +609,12 @@ describe('AccountMasterTab', () => {
   describe('科目の統合(計画Issue #97)', () => {
     const check = (name: string) => fireEvent.click(screen.getByRole('checkbox', { name: `${name}を選択` }))
     const mergePanel = () => within(screen.getByRole('region', { name: '科目の統合' }))
+    /** 統合先の選択欄(共通の選択欄)を開き、検索で絞ってから科目を選ぶ */
+    const chooseTarget = (name: string) => {
+      fireEvent.click(mergePanel().getByRole('button', { name: /^統合先/ }))
+      fireEvent.change(screen.getByLabelText('統合先を検索'), { target: { value: name } })
+      fireEvent.click(within(screen.getByRole('dialog', { name: '統合先' })).getByRole('button', { name }))
+    }
 
     it('2件以上チェックすると統合の欄が出て、確認を経て仕訳が統合先に付け替えられる', async () => {
       const target = accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
@@ -621,7 +627,7 @@ describe('AccountMasterTab', () => {
 
       check('交通費')
       check('バス代')
-      fireEvent.change(mergePanel().getByLabelText('統合先'), { target: { value: String(target.id) } })
+      chooseTarget('交通費')
       fireEvent.click(mergePanel().getByRole('button', { name: '統合する' }))
       expect(mergePanel().getByText(/仕訳の明細1行を付け替えます/)).toBeInTheDocument()
       expect(entries.findById(entry.id)!.lines.some((l) => l.accountId === bus.id)).toBe(true)
@@ -692,12 +698,16 @@ describe('AccountMasterTab', () => {
       check('旧交通費')
       check('バス代')
 
-      const options = within(mergePanel().getByLabelText('統合先')).getAllByRole('option').map((o) => o.textContent)
-      expect(options).toEqual(['選択してください', 'バス代'])
+      fireEvent.click(mergePanel().getByRole('button', { name: /^統合先/ }))
+      const dialog = within(screen.getByRole('dialog', { name: '統合先' }))
+      fireEvent.change(screen.getByLabelText('統合先を検索'), { target: { value: '交通費' } })
+      expect(dialog.queryByRole('button', { name: '旧交通費' })).not.toBeInTheDocument()
+      fireEvent.change(screen.getByLabelText('統合先を検索'), { target: { value: 'バス' } })
+      expect(dialog.getByRole('button', { name: 'バス代' })).toBeInTheDocument()
     })
 
     it('統合後、仕訳が0件になった統合元は、削除できるようになる', async () => {
-      const target = accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
+      accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
       const bus = accounts.create({ category: 'expense', name: 'バス代', isReconcilable: null })
       const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
       postEntry(bus.id, cash.id)
@@ -705,7 +715,7 @@ describe('AccountMasterTab', () => {
       await screen.findByRole('button', { name: '交通費' })
       check('交通費')
       check('バス代')
-      fireEvent.change(mergePanel().getByLabelText('統合先'), { target: { value: String(target.id) } })
+      chooseTarget('交通費')
       fireEvent.click(mergePanel().getByRole('button', { name: '統合する' }))
       fireEvent.click(await mergePanel().findByRole('button', { name: '統合を実行' }))
       await screen.findByText(/統合しました/)

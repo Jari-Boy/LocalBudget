@@ -14,6 +14,7 @@ import { I18nextProvider } from 'react-i18next'
 import i18n from '../../infrastructure/i18n/i18n'
 import { createTestDatabase } from '../../infrastructure/db/createTestDatabase'
 import { runMigrations } from '../../infrastructure/db/migrations'
+import { SqlJsAccountGroupRepository } from '../../infrastructure/db/SqlJsAccountGroupRepository'
 import { SqlJsAccountRepository } from '../../infrastructure/db/SqlJsAccountRepository'
 import { SqlJsCounterpartyRepository } from '../../infrastructure/db/SqlJsCounterpartyRepository'
 import { SqlJsKeywordRuleRepository } from '../../infrastructure/db/SqlJsKeywordRuleRepository'
@@ -44,9 +45,18 @@ function renderTab() {
         keywordRuleRepository={rules}
         counterpartyRepository={new SqlJsCounterpartyRepository(db)}
         accountRepository={new SqlJsAccountRepository(db)}
+        accountGroupRepository={new SqlJsAccountGroupRepository(db)}
       />
     </I18nextProvider>,
   )
+}
+
+/** 科目の選択欄(共通の選択欄)を開き、検索で絞ってから科目を選ぶ。scopeは編集パネルなどの範囲、labelは欄の名称 */
+function chooseAccount(label: RegExp | string, name: string, scope: { getByRole: typeof screen.getByRole } = screen) {
+  fireEvent.click(scope.getByRole('button', { name: typeof label === 'string' ? new RegExp('^' + label) : label }))
+  const dialog = screen.getByRole('dialog')
+  fireEvent.change(within(dialog).getByRole('searchbox'), { target: { value: name } })
+  fireEvent.click(within(dialog).getByRole('button', { name }))
 }
 
 /** 一覧のキーワードの行(世帯メンバー・取引先タブと同じツリー表。区分の見出し行・ヘッダー行は除く) */
@@ -96,7 +106,7 @@ describe('KeywordMasterTab', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'キーワードを追加' }))
 
     fireEvent.change(screen.getByLabelText(/^キーワード\(摘要/), { target: { value: 'ａｔｍ' } })
-    fireEvent.change(screen.getByLabelText(/^相手科目/), { target: { value: String(cashId) } })
+    chooseAccount(/^相手科目/, '現金')
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(rules.findAll()).toHaveLength(1))
@@ -107,7 +117,7 @@ describe('KeywordMasterTab', () => {
     renderTab()
     fireEvent.click(await screen.findByRole('button', { name: 'キーワードを追加' }))
 
-    fireEvent.change(screen.getByLabelText(/^相手科目/), { target: { value: String(cashId) } })
+    chooseAccount(/^相手科目/, '現金')
 
     expect(screen.getByLabelText(/^取引先/)).toBeDisabled()
   })
@@ -127,7 +137,7 @@ describe('KeywordMasterTab', () => {
     rules.create({ pattern: 'ATM', accountId: cashId })
     renderTab()
     fireEvent.click(await screen.findByRole('button', { name: 'キーワードを追加' }))
-    fireEvent.change(screen.getByLabelText(/^相手科目/), { target: { value: String(cashId) } })
+    chooseAccount(/^相手科目/, '現金')
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('キーワードが空です')
@@ -185,7 +195,7 @@ describe('KeywordMasterTab', () => {
     fireEvent.click(screen.getByLabelText('VISAを選択'))
 
     const panel = within(screen.getByRole('region', { name: '一括操作' }))
-    fireEvent.change(panel.getByLabelText('科目'), { target: { value: String(card.id) } })
+    chooseAccount('科目', '未払金', panel)
     fireEvent.click(panel.getByRole('button', { name: '変更を適用' }))
 
     await waitFor(() => expect(rules.findAll().map((r) => r.accountId)).toEqual([card.id, card.id]))
@@ -199,7 +209,7 @@ describe('KeywordMasterTab', () => {
     fireEvent.click(screen.getByLabelText('すべて選択'))
 
     const panel = within(screen.getByRole('region', { name: '一括操作' }))
-    fireEvent.change(panel.getByLabelText('科目'), { target: { value: String(cashId) } })
+    chooseAccount('科目', '現金', panel)
     fireEvent.click(panel.getByRole('button', { name: '変更を適用' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('取引先と相手科目を両方指定できるのは')

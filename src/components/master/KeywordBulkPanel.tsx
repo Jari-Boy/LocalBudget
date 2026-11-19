@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
+import type { AccountGroup } from '../../domain/account-group/AccountGroup'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { KeywordRule } from '../../domain/keyword-rule/KeywordRule'
+import { AccountSelect } from './AccountSelect'
 import type { BulkChoice } from './keywordRuleForm'
 import './master.css'
 
@@ -11,12 +13,17 @@ export interface KeywordBulkPanelProps {
   rules: readonly KeywordRule[]
   counterparties: readonly Counterparty[]
   accounts: readonly Account[]
+  /** 科目の選択欄で、科目をグループの階層で見せるための科目グループ */
+  accountGroups: readonly AccountGroup[]
   busy: boolean
   error: string
   onApply: (change: { counterparty: BulkChoice; account: BulkChoice }) => void
   onDelete: () => void
   onClear: () => void
 }
+
+/** 科目の一括変更に選べるのは、有効で、システム管理ではない科目 */
+const isSelectableAccount = (account: Account) => account.isActive && !account.isSystemManaged
 
 /** セレクトの値: 変更しない / 外す / ルールのid */
 const KEEP = 'keep'
@@ -29,7 +36,7 @@ const toChoice = (value: string): BulkChoice => (value === KEEP ? 'keep' : value
  * 取引先と科目の一括変更(「変更しない」「外す」「このものにする」)と、2回押しの一括削除を持つ。
  * 変更の検証と適用は呼び出し側(planBulkChange)が行う。
  */
-export function KeywordBulkPanel({ rules, counterparties, accounts, busy, error, onApply, onDelete, onClear }: KeywordBulkPanelProps) {
+export function KeywordBulkPanel({ rules, counterparties, accounts, accountGroups, busy, error, onApply, onDelete, onClear }: KeywordBulkPanelProps) {
   const { t } = useTranslation('master')
   const [counterparty, setCounterparty] = useState(KEEP)
   const [account, setAccount] = useState(KEEP)
@@ -65,26 +72,20 @@ export function KeywordBulkPanel({ rules, counterparties, accounts, busy, error,
           </select>
         </div>
         <div className="master-field">
-          <label className="master-field__label" htmlFor="kw-bulk-account">
-            {t('keywordTab.colAccount')}
-          </label>
-          <select
-            id="kw-bulk-account"
-            className="master-field__control"
-            disabled={busy}
+          <span className="master-field__label">{t('keywordTab.colAccount')}</span>
+          <AccountSelect
+            label={t('keywordTab.colAccount')}
+            accounts={accounts}
+            accountGroups={accountGroups}
+            filter={isSelectableAccount}
             value={account}
-            onChange={(e) => setAccount(e.target.value)}
-          >
-            <option value={KEEP}>{t('keywordTab.bulk.keep')}</option>
-            <option value={CLEAR}>{t('keywordTab.bulk.clearValue')}</option>
-            {accounts
-              .filter((a) => a.isActive && !a.isSystemManaged)
-              .map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-          </select>
+            disabled={busy}
+            leadingOptions={[
+              { value: KEEP, label: t('keywordTab.bulk.keep') },
+              { value: CLEAR, label: t('keywordTab.bulk.clearValue') },
+            ]}
+            onChange={setAccount}
+          />
         </div>
         <div className="master-actions">
           <button
