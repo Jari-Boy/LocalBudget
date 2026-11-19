@@ -85,7 +85,6 @@ import { CounterpartyCreateDialog, type CounterpartyCreateInput } from './Counte
 import { formatDescriptionForDisplay } from '../../domain/statement-import/formatDescriptionForDisplay'
 import { countRowsContaining, matchesKeyword, validateKeyword, type KeywordError } from './counterpartyKeywordModel'
 import type { KeywordListItem } from './KeywordList'
-import { buildGroupSelectCategories } from '../common/tree-select/groupSelectCategories'
 import { mappingFormToInput } from '../master/mappingForm'
 import { QuickCreateDialog } from './QuickCreateDialog'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
@@ -2644,7 +2643,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             return rowAccount !== undefined && isCounterpartyEligibleCategory(rowAccount.category) ? rowAccount.id : null
           })()}
           descriptions={visibleIndices.map((i) => records[i].record.description)}
-          groupCategories={buildGroupSelectCategories(data.counterpartyGroups)}
+          groups={data.counterpartyGroups}
           onCreateGroup={createCounterpartyGroup}
           accountCategories={categories.defaultAccounts}
           onCreateAccount={(onCreated) => setDefaultAccountCreate(() => onCreated)}
@@ -2656,7 +2655,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         <QuickCreateDialog
           title={t('createProjectTitle')}
           nameLabel={t('createProjectName')}
-          groupField={{ label: t('projectGroupLabel'), categories: buildGroupSelectCategories(data.projectGroups), onCreate: createProjectGroup }}
+          groupField={{ label: t('projectGroupLabel'), kind: 'projectGroup', groups: data.projectGroups, onCreate: createProjectGroup }}
           onSubmit={(name, groupId) => createProject(name, groupId, createTarget.apply)}
           onCancel={() => setCreateTarget(null)}
         />

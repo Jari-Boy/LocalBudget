@@ -55,7 +55,6 @@ import { canCreateRuleFromEntry } from '../../domain/recurring-transaction/canCr
 import { AccountCreateForm } from '../master/AccountCreateForm'
 import { CreateRuleFromEntryDialog } from './CreateRuleFromEntryDialog'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
-import { buildGroupSelectCategories } from '../common/tree-select/groupSelectCategories'
 import { JournalEntryEditor, type JournalEditorLine, type JournalEditorMaster, type JournalEditorValue } from './JournalEntryEditor'
 import {
   createEmptyJournalEntryFormLine,
@@ -1741,7 +1740,8 @@ export function JournalScreen(props: JournalScreenProps) {
           nameLabel="プロジェクト名"
           groupField={{
             label: 'プロジェクトグループ',
-            categories: buildGroupSelectCategories(data?.projectGroups ?? []),
+            kind: 'projectGroup',
+            groups: data?.projectGroups ?? [],
             onCreate: async (name) => {
               const created = await props.projectGroupRepository.create({ name })
               setData((prev) => (prev === null ? prev : { ...prev, projectGroups: [...prev.projectGroups, created] }))
@@ -1763,7 +1763,8 @@ export function JournalScreen(props: JournalScreenProps) {
           nameLabel="取引先名"
           groupField={{
             label: '取引先グループ',
-            categories: buildGroupSelectCategories(data?.counterpartyGroups ?? []),
+            kind: 'counterpartyGroup',
+            groups: data?.counterpartyGroups ?? [],
             onCreate: async (name) => {
               const created = await props.counterpartyGroupRepository.create({ name })
               setData((prev) => (prev === null ? prev : { ...prev, counterpartyGroups: [...prev.counterpartyGroups, created] }))
