@@ -193,6 +193,8 @@
   "summarySimilar": "(新規のうち似た取引あり {{count}} 件)",
   "summarySkipped": "(保存しない {{count}} 件)",
   "groupCount": "{{count}}件",
+  "groupUnchecked": "未確認 {{count}}件",
+  "groupCollapsedNote": "折りたたみ中の行も、一括操作・確定の対象です。",
   "group_duplicate": "重複",
   "group_duplicate_note": "すでに取り込み済みの明細です。既定では取り込みません。",
   "group_similar": "似た取引あり",

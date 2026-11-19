@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
@@ -63,6 +64,7 @@ import {
   type BulkChange,
   type ImportRowState,
 } from './importRowModel'
+import { countUncheckedByGroup, expandGroup, toggleCollapsedGroup, type CollapsedGroups } from './groupCollapse'
 import { isCounterpartyEligibleCategory } from '../journal-entry/journalEntryFormLine'
 import { collectFinancialInstitutionNames } from '../../domain/statement-import/financialInstitution'
 import { MappingCreateDialog } from './MappingCreateDialog'
@@ -237,6 +239,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [fileSummaries, setFileSummaries] = useState<MultiFileSummary[]>([])
   /** 重複行のジャンプで強調している行(2秒ほど) */
   const [flashIndex, setFlashIndex] = useState<number | null>(null)
+  /**
+   * 折りたたんでいるグループ(計画Issue #231 フェーズ1)。既定は全グループが開いている。折りたたんでも行は処理の対象のまま。
+   * ファイルのチェックの切り替えによる作り直し・確定後の続きの選択では保ち、CSVの選び直し・取込先の変更では初期化する。
+   */
+  const [collapsedGroups, setCollapsedGroups] = useState<CollapsedGroups>(new Set())
   const [noMatch, setNoMatch] = useState(false)
   const [showMappingDialog, setShowMappingDialog] = useState(false)
   const [institutionNames, setInstitutionNames] = useState<string[]>([])
@@ -790,6 +797,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   /** 取込先とチェックしたファイルから、取り込む一覧を作る。チェックしたファイルが無ければ一覧は出さない */
   async function buildSession(account: Account, next: MultiFileMappingMatch, checked: ReadonlySet<string>, restoreRows = false) {
     const files = next.files.filter((f) => checked.has(f.fileName))
+    // ファイルのチェックの切り替えによる作り直し(restoreRows)では、折りたたみの状態を保つ。それ以外は新しい取込なので初期化する
+    if (!restoreRows) setCollapsedGroups(new Set())
     if (files.length === 0) {
       setSession(null)
       return
@@ -1001,6 +1010,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const similarCount = importable.filter((i) => rowGroup(records[i]) === 'similar').length
   const groupCounts = { duplicate: 0, similar: 0, clean: 0 }
   for (const i of visibleIndices) groupCounts[rowGroup(records[i])]++
+  /** 見出しに出す「未確認」の行数。折りたたみ中も見えるので、見えない行の確認漏れに気づける */
+  const uncheckedCounts = session
+    ? countUncheckedByGroup(visibleIndices, records, session.rows)
+    : { duplicate: 0, similar: 0, clean: 0 }
   /** 取込済み(突合マスタ)の仕訳のid。似た取引の出どころ(外部明細)の判定に使う */
   const externalEntryIds = new Set([...(session?.existingRefs.values() ?? [])].map((ref) => ref.journalEntryId))
   const sourceLabelOf = (journalEntryId: number) =>
@@ -1019,6 +1032,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     if (r.crossFileDuplicateOf !== null && !firstDuplicateOf.has(r.crossFileDuplicateOf)) firstDuplicateOf.set(r.crossFileDuplicateOf, i)
   })
   const jumpToRow = (index: number) => {
+    // 移動先のグループが折りたたまれていたら、先に開いて描画してからスクロールする
+    flushSync(() => setCollapsedGroups((prev) => expandGroup(prev, rowGroup(records[index]))))
     document.getElementById(`import-row-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     setFlashIndex(index)
     window.setTimeout(() => setFlashIndex((current) => (current === index ? null : current)), 2200)
@@ -1717,19 +1732,38 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                   const statusText =
                     status === 'new' ? t('statusNew') : status === 'duplicate' ? t('statusDuplicate') : status === 'skipped' ? t('statusSkipped') : t('statusCheck')
 
+                  const isCollapsed = collapsedGroups.has(group)
+                  // 見出し全体を開閉のボタンにする(Tab・Enter・Spaceで操作でき、aria-expandedで状態を伝える)。
+                  // 折りたたむとそのグループの行は描画しないが、件数・未確認の数は見出しに残す(計画Issue #231 フェーズ1)
+                  const groupHeader = startsGroup ? (
+                    <tr className="import-group">
+                      <td colSpan={showFileColumn ? 11 : 10}>
+                        <button
+                          type="button"
+                          className="import-group__head"
+                          aria-expanded={!isCollapsed}
+                          onClick={() => setCollapsedGroups((prev) => toggleCollapsedGroup(prev, group))}
+                        >
+                          <svg className="import-group__chevron" viewBox="0 0 16 16" aria-hidden="true">
+                            <path d={isCollapsed ? 'M6 4l4 4-4 4' : 'M4 6l4 4 4-4'} />
+                          </svg>
+                          <span className="import-group__title">{t(`group_${group}`)}</span>
+                          <span className="import-group__count">{t('groupCount', { count: groupCounts[group] })}</span>
+                          {uncheckedCounts[group] > 0 && (
+                            <span className="import-group__unchecked">{t('groupUnchecked', { count: uncheckedCounts[group] })}</span>
+                          )}
+                          <span className="import-group__note">{t(`group_${group}_note`)}</span>
+                          {/* 重複は取り込み対象外なので、確定の対象という注記は出さない */}
+                          {isCollapsed && group !== 'duplicate' && <span className="import-group__note">{t('groupCollapsedNote')}</span>}
+                        </button>
+                      </td>
+                    </tr>
+                  ) : null
+                  if (isCollapsed) return <Fragment key={reviewRecord.externalId + index}>{groupHeader}</Fragment>
+
                   return (
                     <Fragment key={reviewRecord.externalId + index}>
-                      {startsGroup && (
-                        <tr className="import-group">
-                          <td colSpan={showFileColumn ? 11 : 10}>
-                            <div className="import-group__head">
-                              <span className="import-group__title">{t(`group_${group}`)}</span>
-                              <span className="import-group__count">{t('groupCount', { count: groupCounts[group] })}</span>
-                              <span className="import-group__note">{t(`group_${group}_note`)}</span>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
+                      {groupHeader}
                       <tr
                         id={`import-row-${index}`}
                         className={
