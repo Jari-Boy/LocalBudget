@@ -463,3 +463,10 @@
 **原因**: 自動保存の判定は`db.run`の呼び出しの有無で、中身がデータを変えるかどうかは見ない。
 **対策**: 読み取りのAPIは`db.exec`のみにする。表の作成は起動時(自動保存の開始前)に済ませる。読み取りのAPIを足したら、`db.run`を呼んでいないかを確認する。詳細は`docs/guides/knowledge.md`を参照。
 **該当箇所(例)**: `src/infrastructure/db/onboarding.ts`、`e2e/recurring-transaction-proposal-review.spec.ts`、計画Issue #177
+
+## マスタの実体を選ぶ欄を、画面ごとに生の`<select>`で組み立てて、階層・検索・Enter確定が画面ごとにばらつく(計画Issue #233)
+
+**症状**: 同じグループを選ぶ欄なのに、画面によって階層が出ない(名前だけのフラット表示、「親 / 子」の連結)、検索窓が無い、検索で1件に絞れてもEnterで確定できない、ひらがなで検索してもカタカナの名前にヒットしない、といった差が出る。
+**原因**: 共通の選択部品が無く、画面ごとに候補の組み立てと絞り込みを書いていた。検索も完全な部分一致(`name.includes(q)`)で、表記ゆれを吸収していなかった。
+**対策**: マスタの実体(科目・取引先・プロジェクト・世帯メンバー、各グループ)を選ぶ欄は、共通部品`EntitySelect`を使い、種類(`kind`)と絞り込み条件(`filter`)だけを渡す。階層は名前の連結ではなくインデント(深さ`depth`)で表す。検索は`normalizeForSearch`(ひらがな・カタカナ・全角半角・大小・空白を区別しない)を通す。短い固定の選択肢(区分・はい/いいえ・文字コード等)だけがネイティブの`<select>`のままでよい。`noRawEntitySelect.test.ts`の一覧に載せるのは、実体ではない固定の選択肢だけにする。Enterの確定では、日本語の変換確定(`isComposing`・keyCode 229)を除外し、フォームの送信とも競合させない。
+**該当箇所(例)**: `src/components/common/entity-select/EntitySelect.tsx`、`src/components/common/tree-select/normalizeForSearch.ts`、`src/components/common/entity-select/noRawEntitySelect.test.ts`、`docs/decisions.md`「選択欄は共通部品(EntitySelect)に統一し、画面ごとに実体の<select>を書かない」
