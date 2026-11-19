@@ -166,6 +166,7 @@ CSV明細の摘要欄(例:「AMAZON.CO.JP」「イオン○○店」)から取�
 | `counterparty_group_id` | 表示用グループ | FK(`counterparty_groups`)、任意。単一所属。NULL=未分類。CSV取込で作られた取引先は未分類で登録する(計画Issue #143) |
 | `sort_order` | 表示順 | 同じ入れ物(同一`counterparty_group_id`)の中での表示順。表示専用 |
 | `is_active` | 有効/非アクティブ | falseにしても過去仕訳・過去集計に影響なし |
+| `is_favorite` | お気に入り | 選択欄の先頭の「★ お気に入り」に固定表示する(計画Issue #231 フェーズ4、`docs/decisions.md`の同日の項)。表示専用で、集計・照合には関与しない。無効にしても状態を保つ(選択欄では、従来どおり、無効な項目は選択中のもの以外は出さない)。統合(`merge`)では、統合先の状態を変えず、統合元のお気に入りを外す(引き継がない) |
 | `created_at` | 作成日時 | |
 | `updated_at` | 更新日時 | |
 

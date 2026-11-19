@@ -368,7 +368,7 @@ export function TreeSelect(props: TreeSelectProps) {
                       </span>
                     )}
                   </button>
-                  {favoriteKind !== undefined && toggleFavorite !== undefined && (
+                  {favoriteKind !== undefined && toggleFavorite !== undefined && /^\d+$/.test(row.value) && (
                     // ★は項目の選択とは別のボタン(押しても選ばず、閉じない)。計画Issue #231 フェーズ4
                     <button
                       type="button"

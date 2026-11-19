@@ -1,0 +1,48 @@
+/* マスタ画面の行に置く、お気に入りの★のボタン(計画Issue #231 フェーズ4)。選択欄の★(tree-select__star)と同じ見た目 */
+.favorite-star {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.favorite-star:hover {
+  background: var(--color-hover);
+}
+
+.favorite-star:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.favorite-star svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+
+.favorite-star--on {
+  color: var(--color-star, #a8620b);
+}
+
+.favorite-star--on svg {
+  fill: currentColor;
+}
+
+/* ★を出さない行(システム管理の科目)で、名称の位置をそろえるための空き */
+.favorite-star-placeholder {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 26px;
+}

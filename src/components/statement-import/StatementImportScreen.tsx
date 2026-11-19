@@ -2026,6 +2026,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               <TreeSelect
                 label={t('bulkCounterAccount')}
                 categories={categories.counterAccounts}
+                favoriteKind="account"
                 value=""
                 placeholder={t('bulkCounterAccountPlaceholder')}
                 onChange={(v) => v !== '' && applyBulk({ field: 'counterAccount', value: Number(v) })}
@@ -2037,6 +2038,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               <TreeSelect
                 label={t('bulkCounterparty')}
                 categories={categories.counterparties}
+                favoriteKind="counterparty"
                 value=""
                 emptyLabel={t('bulkClear')}
                 placeholder={t('bulkCounterpartyPlaceholder')}
@@ -2045,6 +2047,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               <TreeSelect
                 label={t('bulkProject')}
                 categories={categories.projects}
+                favoriteKind="project"
                 value=""
                 emptyLabel={t('bulkClear')}
                 placeholder={t('bulkProjectPlaceholder')}
@@ -2285,6 +2288,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                               <TreeSelect
                                 label={t('colCounterAccount')}
                                 categories={categories.counterAccounts}
+                                favoriteKind="account"
                                 value={treeValue(state.counterAccountId)}
                                 placeholder={t('chooseDefinition')}
                                 disabled={isSkipped}
@@ -2319,6 +2323,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                     label={t('counterpartyLabel')}
                                     disabled={isSkipped}
                                     categories={categories.counterparties}
+                                    favoriteKind="counterparty"
                                     value={treeValue(state.counterpartyId)}
                                     emptyLabel={t('noCounterpartyOption')}
                                     placeholder={t('noCounterpartyOption')}
@@ -2386,6 +2391,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                 label={t('projectLabel')}
                                 disabled={isSkipped}
                                 categories={categories.projects}
+                                favoriteKind="project"
                                 value={treeValue(state.projectId)}
                                 emptyLabel={t('noProjectOption')}
                                 placeholder={t('memberNone')}

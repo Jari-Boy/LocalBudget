@@ -140,6 +140,7 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
                           <TreeSelect
                             label={t('patternAccountLabel', { index: index + 1 })}
                             categories={accountCategories}
+                            favoriteKind="account"
                             value={item.accountId == null ? '' : String(item.accountId)}
                             emptyLabel={t('defaultAccountNone')}
                             placeholder={t('defaultAccountNone')}

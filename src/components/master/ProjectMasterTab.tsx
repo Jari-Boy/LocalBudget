@@ -137,6 +137,7 @@ export function ProjectMasterTab({
       tree={tree}
       columns={['状態']}
       leafLabel={LEAF_LABEL}
+      favoriteKind="project"
       actions={actions}
       isLeafActive={(id) => data.projects.find((p) => p.id === id)?.isActive ?? true}
       leafBlockedText={(id) => describeDeletionBlocks(listDeletionBlocks('project', usage.get('project', id)), t)}

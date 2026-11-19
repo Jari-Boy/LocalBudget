@@ -162,6 +162,7 @@ export function AnalysisConditionBar(props: AnalysisConditionBarProps) {
         <TreeSelect
           label={t('filter.project')}
           categories={props.projectCategories}
+          favoriteKind="project"
           value={values.project}
           onChange={(project) => onValuesChange({ ...values, project })}
           allowGroupSelect
@@ -174,6 +175,7 @@ export function AnalysisConditionBar(props: AnalysisConditionBarProps) {
         <TreeSelect
           label={t('filter.counterparty')}
           categories={props.counterpartyCategories}
+          favoriteKind="counterparty"
           value={values.counterparty}
           onChange={(counterparty) => onValuesChange({ ...values, counterparty })}
           allowGroupSelect

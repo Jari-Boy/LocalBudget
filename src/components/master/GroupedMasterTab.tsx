@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { FavoriteStarButton } from '../common/favorites/FavoriteStarButton'
+import type { FavoriteKind } from '../common/favorites/FavoritesContext'
 import { computeTreeNodeUpdates, type TreeNodeUpdate } from '../common/tree-table/computeTreeNodeUpdates'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import { TreeCardList, type TreeCardContent } from '../common/tree-table/TreeCardList'
@@ -49,6 +51,8 @@ export interface GroupedMasterTabProps {
   leafBlockedText: (leafId: number) => string
   /** 変更後に呼び出し元のデータを読み直す */
   onChanged: () => Promise<void>
+  /** 渡すと、項目の行の名称の左に、お気に入りの★を出す(計画Issue #231 フェーズ4)。項目のidを、この種類のidとして扱う */
+  favoriteKind?: FavoriteKind
   /** 選んだ項目の右パネルに足す固有の欄(例: 取引先の既定の科目・パターン) */
   /**
    * 渡すと、左の一覧を表(TreeTable)ではなく、仕訳一覧と同じ見た目のカード型(TreeCardList)で出す
@@ -84,6 +88,7 @@ export function GroupedMasterTab({
   leafLabel,
   actions,
   isLeafActive,
+  favoriteKind,
   leafBlockedText,
   onChanged,
   renderLeafExtra,
@@ -214,6 +219,11 @@ export function GroupedMasterTab({
               void applyMove(next)
             }}
             onMoveRejected={setError}
+            renderLeafLeading={
+              favoriteKind === undefined
+                ? undefined
+                : (node) => <FavoriteStarButton kind={favoriteKind} id={parseNodeId(node.id).id} name={node.name} />
+            }
           />
         )}
         <p className="master-note">{t('accountTab.dragHint')}</p>

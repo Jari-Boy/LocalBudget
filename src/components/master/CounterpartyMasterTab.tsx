@@ -187,6 +187,7 @@ export function CounterpartyMasterTab({
       tree={tree}
       columns={['キーワード', '状態']}
       leafLabel={LEAF_LABEL}
+      favoriteKind="counterparty"
       actions={actions}
       isLeafActive={(id) => data.counterparties.find((c) => c.id === id)?.isActive ?? true}
       leafBlockedText={(id) =>

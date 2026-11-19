@@ -21,6 +21,7 @@ import {
 import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
 import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
 import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
+import { FavoriteStarButton, FavoriteStarPlaceholder } from '../common/favorites/FavoriteStarButton'
 import { computeTreeNodeUpdates } from '../common/tree-table/computeTreeNodeUpdates'
 import { TreeTable } from '../common/tree-table/TreeTable'
 import {
@@ -295,6 +296,15 @@ export function AccountMasterTab({
             void applyMove(next)
           }}
           onMoveRejected={setError}
+          // お気に入りの★(計画Issue #231 フェーズ4)。システム管理の科目は手入力の選択欄に出ないので、★は出さず、場所だけ空ける
+          renderLeafLeading={(node) => {
+            const { id } = parseNodeId(node.id)
+            return data.accounts.find((a) => a.id === id)?.isSystemManaged === true ? (
+              <FavoriteStarPlaceholder />
+            ) : (
+              <FavoriteStarButton kind="account" id={id} name={node.name} />
+            )
+          }}
           renderCategoryActions={(key) => (
             <>
               <button

@@ -195,6 +195,18 @@ describe('TreeSelect: お気に入り', () => {
     expect(within(popup()).getAllByRole('button', { name: '新費目' })).toHaveLength(2)
   })
 
+  it('数値のid以外の値の項目(一括編集の「なし(外す)」などの擬似項目)には、★を出さない', async () => {
+    const withPseudo: TreeSelectCategory[] = [
+      { key: '__bulk', name: '操作', nodes: [{ kind: 'item', value: '__clear__', name: 'なし(外す)', isActive: true }] },
+      ...categories,
+    ]
+    setup({ props: { categories: withPseudo } })
+    const list = await open()
+
+    expect(list.queryByRole('button', { name: /なし\(外す\)をお気に入り/ })).not.toBeInTheDocument()
+    expect(star(list, '交際費', false)).toHaveLength(1)
+  })
+
   it('プロバイダーが無いときは、favoriteKindを渡しても、★もセクションも出さない(従来の見た目のまま)', async () => {
     setup({ withProvider: false })
     const list = await open()
