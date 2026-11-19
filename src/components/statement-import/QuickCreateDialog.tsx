@@ -1,12 +1,11 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { EntitySelect, type EntityGroup, type EntitySelectKind } from '../common/entity-select/EntitySelect'
+import { EntitySelect, type EntityGroup } from '../common/entity-select/EntitySelect'
 
 export interface QuickCreateGroupField {
   /** グループの選択欄の名称(「取引先グループ」など) */
   label: string
-  /** グループの種類(取引先グループ・プロジェクトグループ)。候補の組み立てと階層のインデントは共通の選択欄が行う */
-  kind: EntitySelectKind
+  /** 選べるグループ。候補の組み立てと階層のインデントは共通の選択欄が行う */
   groups: readonly EntityGroup[]
   /**
    * 渡すと、選択欄の末尾に「+ グループを新規追加」を出す。名前だけで最上位のグループを作り、作ったグループのidを返す
@@ -79,7 +78,6 @@ export function QuickCreateDialog({ title, nameLabel, onSubmit, onCancel, groupF
           <div className="import-field">
             <span className="import-field__label">{groupField.label}</span>
             <EntitySelect
-              kind={groupField.kind}
               label={groupField.label}
               groups={groupField.groups}
               value={groupId}

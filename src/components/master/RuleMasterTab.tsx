@@ -392,7 +392,6 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           nameLabel="取引先名"
           groupField={{
             label: '取引先グループ',
-            kind: 'counterpartyGroup',
             groups: data.counterpartyGroups,
             onCreate: async (name) => {
               const created = await Promise.resolve(counterpartyGroupRepository.create({ name }))
@@ -435,7 +434,6 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           nameLabel="プロジェクト名"
           groupField={{
             label: 'プロジェクトグループ',
-            kind: 'projectGroup',
             groups: data.projectGroups,
             onCreate: async (name) => {
               const created = await Promise.resolve(projectGroupRepository.create({ name }))

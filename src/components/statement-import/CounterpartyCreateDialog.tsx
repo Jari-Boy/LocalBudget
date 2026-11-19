@@ -90,7 +90,7 @@ export function CounterpartyCreateDialog(props: CounterpartyCreateDialogProps) {
     <QuickCreateDialog
       title={t('createCounterpartyTitle')}
       nameLabel={t('createCounterpartyName')}
-      groupField={{ label: t('counterpartyGroupLabel'), kind: 'counterpartyGroup', groups, onCreate: onCreateGroup }}
+      groupField={{ label: t('counterpartyGroupLabel'), groups, onCreate: onCreateGroup }}
       validate={() => items.every((item) => item.error === null)}
       onSubmit={(name, groupId) =>
         onSubmit({

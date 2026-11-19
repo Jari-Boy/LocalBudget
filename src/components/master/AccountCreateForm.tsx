@@ -211,7 +211,7 @@ export function AccountCreateForm({
         <span className="master-field__label">{t('createForm.group')}</span>
         {/* 階層をインデントで示す共通の選択欄(計画Issue #233)。同じ区分・アクティブなグループだけを候補にする */}
         <EntitySelect
-          kind="accountGroup"
+         
           label={t('createForm.group')}
           groups={groups}
           filter={isGroupOfCategory}

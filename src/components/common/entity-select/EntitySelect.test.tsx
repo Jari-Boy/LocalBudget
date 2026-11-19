@@ -35,7 +35,7 @@ describe('EntitySelect', () => {
     const onChange = vi.fn()
     render(
       <EntitySelect
-        kind="accountGroup"
+       
         label="所属グループ"
         groups={[g(1, '食費', null, 'revenue'), g(2, '外食', 1, 'expense')]}
         filter={(x) => x.category === 'expense'}
@@ -49,7 +49,7 @@ describe('EntitySelect', () => {
   })
 
   it('親子の順に、深さに応じてインデントした項目を出す', () => {
-    render(<EntitySelect kind="accountGroup" label="所属グループ" groups={groups} value={null} onChange={vi.fn()} />)
+    render(<EntitySelect label="所属グループ" groups={groups} value={null} onChange={vi.fn()} />)
     open()
     expect(screen.getByRole('button', { name: '食費' })).toHaveStyle({ paddingLeft: '8px' })
     expect(screen.getByRole('button', { name: '外食' })).toHaveStyle({ paddingLeft: '24px' })
@@ -57,7 +57,7 @@ describe('EntitySelect', () => {
 
   it('filterに合わないグループは出さない', () => {
     render(
-      <EntitySelect kind="accountGroup" label="所属グループ" groups={groups} filter={(x) => x.category === 'expense'} value={null} onChange={vi.fn()} />,
+      <EntitySelect label="所属グループ" groups={groups} filter={(x) => x.category === 'expense'} value={null} onChange={vi.fn()} />,
     )
     open()
     expect(screen.queryByRole('button', { name: '給与' })).toBeNull()
@@ -65,18 +65,18 @@ describe('EntitySelect', () => {
   })
 
   it('非アクティブなグループは出さないが、現在の値なら出す', () => {
-    const { unmount } = render(<EntitySelect kind="accountGroup" label="所属グループ" groups={groups} value={null} onChange={vi.fn()} />)
+    const { unmount } = render(<EntitySelect label="所属グループ" groups={groups} value={null} onChange={vi.fn()} />)
     open()
     expect(screen.queryByRole('button', { name: '旧グループ' })).toBeNull()
     unmount()
-    render(<EntitySelect kind="accountGroup" label="所属グループ" groups={groups} value={4} onChange={vi.fn()} />)
+    render(<EntitySelect label="所属グループ" groups={groups} value={4} onChange={vi.fn()} />)
     open()
     expect(screen.getByRole('button', { name: '旧グループ' })).toBeInTheDocument()
   })
 
   it('選ぶとidの数値で、未分類を選ぶとnullでonChangeを呼ぶ', () => {
     const onChange = vi.fn()
-    render(<EntitySelect kind="counterpartyGroup" label="所属グループ" groups={groups} value={1} onChange={onChange} emptyLabel="未分類" />)
+    render(<EntitySelect label="所属グループ" groups={groups} value={1} onChange={onChange} emptyLabel="未分類" />)
     open()
     fireEvent.click(screen.getByRole('button', { name: '外食' }))
     expect(onChange).toHaveBeenLastCalledWith(2)
@@ -89,7 +89,7 @@ describe('EntitySelect', () => {
     const onChange = vi.fn()
     render(
       <EntitySelect
-        kind="projectGroup"
+       
         label="所属グループ"
         groups={[g(1, 'ドラッグストア', null)]}
         value={null}
@@ -105,14 +105,14 @@ describe('EntitySelect', () => {
 
   it('onCreateを渡すと「+ 新規追加」を出し、押すとonCreateを呼ぶ', () => {
     const onCreate = vi.fn()
-    render(<EntitySelect kind="accountGroup" label="所属グループ" groups={groups} value={null} onChange={vi.fn()} onCreate={onCreate} createLabel="グループを新規追加" />)
+    render(<EntitySelect label="所属グループ" groups={groups} value={null} onChange={vi.fn()} onCreate={onCreate} createLabel="グループを新規追加" />)
     open()
     fireEvent.click(screen.getByRole('button', { name: '+ グループを新規追加' }))
     expect(onCreate).toHaveBeenCalled()
   })
 
   it('グループが無くても、未分類の選択だけ出せる(落ちない)', () => {
-    render(<EntitySelect kind="accountGroup" label="所属グループ" groups={[]} value={null} onChange={vi.fn()} emptyLabel="未分類" />)
+    render(<EntitySelect label="所属グループ" groups={[]} value={null} onChange={vi.fn()} emptyLabel="未分類" />)
     open()
     expect(screen.getByRole('button', { name: '未分類' })).toBeInTheDocument()
   })

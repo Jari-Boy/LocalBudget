@@ -51,7 +51,7 @@ describe('QuickCreateDialog', () => {
   })
 
   it('グループを選ばずに追加すると未分類(null)、選ぶとそのグループのidで作る', async () => {
-    const { onSubmit } = renderDialog({ groupField: { label: 'プロジェクトグループ', kind: 'projectGroup', groups: GROUPS } })
+    const { onSubmit } = renderDialog({ groupField: { label: 'プロジェクトグループ', groups: GROUPS } })
     expect(screen.getByRole('button', { name: /^プロジェクトグループ: 未分類/ })).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('プロジェクト名'), { target: { value: '夏' } })
@@ -60,7 +60,7 @@ describe('QuickCreateDialog', () => {
   })
 
   it('選んだグループのidで作る', async () => {
-    const { onSubmit } = renderDialog({ groupField: { label: 'プロジェクトグループ', kind: 'projectGroup', groups: GROUPS } })
+    const { onSubmit } = renderDialog({ groupField: { label: 'プロジェクトグループ', groups: GROUPS } })
 
     fireEvent.change(screen.getByLabelText('プロジェクト名'), { target: { value: '夏' } })
     fireEvent.click(screen.getByRole('button', { name: /^プロジェクトグループ/ }))
@@ -71,7 +71,7 @@ describe('QuickCreateDialog', () => {
   })
 
   it('onCreateを渡さなければ、グループ欄に「+ グループを新規追加」を出さない', () => {
-    renderDialog({ groupField: { label: 'プロジェクトグループ', kind: 'projectGroup', groups: GROUPS } })
+    renderDialog({ groupField: { label: 'プロジェクトグループ', groups: GROUPS } })
 
     fireEvent.click(screen.getByRole('button', { name: /^プロジェクトグループ/ }))
 
@@ -80,7 +80,7 @@ describe('QuickCreateDialog', () => {
 
   it('「+ グループを新規追加」で名前だけを入力してグループを作ると、作ったグループがそのまま選ばれ、そのidで作成できる', async () => {
     const onCreateGroup = vi.fn(async () => 9)
-    const { onSubmit } = renderDialog({ groupField: { label: 'プロジェクトグループ', kind: 'projectGroup', groups: GROUPS, onCreate: onCreateGroup } })
+    const { onSubmit } = renderDialog({ groupField: { label: 'プロジェクトグループ', groups: GROUPS, onCreate: onCreateGroup } })
     fireEvent.change(screen.getByLabelText('プロジェクト名'), { target: { value: '夏' } })
 
     fireEvent.click(screen.getByRole('button', { name: /^プロジェクトグループ/ }))
@@ -96,7 +96,7 @@ describe('QuickCreateDialog', () => {
 
   it('グループの追加をキャンセルすると、グループを作らず、選択も変わらない', () => {
     const onCreateGroup = vi.fn(async () => 9)
-    renderDialog({ groupField: { label: 'プロジェクトグループ', kind: 'projectGroup', groups: GROUPS, onCreate: onCreateGroup } })
+    renderDialog({ groupField: { label: 'プロジェクトグループ', groups: GROUPS, onCreate: onCreateGroup } })
 
     fireEvent.click(screen.getByRole('button', { name: /^プロジェクトグループ/ }))
     fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクトグループ' })).getByRole('button', { name: '+ グループを新規追加' }))

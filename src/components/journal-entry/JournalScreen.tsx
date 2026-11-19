@@ -1740,7 +1740,6 @@ export function JournalScreen(props: JournalScreenProps) {
           nameLabel="プロジェクト名"
           groupField={{
             label: 'プロジェクトグループ',
-            kind: 'projectGroup',
             groups: data?.projectGroups ?? [],
             onCreate: async (name) => {
               const created = await props.projectGroupRepository.create({ name })
@@ -1763,7 +1762,6 @@ export function JournalScreen(props: JournalScreenProps) {
           nameLabel="取引先名"
           groupField={{
             label: '取引先グループ',
-            kind: 'counterpartyGroup',
             groups: data?.counterpartyGroups ?? [],
             onCreate: async (name) => {
               const created = await props.counterpartyGroupRepository.create({ name })

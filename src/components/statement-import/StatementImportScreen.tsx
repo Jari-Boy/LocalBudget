@@ -2655,7 +2655,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         <QuickCreateDialog
           title={t('createProjectTitle')}
           nameLabel={t('createProjectName')}
-          groupField={{ label: t('projectGroupLabel'), kind: 'projectGroup', groups: data.projectGroups, onCreate: createProjectGroup }}
+          groupField={{ label: t('projectGroupLabel'), groups: data.projectGroups, onCreate: createProjectGroup }}
           onSubmit={(name, groupId) => createProject(name, groupId, createTarget.apply)}
           onCancel={() => setCreateTarget(null)}
         />
