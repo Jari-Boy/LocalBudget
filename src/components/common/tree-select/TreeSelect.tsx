@@ -5,6 +5,7 @@ import {
   buildTreeSelectRows,
   GROUP_VALUE_PREFIX,
   type TreeSelectCategory,
+  type TreeSelectItemNode,
   type TreeSelectNode,
 } from './treeSelectModel'
 import './TreeSelect.css'
@@ -65,16 +66,20 @@ function findGroupName(nodes: readonly TreeSelectNode[], id: string): string | u
   return undefined
 }
 
-function findItemName(nodes: readonly TreeSelectNode[], value: string): string | undefined {
-  for (const node of nodes) {
-    if (node.kind === 'item') {
-      if (node.value === value) return node.name
-    } else {
-      const nested = findItemName(node.children, value)
-      if (nested !== undefined) return nested
-    }
-  }
-  return undefined
+function collectItems(nodes: readonly TreeSelectNode[]): TreeSelectItemNode[] {
+  return nodes.flatMap((node) => (node.kind === 'item' ? [node] : collectItems(node.children)))
+}
+
+/**
+ * 項目の表示名。パス表示名(pathName)を持つ階層つきの項目は、同名の項目がほかにもあるときだけ「親 > 子」で返す
+ * (閉じた状態でも見分けられるように。計画Issue #233)。見つからなければundefined
+ */
+function findItemName(categories: readonly TreeSelectCategory[], value: string): string | undefined {
+  const items = categories.flatMap((category) => collectItems(category.nodes))
+  const found = items.find((node) => node.value === value)
+  if (found === undefined) return undefined
+  const isAmbiguous = found.pathName !== undefined && items.some((node) => node !== found && node.name === found.name)
+  return isAmbiguous ? found.pathName : found.name
 }
 
 /** 値(項目の値または「g:グループID」)の表示名。見つからなければ値そのもの */
@@ -87,11 +92,7 @@ function nameOfValue(categories: readonly TreeSelectCategory[], value: string): 
     }
     return value
   }
-  for (const category of categories) {
-    const name = findItemName(category.nodes, value)
-    if (name !== undefined) return name
-  }
-  return value
+  return findItemName(categories, value) ?? value
 }
 
 /**
@@ -237,6 +238,16 @@ export function TreeSelect(props: TreeSelectProps) {
       close()
       return
     }
+    if (event.key === 'Enter' && event.target === searchRef.current) {
+      // 検索欄でのEnterは、フォームの送信に使わせない。日本語の変換確定のEnter(isComposing・keyCode 229)は何もしない。
+      // 検索で候補が1件に絞れていれば、それを選ぶ(計画Issue #233)
+      if (event.nativeEvent.isComposing || event.keyCode === 229) return
+      event.preventDefault()
+      if (query.trim() === '') return
+      const candidates = [...new Set(rows.flatMap((row) => (row.type === 'item' ? [row.value] : [])))]
+      if (candidates.length === 1) choose(candidates[0])
+      return
+    }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
     event.preventDefault()
     const focusables: HTMLElement[] = [
@@ -314,10 +325,18 @@ export function TreeSelect(props: TreeSelectProps) {
                 {emptyLabel}
               </button>
             )}
-            {rows.map((row) => {
+            {rows.map((row, rowIndex) => {
               if (row.type === 'category') {
                 return (
                   <div key={`c:${row.name}`} className="tree-select__category">
+                    {row.name}
+                  </div>
+                )
+              }
+              if (row.type === 'context') {
+                return (
+                  // 検索で絞り落とされた親。階層が追えるように残す(押せない、計画Issue #233)
+                  <div key={`x:${rowIndex}`} className="tree-select__context" style={{ paddingLeft: row.indent }}>
                     {row.name}
                   </div>
                 )
