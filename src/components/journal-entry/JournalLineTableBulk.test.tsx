@@ -5,6 +5,7 @@
  * (足りない側の空欄にはない)こと、選択状態の表示、チェックを押しても仕訳の選択(行を押す操作)にならないこと、
  * 見出しのチェックでその側の全行を選べること(全選択・一部・なしの状態)、押せない状態(disabled)、
  * 編集中の仕訳にはチェックが出ないこと、選択の列が列幅の調整の対象外で表の最小幅に含まれることを検証する。
+ * 加えて、1行でも選択している間は、行のどこを押してもチェックの操作になり編集に入らないこと(計画Issue #235 C)を検証する。
  * 外部依存なし(表示用の名前解決関数 lookup と JournalEntry を渡すだけ)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -53,7 +54,7 @@ const lookup = {
 }
 
 function makeBulk(overrides: Partial<JournalLineTableBulk> = {}): JournalLineTableBulk {
-  return { selectedLineIds: new Set<number>(), disabled: false, onToggleLine: vi.fn(), onToggleSide: vi.fn(), ...overrides }
+  return { selectedLineIds: new Set<number>(), disabled: false, onToggleLine: vi.fn(), onToggleSide: vi.fn(), onToggleEntry: vi.fn(), ...overrides }
 }
 
 function renderTable(bulk: JournalLineTableBulk | undefined, extra: Partial<JournalLineTableProps> = {}) {
@@ -211,5 +212,88 @@ describe('JournalLineTable(一括編集の行選択)', () => {
     expect(container.querySelector('table')).toHaveStyle({ minWidth: `${totalTableWidth(DEFAULT_COLUMN_WIDTHS) + 64}px` })
     // 日付〜コメントの4列 + (選択+5列) × 2
     expect(container.querySelectorAll('col')).toHaveLength(16)
+  })
+})
+
+describe('JournalLineTable(選択中の行クリック)', () => {
+  /** 行の中のセルを、セルの並びの順番(0始まり)で得る。日付・出どころ・摘要・コメント → 借方の選択・科目・… → 貸方の選択・科目・… */
+  const cellOf = (row: HTMLElement, index: number) => row.querySelectorAll('td')[index] as HTMLElement
+  const DEBIT_ACCOUNT = 5
+  const CREDIT_ACCOUNT = 11
+
+  it('1行も選択していないときは、行を押すと従来どおり仕訳が選ばれ、チェックの操作は呼ばれない', () => {
+    const bulk = makeBulk()
+    const { container, onSelect } = renderTable(bulk)
+    fireEvent.click(cellOf(rowsOf(container, 1)[0], DEBIT_ACCOUNT))
+    expect(onSelect).toHaveBeenCalledWith(1)
+    expect(bulk.onToggleLine).not.toHaveBeenCalled()
+    expect(bulk.onToggleEntry).not.toHaveBeenCalled()
+  })
+
+  it('選択中に借方側のセルを押すと、その借方の行のチェックが切り替わり、編集には入らない', () => {
+    const bulk = makeBulk({ selectedLineIds: new Set([21]) })
+    const { container, onSelect } = renderTable(bulk)
+    fireEvent.click(cellOf(rowsOf(container, 1)[0], DEBIT_ACCOUNT))
+    expect(bulk.onToggleLine).toHaveBeenCalledWith(11)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('選択中に貸方側のセルを押すと、その貸方の行のチェックが切り替わる', () => {
+    const bulk = makeBulk({ selectedLineIds: new Set([21]) })
+    const { container, onSelect } = renderTable(bulk)
+    fireEvent.click(cellOf(rowsOf(container, 1)[0], CREDIT_ACCOUNT))
+    expect(bulk.onToggleLine).toHaveBeenCalledWith(12)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('複合仕訳の2行目の借方側を押すと、その行(2行目)のチェックが切り替わる', () => {
+    const bulk = makeBulk({ selectedLineIds: new Set([11]) })
+    const { container } = renderTable(bulk)
+    fireEvent.click(cellOf(rowsOf(container, 2)[1], DEBIT_ACCOUNT))
+    expect(bulk.onToggleLine).toHaveBeenCalledWith(22)
+  })
+
+  it('選択中に、日付・摘要などの左側を押すと、その仕訳の全明細行を切り替える(onToggleEntry)', () => {
+    const bulk = makeBulk({ selectedLineIds: new Set([21]) })
+    const { container, onSelect } = renderTable(bulk)
+    fireEvent.click(cellOf(rowsOf(container, 1)[0], 0))
+    expect(bulk.onToggleEntry).toHaveBeenCalledWith(1)
+    expect(bulk.onToggleLine).not.toHaveBeenCalled()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('選択中に摘要のボタンを押しても、編集には入らず、その仕訳の全明細行の切り替えになる', () => {
+    const bulk = makeBulk({ selectedLineIds: new Set([21]) })
+    const { onSelect } = renderTable(bulk)
+    fireEvent.click(screen.getByRole('button', { name: 'コンビニ' }))
+    expect(bulk.onToggleEntry).toHaveBeenCalledWith(1)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('複合仕訳の足りない側の空欄を押しても、何も呼ばれない', () => {
+    const bulk = makeBulk({ selectedLineIds: new Set([11]) })
+    const { container, onSelect } = renderTable(bulk)
+    // 仕訳2の2行目は貸方が空欄(貸方側のセルは、左4列+借方6列の次から)
+    fireEvent.click(cellOf(rowsOf(container, 2)[1], CREDIT_ACCOUNT))
+    expect(bulk.onToggleLine).not.toHaveBeenCalled()
+    expect(bulk.onToggleEntry).not.toHaveBeenCalled()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('押せない状態(disabled)のときは、選択中に行を押しても何も呼ばれない', () => {
+    const bulk = makeBulk({ selectedLineIds: new Set([11]), disabled: true })
+    const { container, onSelect } = renderTable(bulk)
+    fireEvent.click(cellOf(rowsOf(container, 1)[0], DEBIT_ACCOUNT))
+    expect(bulk.onToggleLine).not.toHaveBeenCalled()
+    expect(bulk.onToggleEntry).not.toHaveBeenCalled()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('チェックボックスを直接押したときは、行の切り替えと二重にならず、1回だけ呼ばれる', () => {
+    const bulk = makeBulk({ selectedLineIds: new Set([11]) })
+    const { container } = renderTable(bulk)
+    fireEvent.click(within(rowsOf(container, 1)[0]).getByRole('checkbox', { name: '貸方の行を選択' }))
+    expect(bulk.onToggleLine).toHaveBeenCalledTimes(1)
+    expect(bulk.onToggleLine).toHaveBeenCalledWith(12)
   })
 })
