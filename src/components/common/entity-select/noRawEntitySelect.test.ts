@@ -29,11 +29,8 @@ const ALLOWED: Record<string, Exception> = {
   'components/master/RuleAmountSchedulePanel.tsx': { count: 2, kind: FIXED, reason: '仕訳の明細行番号の選択(実体ではない)' },
   'components/master/AccountCreateForm.tsx': { count: 3, kind: FIXED, reason: '区分・外部明細の有無・残高情報の有無は固定の選択肢' },
   'components/master/RuleEditForm.tsx': { count: 1, kind: FIXED, reason: '汎用の固定の選択肢(頻度・曜日など)' },
-  'components/settlement/SplitTab.tsx': { count: 2, kind: UNMIGRATED, reason: '按分の方法は固定の選択肢。精算バッチは#234で扱いを決める' },
-  'components/statement-import/StatementImportScreen.tsx': { count: 4, kind: UNMIGRATED, reason: '明細定義・一括/行ごとの精算バッチ・置き換え先(世帯メンバーと科目は移行済み)。精算バッチの扱いと残りは#234で決める' },
-  'components/journal-entry/JournalLinesEditor.tsx': { count: 1, kind: UNMIGRATED, reason: '精算バッチの選択(世帯メンバーは移行済み)。精算バッチの扱いは#234で決める' },
-  'components/journal-entry/JournalLineTable.tsx': { count: 1, kind: UNMIGRATED, reason: '精算バッチの選択(世帯メンバーは移行済み)。精算バッチの扱いは#234で決める' },
-  'components/journal-entry/JournalLineBulkBar.tsx': { count: 1, kind: UNMIGRATED, reason: '精算バッチの選択(世帯メンバーは移行済み)。精算バッチの扱いは#234で決める' },
+  'components/settlement/SplitTab.tsx': { count: 1, kind: FIXED, reason: '按分の方法(割合・均等・金額)の固定の選択肢' },
+  'components/statement-import/StatementImportScreen.tsx': { count: 2, kind: UNMIGRATED, reason: 'マッピング定義の選択は#234の6つ目で移す。置き換え先は似た登録済み仕訳の候補で、マスタの実体ではない(最後に固定にする)' },
   'components/journal-entry/RelatedEntriesSection.tsx': { count: 1, kind: FIXED, reason: '仕訳の関連グループ(仕訳どうしを束ねる)の選択で、マスタのグループ(実体)ではない' },
 }
 

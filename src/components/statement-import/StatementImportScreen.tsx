@@ -44,6 +44,7 @@ import type { AccountBalanceRecordRepository } from '../../domain/reconciliation
 import { AccountCreateForm } from '../master/AccountCreateForm'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
 import { AccountSelect } from '../master/AccountSelect'
+import { BatchSelect } from '../master/BatchSelect'
 import { MemberSelect } from '../master/MemberSelect'
 import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../master/masterTreeNodes'
 import type { MappingForm } from '../master/mappingForm'
@@ -2033,20 +2034,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 placeholder={t('bulkMemberPlaceholder')}
                 onChange={(v) => applyBulk({ field: 'householdMember', value: toId(v) })}
               />
-              <select
-                className="import-control import-control--small"
-                aria-label={t('bulkBatch')}
+              <BatchSelect
+                label={t('bulkBatch')}
+                batches={data.batches}
                 value=""
-                onChange={(e) => e.target.value !== '' && applyBulk({ field: 'settlementBatch', value: e.target.value === 'none' ? null : Number(e.target.value) })}
-              >
-                <option value="">{t('bulkBatchPlaceholder')}</option>
-                <option value="none">{t('bulkClear')}</option>
-                {data.batches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+                emptyLabel={t('bulkClear')}
+                placeholder={t('bulkBatchPlaceholder')}
+                onChange={(v) => applyBulk({ field: 'settlementBatch', value: toId(v) })}
+              />
               <input
                 className="import-control import-control--small"
                 aria-label={t('bulkCommentLabel')}
@@ -2334,20 +2329,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                   />
                                 )}
                                 {taggable && (
-                                  <select
-                                    className="import-control import-control--small"
-                                    aria-label={t('rowBatch', { desc })}
-                                    value={state.settlementBatchId ?? ''}
+                                  <BatchSelect
+                                    label={t('rowBatch', { desc })}
+                                    batches={data.batches}
+                                    value={String(state.settlementBatchId ?? '')}
+                                    emptyLabel={t('noBatch')}
                                     disabled={isSkipped}
-                                    onChange={(e) => updateRow(index, (s) => ({ ...s, settlementBatchId: toId(e.target.value) }))}
-                                  >
-                                    <option value="">{t('noBatch')}</option>
-                                    {data.batches.map((b) => (
-                                      <option key={b.id} value={b.id}>
-                                        {b.name}
-                                      </option>
-                                    ))}
-                                  </select>
+                                    onChange={(v) => updateRow(index, (s) => ({ ...s, settlementBatchId: toId(v) }))}
+                                  />
                                 )}
                               </div>
                             </td>

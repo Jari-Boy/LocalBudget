@@ -35,6 +35,7 @@ import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepo
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/SqlJsStatementImportDraftRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
+import { chooseBatch, expectBatch, findBatchButton, queryBatchButton } from '../master/batchSelectTestHelpers'
 import { chooseMember, expectMember, findMemberButton, listMemberOptions } from '../master/memberSelectTestHelpers'
 import { StatementImportScreen } from './StatementImportScreen'
 import { chooseTargetAccount, expectTargetAccount, findTargetAccountButton } from './targetAccountTestHelpers'
@@ -279,10 +280,10 @@ describe('StatementImportScreen', () => {
     fireEvent.click(screen.getByLabelText('ランチを選択'))
     const bulk = within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
     expect(bulk.getByText('2件に一括設定')).toBeInTheDocument()
-    fireEvent.change(bulk.getByLabelText('精算バッチを一括設定'), { target: { value: '1' } })
+    chooseBatch('精算バッチを一括設定', '10月の立替', bulk)
 
     expect(bulk.getByText('1件に設定しました(1件は対象外)')).toBeInTheDocument()
-    expect(rowOf(/ランチ/).getByLabelText('ランチの精算バッチ')).toHaveValue('1')
+    expectBatch('ランチの精算バッチ', '10月の立替', rowOf(/ランチ/))
 
     pick(bulk, '一括のプロジェクト', '沖縄旅行')
     expect(bulk.getByText('2件に設定しました')).toBeInTheDocument()
@@ -364,6 +365,44 @@ describe('StatementImportScreen', () => {
     })
   })
 
+  describe('精算バッチの選択欄(計画Issue #234)', () => {
+    const TWO_ROWS = `${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,ランチ,-800,96200\n`
+    const bulkGroup = () => within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
+
+    it('一括設定で精算バッチを選ぶと選択した行に付き、「なし(クリア)」で外れる', async () => {
+      makeMapping()
+      batches.create({ name: '10月の立替', type: 'expense_splitting' })
+      renderScreen()
+      await chooseCsv(TWO_ROWS)
+      pick(rowOf(/スーパー/), '相手科目', '立替金')
+      pick(rowOf(/ランチ/), '相手科目', '立替金')
+      fireEvent.click(screen.getByLabelText('スーパーを選択'))
+      fireEvent.click(screen.getByLabelText('ランチを選択'))
+
+      chooseBatch('精算バッチを一括設定', '10月の立替', bulkGroup())
+      expectBatch('スーパーの精算バッチ', '10月の立替', rowOf(/スーパー/))
+      expectBatch('ランチの精算バッチ', '10月の立替', rowOf(/ランチ/))
+
+      chooseBatch('精算バッチを一括設定', 'なし(クリア)', bulkGroup())
+      expectBatch('スーパーの精算バッチ', '精算バッチなし', rowOf(/スーパー/))
+      expectBatch('ランチの精算バッチ', '精算バッチなし', rowOf(/ランチ/))
+    })
+
+    it('行ごとに精算バッチを選ぶと、その行だけが変わる', async () => {
+      makeMapping()
+      batches.create({ name: '10月の立替', type: 'expense_splitting' })
+      renderScreen()
+      await chooseCsv(TWO_ROWS)
+      pick(rowOf(/スーパー/), '相手科目', '立替金')
+      pick(rowOf(/ランチ/), '相手科目', '立替金')
+
+      chooseBatch('ランチの精算バッチ', '10月の立替', rowOf(/ランチ/))
+
+      expectBatch('ランチの精算バッチ', '10月の立替', rowOf(/ランチ/))
+      expectBatch('スーパーの精算バッチ', '精算バッチなし', rowOf(/スーパー/))
+    })
+  })
+
   it('精算バッチは立替金・未払金の行だけに出て、利用者が作った資産(有価証券など)の行には出ない', async () => {
     makeMapping()
     accounts.create({ category: 'asset', name: '有価証券', isReconcilable: false })
@@ -375,8 +414,8 @@ describe('StatementImportScreen', () => {
     pick(rowOf(/スーパー/), '相手科目', '有価証券')
     pick(rowOf(/ランチ/), '相手科目', '立替金')
 
-    expect(rowOf(/スーパー/).queryByLabelText('スーパーの精算バッチ')).not.toBeInTheDocument()
-    expect(rowOf(/ランチ/).getByLabelText('ランチの精算バッチ')).toBeInTheDocument()
+    expect(queryBatchButton('スーパーの精算バッチ', rowOf(/スーパー/))).toBeNull()
+    expect(findBatchButton('ランチの精算バッチ', rowOf(/ランチ/))).toBeInTheDocument()
   })
 
   it('確定すると仕訳が作られ、同じ画面で続けて次のCSVを取り込める', async () => {
@@ -2528,6 +2567,19 @@ describe('StatementImportScreen', () => {
         fireEvent.click(await screen.findByRole('radio', { name: 'この取引を保存しない' }))
 
         expect(findMemberButton('ランチの世帯メンバー', rowOf(/ランチ/))).toBeDisabled()
+      })
+
+      it('「この取引を保存しない」の行は、精算バッチの欄が押せなくなる', async () => {
+        makeMapping()
+        manualLunch()
+        renderScreen()
+        await chooseCsv(CSV3)
+        pick(rowOf(/ランチ/), '相手科目', '立替金')
+        expect(findBatchButton('ランチの精算バッチ', rowOf(/ランチ/))).toBeEnabled()
+
+        fireEvent.click(await screen.findByRole('radio', { name: 'この取引を保存しない' }))
+
+        expect(findBatchButton('ランチの精算バッチ', rowOf(/ランチ/))).toBeDisabled()
       })
     })
 

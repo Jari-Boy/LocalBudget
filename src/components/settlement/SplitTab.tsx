@@ -16,6 +16,7 @@ import {
 } from '../expense-splitting/expenseSplittingFormParticipant'
 import { runInHistoryGroup } from '../../infrastructure/history/historyGroupRunner'
 import { submitExpenseSplit, type SubmitExpenseSplitError } from '../expense-splitting/submitExpenseSplit'
+import { BatchSelect } from '../master/BatchSelect'
 import type { SplitSettleData, SplitSettleDerived, SplitSettleRepositories } from './splitSettleData'
 import {
   buildPartnerCategories,
@@ -44,6 +45,9 @@ const ERROR_TEXT: Record<SubmitExpenseSplitError, string> = {
   counterpartyTargetRequired: '分担相手を選んでください',
   noRecipient: '相手の負担額が0円です。割合や金額を確認してください',
 }
+
+/** 割勘タブのバッチの先頭に固定する「新しいバッチを作成」(記録するときにバッチを作る既定の選択状態)。参照を安定させるため定数にする */
+const NEW_BATCH_OPTIONS = [{ value: 'new', label: '新しいバッチを作成' }]
 
 const MODE_LABEL: Record<ExpenseSplittingAllocationMode, string> = {
   ratio: '割合で分ける',
@@ -405,22 +409,15 @@ export function SplitTab({
           </div>
 
           <div className="split-settle__field">
-            <label className="split-settle__label" htmlFor="split-batch">
-              精算バッチ
-            </label>
-            <select
-              id="split-batch"
-              className="split-settle__control"
-              value={batchId}
-              onChange={(e) => setBatchId(e.target.value === 'new' ? 'new' : Number(e.target.value))}
-            >
-              <option value="new">新しいバッチを作成</option>
-              {data.batches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+            <span className="split-settle__label">精算バッチ</span>
+            {/* 「新しいバッチを作成」は操作ではなく既定の選択状態(記録するときに作る)なので、先頭に固定した項目にする */}
+            <BatchSelect
+              label="精算バッチ"
+              batches={data.batches}
+              value={String(batchId)}
+              leadingOptions={NEW_BATCH_OPTIONS}
+              onChange={(value) => setBatchId(value === 'new' ? 'new' : Number(value))}
+            />
           </div>
 
           <div className="split-settle__line split-settle__line--total">

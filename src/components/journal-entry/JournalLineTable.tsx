@@ -5,6 +5,7 @@ import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { formatDate } from '../../infrastructure/i18n/formatDate'
 import { SOURCE_TAGS } from '../common/journal-result/journalResultModel'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
+import { BatchSelect } from '../master/BatchSelect'
 import { JournalMemberSelect } from './JournalMemberSelect'
 import { createEmptyJournalEntryFormLine, isCounterpartyEligibleCategory, type JournalEntryFormLine } from './journalEntryFormLine'
 import type { JournalEditorLine, JournalEditorMaster, JournalEditorValue } from './JournalEntryEditor'
@@ -356,20 +357,14 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
           }
         />
       ) : account !== undefined && isSettlementBatchTaggableAccount(account) ? (
-        <select
+        <BatchSelect
           key="partner"
-          className="journal-line-table__control"
-          aria-label={`${sideName}の精算バッチ`}
+          label={`${sideName}の精算バッチ`}
+          batches={master.batches}
           value={line.settlementBatchId == null ? '' : String(line.settlementBatchId)}
-          onChange={(e) => updateLine(key, (l) => ({ ...l, settlementBatchId: e.target.value === '' ? null : Number(e.target.value) }))}
-        >
-          <option value="">精算バッチなし</option>
-          {master.batches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
+          emptyLabel="精算バッチなし"
+          onChange={(value) => updateLine(key, (l) => ({ ...l, settlementBatchId: value === '' ? null : Number(value) }))}
+        />
       ) : null,
       defaultMember !== undefined && line.householdMemberId === defaultMember.id ? (
         <span key="member" className="journal-line-table__locked">

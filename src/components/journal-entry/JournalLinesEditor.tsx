@@ -4,6 +4,7 @@ import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
+import { BatchSelect } from '../master/BatchSelect'
 import { JournalMemberSelect } from './JournalMemberSelect'
 import { createEmptyJournalEntryFormLine, isCounterpartyEligibleCategory, type JournalEntryFormLine } from './journalEntryFormLine'
 import { applyAccountChange } from './journalLineAccountChange'
@@ -178,30 +179,18 @@ export function JournalLinesEditor({
                         </div>
                       )}
                       {account !== undefined && isSettlementBatchTaggableAccount(account) && (
-                        <select
-                          className="journal-editor__control journal-editor__select"
-                          aria-label="精算バッチ"
-                          disabled={readOnlyLines}
+                        <BatchSelect
+                          label="精算バッチ"
+                          batches={master.batches}
                           value={line.settlementBatchId == null ? '' : String(line.settlementBatchId)}
-                          onChange={(e) => {
-                            if (e.target.value === 'new') {
-                              setCreatingBatchKey(key)
-                              return
-                            }
-                            updateLine(key, (l) => ({
-                              ...l,
-                              settlementBatchId: e.target.value === '' ? null : Number(e.target.value),
-                            }))
-                          }}
-                        >
-                          <option value="">精算バッチなし</option>
-                          {master.batches.map((b) => (
-                            <option key={b.id} value={b.id}>
-                              {b.name}
-                            </option>
-                          ))}
-                          {onCreateBatch !== undefined && <option value="new">+ 新しいバッチ</option>}
-                        </select>
+                          emptyLabel="精算バッチなし"
+                          disabled={readOnlyLines}
+                          onCreate={onCreateBatch === undefined ? undefined : () => setCreatingBatchKey(key)}
+                          createLabel="新しいバッチ"
+                          onChange={(value) =>
+                            updateLine(key, (l) => ({ ...l, settlementBatchId: value === '' ? null : Number(value) }))
+                          }
+                        />
                       )}
                       <div className="journal-editor__sub-field">
                         <TreeSelect

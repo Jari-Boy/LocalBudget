@@ -17,6 +17,7 @@ import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { fromJournalLine } from './journalEntryFormLine'
 import type { JournalEditorMaster, JournalEditorValue } from './JournalEntryEditor'
 import { chooseMember } from '../master/memberSelectTestHelpers'
+import { chooseBatch, findBatchButton, queryBatchButton } from '../master/batchSelectTestHelpers'
 import { JournalLineTable, type JournalLineTableLookup, type JournalLineTableProps } from './JournalLineTable'
 
 afterEach(cleanup)
@@ -179,17 +180,17 @@ describe('JournalLineTable(インライン編集)', () => {
     const advance = entry(1, '立替', [line(11, 1, 'debit', 3, 3200), line(12, 1, 'credit', 1, 3200)])
     render(<Harness initial={valueOf(advance)} />)
     // 借方=立替金 → 精算バッチだけ。貸方=食費(費用) → 取引先だけ
-    expect(screen.getByLabelText('借方の精算バッチ')).toBeInTheDocument()
+    expect(findBatchButton('借方の精算バッチ')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /借方の取引先/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /貸方の取引先/ })).toBeInTheDocument()
-    expect(screen.queryByLabelText('貸方の精算バッチ')).not.toBeInTheDocument()
+    expect(queryBatchButton('貸方の精算バッチ')).toBeNull()
   })
 
   it('取引先も精算バッチも持てない科目(普通預金)の行には、どちらの選択も出ない', () => {
     render(<Harness />)
     // 貸方=普通預金(資産・システム管理でない)
     expect(screen.queryByRole('button', { name: /貸方の取引先/ })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('貸方の精算バッチ')).not.toBeInTheDocument()
+    expect(queryBatchButton('貸方の精算バッチ')).toBeNull()
   })
 
   it('摘要・コメントを書き換えると、編集内容の onChange に反映される', () => {
@@ -215,6 +216,18 @@ describe('JournalLineTable(インライン編集)', () => {
     render(<Harness onValue={onValue} />)
     chooseMember('貸方の世帯メンバー', '花子')
     expect(onValue.mock.calls.at(-1)![0].lines[1].line.householdMemberId).toBe(2)
+  })
+
+  it('精算バッチを選び直すと、その行の精算バッチが更新され、「精算バッチなし」で外せる', () => {
+    const advance = entry(1, '立替', [line(11, 1, 'debit', 3, 3200), line(12, 1, 'credit', 1, 3200)])
+    const onValue = vi.fn()
+    render(<Harness initial={valueOf(advance)} onValue={onValue} />)
+
+    chooseBatch('借方の精算バッチ', '11月の割勘')
+    expect(onValue.mock.calls.at(-1)![0].lines[0].line.settlementBatchId).toBe(30)
+
+    chooseBatch('借方の精算バッチ', '精算バッチなし')
+    expect(onValue.mock.calls.at(-1)![0].lines[0].line.settlementBatchId).toBeNull()
   })
 
   it('科目の選択ボタンが借方・貸方の行に出て、いまの科目名を表示する', () => {

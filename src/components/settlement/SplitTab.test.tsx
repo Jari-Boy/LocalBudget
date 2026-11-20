@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
+import { chooseBatchFrom } from '../master/batchSelectTestHelpers'
 import { SplitTab } from './SplitTab'
 import { deriveSplitSettle, type SplitSettleData, type SplitSettleRepositories } from './splitSettleData'
 
@@ -322,6 +323,23 @@ describe('SplitTab', () => {
     expect(screen.getByLabelText('摘要')).toHaveAttribute('placeholder', 'ランチの割勘')
   })
 
+  it('精算バッチは、既定で「新しいバッチを作成」が選ばれ、既存のバッチも候補に出て、選び直して戻せる', () => {
+    const data = makeData()
+    data.batches = [{ id: 7, name: '9月の精算', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
+    setup(data)
+
+    const batchButton = () => screen.getByRole('button', { name: /^精算バッチ: (新しいバッチを作成|9月の精算)$/ })
+    expect(batchButton()).toHaveAccessibleName('精算バッチ: 新しいバッチを作成')
+    fireEvent.click(batchButton())
+    const dialog = within(screen.getByRole('dialog', { name: '精算バッチ' }))
+    expect(dialog.getByRole('button', { name: '新しいバッチを作成' })).toBeInTheDocument()
+    fireEvent.click(dialog.getByRole('button', { name: '9月の精算' }))
+    expect(batchButton()).toHaveAccessibleName('精算バッチ: 9月の精算')
+
+    chooseBatchFrom(batchButton(), '新しいバッチを作成')
+    expect(batchButton()).toHaveAccessibleName('精算バッチ: 新しいバッチを作成')
+  })
+
   it('既存の精算バッチを選んだときも、入力した摘要は割勘仕訳の摘要になり、バッチは作らない', async () => {
     const data = makeData()
     data.batches = [{ id: 7, name: '9月の精算', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
@@ -330,7 +348,8 @@ describe('SplitTab', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'ランチを選択' }))
     chooseOption(/^分担相手/, '妻')
     fireEvent.change(screen.getByLabelText('摘要'), { target: { value: '追加分' } })
-    fireEvent.change(screen.getByLabelText('精算バッチ'), { target: { value: '7' } })
+    // 画面の上の絞り込みにも「精算バッチ」の欄があるので、既定で「新しいバッチを作成」が選ばれているほうのボタンを渡す
+    chooseBatchFrom(screen.getByRole('button', { name: '精算バッチ: 新しいバッチを作成' }), '9月の精算')
     fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
 
     await waitFor(() => expect(repositories.journalEntryRepository.create).toHaveBeenCalled())
