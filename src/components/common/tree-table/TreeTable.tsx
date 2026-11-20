@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useRangeSelection } from '../range-selection/useRangeSelection'
 import {
   buildTreeTableRows,
   CATEGORY_ID_PREFIX,
@@ -89,13 +90,12 @@ export function TreeTable({
       return next
     })
 
-  const toggleChecked = (id: string) =>
-    onCheckedChange(checkedIds.includes(id) ? checkedIds.filter((x) => x !== id) : [...checkedIds, id])
-
   const colSpan = columns.length + 2
 
-  /** ヘッダーの「すべて選択」の対象: 表示中(折りたたみで隠れていない)の全行 */
+  /** ヘッダーの「すべて選択」と範囲選択の対象: 表示中(折りたたみで隠れていない)の全行 */
   const visibleIds = rows.flatMap((row) => (row.type === 'node' ? [row.node.id] : []))
+  // 行のチェックの Shift+クリック(範囲選択)・Ctrl/Cmd+クリック(トグル)・Shift+↑↓(計画Issue #235 D)。範囲は表示中の行だけ
+  const range = useRangeSelection<string>({ order: visibleIds, selected: checkedIds, onChange: onCheckedChange })
   const checkedVisibleCount = visibleIds.filter((id) => checkedIds.includes(id)).length
   const allChecked = visibleIds.length > 0 && checkedVisibleCount === visibleIds.length
   const toggleAll = () => onCheckedChange(allChecked ? [] : visibleIds)
@@ -181,7 +181,7 @@ export function TreeTable({
                     type="checkbox"
                     aria-label={`${node.name}を選択`}
                     checked={checkedIds.includes(node.id)}
-                    onChange={() => toggleChecked(node.id)}
+                    {...range.checkboxProps(node.id)}
                   />
                 </td>
                 <td>
