@@ -135,11 +135,6 @@
   min-width: 0;
 }
 
-/* 精算バッチ・世帯メンバーの選択。科目・プロジェクトの選択ツリー(TreeSelect)と同じ高さ・枠・文字・背景にそろえる(.journal-editor__control の見た目をそのまま使う) */
-.journal-editor__select {
-  flex: 1 1 110px;
-}
-
 .journal-editor__locked {
   flex: 1 1 110px;
   font-size: var(--font-size-sm);

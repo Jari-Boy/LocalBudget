@@ -25,6 +25,7 @@ import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/Se
 import { UnsavedChangesGuardProvider, useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
 import { saveUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
 import { chooseMember, expectMember, expectMembers, findMemberButton } from '../master/memberSelectTestHelpers'
+import { findBatchButton } from '../master/batchSelectTestHelpers'
 import { JournalScreen, type JournalScreenProps } from './JournalScreen'
 import type { RecurringTransactionRuleLine } from '../../domain/recurring-transaction/RecurringTransactionRule'
 import type { JournalTemplate } from '../../domain/journal-template/JournalTemplate'
@@ -1525,11 +1526,11 @@ describe('JournalScreen(明細行単位)', () => {
       it('食費(費用)の行だけを選ぶと精算バッチは選べず、立替金の行だけを選ぶと精算バッチを選べる', async () => {
         await setupLineView()
         fireEvent.click(debitBox('ランチ'))
-        expect(within(bulkBar()).getByLabelText('一括編集の精算バッチ')).toBeDisabled()
+        expect(findBatchButton('一括編集の精算バッチ', within(bulkBar()))).toBeDisabled()
         expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeEnabled()
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('旅行の立替'))
-        expect(within(bulkBar()).getByLabelText('一括編集の精算バッチ')).toBeEnabled()
+        expect(findBatchButton('一括編集の精算バッチ', within(bulkBar()))).toBeEnabled()
         expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
       })
 

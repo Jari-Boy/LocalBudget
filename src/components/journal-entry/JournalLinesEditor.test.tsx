@@ -7,11 +7,12 @@
  * 科目の区分に応じて取引先・精算バッチの欄が出ること。外部依存なし(マスタは props で渡す)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEditorLine, JournalEditorMaster } from './JournalEntryEditor'
+import { chooseBatch, expectBatch, findBatchButton, queryBatchButton } from '../master/batchSelectTestHelpers'
 import { JournalLinesEditor, type JournalLinesEditorProps } from './JournalLinesEditor'
 
 afterEach(cleanup)
@@ -45,7 +46,7 @@ const master: JournalEditorMaster = {
   counterpartyCategories: [],
   projectCategories: [],
   members: [{ id: 1, name: '夫', isGroup: false, isActive: true, createdAt: '', updatedAt: '' }],
-  batches: [],
+  batches: [{ id: 1, name: '6月の割勘', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }],
 }
 
 const line = (key: number, side: 'debit' | 'credit', accountId: number | null, amount: string): JournalEditorLine => ({
@@ -60,12 +61,16 @@ function Harness(props: {
   allowBlankAmounts?: boolean
   onRequestCreateProject?: (apply: (id: number) => void) => void
   onCreateBatch?: JournalLinesEditorProps['onCreateBatch']
+  onLinesChange?: (lines: JournalEditorLine[]) => void
 }) {
   const [lines, setLines] = useState(props.initial)
   return (
     <JournalLinesEditor
       lines={lines}
-      onChange={setLines}
+      onChange={(next) => {
+        setLines(next)
+        props.onLinesChange?.(next)
+      }}
       master={master}
       bookkeeperId={props.bookkeeperId === undefined ? 1 : props.bookkeeperId}
       readOnlyLines={props.readOnlyLines}
@@ -122,8 +127,8 @@ describe('JournalLinesEditor', () => {
   it('システム管理の立替金の行には、精算バッチの欄が出る(費用の行には出ない)', () => {
     render(<Harness initial={[line(1, 'debit', 1, '1200'), line(2, 'credit', 3, '1200')]} />)
 
-    expect(within(screen.getByRole('group', { name: '貸方' })).getByLabelText('精算バッチ')).toBeInTheDocument()
-    expect(within(screen.getByRole('group', { name: '借方' })).queryByLabelText('精算バッチ')).toBeNull()
+    expect(findBatchButton('精算バッチ', within(screen.getByRole('group', { name: '貸方' })))).toBeInTheDocument()
+    expect(queryBatchButton('精算バッチ', within(screen.getByRole('group', { name: '借方' })))).toBeNull()
   })
 
   it('onRequestCreateProject を渡すと、プロジェクトの選択ツリーに「+ 新規追加」が出て、押すと呼ばれる(計画Issue #180)', () => {
@@ -152,7 +157,39 @@ describe('JournalLinesEditor', () => {
       />,
     )
 
-    expect(within(screen.getByLabelText('精算バッチ')).getByRole('option', { name: '+ 新しいバッチ' })).toBeInTheDocument()
+    fireEvent.click(findBatchButton('精算バッチ'))
+    expect(screen.getByRole('button', { name: '+ 新しいバッチ' })).toBeInTheDocument()
+  })
+
+  it('精算バッチを選ぶと、その行のバッチが更新され、「精算バッチなし」で外せる', () => {
+    const onLinesChange = vi.fn()
+    render(<Harness onLinesChange={onLinesChange} initial={[line(1, 'debit', 1, '1200'), line(2, 'credit', 3, '1200')]} />)
+
+    chooseBatch('精算バッチ', '6月の割勘')
+    expect(onLinesChange.mock.calls.at(-1)![0][1].line.settlementBatchId).toBe(1)
+    expectBatch('精算バッチ', '6月の割勘')
+
+    chooseBatch('精算バッチ', '精算バッチなし')
+    expect(onLinesChange.mock.calls.at(-1)![0][1].line.settlementBatchId).toBeNull()
+  })
+
+  it('「+ 新しいバッチ」を押すと名前の入力欄が開き、作成すると、その行のバッチになる', async () => {
+    const onLinesChange = vi.fn()
+    render(
+      <Harness
+        onLinesChange={onLinesChange}
+        initial={[line(1, 'debit', 1, '1200'), line(2, 'credit', 3, '1200')]}
+        onCreateBatch={async (name) => ({ id: 9, name, type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' })}
+      />,
+    )
+
+    fireEvent.click(findBatchButton('精算バッチ'))
+    fireEvent.click(screen.getByRole('button', { name: '+ 新しいバッチ' }))
+    fireEvent.change(screen.getByLabelText('新しい精算バッチの名前'), { target: { value: '旅行' } })
+    fireEvent.click(screen.getByRole('button', { name: 'バッチを作成' }))
+
+    await waitFor(() => expect(onLinesChange.mock.calls.at(-1)![0][1].line.settlementBatchId).toBe(9))
+    expect(screen.queryByLabelText('新しい精算バッチの名前')).toBeNull()
   })
 })
 

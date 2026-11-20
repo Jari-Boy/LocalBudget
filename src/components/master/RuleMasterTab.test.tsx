@@ -29,6 +29,7 @@ import { SqlJsJournalEntryRepository } from '../../infrastructure/db/SqlJsJourna
 import { SqlJsProjectGroupRepository } from '../../infrastructure/db/SqlJsProjectGroupRepository'
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../../infrastructure/db/SqlJsRecurringTransactionRuleRepository'
+import { queryBatchButton } from './batchSelectTestHelpers'
 import { RuleMasterTab } from './RuleMasterTab'
 import { chooseMember, expectMember } from './memberSelectTestHelpers'
 import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
@@ -558,7 +559,7 @@ describe('パネルの見た目(計画Issue #164、仕訳エディタと同じ�
     renderTab()
     fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
 
-    expect(panel('定期仕訳の追加').queryByLabelText('精算バッチ')).not.toBeInTheDocument()
+    expect(queryBatchButton('精算バッチ', panel('定期仕訳の追加'))).toBeNull()
   })
 })
 

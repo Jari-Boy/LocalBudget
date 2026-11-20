@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
+import { BatchSelect } from '../master/BatchSelect'
 import { MemberSelect } from '../master/MemberSelect'
 import type { TreeSelectCategory, TreeSelectNode } from '../common/tree-select/treeSelectModel'
 import type { JournalEditorMaster } from './JournalEntryEditor'
@@ -37,6 +38,8 @@ export interface JournalLineBulkBarProps {
 /** 「なし(外す)」を表す選択ツリーの項目の値 */
 const CLEAR_VALUE = '__clear'
 const KEEP_LABEL = '変更しない'
+/** 一括編集の精算バッチで、「変更しない」の次に固定して出す「なし(外す)」。参照を安定させるため定数にする */
+const CLEAR_OPTIONS = [{ value: CLEAR_VALUE, label: 'なし(外す)' }]
 
 /** 選択ツリーの先頭に「なし(外す)」の項目を足す(科目には外す操作はないので足さない) */
 function withClearOption(categories: readonly TreeSelectCategory[]): TreeSelectCategory[] {
@@ -166,21 +169,15 @@ export function JournalLineBulkBar({
         </div>
         <div className="journal-line-bulk__field">
           <span className="journal-line-bulk__label">精算バッチ</span>
-          <select
-            className="journal-line-bulk__select"
-            aria-label="一括編集の精算バッチ"
+          <BatchSelect
+            label="一括編集の精算バッチ"
+            batches={master.batches}
             value={changeToValue(pick.batch)}
+            emptyLabel={KEEP_LABEL}
+            leadingOptions={CLEAR_OPTIONS}
             disabled={!rules.batchAllowed}
-            onChange={(e) => change({ batch: valueToChange(e.target.value) })}
-          >
-            <option value="">{KEEP_LABEL}</option>
-            <option value={CLEAR_VALUE}>なし(外す)</option>
-            {master.batches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => change({ batch: valueToChange(v) })}
+          />
           {note(rules.batchAllowed, '未収金・未払金(精算バッチ)の行のみ')}
         </div>
         <div className="journal-line-bulk__field">

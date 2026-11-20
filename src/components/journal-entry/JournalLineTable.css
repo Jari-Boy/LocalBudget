@@ -280,12 +280,6 @@
   font-size: var(--font-size-xs);
 }
 
-.journal-line-table select.journal-line-table__control {
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: none;
-}
-
 .journal-line-table__amount-edit {
   display: flex;
   align-items: center;

@@ -16,6 +16,7 @@ import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntr
 import type { JournalEditorMaster } from './JournalEntryEditor'
 import { EMPTY_BULK_PICK, type BulkPick, type BulkSelectedLine } from './journalBulkEditModel'
 import { chooseMember, findMemberButton } from '../master/memberSelectTestHelpers'
+import { chooseBatch, findBatchButton } from '../master/batchSelectTestHelpers'
 import { JournalLineBulkBar } from './JournalLineBulkBar'
 
 afterEach(cleanup)
@@ -175,6 +176,17 @@ describe('JournalLineBulkBar', () => {
       expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ project: { kind: 'keep' } }))
     })
 
+    it('精算バッチは「なし(外す)」も選べる。「変更しない」に戻すこともできる', () => {
+      const onPick = vi.fn()
+      render(<Harness selected={[sel(e2, 21)]} onPick={onPick} />)
+      chooseBatch('一括編集の精算バッチ', '6月の割勘')
+      expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ batch: { kind: 'set', value: 7 } }))
+      chooseBatch('一括編集の精算バッチ', 'なし(外す)')
+      expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ batch: { kind: 'clear' } }))
+      chooseBatch('一括編集の精算バッチ', '変更しない')
+      expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ batch: { kind: 'keep' } }))
+    })
+
     it('世帯メンバーを選ぶと pick に反映される', () => {
       const onPick = vi.fn()
       render(<Harness selected={[sel(e1, 11)]} onPick={onPick} />)
@@ -201,10 +213,10 @@ describe('JournalLineBulkBar', () => {
 
     it('立替金の行だけなら精算バッチを選べる。食費の行が混ざると選べず、理由を出す', () => {
       const { unmount } = render(<Harness selected={[sel(e2, 21)]} />)
-      expect(screen.getByLabelText('一括編集の精算バッチ')).toBeEnabled()
+      expect(findBatchButton('一括編集の精算バッチ')).toBeEnabled()
       unmount()
       render(<Harness selected={[sel(e2, 21), sel(e2, 22)]} />)
-      expect(screen.getByLabelText('一括編集の精算バッチ')).toBeDisabled()
+      expect(findBatchButton('一括編集の精算バッチ')).toBeDisabled()
       expect(screen.getByText('未収金・未払金(精算バッチ)の行のみ')).toBeInTheDocument()
     })
 
@@ -223,9 +235,9 @@ describe('JournalLineBulkBar', () => {
 
     it('科目を立替金に一括で変えようとすると、食費の行が混ざっていても精算バッチを選べるようになる', () => {
       render(<Harness selected={[sel(e1, 11)]} />)
-      expect(screen.getByLabelText('一括編集の精算バッチ')).toBeDisabled()
+      expect(findBatchButton('一括編集の精算バッチ')).toBeDisabled()
       chooseTree('一括編集の科目', '変更しない', '立替金')
-      expect(screen.getByLabelText('一括編集の精算バッチ')).toBeEnabled()
+      expect(findBatchButton('一括編集の精算バッチ')).toBeEnabled()
     })
 
     it('選べなくなった項目の選択は外れる(取引先を選んだあと、科目を普通預金に変えると、取引先は「変更しない」に戻る)', () => {
@@ -240,7 +252,7 @@ describe('JournalLineBulkBar', () => {
     it('0行のとき(選択が空になった直後など)も、すべての項目が選べない', () => {
       render(<Harness selected={[]} />)
       expect(screen.getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
-      expect(screen.getByLabelText('一括編集の精算バッチ')).toBeDisabled()
+      expect(findBatchButton('一括編集の精算バッチ')).toBeDisabled()
       expect(findMemberButton('一括編集の世帯メンバー')).toBeDisabled()
     })
   })

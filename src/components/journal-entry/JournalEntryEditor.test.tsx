@@ -14,6 +14,7 @@ import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Account } from '../../domain/account/Account'
 import { chooseMember, expectMember, expectMembers, findMemberButton, findMemberButtons, listMemberOptions, listMemberOptionsOf } from '../master/memberSelectTestHelpers'
+import { expectBatch, findBatchButton, queryBatchButton } from '../master/batchSelectTestHelpers'
 import { JournalEntryEditor, type JournalEditorLine, type JournalEditorMaster, type JournalEditorValue } from './JournalEntryEditor'
 
 afterEach(cleanup)
@@ -146,19 +147,19 @@ describe('JournalEntryEditor', () => {
 
   it('割勘の一時勘定(システム管理の立替金・未払金)の行にだけ精算バッチ欄を出す', () => {
     render(<Harness initial={value([debit(1, 3, '1000'), credit(2, 2, '1000')])} />)
-    expect(screen.getByLabelText('精算バッチ')).toBeInTheDocument()
+    expect(findBatchButton('精算バッチ')).toBeInTheDocument()
   })
 
   it('利用者が作った一時勘定(未収金など)の行には精算バッチ欄を出さない', () => {
     render(<Harness initial={value([debit(1, 5, '1000'), credit(2, 2, '1000')])} />)
-    expect(screen.queryByLabelText('精算バッチ')).not.toBeInTheDocument()
+    expect(queryBatchButton('精算バッチ')).toBeNull()
   })
 
   it('精算バッチのタグを保持したまま表示する', () => {
     const lines = [debit(1, 3, '1000'), credit(2, 2, '1000')]
     lines[0].line = { ...lines[0].line, settlementBatchId: 7 }
     render(<Harness initial={value(lines)} />)
-    expect(screen.getByLabelText('精算バッチ')).toHaveValue('7')
+    expectBatch('精算バッチ', '旅行')
   })
 
   it('科目に既定の世帯メンバーがあれば「(科目の既定)」と表示して選ばせない', () => {
