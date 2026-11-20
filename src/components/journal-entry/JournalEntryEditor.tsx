@@ -5,6 +5,7 @@ import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 import type { JournalEntryFormLine } from './journalEntryFormLine'
 import { followBookkeeper } from './journalEditorMember'
 import { JournalLinesEditor } from './JournalLinesEditor'
+import { JournalMemberSelect } from './JournalMemberSelect'
 import './JournalEntryEditor.css'
 
 export interface JournalEditorLine {
@@ -104,16 +105,6 @@ export function JournalEntryEditor({
       lines: [...followBookkeeper(value.lines, defaultMemberOf, value.householdMemberId, next)],
     })
 
-  /** 選べる世帯メンバー。無効なメンバーは、いま選ばれている場合だけ残す */
-  const memberOptions = (selectedId: number | null) =>
-    master.members
-      .filter((m) => m.isActive || m.id === selectedId)
-      .map((m) => (
-        <option key={m.id} value={m.id}>
-          {m.name}
-        </option>
-      ))
-
   return (
     <div className="journal-editor">
       <div className="journal-editor__head">
@@ -144,23 +135,15 @@ export function JournalEntryEditor({
           />
         </div>
         <div className="journal-editor__field journal-editor__field--bookkeeper">
-          <label className="journal-editor__label" htmlFor="journal-editor-bookkeeper">
-            起票者
-          </label>
-          <select
-            id="journal-editor-bookkeeper"
-            className="journal-editor__control"
-            value={value.householdMemberId === null ? '' : String(value.householdMemberId)}
+          <span className="journal-editor__label">起票者</span>
+          <JournalMemberSelect
+            label="起票者"
+            members={master.members}
+            memberId={value.householdMemberId}
+            noneLabel={bookkeeperNoneLabel}
             disabled={lockEntryDate}
-            onChange={(e) => changeBookkeeper(e.target.value === '' ? null : Number(e.target.value))}
-          >
-            {bookkeeperNoneLabel !== undefined ? (
-              <option value="">{bookkeeperNoneLabel}</option>
-            ) : (
-              value.householdMemberId === null && <option value="">選択してください</option>
-            )}
-            {memberOptions(value.householdMemberId)}
-          </select>
+            onChange={changeBookkeeper}
+          />
         </div>
         {!hideComment && (
           <div className="journal-editor__field journal-editor__field--comment">

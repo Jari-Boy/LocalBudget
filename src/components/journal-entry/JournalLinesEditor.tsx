@@ -4,6 +4,7 @@ import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
+import { JournalMemberSelect } from './JournalMemberSelect'
 import { createEmptyJournalEntryFormLine, isCounterpartyEligibleCategory, type JournalEntryFormLine } from './journalEntryFormLine'
 import { applyAccountChange } from './journalLineAccountChange'
 import { summarizeBalance } from './journalScreenModel'
@@ -87,16 +88,6 @@ export function JournalLinesEditor({
   /** 科目を変えたとき、その科目では持てない取引先・精算バッチ・メンバーの指定を外す */
   const changeAccount = (key: number, accountId: number | null) =>
     updateLine(key, (line) => applyAccountChange({ line, accountId, accountById, bookkeeperId }))
-
-  /** 選べる世帯メンバー。無効なメンバーは、いま選ばれている場合だけ残す */
-  const memberOptions = (selectedId: number | null) =>
-    master.members
-      .filter((m) => m.isActive || m.id === selectedId)
-      .map((m) => (
-        <option key={m.id} value={m.id}>
-          {m.name}
-        </option>
-      ))
 
   const createBatch = async (key: number) => {
     if (onCreateBatch === undefined || newBatchName.trim() === '') return
@@ -232,34 +223,16 @@ export function JournalLinesEditor({
                       {defaultMember !== undefined && line.householdMemberId === defaultMember.id ? (
                         <span className="journal-editor__locked">{defaultMember.name}(科目の既定)</span>
                       ) : (
-                        <select
-                          className="journal-editor__control journal-editor__select"
-                          aria-label="世帯メンバー"
+                        // defaultMemberがあるのは、科目の既定メンバーを後から変えて、旧メンバーのまま残した行。旧メンバーのまま保存するか、既定値にだけ変えられる
+                        <JournalMemberSelect
+                          label="世帯メンバー"
+                          members={master.members}
+                          memberId={line.householdMemberId}
+                          noneLabel={memberNoneLabel}
+                          defaultMember={defaultMember}
                           disabled={readOnlyLines}
-                          value={line.householdMemberId === null ? '' : String(line.householdMemberId)}
-                          onChange={(e) =>
-                            updateLine(key, (l) => ({
-                              ...l,
-                              householdMemberId: e.target.value === '' ? null : Number(e.target.value),
-                            }))
-                          }
-                        >
-                          {(line.householdMemberId === null || memberNoneLabel !== undefined) && (
-                            <option value="">{memberNoneLabel ?? '選択してください'}</option>
-                          )}
-                          {defaultMember === undefined ? (
-                            memberOptions(line.householdMemberId)
-                          ) : (
-                            // 科目の既定メンバーを後から変えて、旧メンバーのまま残した行。旧メンバーのまま保存するか、既定値にだけ変えられる
-                            [line.householdMemberId, defaultMember.id].map((id) => (
-                              <option key={id} value={id ?? ''}>
-                                {id === defaultMember.id
-                                  ? `${defaultMember.name}(科目の既定)`
-                                  : (memberById.get(id ?? -1)?.name ?? '')}
-                              </option>
-                            ))
-                          )}
-                        </select>
+                          onChange={(householdMemberId) => updateLine(key, (l) => ({ ...l, householdMemberId }))}
+                        />
                       )}
                     </div>
                     {creatingBatchKey === key && (

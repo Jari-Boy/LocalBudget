@@ -223,10 +223,10 @@ test.describe('承認待ちの定期仕訳(仕訳画面のタブ)', () => {
     await expect(confirm).toBeDisabled()
 
     await detailPanel(page).getByLabel('通信費(提案テスト3)の金額').fill('3500')
-    const memberSelect = detailPanel(page).locator('select.journal-screen__select')
-    const memberOptions = await memberSelect.locator('option').all()
-    const memberValue = await memberOptions[1].getAttribute('value')
-    await memberSelect.selectOption(memberValue!)
+    // 提案の起票者の選択欄(共通の選択欄)を開き、先頭の「選択してください」の次の項目(最初のメンバー)を選ぶ。
+    // 詳細パネルの編集欄にも「起票者」があるため、提案用の囲み(journal-screen__inline-field)の中に限る
+    await detailPanel(page).locator('.journal-screen__inline-field').getByRole('button', { name: /^起票者/ }).click()
+    await page.getByRole('dialog', { name: '起票者' }).getByRole('button').nth(1).click()
 
     await expect(confirm).toBeEnabled()
     await confirm.click()

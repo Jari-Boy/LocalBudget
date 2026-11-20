@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import i18n from '../../infrastructure/i18n/i18n'
+import { expectMember } from '../master/memberSelectTestHelpers'
 import { CreateRuleFromEntryDialog } from './CreateRuleFromEntryDialog'
 import type { JournalEditorMaster } from './JournalEntryEditor'
 
@@ -77,7 +78,7 @@ describe('CreateRuleFromEntryDialog', () => {
 
     const dialog = within(screen.getByRole('dialog', { name: '定期仕訳の作成' }))
     expect(dialog.getByLabelText('名称')).toHaveValue('ジム年会費')
-    expect(dialog.getByLabelText('起票者')).toHaveValue('3')
+    expectMember('起票者', '夫', dialog)
     expect(within(dialog.getByRole('group', { name: '借方' })).getByLabelText('健康・運動の金額')).toHaveValue('9800')
     expect(within(dialog.getByRole('group', { name: '貸方' })).getByLabelText('クレジットカードの金額')).toHaveValue('9800')
   })

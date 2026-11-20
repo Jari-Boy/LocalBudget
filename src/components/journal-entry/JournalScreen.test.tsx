@@ -24,6 +24,7 @@ import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { UnsavedChangesGuardProvider, useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
 import { saveUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
+import { chooseMember, expectMember, expectMembers, findMemberButton } from '../master/memberSelectTestHelpers'
 import { JournalScreen, type JournalScreenProps } from './JournalScreen'
 import type { RecurringTransactionRuleLine } from '../../domain/recurring-transaction/RecurringTransactionRule'
 import type { JournalTemplate } from '../../domain/journal-template/JournalTemplate'
@@ -712,7 +713,7 @@ describe('JournalScreen', () => {
     it('起票者を変えて保存すると、更新に起票者が渡り、手で変えていない明細行も追従する', async () => {
       const props = setup()
       await ready()
-      fireEvent.change(within(detail()).getByRole('combobox', { name: '起票者' }), { target: { value: '2' } })
+      chooseMember('起票者', '妻', within(detail()))
       fireEvent.click(within(detail()).getByRole('button', { name: '保存' }))
 
       await waitFor(() =>
@@ -734,9 +735,7 @@ describe('JournalScreen', () => {
       await ready()
       fireEvent.click(screen.getByRole('button', { name: '手入力で起票' }))
 
-      const memberSelects = within(detail()).getAllByRole('combobox', { name: '世帯メンバー' })
-      expect(memberSelects).toHaveLength(2)
-      for (const select of memberSelects) expect(select).toHaveValue('1')
+      expectMembers('世帯メンバー', ['夫', '夫'], within(detail()))
     })
 
     it('世帯メンバーが入っていない下書きの行は、再開すると起票者で補われて確定できる', async () => {
@@ -745,9 +744,7 @@ describe('JournalScreen', () => {
       fireEvent.click(screen.getByRole('tab', { name: /下書き/ }))
       fireEvent.click(await screen.findByRole('button', { name: /確定する下書き/ }))
 
-      for (const select of within(detail()).getAllByRole('combobox', { name: '世帯メンバー' })) {
-        expect(select).toHaveValue('1')
-      }
+      expectMembers('世帯メンバー', ['夫', '夫'], within(detail()))
       expect(within(detail()).getByRole('button', { name: '確定して仕訳にする' })).toBeEnabled()
     })
   })
@@ -1107,7 +1104,7 @@ describe('JournalScreen', () => {
 
       const debitColumn = within(within(detail()).getByRole('group', { name: '借方' }))
       expect(debitColumn.getByRole('button', { name: /^プロジェクト/ })).toBeEnabled()
-      expect(debitColumn.getByRole('combobox', { name: '世帯メンバー' })).toBeEnabled()
+      expect(findMemberButton('世帯メンバー', debitColumn)).toBeEnabled()
       expect(debitColumn.getByRole('button', { name: '+ 借方の行を追加' })).toBeEnabled()
       expect(within(detail()).getByLabelText('取引日')).toBeDisabled()
     })
@@ -1198,7 +1195,7 @@ describe('JournalScreen', () => {
       const confirmButton = screen.getByRole('button', { name: '選択した定期仕訳を承認して反映' })
       expect(confirmButton).toBeDisabled()
       expect(screen.getByText(/起票者が決まっていない提案\(ジム会費\)があります/)).toBeInTheDocument()
-      fireEvent.change(screen.getByLabelText('まとめて確定の起票者'), { target: { value: '2' } })
+      chooseMember('まとめて確定の起票者', '妻')
       expect(confirmButton).toBeEnabled()
       fireEvent.click(confirmButton)
 
@@ -1215,7 +1212,7 @@ describe('JournalScreen', () => {
 
       fireEvent.click(checkbox(/ネット代/)[0])
 
-      expect(screen.queryByLabelText('まとめて確定の起票者')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^まとめて確定の起票者/ })).not.toBeInTheDocument()
     })
 
     it('まとめて確定に失敗したら、エラーを表示する(確定したことにならない)', async () => {
@@ -1490,7 +1487,6 @@ describe('JournalScreen(明細行単位)', () => {
       fireEvent.click(within(bulkBar()).getByRole('button', { name: '一括編集の科目: 変更しない' }))
       fireEvent.click(within(screen.getByRole('dialog', { name: '一括編集の科目' })).getByRole('button', { name: option }))
     }
-    const memberSelect = () => within(bulkBar()).getByLabelText('一括編集の世帯メンバー')
     const apply = () => within(bulkBar()).getByRole('button', { name: /行に適用$/ })
 
     it('明細行単位のときだけ、各行にチェックボックスが出る(仕訳単位には出ない)', async () => {
@@ -1550,7 +1546,7 @@ describe('JournalScreen(明細行単位)', () => {
         const props = await setupLineView()
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('家賃'))
-        fireEvent.change(memberSelect(), { target: { value: '2' } })
+        chooseMember('一括編集の世帯メンバー', '妻', within(bulkBar()))
 
         fireEvent.click(apply())
         expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
@@ -1572,12 +1568,12 @@ describe('JournalScreen(明細行単位)', () => {
       it('1回目のあとに「やめる」を押すと何も更新されず、項目を選び直しても確認は取り消される', async () => {
         const props = await setupLineView()
         fireEvent.click(debitBox('ランチ'))
-        fireEvent.change(memberSelect(), { target: { value: '2' } })
+        chooseMember('一括編集の世帯メンバー', '妻', within(bulkBar()))
         fireEvent.click(apply())
         fireEvent.click(within(bulkBar()).getByRole('button', { name: 'やめる' }))
         expect(within(bulkBar()).queryByRole('alert')).not.toBeInTheDocument()
         fireEvent.click(apply())
-        fireEvent.change(memberSelect(), { target: { value: '1' } })
+        chooseMember('一括編集の世帯メンバー', '夫', within(bulkBar()))
         expect(within(bulkBar()).queryByRole('alert')).not.toBeInTheDocument()
         expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
       })
@@ -1600,7 +1596,7 @@ describe('JournalScreen(明細行単位)', () => {
         props.journalEntryRepository.update.mockRejectedValueOnce(new Error('boom'))
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('家賃'))
-        fireEvent.change(memberSelect(), { target: { value: '2' } })
+        chooseMember('一括編集の世帯メンバー', '妻', within(bulkBar()))
         fireEvent.click(apply())
         fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
 
@@ -1731,7 +1727,7 @@ describe('JournalScreen: テンプレートから起票(計画Issue #201)', () =
     expect(within(detail()).getByRole('heading', { name: '新しい仕訳' })).toBeInTheDocument()
     expect(within(detail()).getByLabelText('取引日')).toHaveValue(new Date().toISOString().slice(0, 10))
     expect(memoInput()).toHaveValue('昼食')
-    expect(within(detail()).getByLabelText('起票者')).toHaveDisplayValue('妻')
+    expectMember('起票者', '妻', within(detail()))
     expect(within(detail()).getByRole('button', { name: /^科目: 食費/ })).toBeInTheDocument()
     expect(within(detail()).getByRole('button', { name: /^科目: 普通預金/ })).toBeInTheDocument()
     expect(within(detail()).getByText('テンプレート「コンビニ(昼食)」の内容を入れました。金額を入力してください。')).toBeInTheDocument()

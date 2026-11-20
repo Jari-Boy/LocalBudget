@@ -35,6 +35,7 @@ import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepo
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/SqlJsStatementImportDraftRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
+import { chooseMember, expectMember, findMemberButton, listMemberOptions } from '../master/memberSelectTestHelpers'
 import { StatementImportScreen } from './StatementImportScreen'
 import { chooseTargetAccount, expectTargetAccount, findTargetAccountButton } from './targetAccountTestHelpers'
 
@@ -133,8 +134,7 @@ async function chooseCsv(content: string, waitLoaded = true) {
   if (waitLoaded) {
     await screen.findByText(/statement\.csv を読み込み済み/)
     // 科目に名義が無いときは「誰の明細か」を選ばないと確定できない(計画Issue #193)ので、既定では memberId の人を選んでおく
-    const owner = screen.queryByLabelText('誰の明細か(必須)')
-    if (owner) fireEvent.change(owner, { target: { value: String(memberId) } })
+    if (screen.queryByRole('button', { name: /^誰の明細か\(必須\)/ })) chooseMember('誰の明細か(必須)', '自分')
   }
 }
 
@@ -289,6 +289,81 @@ describe('StatementImportScreen', () => {
     expect(rowOf(/スーパー/).getByRole('button', { name: new RegExp(`^プロジェクト: ${trip.name}`) })).toBeInTheDocument()
   })
 
+  describe('世帯メンバーの選択欄(計画Issue #234)', () => {
+    const TWO_ROWS = `${HEADER}2026/10/05,スーパー,-3000,97000
+2026/10/06,ランチ,-800,96200
+`
+    const bulkGroup = () => within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
+
+    it('一括設定で世帯メンバーを選ぶと、選択した全行に反映される(選択しなかった行は変わらない)', async () => {
+      makeMapping()
+      new SqlJsHouseholdMemberRepository(db).create({ name: '花子' })
+      renderScreen()
+      await chooseCsv(`${TWO_ROWS}2026/10/07,家賃,-50000,46200
+`)
+      fireEvent.click(screen.getByLabelText('スーパーを選択'))
+      fireEvent.click(screen.getByLabelText('ランチを選択'))
+
+      chooseMember('世帯メンバーを一括設定', '花子', bulkGroup())
+
+      expectMember('スーパーの世帯メンバー', '花子', rowOf(/スーパー/))
+      expectMember('ランチの世帯メンバー', '花子', rowOf(/ランチ/))
+      expectMember('家賃の世帯メンバー', 'なし', rowOf(/家賃/))
+    })
+
+    it('一括設定の「なし(クリア)」を選ぶと、選択した全行の世帯メンバーが未設定に戻る', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(TWO_ROWS)
+      fireEvent.click(screen.getByLabelText('スーパーを選択'))
+      fireEvent.click(screen.getByLabelText('ランチを選択'))
+      chooseMember('世帯メンバーを一括設定', '自分', bulkGroup())
+      expectMember('スーパーの世帯メンバー', '自分', rowOf(/スーパー/))
+
+      chooseMember('世帯メンバーを一括設定', 'なし(クリア)', bulkGroup())
+
+      expectMember('スーパーの世帯メンバー', 'なし', rowOf(/スーパー/))
+      expectMember('ランチの世帯メンバー', 'なし', rowOf(/ランチ/))
+    })
+
+    it('行ごとに世帯メンバーを選ぶと、その行だけが変わる', async () => {
+      makeMapping()
+      new SqlJsHouseholdMemberRepository(db).create({ name: '花子' })
+      renderScreen()
+      await chooseCsv(TWO_ROWS)
+
+      chooseMember('ランチの世帯メンバー', '花子', rowOf(/ランチ/))
+
+      expectMember('ランチの世帯メンバー', '花子', rowOf(/ランチ/))
+      expectMember('スーパーの世帯メンバー', 'なし', rowOf(/スーパー/))
+    })
+
+    it('相手科目に既定の世帯メンバーがある行は、そのメンバーを出して選べない', async () => {
+      makeMapping()
+      accounts.create({ category: 'asset', name: '夫の財布', isReconcilable: false, householdMemberId: memberId })
+      renderScreen()
+      await chooseCsv(TWO_ROWS)
+
+      pick(rowOf(/スーパー/), '相手科目', '夫の財布')
+
+      expectMember('スーパーの世帯メンバー', '自分', rowOf(/スーパー/))
+      expect(findMemberButton('スーパーの世帯メンバー', rowOf(/スーパー/))).toBeDisabled()
+      expect(findMemberButton('ランチの世帯メンバー', rowOf(/ランチ/))).toBeEnabled()
+    })
+
+    it('「誰の明細か」は、未選択のあいだ囲みに強調のクラスが付き、選ぶと外れる', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(TWO_ROWS, false)
+      await chooseTargetAccount(bank.name)
+      await screen.findByText(/statement.csv を読み込み済み/)
+
+      expect(findMemberButton('誰の明細か(必須)').closest('.import-attention')).not.toBeNull()
+      chooseMember('誰の明細か(必須)', '自分')
+      expect(findMemberButton('誰の明細か(必須)').closest('.import-attention')).toBeNull()
+    })
+  })
+
   it('精算バッチは立替金・未払金の行だけに出て、利用者が作った資産(有価証券など)の行には出ない', async () => {
     makeMapping()
     accounts.create({ category: 'asset', name: '有価証券', isReconcilable: false })
@@ -335,7 +410,7 @@ describe('StatementImportScreen', () => {
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
 
     expect(screen.getByText('花子(科目の名義)')).toBeInTheDocument()
-    expect(screen.queryByLabelText('誰の明細か(必須)')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^誰の明細か\(必須\)/ })).not.toBeInTheDocument()
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「花子の口座」に確定$/ }))
 
@@ -354,11 +429,11 @@ describe('StatementImportScreen', () => {
     pick(rowOf(/スーパー/), '相手科目', '食費')
 
     const confirm = screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ })
-    expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue('')
+    expectMember('誰の明細か(必須)', '誰の明細か選んでください')
     expect(confirm).toBeDisabled()
     expect(screen.getByText('誰の明細かを選ぶと確定できます')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(hanako.id) } })
+    chooseMember('誰の明細か(必須)', '花子')
     expect(confirm).toBeEnabled()
     fireEvent.click(confirm)
 
@@ -378,8 +453,7 @@ describe('StatementImportScreen', () => {
     await screen.findByText(/statement\.csv を読み込み済み/)
     pick(rowOf(/スーパー/), '相手科目', '食費')
 
-    const owner = screen.getByLabelText('誰の明細か(必須)')
-    expect(within(owner).getAllByRole('option')).toHaveLength(1)
+    expect(listMemberOptions('誰の明細か(必須)')).toEqual(['誰の明細か選んでください'])
     expect(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ })).toBeDisabled()
     expect(screen.getByText('誰の明細かを選ぶと確定できます')).toBeInTheDocument()
     expect(userEntries()).toHaveLength(0)
@@ -392,13 +466,13 @@ describe('StatementImportScreen', () => {
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
     await chooseTargetAccount(bank.name)
     await screen.findByText(/statement\.csv を読み込み済み/)
-    fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
-    expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue(String(memberId))
+    chooseMember('誰の明細か(必須)', '自分')
+    expectMember('誰の明細か(必須)', '自分')
 
     await chooseTargetAccount(other.name)
 
     await screen.findByText(/statement\.csv を読み込み済み/)
-    expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue('')
+    expectMember('誰の明細か(必須)', '誰の明細か選んでください')
   })
 
   it('CSVを選ぶ前は画面の中央に「CSVを選択」ボタンと案内を出し、CSVを選ぶと上部のボタンに移る(計画Issue #193)', async () => {
@@ -1879,7 +1953,7 @@ describe('StatementImportScreen', () => {
     expect(screen.queryByRole('row', { name: /スーパー/ })).not.toBeInTheDocument()
     await chooseTargetAccount(card.name)
     await screen.findByRole('button', { name: /^\d+ \/ 1 件を「楽天VISA」に確定$/ })
-    fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
+    chooseMember('誰の明細か(必須)', '自分')
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「楽天VISA」に確定$/ }))
 
@@ -1902,7 +1976,7 @@ describe('StatementImportScreen', () => {
 
     await chooseTargetAccount(bank.name)
     await screen.findByText(/statement\.csv を読み込み済み/)
-    fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
+    chooseMember('誰の明細か(必須)', '自分')
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
 
@@ -2442,6 +2516,18 @@ describe('StatementImportScreen', () => {
 
         expect(rowEl(/ランチ/)).not.toHaveClass('import-row--done')
         expect(rowEl(/ランチ/)).toHaveClass('import-row--skipped')
+      })
+
+      it('「この取引を保存しない」の行は、世帯メンバーの欄が押せなくなる', async () => {
+        makeMapping()
+        manualLunch()
+        renderScreen()
+        await chooseCsv(CSV3)
+        expect(findMemberButton('ランチの世帯メンバー', rowOf(/ランチ/))).toBeEnabled()
+
+        fireEvent.click(await screen.findByRole('radio', { name: 'この取引を保存しない' }))
+
+        expect(findMemberButton('ランチの世帯メンバー', rowOf(/ランチ/))).toBeDisabled()
       })
     })
 

@@ -34,6 +34,7 @@ import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSet
 import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/SqlJsStatementImportDraftRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
 import { StatementImportScreen } from './StatementImportScreen'
+import { chooseMember, expectMember } from '../master/memberSelectTestHelpers'
 import { expectTargetAccount } from './targetAccountTestHelpers'
 
 let db: Database
@@ -126,8 +127,7 @@ async function chooseCsvs(files: Array<{ name: string; body: string }>, waitFor:
     target: { files: files.map((f) => new File([f.body], f.name, { type: 'text/csv' })) },
   })
   await screen.findByText(waitFor)
-  const owner = screen.queryByLabelText('誰の明細か(必須)')
-  if (owner) fireEvent.change(owner, { target: { value: String(memberId) } })
+  if (screen.queryByRole('button', { name: /^誰の明細か\(必須\)/ })) chooseMember('誰の明細か(必須)', '自分')
 }
 const chooseCsv = (content: string) => chooseCsvs([{ name: 'statement.csv', body: content }], /statement\.csv を読み込み済み/)
 
@@ -350,7 +350,7 @@ describe('再開', () => {
 
     await resume()
 
-    expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue(String(memberId))
+    expectMember('誰の明細か(必須)', '自分')
     expect(confirmButton(1, 3)).toBeEnabled()
   })
 

@@ -5,6 +5,7 @@ import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { formatDate } from '../../infrastructure/i18n/formatDate'
 import { SOURCE_TAGS } from '../common/journal-result/journalResultModel'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
+import { JournalMemberSelect } from './JournalMemberSelect'
 import { createEmptyJournalEntryFormLine, isCounterpartyEligibleCategory, type JournalEntryFormLine } from './journalEntryFormLine'
 import type { JournalEditorLine, JournalEditorMaster, JournalEditorValue } from './JournalEntryEditor'
 import { applyAccountChange } from './journalLineAccountChange'
@@ -292,16 +293,6 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
       applyAccountChange({ line, accountId, accountById, bookkeeperId: editing?.value.householdMemberId ?? null }),
     )
 
-  /** 選べる世帯メンバー。無効なメンバーは、いま選ばれている場合だけ残す */
-  const memberOptions = (selectedId: number | null) =>
-    (editing?.master.members ?? [])
-      .filter((m) => m.isActive || m.id === selectedId)
-      .map((m) => (
-        <option key={m.id} value={m.id}>
-          {m.name}
-        </option>
-      ))
-
   const editSideCells = (item: (JournalEditorLine & { side: JournalLineSide | null }) | null, side: JournalLineSide, sideCount: number): ReactNode[] => {
     /** 編集中の行には選択のチェックボックスは出さない。選択の列は空白にせず、科目のセルを2列分にして埋める */
     const accountSpan = hasCheck ? 2 : undefined
@@ -385,16 +376,13 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
           {defaultMember.name}(科目の既定)
         </span>
       ) : (
-        <select
+        <JournalMemberSelect
           key="member"
-          className="journal-line-table__control"
-          aria-label={`${sideName}の世帯メンバー`}
-          value={line.householdMemberId === null ? '' : String(line.householdMemberId)}
-          onChange={(e) => updateLine(key, (l) => ({ ...l, householdMemberId: e.target.value === '' ? null : Number(e.target.value) }))}
-        >
-          {line.householdMemberId === null && <option value="">選択してください</option>}
-          {memberOptions(line.householdMemberId)}
-        </select>
+          label={`${sideName}の世帯メンバー`}
+          members={editing.master.members}
+          memberId={line.householdMemberId}
+          onChange={(householdMemberId) => updateLine(key, (l) => ({ ...l, householdMemberId }))}
+        />
       ),
       <span key="amount" className="journal-line-table__amount-edit">
         <input

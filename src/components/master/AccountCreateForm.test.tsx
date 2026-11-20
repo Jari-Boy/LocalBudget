@@ -28,6 +28,7 @@ import type { AccountCategory } from '../../domain/account/Account'
 import { SqlJsAccountBalanceRecordRepository } from '../../infrastructure/db/SqlJsAccountBalanceRecordRepository'
 import { seedBalanceAdjustmentAccount } from '../../infrastructure/db/seedBalanceAdjustmentAccount'
 import { AccountCreateForm } from './AccountCreateForm'
+import { chooseMember, findMemberButton, listMemberOptions } from './memberSelectTestHelpers'
 
 let db: Database
 let accounts: SqlJsAccountRepository
@@ -75,7 +76,7 @@ describe('AccountCreateForm', () => {
     renderForm('expense')
 
     expect(screen.queryByLabelText('外部明細(CSV)はありますか?')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('名義')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^名義/ })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('最初の残高の金額')).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '食費' } })
@@ -91,7 +92,7 @@ describe('AccountCreateForm', () => {
     expect(screen.getByRole('button', { name: '所属グループ: 普通預金' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('外部明細(CSV)はありますか?'), { target: { value: 'yes' } })
     fireEvent.change(screen.getByLabelText('残高情報は明細にありますか?'), { target: { value: 'yes' } })
-    fireEvent.change(screen.getByLabelText('名義'), { target: { selectedIndex: 0 } })
+    expect(findMemberButton('名義')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '楽天銀行' } })
     fireEvent.click(screen.getByRole('button', { name: '登録' }))
 
@@ -108,10 +109,10 @@ describe('AccountCreateForm', () => {
 
     expect(screen.queryByLabelText('残高情報は明細にありますか?')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '所属グループ: 現金・電子マネー' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: '全員' })).toBeInTheDocument()
+    expect(listMemberOptions('名義')).toContain('全員')
 
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '現金' } })
-    fireEvent.change(screen.getByLabelText('名義'), { target: { value: '' } })
+    chooseMember('名義', '全員')
     fireEvent.click(screen.getByRole('button', { name: '登録' }))
 
     await waitFor(() => expect(registered()).toHaveLength(1))
@@ -141,7 +142,7 @@ describe('AccountCreateForm', () => {
 
     fireEvent.change(screen.getByLabelText('外部明細(CSV)はありますか?'), { target: { value: 'yes' } })
 
-    expect(screen.queryByRole('option', { name: '全員' })).not.toBeInTheDocument()
+    expect(listMemberOptions('名義')).not.toContain('全員')
   })
 
   it('負債を選ぶと、クレジットカードグループが初期選択される', () => {

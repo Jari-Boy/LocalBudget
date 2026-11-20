@@ -33,6 +33,7 @@ import { SqlJsKeywordRuleRepository } from '../../infrastructure/db/SqlJsKeyword
 import { SqlJsRecurringTransactionRuleRepository } from '../../infrastructure/db/SqlJsRecurringTransactionRuleRepository'
 import { seedInitialBalanceAccount } from '../../infrastructure/db/seedInitialBalanceAccount'
 import { AccountMasterTab } from './AccountMasterTab'
+import { chooseMember } from './memberSelectTestHelpers'
 import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
@@ -167,7 +168,7 @@ describe('AccountMasterTab', () => {
     renderTab()
     await open('現金')
 
-    fireEvent.change(panel('科目の編集').getByLabelText('名義'), { target: { value: String(memberId) } })
+    chooseMember('名義', '夫', panel('科目の編集'))
     fireEvent.click(panel('科目の編集').getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(accounts.findById(account.id)!.householdMemberId).toBe(memberId))
@@ -182,7 +183,7 @@ describe('AccountMasterTab', () => {
       postEntry(food.id, cash.id)
       renderTab()
       await open('現金')
-      fireEvent.change(panel('科目の編集').getByLabelText('名義'), { target: { value: String(wifeId) } })
+      chooseMember('名義', '妻', panel('科目の編集'))
       fireEvent.click(panel('科目の編集').getByRole('button', { name: '保存' }))
       return { wifeId, cash, food }
     }
@@ -232,7 +233,7 @@ describe('AccountMasterTab', () => {
       renderTab()
       await open('現金')
 
-      fireEvent.change(panel('科目の編集').getByLabelText('名義'), { target: { value: '' } })
+      chooseMember('名義', '全員', panel('科目の編集'))
       fireEvent.click(panel('科目の編集').getByRole('button', { name: '保存' }))
 
       await waitFor(() => expect(accounts.findById(account.id)!.householdMemberId).toBeNull())
@@ -803,7 +804,7 @@ describe('AccountMasterTab 未保存の編集の警告(計画Issue #190)', () =>
     accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
     renderTab()
     await open('楽天銀行')
-    fireEvent.change(panel('科目の編集').getByLabelText('名義'), { target: { value: String(memberId) } })
+    chooseMember('名義', '夫', panel('科目の編集'))
     await open('食費')
     expect(dialog()).toBeInTheDocument()
   })

@@ -6,6 +6,7 @@ import type { HouseholdMember } from '../../domain/household-member/HouseholdMem
 import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
 import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
 import { EntitySelect } from '../common/entity-select/EntitySelect'
+import { MemberSelect } from './MemberSelect'
 import { useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import { reconciliationAnswerToIsReconcilable } from '../account-registration/reconciliationQuestion'
 import { registerAccount, type AccountCreator, type BalanceRecordCreator } from '../account-registration/registerAccount'
@@ -260,22 +261,15 @@ export function AccountCreateForm({
 
       {showMember && (
         <div className="master-field">
-          <label className="master-field__label" htmlFor="account-create-member">
-            {t('createForm.member')}
-          </label>
-          <select
-            id="account-create-member"
-            className="master-field__control"
+          <span className="master-field__label">{t('createForm.member')}</span>
+          {/* 外部明細があるときは名義が必須なので、「全員」は出さない */}
+          <MemberSelect
+            label={t('createForm.member')}
+            members={members}
             value={memberId === null ? '' : String(memberId)}
-            onChange={(event) => setMemberInput(event.target.value)}
-          >
-            {!csvExists && <option value="">{t('createForm.memberAll')}</option>}
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+            onChange={setMemberInput}
+            emptyLabel={csvExists ? undefined : t('createForm.memberAll')}
+          />
         </div>
       )}
 

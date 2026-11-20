@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
+import { MemberSelect } from '../master/MemberSelect'
 import type { TreeSelectCategory, TreeSelectNode } from '../common/tree-select/treeSelectModel'
 import type { JournalEditorMaster } from './JournalEntryEditor'
 import {
@@ -184,22 +185,14 @@ export function JournalLineBulkBar({
         </div>
         <div className="journal-line-bulk__field">
           <span className="journal-line-bulk__label">世帯メンバー</span>
-          <select
-            className="journal-line-bulk__select"
-            aria-label="一括編集の世帯メンバー"
+          <MemberSelect
+            label="一括編集の世帯メンバー"
+            members={master.members}
             value={pick.memberId === null ? '' : String(pick.memberId)}
+            emptyLabel={KEEP_LABEL}
             disabled={!rules.memberAllowed}
-            onChange={(e) => change({ memberId: e.target.value === '' ? null : Number(e.target.value) })}
-          >
-            <option value="">{KEEP_LABEL}</option>
-            {master.members
-              .filter((m) => m.isActive)
-              .map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-          </select>
+            onChange={(value) => change({ memberId: value === '' ? null : Number(value) })}
+          />
           {note(rules.memberAllowed, '既定メンバーのある科目は不可')}
         </div>
       </div>

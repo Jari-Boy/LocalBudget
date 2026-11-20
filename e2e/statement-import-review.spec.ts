@@ -173,8 +173,12 @@ async function startImport(page: Page, accountName: string | null, csv: string) 
 
 /** 科目に名義が無いときは「誰の明細か」を選ばないと確定できない(計画Issue #193)ので、先頭の世帯メンバーを選ぶ */
 async function chooseOwner(page: Page) {
-  const owner = page.getByLabel('誰の明細か(必須)')
-  if ((await owner.count()) > 0) await owner.selectOption({ index: 1 })
+  const owner = page.getByRole('button', { name: /^誰の明細か\(必須\)/ })
+  if ((await owner.count()) > 0) {
+    // 共通の選択欄を開き、先頭の「選んでください」の次の項目(最初のメンバー)を選ぶ
+    await owner.click()
+    await page.getByRole('dialog', { name: '誰の明細か(必須)' }).getByRole('button').nth(1).click()
+  }
 }
 
 /** 行の中の選択ツリーを開き、検索して項目を選ぶ */

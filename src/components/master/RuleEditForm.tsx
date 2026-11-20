@@ -7,6 +7,7 @@ import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBa
 import { JournalLinesEditor } from '../journal-entry/JournalLinesEditor'
 import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 import { isRuleFormValid, isScheduleFormValid, ruleFromForm, type RuleForm } from './recurringRuleForm'
+import { MemberSelect } from './MemberSelect'
 import { RuleAmountSchedulePanel } from './RuleAmountSchedulePanel'
 import '../journal-entry/JournalEntryEditor.css'
 import './master.css'
@@ -187,22 +188,14 @@ export function RuleEditForm(props: RuleEditFormProps) {
           <input id="rule-name" className="journal-editor__control" value={form.name} onChange={(e) => set('name', e.target.value)} />
         </div>
         <div className="journal-editor__field journal-editor__field--bookkeeper">
-          <label className="journal-editor__label" htmlFor="rule-member">
-            {t('ruleTab.bookkeeper')}
-          </label>
-          <select
-            id="rule-member"
-            className="journal-editor__control"
-            value={form.householdMemberId}
-            onChange={(e) => set('householdMemberId', num(e.target.value))}
-          >
-            <option value="">{t('ruleTab.bookkeeperNone')}</option>
-            {props.members.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+          <span className="journal-editor__label">{t('ruleTab.bookkeeper')}</span>
+          <MemberSelect
+            label={t('ruleTab.bookkeeper')}
+            members={props.members}
+            value={String(form.householdMemberId)}
+            onChange={(value) => set('householdMemberId', num(value))}
+            emptyLabel={t('ruleTab.bookkeeperNone')}
+          />
         </div>
       </div>
 

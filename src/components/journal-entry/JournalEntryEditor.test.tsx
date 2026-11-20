@@ -13,6 +13,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Account } from '../../domain/account/Account'
+import { chooseMember, expectMember, expectMembers, findMemberButton, findMemberButtons, listMemberOptions, listMemberOptionsOf } from '../master/memberSelectTestHelpers'
 import { JournalEntryEditor, type JournalEditorLine, type JournalEditorMaster, type JournalEditorValue } from './JournalEntryEditor'
 
 afterEach(cleanup)
@@ -167,17 +168,16 @@ describe('JournalEntryEditor', () => {
 
   it('起票者をセレクトで選べ、有効なメンバーが並ぶ(計画Issue #169)', () => {
     render(<Harness initial={value([debit(1, 1, '1000'), credit(2, 2, '1000')])} />)
-    const select = screen.getByRole('combobox', { name: '起票者' })
-    expect(select).toHaveValue('1')
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['夫', '妻'])
+    expectMember('起票者', '夫')
+    expect(listMemberOptions('起票者')).toEqual(['夫', '妻'])
   })
 
   it('明細行の世帯メンバー欄に「メンバーなし」の選択肢は無い', () => {
     render(<Harness initial={value([debit(1, 1, '1000'), credit(2, 2, '1000')])} />)
-    const memberSelects = screen.getAllByRole('combobox', { name: '世帯メンバー' })
-    expect(memberSelects.length).toBeGreaterThan(0)
-    for (const select of memberSelects) {
-      expect(within(select).queryByRole('option', { name: 'メンバーなし' })).not.toBeInTheDocument()
+    const memberButtons = findMemberButtons('世帯メンバー')
+    expect(memberButtons.length).toBeGreaterThan(0)
+    for (const button of memberButtons) {
+      expect(listMemberOptionsOf(button)).not.toContain('メンバーなし')
     }
   })
 
@@ -194,7 +194,7 @@ describe('JournalEntryEditor', () => {
       />,
     )
 
-    fireEvent.change(screen.getByRole('combobox', { name: '起票者' }), { target: { value: '2' } })
+    chooseMember('起票者', '妻')
 
     const next = onChange.mock.calls[0][0] as JournalEditorValue
     expect(next.householdMemberId).toBe(2)
@@ -213,7 +213,7 @@ describe('JournalEntryEditor', () => {
 
   it('提案(lockEntryDate)では起票者と取引日を変えられない', () => {
     render(<Harness initial={value([debit(1, 1, '1000'), credit(2, 2, '1000')])} lockEntryDate />)
-    expect(screen.getByRole('combobox', { name: '起票者' })).toBeDisabled()
+    expect(findMemberButton('起票者')).toBeDisabled()
     expect(screen.getByLabelText('取引日')).toBeDisabled()
   })
 
@@ -258,7 +258,7 @@ describe('JournalEntryEditor', () => {
     const creditColumn = within(screen.getByRole('group', { name: '貸方' }))
     expect(debitColumn.getByRole('button', { name: /^取引先/ })).toBeDisabled()
     expect(debitColumn.getByRole('button', { name: /^プロジェクト/ })).toBeDisabled()
-    expect(debitColumn.getByRole('combobox', { name: '世帯メンバー' })).toBeDisabled()
+    expect(findMemberButton('世帯メンバー', debitColumn)).toBeDisabled()
     expect(creditColumn.getByRole('button', { name: /^プロジェクト/ })).toBeDisabled()
     // 費用・収益ではない科目の行には、取引先は出ない
     expect(creditColumn.queryByRole('button', { name: /^取引先/ })).not.toBeInTheDocument()
@@ -270,7 +270,7 @@ describe('JournalEntryEditor', () => {
 
       expect(screen.getByLabelText('取引日')).toBeInTheDocument()
       expect(screen.getByLabelText('コメント(任意)')).toBeInTheDocument()
-      expect(within(screen.getByLabelText('起票者')).queryByRole('option', { name: '起票時に選ぶ' })).not.toBeInTheDocument()
+      expect(listMemberOptions('起票者')).not.toContain('起票時に選ぶ')
     })
 
     it('取引日とコメントを隠し、摘要・起票者と借方・貸方の行は仕訳の入力欄と同じ部品で出る', () => {
@@ -286,11 +286,10 @@ describe('JournalEntryEditor', () => {
     it('起票者に指定した名前の項目が常に出て、選ぶと起票者を決めない(null)状態に戻せる', () => {
       render(<Harness template initial={value([debit(1, 1, ''), credit(2, 2, '')])} />)
 
-      const bookkeeper = screen.getByLabelText('起票者')
-      expect(within(bookkeeper).getByRole('option', { name: '起票時に選ぶ' })).toBeInTheDocument()
-      fireEvent.change(bookkeeper, { target: { value: '' } })
+      expect(listMemberOptions('起票者')).toContain('起票時に選ぶ')
+      chooseMember('起票者', '起票時に選ぶ')
 
-      expect(bookkeeper).toHaveValue('')
+      expectMember('起票者', '起票時に選ぶ')
     })
 
     it('金額が空欄の行を許し、空欄の案内を出す', () => {
@@ -302,10 +301,9 @@ describe('JournalEntryEditor', () => {
     it('起票者を変えると、手で変えていない行の世帯メンバーが追従する(仕訳の入力欄と同じ動き)', () => {
       render(<Harness template initial={value([debit(1, 1, ''), credit(2, 2, '')])} />)
 
-      fireEvent.change(screen.getByLabelText('起票者'), { target: { value: '2' } })
+      chooseMember('起票者', '妻')
 
-      const members = screen.getAllByRole('combobox', { name: '世帯メンバー' })
-      expect(members.map((m) => (m as HTMLSelectElement).value)).toEqual(['2', '2'])
+      expectMembers('世帯メンバー', ['妻', '妻'])
     })
 
     it('memberNoneLabelを渡すと、行の世帯メンバーの選択肢にその名前の「決めない」項目が出る(起票者を決めないテンプレートの行)', () => {
@@ -314,9 +312,8 @@ describe('JournalEntryEditor', () => {
         { key: 2, line: { accountId: 2, side: 'credit', amountInput: '', projectId: null, householdMemberId: null, counterpartyId: null } },
       ] }} />)
 
-      const members = screen.getAllByRole('combobox', { name: '世帯メンバー' })
-      expect(members.map((m) => (m as HTMLSelectElement).value)).toEqual(['', ''])
-      expect(within(members[0]).getByRole('option', { name: '起票者と同じ' })).toBeInTheDocument()
+      expectMembers('世帯メンバー', ['起票者と同じ', '起票者と同じ'])
+      expect(listMemberOptionsOf(findMemberButtons('世帯メンバー')[0])).toContain('起票者と同じ')
     })
   })
 })
