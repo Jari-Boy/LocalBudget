@@ -1960,14 +1960,15 @@ describe('StatementImportScreen', () => {
 
   it('列が同じで複数の定義に一致するときは、表示名で選ばせ、選ぶと取込先の確認に進む', async () => {
     makeMapping({ label: '汎用の定義', accountIds: [] })
-    const linked = makeMapping({ label: '普通預金用' })
+    makeMapping({ label: '普通預金用' })
     renderScreen()
 
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
 
-    const select = await screen.findByLabelText('マッピング定義')
-    expect(Array.from(select.querySelectorAll('option')).map((o) => o.textContent)).toEqual(['選択してください', '汎用の定義', '普通預金用'])
-    fireEvent.change(select, { target: { value: String(linked.id) } })
+    fireEvent.click(await screen.findByRole('button', { name: 'マッピング定義: 選択してください' }))
+    const dialog = within(screen.getByRole('dialog', { name: 'マッピング定義' }))
+    expect(dialog.getAllByRole('button').map((b) => b.textContent)).toEqual(['汎用の定義', '普通預金用'])
+    fireEvent.click(dialog.getByRole('button', { name: '普通預金用' }))
     await screen.findByText(/statement\.csv を読み込み済み/)
     expectTargetAccount(bank.name)
   })

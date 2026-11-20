@@ -243,7 +243,9 @@ test.describe('明細取込画面', () => {
 
     await startImport(page, null, '日付,摘要,金額,残高\n2026/07/20,スーパー,-3000,97000\n')
 
-    await page.getByLabel('マッピング定義').selectOption({ label: 'テスト銀行 別形式' })
+    // マッピング定義の選択欄(共通の選択欄)を開き、検索せずに候補から選ぶ
+    await page.getByRole('button', { name: /^マッピング定義/ }).click()
+    await page.getByRole('dialog', { name: 'マッピング定義' }).getByRole('button', { name: 'テスト銀行 別形式', exact: true }).click()
     await expect(page.getByRole('button', { name: '科目: 普通預金', exact: true })).toBeVisible()
     await expect(page.getByRole('table', { name: '明細の一覧' })).toBeVisible()
     await expect(rowOf(page, /スーパー/)).toBeVisible()
