@@ -12,6 +12,23 @@ export interface UseRangeSelectionParams<Id extends string | number> {
   scopeOf?: (id: Id) => unknown
 }
 
+/** 基点(最後に操作した行)と、フォーカス移動の探索の目印。画面が1つの一覧につき1つ持つ */
+export interface RangeAnchor<Id extends string | number> {
+  anchorRef: { current: Id | null }
+  /** フォーカス移動の探索を、同じ一覧のチェックボックスだけに絞る(画面に複数の一覧があっても混ざらない) */
+  group: string
+}
+
+/**
+ * 基点を保持する(フック)。選択対象(表示中の行)が、画面の早期 return のあとでしか決まらないときは、これを早期 return の前で
+ * 呼び、ハンドラの組み立て(createRangeSelection)を選択対象が決まった後で呼ぶ。そうでなければ useRangeSelection を使う
+ */
+export function useRangeAnchor<Id extends string | number>(): RangeAnchor<Id> {
+  const anchorRef = useRef<Id | null>(null)
+  const group = useId()
+  return { anchorRef, group }
+}
+
 /**
  * チェックボックスで複数選択できる画面の、Shift+クリックの範囲選択・Ctrl/Cmd+クリックのトグル・Shift+↑↓のキーボード範囲選択
  * (計画Issue #235 D)。ルールは純粋関数(rangeSelectionModel)に任せ、基点(最後に操作した行)の保持と、イベント・フォーカスとの
@@ -21,11 +38,15 @@ export interface UseRangeSelectionParams<Id extends string | number> {
  * 行のどこを押してもチェックを切り替える画面は、行に `{...rowProps(id)}` も渡す。
  * Shift+↑↓は、チェックボックスにフォーカスがあるときだけ働く(入力欄・select の中のキーは奪わない)。
  */
-export function useRangeSelection<Id extends string | number>({ order, selected, onChange, isSelectable, scopeOf }: UseRangeSelectionParams<Id>) {
-  const anchorRef = useRef<Id | null>(null)
-  /** フォーカス移動の探索を、同じフックのチェックボックスだけに絞る(画面に複数の一覧があっても混ざらない) */
-  const group = useId()
+export function useRangeSelection<Id extends string | number>(params: UseRangeSelectionParams<Id>) {
+  return createRangeSelection(useRangeAnchor<Id>(), params)
+}
 
+/** フックではない通常の関数。基点(useRangeAnchor)と選択対象から、チェックボックス・行に渡す props を組み立てる */
+export function createRangeSelection<Id extends string | number>(
+  { anchorRef, group }: RangeAnchor<Id>,
+  { order, selected, onChange, isSelectable, scopeOf }: UseRangeSelectionParams<Id>,
+) {
   const pick = (id: Id, modifiers: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => {
     const result = pickItem({
       order,

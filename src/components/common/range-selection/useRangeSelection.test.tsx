@@ -11,7 +11,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useRangeSelection } from './useRangeSelection'
+import { createRangeSelection, useRangeAnchor, useRangeSelection } from './useRangeSelection'
 
 afterEach(cleanup)
 
@@ -214,5 +214,38 @@ describe('useRangeSelection(行を押す操作 pickRow)', () => {
     fireEvent.click(box('a'))
     expect(onChangeSpy).toHaveBeenCalledTimes(1)
     expect(selection()).toBe('a')
+  })
+})
+
+/**
+ * 早期 return のあとで選択対象(表示中の行)が決まる画面向け: 基点の保持(useRangeAnchor、フック)は早期 return より前、
+ * ハンドラの組み立て(createRangeSelection、フックではない通常の関数)は選択対象が決まった後に呼べること。
+ */
+describe('useRangeAnchor + createRangeSelection(早期 return のある画面)', () => {
+  function LateList({ ready }: { ready: boolean }) {
+    const anchor = useRangeAnchor<string>()
+    const [selected, setSelected] = useState<string[]>([])
+    if (!ready) return <p>読み込み中</p>
+    const range = createRangeSelection(anchor, { order: IDS, selected, onChange: setSelected })
+    return (
+      <div>
+        {IDS.map((id) => (
+          <input key={id} type="checkbox" aria-label={id} checked={selected.includes(id)} {...range.checkboxProps(id)} />
+        ))}
+        <output aria-label="選択">{selected.join(',')}</output>
+      </div>
+    )
+  }
+
+  it('読み込み前後で呼ぶフックの数が変わらず、Shift+クリックの範囲選択と Shift+↓ が使える', () => {
+    const view = render(<LateList ready={false} />)
+    view.rerender(<LateList ready />)
+    fireEvent.click(box('a'))
+    fireEvent.click(box('c'), { shiftKey: true })
+    expect(selection()).toBe('a,b,c')
+    box('c').focus()
+    fireEvent.keyDown(box('c'), { key: 'ArrowDown', shiftKey: true })
+    expect(selection()).toBe('a,b,c,d')
+    expect(box('d')).toHaveFocus()
   })
 })
