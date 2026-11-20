@@ -210,6 +210,34 @@ export function toggleProposalChecked(
   return [...checked]
 }
 
+/**
+ * チェックがまとめて変わったとき(範囲選択・トグル選択・Shift+↑↓、計画Issue #235 D)も、同じルールの提案が古い順に途切れず
+ * 選ばれた状態を保つ。前のチェック(prevKeys)と変わった後のチェック(nextKeys)を比べ、加わった提案ごとに「同じルールのそれより古い提案も付ける」、
+ * 外れた提案ごとに「同じルールのそれより新しい提案も外す」を適用する(1件ずつ押したときの toggleProposalChecked と同じ連動)
+ */
+export function reconcileProposalChecked(
+  rows: readonly ProposalKey[],
+  prevKeys: readonly string[],
+  nextKeys: readonly string[],
+): string[] {
+  const prev = new Set(prevKeys)
+  const next = new Set(nextKeys)
+  const result = new Set(nextKeys)
+  for (const row of rows) {
+    const key = proposalKey(row)
+    if (next.has(key) && !prev.has(key)) {
+      for (const other of rows) if (other.ruleId === row.ruleId && other.dueDate <= row.dueDate) result.add(proposalKey(other))
+    }
+  }
+  for (const row of rows) {
+    const key = proposalKey(row)
+    if (prev.has(key) && !next.has(key)) {
+      for (const other of rows) if (other.ruleId === row.ruleId && other.dueDate >= row.dueDate) result.delete(proposalKey(other))
+    }
+  }
+  return [...result]
+}
+
 /** 「すべて選択」: 全件チェック済みなら全部外し、そうでなければ全件にチェックを付ける */
 export function toggleAllProposals(rows: readonly ProposalKey[], checkedKeys: readonly string[]): string[] {
   const checked = new Set(checkedKeys)

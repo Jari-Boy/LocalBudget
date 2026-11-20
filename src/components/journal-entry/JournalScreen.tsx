@@ -77,8 +77,8 @@ import {
   matchedAccountIdsOf,
   pickSelectionAfterDelete,
   sortProposalsOldestFirst,
+  reconcileProposalChecked,
   toggleAllProposals,
-  toggleProposalChecked,
   toMatchedResultItem,
 } from './journalScreenModel'
 import {
@@ -798,9 +798,13 @@ export function JournalScreen(props: JournalScreenProps) {
   const bulkNeedsMember = bulkNoMemberRows.length > 0
   const bulkNoMemberNames = [...new Set(bulkNoMemberRows.map((p) => p.rule.name))].join('、')
 
-  const toggleProposal = (id: number) => {
-    const row = proposalRows.find((p) => p.id === id)
-    if (row) setCheckedProposalKeys(toggleProposalChecked(proposalRows, checkedProposalKeys, row))
+  /**
+   * 一覧のチェックが変わったとき(1件・範囲選択・Ctrl/Cmd+クリック・Shift+↑↓、計画Issue #235 D)。同じルールの提案が
+   * 古い順に途切れず選ばれた状態を保つよう、変わった提案ごとに連動させてから反映する
+   */
+  const changeCheckedProposals = (ids: number[]) => {
+    const nextKeys = proposalRows.filter((p) => ids.includes(p.id)).map(proposalKey)
+    setCheckedProposalKeys(reconcileProposalChecked(proposalRows, checkedProposalKeys, nextKeys))
   }
 
   const confirmChecked = () =>
@@ -1387,7 +1391,7 @@ export function JournalScreen(props: JournalScreenProps) {
             hideAccounts={tab === 'proposals'}
             checkable={
               tab === 'proposals'
-                ? { checkedIds: checkedRows.map((p) => p.id), onToggle: toggleProposal }
+                ? { checkedIds: checkedRows.map((p) => p.id), onChange: changeCheckedProposals }
                 : undefined
             }
             selectionMode="single"

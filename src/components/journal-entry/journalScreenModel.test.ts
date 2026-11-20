@@ -20,6 +20,7 @@ import {
   proposalKey,
   sortProposalsOldestFirst,
   summarizeBalance,
+  reconcileProposalChecked,
   toggleAllProposals,
   toggleProposalChecked,
   toMatchedResultItem,
@@ -264,6 +265,50 @@ describe('提案のまとめて確定のチェック(計画Issue #164)', () => {
     const next = toggleProposalChecked(rows, [key(1, '2026-08-01')], rows[2])
 
     expect(next).toContain(key(1, '2026-09-01'))
+  })
+
+  /**
+   * 範囲選択(Shift+クリック)・トグル選択(Ctrl/Cmd+クリック)・Shift+↑↓で、一度に複数のチェックが変わっても、
+   * 同じルールの古い順に途切れない状態を保つ(計画Issue #235 D)。変わった行(加わった行・外れた行)ごとに、1件ずつ押したときの連動を適用する
+   */
+  describe('範囲選択などでチェックがまとめて変わったときの連動(reconcileProposalChecked)', () => {
+    it('1件だけ加わったときは、1件ずつ押したときと同じく、同じルールのそれより古い提案にもチェックが付く', () => {
+      const next = reconcileProposalChecked(rows, [], [key(1, '2026-09-01')])
+
+      expect([...next].sort()).toEqual([key(1, '2026-08-01'), key(1, '2026-09-01')].sort())
+    })
+
+    it('範囲選択で複数のルールの新しい提案がまとめて加わっても、各ルールで古い順に途切れない', () => {
+      const next = reconcileProposalChecked(rows, [], [key(2, '2026-10-01'), key(1, '2026-10-01')])
+
+      expect([...next].sort()).toEqual(rows.map((r) => key(r.ruleId, r.dueDate)).sort())
+    })
+
+    it('古い提案が外れたときは、同じルールのそれより新しい提案も外れる(別のルールには影響しない)', () => {
+      const checked = [key(1, '2026-08-01'), key(1, '2026-09-01'), key(1, '2026-10-01'), key(2, '2026-09-01')]
+      const next = reconcileProposalChecked(
+        rows,
+        checked,
+        checked.filter((k) => k !== key(1, '2026-09-01')),
+      )
+
+      expect(next).toEqual([key(1, '2026-08-01'), key(2, '2026-09-01')])
+    })
+
+    it('チェックに変化がなければ、そのまま返す', () => {
+      const checked = [key(1, '2026-08-01'), key(2, '2026-09-01')]
+
+      expect(reconcileProposalChecked(rows, checked, checked)).toEqual(checked)
+    })
+
+    it('渡した配列を書き換えない', () => {
+      const prev: string[] = []
+      const next = [key(1, '2026-10-01')]
+      reconcileProposalChecked(rows, prev, next)
+
+      expect(prev).toEqual([])
+      expect(next).toEqual([key(1, '2026-10-01')])
+    })
   })
 
   it('すべて選択: すべてチェック済みでなければ全件にチェックを付け、全件チェック済みなら全部外す', () => {

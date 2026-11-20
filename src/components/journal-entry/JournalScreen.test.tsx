@@ -1068,6 +1068,29 @@ describe('JournalScreen', () => {
       expect(adjusted).toHaveTextContent('期日 2026/11/1')
     })
 
+    it('Shift+クリックで範囲選択しても、同じルールの提案は古い順に途切れず選ばれる(計画Issue #235 D)', async () => {
+      await openProposals()
+
+      fireEvent.click(checkbox(/ジム会費/)[0])
+      // 範囲は「ジム会費(10/15)」から「ネット代(11/1期日)」まで。ネット代の古い方(10/1)も連動して付く
+      fireEvent.click(checkbox(/ネット代/)[1], { shiftKey: true })
+
+      expect(screen.getByText('3件を選択中')).toBeInTheDocument()
+      expect(checkbox(/ネット代/)[0]).toBeChecked()
+    })
+
+    it('Ctrl+クリックで古い提案のチェックを外すと、同じルールのそれより新しい提案も外れる(計画Issue #235 D)', async () => {
+      await openProposals()
+
+      fireEvent.click(checkbox(/ジム会費/)[0])
+      fireEvent.click(checkbox(/ネット代/)[1], { shiftKey: true })
+      fireEvent.click(checkbox(/ネット代/)[0], { ctrlKey: true })
+
+      expect(screen.getByText('1件を選択中')).toBeInTheDocument()
+      expect(checkbox(/ネット代/)[1]).not.toBeChecked()
+      expect(checkbox(/ジム会費/)[0]).toBeChecked()
+    })
+
     it('詳細パネルの摘要の初期値はルール名で、金額の初期値と土日の調整後の日付が出る', async () => {
       await openProposals()
 
