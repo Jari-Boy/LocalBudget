@@ -45,6 +45,7 @@ import { AccountCreateForm } from '../master/AccountCreateForm'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
 import { AccountSelect } from '../master/AccountSelect'
 import { BatchSelect } from '../master/BatchSelect'
+import { MappingDefinitionSelect } from './MappingDefinitionSelect'
 import { MemberSelect } from '../master/MemberSelect'
 import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../master/masterTreeNodes'
 import type { MappingForm } from '../master/mappingForm'
@@ -252,6 +253,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [csv, setCsv] = useState<LoadedCsv | null>(null)
   /** 実パースが通った定義の候補(2件以上のときだけ表示名で選ばせる) */
   const [candidates, setCandidates] = useState<MultiFileMappingMatch[]>([])
+  /** 複数のマッピング定義に一致したときの選択欄の候補。参照を安定させるため、候補が変わったときだけ作り直す */
+  const candidateDefinitions = useMemo(() => candidates.map((m) => m.definition), [candidates])
   const [match, setMatch] = useState<MultiFileMappingMatch | null>(null)
   /** 選んだすべてのCSV(定義に合わないものも含む)。定義の新規作成のサンプルと、読み直しに使う */
   const [csvs, setCsvs] = useState<LoadedCsv[]>([])
@@ -1838,22 +1841,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             )}
             {candidates.length > 1 ? (
               <div className="import-field">
-                <label className="import-field__label" htmlFor="import-definition">
-                  {t('definitionLabel')}
-                </label>
-                <select
-                  id="import-definition"
-                  className="import-control"
-                  value={match?.definition.id ?? ''}
-                  onChange={(e) => e.target.value !== '' && void chooseDefinition(Number(e.target.value))}
-                >
-                  <option value="">{t('chooseDefinition')}</option>
-                  {candidates.map((m) => (
-                    <option key={m.definition.id} value={m.definition.id}>
-                      {m.definition.label}
-                    </option>
-                  ))}
-                </select>
+                <span className="import-field__label">{t('definitionLabel')}</span>
+                <MappingDefinitionSelect
+                  label={t('definitionLabel')}
+                  definitions={candidateDefinitions}
+                  value={String(match?.definition.id ?? '')}
+                  placeholder={t('chooseDefinition')}
+                  onChange={(value) => value !== '' && void chooseDefinition(Number(value))}
+                />
               </div>
             ) : (
               match && (

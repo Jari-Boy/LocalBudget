@@ -1,9 +1,11 @@
 /**
- * 再発防止の構造テスト(計画Issue #233): マスタの実体(科目・取引先・プロジェクト・世帯メンバー・各グループ)を選ぶ欄に
- * 生の `<select>` を新しく足していないことを、ソースを走査して検査する。
- * 画面ごとに `<select>` を書くと、階層のインデント・検索窓・Enter確定が画面ごとにばらつくため、実体は EntitySelect(共通部品)を使う。
- * `<select>` を使ってよいのは、短い固定の選択肢(区分・はい/いいえ・文字コード等)と、下の一覧に理由つきで載せた未移行の画面だけ。
- * 一覧の件数は完全一致で比べるので、移行して減らしたら一覧も減らす(#234で未移行をすべて消す)。外部依存なし(fsでソースを読むだけ)。
+ * 再発防止の構造テスト(計画Issue #233・#234): マスタの実体(科目・取引先・プロジェクト・各グループ・世帯メンバー・精算バッチ・
+ * マッピング定義)を選ぶ欄に、生の `<select>` を新しく足していないことを、ソースを走査して検査する。
+ * 画面ごとに `<select>` を書くと、階層のインデント・検索窓・Enter確定が画面ごとにばらつくため、実体は共通部品
+ * (EntitySelect・AccountSelect・CounterpartySelect・GroupNodeSelect・MemberSelect・BatchSelect・MappingDefinitionSelect)を使う。
+ * `<select>` を使ってよいのは、短い固定の選択肢(区分・はい/いいえ・文字コード等)と、マスタの実体ではないもの(仕訳の候補など)で、
+ * 下の一覧に理由つきで載せたものだけ。一覧の件数は完全一致で比べるので、減らしたら一覧も減らす。
+ * #234で、マスタの実体の移行はすべて終わったので、移行待ち(unmigrated)の例外は残さない。外部依存なし(fsでソースを読むだけ)。
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
@@ -30,7 +32,7 @@ const ALLOWED: Record<string, Exception> = {
   'components/master/AccountCreateForm.tsx': { count: 3, kind: FIXED, reason: '区分・外部明細の有無・残高情報の有無は固定の選択肢' },
   'components/master/RuleEditForm.tsx': { count: 1, kind: FIXED, reason: '汎用の固定の選択肢(頻度・曜日など)' },
   'components/settlement/SplitTab.tsx': { count: 1, kind: FIXED, reason: '按分の方法(割合・均等・金額)の固定の選択肢' },
-  'components/statement-import/StatementImportScreen.tsx': { count: 2, kind: UNMIGRATED, reason: 'マッピング定義の選択は#234の6つ目で移す。置き換え先は似た登録済み仕訳の候補で、マスタの実体ではない(最後に固定にする)' },
+  'components/statement-import/StatementImportScreen.tsx': { count: 1, kind: FIXED, reason: '置き換え先(似た登録済み仕訳の候補)の選択で、マスタの実体ではない' },
   'components/journal-entry/RelatedEntriesSection.tsx': { count: 1, kind: FIXED, reason: '仕訳の関連グループ(仕訳どうしを束ねる)の選択で、マスタのグループ(実体)ではない' },
 }
 
@@ -51,6 +53,15 @@ describe('countRawSelects', () => {
   it('生の select の開始タグだけを数える(selectの語を含む別のタグ・文は数えない)', () => {
     expect(countRawSelects('<select value="a">\n<select>')).toBe(2)
     expect(countRawSelects('<TreeSelect label="x" />\n<EntitySelect />')).toBe(0)
+  })
+})
+
+describe('例外一覧', () => {
+  it('移行待ち(unmigrated)の例外は残っていない(マスタの実体は、すべて共通部品に移行済み。計画Issue #234)', () => {
+    const unmigrated = Object.entries(ALLOWED)
+      .filter(([, exception]) => exception.kind === UNMIGRATED)
+      .map(([path]) => path)
+    expect(unmigrated).toEqual([])
   })
 })
 
