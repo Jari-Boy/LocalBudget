@@ -1662,3 +1662,15 @@
 - 取り込みの「誰の明細か」の未選択の強調は、これまでの取込先と同じく、囲みの要素のクラス(`import-attention`)で選択欄のボタンに付ける。
 - テストでは、メンバーの欄の操作を`memberSelectTestHelpers.ts`(`chooseMember`・`expectMember`・`listMemberOptions`など)に集めた。同じ名前の欄が複数ある画面(仕訳の明細行)は、ボタンを1つずつ渡す版(`chooseMemberFrom`など)を使う。
 **影響**: 構造テストの例外一覧から、`JournalScreen`・`JournalEntryEditor`・`AccountMasterTab`を外し、`AccountCreateForm`・`RuleEditForm`は固定の選択肢だけになったので固定にした。`JournalLinesEditor`・`JournalLineTable`・`JournalLineBulkBar`・`StatementImportScreen`に残るのは、精算バッチと取り込みの明細定義・置き換え先。`SplitTab`の精算バッチと合わせて、次のPRで扱いを決める。
+
+## 2026-11-20: 精算バッチの選択欄を共通の BatchSelect に移行する(計画Issue #234、1実体=1PRの5つ目)
+
+**背景**: 世帯メンバーに続き、精算バッチの生の`<select>`を移す。精算バッチは専用のテーブルを持ち、精算タブで編集・削除ができるマスタの実体で、割勘ごとに1つ増え続ける。そのため、世帯メンバーと違って検索が実用的に効く。固定の選択肢として例外に載せる案は、「数が増える実体にだけ検索が無い」ことになるため採らなかった。対象は6か所(仕訳の明細行のエディタと表のセル、一括編集、割勘タブの「バッチ」、取り込みの一括設定と行ごと)。
+**決定**:
+- バッチは`BatchSelect`(`src/components/master/BatchSelect.tsx`)にした。置き場所・受け渡し(文字列の値、`filter`、`emptyLabel`、`leadingOptions`、`disabled`)は`MemberSelect`と同じ。階層は無いので、元の並び順のままフラットに並べる(並び替えない)。現在の値のバッチは、`filter`に合わなくても候補に残す。
+- 2種類の「新規」は意味が違うので、分けて扱う。仕訳の明細行エディタの「+ 新しいバッチ」は**操作**(押すと行の下に名前の入力欄が開く)なので、`TreeSelect`の「+ 新規追加」(`onCreate`、文言は`createLabel`)にした。割勘タブの「新しいバッチを作成」は、操作ではなく**既定の選択状態**(記録するときにバッチを作る)なので、先頭に固定した特別な項目(`leadingOptions`の値`'new'`)にした。
+- 一括編集の「変更しない」「なし(外す)」、取り込みの一括の「なし(クリア)」と行ごとの「精算バッチなし」は、これまでどおり`emptyLabel`と`leadingOptions`で表す。`leadingOptions`は定数にして参照を安定させる。
+- 「未精算 / 精算済み」の見出し分けは、仕訳画面でバッチ残高の集計が要り変更範囲が広がるため、今回はしない。精算済みの扱い(クローズして候補から外す)は、別Issue #249で、`is_active`として扱う。グループ化は別Issue #248(後回し)。
+- 割勘タブの画面には、上の絞り込みにも「精算バッチ」の欄がある。テストでは同じ名前のボタンが2つ見つかるので、既定の「精算バッチ: 新しいバッチを作成」のボタンを渡して操作する(`chooseBatchFrom`)。
+- テストの補助は`batchSelectTestHelpers.ts`に置き、世帯メンバーの補助(`memberSelectTestHelpers.ts`)の関数をバッチ用の名前で出し直した。
+**影響**: 構造テストの例外一覧から、`JournalLinesEditor`・`JournalLineTable`・`JournalLineBulkBar`を外し、`SplitTab`は按分の方法だけなので固定にした。`StatementImportScreen`に残るのは、マッピング定義(次の6つ目で移す)と、置き換え先(似た登録済み仕訳の候補で、マスタの実体ではない。最後に固定にする)。使われなくなったセレクト用のCSV(`.journal-editor__select`・`.journal-line-bulk__select`・表のセルの`select`の見た目)は削除した。
