@@ -35,6 +35,7 @@ import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepo
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/SqlJsStatementImportDraftRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
+import { chooseMember, expectMember, listMemberOptions } from '../master/memberSelectTestHelpers'
 import { StatementImportScreen } from './StatementImportScreen'
 import { chooseTargetAccount, expectTargetAccount, findTargetAccountButton } from './targetAccountTestHelpers'
 
@@ -133,8 +134,7 @@ async function chooseCsv(content: string, waitLoaded = true) {
   if (waitLoaded) {
     await screen.findByText(/statement\.csv を読み込み済み/)
     // 科目に名義が無いときは「誰の明細か」を選ばないと確定できない(計画Issue #193)ので、既定では memberId の人を選んでおく
-    const owner = screen.queryByLabelText('誰の明細か(必須)')
-    if (owner) fireEvent.change(owner, { target: { value: String(memberId) } })
+    if (screen.queryByRole('button', { name: /^誰の明細か\(必須\)/ })) chooseMember('誰の明細か(必須)', '自分')
   }
 }
 
@@ -335,7 +335,7 @@ describe('StatementImportScreen', () => {
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
 
     expect(screen.getByText('花子(科目の名義)')).toBeInTheDocument()
-    expect(screen.queryByLabelText('誰の明細か(必須)')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^誰の明細か\(必須\)/ })).not.toBeInTheDocument()
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「花子の口座」に確定$/ }))
 
@@ -354,11 +354,11 @@ describe('StatementImportScreen', () => {
     pick(rowOf(/スーパー/), '相手科目', '食費')
 
     const confirm = screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ })
-    expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue('')
+    expectMember('誰の明細か(必須)', '誰の明細か選んでください')
     expect(confirm).toBeDisabled()
     expect(screen.getByText('誰の明細かを選ぶと確定できます')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(hanako.id) } })
+    chooseMember('誰の明細か(必須)', '花子')
     expect(confirm).toBeEnabled()
     fireEvent.click(confirm)
 
@@ -378,8 +378,7 @@ describe('StatementImportScreen', () => {
     await screen.findByText(/statement\.csv を読み込み済み/)
     pick(rowOf(/スーパー/), '相手科目', '食費')
 
-    const owner = screen.getByLabelText('誰の明細か(必須)')
-    expect(within(owner).getAllByRole('option')).toHaveLength(1)
+    expect(listMemberOptions('誰の明細か(必須)')).toEqual(['誰の明細か選んでください'])
     expect(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ })).toBeDisabled()
     expect(screen.getByText('誰の明細かを選ぶと確定できます')).toBeInTheDocument()
     expect(userEntries()).toHaveLength(0)
@@ -392,13 +391,13 @@ describe('StatementImportScreen', () => {
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
     await chooseTargetAccount(bank.name)
     await screen.findByText(/statement\.csv を読み込み済み/)
-    fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
-    expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue(String(memberId))
+    chooseMember('誰の明細か(必須)', '自分')
+    expectMember('誰の明細か(必須)', '自分')
 
     await chooseTargetAccount(other.name)
 
     await screen.findByText(/statement\.csv を読み込み済み/)
-    expect(screen.getByLabelText('誰の明細か(必須)')).toHaveValue('')
+    expectMember('誰の明細か(必須)', '誰の明細か選んでください')
   })
 
   it('CSVを選ぶ前は画面の中央に「CSVを選択」ボタンと案内を出し、CSVを選ぶと上部のボタンに移る(計画Issue #193)', async () => {
@@ -1879,7 +1878,7 @@ describe('StatementImportScreen', () => {
     expect(screen.queryByRole('row', { name: /スーパー/ })).not.toBeInTheDocument()
     await chooseTargetAccount(card.name)
     await screen.findByRole('button', { name: /^\d+ \/ 1 件を「楽天VISA」に確定$/ })
-    fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
+    chooseMember('誰の明細か(必須)', '自分')
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「楽天VISA」に確定$/ }))
 
@@ -1902,7 +1901,7 @@ describe('StatementImportScreen', () => {
 
     await chooseTargetAccount(bank.name)
     await screen.findByText(/statement\.csv を読み込み済み/)
-    fireEvent.change(screen.getByLabelText('誰の明細か(必須)'), { target: { value: String(memberId) } })
+    chooseMember('誰の明細か(必須)', '自分')
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
 

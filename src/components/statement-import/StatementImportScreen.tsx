@@ -44,6 +44,7 @@ import type { AccountBalanceRecordRepository } from '../../domain/reconciliation
 import { AccountCreateForm } from '../master/AccountCreateForm'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
 import { AccountSelect } from '../master/AccountSelect'
+import { MemberSelect } from '../master/MemberSelect'
 import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../master/masterTreeNodes'
 import type { MappingForm } from '../master/mappingForm'
 import type { MaybeAsync } from '../master/maybeAsync'
@@ -1641,7 +1642,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const signedYen = (n: number) => `${n < 0 ? '-' : ''}${formatCurrency(Math.abs(n), 'JPY').replace('￥', '¥')}`
   const treeValue = (id: number | null) => (id === null ? '' : String(id))
   const toId = (value: string) => (value === '' ? null : Number(value))
-  const activeMembers = data.members
 
   /** CSVの選択ボタン。編集中は確認を通してからファイル選択を開く(計画Issue #193) */
   const chooseCsvButton = (className: string) => (
@@ -1889,24 +1889,19 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                   </>
                 ) : (
                   <>
-                    <label className="import-field__label" htmlFor="import-owner">
-                      {t('statementOwnerLabel')}
-                    </label>
-                    <select
-                      id="import-owner"
-                      className={`import-control${statementOwnerId === null ? ' import-control--attention' : ''}`}
-                      value={statementOwnerId ?? ''}
-                      onChange={(e) =>
-                        setOwnerChoice(e.target.value === '' ? null : { accountId: targetAccount.id, memberId: Number(e.target.value) })
-                      }
-                    >
-                      <option value="">{t('statementOwnerPlaceholder')}</option>
-                      {data.members.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
+                    <span className="import-field__label">{t('statementOwnerLabel')}</span>
+                    {/* 未選択のうちは、強調の枠(.import-attention)で目立たせる */}
+                    <div className={statementOwnerId === null ? 'import-attention' : undefined}>
+                      <MemberSelect
+                        label={t('statementOwnerLabel')}
+                        members={data.members}
+                        value={statementOwnerId === null ? '' : String(statementOwnerId)}
+                        emptyLabel={t('statementOwnerPlaceholder')}
+                        onChange={(value) =>
+                          setOwnerChoice(value === '' ? null : { accountId: targetAccount.id, memberId: Number(value) })
+                        }
+                      />
+                    </div>
                   </>
                 )}
               </div>
@@ -2030,20 +2025,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 placeholder={t('bulkProjectPlaceholder')}
                 onChange={(v) => applyBulk({ field: 'project', value: toId(v) })}
               />
-              <select
-                className="import-control import-control--small"
-                aria-label={t('bulkMember')}
+              <MemberSelect
+                label={t('bulkMember')}
+                members={data.members}
                 value=""
-                onChange={(e) => e.target.value !== '' && applyBulk({ field: 'householdMember', value: e.target.value === 'none' ? null : Number(e.target.value) })}
-              >
-                <option value="">{t('bulkMemberPlaceholder')}</option>
-                <option value="none">{t('bulkClear')}</option>
-                {activeMembers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
+                emptyLabel={t('bulkClear')}
+                placeholder={t('bulkMemberPlaceholder')}
+                onChange={(v) => applyBulk({ field: 'householdMember', value: toId(v) })}
+              />
               <select
                 className="import-control import-control--small"
                 aria-label={t('bulkBatch')}
@@ -2379,20 +2368,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                               />
                             </td>
                             <td>
-                              <select
-                                className="import-control import-control--small"
-                                aria-label={t('rowMember', { desc })}
-                                value={defaultMemberId ?? state.householdMemberId ?? ''}
+                              <MemberSelect
+                                label={t('rowMember', { desc })}
+                                members={data.members}
+                                value={String(defaultMemberId ?? state.householdMemberId ?? '')}
+                                emptyLabel={t('memberNone')}
                                 disabled={isSkipped || defaultMemberId !== null}
-                                onChange={(e) => updateRow(index, (s) => ({ ...s, householdMemberId: toId(e.target.value) }))}
-                              >
-                                <option value="">{t('memberNone')}</option>
-                                {activeMembers.map((m) => (
-                                  <option key={m.id} value={m.id}>
-                                    {m.name}
-                                  </option>
-                                ))}
-                              </select>
+                                onChange={(v) => updateRow(index, (s) => ({ ...s, householdMemberId: toId(v) }))}
+                              />
                             </td>
                             <td>
                               <input

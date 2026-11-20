@@ -30,7 +30,7 @@ const ALLOWED: Record<string, Exception> = {
   'components/master/AccountCreateForm.tsx': { count: 3, kind: FIXED, reason: '区分・外部明細の有無・残高情報の有無は固定の選択肢' },
   'components/master/RuleEditForm.tsx': { count: 1, kind: FIXED, reason: '汎用の固定の選択肢(頻度・曜日など)' },
   'components/settlement/SplitTab.tsx': { count: 2, kind: UNMIGRATED, reason: '按分の方法は固定の選択肢。精算バッチは#234で扱いを決める' },
-  'components/statement-import/StatementImportScreen.tsx': { count: 7, kind: UNMIGRATED, reason: '明細定義・名義・一括/行ごとの世帯メンバー・精算バッチ・置き換え先(科目は移行済み)。#234で実体ごとに移す' },
+  'components/statement-import/StatementImportScreen.tsx': { count: 4, kind: UNMIGRATED, reason: '明細定義・一括/行ごとの精算バッチ・置き換え先(世帯メンバーと科目は移行済み)。精算バッチの扱いと残りは#234で決める' },
   'components/journal-entry/JournalLinesEditor.tsx': { count: 1, kind: UNMIGRATED, reason: '精算バッチの選択(世帯メンバーは移行済み)。精算バッチの扱いは#234で決める' },
   'components/journal-entry/JournalLineTable.tsx': { count: 1, kind: UNMIGRATED, reason: '精算バッチの選択(世帯メンバーは移行済み)。精算バッチの扱いは#234で決める' },
   'components/journal-entry/JournalLineBulkBar.tsx': { count: 1, kind: UNMIGRATED, reason: '精算バッチの選択(世帯メンバーは移行済み)。精算バッチの扱いは#234で決める' },

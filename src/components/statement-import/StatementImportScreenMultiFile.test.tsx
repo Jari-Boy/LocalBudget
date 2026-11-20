@@ -32,11 +32,11 @@ import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepo
 import { SqlJsSettlementBatchRepository } from '../../infrastructure/db/SqlJsSettlementBatchRepository'
 import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/SqlJsStatementImportDraftRepository'
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
+import { chooseMember, findMemberButton } from '../master/memberSelectTestHelpers'
 import { StatementImportScreen } from './StatementImportScreen'
 
 let db: Database
 let entries: SqlJsJournalEntryRepository
-let memberId: number
 
 beforeEach(async () => {
   localStorage.clear()
@@ -46,7 +46,7 @@ beforeEach(async () => {
   seedBalanceAdjustmentAccount(db)
   const accounts = new SqlJsAccountRepository(db)
   entries = new SqlJsJournalEntryRepository(db)
-  memberId = new SqlJsHouseholdMemberRepository(db).create({ name: '自分' }).id
+  new SqlJsHouseholdMemberRepository(db).create({ name: '自分' })
   const bank = accounts.create({ category: 'asset', name: '普通預金', isReconcilable: true })
   accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
   accounts.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
@@ -102,8 +102,7 @@ async function chooseCsvs(files: Array<{ name: string; body: string }>, waitFor?
   fireEvent.change(input, { target: { files: files.map((f) => new File([f.body], f.name, { type: 'text/csv' })) } })
   if (waitFor) {
     await screen.findByText(waitFor)
-    const owner = screen.queryByLabelText('誰の明細か(必須)')
-    if (owner) fireEvent.change(owner, { target: { value: String(memberId) } })
+    if (screen.queryByRole('button', { name: /^誰の明細か\(必須\)/ })) chooseMember('誰の明細か(必須)', '自分')
   }
 }
 
@@ -405,7 +404,7 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     expect(headers.map((h) => h.textContent)).not.toContain('ファイル')
     expect(screen.queryByRole('list', { name: '取り込むCSV' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: /取り込めなかったファイル/ })).not.toBeInTheDocument()
-    await waitFor(() => expect(screen.getByLabelText('誰の明細か(必須)')).toBeInTheDocument())
+    await waitFor(() => expect(findMemberButton('誰の明細か(必須)')).toBeInTheDocument())
   })
 })
 
