@@ -48,6 +48,7 @@ import { SOURCE_TAGS, DRAFT_TAG, type JournalResultItem } from '../common/journa
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
 import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../master/masterTreeNodes'
 import type { MaybeAsync } from '../master/maybeAsync'
+import { ownsEscapeKey } from '../common/keyboardTarget'
 import { UnsavedChangesDialog } from '../common/unsaved-changes/UnsavedChangesDialog'
 import { useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
 import { loadUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
@@ -572,6 +573,20 @@ export function JournalScreen(props: JournalScreenProps) {
     }
   }, [warnOnLeave, guard])
 
+  // 一括編集の選択を Esc で全解除する(計画Issue #235 C)。選択中は行を押しても編集に入れないため、解除の導線を用意する。
+  // 解除する処理は描画のたびに最新を入れておき(選択がなければ null)、リスナー自体は1回だけ登録する。
+  // 入力中・ダイアログの中の Esc は、その操作に任せて何もしない
+  const clearBulkOnEscape = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      const clear = clearBulkOnEscape.current
+      if (clear === null || ownsEscapeKey(event.target)) return
+      clear()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   if (data === null || derived === null) {
     return <p role="status">{tCommon('loading')}</p>
@@ -1060,6 +1075,8 @@ export function JournalScreen(props: JournalScreenProps) {
   /** 選択した行に合わせて、選べなくなった項目の選択を外した、変える項目の選択 */
   const effectiveBulkPick = sanitizeBulkPick(bulkPick, bulkEditRules(bulkSelected, bulkPick, derived.accountById))
 
+  clearBulkOnEscape.current = lineView && bulkSelected.length > 0 && !busy ? resetBulk : null
+
   /** 選択する行を変える。選択が変わると、確認は取り消し、結果の表示は消す */
   const changeBulkSelection = (ids: number[]) => {
     setBulkLineIds(ids)
@@ -1075,6 +1092,17 @@ export function JournalScreen(props: JournalScreenProps) {
   const toggleBulkSide = (side: JournalLineSide) => {
     const ids = visibleLines.filter((s) => s.line.side === side).map((s) => s.line.id)
     const allOn = ids.length > 0 && ids.every((id) => bulkSelectedIds.has(id))
+    changeBulkSelection(allOn ? [...bulkSelectedIds].filter((id) => !ids.includes(id)) : [...new Set([...bulkSelectedIds, ...ids])])
+  }
+
+  /**
+   * 選択中に、行の左側(日付・摘要など)を押したとき: その仕訳の表示中の全明細行を切り替える
+   * (全行が選ばれていれば外し、そうでなければすべて選ぶ、計画Issue #235 C)
+   */
+  const toggleBulkEntry = (entryId: number) => {
+    const ids = visibleLines.filter((s) => s.entry.id === entryId).map((s) => s.line.id)
+    if (ids.length === 0) return
+    const allOn = ids.every((id) => bulkSelectedIds.has(id))
     changeBulkSelection(allOn ? [...bulkSelectedIds].filter((id) => !ids.includes(id)) : [...new Set([...bulkSelectedIds, ...ids])])
   }
 
@@ -1352,6 +1380,7 @@ export function JournalScreen(props: JournalScreenProps) {
                   disabled: lineEditing || busy,
                   onToggleLine: toggleBulkLine,
                   onToggleSide: toggleBulkSide,
+                  onToggleEntry: toggleBulkEntry,
                 }}
               />
             </>

@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react'
+import { useRef, type MouseEvent, type ReactNode } from 'react'
 import type { JournalEntry, JournalLine, JournalLineSide } from '../../domain/journal/JournalEntry'
 import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
@@ -65,6 +65,11 @@ export interface JournalLineTableBulk {
   onToggleLine: (lineId: number) => void
   /** 見出しのチェック: その側の表示中の行をすべて選ぶ(すべて選択済みなら外す) */
   onToggleSide: (side: JournalLineSide) => void
+  /**
+   * 選択中に、日付・摘要などの左側(借方・貸方のどちらでもない部分)を押したとき: その仕訳の全明細行を
+   * 切り替える(全行が選ばれていれば外し、そうでなければすべて選ぶ)。計画Issue #235 C
+   */
+  onToggleEntry: (entryId: number) => void
 }
 
 export interface JournalLineTableProps {
@@ -78,7 +83,9 @@ export interface JournalLineTableProps {
   selectedId: number | null
   /**
    * どの行を押しても、その仕訳が選ばれる(選択は仕訳単位)。編集中の仕訳の行は押しても呼ばれない。
-   * 呼び出し側は、選ばれた仕訳をそのまま編集中にする(編集ボタンはない)
+   * 呼び出し側は、選ばれた仕訳をそのまま編集中にする(編集ボタンはない)。
+   * ただし、一括編集の行を1行でも選んでいる間(bulk.selectedLineIds が空でない間)は呼ばれない。そのときは行を
+   * 押すとチェックの操作になる(借方側なら借方の行、貸方側なら貸方の行、左側ならその仕訳の全行)
    */
   onSelect: (entryId: number) => void
   /** 編集中の仕訳。渡すと、その仕訳の全行が入力欄になり、下に操作バーが出る */
@@ -207,6 +214,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
     bulk === undefined ? null : (
       <td
         key="check"
+        data-side={side}
         className={['journal-line-table__cell', 'journal-line-table__cell--check', sideStartClass(side), isLineSelected(line) ? 'journal-line-table__cell--bulk-selected' : '']
           .filter(Boolean)
           .join(' ')}
@@ -238,6 +246,30 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
     )
   }
 
+  /**
+   * 閲覧の行を押したとき。一括編集の行を1行でも選んでいる間は、編集には入らず、押した位置に応じてチェックを切り替える
+   * (チェックボックスだけを狙わなくてよい、計画Issue #235 C)。押せない状態(処理中)のときは何もしない。
+   * 選んでいないときは従来どおり、その仕訳を選ぶ(インライン編集の開始)
+   */
+  const handleRowClick = (
+    event: MouseEvent<HTMLTableRowElement>,
+    entryId: number,
+    pair: { debit: JournalLine | null; credit: JournalLine | null },
+  ) => {
+    if (bulk === undefined || bulk.selectedLineIds.size === 0) {
+      onSelect(entryId)
+      return
+    }
+    if (bulk.disabled) return
+    const side = (event.target as HTMLElement).closest<HTMLElement>('td')?.dataset.side
+    if (side === 'debit' || side === 'credit') {
+      const target = pair[side]
+      if (target !== null) bulk.onToggleLine(target.id)
+      return
+    }
+    bulk.onToggleEntry(entryId)
+  }
+
   // ---- 閲覧 ----
   const viewSideCells = (line: JournalLine | null, currency: string, side: JournalLineSide) => {
     const text = (value: string | undefined) => value ?? ''
@@ -259,7 +291,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
     return [
       checkCell(line, side),
       ...values.map((value, i) => (
-        <td key={SIDE_COLUMNS[i]} className={cellClass(i, side, hasCheck) + selectedClass}>
+        <td key={SIDE_COLUMNS[i]} data-side={side} className={cellClass(i, side, hasCheck) + selectedClass}>
           {value}
         </td>
       )),
@@ -620,7 +652,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
                   key={index}
                   className={selected ? 'journal-line-table__row--selected' : undefined}
                   aria-current={selected ? 'true' : undefined}
-                  onClick={() => onSelect(entry.id)}
+                  onClick={(event) => handleRowClick(event, entry.id, pair)}
                 >
                   <td className="journal-line-table__cell">{index === 0 ? formatDate(toDate(entry.entryDate)) : ''}</td>
                   <td className="journal-line-table__cell">

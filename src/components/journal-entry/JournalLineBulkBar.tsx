@@ -124,7 +124,7 @@ export function JournalLineBulkBar({
           選択を解除
         </button>
         <span className="journal-line-bulk__hint">
-          変える項目だけ選びます。「{KEEP_LABEL}」の項目はそのままです。
+          変える項目だけ選びます。「{KEEP_LABEL}」の項目はそのままです。選択中は、行を押してもチェックを切り替えられます(Esc でも解除できます)。
         </span>
       </div>
 

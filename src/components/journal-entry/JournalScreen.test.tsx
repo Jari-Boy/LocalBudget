@@ -1522,6 +1522,127 @@ describe('JournalScreen(明細行単位)', () => {
       expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
     })
 
+    /**
+     * 選択中の行クリック(計画Issue #235 C): 1行でも選んでいる間は、行のどこを押してもチェックの操作になり、
+     * その仕訳の編集には入らない。チェックボックスだけを狙って押さなくてよい。
+     */
+    describe('選択中の行クリック', () => {
+      /** 行の中のセル(0始まり): 日付・出どころ・摘要・コメント → 借方の選択・科目…(4〜9) → 貸方の選択・科目…(10〜) */
+      const cell = (memo: string, index: number) => within(rowOf(memo)).getAllByRole('cell')[index]
+      const DEBIT_ACCOUNT = 5
+
+      it('選択がないときは、従来どおり行を押すとその仕訳の編集に入る', async () => {
+        await setupLineView()
+        fireEvent.click(cell('家賃', DEBIT_ACCOUNT))
+        expect(screen.getByLabelText('摘要')).toHaveValue('家賃')
+      })
+
+      it('選択中に別の仕訳の借方側を押すと、編集には入らず、その借方の行のチェックが入る', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(cell('家賃', DEBIT_ACCOUNT))
+        expect(screen.queryByLabelText('摘要')).not.toBeInTheDocument()
+        expect(debitBox('家賃')).toBeChecked()
+        expect(creditBox('家賃')).not.toBeChecked()
+        expect(within(bulkBar()).getByText('2行を選択中(借方 2行・貸方 0行、2件の仕訳)')).toBeInTheDocument()
+      })
+
+      it('選択済みの行をもう一度押すと、チェックが外れる', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(debitBox('家賃'))
+        fireEvent.click(cell('家賃', DEBIT_ACCOUNT))
+        expect(debitBox('家賃')).not.toBeChecked()
+        expect(within(bulkBar()).getByText('1行を選択中(借方 1行・貸方 0行、1件の仕訳)')).toBeInTheDocument()
+      })
+
+      it('選択中に摘要(左側)を押すと、その仕訳の全明細行が選ばれ、もう一度押すと全行が外れる', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(screen.getByRole('button', { name: '家賃' }))
+        expect(screen.queryByLabelText('摘要')).not.toBeInTheDocument()
+        expect(debitBox('家賃')).toBeChecked()
+        expect(creditBox('家賃')).toBeChecked()
+        expect(within(bulkBar()).getByText('3行を選択中(借方 2行・貸方 1行、2件の仕訳)')).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: '家賃' }))
+        expect(debitBox('家賃')).not.toBeChecked()
+        expect(creditBox('家賃')).not.toBeChecked()
+        expect(within(bulkBar()).getByText('1行を選択中(借方 1行・貸方 0行、1件の仕訳)')).toBeInTheDocument()
+      })
+
+      it('一部の行だけ選ばれている仕訳の左側を押すと、残りの行も選ばれる', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('家賃'))
+        fireEvent.click(screen.getByRole('button', { name: '家賃' }))
+        expect(creditBox('家賃')).toBeChecked()
+        expect(debitBox('家賃')).toBeChecked()
+      })
+
+      it('最後の1行を行の押下で外して選択が空になると、次に行を押したときは編集に入る', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(cell('ランチ', DEBIT_ACCOUNT))
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+        fireEvent.click(cell('家賃', DEBIT_ACCOUNT))
+        expect(screen.getByLabelText('摘要')).toHaveValue('家賃')
+      })
+    })
+
+    /**
+     * 選択の解除の導線(計画Issue #235 C): 選択中は行を押しても編集に入れないため、Esc でも全解除できる。
+     * 入力中・選択欄のダイアログ操作中の Esc は、その操作に任せて選択を解除しない。
+     */
+    describe('Esc での選択の全解除', () => {
+      it('選択中に Esc を押すと、選択がすべて解除され、一括編集バーが消える', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(creditBox('家賃'))
+        fireEvent.keyDown(document.body, { key: 'Escape' })
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+        expect(debitBox('ランチ')).not.toBeChecked()
+        expect(creditBox('家賃')).not.toBeChecked()
+      })
+
+      it('解除したあとは、行を押すと従来どおり編集に入る', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.keyDown(document.body, { key: 'Escape' })
+        fireEvent.click(screen.getByRole('button', { name: '家賃' }))
+        expect(screen.getByLabelText('摘要')).toHaveValue('家賃')
+      })
+
+      it('テキスト入力欄にフォーカスがあるときの Esc では、選択を解除しない', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.keyDown(screen.getByLabelText('摘要で検索'), { key: 'Escape' })
+        expect(bulkBar()).toBeInTheDocument()
+        expect(debitBox('ランチ')).toBeChecked()
+      })
+
+      it('一括編集の選択欄のダイアログを開いている間の Esc では、選択を解除しない', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(within(bulkBar()).getByRole('button', { name: '一括編集の科目: 変更しない' }))
+        fireEvent.keyDown(screen.getByRole('dialog', { name: '一括編集の科目' }), { key: 'Escape' })
+        expect(bulkBar()).toBeInTheDocument()
+        expect(debitBox('ランチ')).toBeChecked()
+      })
+
+      it('Esc 以外のキーでは解除しない', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.keyDown(document.body, { key: 'a' })
+        expect(bulkBar()).toBeInTheDocument()
+      })
+
+      it('一括編集バーに、Esc でも解除できることを案内する', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        expect(within(bulkBar()).getByText(/Esc/)).toBeInTheDocument()
+        expect(within(bulkBar()).getByText(/行を押してもチェックを切り替えられます/)).toBeInTheDocument()
+      })
+    })
+
     describe('選べない項目の先回りの無効化', () => {
       it('食費(費用)の行だけを選ぶと精算バッチは選べず、立替金の行だけを選ぶと精算バッチを選べる', async () => {
         await setupLineView()
@@ -1611,9 +1732,10 @@ describe('JournalScreen(明細行単位)', () => {
     })
 
     describe('他の操作との整合', () => {
-      it('行を押してインライン編集を始めると、一括編集の選択は解除され、チェックは押せなくなる', async () => {
+      it('選択を解除してから行を押してインライン編集を始めると、チェックは押せなくなる(選択中の行の押下は編集に入らない、計画Issue #235 C)', async () => {
         await setupLineView()
         fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(within(bulkBar()).getByRole('button', { name: '選択を解除' }))
         fireEvent.click(screen.getByRole('button', { name: '家賃' }))
         expect(screen.getByLabelText('摘要')).toHaveValue('家賃')
         expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
