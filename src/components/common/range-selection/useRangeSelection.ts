@@ -71,6 +71,11 @@ export function useRangeSelection<Id extends string | number>({ order, selected,
 
   return {
     /**
+     * 行を押したときの切り替え(修飾キーで範囲・トグル)を、イベントから直接呼ぶ。1つの行の中でセルごとに対象の行が違う表
+     * (仕訳一覧の借方側・貸方側)のように、rowProps では対象を決められないときに使う
+     */
+    pick: (id: Id, event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => pick(id, event),
+    /**
      * チェックボックスに渡す props。押したときの切り替え(修飾キーで範囲・トグル)とキー操作を扱う。
      * 切り替えは onClick で行うため、onChange は何もしない(押したときの修飾キーは onChange では分からない)
      */

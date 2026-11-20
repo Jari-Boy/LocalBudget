@@ -1578,6 +1578,27 @@ describe('JournalScreen(明細行単位)', () => {
         expect(debitBox('家賃')).toBeChecked()
       })
 
+      it('Shift+クリックで、借方の先頭の行から末尾の行までを範囲選択でき、貸方の行は含まれない(計画Issue #235 D)', async () => {
+        await setupLineView()
+        const boxes = () => screen.getAllByRole('checkbox', { name: '借方の行を選択' })
+        fireEvent.click(boxes()[0])
+        fireEvent.click(boxes()[3], { shiftKey: true })
+        expect(within(bulkBar()).getByText('4行を選択中(借方 4行・貸方 0行、4件の仕訳)')).toBeInTheDocument()
+      })
+
+      it('Ctrl+クリックで、離れた行を選択に加えられ、範囲選択のあとに1行だけ外せる', async () => {
+        await setupLineView()
+        const boxes = () => screen.getAllByRole('checkbox', { name: '借方の行を選択' })
+        fireEvent.click(boxes()[0])
+        fireEvent.click(boxes()[2], { ctrlKey: true })
+        expect(within(bulkBar()).getByText('2行を選択中(借方 2行・貸方 0行、2件の仕訳)')).toBeInTheDocument()
+        // Ctrl+クリックで押した3行目が基点になるので、Shift+クリックの範囲は3行目〜4行目
+        fireEvent.click(boxes()[3], { shiftKey: true })
+        expect(within(bulkBar()).getByText('3行を選択中(借方 3行・貸方 0行、3件の仕訳)')).toBeInTheDocument()
+        fireEvent.click(boxes()[2], { ctrlKey: true })
+        expect(within(bulkBar()).getByText('2行を選択中(借方 2行・貸方 0行、2件の仕訳)')).toBeInTheDocument()
+      })
+
       it('最後の1行を行の押下で外して選択が空になると、次に行を押したときは編集に入る', async () => {
         await setupLineView()
         fireEvent.click(debitBox('ランチ'))

@@ -10,6 +10,7 @@
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
 import { JournalLineTable, type JournalLineTableBulk, type JournalLineTableProps } from './JournalLineTable'
@@ -54,7 +55,7 @@ const lookup = {
 }
 
 function makeBulk(overrides: Partial<JournalLineTableBulk> = {}): JournalLineTableBulk {
-  return { selectedLineIds: new Set<number>(), disabled: false, onToggleLine: vi.fn(), onToggleSide: vi.fn(), onToggleEntry: vi.fn(), ...overrides }
+  return { selectedLineIds: new Set<number>(), disabled: false, onChangeSelection: vi.fn(), onToggleSide: vi.fn(), onToggleEntry: vi.fn(), ...overrides }
 }
 
 function renderTable(bulk: JournalLineTableBulk | undefined, extra: Partial<JournalLineTableProps> = {}) {
@@ -99,11 +100,11 @@ describe('JournalLineTable(一括編集の行選択)', () => {
     expect(within(row).getByRole('checkbox', { name: '借方の行を選択' }).closest('td')).not.toHaveClass('journal-line-table__cell--bulk-selected')
   })
 
-  it('チェックを押すと、その行のIDで onToggleLine が呼ばれ、仕訳の選択(onSelect)にはならない', () => {
+  it('チェックを押すと、その行を加えた選択で onChangeSelection が呼ばれ、仕訳の選択(onSelect)にはならない', () => {
     const bulk = makeBulk()
     const { container, onSelect } = renderTable(bulk)
     fireEvent.click(within(rowsOf(container, 2)[1]).getByRole('checkbox', { name: '借方の行を選択' }))
-    expect(bulk.onToggleLine).toHaveBeenCalledWith(22)
+    expect(bulk.onChangeSelection).toHaveBeenCalledWith([22])
     expect(onSelect).not.toHaveBeenCalled()
   })
 
@@ -226,7 +227,7 @@ describe('JournalLineTable(選択中の行クリック)', () => {
     const { container, onSelect } = renderTable(bulk)
     fireEvent.click(cellOf(rowsOf(container, 1)[0], DEBIT_ACCOUNT))
     expect(onSelect).toHaveBeenCalledWith(1)
-    expect(bulk.onToggleLine).not.toHaveBeenCalled()
+    expect(bulk.onChangeSelection).not.toHaveBeenCalled()
     expect(bulk.onToggleEntry).not.toHaveBeenCalled()
   })
 
@@ -234,7 +235,7 @@ describe('JournalLineTable(選択中の行クリック)', () => {
     const bulk = makeBulk({ selectedLineIds: new Set([21]) })
     const { container, onSelect } = renderTable(bulk)
     fireEvent.click(cellOf(rowsOf(container, 1)[0], DEBIT_ACCOUNT))
-    expect(bulk.onToggleLine).toHaveBeenCalledWith(11)
+    expect(bulk.onChangeSelection).toHaveBeenCalledWith([21, 11])
     expect(onSelect).not.toHaveBeenCalled()
   })
 
@@ -242,7 +243,7 @@ describe('JournalLineTable(選択中の行クリック)', () => {
     const bulk = makeBulk({ selectedLineIds: new Set([21]) })
     const { container, onSelect } = renderTable(bulk)
     fireEvent.click(cellOf(rowsOf(container, 1)[0], CREDIT_ACCOUNT))
-    expect(bulk.onToggleLine).toHaveBeenCalledWith(12)
+    expect(bulk.onChangeSelection).toHaveBeenCalledWith([21, 12])
     expect(onSelect).not.toHaveBeenCalled()
   })
 
@@ -250,7 +251,7 @@ describe('JournalLineTable(選択中の行クリック)', () => {
     const bulk = makeBulk({ selectedLineIds: new Set([11]) })
     const { container } = renderTable(bulk)
     fireEvent.click(cellOf(rowsOf(container, 2)[1], DEBIT_ACCOUNT))
-    expect(bulk.onToggleLine).toHaveBeenCalledWith(22)
+    expect(bulk.onChangeSelection).toHaveBeenCalledWith([11, 22])
   })
 
   it('選択中に、日付・摘要などの左側を押すと、その仕訳の全明細行を切り替える(onToggleEntry)', () => {
@@ -258,7 +259,7 @@ describe('JournalLineTable(選択中の行クリック)', () => {
     const { container, onSelect } = renderTable(bulk)
     fireEvent.click(cellOf(rowsOf(container, 1)[0], 0))
     expect(bulk.onToggleEntry).toHaveBeenCalledWith(1)
-    expect(bulk.onToggleLine).not.toHaveBeenCalled()
+    expect(bulk.onChangeSelection).not.toHaveBeenCalled()
     expect(onSelect).not.toHaveBeenCalled()
   })
 
@@ -275,7 +276,7 @@ describe('JournalLineTable(選択中の行クリック)', () => {
     const { container, onSelect } = renderTable(bulk)
     // 仕訳2の2行目は貸方が空欄(貸方側のセルは、左4列+借方6列の次から)
     fireEvent.click(cellOf(rowsOf(container, 2)[1], CREDIT_ACCOUNT))
-    expect(bulk.onToggleLine).not.toHaveBeenCalled()
+    expect(bulk.onChangeSelection).not.toHaveBeenCalled()
     expect(bulk.onToggleEntry).not.toHaveBeenCalled()
     expect(onSelect).not.toHaveBeenCalled()
   })
@@ -284,7 +285,7 @@ describe('JournalLineTable(選択中の行クリック)', () => {
     const bulk = makeBulk({ selectedLineIds: new Set([11]), disabled: true })
     const { container, onSelect } = renderTable(bulk)
     fireEvent.click(cellOf(rowsOf(container, 1)[0], DEBIT_ACCOUNT))
-    expect(bulk.onToggleLine).not.toHaveBeenCalled()
+    expect(bulk.onChangeSelection).not.toHaveBeenCalled()
     expect(bulk.onToggleEntry).not.toHaveBeenCalled()
     expect(onSelect).not.toHaveBeenCalled()
   })
@@ -293,7 +294,88 @@ describe('JournalLineTable(選択中の行クリック)', () => {
     const bulk = makeBulk({ selectedLineIds: new Set([11]) })
     const { container } = renderTable(bulk)
     fireEvent.click(within(rowsOf(container, 1)[0]).getByRole('checkbox', { name: '貸方の行を選択' }))
-    expect(bulk.onToggleLine).toHaveBeenCalledTimes(1)
-    expect(bulk.onToggleLine).toHaveBeenCalledWith(12)
+    expect(bulk.onChangeSelection).toHaveBeenCalledTimes(1)
+    expect(bulk.onChangeSelection).toHaveBeenCalledWith([11, 12])
+  })
+})
+
+/**
+ * 範囲選択・トグル選択(計画Issue #235 D): 共通フック useRangeSelection を借方側・貸方側それぞれに適用する。
+ * 範囲は同じ側の中だけで、借方と貸方をまたがない。選択の状態を実際に持つ小さな親を使って確認する。
+ */
+describe('JournalLineTable(Shift/Ctrl による範囲選択・トグル選択)', () => {
+  function Stateful({ disabled = false }: { disabled?: boolean }) {
+    const [ids, setIds] = useState<ReadonlySet<number>>(new Set())
+    const bulk = makeBulk({ selectedLineIds: ids, disabled, onChangeSelection: (next) => setIds(new Set(next)) })
+    return <JournalLineTable entries={[simple, compound]} lookup={lookup} selectedId={null} onSelect={vi.fn()} bulk={bulk} />
+  }
+
+  const cellOf = (row: HTMLElement, index: number) => row.querySelectorAll('td')[index] as HTMLElement
+
+  /** 借方の行のチェックボックス(表示順: 仕訳1の行11、仕訳2の行21・22) */
+  const debitBoxes = () => screen.getAllByRole('checkbox', { name: '借方の行を選択' })
+  /** 貸方の行のチェックボックス(表示順: 仕訳1の行12、仕訳2の行23) */
+  const creditBoxes = () => screen.getAllByRole('checkbox', { name: '貸方の行を選択' })
+  const checkedOf = (boxes: HTMLElement[]) => boxes.map((box) => (box as HTMLInputElement).checked)
+
+  it('借方の1行目のチェックから、Shift+クリックで借方の3行目までを範囲選択できる(仕訳をまたぐ)', () => {
+    render(<Stateful />)
+    fireEvent.click(debitBoxes()[0])
+    fireEvent.click(debitBoxes()[2], { shiftKey: true })
+    expect(checkedOf(debitBoxes())).toEqual([true, true, true])
+    expect(checkedOf(creditBoxes())).toEqual([false, false])
+  })
+
+  it('範囲選択は同じ側の中だけで、借方から貸方へ Shift+クリックしても、貸方のその行だけが選ばれる', () => {
+    render(<Stateful />)
+    fireEvent.click(debitBoxes()[0])
+    fireEvent.click(creditBoxes()[1], { shiftKey: true })
+    expect(checkedOf(debitBoxes())).toEqual([true, false, false])
+    expect(checkedOf(creditBoxes())).toEqual([false, true])
+  })
+
+  it('Ctrl+クリックは、ほかの選択を保ったまま、その行だけを切り替える', () => {
+    render(<Stateful />)
+    fireEvent.click(debitBoxes()[0])
+    fireEvent.click(debitBoxes()[2], { ctrlKey: true })
+    expect(checkedOf(debitBoxes())).toEqual([true, false, true])
+    fireEvent.click(debitBoxes()[0], { metaKey: true })
+    expect(checkedOf(debitBoxes())).toEqual([false, false, true])
+  })
+
+  it('チェックボックスではなく、行のセルを Shift+クリックしても、範囲選択になる', () => {
+    const { container } = render(<Stateful />)
+    fireEvent.click(debitBoxes()[0])
+    fireEvent.click(cellOf(rowsOf(container, 2)[1], 5), { shiftKey: true })
+    expect(checkedOf(debitBoxes())).toEqual([true, true, true])
+  })
+
+  it('借方のチェックにフォーカスして Shift+↓ を押すと、次の借方の行(次の仕訳の行)までが選ばれ、フォーカスがそこへ移る', () => {
+    render(<Stateful />)
+    debitBoxes()[0].focus()
+    fireEvent.keyDown(debitBoxes()[0], { key: 'ArrowDown', shiftKey: true })
+    expect(checkedOf(debitBoxes())).toEqual([true, true, false])
+    expect(debitBoxes()[1]).toHaveFocus()
+    fireEvent.keyDown(debitBoxes()[1], { key: 'ArrowDown', shiftKey: true })
+    expect(checkedOf(debitBoxes())).toEqual([true, true, true])
+    expect(debitBoxes()[2]).toHaveFocus()
+  })
+
+  it('貸方のチェックでの Shift+↓ は、貸方の次の行へ進み、借方の行には移らない', () => {
+    render(<Stateful />)
+    creditBoxes()[0].focus()
+    fireEvent.keyDown(creditBoxes()[0], { key: 'ArrowDown', shiftKey: true })
+    expect(checkedOf(creditBoxes())).toEqual([true, true])
+    expect(checkedOf(debitBoxes())).toEqual([false, false, false])
+    expect(creditBoxes()[1]).toHaveFocus()
+  })
+
+  it('Shift+↑ で、広げた範囲を縮められる', () => {
+    render(<Stateful />)
+    debitBoxes()[0].focus()
+    fireEvent.keyDown(debitBoxes()[0], { key: 'ArrowDown', shiftKey: true })
+    fireEvent.keyDown(debitBoxes()[1], { key: 'ArrowUp', shiftKey: true })
+    expect(checkedOf(debitBoxes())).toEqual([true, false, false])
+    expect(debitBoxes()[0]).toHaveFocus()
   })
 })

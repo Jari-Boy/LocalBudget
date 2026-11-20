@@ -1085,9 +1085,6 @@ export function JournalScreen(props: JournalScreenProps) {
     setError('')
   }
 
-  const toggleBulkLine = (lineId: number) =>
-    changeBulkSelection(bulkSelectedIds.has(lineId) ? [...bulkSelectedIds].filter((id) => id !== lineId) : [...bulkSelectedIds, lineId])
-
   /** 見出しのチェック: その側の表示中の行をすべて選ぶ(すべて選択済みなら外す) */
   const toggleBulkSide = (side: JournalLineSide) => {
     const ids = visibleLines.filter((s) => s.line.side === side).map((s) => s.line.id)
@@ -1378,7 +1375,7 @@ export function JournalScreen(props: JournalScreenProps) {
                 bulk={{
                   selectedLineIds: bulkSelectedIds,
                   disabled: lineEditing || busy,
-                  onToggleLine: toggleBulkLine,
+                  onChangeSelection: changeBulkSelection,
                   onToggleSide: toggleBulkSide,
                   onToggleEntry: toggleBulkEntry,
                 }}
