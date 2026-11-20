@@ -15,6 +15,7 @@ import type { Account } from '../../domain/account/Account'
 import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
 import type { JournalEditorMaster } from './JournalEntryEditor'
 import { EMPTY_BULK_PICK, type BulkPick, type BulkSelectedLine } from './journalBulkEditModel'
+import { chooseMember, findMemberButton } from '../master/memberSelectTestHelpers'
 import { JournalLineBulkBar } from './JournalLineBulkBar'
 
 afterEach(cleanup)
@@ -177,7 +178,7 @@ describe('JournalLineBulkBar', () => {
     it('世帯メンバーを選ぶと pick に反映される', () => {
       const onPick = vi.fn()
       render(<Harness selected={[sel(e1, 11)]} onPick={onPick} />)
-      fireEvent.change(screen.getByLabelText('一括編集の世帯メンバー'), { target: { value: '2' } })
+      chooseMember('一括編集の世帯メンバー', '妻')
       expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ memberId: 2 }))
     })
   })
@@ -209,7 +210,7 @@ describe('JournalLineBulkBar', () => {
 
     it('既定の世帯メンバーがある科目に変えようとしているとき、世帯メンバーは選べない', () => {
       render(<Harness selected={[sel(e1, 11)]} initialPick={{ ...EMPTY_BULK_PICK, accountId: 5 }} />)
-      expect(screen.getByLabelText('一括編集の世帯メンバー')).toBeDisabled()
+      expect(findMemberButton('一括編集の世帯メンバー')).toBeDisabled()
       expect(screen.getByText('既定メンバーのある科目は不可')).toBeInTheDocument()
     })
 
@@ -240,7 +241,7 @@ describe('JournalLineBulkBar', () => {
       render(<Harness selected={[]} />)
       expect(screen.getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
       expect(screen.getByLabelText('一括編集の精算バッチ')).toBeDisabled()
-      expect(screen.getByLabelText('一括編集の世帯メンバー')).toBeDisabled()
+      expect(findMemberButton('一括編集の世帯メンバー')).toBeDisabled()
     })
   })
 
@@ -283,7 +284,7 @@ describe('JournalLineBulkBar', () => {
     it('項目を選び直すと、確認は取り消される(確認の表示が消え、「N行に適用」に戻る)', () => {
       render(<Harness selected={[sel(e1, 11)]} initialPick={picked} initialConfirming />)
       expect(screen.getByRole('alert')).toBeInTheDocument()
-      fireEvent.change(screen.getByLabelText('一括編集の世帯メンバー'), { target: { value: '2' } })
+      chooseMember('一括編集の世帯メンバー', '妻')
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       expect(applyButton()).toBeInTheDocument()
     })

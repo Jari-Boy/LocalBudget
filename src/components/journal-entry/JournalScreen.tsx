@@ -90,6 +90,7 @@ import {
 } from './journalBulkEditModel'
 import { JournalLineBulkBar } from './JournalLineBulkBar'
 import { JournalLineTable, type JournalLineTableEditing, type JournalLineTableLookup } from './JournalLineTable'
+import { JournalMemberSelect } from './JournalMemberSelect'
 import { useJournalLineTableColumns } from './useJournalLineTableColumns'
 import { loadJournalViewMode, saveJournalViewMode, type JournalViewMode } from './journalViewMode'
 import { RelatedEntriesSection } from './RelatedEntriesSection'
@@ -1279,22 +1280,15 @@ export function JournalScreen(props: JournalScreenProps) {
                 <span className="journal-screen__note">{checkedRows.length}件を選択中</span>
               </div>
               {bulkNeedsMember && (
-                <label className="journal-screen__inline-field">
+                <div className="journal-screen__inline-field">
                   起票者(未定のルール用)
-                  <select
-                    className="journal-screen__select"
-                    aria-label="まとめて確定の起票者"
-                    value={bulkMemberId}
-                    onChange={(e) => setBulkMemberId(e.target.value === '' ? '' : Number(e.target.value))}
-                  >
-                    <option value="">選択してください</option>
-                    {data.members.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <JournalMemberSelect
+                    label="まとめて確定の起票者"
+                    members={data.members}
+                    memberId={bulkMemberId === '' ? null : bulkMemberId}
+                    onChange={(id) => setBulkMemberId(id ?? '')}
+                  />
+                </div>
               )}
               <div className="journal-screen__bulk-row">
                 <button
@@ -1463,21 +1457,15 @@ export function JournalScreen(props: JournalScreenProps) {
               )}
 
               {selection.kind === 'proposal' && selectedProposal?.rule.bookkeeperHouseholdMemberId === null && (
-                <label className="journal-screen__inline-field">
+                <div className="journal-screen__inline-field">
                   起票者
-                  <select
-                    className="journal-screen__select"
-                    value={proposalMemberId}
-                    onChange={(e) => setProposalMemberId(e.target.value === '' ? '' : Number(e.target.value))}
-                  >
-                    <option value="">選択してください</option>
-                    {data.members.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <JournalMemberSelect
+                    label="起票者"
+                    members={data.members}
+                    memberId={proposalMemberId === '' ? null : proposalMemberId}
+                    onChange={(id) => setProposalMemberId(id ?? '')}
+                  />
+                </div>
               )}
 
               <div className="journal-screen__actions">

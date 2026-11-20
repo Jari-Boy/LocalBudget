@@ -16,6 +16,7 @@ import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntr
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { fromJournalLine } from './journalEntryFormLine'
 import type { JournalEditorMaster, JournalEditorValue } from './JournalEntryEditor'
+import { chooseMember } from '../master/memberSelectTestHelpers'
 import { JournalLineTable, type JournalLineTableLookup, type JournalLineTableProps } from './JournalLineTable'
 
 afterEach(cleanup)
@@ -212,7 +213,7 @@ describe('JournalLineTable(インライン編集)', () => {
   it('世帯メンバーを選び直すと、その行の世帯メンバーが更新される', () => {
     const onValue = vi.fn()
     render(<Harness onValue={onValue} />)
-    fireEvent.change(screen.getByLabelText('貸方の世帯メンバー'), { target: { value: '2' } })
+    chooseMember('貸方の世帯メンバー', '花子')
     expect(onValue.mock.calls.at(-1)![0].lines[1].line.householdMemberId).toBe(2)
   })
 

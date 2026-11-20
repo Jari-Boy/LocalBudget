@@ -30,7 +30,7 @@ import { SqlJsProjectGroupRepository } from '../../infrastructure/db/SqlJsProjec
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../../infrastructure/db/SqlJsRecurringTransactionRuleRepository'
 import { RuleMasterTab } from './RuleMasterTab'
-import { chooseMember } from './memberSelectTestHelpers'
+import { chooseMember, expectMember } from './memberSelectTestHelpers'
 import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
@@ -443,9 +443,8 @@ describe('パネルの見た目(計画Issue #164、仕訳エディタと同じ�
     await open('家賃')
     const form = panel('定期仕訳の編集')
 
-    const memberSelect = column(form, '借方').getByLabelText('世帯メンバー')
-    expect(memberSelect).toHaveValue('')
-    fireEvent.change(memberSelect, { target: { value: String(memberId) } })
+    expectMember('世帯メンバー', '起票者と同じ', column(form, '借方'))
+    chooseMember('世帯メンバー', '夫', column(form, '借方'))
     fireEvent.click(form.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(rules.findAll()[0].lines[0].householdMemberId).toBe(memberId))
