@@ -28,8 +28,8 @@ const ALLOWED: Record<string, Exception> = {
   'components/statement-import/MappingCreateDialog.tsx': { count: 5, kind: FIXED, reason: '明細定義の設定の固定の選択肢・CSV列名' },
   'components/master/FinancialInstitutionSelect.tsx': { count: 1, kind: FIXED, reason: '金融機関名(マスタの実体ではない文字列の候補)' },
   'components/master/RuleAmountSchedulePanel.tsx': { count: 2, kind: FIXED, reason: '仕訳の明細行番号の選択(実体ではない)' },
-  'components/master/AccountCreateForm.tsx': { count: 4, kind: UNMIGRATED, reason: '区分・外部明細の有無・残高情報の有無は固定の選択肢。名義(世帯メンバー)は#234で移す' },
-  'components/master/RuleEditForm.tsx': { count: 2, kind: UNMIGRATED, reason: '汎用の固定選択1つ+世帯メンバー。#234で世帯メンバーを移す' },
+  'components/master/AccountCreateForm.tsx': { count: 3, kind: FIXED, reason: '区分・外部明細の有無・残高情報の有無は固定の選択肢' },
+  'components/master/RuleEditForm.tsx': { count: 1, kind: FIXED, reason: '汎用の固定の選択肢(頻度・曜日など)' },
   'components/settlement/SplitTab.tsx': { count: 2, kind: UNMIGRATED, reason: '按分の方法は固定の選択肢。精算バッチは#234で扱いを決める' },
   'components/statement-import/StatementImportScreen.tsx': { count: 7, kind: UNMIGRATED, reason: '明細定義・名義・一括/行ごとの世帯メンバー・精算バッチ・置き換え先(科目は移行済み)。#234で実体ごとに移す' },
   'components/journal-entry/JournalScreen.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
@@ -38,7 +38,6 @@ const ALLOWED: Record<string, Exception> = {
   'components/journal-entry/JournalLineBulkBar.tsx': { count: 2, kind: UNMIGRATED, reason: TODO_234 },
   'components/journal-entry/JournalEntryEditor.tsx': { count: 1, kind: UNMIGRATED, reason: TODO_234 },
   'components/journal-entry/RelatedEntriesSection.tsx': { count: 1, kind: FIXED, reason: '仕訳の関連グループ(仕訳どうしを束ねる)の選択で、マスタのグループ(実体)ではない' },
-  'components/master/AccountMasterTab.tsx': { count: 1, kind: UNMIGRATED, reason: '名義(世帯メンバー)は#234の世帯メンバーの移行で移す(グループは移行済み)' },
 }
 
 /** ソースの中の生の `<select` の数 */

@@ -30,6 +30,7 @@ import { SqlJsProjectGroupRepository } from '../../infrastructure/db/SqlJsProjec
 import { SqlJsProjectRepository } from '../../infrastructure/db/SqlJsProjectRepository'
 import { SqlJsRecurringTransactionRuleRepository } from '../../infrastructure/db/SqlJsRecurringTransactionRuleRepository'
 import { RuleMasterTab } from './RuleMasterTab'
+import { chooseMember } from './memberSelectTestHelpers'
 import { twoLineRuleLines } from '../../domain/recurring-transaction/twoLineRuleLines'
 
 let db: Database
@@ -201,7 +202,7 @@ describe('RuleMasterTab', () => {
 
     const editor = panel('定期仕訳の編集')
     fireEvent.change(editor.getByLabelText('回数の上限'), { target: { value: '12' } })
-    fireEvent.change(editor.getByLabelText('起票者'), { target: { value: String(memberId) } })
+    chooseMember('起票者', '夫', editor)
     fireEvent.click(editor.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(rules.findById(rule.id)!.maxOccurrences).toBe(12))

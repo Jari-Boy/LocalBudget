@@ -38,6 +38,7 @@ import { TreeSearchInput } from '../common/tree-table/TreeSearchInput'
 import { filterTreeNodes } from '../common/tree-table/filterTreeNodes'
 import { AccountKeywordSection } from './AccountKeywordSection'
 import { GroupNodeSelect } from './GroupNodeSelect'
+import { MemberSelect } from './MemberSelect'
 import { DefaultMemberChangeDialog } from './DefaultMemberChangeDialog'
 import { buildAccountTree, groupNodeId, leafNodeId, parseNodeId } from './masterTreeNodes'
 import type { MaybeAsync } from './maybeAsync'
@@ -708,22 +709,14 @@ function EditPanel(props: EditPanelProps) {
 
       {!isGroup && account && !isSystem && (
         <div className="master-field">
-          <label className="master-field__label" htmlFor="master-edit-member">
-            {t('accountTab.member')}
-          </label>
-          <select
-            id="master-edit-member"
-            className="master-field__control"
+          <span className="master-field__label">{t('accountTab.member')}</span>
+          <MemberSelect
+            label={t('accountTab.member')}
+            members={members}
             value={memberInput}
-            onChange={(event) => setMemberInput(event.target.value)}
-          >
-            <option value="">{t('accountTab.memberAll')}</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+            onChange={setMemberInput}
+            emptyLabel={t('accountTab.memberAll')}
+          />
         </div>
       )}
 
