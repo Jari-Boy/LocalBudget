@@ -211,6 +211,8 @@ export function GroupedMasterTab({
           <TreeTable
             categories={tree.categories}
             nodes={shownNodes}
+            // 検索で絞り込んでいても、グループのチェックは絞り込み前の全ノードで配下に連動させる(計画Issue #235 E)
+            cascadeNodes={tree.nodes}
             columns={columns}
             draggable={!searching}
             checkedIds={liveCheckedIds}

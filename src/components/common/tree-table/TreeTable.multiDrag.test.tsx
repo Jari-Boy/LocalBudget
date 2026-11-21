@@ -156,6 +156,49 @@ describe('TreeTable(グループのチェックの配下への連動)', () => {
   })
 })
 
+describe('TreeTable(絞り込み中のグループのチェックの連動、計画Issue #235 E)', () => {
+  /** 検索などで nodes を絞り込んで渡す画面を再現する: snack(food の配下)は隠れているが、cascadeNodes には全ノードを渡す */
+  function Filtered({ withCascadeNodes }: { withCascadeNodes: boolean }) {
+    const [checked, setChecked] = useState<readonly string[]>([])
+    const shown = nodes.filter((n) => n.id !== 'snack')
+    return (
+      <>
+        <TreeTable
+          categories={categories}
+          nodes={shown}
+          cascadeNodes={withCascadeNodes ? nodes : undefined}
+          columns={[]}
+          checkedIds={checked}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onCheckedChange={setChecked}
+          onMove={vi.fn()}
+        />
+        <output aria-label="チェック済み">{checked.join(',')}</output>
+      </>
+    )
+  }
+  const checkedList = () => (screen.getByLabelText('チェック済み').textContent ?? '').split(',').filter(Boolean).sort()
+
+  it('絞り込みで隠れている配下も、グループのチェックに連動してチェックされる(連動は絞り込み前の全ノードで計算する)', () => {
+    render(<Filtered withCascadeNodes />)
+    fireEvent.click(box('food'))
+    expect(checkedList()).toEqual(['eat-out', 'food', 'snack'])
+  })
+
+  it('絞り込み中の見えている配下だけをチェックしても、隠れた配下がそろっていないので、グループにはチェックが付かない', () => {
+    render(<Filtered withCascadeNodes />)
+    fireEvent.click(box('eat-out'))
+    expect(checkedList()).toEqual(['eat-out'])
+  })
+
+  it('cascadeNodes を渡さないときは、表示している nodes で連動を計算する(従来どおり)', () => {
+    render(<Filtered withCascadeNodes={false} />)
+    fireEvent.click(box('food'))
+    expect(checkedList()).toEqual(['eat-out', 'food'])
+  })
+})
+
 describe('TreeTable(複数ドラッグ&ドロップ移動)', () => {
   it('チェックした複数の行(グループとその配下をまとめてチェック+別の行)をドラッグすると、グループは配下ごと、別の行と一緒に移る', () => {
     const spies = setup(['food', 'eat-out', 'snack', 'misc'])

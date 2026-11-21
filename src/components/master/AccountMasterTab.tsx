@@ -277,6 +277,8 @@ export function AccountMasterTab({
         <TreeTable
           categories={tree.categories}
           nodes={shownNodes}
+          // 検索で絞り込んでいても、グループのチェックは絞り込み前の全ノードで配下に連動させる(計画Issue #235 E)
+          cascadeNodes={tree.nodes}
           draggable={!searching}
           columns={['名義', '状態']}
           checkedIds={liveCheckedIds}
