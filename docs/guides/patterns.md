@@ -475,5 +475,5 @@
 
 **症状**: 画面全体に`keydown`を付けて「Escで選択を全解除」などを実装すると、検索欄やセルの入力を取り消すためのEsc、ダイアログを閉じるためのEscまで選択解除に使われ、入力途中の値が意図せず失われたり、ダイアログと選択解除が同時に起きたりする。
 **原因**: `keydown`はフォーカスのある要素から画面全体へ伝わるため、押された時点の対象要素を見ないと、要素自身が扱うべきキーと区別できない。
-**対策**: 画面全体のキー操作は、押された対象を`src/components/common/keyboardTarget.ts`で判定して除外する。`isTextEntryTarget`(テキスト系のinput・textarea・select・contenteditable。チェックボックス・ボタンは文字を入力しないので含めない)、`ownsEscapeKey`(上に加え、`role="dialog"`・`aria-modal`の中)。処理中は無効にする。Shift+↑↓など、入力欄の中で意味を持つキーを足すときも同じ判定を使い、画面ごとに判定を書かない。
-**該当箇所(例)**: `src/components/common/keyboardTarget.ts`、`src/components/journal-entry/JournalScreen.tsx`、`docs/decisions.md`「仕訳一覧で、一括編集の行を選択中は行のどこを押してもチェックを切り替える」
+**対策**: 画面全体のキー操作は、押された対象を`src/components/common/keyboardTarget.ts`で判定して除外する。`isTextEntryTarget`(テキスト系のinput・textarea・select・contenteditable。チェックボックス・ボタンは文字を入力しないので含めない)、`ownsEscapeKey`(上に加え、`role="dialog"`・`aria-modal`の中)。処理中は無効にする。Shift+↑↓など、入力欄の中で意味を持つキーを足すときも同じ判定を使い、画面ごとに判定を書かない。Escで選択を全解除する操作は、この判定を内包した共通フック`useEscapeToClear`(`src/components/common/range-selection/`)を使い、画面ごとに`keydown`を書かない。また、選択中は行のどこを押してもチェックの操作にしたい画面で、行の中のボタン(開閉・詳細を開くなど)の動作と競合する場合は、行に`selectingRowProps`を付ける(キャプチャ段階で止める。入力欄・ダイアログ・チェック自身は除外済みで、画面固有の除外は`ignore`で足す)。ボタン側の`onClick`に選択中かの分岐を書かない。
+**該当箇所(例)**: `src/components/common/keyboardTarget.ts`、`src/components/common/range-selection/`、`src/components/journal-entry/JournalScreen.tsx`、`docs/decisions.md`「複数選択に範囲選択を共通部品で導入し、各画面に適用する」、`docs/decisions.md`「仕訳一覧で、一括編集の行を選択中は行のどこを押してもチェックを切り替える」
