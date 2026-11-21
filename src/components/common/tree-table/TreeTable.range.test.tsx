@@ -81,7 +81,7 @@ describe('TreeTable(範囲選択・トグル選択)', () => {
     render(<Stateful />)
     fireEvent.click(box('eat-out'))
     fireEvent.click(box('misc'), { shiftKey: true })
-    expect(checkedIds()).toEqual(['eat-out', 'snack', 'misc'])
+    expect(checkedIds()).toEqual(['food', 'eat-out', 'snack', 'misc'])
   })
 
   it('上の行へ向けての Shift+クリックも、同じ範囲になる', () => {
@@ -98,20 +98,20 @@ describe('TreeTable(範囲選択・トグル選択)', () => {
     expect(checkedIds()).toEqual(['misc', 'salary'])
   })
 
-  it('折りたたまれて隠れている行は、範囲選択に含まれない(表示中の行だけが対象)', () => {
+  it('範囲選択の対象は表示中の行だけで、折りたたまれたグループは、そのグループのチェックが配下(隠れた行も)へ連動する', () => {
     render(<Stateful />)
     fireEvent.click(screen.getByRole('button', { name: 'foodを開閉' }))
     fireEvent.click(box('food'))
     fireEvent.click(box('misc'), { shiftKey: true })
     fireEvent.click(screen.getByRole('button', { name: 'foodを開閉' }))
-    expect(checkedIds()).toEqual(['food', 'misc'])
+    expect(checkedIds()).toEqual(['food', 'eat-out', 'snack', 'misc'])
   })
 
   it('Ctrl+クリックと Cmd+クリックは、ほかの選択を保ったまま、その行だけを切り替える', () => {
     render(<Stateful />)
     fireEvent.click(box('food'))
     fireEvent.click(box('misc'), { ctrlKey: true })
-    expect(checkedIds()).toEqual(['food', 'misc'])
+    expect(checkedIds()).toEqual(['food', 'eat-out', 'snack', 'misc'])
     fireEvent.click(box('food'), { metaKey: true })
     expect(checkedIds()).toEqual(['misc'])
   })
@@ -163,9 +163,9 @@ describe('TreeTable(範囲選択・トグル選択)', () => {
     render(<Stateful onSelect={onSelect} />)
     fireEvent.click(box('food'))
     fireEvent.click(screen.getByRole('button', { name: 'misc' }))
-    expect(checkedIds()).toEqual(['food', 'misc'])
+    expect(checkedIds()).toEqual(['food', 'eat-out', 'snack', 'misc'])
     fireEvent.click(screen.getByRole('button', { name: 'misc' }))
-    expect(checkedIds()).toEqual(['food'])
+    expect(checkedIds()).toEqual(['food', 'eat-out', 'snack'])
     expect(onSelect).not.toHaveBeenCalled()
   })
 
@@ -176,14 +176,14 @@ describe('TreeTable(範囲選択・トグル選択)', () => {
     fireEvent.click(salary.querySelectorAll('td')[1])
     const food = screen.getByRole('button', { name: 'food' }).closest('tr') as HTMLElement
     fireEvent.click(within(food).getByRole('button', { name: 'food' }))
-    expect(checkedIds()).toEqual(['food', 'misc', 'salary'])
+    expect(checkedIds()).toEqual(['food', 'eat-out', 'snack', 'misc', 'salary'])
   })
 
   it('チェックが1件でもあるときの Shift+行の名前は、基点から押した行までの範囲選択になる', () => {
     render(<Stateful />)
     fireEvent.click(box('eat-out'))
     fireEvent.click(screen.getByRole('button', { name: 'misc' }), { shiftKey: true })
-    expect(checkedIds()).toEqual(['eat-out', 'snack', 'misc'])
+    expect(checkedIds()).toEqual(['food', 'eat-out', 'snack', 'misc'])
   })
 
   it('最後のチェックを外して選択が空に戻ると、行の名前を押したときは従来どおり右パネルが開く', () => {
@@ -226,7 +226,7 @@ describe('TreeTable(範囲選択・トグル選択)', () => {
     render(<Stateful />)
     fireEvent.click(box('food'))
     fireEvent.click(box('misc'), { ctrlKey: true })
-    expect(checkedIds()).toEqual(['food', 'misc'])
+    expect(checkedIds()).toEqual(['food', 'eat-out', 'snack', 'misc'])
     box('misc').focus()
     fireEvent.keyDown(box('misc'), { key: 'Escape' })
     expect(checkedIds()).toEqual([])

@@ -1,5 +1,14 @@
 import { useRef, useState, type DragEvent } from 'react'
-import { CATEGORY_ID_PREFIX, dropZoneFor, resolveTreeMove, type DropZone, type TreeTableNode } from './treeTableModel'
+import {
+  CATEGORY_ID_PREFIX,
+  countCheckedItems,
+  dropZoneFor,
+  resolveTreeMove,
+  topLevelIds,
+  withDescendants,
+  type DropZone,
+  type TreeTableNode,
+} from './treeTableModel'
 
 export interface TreeMoveInfo {
   ids: readonly string[]
@@ -24,25 +33,53 @@ export interface UseTreeDragParams {
   onMoveRejected?: (reason: string) => void
 }
 
+/** 複数の行を移すとき、ドラッグ中に指に付ける「N件を移動」の表示を作って、ドラッグ画像にする(計画Issue #235 E) */
+function setCountDragImage(event: DragEvent<HTMLElement>, count: number) {
+  const setDragImage = event.dataTransfer.setDragImage
+  if (typeof setDragImage !== 'function') return
+  const badge = document.createElement('div')
+  badge.className = 'tree-table__drag-badge'
+  badge.textContent = `${count}件を移動`
+  document.body.appendChild(badge)
+  setDragImage.call(event.dataTransfer, badge, 12, 12)
+  // ドラッグ画像はドラッグ開始の瞬間に取り込まれるため、次のタスクで取り除いてよい
+  setTimeout(() => badge.remove(), 0)
+}
+
 /**
  * ツリーのドラッグ移動の状態と操作(計画Issue #150のTreeTableから、計画Issue #201でカード型の一覧
  * (TreeCardList)と共有するために切り出した)。行の上端・下端で並び替え、グループの中央で中へ、区分の
- * 見出しで最上位へ移す。チェック済みの行をドラッグするとチェック済みの全行を、そうでなければその1行だけを移す。
+ * 見出しで最上位へ移す。チェック済みの行をドラッグするとチェック済みの全行を、そうでなければその1行だけを移す
+ * (チェックしていない行をつかんだときは、チェックはそのままで、つかんだ行だけを移す)。グループとその配下を同時に
+ * チェックしているとき(グループのチェックは配下に連動する)は、グループ1件として配下ごと移す。
+ * 複数の行を移すときは、ドラッグ中に「N件を移動」の表示を付け、移す行(グループなら配下も)を薄く表示する(計画Issue #235 E)。
  * 移動の可否は純粋関数(resolveTreeMove)で判定する。DOMの要素の種類(表の行・リストの項目)には依存しない。
  */
 export function useTreeDrag({ nodes, checkedIds, onMove, onMoveRejected }: UseTreeDragParams) {
   const [dragOver, setDragOver] = useState<TreeDragOver | null>(null)
+  /** ドラッグ中に薄く表示する行(移す行と、その配下) */
+  const [dimmedIds, setDimmedIds] = useState<readonly string[] | null>(null)
   const draggingIds = useRef<readonly string[] | null>(null)
+  const dimTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const endDrag = () => {
     draggingIds.current = null
+    if (dimTimer.current !== null) clearTimeout(dimTimer.current)
+    dimTimer.current = null
+    setDimmedIds(null)
     setDragOver(null)
   }
 
   const handleDragStart = (event: DragEvent<HTMLElement>, id: string) => {
-    draggingIds.current = checkedIds.includes(id) ? checkedIds : [id]
+    const moving = checkedIds.includes(id) ? topLevelIds(nodes, checkedIds) : [id]
+    draggingIds.current = moving
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('text/plain', id)
+    const affected = withDescendants(nodes, moving)
+    const count = countCheckedItems(nodes, affected)
+    if (count > 1) setCountDragImage(event, count)
+    // ドラッグ開始と同時に表示を変えると、ドラッグが取り消されるブラウザがあるため、薄い表示は次のタスクで付ける
+    dimTimer.current = setTimeout(() => setDimmedIds(affected), 0)
   }
 
   const handleNodeDragOver = (event: DragEvent<HTMLElement>, node: TreeTableNode) => {
@@ -75,5 +112,5 @@ export function useTreeDrag({ nodes, checkedIds, onMove, onMoveRejected }: UseTr
     onMove(result.nodes, { ids, targetId, zone: over.zone, expandId: result.expandId })
   }
 
-  return { dragOver, endDrag, handleDragStart, handleNodeDragOver, handleCategoryDragOver, handleDrop }
+  return { dragOver, dimmedIds, endDrag, handleDragStart, handleNodeDragOver, handleCategoryDragOver, handleDrop }
 }
