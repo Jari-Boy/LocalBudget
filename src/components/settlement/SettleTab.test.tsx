@@ -556,3 +556,63 @@ describe('SettleTab: 候補の仕訳で精算する', () => {
     ).toBeInTheDocument()
   })
 })
+
+/**
+ * 候補の仕訳のチェックの範囲選択・トグル選択・Esc での全解除、Ctrl/Cmd を押したまま行のどこかを押したときのチェックの操作
+ * (計画Issue #235 D)。候補の並び順には依存しない(表の1行目・2行目として扱う)。
+ */
+describe('SettleTab: 候補の仕訳の範囲選択・Ctrl選択・Esc(計画Issue #235 D)', () => {
+  const candidateBoxes = () => within(within(selected()).getByRole('table', { name: '精算の候補' })).getAllByRole('checkbox') as HTMLInputElement[]
+  const checkedFlags = () => candidateBoxes().map((box) => box.checked)
+
+  it('候補は2件以上あり、最初はどれも選ばれていない', () => {
+    setup()
+    expect(candidateBoxes().length).toBeGreaterThanOrEqual(2)
+    expect(checkedFlags().every((checked) => !checked)).toBe(true)
+  })
+
+  it('Shift+クリックで、直前に選んだ候補から押した候補までが選ばれる', () => {
+    setup()
+    const last = candidateBoxes().length - 1
+    fireEvent.click(candidateBoxes()[0])
+    fireEvent.click(candidateBoxes()[last], { shiftKey: true })
+    expect(checkedFlags().every((checked) => checked)).toBe(true)
+  })
+
+  it('Ctrl+候補の行の文字部分を押すと、その候補のチェックが切り替わる(Cmd でも同じ)', () => {
+    setup()
+    const row = candidateBoxes()[0].closest('tr') as HTMLElement
+    fireEvent.click(row.querySelectorAll('td')[2], { ctrlKey: true })
+    expect(candidateBoxes()[0].checked).toBe(true)
+    fireEvent.click(row.querySelectorAll('td')[2], { metaKey: true })
+    expect(candidateBoxes()[0].checked).toBe(false)
+  })
+
+  it('チェックが1件でもあるときは、Ctrl を押さなくても、別の候補の行の文字部分を押すとチェックが切り替わる', () => {
+    setup()
+    fireEvent.click(candidateBoxes()[0])
+    const second = candidateBoxes()[1].closest('tr') as HTMLElement
+    fireEvent.click(second.querySelectorAll('td')[2])
+    expect(candidateBoxes()[1].checked).toBe(true)
+    fireEvent.click(second.querySelectorAll('td')[2])
+    expect(candidateBoxes()[1].checked).toBe(false)
+  })
+
+  it('チェックにフォーカスして Shift+↓ を押すと、次の候補までが選ばれ、フォーカスが次のチェックへ移る', () => {
+    setup()
+    candidateBoxes()[0].focus()
+    fireEvent.keyDown(candidateBoxes()[0], { key: 'ArrowDown', shiftKey: true })
+    expect(candidateBoxes()[0].checked).toBe(true)
+    expect(candidateBoxes()[1].checked).toBe(true)
+    expect(candidateBoxes()[1]).toHaveFocus()
+  })
+
+  it('選んだあとに Esc を押すと、選択がすべて外れ、選択合計は 0 に戻る', () => {
+    setup()
+    fireEvent.click(candidateBoxes()[0])
+    expect(within(selected()).getByText('選択合計').parentElement).not.toHaveTextContent(yen(0))
+    fireEvent.keyDown(candidateBoxes()[0], { key: 'Escape' })
+    expect(checkedFlags().every((checked) => !checked)).toBe(true)
+    expect(within(selected()).getByText('選択合計').parentElement).toHaveTextContent(yen(0))
+  })
+})

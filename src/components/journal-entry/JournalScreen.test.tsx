@@ -1068,6 +1068,41 @@ describe('JournalScreen', () => {
       expect(adjusted).toHaveTextContent('期日 2026/11/1')
     })
 
+    it('チェックを付けたあとに Esc を押すと、すべてのチェックが外れる(計画Issue #235 D)', async () => {
+      await openProposals()
+
+      fireEvent.click(checkbox(/ジム会費/)[0])
+      fireEvent.click(checkbox(/ネット代/)[1], { shiftKey: true })
+      expect(screen.getByText('3件を選択中')).toBeInTheDocument()
+      fireEvent.keyDown(checkbox(/ジム会費/)[0], { key: 'Escape' })
+
+      expect(screen.getByText('0件を選択中')).toBeInTheDocument()
+      expect(checkbox(/ジム会費/)[0]).not.toBeChecked()
+    })
+
+    it('Shift+クリックで範囲選択しても、同じルールの提案は古い順に途切れず選ばれる(計画Issue #235 D)', async () => {
+      await openProposals()
+
+      fireEvent.click(checkbox(/ジム会費/)[0])
+      // 範囲は「ジム会費(10/15)」から「ネット代(11/1期日)」まで。ネット代の古い方(10/1)も連動して付く
+      fireEvent.click(checkbox(/ネット代/)[1], { shiftKey: true })
+
+      expect(screen.getByText('3件を選択中')).toBeInTheDocument()
+      expect(checkbox(/ネット代/)[0]).toBeChecked()
+    })
+
+    it('Ctrl+クリックで古い提案のチェックを外すと、同じルールのそれより新しい提案も外れる(計画Issue #235 D)', async () => {
+      await openProposals()
+
+      fireEvent.click(checkbox(/ジム会費/)[0])
+      fireEvent.click(checkbox(/ネット代/)[1], { shiftKey: true })
+      fireEvent.click(checkbox(/ネット代/)[0], { ctrlKey: true })
+
+      expect(screen.getByText('1件を選択中')).toBeInTheDocument()
+      expect(checkbox(/ネット代/)[1]).not.toBeChecked()
+      expect(checkbox(/ジム会費/)[0]).toBeChecked()
+    })
+
     it('詳細パネルの摘要の初期値はルール名で、金額の初期値と土日の調整後の日付が出る', async () => {
       await openProposals()
 
@@ -1143,16 +1178,29 @@ describe('JournalScreen', () => {
       expect(checkbox(/ネット代/)[1]).not.toBeChecked()
     })
 
-    it('チェックを付けても詳細の選択は変わらず、行を押しても(詳細は開くが)チェックは変わらない', async () => {
+    it('チェックを付けただけでは詳細の選択は変わらない。チェックがない間は、行を押すと詳細が開き、チェックは変わらない', async () => {
+      await openProposals()
+
+      fireEvent.click(screen.getAllByRole('button', { name: /ジム会費/ })[0])
+      expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('ジム会費')
+      expect(checkbox(/ジム会費/)[0]).not.toBeChecked()
+
+      fireEvent.click(checkbox(/ネット代/)[0])
+      expect(checkbox(/ネット代/)[0]).toBeChecked()
+      expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('ジム会費')
+    })
+
+    it('チェックが1件でもあるときは、行のどこを押してもチェックの操作になり、詳細は開かない(計画Issue #235 D)', async () => {
       await openProposals()
 
       fireEvent.click(checkbox(/ネット代/)[0])
-      expect(screen.queryByRole('checkbox', { name: /ネット代/, checked: true })).toBeInTheDocument()
       fireEvent.click(screen.getAllByRole('button', { name: /ジム会費/ })[0])
 
-      expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('ジム会費')
-      expect(checkbox(/ジム会費/)[0]).not.toBeChecked()
+      expect(checkbox(/ジム会費/)[0]).toBeChecked()
       expect(checkbox(/ネット代/)[0]).toBeChecked()
+      expect(screen.getByText('2件を選択中')).toBeInTheDocument()
+      // 詳細は、最初に開いていた提案(ネット代)のまま
+      expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('ネット代')
     })
 
     it('すべて選択でチェックが全件に付き、もう一度押すと全部外れる', async () => {
@@ -1578,6 +1626,27 @@ describe('JournalScreen(明細行単位)', () => {
         expect(debitBox('家賃')).toBeChecked()
       })
 
+      it('Shift+クリックで、借方の先頭の行から末尾の行までを範囲選択でき、貸方の行は含まれない(計画Issue #235 D)', async () => {
+        await setupLineView()
+        const boxes = () => screen.getAllByRole('checkbox', { name: '借方の行を選択' })
+        fireEvent.click(boxes()[0])
+        fireEvent.click(boxes()[3], { shiftKey: true })
+        expect(within(bulkBar()).getByText('4行を選択中(借方 4行・貸方 0行、4件の仕訳)')).toBeInTheDocument()
+      })
+
+      it('Ctrl+クリックで、離れた行を選択に加えられ、範囲選択のあとに1行だけ外せる', async () => {
+        await setupLineView()
+        const boxes = () => screen.getAllByRole('checkbox', { name: '借方の行を選択' })
+        fireEvent.click(boxes()[0])
+        fireEvent.click(boxes()[2], { ctrlKey: true })
+        expect(within(bulkBar()).getByText('2行を選択中(借方 2行・貸方 0行、2件の仕訳)')).toBeInTheDocument()
+        // Ctrl+クリックで押した3行目が基点になるので、Shift+クリックの範囲は3行目〜4行目
+        fireEvent.click(boxes()[3], { shiftKey: true })
+        expect(within(bulkBar()).getByText('3行を選択中(借方 3行・貸方 0行、3件の仕訳)')).toBeInTheDocument()
+        fireEvent.click(boxes()[2], { ctrlKey: true })
+        expect(within(bulkBar()).getByText('2行を選択中(借方 2行・貸方 0行、2件の仕訳)')).toBeInTheDocument()
+      })
+
       it('最後の1行を行の押下で外して選択が空になると、次に行を押したときは編集に入る', async () => {
         await setupLineView()
         fireEvent.click(debitBox('ランチ'))
@@ -1633,6 +1702,14 @@ describe('JournalScreen(明細行単位)', () => {
         fireEvent.click(debitBox('ランチ'))
         fireEvent.keyDown(document.body, { key: 'a' })
         expect(bulkBar()).toBeInTheDocument()
+      })
+
+      it('チェックボックスにフォーカスがある状態(チェックを押した直後)でも、Esc で選択が解除される', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        debitBox('ランチ').focus()
+        fireEvent.keyDown(debitBox('ランチ'), { key: 'Escape' })
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
       })
 
       it('一括編集バーに、Esc でも解除できることを案内する', async () => {

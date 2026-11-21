@@ -1,6 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react'
 import { formatCurrency } from '../../../infrastructure/i18n/formatCurrency'
 import { formatDate } from '../../../infrastructure/i18n/formatDate'
+import { useRangeSelection } from '../range-selection/useRangeSelection'
 import { DRAFT_TAG, SOURCE_TAGS, type JournalResultItem } from './journalResultModel'
 import './JournalResultList.css'
 
@@ -15,10 +16,11 @@ export interface JournalResultListProps {
   hideAccounts?: boolean
   /**
    * 渡すと、各行に詳細の選択(selectionMode)とは別のチェックボックスを付ける(まとめて確定用、計画Issue #164)。
-   * チェックボックスを押すとonToggle(その行のid)だけを通知し、選択は変えない。チェックの連動などの
-   * 規則は呼び出し側が持つ
+   * チェックボックスを押すと、変わった後のチェック全体をonChangeで通知し、選択は変えない。Shift+クリックの範囲選択、
+   * Ctrl/Cmd+クリックのトグル、Shift+↑↓での範囲の拡張は、共通フックが決める(計画Issue #235 D)。チェックの連動などの
+   * 規則は呼び出し側が持つ(渡された変更後のチェックを、規則に合わせて直してから反映する)
    */
-  checkable?: { checkedIds: readonly number[]; onToggle: (id: number) => void }
+  checkable?: { checkedIds: readonly number[]; onChange: (ids: number[]) => void }
 }
 
 function toDate(entryDate: string): Date {
@@ -41,6 +43,12 @@ export function JournalResultList({
   checkable,
 }: JournalResultListProps) {
   const listRef = useRef<HTMLDivElement>(null)
+  // checkable のチェックの範囲選択・トグル選択(計画Issue #235 D)
+  const range = useRangeSelection<number>({
+    order: items.map((item) => item.id),
+    selected: checkable?.checkedIds ?? [],
+    onChange: (next) => checkable?.onChange(next),
+  })
   // キー操作で選択を移したときだけ、再描画後にその行へフォーカスを移す
   const pendingFocusId = useRef<number | null>(null)
 
@@ -59,6 +67,8 @@ export function JournalResultList({
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (selectionMode === 'none') return
+    // チェックの Shift+↑↓(範囲の拡張)など、子が処理済みのキーでは、選択を移さない(計画Issue #235 D)
+    if (event.defaultPrevented) return
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
     event.preventDefault()
     const delta = event.key === 'ArrowDown' ? 1 : -1
@@ -94,14 +104,19 @@ export function JournalResultList({
       ) : (
         <ul className="journal-result-list__items">
           {items.map((item) => (
-            <li key={item.id} className={checkable ? 'journal-result-list__item--checkable' : undefined}>
+            <li
+              key={item.id}
+              className={checkable ? 'journal-result-list__item--checkable' : undefined}
+              // Ctrl/Cmd を押したまま行のどこかを押すと、詳細表示の選択を変えずチェックの操作にする(checkable のときだけ。計画Issue #235 D)
+              {...(checkable ? range.selectingRowProps(item.id) : {})}
+            >
               {checkable && (
                 <input
                   type="checkbox"
                   className="journal-result-list__check"
                   aria-label={`${item.memo} ${formatDate(toDate(item.entryDate))}を選択`}
                   checked={checkable.checkedIds.includes(item.id)}
-                  onChange={() => checkable.onToggle(item.id)}
+                  {...range.checkboxProps(item.id)}
                 />
               )}
               <Row

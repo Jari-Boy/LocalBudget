@@ -447,3 +447,77 @@ describe('SplitTab', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled())
   })
 })
+
+/**
+ * 割勘する仕訳のチェックの範囲選択・トグル選択・Esc での全解除、Ctrl/Cmd を押したまま行のどこかを押したときのチェックの操作
+ * (計画Issue #235 D)。表の並びは日付の新しい順(ランチ 10/5 → コーヒー 10/4 → 映画 10/2)。
+ */
+describe('SplitTab: 割勘する仕訳の範囲選択・Ctrl選択・Esc(計画Issue #235 D)', () => {
+  const extra = () => [
+    entry(5, '2026-10-04', 'コーヒー', 'manual', [line(51, 5, 'debit', 1, 400), line(52, 5, 'credit', 2, 400)]),
+    entry(6, '2026-10-02', '映画', 'manual', [line(61, 6, 'debit', 1, 1800), line(62, 6, 'credit', 2, 1800)]),
+  ]
+  const box = (memo: string) => screen.getByRole('checkbox', { name: `${memo}を選択` }) as HTMLInputElement
+  const flags = () => ['ランチ', 'コーヒー', '映画'].map((memo) => box(memo).checked)
+
+  it('Shift+クリックで、直前に選んだ仕訳から押した仕訳までが選ばれる', () => {
+    setup(makeData(extra()))
+    fireEvent.click(box('ランチ'))
+    fireEvent.click(box('映画'), { shiftKey: true })
+    expect(flags()).toEqual([true, true, true])
+  })
+
+  it('Ctrl+クリックで離れた仕訳を選べ、Cmd+クリックでその仕訳だけ外せる', () => {
+    setup(makeData(extra()))
+    fireEvent.click(box('ランチ'))
+    fireEvent.click(box('映画'), { ctrlKey: true })
+    expect(flags()).toEqual([true, false, true])
+    fireEvent.click(box('ランチ'), { metaKey: true })
+    expect(flags()).toEqual([false, false, true])
+  })
+
+  it('Ctrl+行の文字部分を押すと、その仕訳のチェックが切り替わる', () => {
+    setup(makeData(extra()))
+    const row = box('コーヒー').closest('tr') as HTMLElement
+    fireEvent.click(row.querySelectorAll('td')[1], { ctrlKey: true })
+    expect(flags()).toEqual([false, true, false])
+  })
+
+  it('Ctrl+摘要のボタンを押すと、詳細のダイアログは開かず、その仕訳のチェックが切り替わる', () => {
+    setup(makeData(extra()))
+    fireEvent.click(screen.getByRole('button', { name: 'コーヒー' }), { ctrlKey: true })
+    expect(flags()).toEqual([false, true, false])
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('チェックが1件でもあるときは、Ctrl を押さなくても、摘要のボタンを押すと詳細は開かず、その仕訳のチェックが切り替わる', () => {
+    setup(makeData(extra()))
+    fireEvent.click(box('ランチ'))
+    fireEvent.click(screen.getByRole('button', { name: 'コーヒー' }))
+    expect(flags()).toEqual([true, true, false])
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('Ctrl を押さずに摘要のボタンを押すと、従来どおり詳細のダイアログが開き、チェックは変わらない', () => {
+    setup(makeData(extra()))
+    fireEvent.click(screen.getByRole('button', { name: 'コーヒー' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(flags()).toEqual([false, false, false])
+  })
+
+  it('チェックにフォーカスして Shift+↓ を押すと、次の仕訳までが選ばれ、フォーカスが次のチェックへ移る', () => {
+    setup(makeData(extra()))
+    box('ランチ').focus()
+    fireEvent.keyDown(box('ランチ'), { key: 'ArrowDown', shiftKey: true })
+    expect(flags()).toEqual([true, true, false])
+    expect(box('コーヒー')).toHaveFocus()
+  })
+
+  it('選んだあとに Esc を押すと、選択がすべて外れる', () => {
+    setup(makeData(extra()))
+    fireEvent.click(box('ランチ'))
+    fireEvent.click(box('映画'), { shiftKey: true })
+    fireEvent.keyDown(box('映画'), { key: 'Escape' })
+    expect(flags()).toEqual([false, false, false])
+  })
+})

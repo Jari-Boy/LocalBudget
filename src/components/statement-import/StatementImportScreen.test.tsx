@@ -290,6 +290,128 @@ describe('StatementImportScreen', () => {
     expect(rowOf(/スーパー/).getByRole('button', { name: new RegExp(`^プロジェクト: ${trip.name}`) })).toBeInTheDocument()
   })
 
+  /**
+   * 明細の範囲選択・トグル選択(計画Issue #235 D): 明細の行のチェックを、Shift+クリックで範囲選択、Ctrl/Cmd+クリックでトグル、
+   * チェックにフォーカスしての Shift+↑↓で範囲を広げられる。範囲は画面に見える順(グループ・並び替え後)で、重複の行(チェックなし)は含まない。
+   */
+  describe('明細の範囲選択・トグル選択(計画Issue #235 D)', () => {
+    const FOUR_ROWS = `${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,ランチ,-800,96200\n2026/10/07,カフェ,-500,95700\n2026/10/08,書店,-1500,94200\n`
+    const box = (desc: string) => screen.getByLabelText(`${desc}を選択`) as HTMLInputElement
+    const countText = (n: number) => `${n}件に一括設定`
+
+    it('Shift+クリックで、直前に選んだ行から押した行までの明細が選択に加わる', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      fireEvent.click(box('スーパー'))
+      fireEvent.click(box('カフェ'), { shiftKey: true })
+      const bulk = within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
+      expect(bulk.getByText(countText(3))).toBeInTheDocument()
+      expect(box('ランチ').checked).toBe(true)
+      expect(box('書店').checked).toBe(false)
+    })
+
+    it('Ctrl+クリックで離れた行を選択に加え、Cmd+クリックでその行だけ外せる', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      fireEvent.click(box('スーパー'))
+      fireEvent.click(box('書店'), { ctrlKey: true })
+      const bulk = within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
+      expect(bulk.getByText(countText(2))).toBeInTheDocument()
+      expect(box('ランチ').checked).toBe(false)
+      fireEvent.click(box('スーパー'), { metaKey: true })
+      expect(bulk.getByText(countText(1))).toBeInTheDocument()
+    })
+
+    it('チェックにフォーカスして Shift+↓ を押すと、次の行までが選ばれ、フォーカスが次の行のチェックへ移る', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      box('ランチ').focus()
+      fireEvent.keyDown(box('ランチ'), { key: 'ArrowDown', shiftKey: true })
+      expect(box('ランチ').checked).toBe(true)
+      expect(box('カフェ').checked).toBe(true)
+      expect(box('カフェ')).toHaveFocus()
+    })
+
+    it('Ctrl+行の摘要などの文字部分を押すと、その行のチェックが切り替わる(Cmd でも同じ)', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      const row = box('ランチ').closest('tr') as HTMLElement
+      fireEvent.click(row.querySelector('.import-desc') as HTMLElement, { ctrlKey: true })
+      expect(box('ランチ').checked).toBe(true)
+      fireEvent.click(row.querySelector('.import-desc') as HTMLElement, { metaKey: true })
+      expect(box('ランチ').checked).toBe(false)
+    })
+
+    it('Ctrl+行の中のボタン(相手科目の選択欄など)を押したときは、チェックを切り替えず、その部品の操作に任せる', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      const row = box('ランチ').closest('tr') as HTMLElement
+      fireEvent.click(within(row).getByRole('button', { name: /^相手科目/ }), { ctrlKey: true })
+      expect(box('ランチ').checked).toBe(false)
+    })
+
+    it('チェックが1件でもあるときは、Ctrl を押さなくても、別の行の文字部分を押すとチェックが切り替わる', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      fireEvent.click(box('スーパー'))
+      const row = box('カフェ').closest('tr') as HTMLElement
+      fireEvent.click(row.querySelector('.import-desc') as HTMLElement)
+      expect(box('カフェ').checked).toBe(true)
+      fireEvent.click(row.querySelector('.import-desc') as HTMLElement)
+      expect(box('カフェ').checked).toBe(false)
+    })
+
+    it('チェックが1件でもあるときも、行の中のボタン(相手科目の選択欄など)は、チェックを切り替えず、その部品の操作に任せる', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      fireEvent.click(box('スーパー'))
+      const row = box('ランチ').closest('tr') as HTMLElement
+      fireEvent.click(within(row).getByRole('button', { name: /^相手科目/ }))
+      expect(box('ランチ').checked).toBe(false)
+    })
+
+    it('Ctrl を押さずに行の文字部分を押しても、チェックは変わらない', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      const row = box('ランチ').closest('tr') as HTMLElement
+      fireEvent.click(row.querySelector('.import-desc') as HTMLElement)
+      expect(box('ランチ').checked).toBe(false)
+    })
+
+    it('選択したあとに Esc を押すと、選択がすべて解除され、一括設定のバナーが消える', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      fireEvent.click(box('スーパー'))
+      fireEvent.click(box('カフェ'), { shiftKey: true })
+      expect(screen.getByRole('group', { name: '選択した明細への一括設定' })).toBeInTheDocument()
+      box('カフェ').focus()
+      fireEvent.keyDown(box('カフェ'), { key: 'Escape' })
+      expect(screen.queryByRole('group', { name: '選択した明細への一括設定' })).not.toBeInTheDocument()
+      expect(box('スーパー').checked).toBe(false)
+    })
+
+    it('範囲選択のあとに「選択を解除」すると選択が空になり、次の Shift+クリックはその行だけを選ぶ', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      fireEvent.click(box('スーパー'))
+      fireEvent.click(within(screen.getByRole('group', { name: '選択した明細への一括設定' })).getByRole('button', { name: '選択を解除' }))
+      fireEvent.click(box('書店'), { shiftKey: true })
+      expect(box('書店').checked).toBe(true)
+      expect(box('ランチ').checked).toBe(false)
+      expect(box('スーパー').checked).toBe(false)
+    })
+  })
+
   describe('世帯メンバーの選択欄(計画Issue #234)', () => {
     const TWO_ROWS = `${HEADER}2026/10/05,スーパー,-3000,97000
 2026/10/06,ランチ,-800,96200

@@ -6,6 +6,7 @@ import { formatDate } from '../../infrastructure/i18n/formatDate'
 import { SOURCE_TAGS } from '../common/journal-result/journalResultModel'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { BatchSelect } from '../master/BatchSelect'
+import { useRangeSelection } from '../common/range-selection/useRangeSelection'
 import { JournalMemberSelect } from './JournalMemberSelect'
 import { createEmptyJournalEntryFormLine, isCounterpartyEligibleCategory, type JournalEntryFormLine } from './journalEntryFormLine'
 import type { JournalEditorLine, JournalEditorMaster, JournalEditorValue } from './JournalEntryEditor'
@@ -61,8 +62,12 @@ export interface JournalLineTableBulk {
   selectedLineIds: ReadonlySet<number>
   /** チェックを押せない(インライン編集中など) */
   disabled: boolean
-  /** 行のチェック。仕訳の選択(行を押す操作)にはならない */
-  onToggleLine: (lineId: number) => void
+  /**
+   * 選択する行を変える。行のチェック・行の押下・Shift+クリックの範囲選択・Ctrl/Cmd+クリック・Shift+↑↓は、共通フック
+   * useRangeSelection が次の選択(行のidの配列)を決めて、ここへ渡す。仕訳の選択(行を押す操作)にはならない。
+   * 範囲選択は借方側・貸方側のそれぞれの中だけで行う
+   */
+  onChangeSelection: (lineIds: number[]) => void
   /** 見出しのチェック: その側の表示中の行をすべて選ぶ(すべて選択済みなら外す) */
   onToggleSide: (side: JournalLineSide) => void
   /**
@@ -135,13 +140,18 @@ function BulkCheckbox({
   indeterminate = false,
   disabled,
   onChange,
+  rangeProps,
 }: {
   label: string
   checked: boolean
   indeterminate?: boolean
   disabled: boolean
-  onChange: () => void
+  /** 見出しのチェックなど、範囲選択の対象でないチェックの切り替え。rangeProps があれば使わない */
+  onChange?: () => void
+  /** 明細行のチェック: 共通フック useRangeSelection の checkboxProps(押す・Shift+↑↓を扱う) */
+  rangeProps?: ReturnType<ReturnType<typeof useRangeSelection<number>>['checkboxProps']>
 }) {
+  const { onClick: rangeClick, ...restRangeProps } = rangeProps ?? {}
   return (
     <input
       type="checkbox"
@@ -152,9 +162,13 @@ function BulkCheckbox({
       ref={(element) => {
         if (element) element.indeterminate = indeterminate
       }}
-      // 行を押す操作(仕訳の選択・編集の開始)にならないようにする
-      onClick={(event) => event.stopPropagation()}
       onChange={onChange}
+      {...restRangeProps}
+      // 行を押す操作(仕訳の選択・編集の開始)にならないようにする
+      onClick={(event) => {
+        event.stopPropagation()
+        rangeClick?.(event)
+      }}
     />
   )
 }
@@ -196,6 +210,15 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
     />
   )
 
+  // 一括編集の行の範囲選択・トグル選択(Shift/Ctrl+クリック、Shift+↑↓)。範囲は借方側・貸方側のそれぞれの中だけ
+  const sideByLineId = new Map(entries.flatMap((e) => e.lines.map((l) => [l.id, l.side] as const)))
+  const range = useRangeSelection<number>({
+    order: entries.flatMap((e) => e.lines.map((l) => l.id)),
+    selected: bulk === undefined ? [] : [...bulk.selectedLineIds],
+    onChange: (next) => bulk?.onChangeSelection(next),
+    scopeOf: (id) => sideByLineId.get(id),
+  })
+
   if (entries.length === 0) {
     return <p className="journal-line-table__empty">該当する仕訳がありません</p>
   }
@@ -224,7 +247,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
             label={`${SIDE_LABEL[side]}の行を選択`}
             checked={isLineSelected(line)}
             disabled={bulk.disabled}
-            onChange={() => bulk.onToggleLine(line.id)}
+            rangeProps={range.checkboxProps(line.id)}
           />
         )}
       </td>
@@ -256,7 +279,11 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
     entryId: number,
     pair: { debit: JournalLine | null; credit: JournalLine | null },
   ) => {
-    if (bulk === undefined || bulk.selectedLineIds.size === 0) {
+    // Ctrl(Mac は Cmd)を押したまま行のどこかを押したときも、1行も選んでいなくても、チェックの操作にする(計画Issue #235 D)
+    const hasSelection = bulk !== undefined && bulk.selectedLineIds.size > 0
+    const selecting = hasSelection || (bulk !== undefined && (event.ctrlKey || event.metaKey))
+    // 選択の操作ではないとき、または、押せない状態で選択もないとき(修飾キーだけでは何もしない)は、従来どおり仕訳を選ぶ
+    if (bulk === undefined || !selecting || (bulk.disabled && !hasSelection)) {
       onSelect(entryId)
       return
     }
@@ -264,7 +291,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
     const side = (event.target as HTMLElement).closest<HTMLElement>('td')?.dataset.side
     if (side === 'debit' || side === 'credit') {
       const target = pair[side]
-      if (target !== null) bulk.onToggleLine(target.id)
+      if (target !== null) range.pick(target.id, event)
       return
     }
     bulk.onToggleEntry(entryId)

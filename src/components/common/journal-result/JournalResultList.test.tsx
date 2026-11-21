@@ -4,7 +4,8 @@
  * 1仕訳1行の要約(出どころタグ・摘要・金額・日付・借方 / 貸方の代表科目)を表示し、
  * 選択なし・単一・複数を切り替えられること、↑↓キーで移動できることを検証する。
  * 計画Issue #164で、承認待ちの定期仕訳タブ向けに、科目を出さない(hideAccounts)・日付のあとに補足(note)を出す・
- * 詳細の選択とは別のチェックボックス(checkable)を付けられることも検証する。
+ * 詳細の選択とは別のチェックボックス(checkable)を付けられること、そのチェックを Shift+クリック(範囲選択)・Ctrl/Cmd+クリック(トグル)・
+ * Shift+↑↓で操作できること(計画Issue #235 D)も検証する。
  * 外部依存なし(表示用に整形済みの行データ JournalResultItem だけを受け取る)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -200,7 +201,7 @@ describe('JournalResultList(承認待ちの定期仕訳で使う拡張、計画I
         selectionMode="single"
         selectedIds={[]}
         onSelectionChange={() => {}}
-        checkable={{ checkedIds: [2], onToggle: () => {} }}
+        checkable={{ checkedIds: [2], onChange: () => {} }}
       />,
     )
 
@@ -210,7 +211,7 @@ describe('JournalResultList(承認待ちの定期仕訳で使う拡張、計画I
   })
 
   it('checkable のとき、チェックボックスを押すと、選択(詳細表示)は変えずに、そのチェックの切り替えだけを通知する', () => {
-    const onToggle = vi.fn()
+    const onChange = vi.fn()
     const onSelectionChange = vi.fn()
     render(
       <JournalResultList
@@ -218,18 +219,18 @@ describe('JournalResultList(承認待ちの定期仕訳で使う拡張、計画I
         selectionMode="single"
         selectedIds={[]}
         onSelectionChange={onSelectionChange}
-        checkable={{ checkedIds: [], onToggle }}
+        checkable={{ checkedIds: [], onChange }}
       />,
     )
 
     fireEvent.click(screen.getByRole('checkbox', { name: /夕食/ }))
 
-    expect(onToggle).toHaveBeenCalledWith(3)
+    expect(onChange).toHaveBeenCalledWith([3])
     expect(onSelectionChange).not.toHaveBeenCalled()
   })
 
   it('checkable のとき、行を押すと従来どおり選択だけが変わり、チェックの切り替えは通知しない', () => {
-    const onToggle = vi.fn()
+    const onChange = vi.fn()
     const onSelectionChange = vi.fn()
     render(
       <JournalResultList
@@ -237,13 +238,124 @@ describe('JournalResultList(承認待ちの定期仕訳で使う拡張、計画I
         selectionMode="single"
         selectedIds={[]}
         onSelectionChange={onSelectionChange}
-        checkable={{ checkedIds: [], onToggle }}
+        checkable={{ checkedIds: [], onChange }}
       />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: /家賃/ }))
 
     expect(onSelectionChange).toHaveBeenCalledWith([2])
-    expect(onToggle).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('JournalResultList(チェックの範囲選択・トグル選択、計画Issue #235 D)', () => {
+  function CheckableHarness({ onSelectionChange = () => {} }: { onSelectionChange?: (ids: readonly number[]) => void }) {
+    const [checked, setChecked] = useState<number[]>([])
+    return (
+      <>
+        <JournalResultList
+          items={items}
+          selectionMode="single"
+          selectedIds={[]}
+          onSelectionChange={onSelectionChange}
+          checkable={{ checkedIds: checked, onChange: (ids) => setChecked([...ids]) }}
+        />
+        <output aria-label="チェック済み">{checked.join(',')}</output>
+      </>
+    )
+  }
+  const box = (name: RegExp) => screen.getByRole('checkbox', { name })
+  const checked = () => screen.getByLabelText('チェック済み').textContent
+
+  it('Shift+クリックで、直前に押した行から押した行までのチェックが付く', () => {
+    render(<CheckableHarness />)
+    fireEvent.click(box(/セブンイレブン/))
+    fireEvent.click(box(/夕食/), { shiftKey: true })
+    expect(checked()).toBe('1,2,3')
+  })
+
+  it('Ctrl+クリックと Cmd+クリックは、その行のチェックだけを切り替える', () => {
+    render(<CheckableHarness />)
+    fireEvent.click(box(/セブンイレブン/))
+    fireEvent.click(box(/夕食/), { ctrlKey: true })
+    expect(checked()).toBe('1,3')
+    fireEvent.click(box(/セブンイレブン/), { metaKey: true })
+    expect(checked()).toBe('3')
+  })
+
+  it('チェックにフォーカスして Shift+↓ を押すと、次の行までチェックが付き、フォーカスが次の行のチェックへ移る', () => {
+    render(<CheckableHarness />)
+    box(/セブンイレブン/).focus()
+    fireEvent.keyDown(box(/セブンイレブン/), { key: 'ArrowDown', shiftKey: true })
+    expect(checked()).toBe('1,2')
+    expect(box(/家賃/)).toHaveFocus()
+  })
+})
+
+describe('JournalResultList(チェックの Shift+↑↓ と詳細表示の選択、計画Issue #235 D)', () => {
+  it('チェックにフォーカスして Shift+↓ でチェックを広げても、一覧の選択(詳細表示の行)は移らない', () => {
+    const onSelectionChange = vi.fn()
+    function Harness() {
+      const [checked, setChecked] = useState<number[]>([])
+      return (
+        <JournalResultList
+          items={items}
+          selectionMode="single"
+          selectedIds={[]}
+          onSelectionChange={onSelectionChange}
+          checkable={{ checkedIds: checked, onChange: (ids) => setChecked([...ids]) }}
+        />
+      )
+    }
+    render(<Harness />)
+    const first = screen.getByRole('checkbox', { name: /セブンイレブン/ })
+    first.focus()
+    fireEvent.keyDown(first, { key: 'ArrowDown', shiftKey: true })
+    expect(onSelectionChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('checkbox', { name: /家賃/ })).toHaveFocus()
+  })
+
+  it('Shift を押さない ↑↓ は、従来どおり一覧の選択を移す', () => {
+    const onSelectionChange = vi.fn()
+    render(
+      <JournalResultList
+        items={items}
+        selectionMode="single"
+        selectedIds={[1]}
+        onSelectionChange={onSelectionChange}
+        checkable={{ checkedIds: [], onChange: () => {} }}
+      />,
+    )
+    fireEvent.keyDown(screen.getByRole('checkbox', { name: /セブンイレブン/ }), { key: 'ArrowDown' })
+    expect(onSelectionChange).toHaveBeenCalledWith([2])
+  })
+})
+
+describe('JournalResultList(Ctrl/Cmd+行の押下、計画Issue #235 D)', () => {
+  it('checkable のとき、Ctrl+行を押すと、詳細表示の選択は変えず、その行のチェックが切り替わる(Cmd でも同じ)', () => {
+    const onChange = vi.fn()
+    const onSelectionChange = vi.fn()
+    render(
+      <JournalResultList
+        items={items}
+        selectionMode="single"
+        selectedIds={[]}
+        onSelectionChange={onSelectionChange}
+        checkable={{ checkedIds: [], onChange }}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /家賃/ }), { ctrlKey: true })
+    expect(onChange).toHaveBeenCalledWith([2])
+    fireEvent.click(screen.getByRole('button', { name: /夕食/ }), { metaKey: true })
+    expect(onChange).toHaveBeenLastCalledWith([3])
+    expect(onSelectionChange).not.toHaveBeenCalled()
+  })
+
+  it('checkable でない一覧では、Ctrl+行を押しても従来どおり選択が変わる', () => {
+    const onSelectionChange = vi.fn()
+    render(<JournalResultList items={items} selectionMode="single" selectedIds={[]} onSelectionChange={onSelectionChange} />)
+    fireEvent.click(screen.getByRole('button', { name: /家賃/ }), { ctrlKey: true })
+    expect(onSelectionChange).toHaveBeenCalledWith([2])
   })
 })

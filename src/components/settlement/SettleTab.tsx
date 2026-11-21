@@ -16,6 +16,8 @@ import {
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { JournalFilterPopup } from '../common/journal-filter/JournalFilterPopup'
 import { countActiveConditions } from '../common/journal-filter/journalFilterModel'
+import { useEscapeToClear } from '../common/range-selection/useEscapeToClear'
+import { createRangeSelection, useRangeAnchor } from '../common/range-selection/useRangeSelection'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { SplitSettleData, SplitSettleDerived, SplitSettleRepositories } from './splitSettleData'
 import { EntryDetailDialog } from './EntryDetailDialog'
@@ -79,6 +81,17 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
   const [detailEntryId, setDetailEntryId] = useState<number | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [confirmingUnlinkLineId, setConfirmingUnlinkLineId] = useState<number | null>(null)
+  // 候補のチェックの範囲選択の基点。選択対象(候補)は、下の早期 return のあとで決まるため、基点だけをここで持つ(計画Issue #235 D)
+  const rangeAnchor = useRangeAnchor<number>()
+  // Esc で候補のチェックをすべて外す
+  useEscapeToClear(
+    checkedLineIds.size > 0
+      ? () => {
+          setCheckedLineIds(new Set())
+          setFlash('')
+        }
+      : null,
+  )
 
   const allLines = useMemo(() => data.entries.flatMap((e) => e.lines), [data.entries])
   const summaries = useMemo(
@@ -141,6 +154,15 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
           side,
         )
       : []
+  // 候補のチェックの Shift+クリック(範囲選択)・Ctrl/Cmd+クリック(トグル)・Shift+↑↓、Ctrl/Cmd+行のどこかを押す操作(計画Issue #235 D)
+  const rangeSelection = createRangeSelection(rangeAnchor, {
+    order: candidates.map((c) => c.lineId),
+    selected: [...checkedLineIds],
+    onChange: (next) => {
+      setCheckedLineIds(new Set(next))
+      setFlash('')
+    },
+  })
   const chosen = candidates.filter((c) => checkedLineIds.has(c.lineId))
   const total = chosen.reduce((sum, c) => sum + c.amount, 0)
   const diff = total - resolved.balance
@@ -457,21 +479,13 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
                       const memo = c.entry.memo ?? ''
                       const counter = c.entry.lines.find((l) => l.id !== c.lineId)
                       return (
-                        <tr key={c.lineId}>
+                        <tr key={c.lineId} {...rangeSelection.selectingRowProps(c.lineId)}>
                           <td>
                             <input
                               type="checkbox"
                               aria-label={`${memo}を選択`}
                               checked={checkedLineIds.has(c.lineId)}
-                              onChange={() => {
-                                setCheckedLineIds((prev) => {
-                                  const next = new Set(prev)
-                                  if (next.has(c.lineId)) next.delete(c.lineId)
-                                  else next.add(c.lineId)
-                                  return next
-                                })
-                                setFlash('')
-                              }}
+                              {...rangeSelection.checkboxProps(c.lineId)}
                             />
                           </td>
                           <td className="split-settle__nowrap">{c.entry.entryDate}</td>

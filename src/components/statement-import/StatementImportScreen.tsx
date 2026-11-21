@@ -39,6 +39,8 @@ import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRul
 import { resolveMultiFileMappingCandidates, type MultiFileMappingMatch } from '../../domain/statement-import/resolveMultiFileMappingCandidates'
 import { runInHistoryGroup, type HistoryGroupApi } from '../../infrastructure/history/historyGroupRunner'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
+import { useEscapeToClear } from '../common/range-selection/useEscapeToClear'
+import { createRangeSelection, useRangeAnchor } from '../common/range-selection/useRangeSelection'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
 import { AccountCreateForm } from '../master/AccountCreateForm'
@@ -303,7 +305,18 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [ownerChoice, setOwnerChoice] = useState<{ accountId: number; memberId: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  // 明細の範囲選択の基点。選択対象(表示中の行)は、読み込み前の早期 return のあとで決まるため、基点だけをここ(早期 return の前)で持つ
+  const rangeAnchor = useRangeAnchor<number>()
   const [bulkMessage, setBulkMessage] = useState('')
+  // Esc で明細の選択をすべて解除する(一括設定のバナーの「選択を解除」と同じ。計画Issue #235 D)
+  useEscapeToClear(
+    selected.size > 0
+      ? () => {
+          setSelected(new Set())
+          setBulkMessage('')
+        }
+      : null,
+  )
   const [bulkComment, setBulkComment] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -1397,15 +1410,19 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     )
   }
 
-  const toggleSelected = (index: number) => {
-    setBulkMessage('')
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(index)) next.delete(index)
-      else next.add(index)
-      return next
-    })
-  }
+  // 明細の行のチェックの Shift+クリック(範囲選択)・Ctrl/Cmd+クリック(トグル)・Shift+↑↓(計画Issue #235 D)。
+  // 範囲は画面に見える順(グループ・並び替え後)で、折りたたんだグループの行と、重複・保存しない行(チェックなし)は含めない
+  const selectableOrder = importable.filter((i) => !collapsedGroups.has(rowGroup(records[i])))
+  const rangeSelection = createRangeSelection(rangeAnchor, {
+    order: selectableOrder,
+    // 表示中で、チェックのある行(重複・保存しない行・折りたたんだ行は除く)だけが、押して切り替えられる
+    isSelectable: (index) => selectableOrder.includes(index),
+    selected: [...selected],
+    onChange: (next) => {
+      setBulkMessage('')
+      setSelected(new Set(next))
+    },
+  })
   const allSelected = importable.length > 0 && importable.every((i) => selected.has(i))
 
   /**
@@ -2158,6 +2175,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                       {groupHeader}
                       <tr
                         id={`import-row-${index}`}
+                        // Ctrl/Cmd を押したまま行の文字部分を押すと、その行のチェックの操作にする。行の中のボタン・入力欄は、それぞれの操作に任せる(計画Issue #235 D)
+                        {...(!isDup && !isSkipped ? rangeSelection.selectingRowProps(index, { ignore: 'button, a' }) : {})}
                         className={
                           [
                             isDup ? 'import-row--dup' : '',
@@ -2183,7 +2202,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                               aria-label={t('selectRow', { desc })}
                               checked={selected.has(index)}
                               disabled={isSkipped}
-                              onChange={() => toggleSelected(index)}
+                              {...rangeSelection.checkboxProps(index)}
                             />
                           )}
                         </td>
