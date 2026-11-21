@@ -80,7 +80,8 @@ describe('スキーマ v3 → v4(取り込み済みの仕訳の摘要・キー�
     runMigrations(db)
 
     expect(db.exec('SELECT id, pattern FROM keyword_rules ORDER BY id')[0].values).toEqual([
-      [1, 'ファミリーマート'],
+      // 最新の規則(計画Issue #236のv7)で、小書き文字は大きい文字にそろう(ファ → フア)
+      [1, 'フアミリーマート'],
       [3, 'ABC-123'],
     ])
   })

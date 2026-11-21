@@ -42,7 +42,8 @@ describe('スキーマ v2 → v3(キーワードの標準化)', () => {
 
     expect(patterns(db)).toEqual([
       [1, 'モバイルSUICA', 1, 10],
-      [2, 'ファミリーマート', 2, null],
+      // 最新の規則(計画Issue #236のv7)で、小書き文字は大きい文字にそろう(ファ → フア)
+      [2, 'フアミリーマート', 2, null],
     ])
   })
 
@@ -70,7 +71,7 @@ describe('スキーマ v2 → v3(キーワードの標準化)', () => {
 
     runMigrations(db)
 
-    expect(patterns(db)).toEqual([[1, 'マイバスケット', null, 11]])
+    expect(patterns(db)).toEqual([[1, 'マイバスケツト', null, 11]])
   })
 
   it('標準化すると同じになっても、別の取引先のキーワードは、どちらも残す', async () => {
