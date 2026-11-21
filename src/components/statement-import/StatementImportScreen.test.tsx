@@ -335,6 +335,48 @@ describe('StatementImportScreen', () => {
       expect(box('カフェ')).toHaveFocus()
     })
 
+    it('Ctrl+行の摘要などの文字部分を押すと、その行のチェックが切り替わる(Cmd でも同じ)', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      const row = box('ランチ').closest('tr') as HTMLElement
+      fireEvent.click(row.querySelector('.import-desc') as HTMLElement, { ctrlKey: true })
+      expect(box('ランチ').checked).toBe(true)
+      fireEvent.click(row.querySelector('.import-desc') as HTMLElement, { metaKey: true })
+      expect(box('ランチ').checked).toBe(false)
+    })
+
+    it('Ctrl+行の中のボタン(相手科目の選択欄など)を押したときは、チェックを切り替えず、その部品の操作に任せる', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      const row = box('ランチ').closest('tr') as HTMLElement
+      fireEvent.click(within(row).getByRole('button', { name: /^相手科目/ }), { ctrlKey: true })
+      expect(box('ランチ').checked).toBe(false)
+    })
+
+    it('Ctrl を押さずに行の文字部分を押しても、チェックは変わらない', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      const row = box('ランチ').closest('tr') as HTMLElement
+      fireEvent.click(row.querySelector('.import-desc') as HTMLElement)
+      expect(box('ランチ').checked).toBe(false)
+    })
+
+    it('選択したあとに Esc を押すと、選択がすべて解除され、一括設定のバナーが消える', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      fireEvent.click(box('スーパー'))
+      fireEvent.click(box('カフェ'), { shiftKey: true })
+      expect(screen.getByRole('group', { name: '選択した明細への一括設定' })).toBeInTheDocument()
+      box('カフェ').focus()
+      fireEvent.keyDown(box('カフェ'), { key: 'Escape' })
+      expect(screen.queryByRole('group', { name: '選択した明細への一括設定' })).not.toBeInTheDocument()
+      expect(box('スーパー').checked).toBe(false)
+    })
+
     it('範囲選択のあとに「選択を解除」すると選択が空になり、次の Shift+クリックはその行だけを選ぶ', async () => {
       makeMapping()
       renderScreen()

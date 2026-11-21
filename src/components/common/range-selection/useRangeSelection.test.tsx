@@ -249,3 +249,97 @@ describe('useRangeAnchor + createRangeSelection(早期 return のある画面)',
     expect(box('d')).toHaveFocus()
   })
 })
+
+/**
+ * Ctrl/Cmd を押したまま行のどこを押してもチェックの操作になる(計画Issue #235 D の追加要望)。
+ * 行の中の押せる部品(ボタンなど)の動作より優先して行のチェックを切り替え、入力欄・ダイアログの中・チェックボックス自身は
+ * それぞれの操作に任せること、ignore で押しても切り替えない部品を足せること、Ctrl なしの押下は何もしないことを検証する。
+ */
+describe('useRangeSelection(Ctrl/Cmd+行のどこかを押す ctrlRowProps)', () => {
+  function CtrlList({ onOpen, ignore }: { onOpen: (id: string) => void; ignore?: string }) {
+    const [selected, setSelected] = useState<string[]>([])
+    const range = useRangeSelection<string>({ order: IDS, selected, onChange: setSelected })
+    return (
+      <div>
+        <ul>
+          {IDS.map((id) => (
+            <li key={id} data-testid={`row-${id}`} {...range.ctrlRowProps(id, ignore === undefined ? undefined : { ignore })}>
+              <input type="checkbox" aria-label={id} checked={selected.includes(id)} {...range.checkboxProps(id)} />
+              <button type="button" onClick={() => onOpen(id)}>
+                開く{id}
+              </button>
+              <span>メモ{id}</span>
+              <input type="text" aria-label={`入力${id}`} />
+              <div role="dialog" aria-label={`ダイアログ${id}`}>
+                <button type="button">ダイアログ内{id}</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <output aria-label="選択">{selected.join(',')}</output>
+      </div>
+    )
+  }
+
+  it('Ctrl+行の文字部分を押すと、その行のチェックが切り替わる', () => {
+    render(<CtrlList onOpen={vi.fn()} />)
+    fireEvent.click(screen.getByText('メモb'), { ctrlKey: true })
+    expect(selection()).toBe('b')
+    fireEvent.click(screen.getByText('メモb'), { ctrlKey: true })
+    expect(selection()).toBe('')
+  })
+
+  it('Cmd(Mac)+行のどこかを押しても、チェックが切り替わる', () => {
+    render(<CtrlList onOpen={vi.fn()} />)
+    fireEvent.click(screen.getByText('メモc'), { metaKey: true })
+    expect(selection()).toBe('c')
+  })
+
+  it('Ctrl+行の中のボタンを押すと、ボタン自身の動作(開くなど)は起きず、行のチェックが切り替わる', () => {
+    const onOpen = vi.fn()
+    render(<CtrlList onOpen={onOpen} />)
+    fireEvent.click(screen.getByRole('button', { name: '開くd' }), { ctrlKey: true })
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(selection()).toBe('d')
+  })
+
+  it('Ctrl を押さずに行のボタンを押すと、従来どおりボタンの動作だけが起き、チェックは変わらない', () => {
+    const onOpen = vi.fn()
+    render(<CtrlList onOpen={onOpen} />)
+    fireEvent.click(screen.getByRole('button', { name: '開くd' }))
+    expect(onOpen).toHaveBeenCalledWith('d')
+    expect(selection()).toBe('')
+  })
+
+  it('Ctrl+クリックの連続は、基点を移しながらトグルし、Shift+クリックの範囲選択の基点にもなる', () => {
+    render(<CtrlList onOpen={vi.fn()} />)
+    fireEvent.click(screen.getByText('メモa'), { ctrlKey: true })
+    fireEvent.click(screen.getByText('メモc'), { ctrlKey: true })
+    expect(selection()).toBe('a,c')
+    fireEvent.click(box('e'), { shiftKey: true })
+    expect(selection()).toBe('a,c,d,e')
+  })
+
+  it('Ctrl+入力欄・ダイアログの中を押したときは、行のチェックを切り替えない', () => {
+    render(<CtrlList onOpen={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('入力b'), { ctrlKey: true })
+    fireEvent.click(screen.getByRole('button', { name: 'ダイアログ内b' }), { ctrlKey: true })
+    expect(selection()).toBe('')
+  })
+
+  it('Ctrl+チェックボックス自身を押したときは、二重に切り替わらず、1回だけ切り替わる', () => {
+    render(<CtrlList onOpen={vi.fn()} />)
+    fireEvent.click(box('b'), { ctrlKey: true })
+    expect(selection()).toBe('b')
+  })
+
+  it('ignore で指定した部品(例: 開閉ボタン)は、Ctrl を押して押しても、その部品の動作に任せる', () => {
+    const onOpen = vi.fn()
+    render(<CtrlList onOpen={onOpen} ignore="button" />)
+    fireEvent.click(screen.getByRole('button', { name: '開くa' }), { ctrlKey: true })
+    expect(onOpen).toHaveBeenCalledWith('a')
+    expect(selection()).toBe('')
+    fireEvent.click(screen.getByText('メモa'), { ctrlKey: true })
+    expect(selection()).toBe('a')
+  })
+})

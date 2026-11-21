@@ -379,3 +379,61 @@ describe('JournalLineTable(Shift/Ctrl による範囲選択・トグル選択)',
     expect(debitBoxes()[0]).toHaveFocus()
   })
 })
+
+/**
+ * Ctrl/Cmd を押したまま行のどこかを押すと、(1行も選んでいない状態でも)編集には入らず、チェックの操作になる
+ * (計画Issue #235 D の追加要望)。押した位置の切り分けは、選択中の行クリックと同じ。
+ */
+describe('JournalLineTable(Ctrl/Cmd+行の押下)', () => {
+  const cellOf = (row: HTMLElement, index: number) => row.querySelectorAll('td')[index] as HTMLElement
+  const DEBIT_ACCOUNT = 5
+  const CREDIT_ACCOUNT = 11
+
+  it('選択がなくても、Ctrl+借方側のセルを押すと、編集には入らず、その借方の行が選択に加わる', () => {
+    const bulk = makeBulk()
+    const { container, onSelect } = renderTable(bulk)
+    fireEvent.click(cellOf(rowsOf(container, 1)[0], DEBIT_ACCOUNT), { ctrlKey: true })
+    expect(bulk.onChangeSelection).toHaveBeenCalledWith([11])
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('Cmd+貸方側のセルを押すと、その貸方の行が選択に加わる', () => {
+    const bulk = makeBulk()
+    const { container, onSelect } = renderTable(bulk)
+    fireEvent.click(cellOf(rowsOf(container, 1)[0], CREDIT_ACCOUNT), { metaKey: true })
+    expect(bulk.onChangeSelection).toHaveBeenCalledWith([12])
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('Ctrl+日付・摘要などの左側を押すと、その仕訳の全明細行の切り替えになる', () => {
+    const bulk = makeBulk()
+    const { container, onSelect } = renderTable(bulk)
+    fireEvent.click(cellOf(rowsOf(container, 1)[0], 0), { ctrlKey: true })
+    expect(bulk.onToggleEntry).toHaveBeenCalledWith(1)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('Ctrl+摘要のボタンを押しても、編集には入らず、その仕訳の全明細行の切り替えになる', () => {
+    const bulk = makeBulk()
+    const { onSelect } = renderTable(bulk)
+    fireEvent.click(screen.getByRole('button', { name: 'コンビニ' }), { ctrlKey: true })
+    expect(bulk.onToggleEntry).toHaveBeenCalledWith(1)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('Ctrl を押さずに行を押すと、選択がなければ従来どおり編集に入る', () => {
+    const bulk = makeBulk()
+    const { container, onSelect } = renderTable(bulk)
+    fireEvent.click(cellOf(rowsOf(container, 1)[0], DEBIT_ACCOUNT))
+    expect(onSelect).toHaveBeenCalledWith(1)
+    expect(bulk.onChangeSelection).not.toHaveBeenCalled()
+  })
+
+  it('押せない状態(disabled)のときは、Ctrl+行を押しても選択は変わらない', () => {
+    const bulk = makeBulk({ disabled: true })
+    const { container } = renderTable(bulk)
+    fireEvent.click(cellOf(rowsOf(container, 1)[0], DEBIT_ACCOUNT), { ctrlKey: true })
+    expect(bulk.onChangeSelection).not.toHaveBeenCalled()
+    expect(bulk.onToggleEntry).not.toHaveBeenCalled()
+  })
+})

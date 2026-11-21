@@ -104,7 +104,12 @@ export function JournalResultList({
       ) : (
         <ul className="journal-result-list__items">
           {items.map((item) => (
-            <li key={item.id} className={checkable ? 'journal-result-list__item--checkable' : undefined}>
+            <li
+              key={item.id}
+              className={checkable ? 'journal-result-list__item--checkable' : undefined}
+              // Ctrl/Cmd を押したまま行のどこかを押すと、詳細表示の選択を変えずチェックの操作にする(checkable のときだけ。計画Issue #235 D)
+              {...(checkable ? range.ctrlRowProps(item.id) : {})}
+            >
               {checkable && (
                 <input
                   type="checkbox"

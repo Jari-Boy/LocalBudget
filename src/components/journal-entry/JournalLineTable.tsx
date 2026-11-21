@@ -279,7 +279,11 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
     entryId: number,
     pair: { debit: JournalLine | null; credit: JournalLine | null },
   ) => {
-    if (bulk === undefined || bulk.selectedLineIds.size === 0) {
+    // Ctrl(Mac は Cmd)を押したまま行のどこかを押したときも、1行も選んでいなくても、チェックの操作にする(計画Issue #235 D)
+    const hasSelection = bulk !== undefined && bulk.selectedLineIds.size > 0
+    const selecting = hasSelection || (bulk !== undefined && (event.ctrlKey || event.metaKey))
+    // 選択の操作ではないとき、または、押せない状態で選択もないとき(修飾キーだけでは何もしない)は、従来どおり仕訳を選ぶ
+    if (bulk === undefined || !selecting || (bulk.disabled && !hasSelection)) {
       onSelect(entryId)
       return
     }

@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useEscapeToClear } from '../range-selection/useEscapeToClear'
 import { useRangeSelection } from '../range-selection/useRangeSelection'
 import {
   buildTreeTableRows,
@@ -96,6 +97,8 @@ export function TreeTable({
   const visibleIds = rows.flatMap((row) => (row.type === 'node' ? [row.node.id] : []))
   // 行のチェックの Shift+クリック(範囲選択)・Ctrl/Cmd+クリック(トグル)・Shift+↑↓(計画Issue #235 D)。範囲は表示中の行だけ
   const range = useRangeSelection<string>({ order: visibleIds, selected: checkedIds, onChange: onCheckedChange })
+  // Esc でチェックをすべて外す(計画Issue #235 D)
+  useEscapeToClear(checkedIds.length > 0 ? () => onCheckedChange([]) : null)
   const checkedVisibleCount = visibleIds.filter((id) => checkedIds.includes(id)).length
   const allChecked = visibleIds.length > 0 && checkedVisibleCount === visibleIds.length
   const toggleAll = () => onCheckedChange(allChecked ? [] : visibleIds)
@@ -170,6 +173,8 @@ export function TreeTable({
                 draggable={draggable}
                 className={`tree-table__row${isSelected ? ' tree-table__row--selected' : ''}`}
                 aria-current={isSelected ? 'true' : undefined}
+                // Ctrl/Cmd を押したまま行のどこかを押すと、右パネルを開かずチェックの操作にする(開閉ボタンは除く。計画Issue #235 D)
+                {...range.ctrlRowProps(node.id, { ignore: '.tree-table__toggle' })}
                 data-drop-zone={dragOver?.id === node.id ? dragOver.zone : undefined}
                 onDragStart={(event) => handleDragStart(event, node.id)}
                 onDragOver={(event) => handleNodeDragOver(event, node)}

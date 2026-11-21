@@ -1068,6 +1068,18 @@ describe('JournalScreen', () => {
       expect(adjusted).toHaveTextContent('期日 2026/11/1')
     })
 
+    it('チェックを付けたあとに Esc を押すと、すべてのチェックが外れる(計画Issue #235 D)', async () => {
+      await openProposals()
+
+      fireEvent.click(checkbox(/ジム会費/)[0])
+      fireEvent.click(checkbox(/ネット代/)[1], { shiftKey: true })
+      expect(screen.getByText('3件を選択中')).toBeInTheDocument()
+      fireEvent.keyDown(checkbox(/ジム会費/)[0], { key: 'Escape' })
+
+      expect(screen.getByText('0件を選択中')).toBeInTheDocument()
+      expect(checkbox(/ジム会費/)[0]).not.toBeChecked()
+    })
+
     it('Shift+クリックで範囲選択しても、同じルールの提案は古い順に途切れず選ばれる(計画Issue #235 D)', async () => {
       await openProposals()
 
@@ -1677,6 +1689,14 @@ describe('JournalScreen(明細行単位)', () => {
         fireEvent.click(debitBox('ランチ'))
         fireEvent.keyDown(document.body, { key: 'a' })
         expect(bulkBar()).toBeInTheDocument()
+      })
+
+      it('チェックボックスにフォーカスがある状態(チェックを押した直後)でも、Esc で選択が解除される', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        debitBox('ランチ').focus()
+        fireEvent.keyDown(debitBox('ランチ'), { key: 'Escape' })
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
       })
 
       it('一括編集バーに、Esc でも解除できることを案内する', async () => {

@@ -38,7 +38,7 @@ const nodes: TreeTableNode[] = [
   node('salary', 'leaf', 'revenue', null),
 ]
 
-function Stateful() {
+function Stateful({ onSelect = vi.fn() }: { onSelect?: (id: string) => void }) {
   const [checked, setChecked] = useState<readonly string[]>([])
   return (
     <TreeTable
@@ -47,7 +47,7 @@ function Stateful() {
       columns={[]}
       checkedIds={checked}
       selectedId={null}
-      onSelect={vi.fn()}
+      onSelect={onSelect}
       onCheckedChange={setChecked}
       onMove={vi.fn()}
     />
@@ -124,6 +124,66 @@ describe('TreeTable(範囲選択・トグル選択)', () => {
     fireEvent.keyDown(box('food'), { key: 'ArrowDown', shiftKey: true })
     expect(checkedIds()).toEqual(['food', 'misc'])
     expect(box('misc')).toHaveFocus()
+  })
+
+  it('Ctrl+行の名前を押すと、右パネルは開かず、その行のチェックが切り替わる(Cmd でも同じ)', () => {
+    const onSelect = vi.fn()
+    render(<Stateful onSelect={onSelect} />)
+    fireEvent.click(screen.getByRole('button', { name: 'misc' }), { ctrlKey: true })
+    expect(checkedIds()).toEqual(['misc'])
+    fireEvent.click(screen.getByRole('button', { name: 'misc' }), { metaKey: true })
+    expect(checkedIds()).toEqual([])
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('Ctrl+行の名前以外の部分(セル)を押しても、その行のチェックが切り替わる', () => {
+    render(<Stateful />)
+    const row = screen.getByRole('button', { name: 'salary' }).closest('tr') as HTMLElement
+    fireEvent.click(row.querySelectorAll('td')[1], { ctrlKey: true })
+    expect(checkedIds()).toEqual(['salary'])
+  })
+
+  it('Ctrl を押さずに行の名前を押すと、従来どおり右パネルが開く(チェックは変わらない)', () => {
+    const onSelect = vi.fn()
+    render(<Stateful onSelect={onSelect} />)
+    fireEvent.click(screen.getByRole('button', { name: 'misc' }))
+    expect(onSelect).toHaveBeenCalledWith('misc')
+    expect(checkedIds()).toEqual([])
+  })
+
+  it('Ctrl+グループの開閉ボタンは、チェックを切り替えず、これまでどおり開閉する', () => {
+    render(<Stateful />)
+    fireEvent.click(screen.getByRole('button', { name: 'foodを開閉' }), { ctrlKey: true })
+    expect(screen.getByRole('button', { name: 'foodを開閉' })).toHaveAttribute('aria-expanded', 'false')
+    expect(checkedIds()).toEqual([])
+  })
+
+  it('チェックを付けたあとに Esc を押すと、すべてのチェックが外れる(チェックにフォーカスがある状態でも)', () => {
+    render(<Stateful />)
+    fireEvent.click(box('food'))
+    fireEvent.click(box('misc'), { ctrlKey: true })
+    expect(checkedIds()).toEqual(['food', 'misc'])
+    box('misc').focus()
+    fireEvent.keyDown(box('misc'), { key: 'Escape' })
+    expect(checkedIds()).toEqual([])
+  })
+
+  it('チェックがないときの Esc は何もしない(onCheckedChange を呼ばない)', () => {
+    const onCheckedChange = vi.fn()
+    render(
+      <TreeTable
+        categories={categories}
+        nodes={nodes}
+        columns={[]}
+        checkedIds={[]}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onCheckedChange={onCheckedChange}
+        onMove={vi.fn()}
+      />,
+    )
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(onCheckedChange).not.toHaveBeenCalled()
   })
 
   it('ヘッダーの「すべて選択」は、これまでどおり表示中の全行を選び、もう一度押すと解除する', () => {

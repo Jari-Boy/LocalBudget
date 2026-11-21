@@ -331,3 +331,31 @@ describe('JournalResultList(チェックの Shift+↑↓ と詳細表示の選�
     expect(onSelectionChange).toHaveBeenCalledWith([2])
   })
 })
+
+describe('JournalResultList(Ctrl/Cmd+行の押下、計画Issue #235 D)', () => {
+  it('checkable のとき、Ctrl+行を押すと、詳細表示の選択は変えず、その行のチェックが切り替わる(Cmd でも同じ)', () => {
+    const onChange = vi.fn()
+    const onSelectionChange = vi.fn()
+    render(
+      <JournalResultList
+        items={items}
+        selectionMode="single"
+        selectedIds={[]}
+        onSelectionChange={onSelectionChange}
+        checkable={{ checkedIds: [], onChange }}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /家賃/ }), { ctrlKey: true })
+    expect(onChange).toHaveBeenCalledWith([2])
+    fireEvent.click(screen.getByRole('button', { name: /夕食/ }), { metaKey: true })
+    expect(onChange).toHaveBeenLastCalledWith([3])
+    expect(onSelectionChange).not.toHaveBeenCalled()
+  })
+
+  it('checkable でない一覧では、Ctrl+行を押しても従来どおり選択が変わる', () => {
+    const onSelectionChange = vi.fn()
+    render(<JournalResultList items={items} selectionMode="single" selectedIds={[]} onSelectionChange={onSelectionChange} />)
+    fireEvent.click(screen.getByRole('button', { name: /家賃/ }), { ctrlKey: true })
+    expect(onSelectionChange).toHaveBeenCalledWith([2])
+  })
+})
