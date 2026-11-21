@@ -17,6 +17,8 @@ import {
 import { runInHistoryGroup } from '../../infrastructure/history/historyGroupRunner'
 import { submitExpenseSplit, type SubmitExpenseSplitError } from '../expense-splitting/submitExpenseSplit'
 import { BatchSelect } from '../master/BatchSelect'
+import { useEscapeToClear } from '../common/range-selection/useEscapeToClear'
+import { useRangeSelection } from '../common/range-selection/useRangeSelection'
 import type { SplitSettleData, SplitSettleDerived, SplitSettleRepositories } from './splitSettleData'
 import {
   buildPartnerCategories,
@@ -155,16 +157,26 @@ export function SplitTab({
     setError('')
   }
 
-  const toggle = (id: number) => {
-    setCheckedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-    setFlash('')
-    setError('')
-  }
+  // 仕訳のチェックの Shift+クリック(範囲選択)・Ctrl/Cmd+クリック(トグル)・Shift+↑↓、Ctrl/Cmd+行のどこかを押す操作(計画Issue #235 D)
+  const range = useRangeSelection<number>({
+    order: shown.map((item) => item.entry.id),
+    selected: [...checkedIds],
+    onChange: (next) => {
+      setCheckedIds(new Set(next))
+      setFlash('')
+      setError('')
+    },
+  })
+  // Esc で仕訳のチェックをすべて外す
+  useEscapeToClear(
+    checkedIds.size > 0
+      ? () => {
+          setCheckedIds(new Set())
+          setFlash('')
+          setError('')
+        }
+      : null,
+  )
 
   const changeMode = (next: ExpenseSplittingAllocationMode) => {
     setMode(next)
@@ -274,13 +286,13 @@ export function SplitTab({
               {shown.map((item) => {
                 const memo = item.entry.memo ?? ''
                 return (
-                  <tr key={item.entry.id}>
+                  <tr key={item.entry.id} {...range.ctrlRowProps(item.entry.id)}>
                     <td>
                       <input
                         type="checkbox"
                         aria-label={`${memo}を選択`}
                         checked={checkedIds.has(item.entry.id)}
-                        onChange={() => toggle(item.entry.id)}
+                        {...range.checkboxProps(item.entry.id)}
                       />
                     </td>
                     <td className="split-settle__nowrap">{item.entry.entryDate}</td>
