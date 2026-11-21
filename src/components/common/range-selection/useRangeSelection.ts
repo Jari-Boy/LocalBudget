@@ -109,14 +109,15 @@ export function createRangeSelection<Id extends string | number>(
       onMouseDown: preventShiftTextSelection,
     }),
     /**
-     * 行に渡す props。Ctrl(Mac は Cmd)を押したまま行のどこかを押したときだけ、チェックボックスを押したのと同じ規則(トグル、
-     * 基点を移す)で行のチェックを切り替える(計画Issue #235 D)。行の中のボタンなどの動作(キャプチャ段階で止める)より優先する。
+     * 行に渡す props。チェックが1件でも選ばれている間と、Ctrl(Mac は Cmd)を押したままのときは、行のどこを押しても
+     * (行の中のボタンを含めて)、チェックボックスを押したのと同じ規則(トグル、Shift で範囲選択、基点を移す)で行のチェックを
+     * 切り替える(計画Issue #235 D)。行の中のボタンなどの動作(キャプチャ段階で止める)より優先する。
      * 入力欄・select・ダイアログの中・チェックボックス自身は、それぞれの操作に任せる。それ以外にも優先したくない部品は、
-     * ignore に CSS セレクタで指定する(例: 開閉ボタン)。Ctrl を押さない通常の押下には何もしない
+     * ignore に CSS セレクタで指定する(例: 開閉ボタン)。選択がなく Ctrl も押していない通常の押下には何もしない
      */
-    ctrlRowProps: (id: Id, options?: { ignore?: string }) => ({
+    selectingRowProps: (id: Id, options?: { ignore?: string }) => ({
       onClickCapture: (event: MouseEvent<HTMLElement>) => {
-        if (!event.ctrlKey && !event.metaKey) return
+        if (selected.length === 0 && !event.ctrlKey && !event.metaKey) return
         const ignore = ['input, select, textarea, [role="dialog"], [aria-modal="true"]', options?.ignore].filter(Boolean).join(', ')
         if ((event.target as HTMLElement).closest(ignore) !== null) return
         event.stopPropagation()

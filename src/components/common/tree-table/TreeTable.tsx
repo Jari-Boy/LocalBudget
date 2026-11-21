@@ -173,8 +173,9 @@ export function TreeTable({
                 draggable={draggable}
                 className={`tree-table__row${isSelected ? ' tree-table__row--selected' : ''}`}
                 aria-current={isSelected ? 'true' : undefined}
-                // Ctrl/Cmd を押したまま行のどこかを押すと、右パネルを開かずチェックの操作にする(開閉ボタンは除く。計画Issue #235 D)
-                {...range.ctrlRowProps(node.id, { ignore: '.tree-table__toggle' })}
+                // チェックが1件でもあるとき(と Ctrl/Cmd を押したとき)は、行のどこを押しても、右パネルを開かずチェックの操作にする。
+                // 行の操作である開閉ボタンと、名称の左に差し込まれた操作(お気に入りの★など)は除く(計画Issue #235 D)
+                {...range.selectingRowProps(node.id, { ignore: '.tree-table__toggle, .tree-table__leading' })}
                 data-drop-zone={dragOver?.id === node.id ? dragOver.zone : undefined}
                 onDragStart={(event) => handleDragStart(event, node.id)}
                 onDragOver={(event) => handleNodeDragOver(event, node)}
@@ -202,7 +203,9 @@ export function TreeTable({
                         {isOpen ? '▾' : '▸'}
                       </button>
                     )}
-                    {!isGroup && renderLeafLeading?.(node)}
+                    {!isGroup && renderLeafLeading !== undefined && (
+                      <span className="tree-table__leading">{renderLeafLeading(node)}</span>
+                    )}
                     <button
                       type="button"
                       className={`tree-table__link${isGroup ? ' tree-table__link--group' : ''}`}

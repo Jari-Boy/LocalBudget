@@ -490,6 +490,14 @@ describe('SplitTab: 割勘する仕訳の範囲選択・Ctrl選択・Esc(計画I
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('チェックが1件でもあるときは、Ctrl を押さなくても、摘要のボタンを押すと詳細は開かず、その仕訳のチェックが切り替わる', () => {
+    setup(makeData(extra()))
+    fireEvent.click(box('ランチ'))
+    fireEvent.click(screen.getByRole('button', { name: 'コーヒー' }))
+    expect(flags()).toEqual([true, true, false])
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   it('Ctrl を押さずに摘要のボタンを押すと、従来どおり詳細のダイアログが開き、チェックは変わらない', () => {
     setup(makeData(extra()))
     fireEvent.click(screen.getByRole('button', { name: 'コーヒー' }))

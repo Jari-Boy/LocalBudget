@@ -7,7 +7,7 @@
  * 外部依存なし(汎用ノード型だけを渡し、チェックの状態を持つ小さな親を使う)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TreeTable } from './TreeTable'
@@ -38,10 +38,17 @@ const nodes: TreeTableNode[] = [
   node('salary', 'leaf', 'revenue', null),
 ]
 
-function Stateful({ onSelect = vi.fn() }: { onSelect?: (id: string) => void }) {
+function Stateful({
+  onSelect = vi.fn(),
+  renderLeafLeading,
+}: {
+  onSelect?: (id: string) => void
+  renderLeafLeading?: (node: TreeTableNode) => React.ReactNode
+}) {
   const [checked, setChecked] = useState<readonly string[]>([])
   return (
     <TreeTable
+      renderLeafLeading={renderLeafLeading}
       categories={categories}
       nodes={nodes}
       columns={[]}
@@ -149,6 +156,63 @@ describe('TreeTable(範囲選択・トグル選択)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'misc' }))
     expect(onSelect).toHaveBeenCalledWith('misc')
     expect(checkedIds()).toEqual([])
+  })
+
+  it('チェックが1件でもあるときは、Ctrl を押さなくても、行の名前を押すとチェックが切り替わり、右パネルは開かない', () => {
+    const onSelect = vi.fn()
+    render(<Stateful onSelect={onSelect} />)
+    fireEvent.click(box('food'))
+    fireEvent.click(screen.getByRole('button', { name: 'misc' }))
+    expect(checkedIds()).toEqual(['food', 'misc'])
+    fireEvent.click(screen.getByRole('button', { name: 'misc' }))
+    expect(checkedIds()).toEqual(['food'])
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('チェックが1件でもあるときは、行の名前以外の部分(セル・グループの行)を押してもチェックが切り替わる', () => {
+    render(<Stateful />)
+    fireEvent.click(box('misc'))
+    const salary = screen.getByRole('button', { name: 'salary' }).closest('tr') as HTMLElement
+    fireEvent.click(salary.querySelectorAll('td')[1])
+    const food = screen.getByRole('button', { name: 'food' }).closest('tr') as HTMLElement
+    fireEvent.click(within(food).getByRole('button', { name: 'food' }))
+    expect(checkedIds()).toEqual(['food', 'misc', 'salary'])
+  })
+
+  it('チェックが1件でもあるときの Shift+行の名前は、基点から押した行までの範囲選択になる', () => {
+    render(<Stateful />)
+    fireEvent.click(box('eat-out'))
+    fireEvent.click(screen.getByRole('button', { name: 'misc' }), { shiftKey: true })
+    expect(checkedIds()).toEqual(['eat-out', 'snack', 'misc'])
+  })
+
+  it('最後のチェックを外して選択が空に戻ると、行の名前を押したときは従来どおり右パネルが開く', () => {
+    const onSelect = vi.fn()
+    render(<Stateful onSelect={onSelect} />)
+    fireEvent.click(box('misc'))
+    fireEvent.click(screen.getByRole('button', { name: 'misc' }))
+    expect(checkedIds()).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: 'salary' }))
+    expect(onSelect).toHaveBeenCalledWith('salary')
+  })
+
+  it('チェック中でも、グループの開閉ボタンと、行の名前の左に差し込まれた操作(お気に入りの★など)は、チェックを切り替えず、その操作が動く', () => {
+    const onStar = vi.fn()
+    render(
+      <Stateful
+        renderLeafLeading={(n) => (
+          <button type="button" onClick={() => onStar(n.id)}>
+            ★{n.id}
+          </button>
+        )}
+      />,
+    )
+    fireEvent.click(box('misc'))
+    fireEvent.click(screen.getByRole('button', { name: 'foodを開閉' }))
+    expect(screen.getByRole('button', { name: 'foodを開閉' })).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(screen.getByRole('button', { name: '★salary' }))
+    expect(onStar).toHaveBeenCalledWith('salary')
+    expect(checkedIds()).toEqual(['misc'])
   })
 
   it('Ctrl+グループの開閉ボタンは、チェックを切り替えず、これまでどおり開閉する', () => {

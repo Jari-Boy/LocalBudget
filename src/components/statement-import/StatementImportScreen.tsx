@@ -2176,7 +2176,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                       <tr
                         id={`import-row-${index}`}
                         // Ctrl/Cmd を押したまま行の文字部分を押すと、その行のチェックの操作にする。行の中のボタン・入力欄は、それぞれの操作に任せる(計画Issue #235 D)
-                        {...(!isDup && !isSkipped ? rangeSelection.ctrlRowProps(index, { ignore: 'button, a' }) : {})}
+                        {...(!isDup && !isSkipped ? rangeSelection.selectingRowProps(index, { ignore: 'button, a' }) : {})}
                         className={
                           [
                             isDup ? 'import-row--dup' : '',

@@ -1178,16 +1178,29 @@ describe('JournalScreen', () => {
       expect(checkbox(/ネット代/)[1]).not.toBeChecked()
     })
 
-    it('チェックを付けても詳細の選択は変わらず、行を押しても(詳細は開くが)チェックは変わらない', async () => {
+    it('チェックを付けただけでは詳細の選択は変わらない。チェックがない間は、行を押すと詳細が開き、チェックは変わらない', async () => {
+      await openProposals()
+
+      fireEvent.click(screen.getAllByRole('button', { name: /ジム会費/ })[0])
+      expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('ジム会費')
+      expect(checkbox(/ジム会費/)[0]).not.toBeChecked()
+
+      fireEvent.click(checkbox(/ネット代/)[0])
+      expect(checkbox(/ネット代/)[0]).toBeChecked()
+      expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('ジム会費')
+    })
+
+    it('チェックが1件でもあるときは、行のどこを押してもチェックの操作になり、詳細は開かない(計画Issue #235 D)', async () => {
       await openProposals()
 
       fireEvent.click(checkbox(/ネット代/)[0])
-      expect(screen.queryByRole('checkbox', { name: /ネット代/, checked: true })).toBeInTheDocument()
       fireEvent.click(screen.getAllByRole('button', { name: /ジム会費/ })[0])
 
-      expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('ジム会費')
-      expect(checkbox(/ジム会費/)[0]).not.toBeChecked()
+      expect(checkbox(/ジム会費/)[0]).toBeChecked()
       expect(checkbox(/ネット代/)[0]).toBeChecked()
+      expect(screen.getByText('2件を選択中')).toBeInTheDocument()
+      // 詳細は、最初に開いていた提案(ネット代)のまま
+      expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('ネット代')
     })
 
     it('すべて選択でチェックが全件に付き、もう一度押すと全部外れる', async () => {

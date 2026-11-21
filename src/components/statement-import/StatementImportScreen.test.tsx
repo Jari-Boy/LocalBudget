@@ -355,6 +355,28 @@ describe('StatementImportScreen', () => {
       expect(box('ランチ').checked).toBe(false)
     })
 
+    it('チェックが1件でもあるときは、Ctrl を押さなくても、別の行の文字部分を押すとチェックが切り替わる', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      fireEvent.click(box('スーパー'))
+      const row = box('カフェ').closest('tr') as HTMLElement
+      fireEvent.click(row.querySelector('.import-desc') as HTMLElement)
+      expect(box('カフェ').checked).toBe(true)
+      fireEvent.click(row.querySelector('.import-desc') as HTMLElement)
+      expect(box('カフェ').checked).toBe(false)
+    })
+
+    it('チェックが1件でもあるときも、行の中のボタン(相手科目の選択欄など)は、チェックを切り替えず、その部品の操作に任せる', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(FOUR_ROWS)
+      fireEvent.click(box('スーパー'))
+      const row = box('ランチ').closest('tr') as HTMLElement
+      fireEvent.click(within(row).getByRole('button', { name: /^相手科目/ }))
+      expect(box('ランチ').checked).toBe(false)
+    })
+
     it('Ctrl を押さずに行の文字部分を押しても、チェックは変わらない', async () => {
       makeMapping()
       renderScreen()

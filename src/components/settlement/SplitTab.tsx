@@ -286,7 +286,7 @@ export function SplitTab({
               {shown.map((item) => {
                 const memo = item.entry.memo ?? ''
                 return (
-                  <tr key={item.entry.id} {...range.ctrlRowProps(item.entry.id)}>
+                  <tr key={item.entry.id} {...range.selectingRowProps(item.entry.id)}>
                     <td>
                       <input
                         type="checkbox"

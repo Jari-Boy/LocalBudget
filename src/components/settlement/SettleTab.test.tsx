@@ -588,6 +588,16 @@ describe('SettleTab: 候補の仕訳の範囲選択・Ctrl選択・Esc(計画Iss
     expect(candidateBoxes()[0].checked).toBe(false)
   })
 
+  it('チェックが1件でもあるときは、Ctrl を押さなくても、別の候補の行の文字部分を押すとチェックが切り替わる', () => {
+    setup()
+    fireEvent.click(candidateBoxes()[0])
+    const second = candidateBoxes()[1].closest('tr') as HTMLElement
+    fireEvent.click(second.querySelectorAll('td')[2])
+    expect(candidateBoxes()[1].checked).toBe(true)
+    fireEvent.click(second.querySelectorAll('td')[2])
+    expect(candidateBoxes()[1].checked).toBe(false)
+  })
+
   it('チェックにフォーカスして Shift+↓ を押すと、次の候補までが選ばれ、フォーカスが次のチェックへ移る', () => {
     setup()
     candidateBoxes()[0].focus()

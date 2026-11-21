@@ -479,7 +479,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
                       const memo = c.entry.memo ?? ''
                       const counter = c.entry.lines.find((l) => l.id !== c.lineId)
                       return (
-                        <tr key={c.lineId} {...rangeSelection.ctrlRowProps(c.lineId)}>
+                        <tr key={c.lineId} {...rangeSelection.selectingRowProps(c.lineId)}>
                           <td>
                             <input
                               type="checkbox"

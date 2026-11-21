@@ -255,7 +255,7 @@ describe('useRangeAnchor + createRangeSelection(早期 return のある画面)',
  * 行の中の押せる部品(ボタンなど)の動作より優先して行のチェックを切り替え、入力欄・ダイアログの中・チェックボックス自身は
  * それぞれの操作に任せること、ignore で押しても切り替えない部品を足せること、Ctrl なしの押下は何もしないことを検証する。
  */
-describe('useRangeSelection(Ctrl/Cmd+行のどこかを押す ctrlRowProps)', () => {
+describe('useRangeSelection(Ctrl/Cmd+行のどこかを押す selectingRowProps)', () => {
   function CtrlList({ onOpen, ignore }: { onOpen: (id: string) => void; ignore?: string }) {
     const [selected, setSelected] = useState<string[]>([])
     const range = useRangeSelection<string>({ order: IDS, selected, onChange: setSelected })
@@ -263,7 +263,7 @@ describe('useRangeSelection(Ctrl/Cmd+行のどこかを押す ctrlRowProps)', ()
       <div>
         <ul>
           {IDS.map((id) => (
-            <li key={id} data-testid={`row-${id}`} {...range.ctrlRowProps(id, ignore === undefined ? undefined : { ignore })}>
+            <li key={id} data-testid={`row-${id}`} {...range.selectingRowProps(id, ignore === undefined ? undefined : { ignore })}>
               <input type="checkbox" aria-label={id} checked={selected.includes(id)} {...range.checkboxProps(id)} />
               <button type="button" onClick={() => onOpen(id)}>
                 開く{id}
@@ -340,6 +340,98 @@ describe('useRangeSelection(Ctrl/Cmd+行のどこかを押す ctrlRowProps)', ()
     expect(onOpen).toHaveBeenCalledWith('a')
     expect(selection()).toBe('')
     fireEvent.click(screen.getByText('メモa'), { ctrlKey: true })
+    expect(selection()).toBe('a')
+  })
+})
+
+/**
+ * チェックが1件でも選ばれている間は、行のどこを押しても(行の中のボタンを含めて)チェックの操作になる(計画Issue #235 D の仕様)。
+ * 選択がないときは、行の中のボタンなどが従来どおり動く(Ctrl/Cmd を押したときだけは、選択がなくてもチェックの操作)。
+ */
+describe('useRangeSelection(1件でも選択中は行のどこを押してもチェックの操作 selectingRowProps)', () => {
+  function SelectingList({ onOpen, ignore }: { onOpen: (id: string) => void; ignore?: string }) {
+    const [selected, setSelected] = useState<string[]>([])
+    const range = useRangeSelection<string>({ order: IDS, selected, onChange: setSelected })
+    return (
+      <div>
+        <ul>
+          {IDS.map((id) => (
+            <li key={id} data-testid={`row-${id}`} {...range.selectingRowProps(id, ignore === undefined ? undefined : { ignore })}>
+              <input type="checkbox" aria-label={id} checked={selected.includes(id)} {...range.checkboxProps(id)} />
+              <button type="button" onClick={() => onOpen(id)}>
+                開く{id}
+              </button>
+              <span>メモ{id}</span>
+              <input type="text" aria-label={`入力${id}`} />
+              <div role="dialog" aria-label={`ダイアログ${id}`}>
+                <button type="button">ダイアログ内{id}</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <output aria-label="選択">{selected.join(',')}</output>
+      </div>
+    )
+  }
+
+  it('選択がないときは、行の文字部分を押してもチェックは変わらず、行のボタンは従来どおり動く', () => {
+    const onOpen = vi.fn()
+    render(<SelectingList onOpen={onOpen} />)
+    fireEvent.click(screen.getByText('メモa'))
+    fireEvent.click(screen.getByRole('button', { name: '開くb' }))
+    expect(selection()).toBe('')
+    expect(onOpen).toHaveBeenCalledWith('b')
+  })
+
+  it('1件選ばれているとき、別の行の文字部分を押すと、その行のチェックが切り替わる', () => {
+    render(<SelectingList onOpen={vi.fn()} />)
+    fireEvent.click(box('a'))
+    fireEvent.click(screen.getByText('メモc'))
+    expect(selection()).toBe('a,c')
+    fireEvent.click(screen.getByText('メモc'))
+    expect(selection()).toBe('a')
+  })
+
+  it('1件選ばれているとき、行の中のボタンを押すと、ボタンの動作は起きず、その行のチェックが切り替わる', () => {
+    const onOpen = vi.fn()
+    render(<SelectingList onOpen={onOpen} />)
+    fireEvent.click(box('a'))
+    fireEvent.click(screen.getByRole('button', { name: '開くd' }))
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(selection()).toBe('a,d')
+  })
+
+  it('1件選ばれているとき、Shift+行の文字部分を押すと、基点から押した行までが範囲選択される', () => {
+    render(<SelectingList onOpen={vi.fn()} />)
+    fireEvent.click(box('a'))
+    fireEvent.click(screen.getByText('メモc'), { shiftKey: true })
+    expect(selection()).toBe('a,b,c')
+  })
+
+  it('選択が空に戻ると、行のボタンは従来どおり動く', () => {
+    const onOpen = vi.fn()
+    render(<SelectingList onOpen={onOpen} />)
+    fireEvent.click(box('a'))
+    fireEvent.click(box('a'))
+    expect(selection()).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: '開くb' }))
+    expect(onOpen).toHaveBeenCalledWith('b')
+  })
+
+  it('選択中でも、入力欄・ダイアログの中を押したときは、行のチェックを切り替えない', () => {
+    render(<SelectingList onOpen={vi.fn()} />)
+    fireEvent.click(box('a'))
+    fireEvent.click(screen.getByLabelText('入力b'))
+    fireEvent.click(screen.getByRole('button', { name: 'ダイアログ内b' }))
+    expect(selection()).toBe('a')
+  })
+
+  it('選択中でも、ignore で指定した部品は、その部品の動作に任せる', () => {
+    const onOpen = vi.fn()
+    render(<SelectingList onOpen={onOpen} ignore="button" />)
+    fireEvent.click(box('a'))
+    fireEvent.click(screen.getByRole('button', { name: '開くc' }))
+    expect(onOpen).toHaveBeenCalledWith('c')
     expect(selection()).toBe('a')
   })
 })

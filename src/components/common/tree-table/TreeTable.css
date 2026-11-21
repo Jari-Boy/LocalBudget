@@ -107,6 +107,11 @@
   color: var(--color-text);
 }
 
+/* 名称の左に差し込まれた操作(お気に入りの★など)の包み。レイアウトには影響させない(押したときの除外の目印だけ) */
+.tree-table__leading {
+  display: contents;
+}
+
 .tree-table__link {
   padding: 0;
   border: 0;

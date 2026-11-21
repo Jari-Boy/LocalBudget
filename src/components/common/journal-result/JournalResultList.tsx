@@ -108,7 +108,7 @@ export function JournalResultList({
               key={item.id}
               className={checkable ? 'journal-result-list__item--checkable' : undefined}
               // Ctrl/Cmd を押したまま行のどこかを押すと、詳細表示の選択を変えずチェックの操作にする(checkable のときだけ。計画Issue #235 D)
-              {...(checkable ? range.ctrlRowProps(item.id) : {})}
+              {...(checkable ? range.selectingRowProps(item.id) : {})}
             >
               {checkable && (
                 <input
