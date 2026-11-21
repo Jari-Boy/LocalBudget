@@ -27,6 +27,7 @@ import { TreeTable } from '../common/tree-table/TreeTable'
 import {
   CATEGORY_ID_PREFIX,
   resolveTreeMove,
+  topLevelIds,
   type TreeTableNode,
 } from '../common/tree-table/treeTableModel'
 import { AccountCreateForm } from './AccountCreateForm'
@@ -249,6 +250,9 @@ export function AccountMasterTab({
 
   // 消えた行のチェックは捨てる
   const liveCheckedIds = checkedIds.filter((id) => tree.nodes.some((n) => n.id === id))
+  // 右パネルを一括操作パネルに切り替える条件は、チェックした「一番上の行」(グループと配下を同時にチェックしたときはグループ1件)が2件以上
+  // (グループのチェックは配下に連動するため、行の数ではなく一番上の行の数で数える。計画Issue #235 E)
+  const bulkCount = topLevelIds(tree.nodes, liveCheckedIds).length
   const searching = query.trim() !== ''
   const shownNodes = filterTreeNodes(tree.nodes, query)
   const selected = selectedId ? tree.nodes.find((n) => n.id === selectedId) : undefined
@@ -279,7 +283,7 @@ export function AccountMasterTab({
           selectedId={selectedId}
           onSelect={(id) => guarded(() => select(id))}
           // 2件以上のチェックは右パネルを一括操作パネルに差し替えるため、未保存の編集があれば確認を通す
-          onCheckedChange={(ids) => (ids.length >= 2 ? guarded(() => setCheckedIds(ids)) : setCheckedIds(ids))}
+          onCheckedChange={(ids) => (topLevelIds(tree.nodes, ids).length >= 2 ? guarded(() => setCheckedIds(ids)) : setCheckedIds(ids))}
           onMove={(next) => {
             setCheckedIds([])
             void applyMove(next)
@@ -336,7 +340,7 @@ export function AccountMasterTab({
         </p>
       )}
 
-      {liveCheckedIds.length >= 2 && (
+      {bulkCount >= 2 && (
         <BulkSelectionPanel
           nodes={tree.nodes}
           categories={tree.categories}
@@ -365,7 +369,7 @@ export function AccountMasterTab({
         </BulkSelectionPanel>
       )}
 
-      {liveCheckedIds.length < 2 && creating !== null && (
+      {bulkCount < 2 && creating !== null && (
         <AccountCreateForm
           key={creating}
           accountRepository={accountRepository}
@@ -384,7 +388,7 @@ export function AccountMasterTab({
         />
       )}
 
-      {liveCheckedIds.length < 2 && creating === null && selected && (
+      {bulkCount < 2 && creating === null && selected && (
         <EditPanel
           key={selected.id}
           node={selected}

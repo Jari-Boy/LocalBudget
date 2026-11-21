@@ -3,8 +3,11 @@ import { useTranslation } from 'react-i18next'
 import type { TreeTableMoveInfo } from '../common/tree-table/TreeTable'
 import {
   CATEGORY_ID_PREFIX,
+  countCheckedItems,
   moveScopeOf,
   resolveTreeMove,
+  topLevelIds,
+  withDescendants,
   type TreeTableCategory,
   type TreeTableNode,
 } from '../common/tree-table/treeTableModel'
@@ -44,21 +47,25 @@ export function BulkSelectionPanel({
   const { t } = useTranslation('master')
   const scope = moveScopeOf(nodes, checkedIds)
   const categoryName = scope === null ? '' : (categories.find((c) => c.key === scope.categoryKey)?.name ?? scope.categoryKey)
-  const names = checkedIds.map((id) => nodes.find((n) => n.id === id)?.name ?? '').join('、')
+  // グループのチェックは配下に連動するため、グループと配下が同時にチェックされる。名称・移動はグループ1件として扱い(配下は並べない)、
+  // 件数は葉の数で数える(計画Issue #235 E)
+  const topIds = topLevelIds(nodes, checkedIds)
+  const count = countCheckedItems(nodes, withDescendants(nodes, topIds))
+  const names = topIds.map((id) => nodes.find((n) => n.id === id)?.name ?? '').join('、')
 
   const moveTo = (targetId: string) => {
     if (targetId === '') return
-    const result = resolveTreeMove(nodes, checkedIds, { id: targetId, zone: 'inside' })
+    const result = resolveTreeMove(nodes, topIds, { id: targetId, zone: 'inside' })
     if (!result.ok) {
       onMoveRejected(result.reason)
       return
     }
-    onMove(result.nodes, { ids: checkedIds, targetId, zone: 'inside', expandId: result.expandId })
+    onMove(result.nodes, { ids: topIds, targetId, zone: 'inside', expandId: result.expandId })
   }
 
   return (
     <section className="master-panel" aria-label={t('bulk.region')}>
-      <h2 className="master-panel__title">{t('bulk.title', { count: checkedIds.length })}</h2>
+      <h2 className="master-panel__title">{t('bulk.title', { count })}</h2>
       <p className="master-note">{names}</p>
 
       <section className="master-subsection" aria-label={t('bulk.moveTitle')}>

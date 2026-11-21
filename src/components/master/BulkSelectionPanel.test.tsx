@@ -76,6 +76,31 @@ describe('BulkSelectionPanel', () => {
     expect(panel.getByText('misc、other')).toBeInTheDocument()
   })
 
+  it('グループと配下を同時にチェックしているときは、件数は葉の数で数え、名称にはグループだけを出す(配下は並べない)(計画Issue #235 E)', () => {
+    renderPanel(['food', 'eat-out', 'misc'])
+    const panel = within(screen.getByRole('region', { name: '一括操作' }))
+    expect(panel.getByText('2件を選択中')).toBeInTheDocument()
+    expect(panel.getByText('food、misc')).toBeInTheDocument()
+  })
+
+  it('配下がチェックに含まれていないグループでも、配下の葉を含めて件数を数える', () => {
+    renderPanel(['food', 'misc'])
+    const panel = within(screen.getByRole('region', { name: '一括操作' }))
+    expect(panel.getByText('2件を選択中')).toBeInTheDocument()
+    expect(panel.getByText('food、misc')).toBeInTheDocument()
+  })
+
+  it('グループと配下を同時にチェックして区分の最上位へ移すと、グループは配下ごと移り、通知する行はグループと別の行だけになる(計画Issue #235 E)', () => {
+    const { onMove } = renderPanel(['food', 'eat-out', 'misc'])
+    fireEvent.click(destination())
+    const dialog = within(screen.getByRole('dialog', { name: '移動先' }))
+    fireEvent.click(dialog.getByRole('button', { name: '費用の最上位' }))
+    expect(onMove).toHaveBeenCalledTimes(1)
+    const [next, info] = onMove.mock.calls[0] as [TreeTableNode[], { ids: string[] }]
+    expect(info.ids).toEqual(['food', 'misc'])
+    expect(new Map(next.map((n) => [n.id, n.parentId])).get('eat-out')).toBe('food')
+  })
+
   it('移動先には、同じ区分の最上位とグループが並び、移動する行とその配下は含まれない', () => {
     renderPanel(['food', 'misc'])
     fireEvent.click(destination())
