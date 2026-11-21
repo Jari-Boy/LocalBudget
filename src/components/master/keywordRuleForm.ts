@@ -25,7 +25,7 @@ export function validateKeywordRuleInput(params: {
   const otherTexts = params.siblings
     .filter((r) => r.counterpartyId === params.counterpartyId && r.accountId === params.accountId)
     .map((r) => r.pattern)
-  const keywordError = validateKeyword({ text: params.pattern, otherTexts, sourceDescription: null })
+  const keywordError = validateKeyword({ text: params.pattern, otherTexts })
   if (keywordError === 'empty') return 'empty'
   if (keywordError === 'duplicate') return 'duplicate'
   if (params.counterpartyId === null && params.accountId === null) return 'targetRequired'

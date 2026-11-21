@@ -98,7 +98,7 @@
   "patternAdd": "キーワードを追加",
   "patternErrorEmpty": "キーワードを入力してください。消す場合は削除を押してください",
   "patternErrorDuplicate": "同じキーワードがあります",
-  "patternErrorNotInDescription": "この文字列は摘要に含まれないため登録できません",
+  "patternWarnNoMatch": "現在の明細の摘要とはマッチしないキーワードです。",
   "defaultAccountNone": "指定なし",
   "groupUnclassified": "未分類",
   "createGroup": "グループを新規追加",

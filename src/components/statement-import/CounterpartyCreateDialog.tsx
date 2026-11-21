@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { EntityGroup } from '../common/entity-select/EntitySelect'
 import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
-import { countRowsContaining, validateKeyword } from './counterpartyKeywordModel'
+import { countRowsContaining, mostFrequentAccountId, validateKeyword } from './counterpartyKeywordModel'
 import { KeywordList, type KeywordListItem } from './KeywordList'
 import { QuickCreateDialog } from './QuickCreateDialog'
 
@@ -17,7 +17,7 @@ export interface CounterpartyCreateInput {
 }
 
 export interface CounterpartyCreateDialogProps {
-  /** ダイアログを開いた行の摘要。最初のキーワードの初期値になり、新しいキーワードはこの摘要に含まれる文字列に限る */
+  /** ダイアログを開いた行の摘要。取引先名と最初のキーワードの初期値になる(摘要に含まれないキーワードも登録できる。計画Issue #236) */
   rowDescription: string
   /** ダイアログを開いた行の相手科目(取引先を持てない科目なら未設定)。最初のキーワード(行の摘要)の科目の初期値になる */
   rowAccountId: number | null
@@ -69,7 +69,7 @@ export function CounterpartyCreateDialog(props: CounterpartyCreateDialogProps) {
   const setKeywordAccount = (key: string, accountId: number | null) =>
     setKeywords((prev) => prev.map((k) => (k.key === key ? { ...k, accountId } : k)))
 
-  // 入力前の空欄は無視する。それ以外の問題(重複・摘要に含まれない)はその場に出し、追加を止める
+  // 入力前の空欄は無視する。それ以外の問題(重複)はその場に出し、追加を止める。摘要にマッチしないものは注意だけで、止めない
   const items: KeywordListItem[] = keywords.map((keyword) => ({
     key: keyword.key,
     kind: 'new',
@@ -82,7 +82,6 @@ export function CounterpartyCreateDialog(props: CounterpartyCreateDialogProps) {
         : validateKeyword({
             text: keyword.text,
             otherTexts: keywords.filter((other) => other.key !== keyword.key).map((other) => other.text),
-            sourceDescription: rowDescription,
           }),
   }))
 
@@ -90,6 +89,7 @@ export function CounterpartyCreateDialog(props: CounterpartyCreateDialogProps) {
     <QuickCreateDialog
       title={t('createCounterpartyTitle')}
       nameLabel={t('createCounterpartyName')}
+      initialName={rowDescription.trim()}
       groupField={{ label: t('counterpartyGroupLabel'), groups, onCreate: onCreateGroup }}
       validate={() => items.every((item) => item.error === null)}
       onSubmit={(name, groupId) =>
@@ -110,7 +110,8 @@ export function CounterpartyCreateDialog(props: CounterpartyCreateDialogProps) {
         onCommit={() => undefined}
         onDelete={(key) => setKeywords((prev) => prev.filter((k) => k.key !== key))}
         onAdd={() => {
-          setKeywords((prev) => [...prev, { key: `k${nextKey}`, text: '', accountId: null }])
+          // 科目の初期値は、ダイアログ内のキーワードで最も多く使われている科目(同数なら指定なし。計画Issue #236)
+          setKeywords((prev) => [...prev, { key: `k${nextKey}`, text: '', accountId: mostFrequentAccountId(prev.map((k) => k.accountId)) }])
           setNextKey((n) => n + 1)
         }}
         // キーワードと科目のセットで入力する。科目の選択欄は行ごとに出し、末尾の「+ 科目を新規追加」で登録もできる

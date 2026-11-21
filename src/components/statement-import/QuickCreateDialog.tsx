@@ -23,6 +23,8 @@ export interface QuickCreateDialogProps {
   onCancel: () => void
   /** 渡すと、名前の下にグループの選択欄を出す(選ばなければ未分類) */
   groupField?: QuickCreateGroupField
+  /** 名前の入力欄の初期値(取込の取引先の追加では、開いた行の摘要。計画Issue #236)。編集できる */
+  initialName?: string
   /** グループの選択欄の下に足す欄(取込画面の取引先の追加のキーワードなど)。あるとダイアログを広げる */
   children?: ReactNode
   /** 追加を押したときの追加の検証。falseなら作らずに残る */
@@ -34,10 +36,10 @@ export interface QuickCreateDialogProps {
  * (計画Issue #151・#207)。科目の追加は登録フォーム(AccountCreateForm)を別に使う。
  * 入力欄・見出しは、ほかの項目と同じ見た目(import-control・import-field__label)にそろえる。
  */
-export function QuickCreateDialog({ title, nameLabel, onSubmit, onCancel, groupField, children, validate }: QuickCreateDialogProps) {
+export function QuickCreateDialog({ title, nameLabel, onSubmit, onCancel, groupField, children, validate, initialName }: QuickCreateDialogProps) {
   const { t } = useTranslation('statementImport')
   const nameId = useId()
-  const [name, setName] = useState('')
+  const [name, setName] = useState(initialName ?? '')
   const [groupId, setGroupId] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [failed, setFailed] = useState(false)

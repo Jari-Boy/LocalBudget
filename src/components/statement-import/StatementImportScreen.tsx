@@ -89,7 +89,7 @@ import { applyAccountKeywordsToRows } from './applyAccountKeywordsToRows'
 import { applyCounterpartySettingsToRows } from './applyCounterpartySettingsToRows'
 import { CounterpartyCreateDialog, type CounterpartyCreateInput } from './CounterpartyCreateDialog'
 import { formatDescriptionForDisplay } from '../../domain/statement-import/formatDescriptionForDisplay'
-import { countRowsContaining, matchesKeyword, validateKeyword, type KeywordError } from './counterpartyKeywordModel'
+import { countRowsContaining, matchesKeyword, mostFrequentAccountId, validateKeyword, type KeywordError } from './counterpartyKeywordModel'
 import type { KeywordListItem } from './KeywordList'
 import { mappingFormToInput } from '../master/mappingForm'
 import { QuickCreateDialog } from './QuickCreateDialog'
@@ -535,11 +535,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       key: string
       kind: 'registered' | 'new'
       text: string
-      sourceDescription: string | null
       accountId: number | null
       accountLocked?: boolean
     }[] = [
-      ...view.registered.map((r) => ({ key: r.key, kind: 'registered' as const, text: r.text, sourceDescription: null, accountId: r.accountId })),
+      ...view.registered.map((r) => ({ key: r.key, kind: 'registered' as const, text: r.text, accountId: r.accountId })),
       ...(suggestion === null
         ? []
         : [
@@ -547,14 +546,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               key: SUGGESTION_KEY,
               kind: 'new' as const,
               text: suggestion,
-              sourceDescription: description,
               // 摘要の提案の科目は、ダイアログで選ぶまでは、この行の相手科目(取引先を持てる科目のときだけ)。
               // 科目のキーワードの提案は、開いている科目に固定
               accountId: suggestionAccountId,
               accountLocked: accountKind,
             },
           ]),
-      ...view.typing.map((k) => ({ key: k.key, kind: 'new' as const, text: k.text, sourceDescription: description, accountId: k.accountId })),
+      ...view.typing.map((k) => ({ key: k.key, kind: 'new' as const, text: k.text, accountId: k.accountId })),
     ]
     return entries.map((entry) => ({
       key: entry.key,
@@ -570,7 +568,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           ? validateKeyword({
               text: entry.text,
               otherTexts: view.registered.map((r) => r.text),
-              sourceDescription: entry.sourceDescription,
             })
           : (view.errors[entry.key] ?? null),
     }))
@@ -650,7 +647,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   async function commitKeyword(key: string) {
     if (!settings || key === SUGGESTION_KEY || savingKeys.current.has(key)) return
     const view = settings
-    const description = records[view.index].record.description
     const registered = view.registered.find((r) => r.key === key)
     const typing = view.typing.find((k) => k.key === key)
     const text = registered?.text ?? typing?.text
@@ -665,7 +661,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     const error = validateKeyword({
       text,
       otherTexts: items.filter((item) => item.key !== key).map((item) => item.text),
-      sourceDescription: typing ? description : null,
     })
     if (error !== null) {
       withSettings((v) => ({ ...v, errors: { ...v.errors, [key]: error } }))
@@ -722,7 +717,15 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   function addKeyword() {
-    withSettings((view) => ({ ...view, typing: [...view.typing, { key: `t${view.nextKey}`, text: '', accountId: null }], nextKey: view.nextKey + 1 }))
+    withSettings((view) => {
+      // 取引先のキーワードの科目の初期値は、その取引先のキーワードで最も多く使われている科目(費用・収益のみ。同数なら指定なし。
+      // 計画Issue #236)。科目のキーワードは開いている科目に固定なので、ここでは決めない
+      const defaultAccountId =
+        view.counterpartyId === null
+          ? null
+          : mostFrequentAccountId([...view.registered, ...view.typing].map((k) => (k.accountId !== null && isPlAccountId(k.accountId) ? k.accountId : null)))
+      return { ...view, typing: [...view.typing, { key: `t${view.nextKey}`, text: '', accountId: defaultAccountId }], nextKey: view.nextKey + 1 }
+    })
   }
 
   /**
@@ -1500,7 +1503,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       const offered =
         (shouldOfferLearn(records[index], state) && state.counterpartyId !== null) || shouldOfferAccountLearn(records[index], state, accountList)
       if (!offered || !state.learnOn || state.learnPattern === null) return false
-      return validateKeyword({ text: state.learnPattern, otherTexts: [], sourceDescription: records[index].record.description }) !== null
+      return validateKeyword({ text: state.learnPattern, otherTexts: [] }) !== null
     })
     if (hasInvalidSuggestion) {
       setError(t('suggestionInvalidError'))
@@ -1566,7 +1569,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         // 摘要だけでは取引先が決まらなかった行(既定でオフ)や、消した提案は登録しない
         if (shouldOfferLearn(records[index], state) && state.counterpartyId !== null && state.learnOn) {
           const suggestion = (state.learnPattern ?? formatDescriptionForDisplay(record.description)).trim()
-          if (validateKeyword({ text: suggestion, otherTexts: [], sourceDescription: record.description }) === null) {
+          if (validateKeyword({ text: suggestion, otherTexts: [] }) === null) {
             try {
               // 取引先と、この行の相手科目(取引先を持てる科目のときだけ)を1つのルールにまとめて登録する
               await Promise.resolve(
@@ -1589,7 +1592,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         if (shouldOfferAccountLearn(records[index], state, accountList) && state.counterAccountId !== null && state.learnOn) {
           const suggestion = (state.learnPattern ?? formatDescriptionForDisplay(record.description)).trim()
           const keyword = keywordOf(suggestion)
-          if (validateKeyword({ text: suggestion, otherTexts: [], sourceDescription: record.description }) === null) {
+          if (validateKeyword({ text: suggestion, otherTexts: [] }) === null) {
             try {
               const existing = await Promise.resolve(keywordRuleRepository.findByAccount(state.counterAccountId))
               if (!existing.some((rule) => rule.pattern === keyword)) {
