@@ -121,7 +121,7 @@ describe('TreeTable(表示)', () => {
     const { onCheckedChange } = renderTable({ checkedIds: ['misc'] })
     expect(screen.getByRole('checkbox', { name: 'miscを選択' })).toBeChecked()
     fireEvent.click(screen.getByRole('checkbox', { name: 'eat-outを選択' }))
-    expect(onCheckedChange).toHaveBeenCalledWith(['misc', 'eat-out'])
+    expect(onCheckedChange).toHaveBeenCalledWith(['misc', 'eat-out', 'food'])
     fireEvent.click(screen.getByRole('checkbox', { name: 'miscを選択' }))
     expect(onCheckedChange).toHaveBeenLastCalledWith([])
   })

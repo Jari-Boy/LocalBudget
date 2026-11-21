@@ -67,6 +67,87 @@ function descendantIdsOf(nodes: readonly TreeTableNode[], id: string): string[] 
     .flatMap((n) => [n.id, ...descendantIdsOf(nodes, n.id)])
 }
 
+/**
+ * 選んだ行のうち、祖先(親・祖父母など)も選ばれている行を除き、一番上の行だけを返す(渡した順を保つ)。
+ * グループとその配下を同時に選んだとき、移動・件数・名称の表示ではグループだけを扱うために使う(計画Issue #235 E)
+ */
+export function topLevelIds(nodes: readonly TreeTableNode[], ids: readonly string[]): string[] {
+  const selected = new Set(ids)
+  const parentOf = new Map(nodes.map((n) => [n.id, n.parentId]))
+  return ids.filter((id) => {
+    let parent = parentOf.get(id) ?? null
+    while (parent !== null) {
+      if (selected.has(parent)) return false
+      parent = parentOf.get(parent) ?? null
+    }
+    return true
+  })
+}
+
+/** 選んだ行に、配下(入れ子を含む)をすべて加えて返す(重複なし)。移す葉の件数を数えるときなどに使う(計画Issue #235 E) */
+export function withDescendants(nodes: readonly TreeTableNode[], ids: readonly string[]): string[] {
+  return [...new Set(ids.flatMap((id) => [id, ...descendantIdsOf(nodes, id)]))]
+}
+
+function depthOf(nodes: readonly TreeTableNode[], id: string): number {
+  const parentOf = new Map(nodes.map((n) => [n.id, n.parentId]))
+  let depth = 0
+  let parent = parentOf.get(id) ?? null
+  while (parent !== null) {
+    depth += 1
+    parent = parentOf.get(parent) ?? null
+  }
+  return depth
+}
+
+/**
+ * チェックが変わったとき、グループのチェックを配下に連動させる(計画Issue #235 E)。前のチェック(prevIds)と変わった後の
+ * チェック(nextIds)を比べ、加わったグループは配下(入れ子を含む。折りたたみで隠れた行も)すべてにチェックを付け、
+ * 外れたグループは配下すべてのチェックを外す。そのうえで、配下を持つグループは「配下がすべてチェック済みのときだけ」
+ * チェックが付いた状態にそろえる(配下の一部を外せばグループも外れ、配下がすべてそろえばグループにも付く)。
+ * 配下を持たないグループは、そのままの状態を保つ。渡した配列は書き換えない。
+ */
+export function reconcileTreeChecked(
+  nodes: readonly TreeTableNode[],
+  prevIds: readonly string[],
+  nextIds: readonly string[],
+): string[] {
+  const prev = new Set(prevIds)
+  const next = new Set(nextIds)
+  const result = new Set(nextIds)
+  const kindOf = new Map(nodes.map((n) => [n.id, n.kind]))
+
+  for (const id of nextIds) {
+    if (!prev.has(id) && kindOf.get(id) === 'group') for (const d of descendantIdsOf(nodes, id)) result.add(d)
+  }
+  for (const id of prevIds) {
+    if (!next.has(id) && kindOf.get(id) === 'group') for (const d of descendantIdsOf(nodes, id)) result.delete(d)
+  }
+
+  // 配下を持つグループは、深いものから順に、配下がすべてチェック済みのときだけチェックを付ける
+  const groups = nodes
+    .filter((n) => n.kind === 'group' && descendantIdsOf(nodes, n.id).length > 0)
+    .sort((a, b) => depthOf(nodes, b.id) - depthOf(nodes, a.id))
+  for (const group of groups) {
+    if (descendantIdsOf(nodes, group.id).every((d) => result.has(d))) result.add(group.id)
+    else result.delete(group.id)
+  }
+  return [...result]
+}
+
+/**
+ * チェックした件数: チェックした葉の数(グループ自身は数えない)。配下を持たないグループは1件として数える。
+ * 一括操作パネルの「N件」やドラッグ中の「N件を移動」に使う(計画Issue #235 E)
+ */
+export function countCheckedItems(nodes: readonly TreeTableNode[], ids: readonly string[]): number {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  return ids.filter((id) => {
+    const found = byId.get(id)
+    if (found === undefined) return false
+    return found.kind === 'leaf' || descendantIdsOf(nodes, id).length === 0
+  }).length
+}
+
 function leafCountOf(nodes: readonly TreeTableNode[], id: string): number {
   const byId = new Map(nodes.map((n) => [n.id, n]))
   return descendantIdsOf(nodes, id).filter((d) => byId.get(d)?.kind === 'leaf').length
@@ -120,9 +201,12 @@ export function dropZoneFor(isGroup: boolean, ratio: number): DropZone {
  */
 export function resolveTreeMove(
   nodes: readonly TreeTableNode[],
-  ids: readonly string[],
+  requestedIds: readonly string[],
   target: MoveTarget,
 ): MoveResult {
+  // グループとその配下を同時に選んだとき(グループのチェックは配下に連動する)は、一番上の行だけを移す。
+  // 配下はグループの中に残り、グループと一緒に移る(計画Issue #235 E)
+  const ids = topLevelIds(nodes, requestedIds)
   const toCategory = target.id.startsWith(CATEGORY_ID_PREFIX)
   const targetNode = toCategory ? undefined : nodes.find((n) => n.id === target.id)
   if (!toCategory && !targetNode) return { ok: false, reason: REASON_INTO_SELF }

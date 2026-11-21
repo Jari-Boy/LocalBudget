@@ -4,6 +4,7 @@ import { useRangeSelection } from '../range-selection/useRangeSelection'
 import {
   buildTreeTableRows,
   CATEGORY_ID_PREFIX,
+  reconcileTreeChecked,
   type TreeTableCategory,
   type TreeTableNode,
 } from './treeTableModel'
@@ -16,6 +17,12 @@ export type TreeTableMoveInfo = TreeMoveInfo
 export interface TreeTableProps {
   categories: readonly TreeTableCategory[]
   nodes: readonly TreeTableNode[]
+  /**
+   * グループのチェックを配下に連動させる計算(reconcileTreeChecked)に使うノード。既定は nodes。検索などで nodes を絞り込んで
+   * 渡す画面は、絞り込み前の全ノードを渡す(絞り込みで隠れている配下も、グループのチェックに連動させ、グループのチェックが
+   * 「配下すべてがチェック済み」の意味を保つため。計画Issue #235 E)。範囲選択と「すべて選択」は、表示中の行が対象のまま
+   */
+  cascadeNodes?: readonly TreeTableNode[]
   /** 「名称」の右に並べる列の見出し。各ノードのcellsと同じ順 */
   columns: readonly string[]
   checkedIds: readonly string[]
@@ -58,6 +65,7 @@ export interface TreeTableProps {
 export function TreeTable({
   categories,
   nodes,
+  cascadeNodes,
   columns,
   checkedIds,
   selectedId,
@@ -74,7 +82,7 @@ export function TreeTable({
   renderLeafLeading,
 }: TreeTableProps) {
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(new Set())
-  const { dragOver, endDrag, handleDragStart, handleNodeDragOver, handleCategoryDragOver, handleDrop } = useTreeDrag({
+  const { dragOver, dimmedIds, endDrag, handleDragStart, handleNodeDragOver, handleCategoryDragOver, handleDrop } = useTreeDrag({
     nodes,
     checkedIds,
     onMove,
@@ -96,12 +104,15 @@ export function TreeTable({
   /** ヘッダーの「すべて選択」と範囲選択の対象: 表示中(折りたたみで隠れていない)の全行 */
   const visibleIds = rows.flatMap((row) => (row.type === 'node' ? [row.node.id] : []))
   // 行のチェックの Shift+クリック(範囲選択)・Ctrl/Cmd+クリック(トグル)・Shift+↑↓(計画Issue #235 D)。範囲は表示中の行だけ
-  const range = useRangeSelection<string>({ order: visibleIds, selected: checkedIds, onChange: onCheckedChange })
+  // チェックの変更は、グループのチェックを配下に連動させてから親へ渡す(計画Issue #235 E)。グループにチェックを付けると配下
+  // (折りたたみで隠れた行も)すべてに付き、配下の一部を外すとグループも外れ、配下がすべてそろえばグループにも付く
+  const changeChecked = (next: readonly string[]) => onCheckedChange(reconcileTreeChecked(cascadeNodes ?? nodes, checkedIds, next))
+  const range = useRangeSelection<string>({ order: visibleIds, selected: checkedIds, onChange: changeChecked })
   // Esc でチェックをすべて外す(計画Issue #235 D)
   useEscapeToClear(checkedIds.length > 0 ? () => onCheckedChange([]) : null)
   const checkedVisibleCount = visibleIds.filter((id) => checkedIds.includes(id)).length
   const allChecked = visibleIds.length > 0 && checkedVisibleCount === visibleIds.length
-  const toggleAll = () => onCheckedChange(allChecked ? [] : visibleIds)
+  const toggleAll = () => changeChecked(allChecked ? [] : visibleIds)
 
   /** 列見出し。sortを渡したときだけ押せるボタンにし、並び替え中の列に小さい▲▼を付ける */
   const renderHeader = (column: 'name' | number, label: string) => {
@@ -171,7 +182,7 @@ export function TreeTable({
               <tr
                 key={node.id}
                 draggable={draggable}
-                className={`tree-table__row${isSelected ? ' tree-table__row--selected' : ''}`}
+                className={`tree-table__row${isSelected ? ' tree-table__row--selected' : ''}${dimmedIds?.includes(node.id) ? ' tree-table__row--dragging' : ''}`}
                 aria-current={isSelected ? 'true' : undefined}
                 // チェックが1件でもあるとき(と Ctrl/Cmd を押したとき)は、行のどこを押しても、右パネルを開かずチェックの操作にする。
                 // 行の操作である開閉ボタンと、名称の左に差し込まれた操作(お気に入りの★など)は除く(計画Issue #235 D)

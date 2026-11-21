@@ -477,3 +477,10 @@
 **原因**: `keydown`はフォーカスのある要素から画面全体へ伝わるため、押された時点の対象要素を見ないと、要素自身が扱うべきキーと区別できない。
 **対策**: 画面全体のキー操作は、押された対象を`src/components/common/keyboardTarget.ts`で判定して除外する。`isTextEntryTarget`(テキスト系のinput・textarea・select・contenteditable。チェックボックス・ボタンは文字を入力しないので含めない)、`ownsEscapeKey`(上に加え、`role="dialog"`・`aria-modal`の中)。処理中は無効にする。Shift+↑↓など、入力欄の中で意味を持つキーを足すときも同じ判定を使い、画面ごとに判定を書かない。Escで選択を全解除する操作は、この判定を内包した共通フック`useEscapeToClear`(`src/components/common/range-selection/`)を使い、画面ごとに`keydown`を書かない。また、選択中は行のどこを押してもチェックの操作にしたい画面で、行の中のボタン(開閉・詳細を開くなど)の動作と競合する場合は、行に`selectingRowProps`を付ける(キャプチャ段階で止める。入力欄・ダイアログ・チェック自身は除外済みで、画面固有の除外は`ignore`で足す)。ボタン側の`onClick`に選択中かの分岐を書かない。
 **該当箇所(例)**: `src/components/common/keyboardTarget.ts`、`src/components/common/range-selection/`、`src/components/journal-entry/JournalScreen.tsx`、`docs/decisions.md`「複数選択に範囲選択を共通部品で導入し、各画面に適用する」、`docs/decisions.md`「仕訳一覧で、一括編集の行を選択中は行のどこを押してもチェックを切り替える」
+
+## 検索で絞り込んだノードだけを渡すと、グループのチェックの連動など木全体にまたがる計算が崩れる(計画Issue #235)
+
+**症状**: ツリー表を検索で絞り込んでいる間にグループへチェックを付けると、絞り込みで隠れている配下にチェックが付かない。また、配下が一部しか見えていないグループが「全部チェック済み」と誤判定されて、グループのチェックが付いたままになる。
+**原因**: 連動の計算(`reconcileTreeChecked`)を、表示用に絞り込んだ後のノードだけで行っていた。連動は木全体の親子関係に依存するが、絞り込み後の木には隠れた子孫が無い。
+**対策**: 表示用のノードと、木全体にまたがる計算用のノードを分けて渡す。`TreeTable`は表示するノードとは別に`cascadeNodes`(絞り込み前の全ノード)を受け取り、連動はこちらで計算する。一方、範囲選択と「すべて選択」の対象は、見えている行だけのままにする(見えない行を選ばせない)。絞り込みなどでノードを加工して渡す部品に、木全体の整合を要する機能を足すときは、全ノードを別に渡せるようにする。
+**該当箇所(例)**: `src/components/common/tree-table/`の`TreeTable`(`cascadeNodes`)、`AccountMasterTab`・`GroupedMasterTab`、`docs/decisions.md`「ツリー表でグループのチェックを配下に連動させ、チェックした複数の行をまとめてドラッグ移動できるようにする」

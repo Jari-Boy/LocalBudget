@@ -73,6 +73,25 @@
   background: var(--color-accent-soft);
 }
 
+/* ドラッグ中、移す行(グループなら配下も)を薄くする(計画Issue #235 E) */
+.tree-table__row--dragging {
+  opacity: 0.45;
+}
+
+/* 複数の行を移すときに、ドラッグ中に指に付く「N件を移動」の表示。ドラッグ画像として画面の外に一時的に置く */
+.tree-table__drag-badge {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: #ffffff;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .tree-table__check {
   width: 28px;
   padding-right: 0;

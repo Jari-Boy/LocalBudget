@@ -671,6 +671,44 @@ describe('AccountMasterTab', () => {
       expect(screen.getByRole('region', { name: '科目の編集' })).toBeInTheDocument()
     })
 
+    it('グループを1つだけチェックすると、配下の科目にもチェックが連動するが、右パネルは一括操作パネルに切り替わらない(計画Issue #235 E)', async () => {
+      const group = groups.create({ name: '交通', category: 'expense' })
+      accounts.create({ category: 'expense', name: 'バス代', isReconcilable: null, accountGroupId: group.id })
+      accounts.create({ category: 'expense', name: '電車賃', isReconcilable: null, accountGroupId: group.id })
+      renderTab()
+      await open('交通')
+      expect(screen.getByRole('region', { name: 'グループの編集' })).toBeInTheDocument()
+
+      check('交通')
+
+      expect((screen.getByRole('checkbox', { name: 'バス代を選択' }) as HTMLInputElement).checked).toBe(true)
+      expect((screen.getByRole('checkbox', { name: '電車賃を選択' }) as HTMLInputElement).checked).toBe(true)
+      expect(screen.queryByRole('region', { name: '一括操作' })).not.toBeInTheDocument()
+      expect(screen.getByRole('region', { name: 'グループの編集' })).toBeInTheDocument()
+    })
+
+    it('グループと別の科目をチェックすると一括操作パネルが出て、件数は科目の数(グループの配下を含む)で数え、まとめて別のグループへ移せる(計画Issue #235 E)', async () => {
+      const traffic = groups.create({ name: '交通', category: 'expense' })
+      const target = groups.create({ name: '生活', category: 'expense' })
+      const bus = accounts.create({ category: 'expense', name: 'バス代', isReconcilable: null, accountGroupId: traffic.id })
+      const train = accounts.create({ category: 'expense', name: '電車賃', isReconcilable: null, accountGroupId: traffic.id })
+      const food = accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+      renderTab()
+      await screen.findByRole('button', { name: '食費' })
+
+      check('交通')
+      check('食費')
+
+      expect(screen.getByText('3件を選択中')).toBeInTheDocument()
+      chooseGroup('移動先', '生活')
+
+      await waitFor(() => expect(accounts.findById(food.id)!.accountGroupId).toBe(target.id))
+      // 交通グループは配下の科目ごと「生活」の中へ移り、配下の科目は交通グループに残る
+      expect(groups.findById(traffic.id)!.parentGroupId).toBe(target.id)
+      expect(accounts.findById(bus.id)!.accountGroupId).toBe(traffic.id)
+      expect(accounts.findById(train.id)!.accountGroupId).toBe(traffic.id)
+    })
+
     it('一括操作パネルの「グループへ移動」で、チェックした科目がまとめてグループに入る', async () => {
       const group = groups.create({ name: '交通', category: 'expense' })
       const bus = accounts.create({ category: 'expense', name: 'バス代', isReconcilable: null })

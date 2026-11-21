@@ -9,7 +9,7 @@ import { TreeTable } from '../common/tree-table/TreeTable'
 import { TreeSearchInput } from '../common/tree-table/TreeSearchInput'
 import { filterTreeNodes } from '../common/tree-table/filterTreeNodes'
 import { BulkSelectionPanel } from './BulkSelectionPanel'
-import { CATEGORY_ID_PREFIX, resolveTreeMove, type TreeTableNode } from '../common/tree-table/treeTableModel'
+import { CATEGORY_ID_PREFIX, resolveTreeMove, topLevelIds, type TreeTableNode } from '../common/tree-table/treeTableModel'
 import { GroupNodeSelect } from './GroupNodeSelect'
 import { groupNodeId, leafNodeId, parseNodeId, type MasterTreeData } from './masterTreeNodes'
 import './master.css'
@@ -112,6 +112,9 @@ export function GroupedMasterTab({
 
   // 統合・削除などで消えた行のチェックは捨てる
   const liveCheckedIds = checkedIds.filter((id) => tree.nodes.some((n) => n.id === id))
+  // 右パネルを一括操作パネルに切り替える条件は、チェックした「一番上の行」(グループと配下を同時にチェックしたときはグループ1件)が2件以上
+  // (グループのチェックは配下に連動するため、行の数ではなく一番上の行の数で数える。計画Issue #235 E)
+  const bulkCount = topLevelIds(tree.nodes, liveCheckedIds).length
   const searching = query.trim() !== ''
   const shownNodes = filterTreeNodes(tree.nodes, query)
   const categoryKey = tree.categories[0].key
@@ -208,13 +211,15 @@ export function GroupedMasterTab({
           <TreeTable
             categories={tree.categories}
             nodes={shownNodes}
+            // 検索で絞り込んでいても、グループのチェックは絞り込み前の全ノードで配下に連動させる(計画Issue #235 E)
+            cascadeNodes={tree.nodes}
             columns={columns}
             draggable={!searching}
             checkedIds={liveCheckedIds}
             selectedId={selectedId}
             onSelect={(id) => guarded(() => select(id))}
             // 2件以上のチェックは右パネルを一括操作パネルに差し替えるため、未保存の編集があれば確認を通す
-            onCheckedChange={(ids) => (ids.length >= 2 ? guarded(() => setCheckedIds(ids)) : setCheckedIds(ids))}
+            onCheckedChange={(ids) => (topLevelIds(tree.nodes, ids).length >= 2 ? guarded(() => setCheckedIds(ids)) : setCheckedIds(ids))}
             onMove={(next) => {
               setCheckedIds([])
               void applyMove(next)
@@ -241,7 +246,7 @@ export function GroupedMasterTab({
         </p>
       )}
 
-      {liveCheckedIds.length >= 2 && (
+      {bulkCount >= 2 && (
         <BulkSelectionPanel
           nodes={tree.nodes}
           categories={tree.categories}
@@ -261,7 +266,7 @@ export function GroupedMasterTab({
         </BulkSelectionPanel>
       )}
 
-      {liveCheckedIds.length < 2 && selected && (
+      {bulkCount < 2 && selected && (
         <NodePanel
           key={selected.id}
           node={selected}
