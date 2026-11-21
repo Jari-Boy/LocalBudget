@@ -201,6 +201,37 @@ describe('StatementImportScreen', () => {
     expect(row.getByText('新規')).toBeInTheDocument()
   })
 
+  it('摘要に複数のキーワードが別々の取引先で一致したら、自動では入れず、取引先欄の先頭に一致した候補を並べる(計画Issue #236)', async () => {
+    makeMapping()
+    const metro = counterparties.create({ name: '東京メトロ' })
+    const jr = counterparties.create({ name: 'ジェイアール東日本' })
+    // どちらも3文字のキーワードで、使用件数も同じなので、名前の五十音順(ジェイアール東日本 → 東京メトロ)に並ぶ
+    keywordRules.create({ pattern: 'スイカ', counterpartyId: metro.id })
+    keywordRules.create({ pattern: 'ジエイ', counterpartyId: jr.id })
+    counterparties.create({ name: '関係のない店' })
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,ジェイアール スイカ チャージ,-3000,97000
+`)
+
+    const row = rowOf(/スイカ チャージ/)
+    expect(await row.findByText('候補2件から選択')).toBeInTheDocument()
+    expect(row.getByRole('button', { name: /^取引先: 指定なし|^取引先: 取引先なし/ })).toBeInTheDocument()
+    fireEvent.click(row.getByRole('button', { name: /^取引先/ }))
+    const popup = within(screen.getByRole('dialog', { name: '取引先' }))
+    expect(popup.getByText('この摘要に一致した候補')).toBeInTheDocument()
+    const names = popup.getAllByRole('button').map((b) => b.textContent)
+    const firstJr = names.indexOf('ジェイアール東日本')
+    const firstMetro = names.indexOf('東京メトロ')
+    expect(firstJr).toBeGreaterThanOrEqual(0)
+    expect(firstJr).toBeLessThan(firstMetro)
+    // 候補の下に、標準のマスタ表示(関係のない店も含む)が続く
+    expect(popup.getByRole('button', { name: '関係のない店' })).toBeInTheDocument()
+    // 候補を選ぶと、その取引先が入る
+    fireEvent.click(popup.getAllByRole('button', { name: '東京メトロ' })[0])
+    expect(row.getByRole('button', { name: /^取引先: 東京メトロ/ })).toBeInTheDocument()
+  })
+
   it('キーワードに科目が無ければ、取引先だけが入り、相手科目は空のまま(取引先から科目を補わない。計画Issue #219)', async () => {
     makeMapping()
     const cp = counterparties.create({ name: 'セブン' })

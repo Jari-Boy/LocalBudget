@@ -49,6 +49,7 @@
   "noBatch": "精算バッチなし",
   "memberNone": "なし",
   "noteCandidates": "候補{{count}}件から選択",
+  "candidatesPinnedLabel": "この摘要に一致した候補",
   "rowBatch": "{{desc}}の精算バッチ",
   "rowMember": "{{desc}}の世帯メンバー",
   "rowComment": "{{desc}}のコメント",

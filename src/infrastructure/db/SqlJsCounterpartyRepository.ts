@@ -75,6 +75,13 @@ export class SqlJsCounterpartyRepository implements CounterpartyRepository {
     return result ? result.values.map((row) => row[0] as number) : []
   }
 
+  countJournalLinesByCounterparty(): { counterpartyId: number; count: number }[] {
+    const [result] = this.db.exec(
+      'SELECT counterparty_id, COUNT(*) FROM journal_lines WHERE counterparty_id IS NOT NULL GROUP BY counterparty_id ORDER BY counterparty_id',
+    )
+    return result ? result.values.map((row) => ({ counterpartyId: row[0] as number, count: row[1] as number })) : []
+  }
+
   setFavorite(id: number, isFavorite: boolean): void {
     this.db.run('UPDATE counterparties SET is_favorite = ? WHERE id = ?', [isFavorite ? 1 : 0, id])
   }

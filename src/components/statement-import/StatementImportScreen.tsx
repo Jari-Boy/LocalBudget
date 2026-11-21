@@ -34,6 +34,7 @@ import { collectUnreferencedTransactions } from '../../domain/statement-import/c
 import type { ApproximateDuplicateSearchOptions } from '../../domain/statement-import/duplicateDetection'
 import { normalizeDescriptionForMatching } from '../../domain/statement-import/estimateCounterparty'
 import { estimateKeywordRule, type KeywordRuleLookup } from '../../domain/statement-import/estimateKeywordRule'
+import { rankCounterpartyCandidates } from '../../domain/statement-import/rankCounterpartyCandidates'
 import type { KeywordRule } from '../../domain/keyword-rule/KeywordRule'
 import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
 import { resolveMultiFileMappingCandidates, type MultiFileMappingMatch } from '../../domain/statement-import/resolveMultiFileMappingCandidates'
@@ -118,13 +119,10 @@ export interface StatementImportScreenProps {
   journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'delete'>>
   /** 科目の登録フォームで最初の残高を記録する先(計画Issue #205)。省略時は最初の残高の欄を出さない */
   accountBalanceRecordRepository?: MaybeAsync<Pick<AccountBalanceRecordRepository, 'create'>>
-  counterpartyRepository: MaybeAsync<
-    Pick<
-      CounterpartyRepository,
-      | 'findAll'
-      | 'create'
-    >
-  >
+  counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll' | 'create'>> & {
+    /** 摘要に複数のキーワードが一致した行の取引先の候補を並べるときの「過去の使用件数」(計画Issue #236)。渡さなければ使用件数は0として並べる */
+    countJournalLinesByCounterparty?: () => ReturnType<CounterpartyRepository['countJournalLinesByCounterparty']> | Promise<ReturnType<CounterpartyRepository['countJournalLinesByCounterparty']>>
+  }
   /** 摘要のキーワードルール(計画Issue #219)。取引先・相手科目の推定と、確定時の科目ルールの学習に使う */
   keywordRuleRepository: MaybeAsync<
     Pick<KeywordRuleRepository, 'findMatching' | 'findByAccount' | 'findByCounterparty' | 'create' | 'update' | 'delete'>
@@ -858,18 +856,27 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       ),
     )
     const ruleLookup: KeywordRuleLookup = { findMatching: (text) => rulesByText.get(text) ?? [] }
+    // 取引先の候補が複数ある行があるときだけ、候補の並びに使う使用件数と名前を用意する(計画Issue #236)
+    const hasMultipleCandidates = [...rulesByText.values()].some(
+      (rules) => new Set(rules.flatMap((rule) => (rule.counterpartyId === null ? [] : [rule.counterpartyId]))).size > 1,
+    )
+    const usageByCounterparty = new Map<number, number>(
+      hasMultipleCandidates
+        ? (await Promise.resolve(counterpartyRepository.countJournalLinesByCounterparty?.() ?? [])).map((u) => [u.counterpartyId, u.count] as const)
+        : [],
+    )
+    const counterpartyNames = new Map((data?.counterparties ?? []).map((c) => [c.id, c.name] as const))
     return review.records.map((r) => {
       const estimate = estimateKeywordRule(r.record.description, ruleLookup)
       const counterpartyId = estimate.counterpartyId
       // 相手科目は、ルールが科目を持てばその科目、なければ取引先の既定の科目(docs/domain/statement-import.md 1.5)
       const counterAccountId = estimate.accountId
-      const candidates = [
-        ...new Set(
-          (rulesByText.get(normalizeDescriptionForMatching(r.record.description)) ?? []).flatMap((rule) =>
-            rule.counterpartyId === null ? [] : [rule.counterpartyId],
-          ),
-        ),
-      ]
+      // 候補は、一致したキーワードが長い順 → 過去の使用件数が多い順 → 名前の五十音順に並べる(選ぶのは利用者。自動では割り当てない)
+      const candidates = rankCounterpartyCandidates({
+        rules: rulesByText.get(normalizeDescriptionForMatching(r.record.description)) ?? [],
+        usageCountOf: (id) => usageByCounterparty.get(id) ?? 0,
+        nameOf: (id) => counterpartyNames.get(id) ?? '',
+      })
       return createInitialRowState({
         counterpartyId: resolveEligibleCounterpartyId(counterpartyId, counterAccountId, accounts),
         counterAccountId,
@@ -2301,6 +2308,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                     label={t('counterpartyLabel')}
                                     disabled={isSkipped}
                                     categories={categories.counterparties}
+                                    // 摘要に複数のキーワードが一致して決まらなかった行は、一致した取引先を先頭に出す(計画Issue #236)
+                                    pinnedValues={
+                                      state.counterpartyId === null && state.candidateCounterpartyIds.length > 1
+                                        ? state.candidateCounterpartyIds.map(String)
+                                        : undefined
+                                    }
+                                    pinnedLabel={t('candidatesPinnedLabel')}
                                     favoriteKind="counterparty"
                                     value={treeValue(state.counterpartyId)}
                                     emptyLabel={t('noCounterpartyOption')}
