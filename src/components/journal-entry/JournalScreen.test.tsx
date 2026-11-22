@@ -9,9 +9,10 @@
  * 承認待ちの定期仕訳タブの摘要・コメントの編集と保存、土日の調整後の日付と金額の初期値の表示、一覧に科目を出さないこと、
  * 複数の提案のまとめて確定(チェックの連動・すべて選択・起票者の一括指定・confirmManyの呼び出し)も検証する。
  * 未保存の警告を出さない設定(計画Issue #190)のときは、仕訳の切り替えも画面外への移動もリロードも確認を出さないことも検証する。
- * 仕訳一覧の分割表示(計画Issue #253)として、1ページ分(200件)ずつの描画と「さらに表示」、絞り込み後の全体件数の表示、
+ * 仕訳一覧の分割表示(計画Issue #253)として、1ページ分(JOURNAL_LIST_PAGE_SIZE)ずつの描画と「さらに表示」、絞り込み後の全体件数の表示、
  * 絞り込み条件の変更での先頭への復帰、選択中の仕訳が表示範囲の外にならないこと、明細行単位でも同じ分割になること、
- * 見出しのチェックが表示中の行だけを選ぶことも検証する。
+ * 見出しのチェックが表示中の行だけを選ぶこと、2ページ目の行での行クリック・範囲選択、表示から外れた行のチェックが落ちること、
+ * 表示中の最後の仕訳を削除したときの次の選択も検証する。
  * 外部依存はインメモリの偽Repository(vi.fn)で置き換える。
  */
 import '@testing-library/jest-dom/vitest'
@@ -2184,7 +2185,69 @@ describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
     localStorage.setItem('localbudget:journal-view-mode', 'line')
     setup({ entries: makeManyEntries(LINE_PAGE + 50) })
     await screen.findByText(`${LINE_PAGE} / ${LINE_PAGE + 50}件を表示中`)
-    fireEvent.click(screen.getAllByRole('checkbox')[0]!)
+    fireEvent.click(screen.getByRole('checkbox', { name: '借方の行をすべて選択' }))
     expect(screen.getByText(new RegExp(`${LINE_PAGE}行を選択中`))).toBeInTheDocument()
+  })
+
+  it('表示中の最後の仕訳を削除すると、まだ表示していない仕訳へは飛ばず、表示中の直前の仕訳を選ぶ', async () => {
+    const props = setup({ entries: makeManyEntries(PAGE + 50) })
+    await screen.findByText('仕訳1')
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`仕訳${PAGE}(?!\\d)`) }))
+    fireEvent.click(within(detail()).getByRole('button', { name: 'この仕訳を削除' }))
+    fireEvent.click(within(detail()).getByRole('button', { name: '本当に削除する' }))
+    await waitFor(() => expect(props.journalEntryRepository.delete).toHaveBeenCalledWith(PAGE))
+    await waitFor(() => expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue(`仕訳${PAGE - 1}`))
+  })
+
+  describe('明細行単位で「さらに表示」した後の一括編集の選択', () => {
+    const debitBoxes = () => screen.getAllByRole('checkbox', { name: '借方の行を選択' })
+    const selectedCount = (n: number) => screen.queryByText(new RegExp(`(^|\\D)${n}行を選択中`))
+
+    async function openSecondPage() {
+      localStorage.setItem('localbudget:journal-view-mode', 'line')
+      setup({ entries: makeManyEntries(LINE_PAGE + 50) })
+      await screen.findByText(`${LINE_PAGE} / ${LINE_PAGE + 50}件を表示中`)
+      fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+      expect(debitBoxes()).toHaveLength(LINE_PAGE + 50)
+    }
+
+    it('2ページ目の行をチェックし、Shift+クリックで範囲選択でき、1ページ目の行は選ばれない', async () => {
+      await openSecondPage()
+      fireEvent.click(debitBoxes()[LINE_PAGE + 9])
+      expect(selectedCount(1)).toBeInTheDocument()
+      fireEvent.click(debitBoxes()[LINE_PAGE + 12], { shiftKey: true })
+      expect(selectedCount(4)).toBeInTheDocument()
+      expect(debitBoxes()[0]).not.toBeChecked()
+      expect(debitBoxes()[LINE_PAGE + 10]).toBeChecked()
+    })
+
+    it('選択中に、2ページ目の行の左側(摘要など)を押すと、その仕訳の行のチェックを切り替える', async () => {
+      await openSecondPage()
+      fireEvent.click(debitBoxes()[LINE_PAGE + 9])
+      const row = screen.getByText(`仕訳${LINE_PAGE + 20}`).closest('tr')!
+      fireEvent.click(within(row).getByText(`仕訳${LINE_PAGE + 20}`))
+      // 最初に選んだ1行 + 押した仕訳の借方・貸方の2行
+      expect(selectedCount(3)).toBeInTheDocument()
+      expect(within(row).getByRole('checkbox', { name: '借方の行を選択' })).toBeChecked()
+      expect(within(row).getByRole('checkbox', { name: '貸方の行を選択' })).toBeChecked()
+    })
+
+    it('絞り込み条件を変えて表示から外れた行のチェックは外れ、「さらに表示」で再び見えてもチェックは戻らない', async () => {
+      await openSecondPage()
+      fireEvent.click(debitBoxes()[LINE_PAGE + 5])
+      expect(selectedCount(1)).toBeInTheDocument()
+      fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '仕訳' } })
+      fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+      expect(debitBoxes()[LINE_PAGE + 5]).not.toBeChecked()
+      expect(screen.queryByText(/行を選択中/)).not.toBeInTheDocument()
+    })
+
+    it('絞り込み後も表示中の行のチェックは保たれる', async () => {
+      await openSecondPage()
+      fireEvent.click(debitBoxes()[2])
+      fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '仕訳' } })
+      expect(debitBoxes()[2]).toBeChecked()
+      expect(selectedCount(1)).toBeInTheDocument()
+    })
   })
 })

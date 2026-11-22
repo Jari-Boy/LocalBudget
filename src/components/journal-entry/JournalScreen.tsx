@@ -409,6 +409,21 @@ export function JournalScreen(props: JournalScreenProps) {
   )
   const visibleEntries = useMemo(() => matchedEntries.slice(0, shownCount), [matchedEntries, shownCount])
 
+  /**
+   * 一括編集のチェックは、表示中の行だけを対象にする(見えない行を更新してしまわないため)。絞り込みや表示件数の
+   * 先頭への復帰で表示から外れた行のチェックは落とす。残しておくと、「さらに表示」で再び見えたときに
+   * 黙ってチェック済みに戻ってしまう(計画Issue #253)。
+   */
+  const visibleLineIds = useMemo(
+    () => new Set(visibleEntries.flatMap((e) => e.lines.map((l) => l.id))),
+    [visibleEntries],
+  )
+  useEffect(() => {
+    if (!bulkLineIds.some((id) => !visibleLineIds.has(id))) return
+    setBulkLineIds(bulkLineIds.filter((id) => visibleLineIds.has(id)))
+    setBulkConfirming(false)
+  }, [bulkLineIds, visibleLineIds])
+
   /** 絞り込み条件を変える。増やした表示件数は先頭の1ページ分に戻す */
   const changeFilter = (next: JournalEntryFilter) => {
     setFilter(next)
