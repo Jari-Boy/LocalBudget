@@ -254,77 +254,6 @@
   align-items: center;
 }
 
-/* 一覧の3グループ(重複・似た取引あり・問題なし)の見出し行(計画Issue #219 の続き) */
-.import-group td {
-  padding: 0;
-  background: var(--color-field-subtle);
-  border-top: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-}
-
-/* 見出し全体が開閉のボタン(計画Issue #231 フェーズ1)。ボタンの見た目は消して、見出し行の見た目のままにする */
-.import-group__head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  align-items: center;
-  box-sizing: border-box;
-  width: 100%;
-  padding: 10px 8px;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.import-group__head:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
-}
-
-.import-group__chevron {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: var(--color-text-muted);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-/* 未確認の行数(相手科目が決まっていない行)。折りたたみ中も見えて、確認漏れに気づける。文字色はステータスの「要確認」と同じ */
-.import-group__unchecked {
-  padding: 0 8px;
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  color: #8a4b00;
-  border: 1px solid #e3c9a3;
-  border-radius: 10px;
-  background: #fff7e8;
-}
-
-.import-group__title {
-  font-size: var(--font-size-base);
-  font-weight: 600;
-}
-
-.import-group__count {
-  padding: 0 8px;
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background: var(--color-surface);
-}
-
-.import-group__note {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
-}
-
 /* 似た取引がある行と、その下の確認(警告)の行は、まとめて薄い黄色にして、どの行の確認かを分かるようにする */
 .import-row--similar td,
 .import-sub--similar td {
@@ -1061,4 +990,162 @@
   background: var(--color-warning-soft);
   color: var(--color-warning-strong);
   font-size: var(--font-size-sm);
+}
+
+/* 一覧のタブ(計画Issue #263): 下線だけの軽いタブ。隣り合うタブの間に細い縦線。確認が必要なタブには枠線つきの札、確認不要のタブは灰色 */
+.import-tabarea {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.import-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.import-tab {
+  position: relative;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: -1px;
+  padding: 12px 10px 11px;
+  font: inherit;
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.import-tab + .import-tab::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: 50%;
+  width: 1px;
+  height: 20px;
+  margin-top: -10px;
+  background: var(--color-border-strong);
+}
+
+.import-tab--muted {
+  color: var(--color-text-muted);
+}
+
+.import-tab:hover {
+  color: var(--color-text);
+}
+
+.import-tab:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-md);
+}
+
+.import-tab[aria-selected='true'] {
+  color: var(--color-text);
+  font-weight: 600;
+  border-bottom-color: var(--color-accent);
+}
+
+.import-tab__count {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+.import-tab__state {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 1px 9px 1px 7px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+.import-tab__state::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.import-tab__state--todo,
+.import-tab__state--warning {
+  color: var(--color-warning-strong);
+  background: var(--color-warning-soft);
+  border-color: var(--color-warning-line);
+}
+
+.import-tab__state--error {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+}
+
+.import-tabpanel {
+  min-width: 0;
+}
+
+/* ページ送り: 各タブの表の下。表の枠の中に、上の罫線で区切って置く */
+.import-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.import-pager__range {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.import-pager__nav {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.import-pager__btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.import-pager__btn[aria-current='page'] {
+  color: #fff;
+  font-weight: 600;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.import-pager__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.import-pager__gap {
+  color: var(--color-text-muted);
 }

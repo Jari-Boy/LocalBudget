@@ -7,6 +7,9 @@
 import type { StatementImportReviewRecord } from '../../domain/statement-import/buildStatementImportReview'
 import { rowGroup, rowStatus, type ImportRowState } from './importRowModel'
 
+/** タブの内容(tabpanel)のid。タブの aria-controls と、内容側の id で共有する */
+export const importTabPanelId = (key: ImportTabKey) => `import-tabpanel-${key}`
+
 /** 行のあるタブ。「取り込まない行」のタブは行の一覧ではないので、ここには含めない */
 export type RowTab = 'new' | 'duplicate'
 
@@ -35,6 +38,24 @@ export function tabOfRow(record: RowRecord, state: ImportRowState): RowTab {
  */
 export function newTabRank(record: RowRecord): 0 | 1 {
   return rowGroup(record) === 'similar' ? 0 : 1
+}
+
+/**
+ * 行の番号をタブに振り分け、タブの中の並びを決める。「新規」は似た取引の行(newTabRank=0)が先頭で、
+ * 同じ優先度の中は`compare`(並び替えの比較。同じなら取り込んだ順)で並べる。「重複」は`compare`だけで並べる。
+ * indicesには、確定済みを除いた表示対象の行の番号を渡す。
+ */
+export function buildTabIndices(
+  indices: readonly number[],
+  records: readonly RowRecord[],
+  rows: readonly ImportRowState[],
+  compare: (a: number, b: number) => number,
+): Record<RowTab, number[]> {
+  const tabs: Record<RowTab, number[]> = { new: [], duplicate: [] }
+  for (const i of indices) tabs[tabOfRow(records[i], rows[i])].push(i)
+  tabs.new.sort((a, b) => newTabRank(records[a]) - newTabRank(records[b]) || compare(a, b))
+  tabs.duplicate.sort(compare)
+  return tabs
 }
 
 /** ページ番号を1〜ページ数の範囲に収める。ページ数が0のときは1 */

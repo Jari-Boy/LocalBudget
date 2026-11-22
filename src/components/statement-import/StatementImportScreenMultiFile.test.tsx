@@ -106,6 +106,8 @@ async function chooseCsvs(files: Array<{ name: string; body: string }>, waitFor?
   }
 }
 
+/** 一覧のタブ(新規・重複・取り込まない行、計画Issue #263)を開く */
+const openTab = (name: string) => fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${name}`) }))
 const rowsOf = (text: string | RegExp) => screen.getAllByRole('row', { name: text }).map((r) => within(r))
 const rowOf = (text: string | RegExp) => rowsOf(text)[0]
 const pick = (scope: ReturnType<typeof within>, label: string, item: string) => {
@@ -125,8 +127,14 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     const dates = within(screen.getByRole('table', { name: '明細の一覧' }))
       .getAllByText(/^2025\/\d\d\/\d\d$/)
       .map((cell) => cell.textContent)
-    // 重複の行(nov.csvのAmazon)が先頭のグループに出て、そのあと問題なしの行が日付順に並ぶ
-    expect(dates).toEqual(['2025/10/26', '2025/10/03', '2025/10/26', '2025/11/03'])
+    // 「新規」タブには、重複を除いた行が日付順に並ぶ(重複の行は「重複」タブ)
+    expect(dates).toEqual(['2025/10/03', '2025/10/26', '2025/11/03'])
+    openTab('重複')
+    expect(
+      within(screen.getByRole('table', { name: '明細の一覧' }))
+        .getAllByText(/^2025\/\d\d\/\d\d$/)
+        .map((cell) => cell.textContent),
+    ).toEqual(['2025/10/26'])
   })
 
   it('一覧の左端に「ファイル」列が出て、各行の取込元のファイル名が分かる', async () => {
@@ -173,9 +181,11 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
 
     await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
 
-    const [duplicate, original] = rowsOf(/Amazon/)
+    const original = rowOf(/Amazon/)
     expect(original.getByText('oct.csv')).toBeInTheDocument()
     expect(original.queryByText('重複・除外')).not.toBeInTheDocument()
+    openTab('重複')
+    const duplicate = rowOf(/Amazon/)
     expect(duplicate.getByText('nov.csv')).toBeInTheDocument()
     expect(duplicate.getByText('ファイル「oct.csv」の同じ明細と重複のため対象外です')).toBeInTheDocument()
     expect(duplicate.getByText('重複・除外')).toBeInTheDocument()
@@ -185,59 +195,19 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
   it('重複行の「重複元の行へ移動」で重複元の行へスクロールして強調し、重複元の行からも重複した行へ移れる', async () => {
     renderScreen()
     await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
-    const [duplicate, original] = rowsOf(/Amazon/)
+    openTab('重複')
 
-    fireEvent.click(duplicate.getByRole('button', { name: '重複元の行へ移動' }))
+    fireEvent.click(rowOf(/Amazon/).getByRole('button', { name: '重複元の行へ移動' }))
 
+    // 重複元の行は「新規」タブにある。タブを切り替えて開き、その行へスクロールして強調する
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
-    expect(screen.getAllByRole('row', { name: /Amazon/ })[1]).toHaveClass('import-row--flash')
+    expect(screen.getByRole('tab', { name: /^新規/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('row', { name: /Amazon/ })).toHaveClass('import-row--flash')
 
-    fireEvent.click(original.getByRole('button', { name: '重複した行へ移動' }))
+    fireEvent.click(rowOf(/Amazon/).getByRole('button', { name: '重複した行へ移動' }))
 
-    expect(screen.getAllByRole('row', { name: /Amazon/ })[0]).toHaveClass('import-row--flash')
-  })
-
-  describe('グループの折りたたみ(計画Issue #231 フェーズ1)', () => {
-    const groupToggle = (title: string) => screen.getByRole('button', { name: new RegExp(`^${title}\\s*\\d+件`) })
-
-    it('重複元の行のグループが折りたたまれていると、「重複元の行へ移動」で自動で開いてから強調する', async () => {
-      renderScreen()
-      await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
-      fireEvent.click(groupToggle('問題なし'))
-      expect(screen.getAllByRole('row', { name: /Amazon/ })).toHaveLength(1)
-
-      fireEvent.click(rowOf(/Amazon/).getByRole('button', { name: '重複元の行へ移動' }))
-
-      expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'true')
-      const rows = screen.getAllByRole('row', { name: /Amazon/ })
-      expect(rows).toHaveLength(2)
-      expect(rows[1]).toHaveClass('import-row--flash')
-      expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
-    })
-
-    it('重複した行のグループが折りたたまれていると、「重複した行へ移動」で自動で開いてから強調する', async () => {
-      renderScreen()
-      await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
-      const original = rowsOf(/Amazon/)[1]
-      fireEvent.click(groupToggle('重複'))
-      expect(screen.getAllByRole('row', { name: /Amazon/ })).toHaveLength(1)
-
-      fireEvent.click(original.getByRole('button', { name: '重複した行へ移動' }))
-
-      expect(groupToggle('重複')).toHaveAttribute('aria-expanded', 'true')
-      expect(screen.getAllByRole('row', { name: /Amazon/ })[0]).toHaveClass('import-row--flash')
-    })
-
-    it('取り込むファイルのチェックを切り替えて一覧を作り直しても、折りたたみの状態は保たれる', async () => {
-      renderScreen()
-      await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
-      fireEvent.click(groupToggle('問題なし'))
-
-      fireEvent.click(screen.getByRole('checkbox', { name: 'nov.csvを取り込む' }))
-
-      await screen.findByText(/oct\.csv を読み込み済み/)
-      expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'false')
-    })
+    expect(screen.getByRole('tab', { name: /^重複/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('row', { name: /Amazon/ })).toHaveClass('import-row--flash')
   })
 
   describe('ヘッダーでの並び替え(計画Issue #231 フェーズ2)', () => {
@@ -266,7 +236,9 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     it('完全重複の行は入力済みの色にならず、「取り込む」に戻して相手科目を決めると入力済みの色になる', async () => {
       renderScreen()
       await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
-      const duplicateRow = () => screen.getAllByRole('row', { name: /Amazon/ })[0]
+      openTab('重複')
+      // 「取り込む」を選ぶと、行は「新規」タブへ移る。そこでは、nov.csvの行が重複していた行
+      const duplicateRow = () => screen.getAllByRole('row', { name: /Amazon/ }).find((r) => within(r).queryByText('nov.csv'))!
       expect(duplicateRow()).not.toHaveClass('import-row--done')
       expect(duplicateRow()).toHaveClass('import-row--dup')
 
@@ -284,18 +256,19 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
       fireEvent.click(sortButton('日付'))
       fireEvent.click(sortButton('日付'))
       expect(header('日付')).toHaveAttribute('aria-sort', 'descending')
-      const convenience = screen.getAllByRole('row', { name: /コンビニ/ })[0]
-      const original = screen.getAllByRole('row', { name: /Amazon/ })[1]
+      const convenience = screen.getByRole('row', { name: /コンビニ/ })
+      const original = screen.getByRole('row', { name: /Amazon/ })
       expect(isBefore(original, convenience)).toBe(true)
 
-      fireEvent.click(within(screen.getAllByRole('row', { name: /Amazon/ })[0]).getByRole('button', { name: '重複元の行へ移動' }))
+      openTab('重複')
+      fireEvent.click(within(screen.getByRole('row', { name: /Amazon/ })).getByRole('button', { name: '重複元の行へ移動' }))
 
       // 重複元はoct.csvのAmazonの行(nov.csvの重複した行ではない)
       const flashed = screen.getAllByRole('row', { name: /Amazon/ }).filter((r) => r.classList.contains('import-row--flash'))
       expect(flashed).toHaveLength(1)
       expect(within(flashed[0]).getByText('oct.csv')).toBeInTheDocument()
 
-      fireEvent.click(within(screen.getAllByRole('row', { name: /Amazon/ })[1]).getByRole('button', { name: '重複した行へ移動' }))
+      fireEvent.click(within(screen.getByRole('row', { name: /Amazon/ })).getByRole('button', { name: '重複した行へ移動' }))
 
       const flashedBack = screen.getAllByRole('row', { name: /Amazon/ }).filter((r) => r.classList.contains('import-row--flash'))
       expect(flashedBack).toHaveLength(1)
@@ -313,20 +286,26 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     renderScreen()
     await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
 
-    fireEvent.click(rowsOf(/Amazon/)[0].getByRole('button', { name: '取り込む' }))
+    openTab('重複')
 
-    expect(rowsOf(/Amazon/)[0].getByLabelText('Amazonのコメント')).toBeInTheDocument()
+    fireEvent.click(rowOf(/Amazon/).getByRole('button', { name: '取り込む' }))
+
+    // 取り込むと、行は「新規」タブへ移り、重複していたnov.csvの行にも入力欄が出る
+    const novRow = rowsOf(/Amazon/).find((r) => r.queryByText('nov.csv'))!
+    expect(novRow.getByLabelText('Amazonのコメント')).toBeInTheDocument()
   })
 
   it('「取り込む」を押した重複行は、「取り込まない」を押すと重複(対象外)の行に戻り、確定の件数からも外れる', async () => {
     renderScreen()
     await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
-    fireEvent.click(rowsOf(/Amazon/)[0].getByRole('button', { name: '取り込む' }))
+    openTab('重複')
+    fireEvent.click(rowOf(/Amazon/).getByRole('button', { name: '取り込む' }))
     expect(screen.getByRole('button', { name: /^\d+ \/ 4 件を「普通預金」に確定$/ })).toBeInTheDocument()
 
-    fireEvent.click(rowsOf(/Amazon/)[0].getByRole('button', { name: '取り込まない' }))
+    fireEvent.click(rowsOf(/Amazon/).find((r) => r.queryByText('nov.csv'))!.getByRole('button', { name: '取り込まない' }))
 
-    const duplicate = rowsOf(/Amazon/)[0]
+    openTab('重複')
+    const duplicate = rowOf(/Amazon/)
     expect(duplicate.getByText('ファイル「oct.csv」の同じ明細と重複のため対象外です')).toBeInTheDocument()
     expect(duplicate.queryByRole('button', { name: '取り込まない' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ })).toBeInTheDocument()
@@ -348,7 +327,7 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
     renderScreen()
     await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
     for (const text of [/コンビニ/, /書店/]) pick(rowOf(text), '相手科目', '食費')
-    pick(rowsOf(/Amazon/)[1], '相手科目', '食費')
+    pick(rowOf(/Amazon/), '相手科目', '食費')
 
     fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
 
@@ -359,7 +338,8 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
   it('ファイル間の重複行を「取り込む」にして確定しても、外部取引IDが衝突せずに確定できる', async () => {
     renderScreen()
     await chooseCsvs([OCT, NOV], /2ファイルを読み込み済み/)
-    fireEvent.click(rowsOf(/Amazon/)[0].getByRole('button', { name: '取り込む' }))
+    openTab('重複')
+    fireEvent.click(rowOf(/Amazon/).getByRole('button', { name: '取り込む' }))
     for (const text of [/コンビニ/, /書店/]) pick(rowOf(text), '相手科目', '食費')
     pick(rowsOf(/Amazon/)[0], '相手科目', '食費')
     pick(rowsOf(/Amazon/)[1], '相手科目', '食費')
@@ -379,6 +359,7 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
 
     await chooseCsvs([SEP, OCT], /2ファイルを読み込み済み/)
 
+    openTab('重複')
     const row = rowOf(/Spotify/)
     expect(row.getByText('取り込み済みのため対象外です')).toBeInTheDocument()
     fireEvent.click(row.getByText('取り込み済みの仕訳を見る'))
@@ -391,6 +372,7 @@ describe('StatementImportScreen: 複数CSVの一括取込', () => {
 
     await chooseCsvs([withNote, NOV], /2ファイルを読み込み済み/)
 
+    openTab('取り込まない行')
     const panel = within(screen.getByRole('region', { name: '取り込まない行(1件)' }))
     expect(panel.getByText('oct.csv ・ 4行目')).toBeInTheDocument()
   })

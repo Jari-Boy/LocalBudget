@@ -154,6 +154,8 @@ async function openCounterpartySettings(desc: string) {
   await screen.findByRole('dialog', { name: /^取引先「.*」のキーワード$/ })
 }
 const settings = () => within(screen.getByRole('dialog', { name: /^取引先「.*」のキーワード$/ }))
+/** 一覧のタブ(新規・重複・取り込まない行、計画Issue #263)を開く */
+const openTab = (name: string) => fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${name}`) }))
 const confirmButton = (count: number) => screen.getByRole('button', { name: new RegExp(`^\\d+ / ${count} 件を「普通預金」に確定$`) })
 
 /** ダイアログの金融機関名欄で「新しい金融機関名を入力…」を選び、名前を入力する */
@@ -338,6 +340,8 @@ describe('StatementImportScreen', () => {
 
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
 
+    // 重複の行は「重複」タブにある(計画Issue #263)
+    fireEvent.click(await screen.findByRole('tab', { name: /^重複/ }))
     const row = rowOf(/スーパー/)
     expect(await row.findByText('取り込み済みのため対象外です')).toBeInTheDocument()
     expect(row.queryByRole('checkbox')).not.toBeInTheDocument()
@@ -346,8 +350,11 @@ describe('StatementImportScreen', () => {
 
     fireEvent.click(row.getByRole('button', { name: '取り込む' }))
 
+    // 取り込むと、行は「新規」タブへ移り、そのタブが開いて行を見失わない
+    expect(screen.getByRole('tab', { name: /^新規/ })).toHaveAttribute('aria-selected', 'true')
     expect(rowOf(/スーパー/).getByLabelText('スーパーのコメント')).toBeInTheDocument()
     expect(rowOf(/スーパー/).getByText('要確認')).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: /^重複/ })).not.toBeInTheDocument()
   })
 
   it('一括設定のバナー: コメントのボタンは「コメントを適用」で、「選択を解除」は右端に寄せ、ほかの入力・ボタンと同じ高さの部品を使う', async () => {
@@ -926,6 +933,43 @@ describe('StatementImportScreen', () => {
       expect(notice).toHaveClass('import-remaining')
     })
 
+    it('確定できなかった行があるときは、「新規」タブの札に赤の「要対応」が出て、別のタブにいても案内のリンクで、その行へ移れる', async () => {
+      makeMapping()
+      const manual = (entryDate: string, amount: number, memo: string) =>
+        entries.create({
+          householdMemberId: memberId,
+          entryDate,
+          memo,
+          sourceType: 'manual',
+          lines: [
+            { householdMemberId: memberId, accountId: food.id, side: 'debit', amount },
+            { householdMemberId: memberId, accountId: bank.id, side: 'credit', amount },
+          ],
+        })
+      renderScreen()
+      // スーパーを先に確定しておき、同じ行を取り込み直して「重複」タブに出す。コーヒーは似た取引が2件ある
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
+      await screen.findByText(/確定しました/)
+      manual('2026-10-04', 480, '近い方')
+      manual('2026-10-03', 490, '遠い方')
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/05,コーヒー,-480,96520\n`)
+      pick(rowOf(/コーヒー/), '相手科目', '食費')
+      fireEvent.click(await screen.findByRole('radio', { name: '同じ取引なので、登録済みを削除して置き換える' }))
+      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
+
+      await screen.findByText(/確定できなかった行が1件あります/)
+      expect(within(screen.getByRole('tab', { name: /^新規/ })).getByText('要対応 1')).toHaveClass('import-tab__state--error')
+
+      openTab('重複')
+      expect(screen.queryByText(/削除する登録済みの仕訳が未選択です/)).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '新規のタブへ' }))
+
+      expect(screen.getByRole('tab', { name: /^新規/ })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByText(/削除する登録済みの仕訳が未選択です/)).toBeInTheDocument()
+    })
+
     it('入力済みの行が1件も無いときは、確定せず、確定できる行が無いことと未入力の件数を案内する', async () => {
       makeMapping()
       renderScreen()
@@ -1015,22 +1059,21 @@ describe('StatementImportScreen', () => {
       expect(screen.getByRole('button', { name: /^\d+ \/ 2 件を「普通預金」に確定$/ })).toBeInTheDocument()
     })
 
-    it('一覧は「似た取引あり」→「問題なし」の順にグループ分けして並べ、見出しに件数を出す', async () => {
+    it('「新規」タブの一覧では、似た取引がある行を先頭に寄せて、同じ一覧の中に並べ、タブの札に似た取引の件数を出す(計画Issue #263)', async () => {
       makeMapping()
       manualEntry('2026-10-06', 800, 'ランチ')
       renderScreen()
-      // CSVでは問題なしの行(スーパー)が先、似た取引がある行(ランチ)が後
+      // CSVでは似た取引がない行(スーパー)が先、似た取引がある行(ランチ)が後
       await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
 2026/10/06,ランチ,-800,96200
 `)
 
-      const similar = await screen.findByText('似た取引あり')
-      const clean = screen.getByText('問題なし')
-      expect(similar.compareDocumentPosition(clean) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      const lunch = screen.getAllByRole('row', { name: /ランチ/ })[0]
+      const lunch = (await screen.findAllByRole('row', { name: /ランチ/ }))[0]
       const supermarket = screen.getAllByRole('row', { name: /スーパー/ })[0]
       expect(lunch.compareDocumentPosition(supermarket) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      expect(screen.getAllByText('1件')).toHaveLength(2)
+      const tab = screen.getByRole('tab', { name: /^新規/ })
+      expect(within(tab).getByText('似た取引 1')).toBeInTheDocument()
+      expect(within(tab).getByText('未入力 2')).toBeInTheDocument()
       expect(screen.getByText(/似た取引あり 1 件/)).toBeInTheDocument()
     })
 
@@ -1126,7 +1169,7 @@ describe('StatementImportScreen', () => {
 2026/10/06,コーヒー,-480,100
 `)
 
-      await screen.findByText('似た取引あり')
+      await screen.findAllByText('似た取引が登録済みです。二重ではありませんか?')
 
       expect(screen.getAllByText('似た取引が登録済みです。二重ではありませんか?')).toHaveLength(1)
     })
@@ -1235,6 +1278,7 @@ describe('StatementImportScreen', () => {
         await screen.findByText(/確定しました/)
 
         await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+        openTab('重複')
 
         expect(await rowOf(/スーパー/).findByText('取り込み済みのため対象外です')).toBeInTheDocument()
         expect(rowOf(/スーパー/).queryByRole('button', { name: /のキーワード$/ })).not.toBeInTheDocument()
@@ -2401,11 +2445,14 @@ describe('StatementImportScreen', () => {
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n,為替レート 1ドル=150円,,\n`)
 
     expect(rowOf(/スーパー/).getByText('2026/10/05')).toBeInTheDocument()
+    // 読めない行は、3つ目の「取り込まない行」タブに出る(計画Issue #263)
+    fireEvent.click(await screen.findByRole('tab', { name: /^取り込まない行/ }))
     const skipped = within(await screen.findByRole('region', { name: '取り込まない行(1件)' }))
     expect(skipped.getByText(/3行目/)).toBeInTheDocument()
     expect(skipped.getByText(/為替レート 1ドル=150円/)).toBeInTheDocument()
     expect(skipped.getByText(/日付を読み取れません/)).toBeInTheDocument()
 
+    openTab('新規')
     pick(rowOf(/スーパー/), '相手科目', '食費')
     fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
     await screen.findByText(/確定しました/)
@@ -2418,9 +2465,12 @@ describe('StatementImportScreen', () => {
 
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n,補足1,,\n,補足2,,\n`)
 
+    // 警告は、タブの札と、「取り込まない行」タブの先頭に出る(計画Issue #263)
+    expect(await screen.findByText('要確認', { selector: '.import-tab__state' })).toBeInTheDocument()
+    expect(rowOf(/スーパー/).getByText('2026/10/05')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: /^取り込まない行/ }))
     const skipped = within(await screen.findByRole('region', { name: '取り込まない行(2件)' }))
     expect(skipped.getByText(/読み取れない行の方が多いです/)).toBeInTheDocument()
-    expect(rowOf(/スーパー/).getByText('2026/10/05')).toBeInTheDocument()
   })
 
   it('読み取れない行が少ないときは、警告は出さない', async () => {
@@ -2429,8 +2479,10 @@ describe('StatementImportScreen', () => {
 
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,ランチ,-800,96200\n,補足,,\n`)
 
+    fireEvent.click(await screen.findByRole('tab', { name: /^取り込まない行/ }))
     const skipped = within(await screen.findByRole('region', { name: '取り込まない行(1件)' }))
     expect(skipped.queryByText(/読み取れない行の方が多いです/)).not.toBeInTheDocument()
+    expect(screen.queryByText('要確認', { selector: '.import-tab__state' })).not.toBeInTheDocument()
   })
 
   it('定義の作成ダイアログは、読み取れない行の方が多くても読める行が1行あれば保存でき、警告を出す(計画Issue #151)', async () => {
@@ -2503,7 +2555,7 @@ describe('StatementImportScreen', () => {
     expect(onEditMappings).toHaveBeenCalledTimes(1)
   })
 
-  describe('一覧のグループごとの折りたたみ(計画Issue #231 フェーズ1)', () => {
+  describe('一覧のタブとページ送り(計画Issue #263)', () => {
     /** ランチ(10/06・800円)に似た取引ができるよう、手入力の仕訳を1件作る */
     function manualLunch() {
       return entries.create({
@@ -2517,200 +2569,158 @@ describe('StatementImportScreen', () => {
         ],
       })
     }
-    /** 問題なし2件(スーパー・家賃)、似た取引あり1件(ランチ) */
+    /** ふつうの行2件(スーパー・家賃)、似た取引がある行1件(ランチ) */
     const CSV = `${HEADER}2026/10/05,スーパー,-3000,97000
 2026/10/06,ランチ,-800,96200
 2026/10/07,家賃,-50000,46200
 `
-    /** グループ見出しの開閉ボタン(見出し全体が1つのボタン) */
-    const groupToggle = (title: string) => screen.getByRole('button', { name: new RegExp(`^${title}\\s*\\d+件`) })
+    /** n行のCSV(1ページ分の件数を超える行数で、ページ送りを確かめる)。摘要は「店001」「店002」… */
+    const manyRows = (n: number) =>
+      HEADER + Array.from({ length: n }, (_, i) => `2026/10/05,店${String(i + 1).padStart(3, '0')},-100,100`).join('\n') + '\n'
+    const tab = (name: string) => screen.getByRole('tab', { name: new RegExp(`^${name}`) })
 
-    it('初期表示ではすべてのグループが開いていて、見出しは開閉できるボタンで状態が伝わる', async () => {
+    it('初期表示は「新規」タブが開いていて、件数と状態の札(似た取引・未入力)が出る。行のないタブは出さない', async () => {
       makeMapping()
       manualLunch()
       renderScreen()
       await chooseCsv(CSV)
 
-      expect(groupToggle('似た取引あり')).toHaveAttribute('aria-expanded', 'true')
-      expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'true')
+      expect(tab('新規')).toHaveAttribute('aria-selected', 'true')
+      expect(within(tab('新規')).getByText('3')).toBeInTheDocument()
+      expect(within(tab('新規')).getByText('似た取引 1')).toBeInTheDocument()
+      expect(within(tab('新規')).getByText('未入力 3')).toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: /^重複/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: /^取り込まない行/ })).not.toBeInTheDocument()
       expect(screen.getAllByRole('row', { name: /スーパー/ }).length).toBeGreaterThan(0)
       expect(screen.getAllByRole('row', { name: /ランチ/ }).length).toBeGreaterThan(0)
     })
 
-    it('見出しを押すとそのグループの行が描画されなくなり、もう一度押すと戻る。件数は折りたたみ中も見出しに残る', async () => {
+    it('入力すると「未入力」の札の件数が減り、すべて入力すると札が消える', async () => {
       makeMapping()
-      manualLunch()
       renderScreen()
-      await chooseCsv(CSV)
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/07,家賃,-50000,47000\n`)
+      expect(within(tab('新規')).getByText('未入力 2')).toBeInTheDocument()
 
-      fireEvent.click(groupToggle('問題なし'))
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+      expect(within(tab('新規')).getByText('未入力 1')).toBeInTheDocument()
 
-      expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'false')
+      pick(rowOf(/家賃/), '相手科目', '食費')
+      expect(within(tab('新規')).queryByText(/未入力/)).not.toBeInTheDocument()
+    })
+
+    it('重複の行は「重複」タブに分かれ、タブを切り替えると表示する行が入れ替わる。重複のタブは折りたたまず、普通に開く', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
+      await screen.findByText(/確定しました/)
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/07,家賃,-50000,47000\n`)
+
+      expect(await screen.findByRole('tab', { name: /^重複/ })).toHaveAttribute('aria-selected', 'false')
       expect(screen.queryByRole('row', { name: /スーパー/ })).not.toBeInTheDocument()
+      expect(screen.getAllByRole('row', { name: /家賃/ }).length).toBeGreaterThan(0)
+
+      openTab('重複')
+
+      expect(tab('重複')).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getAllByRole('row', { name: /スーパー/ }).length).toBeGreaterThan(0)
       expect(screen.queryByRole('row', { name: /家賃/ })).not.toBeInTheDocument()
-      expect(screen.getAllByRole('row', { name: /ランチ/ }).length).toBeGreaterThan(0)
-      expect(within(groupToggle('問題なし')).getByText('2件')).toBeInTheDocument()
-
-      fireEvent.click(groupToggle('問題なし'))
-
-      expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'true')
-      expect(screen.getAllByRole('row', { name: /スーパー/ }).length).toBeGreaterThan(0)
+      // 確認不要のタブには、状態の札を付けない
+      expect(within(tab('重複')).queryByText(/未入力|要対応|似た取引/)).not.toBeInTheDocument()
     })
 
-    it('折りたたんだグループの行も、確定の件数と全選択の対象に含まれる', async () => {
+    it('タブを切り替えて戻っても、行の入力内容は失われない', async () => {
       makeMapping()
-      manualLunch()
       renderScreen()
-      await chooseCsv(CSV)
-      expect(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ })).toBeInTheDocument()
-
-      fireEvent.click(groupToggle('問題なし'))
-
-      expect(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ })).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
-      fireEvent.click(groupToggle('問題なし'))
-      expect(rowOf(/スーパー/).getByRole('checkbox', { name: /スーパー/ })).toBeChecked()
-      expect(rowOf(/家賃/).getByRole('checkbox', { name: /家賃/ })).toBeChecked()
-    })
-
-    it('折りたたんで開き直しても、行の入力内容は失われない', async () => {
-      makeMapping()
-      manualLunch()
-      renderScreen()
-      await chooseCsv(CSV)
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
       pick(rowOf(/スーパー/), '相手科目', '食費')
-      fireEvent.change(screen.getByLabelText('スーパーのコメント'), { target: { value: '週末の買い出し' } })
+      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
+      await screen.findByText(/確定しました/)
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/07,家賃,-50000,47000\n`)
+      await screen.findByRole('tab', { name: /^重複/ })
+      fireEvent.change(screen.getByLabelText('家賃のコメント'), { target: { value: '10月分' } })
 
-      fireEvent.click(groupToggle('問題なし'))
-      fireEvent.click(groupToggle('問題なし'))
+      openTab('重複')
+      openTab('新規')
 
-      expect(rowOf(/スーパー/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
-      expect(screen.getByLabelText('スーパーのコメント')).toHaveValue('週末の買い出し')
+      expect(screen.getByLabelText('家賃のコメント')).toHaveValue('10月分')
     })
 
-    it('見出しに「未確認 N件」(相手科目が決まっていない行の数)を出し、入力すると減る。折りたたみ中も見える', async () => {
+    it('1ページに表示するのは50件までで、「1–50 / N件」とページ番号を出し、次のページで残りを表示する', async () => {
       makeMapping()
-      manualLunch()
       renderScreen()
-      await chooseCsv(CSV)
-      expect(within(groupToggle('問題なし')).getByText('未確認 2件')).toBeInTheDocument()
+      await chooseCsv(manyRows(60))
 
-      fireEvent.click(groupToggle('問題なし'))
-      expect(within(groupToggle('問題なし')).getByText('未確認 2件')).toBeInTheDocument()
+      expect(screen.getByText('1–50 / 60件')).toBeInTheDocument()
+      expect(screen.getAllByRole('row', { name: /店001/ }).length).toBeGreaterThan(0)
+      expect(screen.getAllByRole('row', { name: /店050/ }).length).toBeGreaterThan(0)
+      expect(screen.queryByRole('row', { name: /店051/ })).not.toBeInTheDocument()
 
-      fireEvent.click(groupToggle('問題なし'))
-      pick(rowOf(/スーパー/), '相手科目', '食費')
-      expect(within(groupToggle('問題なし')).getByText('未確認 1件')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '次のページ' }))
 
-      pick(rowOf(/家賃/), '相手科目', '食費')
-      expect(within(groupToggle('問題なし')).queryByText(/未確認/)).not.toBeInTheDocument()
+      expect(screen.getByText('51–60 / 60件')).toBeInTheDocument()
+      expect(screen.getAllByRole('row', { name: /店051/ }).length).toBeGreaterThan(0)
+      expect(screen.queryByRole('row', { name: /店001/ })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '2ページ目' })).toHaveAttribute('aria-current', 'page')
     })
 
-    it('折りたたみ中のグループには「折りたたみ中の行も、一括操作・確定の対象です」と出し、開くと消える', async () => {
+    it('ページを切り替えても、ほかのページで入力した内容は残る', async () => {
       makeMapping()
-      manualLunch()
       renderScreen()
-      await chooseCsv(CSV)
-      expect(screen.queryByText('折りたたみ中の行も、一括操作・確定の対象です。')).not.toBeInTheDocument()
+      await chooseCsv(manyRows(60))
+      fireEvent.change(screen.getByLabelText('店001のコメント'), { target: { value: '1ページ目のメモ' } })
 
-      fireEvent.click(groupToggle('問題なし'))
-      expect(screen.getByText('折りたたみ中の行も、一括操作・確定の対象です。')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '次のページ' }))
+      fireEvent.click(screen.getByRole('button', { name: '前のページ' }))
 
-      fireEvent.click(groupToggle('問題なし'))
-      expect(screen.queryByText('折りたたみ中の行も、一括操作・確定の対象です。')).not.toBeInTheDocument()
+      expect(screen.getByLabelText('店001のコメント')).toHaveValue('1ページ目のメモ')
     })
 
-    it('行が1件もないグループは、見出しごと出さない', async () => {
+    it('見出しのチェックは、表示中のページの行だけを選び、一括設定の対象もその行だけ。ページを切り替えると選択は外れる', async () => {
       makeMapping()
       renderScreen()
-      await chooseCsv(CSV)
+      await chooseCsv(manyRows(60))
 
-      expect(screen.queryByText('似た取引あり')).not.toBeInTheDocument()
-      expect(screen.queryByText('重複')).not.toBeInTheDocument()
-      expect(groupToggle('問題なし')).toBeInTheDocument()
-    })
-
-    it('折りたたんだ状態で一括操作をしても、折りたたんでいる行に反映され、開き直すと値が入っている', async () => {
-      makeMapping()
-      manualLunch()
-      renderScreen()
-      await chooseCsv(CSV)
       fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
-      fireEvent.click(groupToggle('問題なし'))
-      expect(screen.queryByRole('row', { name: /スーパー/ })).not.toBeInTheDocument()
 
+      expect(within(screen.getByRole('group', { name: '選択した明細への一括設定' })).getByText('50件に一括設定')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: '次のページ' }))
+
+      expect(screen.queryByRole('group', { name: '選択した明細への一括設定' })).not.toBeInTheDocument()
+      expect(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' })).not.toBeChecked()
+    })
+
+    it('確定の件数と確定は、見えていないページの行も含めた全件が対象で、確定した行は一覧から外れる', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(manyRows(60))
+      // 1ページ目の50件をまとめて入力して、確定する
+      fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
       const bulk = within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
-      expect(bulk.getByText('3件に一括設定')).toBeInTheDocument()
-      fireEvent.change(bulk.getByLabelText('一括で設定するコメント'), { target: { value: 'まとめて入力' } })
-      fireEvent.click(bulk.getByRole('button', { name: 'コメントを適用' }))
-      expect(bulk.getByText('3件に設定しました')).toBeInTheDocument()
+      fireEvent.click(bulk.getByRole('button', { name: /^一括の相手科目/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '一括の相手科目' })).getByRole('button', { name: '食費' }))
 
-      fireEvent.click(groupToggle('問題なし'))
-      expect(screen.getByLabelText('スーパーのコメント')).toHaveValue('まとめて入力')
-      expect(screen.getByLabelText('家賃のコメント')).toHaveValue('まとめて入力')
+      expect(screen.getByRole('button', { name: '50 / 60 件を「普通預金」に確定' })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '50 / 60 件を「普通預金」に確定' }))
+
+      await screen.findByText(/50件を確定しました。未入力の10件は確定していません/)
+      expect(userEntries()).toHaveLength(50)
+      // 残りの10件は、1ページ目に繰り上がる
+      expect(screen.getByText('1–10 / 10件')).toBeInTheDocument()
     })
 
-    it('折りたたんだ状態で確定しても、折りたたんでいた行も仕訳として保存され、全件が確定して空になったグループの見出しは消える', async () => {
+    it('新しいCSVを選び直すと、開くタブとページは最初(「新規」の1ページ目)に戻る', async () => {
       makeMapping()
-      manualLunch()
       renderScreen()
-      await chooseCsv(CSV)
-      pick(rowOf(/スーパー/), '相手科目', '食費')
-      pick(rowOf(/家賃/), '相手科目', '食費')
-      fireEvent.click(groupToggle('問題なし'))
+      await chooseCsv(manyRows(60))
+      fireEvent.click(screen.getByRole('button', { name: '次のページ' }))
+      expect(screen.getByText('51–60 / 60件')).toBeInTheDocument()
 
-      // ランチは相手科目が未選択なので確定できず残る(部分確定)
-      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
+      await chooseCsv(manyRows(60))
 
-      await screen.findByText(/2件を確定しました。未入力の1件は確定していません/)
-      expect(userEntries().filter((e) => e.sourceType === 'external_import')).toHaveLength(2)
-      expect(userEntries().map((e) => e.memo)).toEqual(expect.arrayContaining(['スーパー', '家賃']))
-      expect(screen.queryByRole('button', { name: /^問題なし/ })).not.toBeInTheDocument()
-      expect(groupToggle('似た取引あり')).toBeInTheDocument()
-    })
-
-    it('一部だけ確定して残りの行を続けるときは、折りたたんだグループの状態を保つ', async () => {
-      makeMapping()
-      manualLunch()
-      renderScreen()
-      await chooseCsv(CSV)
-      pick(rowOf(/スーパー/), '相手科目', '食費')
-      pick(rowOf(/家賃/), '相手科目', '食費')
-      fireEvent.click(groupToggle('似た取引あり'))
-
-      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
-
-      await screen.findByText(/2件を確定しました。未入力の1件は確定していません/)
-      expect(groupToggle('似た取引あり')).toHaveAttribute('aria-expanded', 'false')
-      expect(screen.queryByRole('row', { name: /ランチ/ })).not.toBeInTheDocument()
-    })
-
-    it('取込先の科目を変えると、折りたたみは初期状態(すべて開く)に戻る', async () => {
-      const other = accounts.create({ category: 'asset', name: '別の預金', isReconcilable: true })
-      makeMapping({ accountIds: [bank.id, other.id] })
-      renderScreen()
-      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`, false)
-      await chooseTargetAccount(bank.name)
-      await screen.findByText(/statement\.csv を読み込み済み/)
-      fireEvent.click(groupToggle('問題なし'))
-      expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'false')
-
-      await chooseTargetAccount(other.name)
-
-      await waitFor(() => expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'true'))
-    })
-
-    it('新しいCSVを選び直すと、折りたたみは初期状態(すべて開く)に戻る', async () => {
-      makeMapping()
-      manualLunch()
-      renderScreen()
-      await chooseCsv(CSV)
-      fireEvent.click(groupToggle('問題なし'))
-      expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'false')
-
-      await chooseCsv(CSV)
-
-      await waitFor(() => expect(groupToggle('問題なし')).toHaveAttribute('aria-expanded', 'true'))
+      await waitFor(() => expect(screen.getByText('1–50 / 60件')).toBeInTheDocument())
     })
   })
 
@@ -2730,7 +2740,6 @@ describe('StatementImportScreen', () => {
         .map((d) => ({ d, el: rowEl(new RegExp(d)) }))
         .sort((a, b) => (isBefore(a.el, b.el) ? -1 : 1))
         .map((x) => x.d)
-    const groupToggle = (title: string) => screen.getByRole('button', { name: new RegExp(`^${title}\\s*\\d+件`) })
     function manualLunch() {
       return entries.create({
         householdMemberId: memberId,
@@ -2872,21 +2881,16 @@ describe('StatementImportScreen', () => {
         expect(descriptions()).toEqual(['スーパー', 'ランチ', '家賃'])
       })
 
-      it('3グループの見出しは残り、並び替えはグループの中だけで行う(グループをまたいで動かない)', async () => {
+      it('「新規」タブでは、並び替えても似た取引がある行が先頭のままで、その後ろの行が並び替えの順になる(計画Issue #263)', async () => {
         makeMapping()
         manualLunch()
         renderScreen()
         await chooseCsv(CSV3)
 
-        // 金額の昇順では 家賃(-50,000) が先頭になるが、似た取引がある ランチ は「似た取引あり」のグループに残る
+        // 金額の昇順では 家賃(-50,000) が先頭になるが、似た取引がある ランチ は先頭に寄ったまま動かない
         fireEvent.click(sortButton('金額'))
 
-        const similar = screen.getByText('似た取引あり')
-        const clean = screen.getByText('問題なし')
-        expect(isBefore(similar, rowEl(/ランチ/))).toBe(true)
-        expect(isBefore(rowEl(/ランチ/), clean)).toBe(true)
-        expect(isBefore(clean, rowEl(/家賃/))).toBe(true)
-        expect(isBefore(rowEl(/家賃/), rowEl(/スーパー/))).toBe(true)
+        expect(descriptions()).toEqual(['ランチ', '家賃', 'スーパー'])
       })
 
       it('並び替えたあとに行へ入力しても、行は動かない(ヘッダーを押した時点の並びを保つ)', async () => {
@@ -2938,20 +2942,6 @@ describe('StatementImportScreen', () => {
         const refs = new SqlJsExternalTransactionRefRepository(db).findByAccount(bank.id)
         const orderOf = (description: string) => refs.find((r) => r.description === description)?.rowOrder
         expect([orderOf('スーパー'), orderOf('ランチ'), orderOf('家賃')]).toEqual([0, 1, 2])
-      })
-
-      it('グループの折りたたみと併用しても、折りたたんで開き直すと並びは保たれる', async () => {
-        makeMapping()
-        renderScreen()
-        await chooseCsv(CSV3)
-        fireEvent.click(sortButton('金額'))
-        expect(descriptions()).toEqual(['家賃', 'スーパー', 'ランチ'])
-
-        fireEvent.click(groupToggle('問題なし'))
-        fireEvent.click(groupToggle('問題なし'))
-
-        expect(header('金額')).toHaveAttribute('aria-sort', 'ascending')
-        expect(descriptions()).toEqual(['家賃', 'スーパー', 'ランチ'])
       })
 
       it('新しいCSVを選び直すと、並び替えは解除される', async () => {

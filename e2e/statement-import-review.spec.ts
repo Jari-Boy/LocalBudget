@@ -363,9 +363,11 @@ test.describe('明細取込画面', () => {
         '2026/07/22,謎の店舗,-1500,TX-NEW3\n',
     )
 
-    // 1行目: 取り込み済みの行は入力欄も選択も出ず、対象外と表示される
+    // 1行目: 取り込み済みの行は「重複」タブに分かれ、入力欄も選択も出ず、対象外と表示される(計画Issue #263)
+    await page.getByRole('tab', { name: /^重複/ }).click()
     await expect(rowOf(page, /ATM引出/)).toContainText('取り込み済みのため対象外です')
     await expect(rowOf(page, /ATM引出/).getByRole('checkbox')).toHaveCount(0)
+    await page.getByRole('tab', { name: /^新規/ }).click()
     // 2行目: 取引先パターンに一致し、取引先の既定の科目が入る
     await expect(rowOf(page, /イオン渋谷店/).getByRole('button', { name: /^相手科目: テスト費目/ })).toBeVisible()
     await expect(rowOf(page, /イオン渋谷店/).getByRole('button', { name: /^取引先: イオン/ })).toBeVisible()
@@ -401,7 +403,7 @@ test.describe('明細取込画面', () => {
       .toBe(-10500)
   })
 
-  test('一覧のヘッダーの並び替えとグループの折りたたみは、キーボード(Tab・Enter・Space)で操作できる(計画Issue #231)', async ({ page }) => {
+  test('一覧のヘッダーの並び替えは、キーボード(Tab・Enter・Space)で操作でき、タブは選択中の1つだけがTabキーで止まる(計画Issue #231・#263)', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING)
@@ -426,14 +428,10 @@ test.describe('明細取込画面', () => {
     await page.keyboard.press('Tab')
     await expect(page.getByRole('columnheader', { name: '相手科目' }).getByRole('button')).toBeFocused()
 
-    // グループの見出しも、EnterとSpaceで折りたたみ・展開できる
-    const group = page.getByRole('button', { name: /^問題なし\s*\d+件/ })
-    await group.focus()
-    await page.keyboard.press('Enter')
-    await expect(group).toHaveAttribute('aria-expanded', 'false')
-    await expect(page.getByRole('row', { name: /スーパー/ })).toHaveCount(0)
-    await page.keyboard.press('Space')
-    await expect(group).toHaveAttribute('aria-expanded', 'true')
+    // タブ(計画Issue #263)は、選択中の1つだけがTabキーで止まり、押して選べる。行のあるタブは「新規」だけ
+    const newTab = page.getByRole('tab', { name: /^新規/ })
+    await expect(newTab).toHaveAttribute('aria-selected', 'true')
+    await expect(newTab).toHaveAttribute('tabindex', '0')
     await expect(page.getByRole('row', { name: /スーパー/ })).toHaveCount(1)
   })
 

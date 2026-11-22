@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { createInitialRowState } from './importRowModel'
 import {
   IMPORT_PAGE_SIZE,
+  buildTabIndices,
   clampPage,
   newTabRank,
   pageNumbers,
@@ -109,6 +110,40 @@ describe('pageNumbers', () => {
   it('ページが1つ(または0)のときは、番号を並べない', () => {
     expect(pageNumbers(1, 1)).toEqual([])
     expect(pageNumbers(1, 0)).toEqual([])
+  })
+})
+
+describe('buildTabIndices', () => {
+  const records = [
+    record(), // 0: ふつう
+    record({ approximateCandidates: [{}] }), // 1: 似た取引
+    record({ isExactDuplicate: true }), // 2: 重複
+    record(), // 3: ふつう
+    record({ approximateCandidates: [{}] }), // 4: 似た取引
+    record({ isExactDuplicate: true }), // 5: 重複(取り込むを選んだ)
+  ]
+  const rows = [row(null), row(null), row(null), row(null), row(null), row(1, { includeDuplicate: true })]
+  const byIndex = (a: number, b: number) => a - b
+
+  it('行を「新規」「重複」のタブに振り分ける', () => {
+    const tabs = buildTabIndices([0, 1, 2, 3, 4, 5], records, rows, byIndex)
+    expect(tabs.duplicate).toEqual([2])
+    expect(tabs.new).toHaveLength(5)
+  })
+
+  it('「新規」タブでは、似た取引の行を先頭に寄せ、そのあとはもとの並び(比較の関数)で並べる', () => {
+    const tabs = buildTabIndices([0, 1, 2, 3, 4, 5], records, rows, byIndex)
+    expect(tabs.new).toEqual([1, 4, 0, 3, 5])
+  })
+
+  it('並び替えの比較の関数を渡すと、似た取引の行の中でも、ふつうの行の中でもその順になる', () => {
+    const tabs = buildTabIndices([0, 1, 2, 3, 4, 5], records, rows, (a, b) => b - a)
+    expect(tabs.new).toEqual([4, 1, 5, 3, 0])
+  })
+
+  it('渡した行の番号だけを振り分ける(確定済みの行を除いて渡す)', () => {
+    const tabs = buildTabIndices([3, 2], records, rows, byIndex)
+    expect(tabs).toEqual({ new: [3], duplicate: [2] })
   })
 })
 

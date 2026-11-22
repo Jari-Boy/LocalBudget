@@ -70,7 +70,17 @@ import {
   type BulkChange,
   type ImportRowState,
 } from './importRowModel'
-import { countUncheckedByGroup, expandGroup, toggleCollapsedGroup, type CollapsedGroups } from './groupCollapse'
+import {
+  IMPORT_PAGE_SIZE,
+  buildTabIndices,
+  importTabPanelId,
+  pageRange,
+  summarizeTabs,
+  type ImportTabKey,
+  type RowTab,
+} from './importTabs'
+import { ImportTabBar, type ImportTabItem } from './ImportTabBar'
+import { ImportPager } from './ImportPager'
 import { compareBySort, cycleSort, type ImportSort, type SortKey, type SortableRow } from './importRowSort'
 import { ConfirmDialog } from '../common/confirm-dialog/ConfirmDialog'
 import type {
@@ -284,7 +294,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
    * 折りたたんでいるグループ(計画Issue #231 フェーズ1)。既定は全グループが開いている。折りたたんでも行は処理の対象のまま。
    * ファイルのチェックの切り替えによる作り直し・確定後の続きの選択では保ち、CSVの選び直し・取込先の変更では初期化する。
    */
-  const [collapsedGroups, setCollapsedGroups] = useState<CollapsedGroups>(new Set())
+  /** 開いているタブと、行のあるタブごとのページ(計画Issue #263)。新しい取込では最初に戻す */
+  const [activeTab, setActiveTab] = useState<ImportTabKey>('new')
+  const [pages, setPages] = useState<Record<RowTab, number>>({ new: 1, duplicate: 1 })
   /**
    * ヘッダーでの並び替え(計画Issue #231 フェーズ2)。グループの中だけを並べ、ヘッダーを押した時点の値で並びを決めて入力では動かさない。
    * 折りたたみと同じく、ファイルのチェックの切り替えによる作り直しでは保ち、CSVの選び直し・取込先の変更では解除する。
@@ -321,6 +333,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   // 明細の範囲選択の基点。選択対象(表示中の行)は、読み込み前の早期 return のあとで決まるため、基点だけをここ(早期 return の前)で持つ
   const rangeAnchor = useRangeAnchor<number>()
+  /** タブ見出しと一覧のまとまり。ページを送ったときに、先頭までスクロールする目印 */
+  const tabsRef = useRef<HTMLDivElement>(null)
   const [bulkMessage, setBulkMessage] = useState('')
   // Esc で明細の選択をすべて解除する(一括設定のバナーの「選択を解除」と同じ。計画Issue #235 D)
   useEscapeToClear(
@@ -955,9 +969,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     resume?: { savedAt: string },
   ) {
     const files = next.files.filter((f) => checked.has(f.fileName))
-    // ファイルのチェックの切り替えによる作り直し(restoreRows)では、折りたたみの状態を保つ。それ以外は新しい取込なので初期化する
+    // ファイルのチェックの切り替えによる作り直し(restoreRows)では、開いているタブとページを保つ。それ以外は新しい取込なので初期化する
     if (!restoreRows) {
-      setCollapsedGroups(new Set())
+      setActiveTab('new')
+      setPages({ new: 1, duplicate: 1 })
       setSort(null)
     }
     if (files.length === 0) {
@@ -1360,31 +1375,107 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   const records = session?.review.records ?? []
-  // 一覧は「重複」→「似た取引あり」→「問題なし」の順に並べる。グループの中は、ヘッダーで並び替えていなければ取り込んだ順のまま、
-  // 並び替えていればヘッダーを押した時点の値の順(計画Issue #231 フェーズ2)。保存時の並び(rowOrder)は、どちらでも元の順を使う
-  const GROUP_ORDER = ['duplicate', 'similar', 'clean'] as const
-  const visibleIndices = session
-    ? records
-        .map((_, i) => i)
-        .filter((i) => !session.done.has(i))
-        .sort(
-          (a, b) =>
-            GROUP_ORDER.indexOf(rowGroup(records[a])) - GROUP_ORDER.indexOf(rowGroup(records[b])) ||
-            compareBySort(sort, records[a], records[b]) ||
-            a - b,
-        )
-    : []
+  // 行は「新規」「重複」のタブに分ける(計画Issue #263)。「新規」は似た取引の行を先頭に寄せる。タブの中は、ヘッダーで並び替えて
+  // いなければ取り込んだ順のまま、並び替えていればヘッダーを押した時点の値の順(計画Issue #231 フェーズ2)。保存時の並び(rowOrder)は、どちらでも元の順を使う
+  const compareRows = (a: number, b: number) => compareBySort(sort, records[a], records[b]) || a - b
+  const remainingIndices = session ? records.map((_, i) => i).filter((i) => !session.done.has(i)) : []
+  const tabIndices = session ? buildTabIndices(remainingIndices, records, session.rows, compareRows) : { new: [], duplicate: [] }
+  const visibleIndices = [...tabIndices.new, ...tabIndices.duplicate]
   const statusOf = (i: number) => rowStatus(records[i], session!.rows[i])
   const importable = visibleIndices.filter((i) => statusOf(i) !== 'duplicate' && statusOf(i) !== 'skipped')
   const skippedCount = visibleIndices.filter((i) => statusOf(i) === 'skipped').length
   const dupCount = visibleIndices.length - importable.length - skippedCount
   const similarCount = importable.filter((i) => rowGroup(records[i]) === 'similar').length
-  const groupCounts = { duplicate: 0, similar: 0, clean: 0 }
-  for (const i of visibleIndices) groupCounts[rowGroup(records[i])]++
-  /** 見出しに出す「未確認」の行数。折りたたみ中も見えるので、見えない行の確認漏れに気づける */
-  const uncheckedCounts = session
-    ? countUncheckedByGroup(visibleIndices, records, session.rows)
-    : { duplicate: 0, similar: 0, clean: 0 }
+  /** タブ見出しの件数と状態の札。ほかのタブの行は見えないので、確認の漏れに気づけるよう見出しに出す(計画Issue #263) */
+  const tabSummary = session
+    ? summarizeTabs(remainingIndices, records, session.rows)
+    : { newCount: 0, duplicateCount: 0, similarCount: 0, uncheckedCount: 0 }
+  const showFileColumn = (session?.review.files.length ?? 0) >= 2
+  const unreadableCount = session?.review.unreadableRows.length ?? 0
+  /** 読めない行の方が取り込める行より多い(マッピングの取り違えの疑い)。タブの札と、タブの中の先頭の警告に出す */
+  const unreadableMajority = session !== null && unreadableCount > records.length
+  const rowErrorCount = Object.keys(rowErrors).length
+  /** いま開いているタブ。行が無くなったタブ(最後の重複を「取り込む」にしたなど)を開いたままにはしない */
+  const shownTab: ImportTabKey =
+    (activeTab === 'duplicate' && tabSummary.duplicateCount === 0) || (activeTab === 'unreadable' && unreadableCount === 0)
+      ? 'new'
+      : visibleIndices.length === 0 && unreadableCount > 0
+        ? 'unreadable'
+        : activeTab
+  const shownRowTab: RowTab = shownTab === 'duplicate' ? 'duplicate' : 'new'
+  const shownTabIndices = tabIndices[shownRowTab]
+  const shownPage = pageRange({ total: shownTabIndices.length, page: pages[shownRowTab], pageSize: IMPORT_PAGE_SIZE })
+  /** 表に描く行。いま開いているタブの、いまのページの分だけ(描画だけを区切り、状態と確定の対象は全件のまま) */
+  const pageIndices = shownTab === 'unreadable' ? [] : shownTabIndices.slice(shownPage.start, shownPage.end)
+  const tabItems: ImportTabItem[] = [
+    {
+      key: 'new',
+      label: t('tabNew'),
+      count: tabSummary.newCount,
+      states: [
+        ...(rowErrorCount > 0
+          ? [{ tone: 'error' as const, text: t('tabStateError', { count: rowErrorCount }) }]
+          : tabSummary.similarCount > 0
+            ? [{ tone: 'todo' as const, text: t('tabStateSimilar', { count: tabSummary.similarCount }) }]
+            : []),
+        ...(tabSummary.uncheckedCount > 0
+          ? [{ tone: 'todo' as const, text: t('tabStateUnchecked', { count: tabSummary.uncheckedCount }) }]
+          : []),
+      ],
+    },
+    ...(tabSummary.duplicateCount > 0
+      ? [{ key: 'duplicate' as const, label: t('tabDuplicate'), count: tabSummary.duplicateCount, muted: true }]
+      : []),
+    ...(unreadableCount > 0
+      ? [
+          {
+            key: 'unreadable' as const,
+            label: t('tabUnreadable'),
+            count: unreadableCount,
+            muted: !unreadableMajority,
+            states: unreadableMajority ? [{ tone: 'warning' as const, text: t('tabStateUnreadableWarning') }] : [],
+          },
+        ]
+      : []),
+  ]
+  /** 日付・金額を読めず、取り込まない行の一覧(3つ目のタブの内容)。読めない行の方が多いときの警告を、先頭に出す */
+  const unreadablePanel = session ? (
+    <section aria-label={t('unreadableTitle', { count: unreadableCount })} className="import-panel import-unreadable-panel">
+      {unreadableMajority && <p className="import-error">{t('unreadableMajorityWarning')}</p>}
+      <p className="import-note">{t('unreadableNote')}</p>
+      <ul className="import-unreadable">
+        {session.review.unreadableRows.map((row) => (
+          <li key={`${row.fileName}:${row.rowNumber}`}>
+            <span className="import-nowrap">
+              {showFileColumn
+                ? t('unreadableRowInFile', { fileName: row.fileName, row: row.rowNumber })
+                : t('unreadableRow', { row: row.rowNumber })}
+            </span>
+            <span className="import-unreadable__cells">{row.cells.filter((c) => c !== '').join(' / ')}</span>
+            <span className="import-error">
+              {row.error === 'invalidAmount' ? tMaster('mappingTab.errorInvalidAmount') : tMaster('mappingTab.errorInvalidDate')}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  ) : null
+  /** タブを切り替える。選択は表示中の行だけが対象なので、見えなくなる行の選択は外す(一括設定が見えない行に及ばないように) */
+  const selectTab = (key: ImportTabKey) => {
+    if (key === shownTab) return
+    setActiveTab(key)
+    clearSelection()
+  }
+  const goToPage = (page: number) => {
+    setPages((prev) => ({ ...prev, [shownRowTab]: page }))
+    clearSelection()
+    tabsRef.current?.scrollIntoView?.({ block: 'start' })
+  }
+  const clearSelection = () => {
+    setSelected(new Set())
+    setBulkMessage('')
+    rangeAnchor.anchorRef.current = null
+  }
   /** 取込済み(突合マスタ)の仕訳のid。似た取引の出どころ(外部明細)の判定に使う */
   const externalEntryIds = new Set([...(session?.existingRefs.values() ?? [])].map((ref) => ref.journalEntryId))
   const sourceLabelOf = (journalEntryId: number) =>
@@ -1396,7 +1487,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const crossFileDupCount = visibleIndices.filter(
     (i) => statusOf(i) === 'duplicate' && records[i].crossFileDuplicateOf !== null,
   ).length
-  const showFileColumn = (session?.review.files.length ?? 0) >= 2
   /** 重複元の行 → 最初の重複した行(重複元の行から重複した行へ移る導線に使う) */
   const firstDuplicateOf = new Map<number, number>()
   records.forEach((r, i) => {
@@ -1435,12 +1525,30 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       </th>
     )
   }
-  const jumpToRow = (index: number) => {
-    // 移動先のグループが折りたたまれていたら、先に開いて描画してからスクロールする
-    flushSync(() => setCollapsedGroups((prev) => expandGroup(prev, rowGroup(records[index]))))
-    document.getElementById(`import-row-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  /**
+   * 行へ移る。行のあるタブとページを先に開いて描画してから、スクロールして強調する(計画Issue #263)。
+   * rowsを渡すと、その状態になったあとの行の置き場所へ移る(重複の「取り込む」で、行が「新規」へ移ったあとを探すため)
+   */
+  const jumpToRow = (index: number, rows: readonly ImportRowState[] | undefined = session?.rows) => {
+    if (!session || !rows) return
+    const tabs = buildTabIndices(remainingIndices, records, rows, compareRows)
+    const tab: RowTab = tabs.duplicate.includes(index) ? 'duplicate' : 'new'
+    const page = Math.floor(tabs[tab].indexOf(index) / IMPORT_PAGE_SIZE) + 1
+    if (tab !== shownTab || page !== shownPage.page) {
+      flushSync(() => {
+        setActiveTab(tab)
+        setPages((prev) => ({ ...prev, [tab]: page }))
+        clearSelection()
+      })
+    }
+    document.getElementById(`import-row-${index}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
     setFlashIndex(index)
     window.setTimeout(() => setFlashIndex((current) => (current === index ? null : current)), 2200)
+  }
+  /** 確定できなかった行のうち、一覧の先頭に近い行へ移る(エラーの行は、いつも「新規」タブにある) */
+  const goToFirstErrorRow = () => {
+    const first = tabIndices.new.find((i) => rowErrors[i] !== undefined)
+    if (first !== undefined) jumpToRow(first)
   }
   const formatPeriod = (start: string, end: string) => {
     const from = start.replaceAll('-', '/')
@@ -1480,11 +1588,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   // 明細の行のチェックの Shift+クリック(範囲選択)・Ctrl/Cmd+クリック(トグル)・Shift+↑↓(計画Issue #235 D)。
-  // 範囲は画面に見える順(グループ・並び替え後)で、折りたたんだグループの行と、重複・保存しない行(チェックなし)は含めない
-  const selectableOrder = importable.filter((i) => !collapsedGroups.has(rowGroup(records[i])))
+  // 範囲は画面に見える順(タブ・ページ・並び替え後)で、表示中のタブの表示中のページの行だけ。重複・保存しない行(チェックなし)は含めない(計画Issue #263)
+  const selectableOrder = pageIndices.filter((i) => statusOf(i) !== 'duplicate' && statusOf(i) !== 'skipped')
   const rangeSelection = createRangeSelection(rangeAnchor, {
     order: selectableOrder,
-    // 表示中で、チェックのある行(重複・保存しない行・折りたたんだ行は除く)だけが、押して切り替えられる
+    // 表示中で、チェックのある行(重複・保存しない行・ほかのタブやページの行は除く)だけが、押して切り替えられる
     isSelectable: (index) => selectableOrder.includes(index),
     selected: [...selected],
     onChange: (next) => {
@@ -1492,7 +1600,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       setSelected(new Set(next))
     },
   })
-  const allSelected = importable.length > 0 && importable.every((i) => selected.has(i))
+  /** 見出しのチェック: 表示中のページの行がすべて選ばれているか(全タブ・全ページの行ではない) */
+  const allSelected = selectableOrder.length > 0 && selectableOrder.every((i) => selected.has(i))
 
   /**
    * 取引先をその場で追加する(計画Issue #207)。追加を押した時点で、取引先・キーワード(と、キーワードに紐づける科目)をまとめて保存する。
@@ -2013,7 +2122,15 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 : confirmResult.unfilled > 0
                   ? t('confirmNothingReady', { unfilled: confirmResult.unfilled })
                   : null}
-              {confirmResult.failed > 0 && <span> {t('confirmFailedLine', { count: confirmResult.failed })}</span>}
+              {confirmResult.failed > 0 && (
+                <>
+                  <span>{t('confirmFailedLine', { count: confirmResult.failed })}</span>
+                  {/* 別のタブにいても、確定できなかった行(「新規」タブにある)へ移れる */}
+                  <button type="button" className="import-link" onClick={goToFirstErrorRow}>
+                    {t('confirmFailedLink')}
+                  </button>
+                </>
+              )}
             </p>
           )}
 
@@ -2116,6 +2233,16 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             </div>
           )}
 
+        </>
+      )}
+
+      {session && (visibleIndices.length > 0 || unreadableCount > 0) && (
+        <div ref={tabsRef} className="import-tabarea">
+          <ImportTabBar label={t('tabsLabel')} tabs={tabItems} active={shownTab} onSelect={selectTab} />
+          <div role="tabpanel" id={importTabPanelId(shownTab)} aria-labelledby={`import-tab-${shownTab}`} className="import-tabpanel">
+            {shownTab === 'unreadable' ? (
+              unreadablePanel
+            ) : (
           <div className="import-table-wrap">
             <table className="import-table" aria-label={t('tableLabel')}>
               <thead>
@@ -2126,7 +2253,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                       type="checkbox"
                       aria-label={t('selectAll')}
                       checked={allSelected}
-                      onChange={() => { setBulkMessage(''); setSelected(allSelected ? new Set() : new Set(importable)) }}
+                      onChange={() => {
+                        setBulkMessage('')
+                        // 見出しのチェックは、表示中のページの行だけを選ぶ・外す(ほかのタブ・ページの行には及ばない。計画Issue #263)
+                        setSelected(allSelected ? new Set() : new Set(selectableOrder))
+                      }}
                     />
                   </th>
                   {sortHeader('date', t('colDate'))}
@@ -2142,7 +2273,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 </tr>
               </thead>
               <tbody>
-                {visibleIndices.map((index, position) => {
+                {pageIndices.map((index) => {
                   const reviewRecord = records[index]
                   const state = session.rows[index]
                   const status = statusOf(index)
@@ -2150,7 +2281,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                   const isDup = status === 'duplicate'
                   const isSkipped = status === 'skipped'
                   const group = rowGroup(reviewRecord)
-                  const startsGroup = position === 0 || rowGroup(records[visibleIndices[position - 1]]) !== group
                   const account = accountList.find((a) => a.id === state.counterAccountId)
                   const showCounterparty = account === undefined || isCounterpartyEligibleCategory(account.category)
                   const defaultMemberId = defaultMemberIdOf(state.counterAccountId, accountList)
@@ -2179,38 +2309,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                   const statusText =
                     status === 'new' ? t('statusNew') : status === 'duplicate' ? t('statusDuplicate') : status === 'skipped' ? t('statusSkipped') : t('statusCheck')
 
-                  const isCollapsed = collapsedGroups.has(group)
-                  // 見出し全体を開閉のボタンにする(Tab・Enter・Spaceで操作でき、aria-expandedで状態を伝える)。
-                  // 折りたたむとそのグループの行は描画しないが、件数・未確認の数は見出しに残す(計画Issue #231 フェーズ1)
-                  const groupHeader = startsGroup ? (
-                    <tr className="import-group">
-                      <td colSpan={showFileColumn ? 11 : 10}>
-                        <button
-                          type="button"
-                          className="import-group__head"
-                          aria-expanded={!isCollapsed}
-                          onClick={() => setCollapsedGroups((prev) => toggleCollapsedGroup(prev, group))}
-                        >
-                          <svg className="import-group__chevron" viewBox="0 0 16 16" aria-hidden="true">
-                            <path d={isCollapsed ? 'M6 4l4 4-4 4' : 'M4 6l4 4 4-4'} />
-                          </svg>
-                          <span className="import-group__title">{t(`group_${group}`)}</span>
-                          <span className="import-group__count">{t('groupCount', { count: groupCounts[group] })}</span>
-                          {uncheckedCounts[group] > 0 && (
-                            <span className="import-group__unchecked">{t('groupUnchecked', { count: uncheckedCounts[group] })}</span>
-                          )}
-                          <span className="import-group__note">{t(`group_${group}_note`)}</span>
-                          {/* 重複は取り込み対象外なので、確定の対象という注記は出さない */}
-                          {isCollapsed && group !== 'duplicate' && <span className="import-group__note">{t('groupCollapsedNote')}</span>}
-                        </button>
-                      </td>
-                    </tr>
-                  ) : null
-                  if (isCollapsed) return <Fragment key={reviewRecord.externalId + index}>{groupHeader}</Fragment>
-
                   return (
                     <Fragment key={reviewRecord.externalId + index}>
-                      {groupHeader}
                       <tr
                         id={`import-row-${index}`}
                         // Ctrl/Cmd を押したまま行の文字部分を押すと、その行のチェックの操作にする。行の中のボタン・入力欄は、それぞれの操作に任せる(計画Issue #235 D)
@@ -2292,7 +2392,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                             <button
                               type="button"
                               className="import-link"
-                              onClick={() => updateRow(index, (s) => ({ ...s, includeDuplicate: true }))}
+                              onClick={() => {
+                                // 「取り込む」を選ぶと、行は「新規」タブへ移る。見失わないよう、移った先を開いて強調する(計画Issue #263)
+                                updateRow(index, (s) => ({ ...s, includeDuplicate: true }))
+                                jumpToRow(index, session.rows.map((s, i) => (i === index ? { ...s, includeDuplicate: true } : s)))
+                              }}
                             >
                               {t('importAnyway')}
                             </button>
@@ -2620,37 +2724,18 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 })}
               </tbody>
             </table>
+            <ImportPager
+              total={shownTabIndices.length}
+              page={shownPage.page}
+              pageSize={IMPORT_PAGE_SIZE}
+              onPage={goToPage}
+            />
           </div>
-        </>
+            )}
+          </div>
+        </div>
       )}
 
-      {session && session.review.unreadableRows.length > 0 && (
-        <section
-          aria-label={t('unreadableTitle', { count: session.review.unreadableRows.length })}
-          className="import-panel"
-        >
-          <p className="import-panel__title">{t('unreadableTitle', { count: session.review.unreadableRows.length })}</p>
-          {session.review.unreadableRows.length > session.review.records.length && (
-            <p className="import-error">{t('unreadableMajorityWarning')}</p>
-          )}
-          <p className="import-note">{t('unreadableNote')}</p>
-          <ul className="import-unreadable">
-            {session.review.unreadableRows.map((row) => (
-              <li key={`${row.fileName}:${row.rowNumber}`}>
-                <span className="import-nowrap">
-                  {showFileColumn
-                    ? t('unreadableRowInFile', { fileName: row.fileName, row: row.rowNumber })
-                    : t('unreadableRow', { row: row.rowNumber })}
-                </span>
-                <span className="import-unreadable__cells">{row.cells.filter((c) => c !== '').join(' / ')}</span>
-                <span className="import-error">
-                  {row.error === 'invalidAmount' ? tMaster('mappingTab.errorInvalidAmount') : tMaster('mappingTab.errorInvalidDate')}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
 
       {(session || doneMessage) && (
         <div className="import-footer">
