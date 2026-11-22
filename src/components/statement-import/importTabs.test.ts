@@ -88,6 +88,10 @@ describe('pageRange', () => {
     expect(Number.isInteger(IMPORT_PAGE_SIZE)).toBe(true)
     expect(IMPORT_PAGE_SIZE).toBeGreaterThan(0)
   })
+
+  it('1ページの件数は50件である(100件では描画が重いため、計画Issue #266)', () => {
+    expect(IMPORT_PAGE_SIZE).toBe(50)
+  })
 })
 
 describe('pageNumbers', () => {
