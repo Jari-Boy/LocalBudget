@@ -1152,13 +1152,27 @@
 
 /* 列ごとの行の絞り込み(計画Issue #258): 表見出しの下の絞り込み行と、絞り込み中の案内。条件が入っている欄は緑の太枠にする */
 .import-filter-row td {
-  padding: 0 6px 8px;
+  padding: 10px 6px 8px;
   border-bottom: 1px solid var(--color-border);
   vertical-align: top;
 }
 
 .import-filter {
   position: relative;
+}
+
+/* 期間の2つの日付入力は、日付の列に上下に並べる。ほかの欄より小さくして、行の高さが増えすぎないようにする */
+.import-filter__dates {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.import-filter__date {
+  width: 100%;
+  min-width: 132px;
+  min-height: 30px;
+  font-size: var(--font-size-sm);
 }
 
 .import-filter__text {

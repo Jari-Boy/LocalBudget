@@ -1,7 +1,7 @@
 /**
  * importRowFilter(明細取込画面の列ごとの行の絞り込み、計画Issue #258)のユニットテスト。
- * 摘要のテキスト絞り込み(選択欄の検索と同じ正規化で、表記ゆれに強い)、相手科目・取引先・プロジェクトのid絞り込みと
- * 「未設定」、複数条件のAND、入力欄を持たない重複の行の扱い、絞り込みで隠れた行の選択を外す処理を検証する。
+ * 摘要のテキスト絞り込み(選択欄の検索と同じ正規化で、表記ゆれに強い)、期間(開始日・終了日、両端を含む)、
+ * 相手科目・取引先・プロジェクト・メンバーのid絞り込みと「未設定」、複数条件のAND、入力欄を持たない重複の行の扱い、絞り込みで隠れた行の選択を外す処理を検証する。
  * DB・DOM非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
@@ -19,11 +19,12 @@ const row = (
   overrides: Partial<Omit<FilterableRow, 'inputs'>> & { inputs?: Partial<NonNullable<FilterableRow['inputs']>> | null } = {},
 ): FilterableRow => ({
   description: 'セブン-イレブン 新宿三丁目店',
+  entryDate: '2026-10-05',
   ...overrides,
   inputs:
     overrides.inputs === null
       ? null
-      : { counterAccountId: null, counterpartyId: null, projectId: null, ...overrides.inputs },
+      : { counterAccountId: null, counterpartyId: null, projectId: null, memberId: null, ...overrides.inputs },
 })
 
 const filter = (overrides: Partial<ImportRowFilter>): ImportRowFilter => ({ ...EMPTY_ROW_FILTER, ...overrides })
@@ -42,6 +43,16 @@ describe('isRowFilterActive / activeConditionCount', () => {
     const f = filter({ description: 'セブン', project: 'unset', counterAccount: 3 })
     expect(isRowFilterActive(f)).toBe(true)
     expect(activeConditionCount(f)).toBe(3)
+  })
+
+  it('期間は、開始日・終了日のどちらを指定しても、1つの条件として数える', () => {
+    expect(activeConditionCount(filter({ dateFrom: '2026-10-01' }))).toBe(1)
+    expect(activeConditionCount(filter({ dateTo: '2026-10-31' }))).toBe(1)
+    expect(activeConditionCount(filter({ dateFrom: '2026-10-01', dateTo: '2026-10-31' }))).toBe(1)
+  })
+
+  it('メンバーの条件も数える', () => {
+    expect(activeConditionCount(filter({ member: 'unset' }))).toBe(1)
   })
 })
 
@@ -88,6 +99,44 @@ describe('matchesRowFilter: 相手科目・取引先・プロジェクト', () =
   })
 })
 
+describe('matchesRowFilter: メンバー', () => {
+  it('指定したメンバーの行だけ一致し、「未設定」はメンバーが決まっていない行だけ一致する', () => {
+    expect(matchesRowFilter(filter({ member: 2 }), row({ inputs: { memberId: 2 } }))).toBe(true)
+    expect(matchesRowFilter(filter({ member: 2 }), row({ inputs: { memberId: 3 } }))).toBe(false)
+    expect(matchesRowFilter(filter({ member: 'unset' }), row({ inputs: { memberId: null } }))).toBe(true)
+    expect(matchesRowFilter(filter({ member: 'unset' }), row({ inputs: { memberId: 2 } }))).toBe(false)
+  })
+})
+
+describe('matchesRowFilter: 期間', () => {
+  const on = (entryDate: string) => row({ entryDate })
+
+  it('開始日と終了日の両端を含む範囲に入る行だけ一致する', () => {
+    const f = filter({ dateFrom: '2026-10-05', dateTo: '2026-10-10' })
+    expect(matchesRowFilter(f, on('2026-10-05'))).toBe(true)
+    expect(matchesRowFilter(f, on('2026-10-10'))).toBe(true)
+    expect(matchesRowFilter(f, on('2026-10-04'))).toBe(false)
+    expect(matchesRowFilter(f, on('2026-10-11'))).toBe(false)
+  })
+
+  it('開始日だけなら、その日以降のすべて。終了日だけなら、その日以前のすべて', () => {
+    expect(matchesRowFilter(filter({ dateFrom: '2026-10-05' }), on('2026-12-31'))).toBe(true)
+    expect(matchesRowFilter(filter({ dateFrom: '2026-10-05' }), on('2026-10-04'))).toBe(false)
+    expect(matchesRowFilter(filter({ dateTo: '2026-10-05' }), on('2026-01-01'))).toBe(true)
+    expect(matchesRowFilter(filter({ dateTo: '2026-10-05' }), on('2026-10-06'))).toBe(false)
+  })
+
+  it('開始日が終了日より後なら、どの行も一致しない', () => {
+    expect(matchesRowFilter(filter({ dateFrom: '2026-10-10', dateTo: '2026-10-01' }), on('2026-10-05'))).toBe(false)
+  })
+
+  it('入力欄を持たない行(重複)にも、期間は効く', () => {
+    const f = filter({ dateFrom: '2026-10-06' })
+    expect(matchesRowFilter(f, row({ entryDate: '2026-10-05', inputs: null }))).toBe(false)
+    expect(matchesRowFilter(f, row({ entryDate: '2026-10-07', inputs: null }))).toBe(true)
+  })
+})
+
 describe('matchesRowFilter: 複数条件(AND)', () => {
   const f = filter({ description: 'セブン', counterAccount: 5, project: 'unset' })
 
@@ -108,9 +157,10 @@ describe('matchesRowFilter: 入力欄を持たない行(重複)', () => {
     expect(matchesRowFilter(filter({ description: 'ローソン' }), row({ inputs: null }))).toBe(false)
   })
 
-  it('科目・取引先・プロジェクトの条件があると、「未設定」を含めて一致しない(値を持たないため)', () => {
+  it('科目・取引先・プロジェクト・メンバーの条件があると、「未設定」を含めて一致しない(値を持たないため)', () => {
     expect(matchesRowFilter(filter({ counterAccount: 5 }), row({ inputs: null }))).toBe(false)
     expect(matchesRowFilter(filter({ project: 'unset' }), row({ inputs: null }))).toBe(false)
+    expect(matchesRowFilter(filter({ member: 'unset' }), row({ inputs: null }))).toBe(false)
   })
 })
 

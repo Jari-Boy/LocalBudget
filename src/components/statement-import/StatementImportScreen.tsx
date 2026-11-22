@@ -1401,6 +1401,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const matchesFilterWith = (filter: ImportRowFilter, i: number) =>
     matchesRowFilter(filter, {
       description: formatDescriptionForDisplay(records[i].record.description),
+      entryDate: records[i].record.entryDate,
       inputs:
         statusOf(i) === 'duplicate'
           ? null
@@ -1408,6 +1409,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               counterAccountId: session!.rows[i].counterAccountId,
               counterpartyId: session!.rows[i].counterpartyId,
               projectId: session!.rows[i].projectId,
+              // 画面に出しているメンバー: 科目に既定のメンバーがあればそのメンバー、無ければ行で選んだメンバー
+              memberId: defaultMemberIdOf(session!.rows[i].counterAccountId, accountList) ?? session!.rows[i].householdMemberId,
             },
     })
   const rowFilterActive = isRowFilterActive(rowFilter)
@@ -1634,7 +1637,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     if (removed > 0) setBulkMessage(t('filterSelectionRemoved', { count: removed }))
     rangeAnchor.anchorRef.current = null
   }
-  const setFilterId = (key: 'counterAccount' | 'counterparty' | 'project', value: IdCondition) =>
+  /** 絞り込みの選択欄の先頭に置く「未設定」(項目が決まっていない行) */
+  const filterUnsetOptions = [{ value: 'unset', label: t('filterUnset') }]
+  const setFilterId = (key: 'counterAccount' | 'counterparty' | 'project' | 'member', value: IdCondition) =>
     changeRowFilter({ ...rowFilter, [key]: value })
   /** 絞り込み行の選択欄(相手科目・取引先・プロジェクト)。階層・検索窓・Enter確定は共通の選択欄のまま、先頭に「すべて」「未設定」を置く */
   const filterSelect = (
@@ -1651,7 +1656,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         value={rowFilter[key] === null ? '' : String(rowFilter[key])}
         emptyLabel={t('filterAll')}
         placeholder={t('filterAll')}
-        leadingOptions={[{ value: 'unset', label: t('filterUnset') }]}
+        leadingOptions={filterUnsetOptions}
         onChange={(v) => setFilterId(key, v === '' ? null : v === 'unset' ? 'unset' : Number(v))}
       />
     </div>
@@ -2381,7 +2386,29 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 <tr className="import-filter-row">
                   {showFileColumn && <td />}
                   <td />
-                  <td />
+                  <td>
+                    {/* 期間(開始日・終了日、両端を含む)。日付の列に、上下に並べる */}
+                    <div className="import-filter__dates">
+                      <div className={rowFilter.dateFrom !== '' ? 'import-filter import-filter--on' : 'import-filter'}>
+                        <input
+                          type="date"
+                          className="import-control import-filter__date"
+                          aria-label={t('filterDateFromLabel')}
+                          value={rowFilter.dateFrom}
+                          onChange={(e) => changeRowFilter({ ...rowFilter, dateFrom: e.target.value })}
+                        />
+                      </div>
+                      <div className={rowFilter.dateTo !== '' ? 'import-filter import-filter--on' : 'import-filter'}>
+                        <input
+                          type="date"
+                          className="import-control import-filter__date"
+                          aria-label={t('filterDateToLabel')}
+                          value={rowFilter.dateTo}
+                          onChange={(e) => changeRowFilter({ ...rowFilter, dateTo: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </td>
                   <td>
                     <div className={rowFilter.description.trim() !== '' ? 'import-filter import-filter--on' : 'import-filter'}>
                       <input
@@ -2407,7 +2434,19 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                   <td>{filterSelect('counterAccount', t('filterCounterAccountLabel'), categories.counterAccounts, 'account')}</td>
                   <td>{filterSelect('counterparty', t('filterCounterpartyLabel'), categories.counterparties, 'counterparty')}</td>
                   <td>{filterSelect('project', t('filterProjectLabel'), categories.projects, 'project')}</td>
-                  <td />
+                  <td>
+                    <div className={rowFilter.member !== null ? 'import-filter import-filter--on' : 'import-filter'}>
+                      <MemberSelect
+                        label={t('filterMemberLabel')}
+                        members={data.members}
+                        value={rowFilter.member === null ? '' : String(rowFilter.member)}
+                        emptyLabel={t('filterAll')}
+                        placeholder={t('filterAll')}
+                        leadingOptions={filterUnsetOptions}
+                        onChange={(v) => setFilterId('member', v === '' ? null : v === 'unset' ? 'unset' : Number(v))}
+                      />
+                    </div>
+                  </td>
                   <td />
                   <td />
                 </tr>
