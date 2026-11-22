@@ -12,7 +12,12 @@ export function useElementHeight(element: HTMLElement | null): number {
   const [height, setHeight] = useState(0)
 
   useLayoutEffect(() => {
-    if (element === null || typeof ResizeObserver === 'undefined') return
+    if (element === null) {
+      // 要素が消えたら(絞り込み欄を閉じたときなど)、高さも0に戻す
+      setHeight(0)
+      return
+    }
+    if (typeof ResizeObserver === 'undefined') return
     const measure = () => setHeight(element.offsetHeight)
     measure()
     const observer = new ResizeObserver(measure)

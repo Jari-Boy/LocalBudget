@@ -67,7 +67,7 @@ describe('useElementHeight', () => {
     render(<Probe initial={40} />)
 
     expect(observed).toContain(screen.getByTestId('target'))
-    expect(screen.getByTestId('height')).toHaveTextContent('0')
+    expect(screen.getByTestId('height')).toHaveTextContent(/^0$/)
   })
 
   it('要素の高さが変わると、新しい高さを返す', () => {
@@ -89,6 +89,16 @@ describe('useElementHeight', () => {
     expect(screen.getByTestId('height')).toHaveTextContent('120')
   })
 
+  it('要素が消えたら(絞り込み欄を閉じたときなど)、高さは0に戻る', () => {
+    const { rerender } = render(<Probe initial={40} show />)
+    resizeTo(120)
+    expect(screen.getByTestId('height')).toHaveTextContent('120')
+
+    rerender(<Probe initial={40} show={false} />)
+
+    expect(screen.getByTestId('height')).toHaveTextContent(/^0$/)
+  })
+
   it('取り外すと、監視をやめる', () => {
     const { unmount } = render(<Probe initial={40} />)
 
@@ -103,6 +113,6 @@ describe('useElementHeight', () => {
 
     render(<Probe initial={40} />)
 
-    expect(screen.getByTestId('height')).toHaveTextContent('0')
+    expect(screen.getByTestId('height')).toHaveTextContent(/^0$/)
   })
 })
