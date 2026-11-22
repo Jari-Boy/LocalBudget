@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import { filterJournalEntries } from '../../domain/journal/filterJournalEntries'
@@ -6,6 +6,7 @@ import { buildRelatedEntryIdsByEntryId } from '../../domain/journal-link-group/b
 import { listSplittableEntries, type SplittableEntry } from '../../domain/expense-splitting/listSplittableEntries'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { JournalFilterPanel } from '../common/journal-filter/JournalFilterPanel'
+import { useElementHeight } from '../common/sticky/useElementHeight'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { EntryDetailDialog } from './EntryDetailDialog'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
@@ -96,6 +97,9 @@ export function SplitTab({
   onFilterChange,
   filterOpen,
 }: SplitTabProps) {
+  /** 絞り込み欄(開いているときだけある)の要素と高さ。右のパネルの追従位置に足す(計画Issue #266) */
+  const [filterElement, setFilterElement] = useState<HTMLDivElement | null>(null)
+  const filterHeight = useElementHeight(filterElement)
   const [checkedIds, setCheckedIds] = useState<ReadonlySet<number>>(() => new Set(initialCheckedEntryIds))
   const nextKey = useRef(2)
   const [partners, setPartners] = useState<ExpenseSplittingParticipantRow[]>([
@@ -266,7 +270,7 @@ export function SplitTab({
   return (
     <>
       {filterOpen && (
-        <div className="split-settle__filter" id="split-settle-filter">
+        <div className="split-settle__filter" id="split-settle-filter" ref={setFilterElement}>
           <JournalFilterPanel
             filter={filter}
             onChange={onFilterChange}
@@ -276,7 +280,8 @@ export function SplitTab({
         </div>
       )}
 
-      <div className="split-settle__body">
+      {/* 右のパネルは、固定したタブの行と絞り込み欄の下に追従する(絞り込み欄の高さを --sticky-head-extra で渡す、計画Issue #266) */}
+      <div className="split-settle__body" style={{ '--sticky-head-extra': `${filterHeight}px` } as CSSProperties}>
         <section aria-label="割勘する仕訳" className="split-settle__card split-settle__card--table">
           <p className="split-settle__note split-settle__note--pad">
             費用の行があり、まだ割勘していない仕訳だけを表示しています。費用の行が複数あれば、各行を同じ割合で割ります。

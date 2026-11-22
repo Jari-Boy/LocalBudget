@@ -15,11 +15,15 @@
   .journal-screen__body > .journal-screen__detail,
   .split-settle__body > .split-settle__side,
   .split-settle__body > .split-settle__panel {
-    --sticky-side-panel-top: 16px;
+    /*
+     * 追従する位置は、上部に固定したタブ・絞り込み欄(--sticky-head-h、画面側が測って入れる)の下から16px。
+     * 割勘は、絞り込み欄の高さの分(--sticky-head-extra)も足す。固定した行に覆われて見切れないようにする(計画Issue #266)
+     */
+    --sticky-side-panel-top: calc(var(--sticky-head-h, 0px) + var(--sticky-head-extra, 0px) + 16px);
     position: sticky;
     top: var(--sticky-side-panel-top);
-    max-height: calc(100vh - 2 * var(--sticky-side-panel-top));
-    max-height: calc(100dvh - 2 * var(--sticky-side-panel-top));
+    max-height: calc(100vh - var(--sticky-side-panel-top) - 16px);
+    max-height: calc(100dvh - var(--sticky-side-panel-top) - 16px);
     overflow-y: auto;
   }
 }
