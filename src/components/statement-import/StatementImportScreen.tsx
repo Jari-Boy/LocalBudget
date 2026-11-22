@@ -2384,6 +2384,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 {/* 列ごとの絞り込み(計画Issue #258)。並び替えの見出しとは別の行に置き、見出しを押す操作と衝突させない */}
                 <tr className="import-filter-row">
                   {showFileColumn && <td />}
+                  {/* チェックの列・日付の列は絞り込みの対象外 */}
+                  <td />
                   <td />
                   <td>
                     <div className={rowFilter.description.trim() !== '' ? 'import-filter import-filter--on' : 'import-filter'}>

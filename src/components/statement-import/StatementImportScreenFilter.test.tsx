@@ -312,6 +312,22 @@ describe('StatementImportScreen: 列ごとの行の絞り込み(計画Issue #258
     expect(names.some((n) => n.includes('ローソン'))).toBe(false)
   })
 
+  it('絞り込みの各欄は、対応する列の見出しの真下に並ぶ(列がずれない)', async () => {
+    renderScreen()
+    await chooseCsv(CSV)
+
+    const rows = within(screen.getByRole('table')).getAllByRole('row')
+    const headers = within(rows[0]).getAllByRole('columnheader')
+    const cells = within(rows[1]).getAllByRole('cell')
+    expect(cells).toHaveLength(headers.length)
+    const under = (header: string) => within(cells[headers.findIndex((h) => (h.textContent ?? '').startsWith(header))])
+    expect(under('摘要').getByLabelText('摘要で絞り込み')).toBeInTheDocument()
+    expect(under('相手科目').getByRole('button', { name: /^相手科目で絞り込み/ })).toBeInTheDocument()
+    expect(under('取引先').getByRole('button', { name: /^取引先で絞り込み/ })).toBeInTheDocument()
+    expect(under('プロジェクト').getByRole('button', { name: /^プロジェクトで絞り込み/ })).toBeInTheDocument()
+    expect(under('メンバー').getByRole('button', { name: /^メンバーで絞り込み/ })).toBeInTheDocument()
+  })
+
   it('絞り込み行の欄は列見出し(columnheader)ではなく、列の見出しは並び替えのボタンだけを持つ', async () => {
     renderScreen()
     await chooseCsv(CSV)
