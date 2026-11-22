@@ -1591,6 +1591,11 @@ describe('JournalScreen(明細行単位)', () => {
       fireEvent.click(within(screen.getByRole('dialog', { name: '一括編集の科目' })).getByRole('button', { name: option }))
     }
     const apply = () => within(bulkBar()).getByRole('button', { name: /行に適用$/ })
+    /** 科目・取引先以外の項目は「その他の項目」を開くと出る(計画Issue #266)。バーが出し直されると畳まれるので、使う直前に開く */
+    const openMore = () => fireEvent.click(within(bulkBar()).getByRole('button', { name: /^その他の項目/ }))
+    /** 適用の確認は、固定バーを高くしないよう、ダイアログで出る */
+    const confirmDialog = () => screen.getByRole('dialog', { name: '一括編集の確認' })
+    const queryConfirmDialog = () => screen.queryByRole('dialog', { name: '一括編集の確認' })
 
     it('明細行単位のときだけ、各行にチェックボックスが出る(仕訳単位には出ない)', async () => {
       await setupLineView()
@@ -1608,6 +1613,48 @@ describe('JournalScreen(明細行単位)', () => {
       fireEvent.click(within(bulkBar()).getByRole('button', { name: '選択を解除' }))
       expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
       expect(debitBox('ランチ')).not.toBeChecked()
+    })
+
+    /** 計画Issue #266: バーの領域を常に確保し、最初のチェックでバーが出ても下の行が押し下げられないようにする */
+    describe('バーの領域の確保と上部への固定(計画Issue #266)', () => {
+      const slot = () => screen.getByTestId('journal-bulk-slot')
+
+      it('未選択のときも、バーの領域(案内)が表の上に確保されている', async () => {
+        await setupLineView()
+        expect(within(slot()).getByText(/行にチェックを付けると、ここに一括編集が出ます/)).toBeInTheDocument()
+        expect(slot().nextElementSibling).toBe(lineTable().closest('.journal-line-table-wrap'))
+      })
+
+      it('最初のチェックを付けると、同じ領域の中身がバーに替わり、領域の位置は動かない(行が押し下げられない)', async () => {
+        await setupLineView()
+        const before = slot()
+        fireEvent.click(debitBox('ランチ'))
+        expect(screen.getByTestId('journal-bulk-slot')).toBe(before)
+        expect(within(before).getByRole('region', { name: '一括編集' })).toBeInTheDocument()
+        expect(within(before).queryByText(/行にチェックを付けると/)).not.toBeInTheDocument()
+        expect(before.nextElementSibling).toBe(lineTable().closest('.journal-line-table-wrap'))
+      })
+
+      it('選択を解除すると、領域は残り、中身が案内に戻る', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(within(bulkBar()).getByRole('button', { name: '選択を解除' }))
+        expect(within(slot()).getByText(/行にチェックを付けると/)).toBeInTheDocument()
+      })
+
+      it('仕訳単位の表示や、下書き・承認待ちのタブには、バーの領域を出さない', async () => {
+        await setupLineView()
+        switchTo('仕訳単位')
+        expect(screen.queryByTestId('journal-bulk-slot')).not.toBeInTheDocument()
+      })
+
+      it('タブの行と絞り込み欄は、ひとつの固定の容器にまとまっている(絞り込み欄を開いても同じ容器)', async () => {
+        await setupLineView()
+        const sticky = screen.getByRole('tablist', { name: '仕訳の種類' }).closest('.journal-screen__sticky')
+        expect(sticky).not.toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: '絞り込みを開く' }))
+        expect(within(sticky as HTMLElement).getByRole('search', { name: '仕訳の絞り込み' })).toBeInTheDocument()
+      })
     })
 
     it('行を押さずにチェックだけでは、その仕訳の編集は始まらない', async () => {
@@ -1778,10 +1825,12 @@ describe('JournalScreen(明細行単位)', () => {
       it('食費(費用)の行だけを選ぶと精算バッチは選べず、立替金の行だけを選ぶと精算バッチを選べる', async () => {
         await setupLineView()
         fireEvent.click(debitBox('ランチ'))
+        openMore()
         expect(findBatchButton('一括編集の精算バッチ', within(bulkBar()))).toBeDisabled()
         expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeEnabled()
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('旅行の立替'))
+        openMore()
         expect(findBatchButton('一括編集の精算バッチ', within(bulkBar()))).toBeEnabled()
         expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
       })
@@ -1799,12 +1848,13 @@ describe('JournalScreen(明細行単位)', () => {
         const props = await setupLineView()
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('家賃'))
+        openMore()
         chooseMember('一括編集の世帯メンバー', '妻', within(bulkBar()))
 
         fireEvent.click(apply())
         expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
-        expect(within(bulkBar()).getByRole('alert')).toHaveTextContent('2行(2件の仕訳)を更新します。元に戻せません。')
-        fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
+        expect(confirmDialog()).toHaveTextContent('2行(2件の仕訳)を更新します。元に戻せません。')
+        fireEvent.click(within(confirmDialog()).getByRole('button', { name: '本当に更新する' }))
 
         await waitFor(() => expect(props.journalEntryRepository.update).toHaveBeenCalledTimes(2))
         const calls = props.journalEntryRepository.update.mock.calls as unknown as [number, { lines: { id?: number; householdMemberId: number }[] }][]
@@ -1821,13 +1871,14 @@ describe('JournalScreen(明細行単位)', () => {
       it('1回目のあとに「やめる」を押すと何も更新されず、項目を選び直しても確認は取り消される', async () => {
         const props = await setupLineView()
         fireEvent.click(debitBox('ランチ'))
+        openMore()
         chooseMember('一括編集の世帯メンバー', '妻', within(bulkBar()))
         fireEvent.click(apply())
-        fireEvent.click(within(bulkBar()).getByRole('button', { name: 'やめる' }))
-        expect(within(bulkBar()).queryByRole('alert')).not.toBeInTheDocument()
+        fireEvent.click(within(confirmDialog()).getByRole('button', { name: 'やめる' }))
+        expect(queryConfirmDialog()).not.toBeInTheDocument()
         fireEvent.click(apply())
         chooseMember('一括編集の世帯メンバー', '夫', within(bulkBar()))
-        expect(within(bulkBar()).queryByRole('alert')).not.toBeInTheDocument()
+        expect(queryConfirmDialog()).not.toBeInTheDocument()
         expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
       })
 
@@ -1836,7 +1887,7 @@ describe('JournalScreen(明細行単位)', () => {
         fireEvent.click(debitBox('ランチ'))
         chooseAccount('家賃')
         fireEvent.click(apply())
-        fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
+        fireEvent.click(within(confirmDialog()).getByRole('button', { name: '本当に更新する' }))
         await waitFor(() => expect(props.journalEntryRepository.update).toHaveBeenCalledTimes(1))
         const [id, input] = props.journalEntryRepository.update.mock.calls[0] as unknown as [number, { lines: { accountId: number }[] }]
         expect(id).toBe(1)
@@ -1849,9 +1900,10 @@ describe('JournalScreen(明細行単位)', () => {
         props.journalEntryRepository.update.mockRejectedValueOnce(new Error('boom'))
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('家賃'))
+        openMore()
         chooseMember('一括編集の世帯メンバー', '妻', within(bulkBar()))
         fireEvent.click(apply())
-        fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
+        fireEvent.click(within(confirmDialog()).getByRole('button', { name: '本当に更新する' }))
 
         expect(await screen.findByText('1行(1件の仕訳)を更新しました')).toBeInTheDocument()
         expect(screen.getByRole('alert')).toHaveTextContent(/更新できませんでした.*「ランチ」/)

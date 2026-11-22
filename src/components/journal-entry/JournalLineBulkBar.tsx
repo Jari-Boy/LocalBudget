@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { ConfirmDialog } from '../common/confirm-dialog/ConfirmDialog'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { BatchSelect } from '../master/BatchSelect'
 import { MemberSelect } from '../master/MemberSelect'
@@ -38,6 +40,8 @@ export interface JournalLineBulkBarProps {
 /** 「なし(外す)」を表す選択ツリーの項目の値 */
 const CLEAR_VALUE = '__clear'
 const KEEP_LABEL = '変更しない'
+/** バーの2行目に小さく出す案内(長いときは省略して、全文はマウスを載せると出る) */
+const HINT = '選択中は、行を押してもチェックを切り替えられます(Esc でも解除できます)'
 /** 一括編集の精算バッチで、「変更しない」の次に固定して出す「なし(外す)」。参照を安定させるため定数にする */
 const CLEAR_OPTIONS = [{ value: CLEAR_VALUE, label: 'なし(外す)' }]
 
@@ -75,8 +79,10 @@ function valueToChange(value: string): BulkChange<number> {
 }
 
 /**
- * 一括編集バー(計画Issue #182)。明細行単位の表で明細の行を1行以上選ぶと、表の上に出る。変える項目
- * (科目・プロジェクト・取引先・精算バッチ・世帯メンバー)だけを選び、「変更しない」の項目はそのまま。
+ * 一括編集バー(計画Issue #182)。明細行単位の表で明細の行を1行以上選ぶと、表の上(画面の上部に固定された領域)に出る。
+ * 変える項目だけを選び、「変更しない」の項目はそのまま。固定領域を高くしないため(計画Issue #266)、1行にまとめる:
+ * 科目と取引先は常に出し、プロジェクト・精算バッチ・世帯メンバーは「その他の項目」を開くと下に重ねて出す
+ * (表を押し下げない。変えている項目があると、閉じていても「その他の項目」に件数が出る)。適用の確認は、バーの中ではなくダイアログで出す。
  * 取引先・精算バッチ・世帯メンバーは、選択した行(科目を変えるなら変更後の科目)に合わせて先に無効にし、
  * 理由を示す(不正な操作をできなくする)。選べなくなった項目の選択は自動で外す。適用は2回押して確定する
  * (1回目で件数と元に戻せない旨を示す確認を出す)。選択・編集内容・確認の状態と、実際の保存は呼び出し側が持つ。
@@ -93,6 +99,7 @@ export function JournalLineBulkBar({
   onClearSelection,
   busy,
 }: JournalLineBulkBarProps) {
+  const [moreOpen, setMoreOpen] = useState(false)
   const accountById = new Map(master.accounts.map((a) => [a.id, a]))
   const rules = bulkEditRules(selected, pick, accountById)
   const stats = selectionStats(selected)
@@ -105,6 +112,9 @@ export function JournalLineBulkBar({
   /** 科目を変えて取引先・精算バッチが外れる行があるときの警告。確認のときだけ出す */
   const warnings = summarizeBulkEdit(selected, pick, accountById, labels).filter((s) => s.warn)
   const empty = isBulkPickEmpty(pick)
+  /** 「その他の項目」に畳まれた項目のうち、変えているものの数 */
+  const moreChangedCount = [pick.project.kind !== 'keep', pick.batch.kind !== 'keep', pick.memberId !== null].filter(Boolean).length
+  const moreLabel = moreChangedCount > 0 ? `その他の項目(${moreChangedCount}件変更中)` : 'その他の項目'
 
   /** 選び直したとき、選べなくなった項目の選択を外してから親へ伝える */
   const change = (patch: Partial<BulkPick>) => {
@@ -118,19 +128,15 @@ export function JournalLineBulkBar({
 
   return (
     <section aria-label="一括編集" className="journal-line-bulk">
-      <div className="journal-line-bulk__head">
-        <strong className="journal-line-bulk__count">{`${stats.lineCount}行を選択中(借方 ${stats.debitCount}行・貸方 ${stats.creditCount}行、${stats.entryCount}件の仕訳)`}</strong>
-        <button type="button" className="journal-line-bulk__button" onClick={onClearSelection}>
-          選択を解除
-        </button>
-        <span className="journal-line-bulk__hint">
-          変える項目だけ選びます。「{KEEP_LABEL}」の項目はそのままです。選択中は、行を押してもチェックを切り替えられます(Esc でも解除できます)。
-        </span>
-      </div>
+      <div className="journal-line-bulk__row">
+        <div className="journal-line-bulk__summary">
+          <strong className="journal-line-bulk__count">{`${stats.lineCount}行を選択中(借方 ${stats.debitCount}行・貸方 ${stats.creditCount}行、${stats.entryCount}件の仕訳)`}</strong>
+          <span className="journal-line-bulk__hint" title={HINT}>
+            {HINT}
+          </span>
+        </div>
 
-      <div className="journal-line-bulk__fields">
         <div className="journal-line-bulk__field">
-          <span className="journal-line-bulk__label">科目</span>
           <TreeSelect
             label="一括編集の科目"
             categories={master.accountCategories}
@@ -142,19 +148,6 @@ export function JournalLineBulkBar({
           />
         </div>
         <div className="journal-line-bulk__field">
-          <span className="journal-line-bulk__label">プロジェクト</span>
-          <TreeSelect
-            label="一括編集のプロジェクト"
-            categories={withClearOption(master.projectCategories)}
-            favoriteKind="project"
-            value={changeToValue(pick.project)}
-            emptyLabel={KEEP_LABEL}
-            placeholder={KEEP_LABEL}
-            onChange={(v) => change({ project: valueToChange(v) })}
-          />
-        </div>
-        <div className="journal-line-bulk__field">
-          <span className="journal-line-bulk__label">取引先</span>
           <TreeSelect
             label="一括編集の取引先"
             categories={withClearOption(master.counterpartyCategories)}
@@ -167,60 +160,96 @@ export function JournalLineBulkBar({
           />
           {note(rules.counterpartyAllowed, '費用・収益の行のみ')}
         </div>
-        <div className="journal-line-bulk__field">
-          <span className="journal-line-bulk__label">精算バッチ</span>
-          <BatchSelect
-            label="一括編集の精算バッチ"
-            batches={master.batches}
-            value={changeToValue(pick.batch)}
-            emptyLabel={KEEP_LABEL}
-            leadingOptions={CLEAR_OPTIONS}
-            disabled={!rules.batchAllowed}
-            onChange={(v) => change({ batch: valueToChange(v) })}
-          />
-          {note(rules.batchAllowed, '未収金・未払金(精算バッチ)の行のみ')}
-        </div>
-        <div className="journal-line-bulk__field">
-          <span className="journal-line-bulk__label">世帯メンバー</span>
-          <MemberSelect
-            label="一括編集の世帯メンバー"
-            members={master.members}
-            value={pick.memberId === null ? '' : String(pick.memberId)}
-            emptyLabel={KEEP_LABEL}
-            disabled={!rules.memberAllowed}
-            onChange={(value) => change({ memberId: value === '' ? null : Number(value) })}
-          />
-          {note(rules.memberAllowed, '既定メンバーのある科目は不可')}
-        </div>
+
+        <button
+          type="button"
+          className="journal-line-bulk__button"
+          aria-label={moreLabel}
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((open) => !open)}
+        >
+          {`その他の項目${moreChangedCount > 0 ? `(${moreChangedCount})` : ''} ${moreOpen ? '▴' : '▾'}`}
+        </button>
+
+        <span className="journal-line-bulk__spacer" />
+        <button type="button" className="journal-line-bulk__button" onClick={onClearSelection}>
+          選択を解除
+        </button>
+        <button
+          type="button"
+          className="journal-line-bulk__button journal-line-bulk__button--primary"
+          disabled={busy || empty || selected.length === 0}
+          onClick={onAskConfirm}
+        >
+          {empty ? '適用' : `${stats.lineCount}行に適用`}
+        </button>
       </div>
 
-      {confirming ? (
-        <div role="alert" className="journal-line-bulk__confirm">
-          <strong className="journal-line-bulk__confirm-title">{`${stats.lineCount}行(${stats.entryCount}件の仕訳)を更新します。元に戻せません。`}</strong>
-          {warnings.map((w) => (
-            <span key={w.text} className="journal-line-bulk__note">
-              {w.text}
-            </span>
-          ))}
-          <button type="button" className="journal-line-bulk__button" onClick={onCancelConfirm}>
-            やめる
-          </button>
-          <button type="button" className="journal-line-bulk__button journal-line-bulk__button--danger" disabled={busy} onClick={onApply}>
-            本当に更新する
-          </button>
-        </div>
-      ) : (
-        <div className="journal-line-bulk__actions">
-          <button
-            type="button"
-            className="journal-line-bulk__button journal-line-bulk__button--primary"
-            disabled={busy || empty || selected.length === 0}
-            onClick={onAskConfirm}
-          >
-            {empty ? '適用' : `${stats.lineCount}行に適用`}
-          </button>
+      {moreOpen && (
+        <div className="journal-line-bulk__more">
+          <div className="journal-line-bulk__field journal-line-bulk__field--labeled">
+            <span className="journal-line-bulk__label">プロジェクト</span>
+            <TreeSelect
+              label="一括編集のプロジェクト"
+              categories={withClearOption(master.projectCategories)}
+              favoriteKind="project"
+              value={changeToValue(pick.project)}
+              emptyLabel={KEEP_LABEL}
+              placeholder={KEEP_LABEL}
+              onChange={(v) => change({ project: valueToChange(v) })}
+            />
+          </div>
+          <div className="journal-line-bulk__field journal-line-bulk__field--labeled">
+            <span className="journal-line-bulk__label">精算バッチ</span>
+            <BatchSelect
+              label="一括編集の精算バッチ"
+              batches={master.batches}
+              value={changeToValue(pick.batch)}
+              emptyLabel={KEEP_LABEL}
+              leadingOptions={CLEAR_OPTIONS}
+              disabled={!rules.batchAllowed}
+              onChange={(v) => change({ batch: valueToChange(v) })}
+            />
+            {note(rules.batchAllowed, '未収金・未払金(精算バッチ)の行のみ')}
+          </div>
+          <div className="journal-line-bulk__field journal-line-bulk__field--labeled">
+            <span className="journal-line-bulk__label">世帯メンバー</span>
+            <MemberSelect
+              label="一括編集の世帯メンバー"
+              members={master.members}
+              value={pick.memberId === null ? '' : String(pick.memberId)}
+              emptyLabel={KEEP_LABEL}
+              disabled={!rules.memberAllowed}
+              onChange={(value) => change({ memberId: value === '' ? null : Number(value) })}
+            />
+            {note(rules.memberAllowed, '既定メンバーのある科目は不可')}
+          </div>
         </div>
       )}
+
+      {confirming &&
+        // 確認はダイアログで出す。固定バーの重なり順(スタッキング)の外に出すため body に描く
+        createPortal(
+          <ConfirmDialog
+            title="一括編集の確認"
+            message={
+              <>
+                {`${stats.lineCount}行(${stats.entryCount}件の仕訳)を更新します。元に戻せません。`}
+                {warnings.map((w) => (
+                  <span key={w.text} className="journal-line-bulk__note journal-line-bulk__note--block">
+                    {w.text}
+                  </span>
+                ))}
+              </>
+            }
+            confirmLabel="本当に更新する"
+            cancelLabel="やめる"
+            busy={busy}
+            onConfirm={onApply}
+            onCancel={onCancelConfirm}
+          />,
+          document.body,
+        )}
     </section>
   )
 }

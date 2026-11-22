@@ -1,10 +1,15 @@
-/* 一括編集バー(計画Issue #182)。表の上に出る。色・余白は既存のデザイントークンを使い、文字は表と同じ12pxに揃える */
+/*
+ * 一括編集バー(計画Issue #182)。表の上の、画面の上部に固定された領域(JournalScreen の __bulk-slot)に出る。
+ * 固定領域を高くしないため、1行にまとめる(計画Issue #266)。色・余白は既存のデザイントークンを使い、文字は表と同じ12pxに揃える。
+ * 領域の高さ(--journal-bulk-slot-h)は、バーが出ても行がずれないよう、バーと案内で同じ値を使う。
+ */
 .journal-line-bulk {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  position: relative;
   box-sizing: border-box;
-  padding: 12px 14px;
+  height: var(--journal-bulk-slot-h, 60px);
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
   border: 2px solid var(--color-accent);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
@@ -12,32 +17,51 @@
   font-size: var(--font-size-xs);
 }
 
-.journal-line-bulk__head {
+.journal-line-bulk__row {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
+}
+
+/* 選択件数と案内の2行。長いときは省略して、領域の高さを変えない */
+.journal-line-bulk__summary {
+  flex: 0 1 340px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.journal-line-bulk__count,
+.journal-line-bulk__hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .journal-line-bulk__count {
   color: var(--color-accent);
+  line-height: 1.3;
 }
 
 .journal-line-bulk__hint {
-  color: var(--color-text);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.2;
 }
 
-.journal-line-bulk__fields {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 12px;
+.journal-line-bulk__spacer {
+  flex: 1 1 0;
 }
 
 .journal-line-bulk__field {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
+  flex: 0 0 150px;
   width: 150px;
 }
 
@@ -45,32 +69,42 @@
   color: var(--color-text);
 }
 
-/* 選べない理由(幅が狭い項目の下に出るので、折り返して全文を読めるようにする) */
+/* 選べない理由(項目の下に1行で出す。領域の高さに収まる小さな文字) */
 .journal-line-bulk__note {
   color: #8a4b00;
-  line-height: 1.4;
+  font-size: 11px;
+  line-height: 1.2;
 }
 
-.journal-line-bulk__actions,
-.journal-line-bulk__confirm {
+.journal-line-bulk__note--block {
+  display: block;
+  margin-top: 6px;
+  font-size: var(--font-size-xs);
+}
+
+/* 「その他の項目」: バーの下に重ねて出す(表を押し下げない) */
+.journal-line-bulk__more {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  box-sizing: border-box;
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popup);
 }
 
-.journal-line-bulk__confirm {
-  padding: 8px 10px;
-  border: 1px solid var(--color-danger, #b3261e);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--color-danger, #b3261e) 6%, var(--color-surface));
-}
-
-.journal-line-bulk__confirm-title {
-  color: var(--color-danger, #b3261e);
+.journal-line-bulk__field--labeled {
+  gap: 3px;
 }
 
 .journal-line-bulk__button {
+  flex: 0 0 auto;
   min-height: 32px;
   padding: 0 14px;
   border: 1px solid var(--color-border);
@@ -79,19 +113,13 @@
   color: var(--color-text);
   font: inherit;
   font-size: var(--font-size-xs);
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .journal-line-bulk__button--primary {
   border-color: var(--color-accent);
   background: var(--color-accent);
-  color: #ffffff;
-  font-weight: 700;
-}
-
-.journal-line-bulk__button--danger {
-  border-color: var(--color-danger, #b3261e);
-  background: var(--color-danger, #b3261e);
   color: #ffffff;
   font-weight: 700;
 }

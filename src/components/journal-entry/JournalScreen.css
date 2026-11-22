@@ -22,6 +22,47 @@
   font-weight: 700;
 }
 
+/*
+ * タブの行と絞り込み欄は、スクロールしても画面の上部に固定する(計画Issue #266)。画面タイトルは固定しない。
+ * 重なり順は、ポップアップ・ダイアログ(z-index: 30)より下にする。高さは画面側が --sticky-head-h に入れ、
+ * その下に固定する一括編集バーの top になる。
+ */
+.journal-screen__sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 8px;
+  background: var(--color-bg);
+}
+
+/* 一括編集バーの領域(明細行単位の表の上)。未選択のときも同じ高さで確保し、バーが出ても行がずれない。タブ・絞り込み欄の下に固定する */
+.journal-screen__bulk-slot {
+  position: sticky;
+  top: var(--sticky-head-h, 0px);
+  z-index: 15;
+  box-sizing: border-box;
+  /* バーと案内で同じ高さにする(JournalLineBulkBar.css の --journal-bulk-slot-h と同じ値) */
+  --journal-bulk-slot-h: 60px;
+  height: var(--journal-bulk-slot-h);
+  background: var(--color-bg);
+}
+
+.journal-screen__bulk-slot-hint {
+  box-sizing: border-box;
+  height: var(--journal-bulk-slot-h);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
 /* タブの行。右端に絞り込みの開閉ボタンを置く(専用の行は取らない、計画Issue #266) */
 .journal-screen__tabbar {
   display: flex;

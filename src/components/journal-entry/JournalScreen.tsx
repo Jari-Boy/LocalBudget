@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
@@ -41,6 +41,7 @@ import type { RecurringTransactionRuleRepository } from '../../domain/recurring-
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
 import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
+import { useElementHeight } from '../common/sticky/useElementHeight'
 import { JournalFilterPanel, type JournalFilterOptions } from '../common/journal-filter/JournalFilterPanel'
 import { countActiveConditions } from '../common/journal-filter/journalFilterModel'
 import { JournalResultList } from '../common/journal-result/JournalResultList'
@@ -270,6 +271,9 @@ export function JournalScreen(props: JournalScreenProps) {
   const [filter, setFilter] = useState<JournalEntryFilter>(props.initialFilter ?? {})
   /** 絞り込み欄の開閉。初期状態は閉(条件があるときはボタンの件数バッジで分かる、計画Issue #266) */
   const [filterOpen, setFilterOpen] = useState(false)
+  /** 上部に固定するタブ・絞り込み欄の容器と、その高さ(下の固定要素の top に使う、計画Issue #266) */
+  const [stickyElement, setStickyElement] = useState<HTMLDivElement | null>(null)
+  const stickyHeight = useElementHeight(stickyElement)
   /** 「さらに表示」で増やした表示件数の上限。null は先頭の1ページ分(計画Issue #253)。絞り込み条件を変えると戻す */
   const [displayLimit, setDisplayLimit] = useState<number | null>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
@@ -1241,7 +1245,7 @@ export function JournalScreen(props: JournalScreenProps) {
         : ''
 
   return (
-    <div className="journal-screen">
+    <div className="journal-screen" style={{ '--sticky-head-h': `${stickyHeight}px` } as CSSProperties}>
       <div className="journal-screen__head">
         <h1 className="journal-screen__title">仕訳</h1>
         <div className="journal-screen__actions">
@@ -1277,6 +1281,8 @@ export function JournalScreen(props: JournalScreenProps) {
 
       {props.banner}
 
+      {/* タブの行と絞り込み欄は、スクロールしても画面の上部に固定する(計画Issue #266)。高さは下の固定要素(一括編集バー)の top に渡す */}
+      <div className="journal-screen__sticky" ref={setStickyElement}>
       <div className="journal-screen__tabbar">
         <div role="tablist" aria-label="仕訳の種類" className="journal-screen__tabs">
           {tabs.map((item) => (
@@ -1301,6 +1307,12 @@ export function JournalScreen(props: JournalScreenProps) {
           />
         )}
       </div>
+      {tab === 'list' && filterOpen && (
+        <div className="journal-screen__filter" id="journal-screen-filter">
+          <JournalFilterPanel filter={filter} onChange={changeFilter} options={filterOptions} resultCount={matchedEntries.length} />
+        </div>
+      )}
+      </div>
 
       {tab === 'rules' && props.rulesPanel !== undefined ? (
         <div className="journal-screen__rules">{props.rulesPanel}</div>
@@ -1308,11 +1320,6 @@ export function JournalScreen(props: JournalScreenProps) {
         <div className="journal-screen__rules">{props.templatesPanel}</div>
       ) : (
         <>
-      {tab === 'list' && filterOpen && (
-        <div className="journal-screen__filter" id="journal-screen-filter">
-          <JournalFilterPanel filter={filter} onChange={changeFilter} options={filterOptions} resultCount={matchedEntries.length} />
-        </div>
-      )}
       {note !== '' && <p className="journal-screen__note">{note}</p>}
 
       {tab === 'list' && (
@@ -1405,23 +1412,28 @@ export function JournalScreen(props: JournalScreenProps) {
                   {error}
                 </p>
               )}
-              {bulkSelected.length > 0 && (
-                <JournalLineBulkBar
-                  selected={bulkSelected}
-                  pick={effectiveBulkPick}
-                  onPickChange={(next) => {
-                    setBulkPick(next)
-                    setBulkConfirming(false)
-                  }}
-                  master={master}
-                  confirming={bulkConfirming}
-                  onAskConfirm={() => setBulkConfirming(true)}
-                  onCancelConfirm={() => setBulkConfirming(false)}
-                  onApply={() => void applyBulk()}
-                  onClearSelection={resetBulk}
-                  busy={busy}
-                />
-              )}
+              {/* バーの領域は未選択のときも確保する。最初のチェックでバーが出ても、下の行が押し下げられない(計画Issue #266)。上部に固定する */}
+              <div className="journal-screen__bulk-slot" data-testid="journal-bulk-slot">
+                {bulkSelected.length > 0 ? (
+                  <JournalLineBulkBar
+                    selected={bulkSelected}
+                    pick={effectiveBulkPick}
+                    onPickChange={(next) => {
+                      setBulkPick(next)
+                      setBulkConfirming(false)
+                    }}
+                    master={master}
+                    confirming={bulkConfirming}
+                    onAskConfirm={() => setBulkConfirming(true)}
+                    onCancelConfirm={() => setBulkConfirming(false)}
+                    onApply={() => void applyBulk()}
+                    onClearSelection={resetBulk}
+                    busy={busy}
+                  />
+                ) : (
+                  <p className="journal-screen__bulk-slot-hint">行にチェックを付けると、ここに一括編集が出ます(この領域は常に確保され、行はずれません)</p>
+                )}
+              </div>
               <JournalLineTable
                 columns={lineColumns}
                 entries={visibleEntries}
