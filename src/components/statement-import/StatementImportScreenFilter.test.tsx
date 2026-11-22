@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * StatementImportScreen の列ごとの行の絞り込み(計画Issue #258)のコンポーネントテスト。
- * 表見出しの下の絞り込み行(摘要のテキスト・期間・相手科目/取引先/プロジェクト/メンバーの共通の選択欄と「未設定」)で行を絞れること、
+ * 表見出しの下の絞り込み行(摘要のテキスト・相手科目/取引先/プロジェクト/メンバーの共通の選択欄と「未設定」)で行を絞れること、
  * 複数の条件がANDで効くこと、条件の解除で全行に戻ること、タブの件数が「表示中 / 全体」になること、
  * 絞り込みで隠れた行のチェックが外れること、一括設定と確定が表示中の行だけに及ぶことを確認する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
@@ -219,32 +219,15 @@ describe('StatementImportScreen: 列ごとの行の絞り込み(計画Issue #258
     expect(hasRow(/家賃/)).toBe(true)
   })
 
-  it('期間で絞り込むと、開始日・終了日を含む範囲の日付の行だけが表示される。片方だけの指定もできる', async () => {
+  it('「すべての条件を解除」で、メンバーの条件も解除される', async () => {
     renderScreen()
     await chooseCsv(CSV)
-
-    fireEvent.change(screen.getByLabelText('期間の開始'), { target: { value: '2026-10-06' } })
-    fireEvent.change(screen.getByLabelText('期間の終了'), { target: { value: '2026-10-07' } })
-    expect(hasRow(/池袋店/)).toBe(true)
-    expect(hasRow(/ローソン/)).toBe(true)
+    pickMemberInRow(/ローソン/, '配偶者')
+    pickFilter('メンバーで絞り込み', '配偶者')
     expect(hasRow(/新宿店/)).toBe(false)
-    expect(hasRow(/家賃/)).toBe(false)
-    expect(screen.getByRole('status', { name: '絞り込みの状況' })).toHaveTextContent('4件のうち2件を表示')
-
-    fireEvent.change(screen.getByLabelText('期間の終了'), { target: { value: '' } })
-    expect(hasRow(/家賃/)).toBe(true)
-    expect(hasRow(/新宿店/)).toBe(false)
-  })
-
-  it('「すべての条件を解除」で、期間とメンバーの条件も解除される', async () => {
-    renderScreen()
-    await chooseCsv(CSV)
-    fireEvent.change(screen.getByLabelText('期間の開始'), { target: { value: '2026-10-07' } })
-    pickFilter('メンバーで絞り込み', '未設定')
 
     fireEvent.click(screen.getByRole('button', { name: 'すべての条件を解除' }))
 
-    expect(screen.getByLabelText('期間の開始')).toHaveValue('')
     expect(hasRow(/新宿店/)).toBe(true)
   })
 

@@ -1401,7 +1401,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const matchesFilterWith = (filter: ImportRowFilter, i: number) =>
     matchesRowFilter(filter, {
       description: formatDescriptionForDisplay(records[i].record.description),
-      entryDate: records[i].record.entryDate,
       inputs:
         statusOf(i) === 'duplicate'
           ? null
@@ -2386,29 +2385,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 <tr className="import-filter-row">
                   {showFileColumn && <td />}
                   <td />
-                  <td>
-                    {/* 期間(開始日・終了日、両端を含む)。日付の列に、上下に並べる */}
-                    <div className="import-filter__dates">
-                      <div className={rowFilter.dateFrom !== '' ? 'import-filter import-filter--on' : 'import-filter'}>
-                        <input
-                          type="date"
-                          className="import-control import-filter__date"
-                          aria-label={t('filterDateFromLabel')}
-                          value={rowFilter.dateFrom}
-                          onChange={(e) => changeRowFilter({ ...rowFilter, dateFrom: e.target.value })}
-                        />
-                      </div>
-                      <div className={rowFilter.dateTo !== '' ? 'import-filter import-filter--on' : 'import-filter'}>
-                        <input
-                          type="date"
-                          className="import-control import-filter__date"
-                          aria-label={t('filterDateToLabel')}
-                          value={rowFilter.dateTo}
-                          onChange={(e) => changeRowFilter({ ...rowFilter, dateTo: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                  </td>
                   <td>
                     <div className={rowFilter.description.trim() !== '' ? 'import-filter import-filter--on' : 'import-filter'}>
                       <input

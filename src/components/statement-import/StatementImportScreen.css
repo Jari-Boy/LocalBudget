@@ -1161,20 +1161,6 @@
   position: relative;
 }
 
-/* 期間の2つの日付入力は、日付の列に上下に並べる。ほかの欄より小さくして、行の高さが増えすぎないようにする */
-.import-filter__dates {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.import-filter__date {
-  width: 100%;
-  min-width: 132px;
-  min-height: 30px;
-  font-size: var(--font-size-sm);
-}
-
 .import-filter__text {
   width: 100%;
   padding-right: 28px;
