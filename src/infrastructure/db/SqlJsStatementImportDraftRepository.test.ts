@@ -37,10 +37,6 @@ const rowInput = (overrides: Partial<StatementImportDraftRowInput> = {}): Statem
   includeDuplicate: false,
   approximateDecision: 'different_transaction',
   replacementTargetId: null,
-  learnOn: true,
-  learnPattern: null,
-  learnAccountTouched: false,
-  learnAccountId: null,
   ...overrides,
 })
 

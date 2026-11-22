@@ -24,10 +24,6 @@ export interface StatementImportDraftRowInput {
   includeDuplicate: boolean
   approximateDecision: StatementImportDraftApproximateDecision
   replacementTargetId: number | null
-  learnOn: boolean
-  learnPattern: string | null
-  learnAccountTouched: boolean
-  learnAccountId: number | null
 }
 
 /** 一時保存したCSV1ファイル。取り込んだ全ファイルを選んだ順に持つ */

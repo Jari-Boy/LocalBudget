@@ -941,3 +941,70 @@
   font-size: 13px;
   color: var(--color-danger);
 }
+
+/* キーワードのポップアップ(計画Issue #259): 入口のアイコン・一致した行の強調・行ごとの適用・ゴミ箱アイコン */
+.import-with-icon {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.import-with-icon > .tree-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.import-icon-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--color-text-muted, var(--color-text));
+  cursor: pointer;
+}
+
+.import-icon-btn:hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+.import-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.import-icon-btn--matched {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.import-icon-btn--danger:hover:not(:disabled) {
+  color: var(--color-danger);
+}
+
+.import-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.import-settings__pattern--matched {
+  padding: 4px 6px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+}
+
+.import-settings__matched {
+  font-size: var(--font-size-xs);
+  color: var(--color-accent);
+}
