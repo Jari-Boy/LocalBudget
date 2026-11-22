@@ -66,6 +66,7 @@ export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, re
               }}
             />
             {renderAccount?.(item, index)}
+            {item.matched === true && <span className="import-settings__matched import-nowrap">{t('patternMatchedRow')}</span>}
             <span className="import-note import-nowrap" title={t('patternRowsTitle')}>
               {t('patternRows', { count: item.count })}
             </span>
@@ -82,7 +83,6 @@ export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, re
               </svg>
             </button>
           </div>
-          {item.matched === true && <span className="import-settings__matched">{t('patternMatchedRow')}</span>}
           {item.error !== null && <span className="import-error import-settings__error">{errorText(item.error)}</span>}
           {/* 現在の明細の摘要にマッチしない新規キーワードは、登録できるが、タイプミスなどに気づけるよう注意を出す(計画Issue #236) */}
           {item.error === null && item.kind === 'new' && item.text.trim() !== '' && item.count === 0 && (

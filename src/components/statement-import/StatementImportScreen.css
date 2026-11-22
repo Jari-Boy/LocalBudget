@@ -998,13 +998,18 @@
   stroke-linejoin: round;
 }
 
-.import-settings__pattern--matched {
+/* 一致した行だけ余白が変わると入力欄がずれるので、余白は全行そろえ、一致した行は背景だけ変える */
+.import-settings__pattern {
   padding: 4px 6px;
   border-radius: var(--radius-md);
+}
+
+.import-settings__pattern--matched {
   background: var(--color-accent-soft);
 }
 
 .import-settings__matched {
+  flex: none;
   font-size: var(--font-size-xs);
   color: var(--color-accent);
 }
