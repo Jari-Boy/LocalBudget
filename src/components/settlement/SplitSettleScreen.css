@@ -15,11 +15,16 @@
 }
 
 /* タブの行。右端に絞り込みの開閉ボタンを置く(専用の行は取らない、計画Issue #266) */
+/* スクロールしても画面の上部に固定する。画面タイトルは固定しない。重なり順は、ポップアップ・ダイアログ(z-index: 30)より下にする */
 .split-settle__tabbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
 }
 
 .split-settle__tabs {
@@ -47,7 +52,11 @@
   border-bottom-color: var(--color-accent);
 }
 
+/* 絞り込み欄は、タブの行の下に固定する。タブの行の高さは画面側が --sticky-head-h に入れる */
 .split-settle__filter {
+  position: sticky;
+  top: var(--sticky-head-h, 0px);
+  z-index: 15;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);

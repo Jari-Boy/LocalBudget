@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
 import { countActiveConditions } from '../common/journal-filter/journalFilterModel'
+import { useElementHeight } from '../common/sticky/useElementHeight'
 import { SettleTab } from './SettleTab'
 import { SplitTab } from './SplitTab'
 import { deriveSplitSettle, loadSplitSettleData, type SplitSettleData, type SplitSettleRepositories } from './splitSettleData'
@@ -39,6 +40,9 @@ export function SplitSettleScreen({
   /** 割勘タブの絞り込み条件と開閉。タブの行のボタンで開閉するため、ここで持ち、タブを行き来しても保つ(初期は閉、計画Issue #266) */
   const [filter, setFilter] = useState<JournalEntryFilter>({})
   const [filterOpen, setFilterOpen] = useState(false)
+  /** 上部に固定するタブの行と、その高さ(絞り込み欄の top に使う、計画Issue #266) */
+  const [tabbarElement, setTabbarElement] = useState<HTMLDivElement | null>(null)
+  const tabbarHeight = useElementHeight(tabbarElement)
   const [data, setData] = useState<SplitSettleData | null>(null)
 
   const reload = async () => setData(await loadSplitSettleData(repositories))
@@ -55,9 +59,9 @@ export function SplitSettleScreen({
   const date = today ?? new Date().toISOString().slice(0, 10)
 
   return (
-    <div className="split-settle">
+    <div className="split-settle" style={{ '--sticky-head-h': `${tabbarHeight}px` } as CSSProperties}>
       <h1 className="split-settle__title">割勘・精算</h1>
-      <div className="split-settle__tabbar">
+      <div className="split-settle__tabbar" ref={setTabbarElement}>
         <div role="tablist" aria-label="割勘と精算" className="split-settle__tabs">
           {TABS.map((item) => (
             <button

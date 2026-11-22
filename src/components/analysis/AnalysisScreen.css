@@ -93,11 +93,16 @@
 }
 
 /* ---- タブ ---- */
+/* スクロールしても画面の上部に固定する(計画Issue #266)。条件バー(期間・比較・絞り込み)は固定せず、縦の領域を節約する */
 .analysis__tabs {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
 }
 
 .analysis__tab {

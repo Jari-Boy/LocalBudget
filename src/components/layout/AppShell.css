@@ -96,11 +96,19 @@
   font-weight: 700;
 }
 
+/*
+ * 領域内のタブ(マスタの科目・取引先…)は、スクロールしても画面の上部に固定する(計画Issue #266)。画面タイトルは固定しない。
+ * 重なり順は、ポップアップ・ダイアログ(z-index: 30)より下にする。
+ */
 .app-shell__tabs {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
 }
 
 .app-shell__tab {
