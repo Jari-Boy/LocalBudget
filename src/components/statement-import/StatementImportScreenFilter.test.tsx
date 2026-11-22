@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * StatementImportScreen の列ごとの行の絞り込み(計画Issue #258)のコンポーネントテスト。
- * 表見出しの下の絞り込み行(摘要のテキスト・相手科目/取引先/プロジェクト/メンバーの共通の選択欄と「未設定」)で行を絞れること、
+ * StatementImportScreen の行の絞り込み(計画Issue #258)のコンポーネントテスト。
+ * 仕訳一覧と同じ作りの絞り込みパネル(摘要の検索・相手科目/取引先/プロジェクト/世帯メンバーの複数選択欄と「未設定」)で行を絞れること、
  * 複数の条件がANDで効くこと、条件の解除で全行に戻ること、タブの件数が「表示中 / 全体」になること、
  * 絞り込みで隠れた行のチェックが外れること、一括設定と確定が表示中の行だけに及ぶことを確認する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
@@ -120,19 +120,28 @@ const pickIn = (scope: ReturnType<typeof within>, label: string, item: string) =
   fireEvent.click(scope.getByRole('button', { name: new RegExp(`^${label}`) }))
   fireEvent.click(within(screen.getByRole('dialog', { name: label })).getByRole('button', { name: item }))
 }
-/** 絞り込み行の選択欄(表の見出しの中)から選ぶ */
-const pickFilter = (label: string, item: string) => pickIn(within(screen.getByRole('table')), label, item)
+/** 仕訳一覧と同じ作りの、明細の絞り込みパネル */
+const panel = () => within(screen.getByRole('search', { name: '明細の絞り込み' }))
+/** パネルの選択欄を開き、項目を選んで(複数選択なので開いたまま)閉じる。選び済みの項目を選ぶと外れる */
+const chooseFilter = (label: string, ...items: string[]) => {
+  const trigger = panel().getByRole('button', { name: new RegExp(`^${label}`) })
+  fireEvent.click(trigger)
+  const dialog = within(screen.getByRole('dialog', { name: label }))
+  for (const item of items) fireEvent.click(dialog.getByRole('button', { name: new RegExp(`^${item}`) }))
+  fireEvent.click(trigger)
+}
 /** 行の世帯メンバーの選択欄から選ぶ */
 const pickMemberInRow = (rowText: RegExp, name: string) => {
   fireEvent.click(rowOf(rowText).getByRole('button', { name: /の世帯メンバー/ }))
   fireEvent.click(within(screen.getByRole('dialog', { name: /の世帯メンバー/ })).getByRole('button', { name }))
 }
 const typeDescriptionFilter = (text: string) =>
-  fireEvent.change(screen.getByLabelText('摘要で絞り込み'), { target: { value: text } })
+  fireEvent.change(panel().getByRole('searchbox', { name: '摘要で検索' }), { target: { value: text } })
+const clearFilter = () => fireEvent.click(panel().getByRole('button', { name: '条件をクリア' }))
 const confirmButton = (count: number) => screen.getByRole('button', { name: new RegExp(`^\\d+ / ${count} 件を「普通預金」に確定$`) })
 
-describe('StatementImportScreen: 列ごとの行の絞り込み(計画Issue #258)', () => {
-  it('摘要で絞り込むと、表記ゆれ(ハイフンの有無)を含めて該当する行だけが表示され、条件を解除すると全行に戻る', async () => {
+describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)', () => {
+  it('摘要で検索すると、表記ゆれ(ハイフンの有無)を含めて該当する行だけが表示され、条件をクリアすると全行に戻る', async () => {
     renderScreen()
     await chooseCsv(CSV)
 
@@ -145,103 +154,114 @@ describe('StatementImportScreen: 列ごとの行の絞り込み(計画Issue #258
     expect(hasRow(/ローソン/)).toBe(false)
     expect(hasRow(/家賃/)).toBe(false)
 
-    fireEvent.click(screen.getByRole('button', { name: 'すべての条件を解除' }))
+    clearFilter()
 
     expect(hasRow(/ローソン/)).toBe(true)
     expect(hasRow(/家賃/)).toBe(true)
-    expect(screen.getByLabelText('摘要で絞り込み')).toHaveValue('')
+    expect(panel().getByRole('searchbox', { name: '摘要で検索' })).toHaveValue('')
   })
 
-  it('絞り込み中は「N件のうちM件を表示」の案内と、タブの「表示中 / 全体」の件数が出て、条件が無いときは出ない', async () => {
+  it('パネルに表示中の件数が出て、タブには「表示中 / 全体」が出る。条件が無いときは「条件をクリア」が出ない', async () => {
     renderScreen()
     await chooseCsv(CSV)
-    expect(screen.queryByRole('button', { name: 'すべての条件を解除' })).not.toBeInTheDocument()
+    expect(panel().queryByRole('button', { name: '条件をクリア' })).not.toBeInTheDocument()
+    expect(panel().getByRole('status')).toHaveTextContent('4件')
 
     typeDescriptionFilter('セブン')
 
-    expect(screen.getByRole('status', { name: '絞り込みの状況' })).toHaveTextContent('4件のうち2件を表示')
+    expect(panel().getByRole('status')).toHaveTextContent('2件')
     expect(within(screen.getByRole('tab', { name: /^新規/ })).getByText('2 / 4')).toBeInTheDocument()
   })
 
-  it('条件に合う行が無いときは、その旨を出し、条件を解除すれば戻せる', async () => {
+  it('絞り込みは、表の中ではなく、表の外の独立したパネルにある(仕訳一覧と同じ)', async () => {
+    renderScreen()
+    await chooseCsv(CSV)
+
+    expect(panel().getByRole('searchbox', { name: '摘要で検索' })).toBeInTheDocument()
+    expect(within(screen.getByRole('table')).queryByRole('searchbox')).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('columnheader', { name: /絞り込み|検索/ })).toHaveLength(0)
+    const header = screen.getByRole('columnheader', { name: /^相手科目/ })
+    expect(within(header).getAllByRole('button')).toHaveLength(1)
+  })
+
+  it('条件に合う行が無いときは、その旨を出し、条件をクリアすれば戻せる', async () => {
     renderScreen()
     await chooseCsv(CSV)
 
     typeDescriptionFilter('存在しない店')
 
     expect(screen.getByText('条件に合う行がありません')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'すべての条件を解除' }))
+    clearFilter()
     expect(hasRow(/家賃/)).toBe(true)
   })
 
-  it('相手科目の絞り込みは、共通の選択欄で科目を選び、「未設定」で未入力の行だけを出せる', async () => {
+  it('相手科目は共通の選択欄(複数選択)で絞れ、「未設定」と一緒に選ぶと、どちらかに合う行が出る', async () => {
     renderScreen()
     await chooseCsv(CSV)
     pickIn(rowOf(/新宿店/), '相手科目', '食費')
     pickIn(rowOf(/ローソン/), '相手科目', '食費')
 
-    pickFilter('相手科目で絞り込み', '食費')
+    chooseFilter('相手科目', '食費')
     expect(hasRow(/新宿店/)).toBe(true)
     expect(hasRow(/ローソン/)).toBe(true)
     expect(hasRow(/池袋店/)).toBe(false)
 
-    pickFilter('相手科目で絞り込み', '未設定')
+    chooseFilter('相手科目', '未設定')
     expect(hasRow(/池袋店/)).toBe(true)
     expect(hasRow(/家賃/)).toBe(true)
-    expect(hasRow(/新宿店/)).toBe(false)
+    expect(hasRow(/新宿店/)).toBe(true)
   })
 
-  it('プロジェクトの絞り込みは、選んだプロジェクトの行と、「未設定」の行を出し分けられる', async () => {
+  it('プロジェクトは、選んだプロジェクトの行と、「未設定」の行を出し分けられる', async () => {
     renderScreen()
     await chooseCsv(CSV)
     pickIn(rowOf(/家賃/), 'プロジェクト', '出張')
 
-    pickFilter('プロジェクトで絞り込み', '出張')
+    chooseFilter('プロジェクト', '出張')
     expect(hasRow(/家賃/)).toBe(true)
     expect(hasRow(/ローソン/)).toBe(false)
 
-    pickFilter('プロジェクトで絞り込み', '未設定')
+    chooseFilter('プロジェクト', '出張', '未設定')
     expect(hasRow(/家賃/)).toBe(false)
     expect(hasRow(/ローソン/)).toBe(true)
   })
 
-  it('メンバーの絞り込みは、選んだメンバーの行と、「未設定」の行を出し分けられる', async () => {
+  it('世帯メンバーは、選んだメンバーの行と、「未設定」の行を出し分けられる', async () => {
     renderScreen()
     await chooseCsv(CSV)
     pickMemberInRow(/ローソン/, '配偶者')
 
-    pickFilter('メンバーで絞り込み', '配偶者')
+    chooseFilter('世帯メンバー', '配偶者')
     expect(hasRow(/ローソン/)).toBe(true)
     expect(hasRow(/家賃/)).toBe(false)
 
-    pickFilter('メンバーで絞り込み', '未設定')
+    chooseFilter('世帯メンバー', '配偶者', '未設定')
     expect(hasRow(/ローソン/)).toBe(false)
     expect(hasRow(/家賃/)).toBe(true)
   })
 
-  it('「すべての条件を解除」で、メンバーの条件も解除される', async () => {
+  it('「条件をクリア」で、選択欄の条件もすべて解除される', async () => {
     renderScreen()
     await chooseCsv(CSV)
     pickMemberInRow(/ローソン/, '配偶者')
-    pickFilter('メンバーで絞り込み', '配偶者')
+    chooseFilter('世帯メンバー', '配偶者')
     expect(hasRow(/新宿店/)).toBe(false)
 
-    fireEvent.click(screen.getByRole('button', { name: 'すべての条件を解除' }))
+    clearFilter()
 
     expect(hasRow(/新宿店/)).toBe(true)
   })
 
-  it('複数の条件は、すべてに合う行だけを表示する(AND)', async () => {
+  it('複数の軸の条件は、すべてに合う行だけを表示する(AND)', async () => {
     renderScreen()
     await chooseCsv(CSV)
     pickIn(rowOf(/新宿店/), '相手科目', '食費')
 
     typeDescriptionFilter('セブン')
-    pickFilter('相手科目で絞り込み', '食費')
+    chooseFilter('相手科目', '食費')
 
     expect(hasRow(/新宿店/)).toBe(true)
     expect(hasRow(/池袋店/)).toBe(false)
-    expect(screen.getByRole('status', { name: '絞り込みの状況' })).toHaveTextContent('2つの条件')
   })
 
   it('絞り込みで隠れた行のチェックは外れ、外した件数が一括設定の案内に出る。表示中の行のチェックは残る', async () => {
@@ -264,7 +284,7 @@ describe('StatementImportScreen: 列ごとの行の絞り込み(計画Issue #258
     fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
 
     pickIn(within(screen.getByRole('group', { name: '選択した明細への一括設定' })), '一括の相手科目', '食費')
-    fireEvent.click(screen.getByRole('button', { name: 'すべての条件を解除' }))
+    clearFilter()
 
     expect(rowOf(/新宿店/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
     expect(rowOf(/池袋店/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
@@ -282,19 +302,19 @@ describe('StatementImportScreen: 列ごとの行の絞り込み(計画Issue #258
 
     await screen.findByText(/2件を確定しました/)
     expect(entries.findAll().filter((e) => e.sourceType !== 'auto_balance_adjustment')).toHaveLength(2)
-    fireEvent.click(screen.getByRole('button', { name: 'すべての条件を解除' }))
+    clearFilter()
     expect(hasRow(/ローソン/)).toBe(true)
     expect(hasRow(/家賃/)).toBe(true)
     expect(hasRow(/新宿店/)).toBe(false)
   })
 
-  it('絞り込みを解除すれば、確定の対象は全件に戻る', async () => {
+  it('絞り込みをクリアすれば、確定の対象は全件に戻る', async () => {
     renderScreen()
     await chooseCsv(CSV)
     typeDescriptionFilter('セブン')
     expect(confirmButton(2)).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'すべての条件を解除' }))
+    clearFilter()
 
     expect(confirmButton(4)).toBeInTheDocument()
   })
@@ -310,30 +330,5 @@ describe('StatementImportScreen: 列ごとの行の絞り込み(計画Issue #258
     const names = screen.getAllByRole('row', { name: /店/ }).map((r) => r.textContent ?? '')
     expect(names[0]).toContain('池袋店')
     expect(names.some((n) => n.includes('ローソン'))).toBe(false)
-  })
-
-  it('絞り込みの各欄は、対応する列の見出しの真下に並ぶ(列がずれない)', async () => {
-    renderScreen()
-    await chooseCsv(CSV)
-
-    const rows = within(screen.getByRole('table')).getAllByRole('row')
-    const headers = within(rows[0]).getAllByRole('columnheader')
-    const cells = within(rows[1]).getAllByRole('cell')
-    expect(cells).toHaveLength(headers.length)
-    const under = (header: string) => within(cells[headers.findIndex((h) => (h.textContent ?? '').startsWith(header))])
-    expect(under('摘要').getByLabelText('摘要で絞り込み')).toBeInTheDocument()
-    expect(under('相手科目').getByRole('button', { name: /^相手科目で絞り込み/ })).toBeInTheDocument()
-    expect(under('取引先').getByRole('button', { name: /^取引先で絞り込み/ })).toBeInTheDocument()
-    expect(under('プロジェクト').getByRole('button', { name: /^プロジェクトで絞り込み/ })).toBeInTheDocument()
-    expect(under('メンバー').getByRole('button', { name: /^メンバーで絞り込み/ })).toBeInTheDocument()
-  })
-
-  it('絞り込み行の欄は列見出し(columnheader)ではなく、列の見出しは並び替えのボタンだけを持つ', async () => {
-    renderScreen()
-    await chooseCsv(CSV)
-
-    const header = screen.getByRole('columnheader', { name: /^相手科目/ })
-    expect(within(header).getAllByRole('button')).toHaveLength(1)
-    expect(screen.queryAllByRole('columnheader', { name: /絞り込み/ })).toHaveLength(0)
   })
 })

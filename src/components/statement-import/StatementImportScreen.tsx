@@ -43,9 +43,7 @@ import { runInHistoryGroup, type HistoryGroupApi } from '../../infrastructure/hi
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { useEscapeToClear } from '../common/range-selection/useEscapeToClear'
 import { createRangeSelection, useRangeAnchor } from '../common/range-selection/useRangeSelection'
-import type { FavoriteKind } from '../common/favorites/FavoritesContext'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
-import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
 import { AccountCreateForm } from '../master/AccountCreateForm'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
@@ -84,14 +82,17 @@ import {
 import { ImportTabBar, type ImportTabItem } from './ImportTabBar'
 import { ImportPager } from './ImportPager'
 import {
-  EMPTY_ROW_FILTER,
+  EMPTY_FILTER_INPUT,
   isRowFilterActive,
   matchesRowFilter,
+  memberFilterCategories,
   pruneSelection,
-  activeConditionCount,
-  type IdCondition,
+  resolveFilterInput,
+  type FilterAxis,
+  type ImportFilterInput,
   type ImportRowFilter,
 } from './importRowFilter'
+import { ImportRowFilterPanel } from './ImportRowFilterPanel'
 import { compareBySort, cycleSort, type ImportSort, type SortKey, type SortableRow } from './importRowSort'
 import { ConfirmDialog } from '../common/confirm-dialog/ConfirmDialog'
 import type {
@@ -314,7 +315,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
    */
   const [sort, setSort] = useState<ImportSort | null>(null)
   /** 列ごとの行の絞り込みの条件(計画Issue #258)。表示だけの条件で、一時保存には含めない。新しい取込では解除する */
-  const [rowFilter, setRowFilter] = useState<ImportRowFilter>(EMPTY_ROW_FILTER)
+  const [rowFilterInput, setRowFilterInput] = useState<ImportFilterInput>(EMPTY_FILTER_INPUT)
   /** 開始状態に出す一時保存の一覧(計画Issue #231 フェーズ3)。取込先の科目ごとに1つ */
   const [drafts, setDrafts] = useState<StatementImportDraftSummary[]>([])
   /** いま開いている取込が、再開した(または保存した)一時保存のid。同じ取込先への保存し直しは、これなら確認なしで上書きする */
@@ -987,7 +988,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       setActiveTab('new')
       setPages({ new: 1, duplicate: 1 })
       setSort(null)
-      setRowFilter(EMPTY_ROW_FILTER)
+      setRowFilterInput(EMPTY_FILTER_INPUT)
     }
     if (files.length === 0) {
       setSession(null)
@@ -1397,6 +1398,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const tabIndices = session ? buildTabIndices(remainingIndices, records, session.rows, compareRows) : { new: [], duplicate: [] }
   const visibleIndices = [...tabIndices.new, ...tabIndices.duplicate]
   const statusOf = (i: number) => rowStatus(records[i], session!.rows[i])
+  /** 絞り込みパネルの入力(選択欄の値)を、判定に使う条件(グループは配下の項目のidに展開)にしたもの(計画Issue #258) */
+  const filterCategories = {
+    counterAccount: categories.counterAccounts,
+    counterparty: categories.counterparties,
+    project: categories.projects,
+    member: memberFilterCategories(data.members),
+  }
+  const rowFilter = resolveFilterInput(rowFilterInput, filterCategories)
   /** 行が絞り込みの条件に合うか(計画Issue #258)。重複の行は入力欄を持たないので、科目などの条件には合わない */
   const matchesFilterWith = (filter: ImportRowFilter, i: number) =>
     matchesRowFilter(filter, {
@@ -1583,7 +1592,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const jumpToRow = (index: number, rows: readonly ImportRowState[] | undefined = session?.rows) => {
     if (!session || !rows) return
     // 行き先が絞り込みで隠れていると見失うので、移る前に絞り込みを解除する(計画Issue #258)
-    if (rowFilterActive) setRowFilter(EMPTY_ROW_FILTER)
+    if (rowFilterActive) setRowFilterInput(EMPTY_FILTER_INPUT)
     const tabs = buildTabIndices(remainingIndices, records, rows, compareRows)
     const tab: RowTab = tabs.duplicate.includes(index) ? 'duplicate' : 'new'
     const page = Math.floor(tabs[tab].indexOf(index) / IMPORT_PAGE_SIZE) + 1
@@ -1622,13 +1631,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const checkCount = visibleIndices.filter((i) => statusOf(i) === 'check').length
   /** いま投入できる件数。取り込み対象(全件)のうち、相手科目などが決まっていて確定できる行(ステータスが「新規」)。確定ボタンに「N / 全件」で出す */
   const readyCount = confirmTargets.filter((i) => statusOf(i) === 'new').length
-  /** 絞り込みの条件を変える。条件が変わると1ページ目に戻り、見えなくなる行のチェックは外す(外した件数を一括設定の案内に出す) */
-  const changeRowFilter = (next: ImportRowFilter) => {
-    setRowFilter(next)
+  /** 絞り込みの入力を変える。条件が変わると1ページ目に戻り、見えなくなる行のチェックは外す(外した件数を一括設定の案内に出す) */
+  const changeRowFilterInput = (next: ImportFilterInput) => {
+    setRowFilterInput(next)
     setPages({ new: 1, duplicate: 1 })
+    const nextFilter = resolveFilterInput(next, filterCategories)
     const firstPage = new Set(
       tabIndices[shownRowTab]
-        .filter((i) => !isRowFilterActive(next) || matchesFilterWith(next, i))
+        .filter((i) => !isRowFilterActive(nextFilter) || matchesFilterWith(nextFilter, i))
         .slice(0, IMPORT_PAGE_SIZE),
     )
     const { kept, removed } = pruneSelection(selected, (i) => firstPage.has(i))
@@ -1636,30 +1646,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     if (removed > 0) setBulkMessage(t('filterSelectionRemoved', { count: removed }))
     rangeAnchor.anchorRef.current = null
   }
-  /** 絞り込みの選択欄の先頭に置く「未設定」(項目が決まっていない行) */
-  const filterUnsetOptions = [{ value: 'unset', label: t('filterUnset') }]
-  const setFilterId = (key: 'counterAccount' | 'counterparty' | 'project' | 'member', value: IdCondition) =>
-    changeRowFilter({ ...rowFilter, [key]: value })
-  /** 絞り込み行の選択欄(相手科目・取引先・プロジェクト)。階層・検索窓・Enter確定は共通の選択欄のまま、先頭に「すべて」「未設定」を置く */
-  const filterSelect = (
-    key: 'counterAccount' | 'counterparty' | 'project',
-    label: string,
-    cats: readonly TreeSelectCategory[],
-    kind: FavoriteKind,
-  ) => (
-    <div className={rowFilter[key] !== null ? 'import-filter import-filter--on' : 'import-filter'}>
-      <TreeSelect
-        label={label}
-        categories={cats}
-        favoriteKind={kind}
-        value={rowFilter[key] === null ? '' : String(rowFilter[key])}
-        emptyLabel={t('filterAll')}
-        placeholder={t('filterAll')}
-        leadingOptions={filterUnsetOptions}
-        onChange={(v) => setFilterId(key, v === '' ? null : v === 'unset' ? 'unset' : Number(v))}
-      />
-    </div>
-  )
+  const changeFilterValues = (axis: FilterAxis, values: string[]) =>
+    changeRowFilterInput({ ...rowFilterInput, values: { ...rowFilterInput.values, [axis]: values } })
 
   const applyBulk = (change: BulkChange) => {
     if (!session) return
@@ -2249,6 +2237,18 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             </div>
           )}
 
+          <ImportRowFilterPanel
+            input={rowFilterInput}
+            onDescriptionChange={(description) => changeRowFilterInput({ ...rowFilterInput, description })}
+            onValuesChange={changeFilterValues}
+            onClear={() => changeRowFilterInput(EMPTY_FILTER_INPUT)}
+            counterAccountCategories={categories.counterAccounts}
+            counterpartyCategories={categories.counterparties}
+            projectCategories={categories.projects}
+            members={data.members}
+            resultCount={shownTabIndices.length}
+          />
+
           {selected.size > 0 && (
             <div role="group" aria-label={t('bulkGroup')} className="import-bulk">
               <span className="import-bulk__count">{t('bulkCount', { count: selected.size })}</span>
@@ -2336,23 +2336,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             {shownTab === 'unreadable' ? (
               unreadablePanel
             ) : (
-          <>
-            {rowFilterActive && (
-              <p role="status" aria-label={t('filterStatusLabel')} className="import-filter-status">
-                <span>
-                  {activeConditionCount(rowFilter) >= 2
-                    ? t('filterStatusMulti', {
-                        total: tabIndices[shownRowTab].length,
-                        shown: shownTabIndices.length,
-                        count: activeConditionCount(rowFilter),
-                      })
-                    : t('filterStatus', { total: tabIndices[shownRowTab].length, shown: shownTabIndices.length })}
-                </span>
-                <button type="button" className="import-link" onClick={() => changeRowFilter(EMPTY_ROW_FILTER)}>
-                  {t('filterClearAll')}
-                </button>
-              </p>
-            )}
           <div className="import-table-wrap">
             <table className="import-table" aria-label={t('tableLabel')}>
               <thead>
@@ -2380,53 +2363,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                   <th>{t('colMember')}</th>
                   <th>{t('colComment')}</th>
                   {sortHeader('status', t('colStatus'))}
-                </tr>
-                {/* 列ごとの絞り込み(計画Issue #258)。並び替えの見出しとは別の行に置き、見出しを押す操作と衝突させない */}
-                <tr className="import-filter-row">
-                  {showFileColumn && <td />}
-                  {/* チェックの列・日付の列は絞り込みの対象外 */}
-                  <td />
-                  <td />
-                  <td>
-                    <div className={rowFilter.description.trim() !== '' ? 'import-filter import-filter--on' : 'import-filter'}>
-                      <input
-                        className="import-control import-filter__text"
-                        aria-label={t('filterDescriptionLabel')}
-                        placeholder={t('filterDescriptionLabel')}
-                        value={rowFilter.description}
-                        onChange={(e) => changeRowFilter({ ...rowFilter, description: e.target.value })}
-                      />
-                      {rowFilter.description !== '' && (
-                        <button
-                          type="button"
-                          className="import-filter__clear"
-                          aria-label={t('filterDescriptionClear')}
-                          onClick={() => changeRowFilter({ ...rowFilter, description: '' })}
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                  <td />
-                  <td>{filterSelect('counterAccount', t('filterCounterAccountLabel'), categories.counterAccounts, 'account')}</td>
-                  <td>{filterSelect('counterparty', t('filterCounterpartyLabel'), categories.counterparties, 'counterparty')}</td>
-                  <td>{filterSelect('project', t('filterProjectLabel'), categories.projects, 'project')}</td>
-                  <td>
-                    <div className={rowFilter.member !== null ? 'import-filter import-filter--on' : 'import-filter'}>
-                      <MemberSelect
-                        label={t('filterMemberLabel')}
-                        members={data.members}
-                        value={rowFilter.member === null ? '' : String(rowFilter.member)}
-                        emptyLabel={t('filterAll')}
-                        placeholder={t('filterAll')}
-                        leadingOptions={filterUnsetOptions}
-                        onChange={(v) => setFilterId('member', v === '' ? null : v === 'unset' ? 'unset' : Number(v))}
-                      />
-                    </div>
-                  </td>
-                  <td />
-                  <td />
                 </tr>
               </thead>
               <tbody>
@@ -2895,7 +2831,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               onPage={goToPage}
             />
           </div>
-          </>
             )}
           </div>
         </div>
