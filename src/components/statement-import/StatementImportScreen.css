@@ -1151,9 +1151,9 @@
 }
 
 /* 列ごとの行の絞り込み(計画Issue #258): 表見出しの下の絞り込み行と、絞り込み中の案内。条件が入っている欄は緑の太枠にする */
-.import-filter-row th {
+.import-filter-row td {
   padding: 0 6px 8px;
-  font-weight: 400;
+  border-bottom: 1px solid var(--color-border);
   vertical-align: top;
 }
 

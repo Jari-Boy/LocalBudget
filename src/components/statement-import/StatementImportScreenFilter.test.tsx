@@ -279,4 +279,13 @@ describe('StatementImportScreen: 列ごとの行の絞り込み(計画Issue #258
     expect(names[0]).toContain('池袋店')
     expect(names.some((n) => n.includes('ローソン'))).toBe(false)
   })
+
+  it('絞り込み行の欄は列見出し(columnheader)ではなく、列の見出しは並び替えのボタンだけを持つ', async () => {
+    renderScreen()
+    await chooseCsv(CSV)
+
+    const header = screen.getByRole('columnheader', { name: /^相手科目/ })
+    expect(within(header).getAllByRole('button')).toHaveLength(1)
+    expect(screen.queryAllByRole('columnheader', { name: /絞り込み/ })).toHaveLength(0)
+  })
 })

@@ -2379,10 +2379,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 </tr>
                 {/* 列ごとの絞り込み(計画Issue #258)。並び替えの見出しとは別の行に置き、見出しを押す操作と衝突させない */}
                 <tr className="import-filter-row">
-                  {showFileColumn && <th />}
-                  <th />
-                  <th />
-                  <th>
+                  {showFileColumn && <td />}
+                  <td />
+                  <td />
+                  <td>
                     <div className={rowFilter.description.trim() !== '' ? 'import-filter import-filter--on' : 'import-filter'}>
                       <input
                         className="import-control import-filter__text"
@@ -2402,14 +2402,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                         </button>
                       )}
                     </div>
-                  </th>
-                  <th />
-                  <th>{filterSelect('counterAccount', t('filterCounterAccountLabel'), categories.counterAccounts, 'account')}</th>
-                  <th>{filterSelect('counterparty', t('filterCounterpartyLabel'), categories.counterparties, 'counterparty')}</th>
-                  <th>{filterSelect('project', t('filterProjectLabel'), categories.projects, 'project')}</th>
-                  <th />
-                  <th />
-                  <th />
+                  </td>
+                  <td />
+                  <td>{filterSelect('counterAccount', t('filterCounterAccountLabel'), categories.counterAccounts, 'account')}</td>
+                  <td>{filterSelect('counterparty', t('filterCounterpartyLabel'), categories.counterparties, 'counterparty')}</td>
+                  <td>{filterSelect('project', t('filterProjectLabel'), categories.projects, 'project')}</td>
+                  <td />
+                  <td />
+                  <td />
                 </tr>
               </thead>
               <tbody>
