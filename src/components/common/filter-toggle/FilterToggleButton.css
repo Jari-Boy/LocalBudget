@@ -1,0 +1,61 @@
+/* 絞り込みの開閉ボタン(計画Issue #266)。値はdesign/tokens.cssのトークンを使う。 */
+.filter-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.filter-toggle:hover {
+  background: var(--color-hover);
+}
+
+/* 条件が適用中(閉じていても分かる) */
+.filter-toggle--active {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+  color: var(--color-accent);
+}
+
+/* 開いている間は塗りつぶす */
+.filter-toggle--open,
+.filter-toggle--open:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #ffffff;
+}
+
+.filter-toggle__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.filter-toggle--open .filter-toggle__badge {
+  background: #ffffff;
+  color: var(--color-accent);
+}
