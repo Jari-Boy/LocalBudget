@@ -19,6 +19,11 @@ export interface CounterpartyRepository {
    * 無効の取引先も、お気に入りの状態は保つ(選択欄での表示は、従来どおり、無効なものを選択中以外は出さない)
    */
   findFavoriteIds(): number[]
+  /**
+   * 取引先ごとの仕訳明細(journal_lines)の数(計画Issue #236)。明細取込で、摘要に複数のキーワードが一致した行の
+   * 取引先の候補を並べるときの「過去の使用件数」に使う。使われていない取引先は含めない
+   */
+  countJournalLinesByCounterparty(): { counterpartyId: number; count: number }[]
   /** お気に入りの付け外し。表示専用で、ほかの項目は変えない。存在しないidを指定しても何も起きない */
   setFavorite(id: number, isFavorite: boolean): void
 

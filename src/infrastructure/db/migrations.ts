@@ -21,6 +21,7 @@ import { MIGRATION_V3_NORMALIZE_KEYWORDS } from './migrationV3NormalizeKeywords'
 import { MIGRATION_V4_NORMALIZE_DESCRIPTIONS } from './migrationV4NormalizeDescriptions'
 import { MIGRATION_V5_STATEMENT_IMPORT_DRAFTS } from './migrationV5StatementImportDrafts'
 import { MIGRATION_V6_FAVORITES } from './migrationV6Favorites'
+import { MIGRATION_V7_NORMALIZE_KANA_KEYWORDS } from './migrationV7NormalizeKanaKeywords'
 
 /**
  * 最新スキーマと差分の2本立て(計画Issue #42、docs/decisions.md)。
@@ -40,7 +41,7 @@ export interface MigrationPlan {
   diffs: Readonly<Record<number, readonly MigrationStep[]>>
 }
 
-export const LATEST_SCHEMA_VERSION = 6
+export const LATEST_SCHEMA_VERSION = 7
 
 // household_members → accounts(household_membersを参照) → projects/counterparties
 // → settlement_batches(counterpartiesを参照) → journal(accounts/projects/counterparties/
@@ -83,6 +84,8 @@ export const SCHEMA_PLAN: MigrationPlan = {
     5: MIGRATION_V5_STATEMENT_IMPORT_DRAFTS,
     // v6(計画Issue #231 フェーズ4): 科目・取引先・プロジェクトのお気に入りの列(is_favorite)の追加と、システム管理科目のトリガーの更新
     6: MIGRATION_V6_FAVORITES,
+    // v7(計画Issue #236): キーワードの、ひらがな・カタカナの小書き文字の統一(表の形は変えない)
+    7: MIGRATION_V7_NORMALIZE_KANA_KEYWORDS,
   },
 }
 

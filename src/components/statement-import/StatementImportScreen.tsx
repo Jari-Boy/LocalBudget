@@ -34,6 +34,7 @@ import { collectUnreferencedTransactions } from '../../domain/statement-import/c
 import type { ApproximateDuplicateSearchOptions } from '../../domain/statement-import/duplicateDetection'
 import { normalizeDescriptionForMatching } from '../../domain/statement-import/estimateCounterparty'
 import { estimateKeywordRule, type KeywordRuleLookup } from '../../domain/statement-import/estimateKeywordRule'
+import { rankCounterpartyCandidates } from '../../domain/statement-import/rankCounterpartyCandidates'
 import type { KeywordRule } from '../../domain/keyword-rule/KeywordRule'
 import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
 import { resolveMultiFileMappingCandidates, type MultiFileMappingMatch } from '../../domain/statement-import/resolveMultiFileMappingCandidates'
@@ -89,7 +90,7 @@ import { applyAccountKeywordsToRows } from './applyAccountKeywordsToRows'
 import { applyCounterpartySettingsToRows } from './applyCounterpartySettingsToRows'
 import { CounterpartyCreateDialog, type CounterpartyCreateInput } from './CounterpartyCreateDialog'
 import { formatDescriptionForDisplay } from '../../domain/statement-import/formatDescriptionForDisplay'
-import { countRowsContaining, matchesKeyword, validateKeyword, type KeywordError } from './counterpartyKeywordModel'
+import { countRowsContaining, matchesKeyword, mostFrequentAccountId, validateKeyword, type KeywordError } from './counterpartyKeywordModel'
 import type { KeywordListItem } from './KeywordList'
 import { mappingFormToInput } from '../master/mappingForm'
 import { QuickCreateDialog } from './QuickCreateDialog'
@@ -118,13 +119,10 @@ export interface StatementImportScreenProps {
   journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'delete'>>
   /** 科目の登録フォームで最初の残高を記録する先(計画Issue #205)。省略時は最初の残高の欄を出さない */
   accountBalanceRecordRepository?: MaybeAsync<Pick<AccountBalanceRecordRepository, 'create'>>
-  counterpartyRepository: MaybeAsync<
-    Pick<
-      CounterpartyRepository,
-      | 'findAll'
-      | 'create'
-    >
-  >
+  counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll' | 'create'>> & {
+    /** 摘要に複数のキーワードが一致した行の取引先の候補を並べるときの「過去の使用件数」(計画Issue #236)。渡さなければ使用件数は0として並べる */
+    countJournalLinesByCounterparty?: () => ReturnType<CounterpartyRepository['countJournalLinesByCounterparty']> | Promise<ReturnType<CounterpartyRepository['countJournalLinesByCounterparty']>>
+  }
   /** 摘要のキーワードルール(計画Issue #219)。取引先・相手科目の推定と、確定時の科目ルールの学習に使う */
   keywordRuleRepository: MaybeAsync<
     Pick<KeywordRuleRepository, 'findMatching' | 'findByAccount' | 'findByCounterparty' | 'create' | 'update' | 'delete'>
@@ -535,11 +533,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       key: string
       kind: 'registered' | 'new'
       text: string
-      sourceDescription: string | null
       accountId: number | null
       accountLocked?: boolean
     }[] = [
-      ...view.registered.map((r) => ({ key: r.key, kind: 'registered' as const, text: r.text, sourceDescription: null, accountId: r.accountId })),
+      ...view.registered.map((r) => ({ key: r.key, kind: 'registered' as const, text: r.text, accountId: r.accountId })),
       ...(suggestion === null
         ? []
         : [
@@ -547,14 +544,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               key: SUGGESTION_KEY,
               kind: 'new' as const,
               text: suggestion,
-              sourceDescription: description,
               // 摘要の提案の科目は、ダイアログで選ぶまでは、この行の相手科目(取引先を持てる科目のときだけ)。
               // 科目のキーワードの提案は、開いている科目に固定
               accountId: suggestionAccountId,
               accountLocked: accountKind,
             },
           ]),
-      ...view.typing.map((k) => ({ key: k.key, kind: 'new' as const, text: k.text, sourceDescription: description, accountId: k.accountId })),
+      ...view.typing.map((k) => ({ key: k.key, kind: 'new' as const, text: k.text, accountId: k.accountId })),
     ]
     return entries.map((entry) => ({
       key: entry.key,
@@ -570,7 +566,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           ? validateKeyword({
               text: entry.text,
               otherTexts: view.registered.map((r) => r.text),
-              sourceDescription: entry.sourceDescription,
             })
           : (view.errors[entry.key] ?? null),
     }))
@@ -650,7 +645,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   async function commitKeyword(key: string) {
     if (!settings || key === SUGGESTION_KEY || savingKeys.current.has(key)) return
     const view = settings
-    const description = records[view.index].record.description
     const registered = view.registered.find((r) => r.key === key)
     const typing = view.typing.find((k) => k.key === key)
     const text = registered?.text ?? typing?.text
@@ -665,7 +659,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     const error = validateKeyword({
       text,
       otherTexts: items.filter((item) => item.key !== key).map((item) => item.text),
-      sourceDescription: typing ? description : null,
     })
     if (error !== null) {
       withSettings((v) => ({ ...v, errors: { ...v.errors, [key]: error } }))
@@ -722,7 +715,15 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   function addKeyword() {
-    withSettings((view) => ({ ...view, typing: [...view.typing, { key: `t${view.nextKey}`, text: '', accountId: null }], nextKey: view.nextKey + 1 }))
+    withSettings((view) => {
+      // 取引先のキーワードの科目の初期値は、その取引先のキーワードで最も多く使われている科目(費用・収益のみ。同数なら指定なし。
+      // 計画Issue #236)。科目のキーワードは開いている科目に固定なので、ここでは決めない
+      const defaultAccountId =
+        view.counterpartyId === null
+          ? null
+          : mostFrequentAccountId([...view.registered, ...view.typing].map((k) => (k.accountId !== null && isPlAccountId(k.accountId) ? k.accountId : null)))
+      return { ...view, typing: [...view.typing, { key: `t${view.nextKey}`, text: '', accountId: defaultAccountId }], nextKey: view.nextKey + 1 }
+    })
   }
 
   /**
@@ -855,18 +856,27 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       ),
     )
     const ruleLookup: KeywordRuleLookup = { findMatching: (text) => rulesByText.get(text) ?? [] }
+    // 取引先の候補が複数ある行があるときだけ、候補の並びに使う使用件数と名前を用意する(計画Issue #236)
+    const hasMultipleCandidates = [...rulesByText.values()].some(
+      (rules) => new Set(rules.flatMap((rule) => (rule.counterpartyId === null ? [] : [rule.counterpartyId]))).size > 1,
+    )
+    const usageByCounterparty = new Map<number, number>(
+      hasMultipleCandidates
+        ? (await Promise.resolve(counterpartyRepository.countJournalLinesByCounterparty?.() ?? [])).map((u) => [u.counterpartyId, u.count] as const)
+        : [],
+    )
+    const counterpartyNames = new Map((data?.counterparties ?? []).map((c) => [c.id, c.name] as const))
     return review.records.map((r) => {
       const estimate = estimateKeywordRule(r.record.description, ruleLookup)
       const counterpartyId = estimate.counterpartyId
       // 相手科目は、ルールが科目を持てばその科目、なければ取引先の既定の科目(docs/domain/statement-import.md 1.5)
       const counterAccountId = estimate.accountId
-      const candidates = [
-        ...new Set(
-          (rulesByText.get(normalizeDescriptionForMatching(r.record.description)) ?? []).flatMap((rule) =>
-            rule.counterpartyId === null ? [] : [rule.counterpartyId],
-          ),
-        ),
-      ]
+      // 候補は、一致したキーワードが長い順 → 過去の使用件数が多い順 → 名前の五十音順に並べる(選ぶのは利用者。自動では割り当てない)
+      const candidates = rankCounterpartyCandidates({
+        rules: rulesByText.get(normalizeDescriptionForMatching(r.record.description)) ?? [],
+        usageCountOf: (id) => usageByCounterparty.get(id) ?? 0,
+        nameOf: (id) => counterpartyNames.get(id) ?? '',
+      })
       return createInitialRowState({
         counterpartyId: resolveEligibleCounterpartyId(counterpartyId, counterAccountId, accounts),
         counterAccountId,
@@ -1500,7 +1510,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       const offered =
         (shouldOfferLearn(records[index], state) && state.counterpartyId !== null) || shouldOfferAccountLearn(records[index], state, accountList)
       if (!offered || !state.learnOn || state.learnPattern === null) return false
-      return validateKeyword({ text: state.learnPattern, otherTexts: [], sourceDescription: records[index].record.description }) !== null
+      return validateKeyword({ text: state.learnPattern, otherTexts: [] }) !== null
     })
     if (hasInvalidSuggestion) {
       setError(t('suggestionInvalidError'))
@@ -1566,7 +1576,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         // 摘要だけでは取引先が決まらなかった行(既定でオフ)や、消した提案は登録しない
         if (shouldOfferLearn(records[index], state) && state.counterpartyId !== null && state.learnOn) {
           const suggestion = (state.learnPattern ?? formatDescriptionForDisplay(record.description)).trim()
-          if (validateKeyword({ text: suggestion, otherTexts: [], sourceDescription: record.description }) === null) {
+          if (validateKeyword({ text: suggestion, otherTexts: [] }) === null) {
             try {
               // 取引先と、この行の相手科目(取引先を持てる科目のときだけ)を1つのルールにまとめて登録する
               await Promise.resolve(
@@ -1589,7 +1599,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         if (shouldOfferAccountLearn(records[index], state, accountList) && state.counterAccountId !== null && state.learnOn) {
           const suggestion = (state.learnPattern ?? formatDescriptionForDisplay(record.description)).trim()
           const keyword = keywordOf(suggestion)
-          if (validateKeyword({ text: suggestion, otherTexts: [], sourceDescription: record.description }) === null) {
+          if (validateKeyword({ text: suggestion, otherTexts: [] }) === null) {
             try {
               const existing = await Promise.resolve(keywordRuleRepository.findByAccount(state.counterAccountId))
               if (!existing.some((rule) => rule.pattern === keyword)) {
@@ -2298,6 +2308,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                     label={t('counterpartyLabel')}
                                     disabled={isSkipped}
                                     categories={categories.counterparties}
+                                    // 摘要に複数のキーワードが一致して決まらなかった行は、一致した取引先を先頭に出す(計画Issue #236)
+                                    pinnedValues={
+                                      state.counterpartyId === null && state.candidateCounterpartyIds.length > 1
+                                        ? state.candidateCounterpartyIds.map(String)
+                                        : undefined
+                                    }
+                                    pinnedLabel={t('candidatesPinnedLabel')}
                                     favoriteKind="counterparty"
                                     value={treeValue(state.counterpartyId)}
                                     emptyLabel={t('noCounterpartyOption')}

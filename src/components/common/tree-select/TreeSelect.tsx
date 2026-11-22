@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useFavorites, type FavoriteKind } from '../favorites/FavoritesContext'
+import { matchesSearch } from './normalizeForSearch'
 import {
   buildTreeSelectRows,
   GROUP_VALUE_PREFIX,
@@ -23,6 +24,14 @@ interface TreeSelectBaseProps {
    * 値は実体の値と重ならない文字列にする。単一選択のときだけ使う
    */
   leadingOptions?: readonly { value: string; label: string }[]
+  /**
+   * 一覧の先頭に固定して出す候補の値(渡した順。計画Issue #236)。明細取込で、摘要に複数のキーワードが一致した行の
+   * 取引先欄に、一致した取引先を先に出し、その下に標準のマスタ表示を続けるために使う。単一選択のときだけ使う。
+   * 検索中は、検索の語に合う候補だけを残す(合うものが無ければ見出しも出さない)
+   */
+  pinnedValues?: readonly string[]
+  /** 先頭に固定する候補の見出し */
+  pinnedLabel?: string
   /** 未選択のときにボタンへ出す文言 */
   placeholder?: string
   /** 渡すと、一覧の末尾に「+ 新規追加」を出す。押すと閉じてから呼ぶ(追加の画面は呼び出し側が開く) */
@@ -113,6 +122,8 @@ export function TreeSelect(props: TreeSelectProps) {
     allowGroupSelect = false,
     emptyLabel,
     leadingOptions,
+    pinnedValues,
+    pinnedLabel,
     placeholder = '指定なし',
     onCreate,
     createLabel = '新規追加',
@@ -153,6 +164,18 @@ export function TreeSelect(props: TreeSelectProps) {
         favoriteValues,
       }),
     [categories, value, isMulti, selectedValues, query, openOverrides, favoriteValues],
+  )
+
+  // 先頭に固定する候補(計画Issue #236)。選択肢に無い値は出さず、検索中は語に合うものだけ残す
+  const pinnedCandidates = useMemo(
+    () =>
+      isMulti
+        ? []
+        : (pinnedValues ?? []).flatMap((pinned) => {
+            const name = findItemName(categories, pinned)
+            return name !== undefined && matchesSearch(name, query) ? [{ value: pinned, name }] : []
+          }),
+    [isMulti, pinnedValues, categories, query],
   )
 
   const selectedNames = useMemo(
@@ -323,6 +346,22 @@ export function TreeSelect(props: TreeSelectProps) {
             </button>
           )}
           <div className="tree-select__list" ref={listRef}>
+            {pinnedCandidates.length > 0 && (
+              <>
+                {pinnedLabel !== undefined && <div className="tree-select__category">{pinnedLabel}</div>}
+                {pinnedCandidates.map((candidate) => (
+                  <button
+                    key={`p:${candidate.value}`}
+                    type="button"
+                    className={`tree-select__item${value === candidate.value ? ' tree-select__item--selected' : ''}`}
+                    style={{ paddingLeft: 8 }}
+                    onClick={() => choose(candidate.value)}
+                  >
+                    {candidate.name}
+                  </button>
+                ))}
+              </>
+            )}
             {leadingOptions?.map((option) => (
               <button
                 key={`l:${option.value}`}

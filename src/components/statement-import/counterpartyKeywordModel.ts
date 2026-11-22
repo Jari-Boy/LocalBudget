@@ -5,25 +5,41 @@ import { normalizeDescriptionForMatching } from '../../domain/statement-import/e
  * 明細取込の「取引先の設定」と、取引先の追加ダイアログで共通に使う。DB・DOM非依存の純粋関数。
  */
 
-export type KeywordError = 'empty' | 'duplicate' | 'notInDescription'
+export type KeywordError = 'empty' | 'duplicate'
 
 /**
- * キーワード1件の問題を返す(問題がなければnull)。空、正規化(全角半角・大文字小文字・空白除去)後に
- * 他のキーワードと同じ(重複)、元の摘要が指定されているのにそこに含まれない文字列、の順に判定する。
- * 元の摘要は、新しく登録するキーワードにだけ渡す(登録済みキーワードの編集には「摘要に含まれる」条件をかけない)。
+ * キーワード1件の問題を返す(問題がなければnull)。空、正規化(全角半角・大文字小文字・空白除去・
+ * ひらがな/カタカナ・小書き文字の統一)後に他のキーワードと同じ(重複)、の順に判定する。
+ * 現在の明細の摘要に含まれない文字列も登録できる(計画Issue #236。含む行が0行になるだけで、画面で注意を出す)。
  */
-export function validateKeyword(params: {
-  text: string
-  otherTexts: readonly string[]
-  sourceDescription: string | null
-}): KeywordError | null {
+export function validateKeyword(params: { text: string; otherTexts: readonly string[] }): KeywordError | null {
   const normalized = normalizeDescriptionForMatching(params.text)
   if (normalized.length === 0) return 'empty'
   if (params.otherTexts.some((other) => normalizeDescriptionForMatching(other) === normalized)) return 'duplicate'
-  if (params.sourceDescription !== null && !normalizeDescriptionForMatching(params.sourceDescription).includes(normalized)) {
-    return 'notInDescription'
-  }
   return null
+}
+
+/**
+ * 新しいキーワードの科目の初期値(計画Issue #236)。キーワードに紐づく科目(未設定のnullは数えない)のうち、
+ * 最も多く使われているもののid。件数が同数で並ぶとき、数えるものが無いときはnull(結果を不安定に見せないため、
+ * 同数のときは決めずに利用者が選ぶ)。取引先を持てない科目は、呼び出し側で除いてから渡す。
+ */
+export function mostFrequentAccountId(accountIds: readonly (number | null)[]): number | null {
+  const counts = new Map<number, number>()
+  for (const id of accountIds) if (id !== null) counts.set(id, (counts.get(id) ?? 0) + 1)
+  let best: number | null = null
+  let bestCount = 0
+  let tied = false
+  for (const [id, count] of counts) {
+    if (count > bestCount) {
+      best = id
+      bestCount = count
+      tied = false
+    } else if (count === bestCount) {
+      tied = true
+    }
+  }
+  return tied ? null : best
 }
 
 /** キーワード(正規化して部分一致)を含む摘要の数。空のキーワードはどの摘要にも含まれないものとして数える */

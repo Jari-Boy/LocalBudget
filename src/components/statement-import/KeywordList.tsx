@@ -36,8 +36,7 @@ export interface KeywordListProps {
  */
 export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, renderAccount, label }: KeywordListProps) {
   const { t } = useTranslation('statementImport')
-  const errorText = (error: KeywordError) =>
-    error === 'empty' ? t('patternErrorEmpty') : error === 'duplicate' ? t('patternErrorDuplicate') : t('patternErrorNotInDescription')
+  const errorText = (error: KeywordError) => (error === 'empty' ? t('patternErrorEmpty') : t('patternErrorDuplicate'))
 
   return (
     <div className="import-field">
@@ -76,6 +75,10 @@ export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, re
             </button>
           </div>
           {item.error !== null && <span className="import-error import-settings__error">{errorText(item.error)}</span>}
+          {/* 現在の明細の摘要にマッチしない新規キーワードは、登録できるが、タイプミスなどに気づけるよう注意を出す(計画Issue #236) */}
+          {item.error === null && item.kind === 'new' && item.text.trim() !== '' && item.count === 0 && (
+            <span className="import-warning import-settings__error">{t('patternWarnNoMatch')}</span>
+          )}
         </div>
       ))}
       <div>

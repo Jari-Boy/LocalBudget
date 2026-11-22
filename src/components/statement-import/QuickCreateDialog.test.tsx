@@ -40,6 +40,15 @@ describe('QuickCreateDialog', () => {
     expect(screen.getByRole('button', { name: '追加' })).toBeDisabled()
   })
 
+  it('名前の初期値(initialName)を渡すと入力欄に入り、そのまま追加できる(計画Issue #236)', async () => {
+    const { onSubmit } = renderDialog({ title: '取引先を追加', nameLabel: '取引先名', initialName: 'スーパー 新宿店' })
+
+    expect(screen.getByLabelText('取引先名')).toHaveValue('スーパー 新宿店')
+    fireEvent.click(screen.getByRole('button', { name: '追加' }))
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('スーパー 新宿店', null))
+  })
+
   it('グループの選択欄を渡さない画面(割勘など)では、グループの欄を出さず、グループなし(null)で作る', async () => {
     const { onSubmit } = renderDialog({ title: '取引先を追加', nameLabel: '取引先名' })
 

@@ -112,6 +112,15 @@
   color: var(--color-danger);
 }
 
+.import-warning {
+  margin: 0;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: var(--radius-md);
+  background: var(--color-tag-yellow-bg);
+  color: var(--color-tag-yellow-text);
+}
+
 .import-bulk {
   display: flex;
   flex-wrap: wrap;
