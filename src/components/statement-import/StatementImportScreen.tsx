@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
 import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
@@ -82,6 +82,7 @@ import {
 import { ImportTabBar, type ImportTabItem } from './ImportTabBar'
 import { ImportPager } from './ImportPager'
 import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
+import { useElementHeight } from '../common/sticky/useElementHeight'
 import {
   activeConditionCount,
   batchFilterCategories,
@@ -320,6 +321,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [rowFilterInput, setRowFilterInput] = useState<ImportFilterInput>(EMPTY_FILTER_INPUT)
   /** 行の絞り込み欄の開閉。初期状態は閉(条件があるときはボタンの件数バッジで分かる、計画Issue #266) */
   const [rowFilterOpen, setRowFilterOpen] = useState(false)
+  /** 一括設定の「その他の項目」(プロジェクト・世帯メンバー・精算バッチ・コメント)の開閉(計画Issue #266) */
+  const [bulkMoreOpen, setBulkMoreOpen] = useState(false)
+  /** 上部に固定するタブ・絞り込み欄の容器と、その高さ(一括設定の領域の top に使う、計画Issue #266) */
+  const [stickyElement, setStickyElement] = useState<HTMLDivElement | null>(null)
+  const stickyHeight = useElementHeight(stickyElement)
   /** 開始状態に出す一時保存の一覧(計画Issue #231 フェーズ3)。取込先の科目ごとに1つ */
   const [drafts, setDrafts] = useState<StatementImportDraftSummary[]>([])
   /** いま開いている取込が、再開した(または保存した)一時保存のid。同じ取込先への保存し直しは、これなら確認なしで上書きする */
@@ -1907,7 +1913,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   )
 
   return (
-    <div className="import-screen">
+    <div className="import-screen" style={{ '--sticky-head-h': `${stickyHeight}px` } as CSSProperties}>
       {unsavedDialog}
       {draftDialog?.kind === 'overwrite' && (
         <ConfirmDialog
@@ -2260,27 +2266,39 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             </div>
           )}
 
-          {tabRow}
+          {/* タブの行と絞り込み欄は、スクロールしても画面の上部に固定する(計画Issue #266)。高さは下の固定要素(一括設定の領域)の top に渡す */}
+          <div className="import-sticky" ref={setStickyElement}>
+            {tabRow}
 
-          {rowFilterOpen && (
-            <div id="import-row-filter">
-              <ImportRowFilterPanel
-                input={rowFilterInput}
-                onChange={changeRowFilterInput}
-                onClear={() => changeRowFilterInput(EMPTY_FILTER_INPUT)}
-                counterAccountCategories={categories.counterAccounts}
-                counterpartyCategories={categories.counterparties}
-                projectCategories={categories.projects}
-                members={data.members}
-                batches={data.batches}
-                resultCount={shownTabIndices.length}
-              />
-            </div>
-          )}
+            {rowFilterOpen && (
+              <div id="import-row-filter">
+                <ImportRowFilterPanel
+                  input={rowFilterInput}
+                  onChange={changeRowFilterInput}
+                  onClear={() => changeRowFilterInput(EMPTY_FILTER_INPUT)}
+                  counterAccountCategories={categories.counterAccounts}
+                  counterpartyCategories={categories.counterparties}
+                  projectCategories={categories.projects}
+                  members={data.members}
+                  batches={data.batches}
+                  resultCount={shownTabIndices.length}
+                />
+              </div>
+            )}
+          </div>
 
-          {selected.size > 0 && (
+          {/* 一括設定の領域は未選択のときも確保する。最初のチェックでバナーが出ても、下の行が押し下げられない(計画Issue #266)。上部に固定する */}
+          <div className="import-bulk-slot" data-testid="import-bulk-slot">
+          {selected.size > 0 ? (
             <div role="group" aria-label={t('bulkGroup')} className="import-bulk">
-              <span className="import-bulk__count">{t('bulkCount', { count: selected.size })}</span>
+              <div className="import-bulk__summary">
+                <span className="import-bulk__count">{t('bulkCount', { count: selected.size })}</span>
+                {bulkMessage && (
+                  <span role="status" className="import-bulk__message">
+                    {bulkMessage}
+                  </span>
+                )}
+              </div>
               <TreeSelect
                 label={t('bulkCounterAccount')}
                 categories={categories.counterAccounts}
@@ -2302,40 +2320,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 placeholder={t('bulkCounterpartyPlaceholder')}
                 onChange={(v) => applyBulk({ field: 'counterparty', value: toId(v) })}
               />
-              <TreeSelect
-                label={t('bulkProject')}
-                categories={categories.projects}
-                favoriteKind="project"
-                value=""
-                emptyLabel={t('bulkClear')}
-                placeholder={t('bulkProjectPlaceholder')}
-                onChange={(v) => applyBulk({ field: 'project', value: toId(v) })}
-              />
-              <MemberSelect
-                label={t('bulkMember')}
-                members={data.members}
-                value=""
-                emptyLabel={t('bulkClear')}
-                placeholder={t('bulkMemberPlaceholder')}
-                onChange={(v) => applyBulk({ field: 'householdMember', value: toId(v) })}
-              />
-              <BatchSelect
-                label={t('bulkBatch')}
-                batches={data.batches}
-                value=""
-                emptyLabel={t('bulkClear')}
-                placeholder={t('bulkBatchPlaceholder')}
-                onChange={(v) => applyBulk({ field: 'settlementBatch', value: toId(v) })}
-              />
-              <input
-                className="import-control import-control--small"
-                aria-label={t('bulkCommentLabel')}
-                placeholder={t('commentPlaceholder')}
-                value={bulkComment}
-                onChange={(e) => setBulkComment(e.target.value)}
-              />
-              <button type="button" className="import-btn" onClick={() => applyBulk({ field: 'comment', value: bulkComment })}>
-                {t('bulkCommentApply')}
+              <button
+                type="button"
+                className="import-btn"
+                aria-expanded={bulkMoreOpen}
+                onClick={() => setBulkMoreOpen((open) => !open)}
+              >
+                {`${t('bulkMore')} ${bulkMoreOpen ? '▴' : '▾'}`}
               </button>
               <button
                 type="button"
@@ -2347,13 +2338,51 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               >
                 {t('bulkClearSelection')}
               </button>
-              {bulkMessage && (
-                <span role="status" className="import-bulk__message">
-                  {bulkMessage}
-                </span>
+              {/* プロジェクト・世帯メンバー・精算バッチ・コメントは、バナーの下に重ねて出す(表を押し下げない) */}
+              {bulkMoreOpen && (
+                <div className="import-bulk__more">
+                  <TreeSelect
+                    label={t('bulkProject')}
+                    categories={categories.projects}
+                    favoriteKind="project"
+                    value=""
+                    emptyLabel={t('bulkClear')}
+                    placeholder={t('bulkProjectPlaceholder')}
+                    onChange={(v) => applyBulk({ field: 'project', value: toId(v) })}
+                  />
+                  <MemberSelect
+                    label={t('bulkMember')}
+                    members={data.members}
+                    value=""
+                    emptyLabel={t('bulkClear')}
+                    placeholder={t('bulkMemberPlaceholder')}
+                    onChange={(v) => applyBulk({ field: 'householdMember', value: toId(v) })}
+                  />
+                  <BatchSelect
+                    label={t('bulkBatch')}
+                    batches={data.batches}
+                    value=""
+                    emptyLabel={t('bulkClear')}
+                    placeholder={t('bulkBatchPlaceholder')}
+                    onChange={(v) => applyBulk({ field: 'settlementBatch', value: toId(v) })}
+                  />
+                  <input
+                    className="import-control import-control--small"
+                    aria-label={t('bulkCommentLabel')}
+                    placeholder={t('commentPlaceholder')}
+                    value={bulkComment}
+                    onChange={(e) => setBulkComment(e.target.value)}
+                  />
+                  <button type="button" className="import-btn" onClick={() => applyBulk({ field: 'comment', value: bulkComment })}>
+                    {t('bulkCommentApply')}
+                  </button>
+                </div>
               )}
             </div>
+          ) : (
+            <p className="import-bulk-slot__hint">{t('bulkSlotHint')}</p>
           )}
+          </div>
 
         </>
       )}

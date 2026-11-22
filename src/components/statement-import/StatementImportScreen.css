@@ -121,20 +121,77 @@
   color: var(--color-tag-yellow-text);
 }
 
-.import-bulk {
+/*
+ * タブの行と絞り込み欄は、スクロールしても画面の上部に固定する(計画Issue #266)。画面タイトルは固定しない。
+ * 重なり順は、ポップアップ・ダイアログ(z-index: 30)より下にする。高さは画面側が --sticky-head-h に入れ、
+ * その下に固定する一括設定の領域の top になる。
+ */
+.import-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 8px;
+  background: var(--color-bg);
+}
+
+/* 一括設定の領域(表の上)。未選択のときも同じ高さで確保し、バナーが出ても行がずれない。タブ・絞り込み欄の下に固定する */
+.import-bulk-slot {
+  --import-bulk-slot-h: 60px;
+  position: sticky;
+  top: var(--sticky-head-h, 0px);
+  z-index: 15;
+  box-sizing: border-box;
+  height: var(--import-bulk-slot-h);
+  background: var(--color-bg);
+}
+
+.import-bulk-slot__hint {
+  box-sizing: border-box;
+  height: var(--import-bulk-slot-h);
+  margin: 0;
+  display: flex;
   align-items: center;
-  padding: 8px 12px;
-  background: var(--color-accent-soft);
+  padding: 0 14px;
+  border: 1px dashed var(--color-border);
   border-radius: var(--radius-lg);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* 一括設定のバナー。固定領域を高くしないよう1行にまとめる(プロジェクト等は「その他の項目」に重ねて出す) */
+.import-bulk {
+  position: relative;
+  box-sizing: border-box;
+  height: var(--import-bulk-slot-h, 60px);
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: center;
+  padding: 0 12px;
+  background: var(--color-accent-soft);
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-lg);
+}
+
+/* 件数と結果のメッセージの2行。長いときは省略して、領域の高さを変えない */
+.import-bulk__summary {
+  flex: 0 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .import-bulk__count {
   /* 画面全体の文字(大きめ)を引き継がず、ほかの入力・ボタンと同じ大きさにする */
   font-size: var(--font-size-base);
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 「選択を解除」は、設定のボタンと離して右端に寄せる */
@@ -143,9 +200,29 @@
 }
 
 .import-bulk__message {
-  flex: 1 1 100%;
-  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
   color: var(--color-accent);
+}
+
+/* 「その他の項目」: バナーの下に重ねて出す(表を押し下げない) */
+.import-bulk__more {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popup);
 }
 
 .import-table-wrap {

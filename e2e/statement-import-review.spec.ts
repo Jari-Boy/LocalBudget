@@ -403,6 +403,47 @@ test.describe('明細取込画面', () => {
       .toBe(-10500)
   })
 
+  test('一括設定の領域は確保され、最初のチェックで行が動かない。スクロールしても、タブの行と一括設定のバナーが画面の上部に固定される(計画Issue #266)', async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 720 })
+    await page.goto('/')
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
+    await setupAccountsAndMapping(page, BANK_AND_EXPENSE, BANK_MAPPING)
+    const rows = Array.from({ length: 45 }, (_, i) => {
+      const n = String(i + 1).padStart(2, '0')
+      return `2026/07/${String((i % 28) + 1).padStart(2, '0')},店${n},-${100 + i},${99000 - i * 100}`
+    })
+    await startImport(page, '普通預金', ['日付,摘要,金額,残高', ...rows, ''].join('\n'))
+    await expect(page.getByText(/statement\.csv を読み込み済み。新規 45 件/)).toBeVisible()
+
+    // 最初のチェックでバナーが出ても、選んだ行の画面上の位置は動かない
+    // (Playwright の check() は、画面外の要素を先にスクロールしてしまうため、先に行を画面内へ入れてから位置を測る)
+    const target = page.getByLabel('店10を選択')
+    await target.scrollIntoViewIfNeeded()
+    const before = await target.boundingBox()
+    expect(before).not.toBeNull()
+    await target.check()
+    const bulk = page.getByRole('group', { name: '選択した明細への一括設定' })
+    await expect(bulk).toBeVisible()
+    const after = await target.boundingBox()
+    expect(Math.abs(after!.y - before!.y)).toBeLessThan(1)
+
+    // 縦にスクロールしても、タブの行とバナーが画面の上部に見え続け、バナーはタブの行の下に重ならずに並ぶ
+    await page.evaluate(() => window.scrollTo(0, 1200))
+    const tabs = page.getByRole('tablist')
+    await expect(tabs).toBeInViewport({ ratio: 1 })
+    await expect(bulk).toBeInViewport({ ratio: 1 })
+    const tabsBox = await tabs.boundingBox()
+    const bulkBox = await bulk.boundingBox()
+    expect(tabsBox!.y).toBeLessThan(8)
+    expect(bulkBox!.y).toBeGreaterThanOrEqual(tabsBox!.y + tabsBox!.height - 1)
+
+    // 絞り込み欄を開くと、バナーはその下に追従する(重ならない)
+    await page.getByRole('button', { name: '絞り込みを開く' }).click()
+    const filterBox = await page.getByRole('search', { name: '明細の絞り込み' }).boundingBox()
+    const bulkBoxOpen = await bulk.boundingBox()
+    expect(bulkBoxOpen!.y).toBeGreaterThanOrEqual(filterBox!.y + filterBox!.height - 1)
+  })
+
   test('一覧のヘッダーの並び替えは、キーボード(Tab・Enter・Space)で操作でき、タブは選択中の1つだけがTabキーで止まる(計画Issue #231・#263)', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
