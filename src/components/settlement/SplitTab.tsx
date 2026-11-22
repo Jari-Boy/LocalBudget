@@ -38,6 +38,11 @@ export interface SplitTabProps {
   onChanged: () => Promise<void>
   /** 最初から選んだ状態にする仕訳(仕訳画面の「この仕訳を割勘」から来たとき) */
   initialCheckedEntryIds?: readonly number[]
+  /** 絞り込み条件。開閉ボタンがタブの行にあるため、親が持つ(計画Issue #266) */
+  filter: JournalEntryFilter
+  onFilterChange: (filter: JournalEntryFilter) => void
+  /** 絞り込み欄を開いているか。初期は閉 */
+  filterOpen: boolean
 }
 
 const ERROR_TEXT: Record<SubmitExpenseSplitError, string> = {
@@ -72,7 +77,7 @@ function payerAccountName(item: SplittableEntry, accounts: readonly Account[]): 
 }
 
 /**
- * 割勘タブ(計画Issue #153、承認済みモックアップ)。絞り込みを常に表示し、割勘できる仕訳だけを
+ * 割勘タブ(計画Issue #153、承認済みモックアップ)。絞り込み欄はタブの行のボタンで開閉し(初期は閉、計画Issue #266)、割勘できる仕訳だけを
  * 候補に出す(割勘で作られた仕訳・割勘済みの仕訳・借方に費用の行がない仕訳は出ない)。
  * 仕訳を選び、分担相手(世帯メンバーと取引先をグループつきで選ぶ)と負担の割合で割勘を記録する。
  * 絞り込みで隠れた行も、チェック済みなら合計に含める。按分は割合のほか、均等・金額指定を選べる
@@ -87,8 +92,10 @@ export function SplitTab({
   today,
   onChanged,
   initialCheckedEntryIds = [],
+  filter,
+  onFilterChange,
+  filterOpen,
 }: SplitTabProps) {
-  const [filter, setFilter] = useState<JournalEntryFilter>({})
   const [checkedIds, setCheckedIds] = useState<ReadonlySet<number>>(() => new Set(initialCheckedEntryIds))
   const nextKey = useRef(2)
   const [partners, setPartners] = useState<ExpenseSplittingParticipantRow[]>([
@@ -258,14 +265,16 @@ export function SplitTab({
 
   return (
     <>
-      <div className="split-settle__filter">
-        <JournalFilterPanel
-          filter={filter}
-          onChange={setFilter}
-          options={derived.filterOptions}
-          resultCount={shown.length}
-        />
-      </div>
+      {filterOpen && (
+        <div className="split-settle__filter" id="split-settle-filter">
+          <JournalFilterPanel
+            filter={filter}
+            onChange={onFilterChange}
+            options={derived.filterOptions}
+            resultCount={shown.length}
+          />
+        </div>
+      )}
 
       <div className="split-settle__body">
         <section aria-label="割勘する仕訳" className="split-settle__card split-settle__card--table">

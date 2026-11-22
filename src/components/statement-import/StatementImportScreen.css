@@ -1000,12 +1000,21 @@
   min-width: 0;
 }
 
+/* タブの行。右端に絞り込みの開閉ボタンを置く(専用の行は取らない、計画Issue #266)。罫線は行全体に引く */
+.import-tabrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
 .import-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
   gap: 0 4px;
-  border-bottom: 1px solid var(--color-border);
 }
 
 .import-tab {

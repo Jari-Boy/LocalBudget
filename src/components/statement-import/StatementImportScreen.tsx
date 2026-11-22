@@ -81,7 +81,9 @@ import {
 } from './importTabs'
 import { ImportTabBar, type ImportTabItem } from './ImportTabBar'
 import { ImportPager } from './ImportPager'
+import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
 import {
+  activeConditionCount,
   batchFilterCategories,
   EMPTY_FILTER_INPUT,
   isRowFilterActive,
@@ -316,6 +318,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [sort, setSort] = useState<ImportSort | null>(null)
   /** 列ごとの行の絞り込みの条件(計画Issue #258)。表示だけの条件で、一時保存には含めない。新しい取込では解除する */
   const [rowFilterInput, setRowFilterInput] = useState<ImportFilterInput>(EMPTY_FILTER_INPUT)
+  /** 行の絞り込み欄の開閉。初期状態は閉(条件があるときはボタンの件数バッジで分かる、計画Issue #266) */
+  const [rowFilterOpen, setRowFilterOpen] = useState(false)
   /** 開始状態に出す一時保存の一覧(計画Issue #231 フェーズ3)。取込先の科目ごとに1つ */
   const [drafts, setDrafts] = useState<StatementImportDraftSummary[]>([])
   /** いま開いている取込が、再開した(または保存した)一時保存のid。同じ取込先への保存し直しは、これなら確認なしで上書きする */
@@ -1887,6 +1891,21 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   const noMatchTitle = csvs.length > 1 ? t('noMatchTitleMulti') : t('noMatchTitle', { fileName: csv?.fileName ?? '' })
 
+  /** タブの行。右端に絞り込みの開閉ボタンを置く(専用の行は取らない、計画Issue #266)。絞り込む行が無いときはボタンを出さない */
+  const tabRow = (
+    <div ref={tabsRef} className="import-tabrow">
+      <ImportTabBar label={t('tabsLabel')} tabs={tabItems} active={shownTab} onSelect={selectTab} />
+      {visibleIndices.length > 0 && (
+        <FilterToggleButton
+          open={rowFilterOpen}
+          activeCount={activeConditionCount(rowFilter)}
+          onToggle={() => setRowFilterOpen((v) => !v)}
+          controlsId="import-row-filter"
+        />
+      )}
+    </div>
+  )
+
   return (
     <div className="import-screen">
       {unsavedDialog}
@@ -2241,17 +2260,23 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             </div>
           )}
 
-          <ImportRowFilterPanel
-            input={rowFilterInput}
-            onChange={changeRowFilterInput}
-            onClear={() => changeRowFilterInput(EMPTY_FILTER_INPUT)}
-            counterAccountCategories={categories.counterAccounts}
-            counterpartyCategories={categories.counterparties}
-            projectCategories={categories.projects}
-            members={data.members}
-            batches={data.batches}
-            resultCount={shownTabIndices.length}
-          />
+          {tabRow}
+
+          {rowFilterOpen && (
+            <div id="import-row-filter">
+              <ImportRowFilterPanel
+                input={rowFilterInput}
+                onChange={changeRowFilterInput}
+                onClear={() => changeRowFilterInput(EMPTY_FILTER_INPUT)}
+                counterAccountCategories={categories.counterAccounts}
+                counterpartyCategories={categories.counterparties}
+                projectCategories={categories.projects}
+                members={data.members}
+                batches={data.batches}
+                resultCount={shownTabIndices.length}
+              />
+            </div>
+          )}
 
           {selected.size > 0 && (
             <div role="group" aria-label={t('bulkGroup')} className="import-bulk">
@@ -2333,9 +2358,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         </>
       )}
 
+      {/* 表示できる行が無く、読めない行のタブだけのとき(絞り込み・一括編集は出さない) */}
+      {session && visibleIndices.length === 0 && unreadableCount > 0 && tabRow}
+
       {session && (visibleIndices.length > 0 || unreadableCount > 0) && (
-        <div ref={tabsRef} className="import-tabarea">
-          <ImportTabBar label={t('tabsLabel')} tabs={tabItems} active={shownTab} onSelect={selectTab} />
+        <div className="import-tabarea">
           <div role="tabpanel" id={importTabPanelId(shownTab)} aria-labelledby={`import-tab-${shownTab}`} className="import-tabpanel">
             {shownTab === 'unreadable' ? (
               unreadablePanel

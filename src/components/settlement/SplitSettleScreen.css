@@ -14,11 +14,20 @@
   font-weight: 700;
 }
 
+/* タブの行。右端に絞り込みの開閉ボタンを置く(専用の行は取らない、計画Issue #266) */
+.split-settle__tabbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
 .split-settle__tabs {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  border-bottom: 1px solid var(--color-border);
 }
 
 .split-settle__tab {

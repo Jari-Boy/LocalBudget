@@ -40,7 +40,9 @@ import type {
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
+import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
 import { JournalFilterPanel, type JournalFilterOptions } from '../common/journal-filter/JournalFilterPanel'
+import { countActiveConditions } from '../common/journal-filter/journalFilterModel'
 import { JournalResultList } from '../common/journal-result/JournalResultList'
 import { AutoBalanceAdjustmentDetail } from './AutoBalanceAdjustmentDetail'
 import { describeAutoBalanceAdjustment } from '../../domain/journal/describeAutoBalanceAdjustment'
@@ -266,6 +268,8 @@ export function JournalScreen(props: JournalScreenProps) {
   /** 明細行単位の表の列幅(「列幅を初期値に戻す」ボタンと表で共有する) */
   const lineColumns = useJournalLineTableColumns()
   const [filter, setFilter] = useState<JournalEntryFilter>(props.initialFilter ?? {})
+  /** 絞り込み欄の開閉。初期状態は閉(条件があるときはボタンの件数バッジで分かる、計画Issue #266) */
+  const [filterOpen, setFilterOpen] = useState(false)
   /** 「さらに表示」で増やした表示件数の上限。null は先頭の1ページ分(計画Issue #253)。絞り込み条件を変えると戻す */
   const [displayLimit, setDisplayLimit] = useState<number | null>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
@@ -1273,19 +1277,29 @@ export function JournalScreen(props: JournalScreenProps) {
 
       {props.banner}
 
-      <div role="tablist" aria-label="仕訳の種類" className="journal-screen__tabs">
-        {tabs.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.key}
-            className={`journal-screen__tab${tab === item.key ? ' journal-screen__tab--current' : ''}`}
-            onClick={() => switchTab(item.key)}
-          >
-            {item.label}
-          </button>
-        ))}
+      <div className="journal-screen__tabbar">
+        <div role="tablist" aria-label="仕訳の種類" className="journal-screen__tabs">
+          {tabs.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              role="tab"
+              aria-selected={tab === item.key}
+              className={`journal-screen__tab${tab === item.key ? ' journal-screen__tab--current' : ''}`}
+              onClick={() => switchTab(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        {tab === 'list' && (
+          <FilterToggleButton
+            open={filterOpen}
+            activeCount={countActiveConditions(filter)}
+            onToggle={() => setFilterOpen((v) => !v)}
+            controlsId="journal-screen-filter"
+          />
+        )}
       </div>
 
       {tab === 'rules' && props.rulesPanel !== undefined ? (
@@ -1294,8 +1308,8 @@ export function JournalScreen(props: JournalScreenProps) {
         <div className="journal-screen__rules">{props.templatesPanel}</div>
       ) : (
         <>
-      {tab === 'list' && (
-        <div className="journal-screen__filter">
+      {tab === 'list' && filterOpen && (
+        <div className="journal-screen__filter" id="journal-screen-filter">
           <JournalFilterPanel filter={filter} onChange={changeFilter} options={filterOptions} resultCount={matchedEntries.length} />
         </div>
       )}
