@@ -84,6 +84,11 @@ export interface JournalLineTableProps {
   bulk?: JournalLineTableBulk
   /** 列幅の状態。画面が持って「列幅を初期値に戻す」ボタンと共有するときに渡す。渡さなければ表自身が持つ */
   columns?: JournalLineTableColumns
+  /**
+   * 表のスクロールの枠(画面の高さに収まり、枠の中でスクロールする。見出しはこの枠の上端に固定する、計画Issue #266)を受け取る。
+   * 一括編集バーの出入りで行が動かないよう、画面がこの枠のスクロール位置を調整するために使う
+   */
+  scrollRegionRef?: (element: HTMLDivElement | null) => void
   /** 選択中の仕訳。その仕訳のすべての行を強調する */
   selectedId: number | null
   /**
@@ -186,7 +191,7 @@ function BulkCheckbox({
  * すべての列を初期の幅に戻せる。
  * 表示用の名前解決(lookup)と編集内容(値と変更通知)だけを受け取り、DB・Repositoryには依存しない。
  */
-export function JournalLineTable({ entries, lookup, selectedId, onSelect, editing, bulk, columns }: JournalLineTableProps) {
+export function JournalLineTable({ entries, lookup, selectedId, onSelect, editing, bulk, columns, scrollRegionRef }: JournalLineTableProps) {
   // ---- 列幅の調整(フックは、仕訳がないときの早期returnより前に置く) ----
   const ownColumns = useJournalLineTableColumns()
   const { widths, widthsRef, resizeTo, commit, resetColumn } = columns ?? ownColumns
@@ -556,7 +561,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
 
   return (
     <div className="journal-line-table-wrap">
-      <div className="journal-line-table">
+      <div className="journal-line-table" ref={scrollRegionRef}>
       <table
         ref={tableRef}
         className="journal-line-table__table"

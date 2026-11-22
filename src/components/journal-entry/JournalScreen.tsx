@@ -42,6 +42,7 @@ import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBa
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
 import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
 import { useElementHeight } from '../common/sticky/useElementHeight'
+import { KeepRowsInPlace } from '../common/sticky/useKeepRowsInPlace'
 import { JournalFilterPanel, type JournalFilterOptions } from '../common/journal-filter/JournalFilterPanel'
 import { countActiveConditions } from '../common/journal-filter/journalFilterModel'
 import { JournalResultList } from '../common/journal-result/JournalResultList'
@@ -274,6 +275,8 @@ export function JournalScreen(props: JournalScreenProps) {
   /** 上部に固定するタブ・絞り込み欄の容器と、その高さ(下の固定要素の top に使う、計画Issue #266) */
   const [stickyElement, setStickyElement] = useState<HTMLDivElement | null>(null)
   const stickyHeight = useElementHeight(stickyElement)
+  /** 明細行単位の表のスクロールの枠。一括編集バーの出入りで、行が画面上で動かないようにスクロール位置を相殺する(計画Issue #266) */
+  const [lineRegion, setLineRegion] = useState<HTMLDivElement | null>(null)
   /** 「さらに表示」で増やした表示件数の上限。null は先頭の1ページ分(計画Issue #253)。絞り込み条件を変えると戻す */
   const [displayLimit, setDisplayLimit] = useState<number | null>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
@@ -1117,6 +1120,7 @@ export function JournalScreen(props: JournalScreenProps) {
     .filter((entry) => entry.sourceType !== 'auto_balance_adjustment') // 自動調整仕訳は一括編集の対象にしない(計画Issue #205)
     .flatMap((entry) => entry.lines.map((line) => ({ entry, line })))
   const bulkSelected = visibleLines.filter((s) => bulkLineIds.includes(s.line.id))
+  const bulkBarShown = lineView && bulkSelected.length > 0
   const bulkSelectedIds = new Set(bulkSelected.map((s) => s.line.id))
   /** 選択した行に合わせて、選べなくなった項目の選択を外した、変える項目の選択 */
   const effectiveBulkPick = sanitizeBulkPick(bulkPick, bulkEditRules(bulkSelected, bulkPick, derived.accountById))
@@ -1245,7 +1249,10 @@ export function JournalScreen(props: JournalScreenProps) {
         : ''
 
   return (
-    <div className="journal-screen" style={{ '--sticky-head-h': `${stickyHeight}px` } as CSSProperties}>
+    <div
+      className={`journal-screen${bulkBarShown ? ' journal-screen--bulk' : ''}`}
+      style={{ '--sticky-head-h': `${stickyHeight}px` } as CSSProperties}
+    >
       <div className="journal-screen__head">
         <h1 className="journal-screen__title">仕訳</h1>
         <div className="journal-screen__actions">
@@ -1412,9 +1419,10 @@ export function JournalScreen(props: JournalScreenProps) {
                   {error}
                 </p>
               )}
-              {/* バーの領域は未選択のときも確保する。最初のチェックでバーが出ても、下の行が押し下げられない(計画Issue #266)。上部に固定する */}
-              <div className="journal-screen__bulk-slot" data-testid="journal-bulk-slot">
-                {bulkSelected.length > 0 ? (
+              {/* バーは選んだときだけ出て、タブの行・絞り込み欄の下に固定する。出入りで表の枠が上下にずれても、行は動かさない(KeepRowsInPlace、計画Issue #266) */}
+              <KeepRowsInPlace visible={bulkBarShown} region={lineRegion} />
+              {bulkSelected.length > 0 && (
+                <div className="journal-screen__bulk-bar">
                   <JournalLineBulkBar
                     selected={bulkSelected}
                     pick={effectiveBulkPick}
@@ -1430,11 +1438,10 @@ export function JournalScreen(props: JournalScreenProps) {
                     onClearSelection={resetBulk}
                     busy={busy}
                   />
-                ) : (
-                  <p className="journal-screen__bulk-slot-hint">行にチェックを付けると、ここに一括編集が出ます(この領域は常に確保され、行はずれません)</p>
-                )}
-              </div>
+                </div>
+              )}
               <JournalLineTable
+                scrollRegionRef={setLineRegion}
                 columns={lineColumns}
                 entries={visibleEntries}
                 lookup={lineLookup}

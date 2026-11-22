@@ -74,7 +74,6 @@
   "bulkCommentApply": "コメントを適用",
   "bulkClearSelection": "選択を解除",
   "bulkMore": "その他の項目",
-  "bulkSlotHint": "行にチェックを付けると、ここに一括設定が出ます(この領域は常に確保され、行はずれません)",
   "bulkApplied": "{{count}}件に設定しました",
   "bulkAppliedWithSkipped": "{{count}}件に設定しました({{skipped}}件は対象外)",
   "createCounterAccount": "科目を新規追加",

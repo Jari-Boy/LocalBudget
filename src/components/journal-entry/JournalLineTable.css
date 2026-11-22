@@ -1,11 +1,28 @@
 /* 仕訳一覧の「明細行単位」の表(計画Issue #182)。色・余白は既存の仕訳一覧と同じデザイントークンを使う */
+/*
+ * 表は、画面の高さに収まるスクロールの枠にする(計画Issue #266)。枠の中で縦横にスクロールし、見出しは枠の上端に固定する
+ * (横スクロール用の枠の中では、ページのスクロールで見出しを固定できないため)。横スクロールバーも常に画面の下に見える。
+ * 高さは、画面の高さから、上部に固定したタブ・絞り込み欄・一括編集バーの分を引く(画面側が --sticky-head-h に入れる)。
+ * 引く48pxは、ページを一番下までスクロールしたときに、枠の上端が固定したヘッダーの下に潜り込まないための余白(main の下の余白40px + 8px)。
+ * 小さな画面でも表が潰れないよう、下限を設ける。
+ */
 .journal-line-table {
+  max-height: max(320px, calc(100dvh - var(--sticky-head-h, 0px) - var(--sticky-bulk-h, 0px) - 48px));
+  /* 画面内のジャンプ(scrollIntoView・キー操作)で、枠が固定したヘッダーの下に潜り込まないようにする */
+  scroll-margin-top: calc(var(--sticky-head-h, 0px) + var(--sticky-bulk-h, 0px) + 8px);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  overflow-x: auto;
+  overflow: auto;
   text-align: left;
   color: var(--color-text);
+}
+
+/* 見出し(借方・貸方の行と列名の2行)は、枠の上端に固定する */
+.journal-line-table__table thead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
 }
 
 .journal-line-table-wrap {

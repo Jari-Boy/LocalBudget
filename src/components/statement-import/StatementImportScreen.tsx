@@ -83,6 +83,7 @@ import { ImportTabBar, type ImportTabItem } from './ImportTabBar'
 import { ImportPager } from './ImportPager'
 import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
 import { useElementHeight } from '../common/sticky/useElementHeight'
+import { KeepRowsInPlace } from '../common/sticky/useKeepRowsInPlace'
 import {
   activeConditionCount,
   batchFilterCategories,
@@ -326,6 +327,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   /** 上部に固定するタブ・絞り込み欄の容器と、その高さ(一括設定の領域の top に使う、計画Issue #266) */
   const [stickyElement, setStickyElement] = useState<HTMLDivElement | null>(null)
   const stickyHeight = useElementHeight(stickyElement)
+  /** 表のスクロールの枠。一括設定のバナーの出入りで、行が画面上で動かないようにスクロール位置を相殺する(計画Issue #266) */
+  const [importRegion, setImportRegion] = useState<HTMLDivElement | null>(null)
   /** 開始状態に出す一時保存の一覧(計画Issue #231 フェーズ3)。取込先の科目ごとに1つ */
   const [drafts, setDrafts] = useState<StatementImportDraftSummary[]>([])
   /** いま開いている取込が、再開した(または保存した)一時保存のid。同じ取込先への保存し直しは、これなら確認なしで上書きする */
@@ -1895,6 +1898,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     </button>
   )
 
+  /** 一括設定のバナーを出しているか(行を選んでいて、表示できる行がある) */
+  const bulkBarShown = visibleIndices.length > 0 && selected.size > 0
+
   const noMatchTitle = csvs.length > 1 ? t('noMatchTitleMulti') : t('noMatchTitle', { fileName: csv?.fileName ?? '' })
 
   /** タブの行。右端に絞り込みの開閉ボタンを置く(専用の行は取らない、計画Issue #266)。絞り込む行が無いときはボタンを出さない */
@@ -1913,7 +1919,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   )
 
   return (
-    <div className="import-screen" style={{ '--sticky-head-h': `${stickyHeight}px` } as CSSProperties}>
+    <div
+      className={`import-screen${bulkBarShown ? ' import-screen--bulk' : ''}`}
+      style={{ '--sticky-head-h': `${stickyHeight}px` } as CSSProperties}
+    >
       {unsavedDialog}
       {draftDialog?.kind === 'overwrite' && (
         <ConfirmDialog
@@ -2287,9 +2296,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             )}
           </div>
 
-          {/* 一括設定の領域は未選択のときも確保する。最初のチェックでバナーが出ても、下の行が押し下げられない(計画Issue #266)。上部に固定する */}
-          <div className="import-bulk-slot" data-testid="import-bulk-slot">
-          {selected.size > 0 ? (
+          {/* バナーは選んだときだけ出て、タブの行・絞り込み欄の下に固定する。出入りで表の枠が上下にずれても、行は動かさない(KeepRowsInPlace、計画Issue #266) */}
+          <KeepRowsInPlace visible={bulkBarShown} region={importRegion} />
+          {bulkBarShown && (
+            <div className="import-bulk-bar">
             <div role="group" aria-label={t('bulkGroup')} className="import-bulk">
               <div className="import-bulk__summary">
                 <span className="import-bulk__count">{t('bulkCount', { count: selected.size })}</span>
@@ -2379,10 +2389,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                 </div>
               )}
             </div>
-          ) : (
-            <p className="import-bulk-slot__hint">{t('bulkSlotHint')}</p>
+            </div>
           )}
-          </div>
 
         </>
       )}
@@ -2396,7 +2404,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             {shownTab === 'unreadable' ? (
               unreadablePanel
             ) : (
-          <div className="import-table-wrap">
+          <div className="import-table-wrap" ref={setImportRegion}>
             <table className="import-table" aria-label={t('tableLabel')}>
               <thead>
                 <tr>

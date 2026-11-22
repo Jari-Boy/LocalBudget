@@ -383,43 +383,36 @@ describe('StatementImportScreen', () => {
     expect(bulk.getByRole('button', { name: '選択を解除' })).not.toHaveClass('import-btn--small')
   })
 
-  /** 計画Issue #266: 一括設定の領域を常に確保し、最初のチェックで出ても下の行が押し下げられないようにする。タブ・絞り込み欄と一緒に上部へ固定する */
-  describe('一括設定の領域の確保と上部への固定(計画Issue #266)', () => {
-    const slot = () => screen.getByTestId('import-bulk-slot')
-
-    it('未選択のときも、一括設定の領域(案内)が表の上に確保され、一括設定のバナーは出ない', async () => {
+  /**
+   * 計画Issue #266: 一括設定のバナーは選んだときだけ出る(領域の確保や案内は出さない)。最初のチェックで表の枠が下がっても、
+   * 行が動かないようスクロール位置を相殺する(相殺は useKeepRowsInPlace のテストと、実ブラウザの E2E で検証する)。
+   * タブの行・絞り込み欄は上部に固定し、表は画面に収まるスクロールの枠にして見出しを固定する。
+   */
+  describe('バナーの出入りと上部への固定(計画Issue #266)', () => {
+    it('未選択のときは、一括設定の領域も案内も出さない。選んだときだけバナーが出る', async () => {
       makeMapping()
       renderScreen()
       await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
 
-      expect(within(slot()).getByText(/行にチェックを付けると、ここに一括設定が出ます/)).toBeInTheDocument()
+      expect(screen.queryByTestId('import-bulk-slot')).not.toBeInTheDocument()
+      expect(screen.queryByText(/行にチェックを付けると/)).not.toBeInTheDocument()
       expect(screen.queryByRole('group', { name: '選択した明細への一括設定' })).not.toBeInTheDocument()
-    })
-
-    it('最初のチェックを付けると、同じ領域の中身がバナーに替わり、領域は動かない(行が押し下げられない)', async () => {
-      makeMapping()
-      renderScreen()
-      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
-      const before = slot()
 
       fireEvent.click(screen.getByLabelText('スーパーを選択'))
 
-      expect(screen.getByTestId('import-bulk-slot')).toBe(before)
-      expect(within(before).getByRole('group', { name: '選択した明細への一括設定' })).toBeInTheDocument()
-      expect(within(before).queryByText(/行にチェックを付けると/)).not.toBeInTheDocument()
+      expect(screen.getByRole('group', { name: '選択した明細への一括設定' })).toBeInTheDocument()
     })
 
-    it('選択を解除すると、領域は残り、中身が案内に戻る', async () => {
+    it('バナーは、表(スクロールの枠)の外にある(バナーは枠の中でスクロールされない)', async () => {
       makeMapping()
       renderScreen()
       await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
       fireEvent.click(screen.getByLabelText('スーパーを選択'))
 
-      fireEvent.click(within(slot()).getByRole('button', { name: '選択を解除' }))
-
-      expect(within(slot()).getByText(/行にチェックを付けると/)).toBeInTheDocument()
+      const scrollRegion = screen.getByRole('table').closest('.import-table-wrap') as HTMLElement
+      expect(scrollRegion).not.toBeNull()
+      expect(scrollRegion).not.toContainElement(screen.getByRole('group', { name: '選択した明細への一括設定' }))
     })
-
     it('バナーは1行にまとめ、相手科目と取引先だけを出す。プロジェクト・世帯メンバー・精算バッチ・コメントは「その他の項目」を開くと出る', async () => {
       makeMapping()
       renderScreen()

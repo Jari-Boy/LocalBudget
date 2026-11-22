@@ -1,12 +1,12 @@
 /*
  * 一括編集バー(計画Issue #182)。表の上の、画面の上部に固定された領域(JournalScreen の __bulk-slot)に出る。
  * 固定領域を高くしないため、1行にまとめる(計画Issue #266)。色・余白は既存のデザイントークンを使い、文字は表と同じ12pxに揃える。
- * 領域の高さ(--journal-bulk-slot-h)は、バーが出ても行がずれないよう、バーと案内で同じ値を使う。
+ * 高さは60px固定(JournalScreen.css の --sticky-bulk-h の計算と揃える)。
  */
 .journal-line-bulk {
   position: relative;
   box-sizing: border-box;
-  height: var(--journal-bulk-slot-h, 60px);
+  height: 60px;
   padding: 0 12px;
   display: flex;
   align-items: center;

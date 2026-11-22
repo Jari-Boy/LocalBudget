@@ -369,7 +369,8 @@ const detail = () => screen.getByRole('region', { name: '仕訳の詳細' })
 
 /** 絞り込み欄は初期状態が「閉」(計画Issue #266)。閉じていれば開いてから、摘要の検索欄を返す */
 function memoSearch(): HTMLElement {
-  const opener = screen.queryByRole('button', { name: /^絞り込みを開く/ })
+  // 一覧が大きいテストでも重くならないよう、役割ではなくラベルで探す(queryByRole は大きな DOM では遅い)
+  const opener = screen.queryByLabelText(/^絞り込みを開く/)
   if (opener !== null) fireEvent.click(opener)
   return screen.getByLabelText('摘要で検索')
 }
@@ -1615,37 +1616,27 @@ describe('JournalScreen(明細行単位)', () => {
       expect(debitBox('ランチ')).not.toBeChecked()
     })
 
-    /** 計画Issue #266: バーの領域を常に確保し、最初のチェックでバーが出ても下の行が押し下げられないようにする */
-    describe('バーの領域の確保と上部への固定(計画Issue #266)', () => {
-      const slot = () => screen.getByTestId('journal-bulk-slot')
-
-      it('未選択のときも、バーの領域(案内)が表の上に確保されている', async () => {
+    /**
+     * 計画Issue #266: バーは選んだときだけ出る(領域の確保や案内は出さない)。最初のチェックで表の枠が下がっても、
+     * 行が動かないようスクロール位置を相殺する(相殺は useKeepRowsInPlace のテストと、実ブラウザの E2E で検証する)。
+     * タブの行・絞り込み欄は上部に固定し、表は画面に収まるスクロールの枠にして見出しを固定する。
+     */
+    describe('バーの出入りと上部への固定(計画Issue #266)', () => {
+      it('未選択のときは、バーの領域も案内も出さない(選んだときだけバーが出る)', async () => {
         await setupLineView()
-        expect(within(slot()).getByText(/行にチェックを付けると、ここに一括編集が出ます/)).toBeInTheDocument()
-        expect(slot().nextElementSibling).toBe(lineTable().closest('.journal-line-table-wrap'))
-      })
-
-      it('最初のチェックを付けると、同じ領域の中身がバーに替わり、領域の位置は動かない(行が押し下げられない)', async () => {
-        await setupLineView()
-        const before = slot()
-        fireEvent.click(debitBox('ランチ'))
-        expect(screen.getByTestId('journal-bulk-slot')).toBe(before)
-        expect(within(before).getByRole('region', { name: '一括編集' })).toBeInTheDocument()
-        expect(within(before).queryByText(/行にチェックを付けると/)).not.toBeInTheDocument()
-        expect(before.nextElementSibling).toBe(lineTable().closest('.journal-line-table-wrap'))
-      })
-
-      it('選択を解除すると、領域は残り、中身が案内に戻る', async () => {
-        await setupLineView()
-        fireEvent.click(debitBox('ランチ'))
-        fireEvent.click(within(bulkBar()).getByRole('button', { name: '選択を解除' }))
-        expect(within(slot()).getByText(/行にチェックを付けると/)).toBeInTheDocument()
-      })
-
-      it('仕訳単位の表示や、下書き・承認待ちのタブには、バーの領域を出さない', async () => {
-        await setupLineView()
-        switchTo('仕訳単位')
         expect(screen.queryByTestId('journal-bulk-slot')).not.toBeInTheDocument()
+        expect(screen.queryByText(/行にチェックを付けると/)).not.toBeInTheDocument()
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+        fireEvent.click(debitBox('ランチ'))
+        expect(bulkBar()).toBeInTheDocument()
+      })
+
+      it('バーは表(スクロールの枠)の上に出て、表の枠の外にある(バーは枠の中でスクロールされない)', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        const scrollRegion = lineTable().closest('.journal-line-table') as HTMLElement
+        expect(scrollRegion).not.toBeNull()
+        expect(scrollRegion).not.toContainElement(bulkBar())
       })
 
       it('タブの行と絞り込み欄は、ひとつの固定の容器にまとまっている(絞り込み欄を開いても同じ容器)', async () => {
@@ -1656,7 +1647,6 @@ describe('JournalScreen(明細行単位)', () => {
         expect(within(sticky as HTMLElement).getByRole('search', { name: '仕訳の絞り込み' })).toBeInTheDocument()
       })
     })
-
     it('行を押さずにチェックだけでは、その仕訳の編集は始まらない', async () => {
       await setupLineView()
       fireEvent.click(debitBox('ランチ'))
@@ -2270,7 +2260,8 @@ describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
     expect(listed(PAGE * 2)).toBeInTheDocument()
     expect(listed(PAGE * 2 + 1)).not.toBeInTheDocument()
     expect(screen.getByText(`${PAGE * 2} / ${total}件を表示中`)).toBeInTheDocument()
-  })
+    // 絞り込み欄を開く操作(計画Issue #266)が増えたぶん、全体を並列で流したときに既定の15秒に近づくため、この重い一覧のテストだけ制限を延ばす
+  }, 30000)
 
   it('明細行単位でも、初めは1ページ分の仕訳だけを描き、「さらに表示」で増やせる', async () => {
     localStorage.setItem('localbudget:journal-view-mode', 'line')

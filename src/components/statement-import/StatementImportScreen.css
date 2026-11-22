@@ -1,5 +1,7 @@
 /* 明細取込画面(計画Issue #151)。値はdesign/tokens.cssのトークンを使う。 */
 .import-screen {
+  /* スクロール位置の相殺(useKeepRowsInPlace)とブラウザのスクロールアンカーが二重にならないようにする */
+  overflow-anchor: none;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -137,35 +139,27 @@
   background: var(--color-bg);
 }
 
-/* 一括設定の領域(表の上)。未選択のときも同じ高さで確保し、バナーが出ても行がずれない。タブ・絞り込み欄の下に固定する */
-.import-bulk-slot {
-  --import-bulk-slot-h: 60px;
+/*
+ * 一括設定のバナー(表の上)。選んだときだけ出て、タブ・絞り込み欄の下に固定する。バナーの高さの分だけ、
+ * 表の枠(.import-table-wrap の max-height)を低くする(.import-screen--bulk が --sticky-bulk-h に高さと間隔を入れる)。
+ * 出入りで表の枠が上下にずれても、行が画面上で動かないよう、画面側がスクロール位置を相殺する(useKeepRowsInPlace)。
+ */
+.import-bulk-bar {
   position: sticky;
   top: var(--sticky-head-h, 0px);
   z-index: 15;
-  box-sizing: border-box;
-  height: var(--import-bulk-slot-h);
   background: var(--color-bg);
 }
 
-.import-bulk-slot__hint {
-  box-sizing: border-box;
-  height: var(--import-bulk-slot-h);
-  margin: 0;
-  display: flex;
-  align-items: center;
-  padding: 0 14px;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-lg);
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
+.import-screen--bulk {
+  /* バナーの高さ(.import-bulk の height、60px) + 表との間隔(.import-screen の gap、16px) */
+  --sticky-bulk-h: 76px;
 }
-
 /* 一括設定のバナー。固定領域を高くしないよう1行にまとめる(プロジェクト等は「その他の項目」に重ねて出す) */
 .import-bulk {
   position: relative;
   box-sizing: border-box;
-  height: var(--import-bulk-slot-h, 60px);
+  height: 60px;
   display: flex;
   flex-wrap: nowrap;
   gap: 8px;
@@ -225,11 +219,31 @@
   box-shadow: var(--shadow-popup);
 }
 
+/*
+ * 表は、画面の高さに収まるスクロールの枠にする(計画Issue #266)。枠の中で縦横にスクロールし、見出しは枠の上端に固定する
+ * (横スクロール用の枠の中では、ページのスクロールで見出しを固定できないため)。横スクロールバーも常に画面の下に見える。
+ * 高さは、画面の高さから、上部に固定したタブ・絞り込み欄・一括設定のバナーの分を引く。引く48pxは、ページを一番下までスクロールしたときに、
+ * 枠の上端が固定したヘッダーの下に潜り込まないための余白(main の下の余白40px + 8px)。小さな画面でも表が潰れないよう、下限を設ける。
+ */
 .import-table-wrap {
+  max-height: max(320px, calc(100dvh - var(--sticky-head-h, 0px) - var(--sticky-bulk-h, 0px) - 48px));
+  /* 画面内のジャンプ(scrollIntoView・キー操作)で、枠が固定したヘッダーの下に潜り込まないようにする */
+  scroll-margin-top: calc(var(--sticky-head-h, 0px) + var(--sticky-bulk-h, 0px) + 8px);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  overflow-x: auto;
+  overflow: auto;
+}
+
+/* 見出しは、枠の上端に固定する(セルに背景を付けて、下の行が透けないようにする) */
+.import-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.import-table thead th {
+  background: var(--color-surface);
 }
 
 .import-table {
