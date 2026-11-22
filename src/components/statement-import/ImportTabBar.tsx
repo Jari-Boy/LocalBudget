@@ -11,6 +11,8 @@ export interface ImportTabItem {
   key: ImportTabKey
   label: string
   count: number
+  /** 絞り込み中の、そのタブの全体の件数(計画Issue #258)。渡すと件数を「count / totalCount」で出す */
+  totalCount?: number
   /** 確認が必要なタブにだけ付ける状態の札 */
   states?: readonly ImportTabState[]
   /** 確認不要のタブ。文字も数も灰色で、札は付けない */
@@ -68,7 +70,7 @@ export function ImportTabBar({ label, tabs, active, onSelect }: ImportTabBarProp
             onKeyDown={(event) => onKeyDown(event, index)}
           >
             <span>{tab.label}</span>
-            <span className="import-tab__count">{tab.count}</span>
+            <span className="import-tab__count">{tab.totalCount === undefined ? tab.count : `${tab.count} / ${tab.totalCount}`}</span>
             {tab.states?.map((state) => (
               <span key={state.text} className={`import-tab__state import-tab__state--${state.tone}`}>
                 {state.text}

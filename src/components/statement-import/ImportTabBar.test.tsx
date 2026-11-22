@@ -133,4 +133,11 @@ describe('ImportTabBar', () => {
 
     expect(screen.getByRole('tab', { name: /^新規/ })).toHaveAttribute('aria-controls', 'import-tabpanel-new')
   })
+
+  it('絞り込み中は、件数を「表示中 / 全体」で出す(絞り込みの計画Issue #258)', () => {
+    renderBar({ tabs: [{ key: 'new', label: '新規', count: 2, totalCount: 7 }, { key: 'duplicate', label: '重複', count: 2, muted: true }] })
+
+    expect(within(screen.getByRole('tab', { name: /^新規/ })).getByText('2 / 7')).toBeInTheDocument()
+    expect(within(screen.getByRole('tab', { name: /^重複/ })).getByText('2')).toBeInTheDocument()
+  })
 })

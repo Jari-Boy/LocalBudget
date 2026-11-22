@@ -43,7 +43,9 @@ import { runInHistoryGroup, type HistoryGroupApi } from '../../infrastructure/hi
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { useEscapeToClear } from '../common/range-selection/useEscapeToClear'
 import { createRangeSelection, useRangeAnchor } from '../common/range-selection/useRangeSelection'
+import type { FavoriteKind } from '../common/favorites/FavoritesContext'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
+import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
 import { AccountCreateForm } from '../master/AccountCreateForm'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
@@ -81,6 +83,15 @@ import {
 } from './importTabs'
 import { ImportTabBar, type ImportTabItem } from './ImportTabBar'
 import { ImportPager } from './ImportPager'
+import {
+  EMPTY_ROW_FILTER,
+  isRowFilterActive,
+  matchesRowFilter,
+  pruneSelection,
+  activeConditionCount,
+  type IdCondition,
+  type ImportRowFilter,
+} from './importRowFilter'
 import { compareBySort, cycleSort, type ImportSort, type SortKey, type SortableRow } from './importRowSort'
 import { ConfirmDialog } from '../common/confirm-dialog/ConfirmDialog'
 import type {
@@ -302,6 +313,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
    * 折りたたみと同じく、ファイルのチェックの切り替えによる作り直しでは保ち、CSVの選び直し・取込先の変更では解除する。
    */
   const [sort, setSort] = useState<ImportSort | null>(null)
+  /** 列ごとの行の絞り込みの条件(計画Issue #258)。表示だけの条件で、一時保存には含めない。新しい取込では解除する */
+  const [rowFilter, setRowFilter] = useState<ImportRowFilter>(EMPTY_ROW_FILTER)
   /** 開始状態に出す一時保存の一覧(計画Issue #231 フェーズ3)。取込先の科目ごとに1つ */
   const [drafts, setDrafts] = useState<StatementImportDraftSummary[]>([])
   /** いま開いている取込が、再開した(または保存した)一時保存のid。同じ取込先への保存し直しは、これなら確認なしで上書きする */
@@ -974,6 +987,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       setActiveTab('new')
       setPages({ new: 1, duplicate: 1 })
       setSort(null)
+      setRowFilter(EMPTY_ROW_FILTER)
     }
     if (files.length === 0) {
       setSession(null)
@@ -1134,7 +1148,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
    * それを一時保存してから移動する。確定の前提(誰の明細か・キーワードの入力)を満たせないときは、何も保存せず移動しない
    */
   async function confirmAndSaveDraft(): Promise<boolean> {
-    const outcome = await handleConfirm()
+    // 離れる前の確定は、絞り込みに関わらず、入力済みの全件が対象(一時保存も全件を保存するため)
+    const outcome = await handleConfirm({ all: true })
     if (outcome.status === 'blocked') return false
     if (outcome.status === 'done') return true
     return saveDraft({ done: outcome.done })
@@ -1382,7 +1397,24 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const tabIndices = session ? buildTabIndices(remainingIndices, records, session.rows, compareRows) : { new: [], duplicate: [] }
   const visibleIndices = [...tabIndices.new, ...tabIndices.duplicate]
   const statusOf = (i: number) => rowStatus(records[i], session!.rows[i])
+  /** 行が絞り込みの条件に合うか(計画Issue #258)。重複の行は入力欄を持たないので、科目などの条件には合わない */
+  const matchesFilterWith = (filter: ImportRowFilter, i: number) =>
+    matchesRowFilter(filter, {
+      description: formatDescriptionForDisplay(records[i].record.description),
+      inputs:
+        statusOf(i) === 'duplicate'
+          ? null
+          : {
+              counterAccountId: session!.rows[i].counterAccountId,
+              counterpartyId: session!.rows[i].counterpartyId,
+              projectId: session!.rows[i].projectId,
+            },
+    })
+  const rowFilterActive = isRowFilterActive(rowFilter)
+  const matchesFilter = (i: number) => !rowFilterActive || matchesFilterWith(rowFilter, i)
   const importable = visibleIndices.filter((i) => statusOf(i) !== 'duplicate' && statusOf(i) !== 'skipped')
+  /** 確定の対象。絞り込み中は表示中の行だけ、条件が無いときは取り込み対象の全件(計画Issue #258) */
+  const confirmTargets = rowFilterActive ? importable.filter(matchesFilter) : importable
   const skippedCount = visibleIndices.filter((i) => statusOf(i) === 'skipped').length
   const dupCount = visibleIndices.length - importable.length - skippedCount
   const similarCount = importable.filter((i) => rowGroup(records[i]) === 'similar').length
@@ -1403,7 +1435,17 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         ? 'unreadable'
         : activeTab
   const shownRowTab: RowTab = shownTab === 'duplicate' ? 'duplicate' : 'new'
-  const shownTabIndices = tabIndices[shownRowTab]
+  /** 開いているタブの、絞り込みに合う行(並びは絞り込み前のまま)。条件が無いときはタブの全行 */
+  const shownTabIndices = rowFilterActive ? tabIndices[shownRowTab].filter(matchesFilter) : tabIndices[shownRowTab]
+  /** 絞り込み中の各タブの、表示中の件数。タブ見出しに「表示中 / 全体」で出す */
+  const filteredTabCounts = {
+    new: rowFilterActive ? tabIndices.new.filter(matchesFilter).length : tabSummary.newCount,
+    duplicate: rowFilterActive ? tabIndices.duplicate.filter(matchesFilter).length : tabSummary.duplicateCount,
+  }
+  // 入力で行が条件に合わなくなる(「未設定」で絞って科目を入れたなど)と、その行は見えなくなる。見えない行のチェックは外す
+  if (rowFilterActive && [...selected].some((i) => !matchesFilter(i))) {
+    setSelected(new Set([...selected].filter(matchesFilter)))
+  }
   const shownPage = pageRange({ total: shownTabIndices.length, page: pages[shownRowTab], pageSize: IMPORT_PAGE_SIZE })
   /** 表に描く行。いま開いているタブの、いまのページの分だけ(描画だけを区切り、状態と確定の対象は全件のまま) */
   const pageIndices = shownTab === 'unreadable' ? [] : shownTabIndices.slice(shownPage.start, shownPage.end)
@@ -1411,7 +1453,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     {
       key: 'new',
       label: t('tabNew'),
-      count: tabSummary.newCount,
+      count: filteredTabCounts.new,
+      totalCount: rowFilterActive ? tabSummary.newCount : undefined,
       states: [
         ...(rowErrorCount > 0
           ? [{ tone: 'error' as const, text: t('tabStateError', { count: rowErrorCount }) }]
@@ -1424,7 +1467,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       ],
     },
     ...(tabSummary.duplicateCount > 0
-      ? [{ key: 'duplicate' as const, label: t('tabDuplicate'), count: tabSummary.duplicateCount, muted: true }]
+      ? [{
+            key: 'duplicate' as const,
+            label: t('tabDuplicate'),
+            count: filteredTabCounts.duplicate,
+            totalCount: rowFilterActive ? tabSummary.duplicateCount : undefined,
+            muted: true,
+          }]
       : []),
     ...(unreadableCount > 0
       ? [
@@ -1531,6 +1580,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
    */
   const jumpToRow = (index: number, rows: readonly ImportRowState[] | undefined = session?.rows) => {
     if (!session || !rows) return
+    // 行き先が絞り込みで隠れていると見失うので、移る前に絞り込みを解除する(計画Issue #258)
+    if (rowFilterActive) setRowFilter(EMPTY_ROW_FILTER)
     const tabs = buildTabIndices(remainingIndices, records, rows, compareRows)
     const tab: RowTab = tabs.duplicate.includes(index) ? 'duplicate' : 'new'
     const page = Math.floor(tabs[tab].indexOf(index) / IMPORT_PAGE_SIZE) + 1
@@ -1568,7 +1619,43 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     )
   const checkCount = visibleIndices.filter((i) => statusOf(i) === 'check').length
   /** いま投入できる件数。取り込み対象(全件)のうち、相手科目などが決まっていて確定できる行(ステータスが「新規」)。確定ボタンに「N / 全件」で出す */
-  const readyCount = importable.filter((i) => statusOf(i) === 'new').length
+  const readyCount = confirmTargets.filter((i) => statusOf(i) === 'new').length
+  /** 絞り込みの条件を変える。条件が変わると1ページ目に戻り、見えなくなる行のチェックは外す(外した件数を一括設定の案内に出す) */
+  const changeRowFilter = (next: ImportRowFilter) => {
+    setRowFilter(next)
+    setPages({ new: 1, duplicate: 1 })
+    const firstPage = new Set(
+      tabIndices[shownRowTab]
+        .filter((i) => !isRowFilterActive(next) || matchesFilterWith(next, i))
+        .slice(0, IMPORT_PAGE_SIZE),
+    )
+    const { kept, removed } = pruneSelection(selected, (i) => firstPage.has(i))
+    setSelected(kept)
+    if (removed > 0) setBulkMessage(t('filterSelectionRemoved', { count: removed }))
+    rangeAnchor.anchorRef.current = null
+  }
+  const setFilterId = (key: 'counterAccount' | 'counterparty' | 'project', value: IdCondition) =>
+    changeRowFilter({ ...rowFilter, [key]: value })
+  /** 絞り込み行の選択欄(相手科目・取引先・プロジェクト)。階層・検索窓・Enter確定は共通の選択欄のまま、先頭に「すべて」「未設定」を置く */
+  const filterSelect = (
+    key: 'counterAccount' | 'counterparty' | 'project',
+    label: string,
+    cats: readonly TreeSelectCategory[],
+    kind: FavoriteKind,
+  ) => (
+    <div className={rowFilter[key] !== null ? 'import-filter import-filter--on' : 'import-filter'}>
+      <TreeSelect
+        label={label}
+        categories={cats}
+        favoriteKind={kind}
+        value={rowFilter[key] === null ? '' : String(rowFilter[key])}
+        emptyLabel={t('filterAll')}
+        placeholder={t('filterAll')}
+        leadingOptions={[{ value: 'unset', label: t('filterUnset') }]}
+        onChange={(v) => setFilterId(key, v === '' ? null : v === 'unset' ? 'unset' : Number(v))}
+      />
+    </div>
+  )
 
   const applyBulk = (change: BulkChange) => {
     if (!session) return
@@ -1665,11 +1752,12 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   /** 確定(docs/domain/statement-import.md 1.5手順7)。1件が失敗しても残りの確定を続ける(継続処理方式) */
-  async function handleConfirm(): Promise<ConfirmOutcome> {
-    return runInHistoryGroup(history, 'statementImport.confirm', confirmImpl)
+  async function handleConfirm(options: { all?: boolean } = {}): Promise<ConfirmOutcome> {
+    return runInHistoryGroup(history, 'statementImport.confirm', () => confirmImpl(options.all === true))
   }
 
-  async function confirmImpl(): Promise<ConfirmOutcome> {
+  /** allがtrueなら、絞り込みに関わらず全件が対象。通常は、絞り込み中は表示中の行だけ(計画Issue #258) */
+  async function confirmImpl(all: boolean): Promise<ConfirmOutcome> {
     if (!session || statementOwnerId === null) return { status: 'blocked' }
     setBusy(true)
     setError('')
@@ -1684,7 +1772,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     // 同じ取込の行は同じ取込日時にそろえる(残高の基準点の並び順を取込単位で判定するため、計画Issue #205)
     const importedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
 
-    for (const index of importable) {
+    for (const index of all ? importable : confirmTargets) {
       const { record, externalId } = records[index]
       const state = session.rows[index]
       // 相手科目が未入力の行は、まだ入力していないだけなのでエラーにせず、確定の対象から外して表に残す(計画Issue #263)
@@ -1739,7 +1827,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     }
     setSelected(new Set())
     const nextDone = new Set([...session.done, ...succeeded])
-    const allConfirmed = failedCount === 0 && unfilled === 0
+    // 絞り込み中は、隠れた行が確定されずに残るので、取り込み対象のすべてを確定できたときだけ「全件確定」とする(計画Issue #258)
+    const allConfirmed = failedCount === 0 && unfilled === 0 && importable.every((i) => succeeded.has(i))
     if (allConfirmed) {
       // 全件確定できたら、画面を取り込み前の状態に戻し、続けて明細を選ぶよう促す。再開していた一時保存は、CSVの生データごと削除する
       const finishedDraftId = currentDraftId
@@ -2243,6 +2332,23 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             {shownTab === 'unreadable' ? (
               unreadablePanel
             ) : (
+          <>
+            {rowFilterActive && (
+              <p role="status" aria-label={t('filterStatusLabel')} className="import-filter-status">
+                <span>
+                  {activeConditionCount(rowFilter) >= 2
+                    ? t('filterStatusMulti', {
+                        total: tabIndices[shownRowTab].length,
+                        shown: shownTabIndices.length,
+                        count: activeConditionCount(rowFilter),
+                      })
+                    : t('filterStatus', { total: tabIndices[shownRowTab].length, shown: shownTabIndices.length })}
+                </span>
+                <button type="button" className="import-link" onClick={() => changeRowFilter(EMPTY_ROW_FILTER)}>
+                  {t('filterClearAll')}
+                </button>
+              </p>
+            )}
           <div className="import-table-wrap">
             <table className="import-table" aria-label={t('tableLabel')}>
               <thead>
@@ -2271,8 +2377,49 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                   <th>{t('colComment')}</th>
                   {sortHeader('status', t('colStatus'))}
                 </tr>
+                {/* 列ごとの絞り込み(計画Issue #258)。並び替えの見出しとは別の行に置き、見出しを押す操作と衝突させない */}
+                <tr className="import-filter-row">
+                  {showFileColumn && <th />}
+                  <th />
+                  <th />
+                  <th>
+                    <div className={rowFilter.description.trim() !== '' ? 'import-filter import-filter--on' : 'import-filter'}>
+                      <input
+                        className="import-control import-filter__text"
+                        aria-label={t('filterDescriptionLabel')}
+                        placeholder={t('filterDescriptionLabel')}
+                        value={rowFilter.description}
+                        onChange={(e) => changeRowFilter({ ...rowFilter, description: e.target.value })}
+                      />
+                      {rowFilter.description !== '' && (
+                        <button
+                          type="button"
+                          className="import-filter__clear"
+                          aria-label={t('filterDescriptionClear')}
+                          onClick={() => changeRowFilter({ ...rowFilter, description: '' })}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  </th>
+                  <th />
+                  <th>{filterSelect('counterAccount', t('filterCounterAccountLabel'), categories.counterAccounts, 'account')}</th>
+                  <th>{filterSelect('counterparty', t('filterCounterpartyLabel'), categories.counterparties, 'counterparty')}</th>
+                  <th>{filterSelect('project', t('filterProjectLabel'), categories.projects, 'project')}</th>
+                  <th />
+                  <th />
+                  <th />
+                </tr>
               </thead>
               <tbody>
+                {rowFilterActive && pageIndices.length === 0 && (
+                  <tr>
+                    <td colSpan={showFileColumn ? 11 : 10} className="import-empty">
+                      {t('filterNoMatch')}
+                    </td>
+                  </tr>
+                )}
                 {pageIndices.map((index) => {
                   const reviewRecord = records[index]
                   const state = session.rows[index]
@@ -2731,6 +2878,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               onPage={goToPage}
             />
           </div>
+          </>
             )}
           </div>
         </div>
@@ -2749,10 +2897,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             <button
               type="button"
               className="import-btn import-btn--primary"
-              disabled={busy || statementOwnerId === null}
+              disabled={busy || statementOwnerId === null || confirmTargets.length === 0}
               onClick={() => void handleConfirm()}
             >
-              {t('confirmCount', { ready: readyCount, count: importable.length, account: session.targetAccount.name })}
+              {t('confirmCount', { ready: readyCount, count: confirmTargets.length, account: session.targetAccount.name })}
             </button>
           )}
           {session && importable.length > 0 && statementOwnerId === null && (
