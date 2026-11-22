@@ -22,6 +22,10 @@
   --color-accent-soft: #e6f0ed;
   --color-danger: #b3261e;
   --color-warning-text: #8a4b00;
+  --color-warning-strong: #6e3b00;
+  --color-warning-soft: #fff7e8;
+  --color-warning-line: #e3c9a3;
+  --color-danger-soft: #fdeceb;
 
   /* サイドナビ */
   --color-nav-bg: #17231f;

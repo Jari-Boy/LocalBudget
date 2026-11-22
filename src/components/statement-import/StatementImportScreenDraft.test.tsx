@@ -385,6 +385,8 @@ describe('再開', () => {
 
     await resume()
 
+    // 取り込み済みの行は「重複」タブに分かれる(計画Issue #263)
+    fireEvent.click(await screen.findByRole('tab', { name: /^重複/ }))
     expect(rowOf(/スーパー/).getByText('取り込み済みのため対象外です')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^0 \/ 2 件を「普通預金」に確定$/ })).toBeInTheDocument()
   })
@@ -480,7 +482,7 @@ describe('破棄と後始末', () => {
 
     fireEvent.click(confirmButton(1, 3))
 
-    await screen.findByText(/1件を確定しました\(2件失敗\)/)
+    await screen.findByText(/1件を確定しました。未入力の2件は確定していません/)
     expect(drafts.findSummaries()).toHaveLength(1)
   })
 })
