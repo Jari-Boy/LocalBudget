@@ -7,8 +7,10 @@
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ImportTabBar, type ImportTabItem } from './ImportTabBar'
+import type { ImportTabKey } from './importTabs'
 
 afterEach(cleanup)
 
@@ -78,6 +80,52 @@ describe('ImportTabBar', () => {
     expect(onSelect).toHaveBeenLastCalledWith('unreadable')
     fireEvent.keyDown(screen.getByRole('tab', { name: /^重複/ }), { key: 'ArrowLeft' })
     expect(onSelect).toHaveBeenLastCalledWith('new')
+  })
+
+  describe('キーボードでの連続した移動', () => {
+    /** 選択中のタブを実際に切り替える入れ物(押すたびに選択が変わり、フォーカスの位置も確かめられる) */
+    function Controlled() {
+      const [active, setActive] = useState<ImportTabKey>('new')
+      return <ImportTabBar label="一覧の種類" tabs={TABS} active={active} onSelect={setActive} />
+    }
+    const press = (key: string) => fireEvent.keyDown(document.activeElement as HTMLElement, { key })
+
+    it('→ を続けて押すと、フォーカスも選択も隣のタブへ順に進む(フォーカスが元のタブに残らない)', () => {
+      render(<Controlled />)
+      screen.getByRole('tab', { name: /^新規/ }).focus()
+
+      press('ArrowRight')
+      expect(screen.getByRole('tab', { name: /^重複/ })).toHaveFocus()
+      expect(screen.getByRole('tab', { name: /^重複/ })).toHaveAttribute('aria-selected', 'true')
+
+      press('ArrowRight')
+      expect(screen.getByRole('tab', { name: /^取り込まない行/ })).toHaveFocus()
+      expect(screen.getByRole('tab', { name: /^取り込まない行/ })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('← を続けて押すと逆順に進み、先頭からさらに ← を押すと最後のタブへ回る', () => {
+      render(<Controlled />)
+      screen.getByRole('tab', { name: /^新規/ }).focus()
+
+      press('ArrowLeft')
+      expect(screen.getByRole('tab', { name: /^取り込まない行/ })).toHaveFocus()
+
+      press('ArrowLeft')
+      expect(screen.getByRole('tab', { name: /^重複/ })).toHaveFocus()
+    })
+
+    it('Home で先頭のタブ、End で最後のタブへ移る', () => {
+      render(<Controlled />)
+      screen.getByRole('tab', { name: /^新規/ }).focus()
+
+      press('End')
+      expect(screen.getByRole('tab', { name: /^取り込まない行/ })).toHaveFocus()
+      expect(screen.getByRole('tab', { name: /^取り込まない行/ })).toHaveAttribute('aria-selected', 'true')
+
+      press('Home')
+      expect(screen.getByRole('tab', { name: /^新規/ })).toHaveFocus()
+      expect(screen.getByRole('tab', { name: /^新規/ })).toHaveAttribute('aria-selected', 'true')
+    })
   })
 
   it('タブは、そのタブの内容(tabpanel)を aria-controls で指す', () => {

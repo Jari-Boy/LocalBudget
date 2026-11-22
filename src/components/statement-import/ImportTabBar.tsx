@@ -29,14 +29,26 @@ export interface ImportTabBarProps {
  * 明細取込画面の一覧のタブ見出し(計画Issue #263)。下線だけの軽いタブで、隣り合うタブの間に細い縦線を入れる。
  * 件数を常に出し、確認が必要なタブには枠線つきの札(黄色=未入力・似た取引、赤=要対応)を添える。確認不要のタブは
  * 灰色で札なし。ほかのタブの行は見えないので、札で確認の漏れに気づけるようにする。選択中のタブだけ Tab キーで止まり、
- * ← → で隣のタブを選べる。
+ * ← → で隣のタブ、Home・End で先頭・最後のタブを選べる(フォーカスも一緒に移る)。
  */
 export function ImportTabBar({ label, tabs, active, onSelect }: ImportTabBarProps) {
+  /** → ← は隣のタブ(端からは反対の端へ回る)、Home・End は先頭・最後のタブ。選ぶだけでなくフォーカスも移し、続けて押せるようにする */
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+    const nextIndex =
+      event.key === 'ArrowRight'
+        ? (index + 1) % tabs.length
+        : event.key === 'ArrowLeft'
+          ? (index + tabs.length - 1) % tabs.length
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? tabs.length - 1
+              : null
+    if (nextIndex === null) return
     event.preventDefault()
-    const next = tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]
+    const next = tabs[nextIndex]
     onSelect(next.key)
+    document.getElementById(`import-tab-${next.key}`)?.focus()
   }
   return (
     <div role="tablist" aria-label={label} className="import-tabs">
