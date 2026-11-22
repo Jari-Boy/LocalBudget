@@ -30,6 +30,7 @@ import { saveUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarn
 import { chooseMember, expectMember, expectMembers, findMemberButton } from '../master/memberSelectTestHelpers'
 import { findBatchButton } from '../master/batchSelectTestHelpers'
 import { JournalScreen, type JournalScreenProps } from './JournalScreen'
+import { JOURNAL_LIST_PAGE_SIZE } from './journalListPaging'
 import type { RecurringTransactionRuleLine } from '../../domain/recurring-transaction/RecurringTransactionRule'
 import type { JournalTemplate } from '../../domain/journal-template/JournalTemplate'
 import type { JournalTemplateGroup } from '../../domain/journal-template-group/JournalTemplateGroup'
@@ -2107,79 +2108,83 @@ function makeManyEntries(count: number): JournalEntry[] {
 }
 
 describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
+  // 1ページ分の件数は仕訳単位・明細行単位ごとの定数。値を変えてもテストが崩れないよう、定数から組み立てる
+  const PAGE = JOURNAL_LIST_PAGE_SIZE.entry
+  const LINE_PAGE = JOURNAL_LIST_PAGE_SIZE.line
   const listed = (id: number) => screen.queryByText(`仕訳${id}`)
 
-  it('全体が1ページ分(200件)を超えるときは、初めは200件だけ描き、「200 / 250件を表示中」と「さらに50件表示」を出す', async () => {
-    setup({ entries: makeManyEntries(250) })
+  it('全体が1ページ分を超えるときは、初めは1ページ分だけ描き、「N / 全体件数を表示中」と「さらに50件表示」を出す', async () => {
+    setup({ entries: makeManyEntries(PAGE + 50) })
     await screen.findByText('仕訳1')
-    expect(listed(200)).toBeInTheDocument()
-    expect(listed(201)).not.toBeInTheDocument()
-    expect(screen.getByText('200 / 250件を表示中')).toBeInTheDocument()
+    expect(listed(PAGE)).toBeInTheDocument()
+    expect(listed(PAGE + 1)).not.toBeInTheDocument()
+    expect(screen.getByText(`${PAGE} / ${PAGE + 50}件を表示中`)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'さらに50件表示' })).toBeInTheDocument()
   })
 
   it('絞り込み欄の「該当N件」は、表示中の件数ではなく、絞り込み後の全体件数を出す', async () => {
-    setup({ entries: makeManyEntries(250) })
+    setup({ entries: makeManyEntries(PAGE + 50) })
     await screen.findByText('仕訳1')
-    expect(screen.getByText('250件')).toBeInTheDocument()
+    expect(screen.getByText(`${PAGE + 50}件`)).toBeInTheDocument()
   })
 
   it('「さらに表示」を押すと残りが表示され、全件を表示済みになるとボタンも件数も消える', async () => {
-    setup({ entries: makeManyEntries(250) })
+    setup({ entries: makeManyEntries(PAGE + 50) })
     await screen.findByText('仕訳1')
     fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
-    expect(listed(250)).toBeInTheDocument()
+    expect(listed(PAGE + 50)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /さらに/ })).not.toBeInTheDocument()
     expect(screen.queryByText(/件を表示中/)).not.toBeInTheDocument()
   })
 
   it('全体が1ページ分に収まるときは、ボタンも件数も出さない', async () => {
-    setup({ entries: makeManyEntries(150) })
+    setup({ entries: makeManyEntries(PAGE - 50) })
     await screen.findByText('仕訳1')
-    expect(listed(150)).toBeInTheDocument()
+    expect(listed(PAGE - 50)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /さらに/ })).not.toBeInTheDocument()
   })
 
-  it('絞り込み条件を変えると、増やした表示件数は先頭の1ページ分(200件)に戻る', async () => {
-    setup({ entries: makeManyEntries(250) })
+  it('絞り込み条件を変えると、増やした表示件数は先頭の1ページ分に戻る', async () => {
+    setup({ entries: makeManyEntries(PAGE + 50) })
     await screen.findByText('仕訳1')
     fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
-    expect(listed(250)).toBeInTheDocument()
+    expect(listed(PAGE + 50)).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '仕訳' } })
-    expect(listed(200)).toBeInTheDocument()
-    expect(listed(201)).not.toBeInTheDocument()
-    expect(screen.getByText('200 / 250件を表示中')).toBeInTheDocument()
+    expect(listed(PAGE)).toBeInTheDocument()
+    expect(listed(PAGE + 1)).not.toBeInTheDocument()
+    expect(screen.getByText(`${PAGE} / ${PAGE + 50}件を表示中`)).toBeInTheDocument()
   })
 
   it('選択中の仕訳が表示範囲の外になるときは、その仕訳が見える最小のページ分まで表示を広げる', async () => {
-    setup({ entries: makeManyEntries(650) })
+    const total = PAGE * 2 + 50
+    setup({ entries: makeManyEntries(total) })
     await screen.findByText('仕訳1')
-    fireEvent.click(screen.getByRole('button', { name: 'さらに200件表示' }))
-    fireEvent.click(screen.getByRole('button', { name: /仕訳230/ }))
-    // 絞り込みを変えると先頭に戻るが、選択中の仕訳(230番目)は見えたままにする
+    fireEvent.click(screen.getByRole('button', { name: `さらに${PAGE}件表示` }))
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`仕訳${PAGE + 30}`) }))
+    // 絞り込みを変えると先頭に戻るが、選択中の仕訳(2ページ目)は見えたままにする
     fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '仕訳' } })
-    expect(listed(230)).toBeInTheDocument()
-    expect(listed(400)).toBeInTheDocument()
-    expect(listed(401)).not.toBeInTheDocument()
-    expect(screen.getByText('400 / 650件を表示中')).toBeInTheDocument()
+    expect(listed(PAGE + 30)).toBeInTheDocument()
+    expect(listed(PAGE * 2)).toBeInTheDocument()
+    expect(listed(PAGE * 2 + 1)).not.toBeInTheDocument()
+    expect(screen.getByText(`${PAGE * 2} / ${total}件を表示中`)).toBeInTheDocument()
   })
 
-  it('明細行単位でも、初めは200件の仕訳だけを描き、「さらに表示」で増やせる', async () => {
+  it('明細行単位でも、初めは1ページ分の仕訳だけを描き、「さらに表示」で増やせる', async () => {
     localStorage.setItem('localbudget:journal-view-mode', 'line')
-    setup({ entries: makeManyEntries(250) })
-    await screen.findByText('200 / 250件を表示中')
+    setup({ entries: makeManyEntries(LINE_PAGE + 50) })
+    await screen.findByText(`${LINE_PAGE} / ${LINE_PAGE + 50}件を表示中`)
     // 表は1仕訳につき1行(借方・貸方を横に並べる)。見出し行などは数えず、増えた行数で確かめる
     const before = screen.getAllByRole('row').length
-    expect(screen.queryByText('仕訳201')).not.toBeInTheDocument()
+    expect(screen.queryByText(`仕訳${LINE_PAGE + 1}`)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
     expect(screen.getAllByRole('row').length - before).toBe(50)
   })
 
   it('明細行単位の見出しのチェック(借方・貸方)は、表示中の行だけを選ぶ', async () => {
     localStorage.setItem('localbudget:journal-view-mode', 'line')
-    setup({ entries: makeManyEntries(250) })
-    await screen.findByText('200 / 250件を表示中')
+    setup({ entries: makeManyEntries(LINE_PAGE + 50) })
+    await screen.findByText(`${LINE_PAGE} / ${LINE_PAGE + 50}件を表示中`)
     fireEvent.click(screen.getAllByRole('checkbox')[0]!)
-    expect(screen.getByText(/200行を選択中/)).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(`${LINE_PAGE}行を選択中`))).toBeInTheDocument()
   })
 })
