@@ -94,6 +94,8 @@ import { JournalLineTable, type JournalLineTableEditing, type JournalLineTableLo
 import { JournalMemberSelect } from './JournalMemberSelect'
 import { useJournalLineTableColumns } from './useJournalLineTableColumns'
 import { loadJournalViewMode, saveJournalViewMode, type JournalViewMode } from './journalViewMode'
+import { JournalListLoadMore } from './JournalListLoadMore'
+import { JOURNAL_LIST_PAGE_SIZE, nextDisplayLimit, resolveShownCount } from './journalListPaging'
 import { RelatedEntriesSection } from './RelatedEntriesSection'
 import { describeTemplateExpansionWarnings, expandJournalTemplate } from './expandJournalTemplate'
 import type { JournalTemplate } from '../../domain/journal-template/JournalTemplate'
@@ -264,6 +266,8 @@ export function JournalScreen(props: JournalScreenProps) {
   /** 明細行単位の表の列幅(「列幅を初期値に戻す」ボタンと表で共有する) */
   const lineColumns = useJournalLineTableColumns()
   const [filter, setFilter] = useState<JournalEntryFilter>(props.initialFilter ?? {})
+  /** 「さらに表示」で増やした表示件数の上限。null は先頭の1ページ分(計画Issue #253)。絞り込み条件を変えると戻す */
+  const [displayLimit, setDisplayLimit] = useState<number | null>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
   const [editor, setEditor] = useState<JournalEditorValue | null>(null)
   const [flash, setFlash] = useState('')
@@ -380,12 +384,36 @@ export function JournalScreen(props: JournalScreenProps) {
     [data, filter],
   )
 
-  const visibleEntries = useMemo(() => {
+  /** 絞り込み後の全仕訳(新しい順)。件数表示の元で、描画するのはこのうち先頭の `visibleEntries` だけ */
+  const matchedEntries = useMemo(() => {
     if (data === null || derived === null) return []
     return filterJournalEntries(data.entries, data.accounts, filter, derived.filterContext).sort(
       (a, b) => b.entryDate.localeCompare(a.entryDate) || b.id - a.id,
     )
   }, [data, derived, filter])
+
+  /**
+   * 一覧に描画する仕訳(計画Issue #253)。絞り込みと並べ替えは全件に対して行い、描画だけを1ページ分ずつに分ける。
+   * 選択中の仕訳が範囲の外にあるときは、その仕訳が見える最小のページ分まで広げる。
+   */
+  const pageSize = JOURNAL_LIST_PAGE_SIZE[viewMode]
+  const shownCount = useMemo(
+    () =>
+      resolveShownCount({
+        total: matchedEntries.length,
+        limit: displayLimit ?? pageSize,
+        pageSize,
+        selectedIndex: selection?.kind === 'entry' ? matchedEntries.findIndex((e) => e.id === selection.id) : -1,
+      }),
+    [matchedEntries, displayLimit, pageSize, selection],
+  )
+  const visibleEntries = useMemo(() => matchedEntries.slice(0, shownCount), [matchedEntries, shownCount])
+
+  /** 絞り込み条件を変える。増やした表示件数は先頭の1ページ分に戻す */
+  const changeFilter = (next: JournalEntryFilter) => {
+    setFilter(next)
+    setDisplayLimit(null)
+  }
 
   const sortedDrafts = useMemo(
     () => [...(data?.drafts ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id - a.id),
@@ -1253,7 +1281,7 @@ export function JournalScreen(props: JournalScreenProps) {
         <>
       {tab === 'list' && (
         <div className="journal-screen__filter">
-          <JournalFilterPanel filter={filter} onChange={setFilter} options={filterOptions} resultCount={visibleEntries.length} />
+          <JournalFilterPanel filter={filter} onChange={changeFilter} options={filterOptions} resultCount={matchedEntries.length} />
         </div>
       )}
       {note !== '' && <p className="journal-screen__note">{note}</p>}
@@ -1380,6 +1408,12 @@ export function JournalScreen(props: JournalScreenProps) {
                   onToggleEntry: toggleBulkEntry,
                 }}
               />
+              <JournalListLoadMore
+                total={matchedEntries.length}
+                shown={shownCount}
+                pageSize={pageSize}
+                onMore={() => setDisplayLimit(nextDisplayLimit(shownCount, pageSize))}
+              />
             </>
           ) : (
           <JournalResultList
@@ -1403,6 +1437,14 @@ export function JournalScreen(props: JournalScreenProps) {
               }
             }}
           />
+          )}
+          {tab === 'list' && !lineView && (
+            <JournalListLoadMore
+              total={matchedEntries.length}
+              shown={shownCount}
+              pageSize={pageSize}
+              onMore={() => setDisplayLimit(nextDisplayLimit(shownCount, pageSize))}
+            />
           )}
         </div>
 
@@ -1455,7 +1497,7 @@ export function JournalScreen(props: JournalScreenProps) {
                   accountNameOf={accountNameOf}
                   onShowPeriod={() => {
                     const from = autoDescription.periodStart ?? autoDescription.periodEnd
-                    setFilter({ accountIds: [autoDescription.accountId], dateFrom: from, dateTo: autoDescription.periodEnd })
+                    changeFilter({ accountIds: [autoDescription.accountId], dateFrom: from, dateTo: autoDescription.periodEnd })
                   }}
                   onOpenReconciliation={
                     props.onOpenAccountReconciliation === undefined

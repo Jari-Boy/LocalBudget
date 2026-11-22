@@ -9,6 +9,9 @@
  * 承認待ちの定期仕訳タブの摘要・コメントの編集と保存、土日の調整後の日付と金額の初期値の表示、一覧に科目を出さないこと、
  * 複数の提案のまとめて確定(チェックの連動・すべて選択・起票者の一括指定・confirmManyの呼び出し)も検証する。
  * 未保存の警告を出さない設定(計画Issue #190)のときは、仕訳の切り替えも画面外への移動もリロードも確認を出さないことも検証する。
+ * 仕訳一覧の分割表示(計画Issue #253)として、1ページ分(200件)ずつの描画と「さらに表示」、絞り込み後の全体件数の表示、
+ * 絞り込み条件の変更での先頭への復帰、選択中の仕訳が表示範囲の外にならないこと、明細行単位でも同じ分割になること、
+ * 見出しのチェックが表示中の行だけを選ぶことも検証する。
  * 外部依存はインメモリの偽Repository(vi.fn)で置き換える。
  */
 import '@testing-library/jest-dom/vitest'
@@ -2090,5 +2093,93 @@ describe('JournalScreen: 起票の入口のボタン(計画Issue #214)', () => {
     // 同じ枠の中に、この順で並ぶ
     expect(new Set(buttons.map((b) => b.parentElement)).size).toBe(1)
     expect(Array.from(buttons[0].parentElement!.querySelectorAll('button')).map((b) => b.textContent)).toEqual(names)
+  })
+})
+
+/** 新しい順に id=1..count の仕訳(摘要は「仕訳{id}」)。分割表示(計画Issue #253)のテスト用 */
+function makeManyEntries(count: number): JournalEntry[] {
+  return Array.from({ length: count }, (_, i) => {
+    const id = i + 1
+    // 日付は id が大きいほど古い(一覧は新しい順なので、並びは id の昇順になる)
+    const date = new Date(Date.UTC(2026, 9, 31) - i * 86400000).toISOString().slice(0, 10)
+    return entry(id, date, `仕訳${id}`, 'manual', [line(id * 10 + 1, id, 'debit', 1, 1000), line(id * 10 + 2, id, 'credit', 2, 1000)])
+  })
+}
+
+describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
+  const listed = (id: number) => screen.queryByText(`仕訳${id}`)
+
+  it('全体が1ページ分(200件)を超えるときは、初めは200件だけ描き、「200 / 250件を表示中」と「さらに50件表示」を出す', async () => {
+    setup({ entries: makeManyEntries(250) })
+    await screen.findByText('仕訳1')
+    expect(listed(200)).toBeInTheDocument()
+    expect(listed(201)).not.toBeInTheDocument()
+    expect(screen.getByText('200 / 250件を表示中')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'さらに50件表示' })).toBeInTheDocument()
+  })
+
+  it('絞り込み欄の「該当N件」は、表示中の件数ではなく、絞り込み後の全体件数を出す', async () => {
+    setup({ entries: makeManyEntries(250) })
+    await screen.findByText('仕訳1')
+    expect(screen.getByText('250件')).toBeInTheDocument()
+  })
+
+  it('「さらに表示」を押すと残りが表示され、全件を表示済みになるとボタンも件数も消える', async () => {
+    setup({ entries: makeManyEntries(250) })
+    await screen.findByText('仕訳1')
+    fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+    expect(listed(250)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /さらに/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/件を表示中/)).not.toBeInTheDocument()
+  })
+
+  it('全体が1ページ分に収まるときは、ボタンも件数も出さない', async () => {
+    setup({ entries: makeManyEntries(150) })
+    await screen.findByText('仕訳1')
+    expect(listed(150)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /さらに/ })).not.toBeInTheDocument()
+  })
+
+  it('絞り込み条件を変えると、増やした表示件数は先頭の1ページ分(200件)に戻る', async () => {
+    setup({ entries: makeManyEntries(250) })
+    await screen.findByText('仕訳1')
+    fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+    expect(listed(250)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '仕訳' } })
+    expect(listed(200)).toBeInTheDocument()
+    expect(listed(201)).not.toBeInTheDocument()
+    expect(screen.getByText('200 / 250件を表示中')).toBeInTheDocument()
+  })
+
+  it('選択中の仕訳が表示範囲の外になるときは、その仕訳が見える最小のページ分まで表示を広げる', async () => {
+    setup({ entries: makeManyEntries(650) })
+    await screen.findByText('仕訳1')
+    fireEvent.click(screen.getByRole('button', { name: 'さらに200件表示' }))
+    fireEvent.click(screen.getByRole('button', { name: /仕訳230/ }))
+    // 絞り込みを変えると先頭に戻るが、選択中の仕訳(230番目)は見えたままにする
+    fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '仕訳' } })
+    expect(listed(230)).toBeInTheDocument()
+    expect(listed(400)).toBeInTheDocument()
+    expect(listed(401)).not.toBeInTheDocument()
+    expect(screen.getByText('400 / 650件を表示中')).toBeInTheDocument()
+  })
+
+  it('明細行単位でも、初めは200件の仕訳だけを描き、「さらに表示」で増やせる', async () => {
+    localStorage.setItem('localbudget:journal-view-mode', 'line')
+    setup({ entries: makeManyEntries(250) })
+    await screen.findByText('200 / 250件を表示中')
+    // 表は1仕訳につき1行(借方・貸方を横に並べる)。見出し行などは数えず、増えた行数で確かめる
+    const before = screen.getAllByRole('row').length
+    expect(screen.queryByText('仕訳201')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+    expect(screen.getAllByRole('row').length - before).toBe(50)
+  })
+
+  it('明細行単位の見出しのチェック(借方・貸方)は、表示中の行だけを選ぶ', async () => {
+    localStorage.setItem('localbudget:journal-view-mode', 'line')
+    setup({ entries: makeManyEntries(250) })
+    await screen.findByText('200 / 250件を表示中')
+    fireEvent.click(screen.getAllByRole('checkbox')[0]!)
+    expect(screen.getByText(/200行を選択中/)).toBeInTheDocument()
   })
 })
