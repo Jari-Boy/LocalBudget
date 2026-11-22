@@ -232,6 +232,78 @@ describe('StatementImportScreen', () => {
     expect(row.getByRole('button', { name: /^取引先: 東京メトロ/ })).toBeInTheDocument()
   })
 
+  it('摘要に複数のキーワードが別々の科目で一致したら、自動では入れず、相手科目欄の先頭にも一致した候補を並べる(計画Issue #260)', async () => {
+    makeMapping()
+    const transport = accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
+    accounts.create({ category: 'expense', name: '雑費', isReconcilable: null })
+    const metro = counterparties.create({ name: '東京メトロ' })
+    const jr = counterparties.create({ name: 'ジェイアール東日本' })
+    // 互いに包含しない独立したキーワードが重なり、取引先も科目も別々なので曖昧になる
+    keywordRules.create({ pattern: 'スイカ', counterpartyId: metro.id, accountId: transport.id })
+    keywordRules.create({ pattern: 'ジエイ', counterpartyId: jr.id, accountId: food.id })
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,ジェイアール スイカ チャージ,-3000,97000
+`)
+
+    const row = rowOf(/スイカ チャージ/)
+    expect(await row.findByText('科目の候補2件から選択')).toBeInTheDocument()
+    expect(row.queryByRole('button', { name: /^相手科目: 交通費|^相手科目: 食費/ })).not.toBeInTheDocument()
+    fireEvent.click(row.getByRole('button', { name: /^相手科目/ }))
+    const popup = within(screen.getByRole('dialog', { name: '相手科目' }))
+    expect(popup.getByText('この摘要に一致した候補')).toBeInTheDocument()
+    const names = popup.getAllByRole('button').map((b) => b.textContent)
+    const firstTransport = names.indexOf('交通費')
+    const firstFood = names.indexOf('食費')
+    const firstMisc = names.indexOf('雑費')
+    expect(firstTransport).toBeGreaterThanOrEqual(0)
+    expect(firstFood).toBeGreaterThanOrEqual(0)
+    // 候補(交通費・食費)が、関係のない科目(雑費)より先に並ぶ
+    expect(Math.max(firstTransport, firstFood)).toBeLessThan(firstMisc)
+    // 候補を選ぶと、その科目が入る
+    fireEvent.click(popup.getAllByRole('button', { name: '交通費' })[0])
+    expect(row.getByRole('button', { name: /^相手科目: 交通費/ })).toBeInTheDocument()
+  })
+
+  it('科目だけのキーワードと取引先つきのキーワードが独立して重なったら、取引先も相手科目も自動では入れず、取引先欄は隠れずに選べる(計画Issue #260)', async () => {
+    makeMapping()
+    const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
+    const seven = counterparties.create({ name: 'セブン銀行' })
+    keywordRules.create({ pattern: 'セブン銀行', counterpartyId: seven.id })
+    keywordRules.create({ pattern: 'ATM', accountId: cash.id })
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,セブン銀行ATM 引出,-10000,90000
+`)
+
+    const row = rowOf(/セブン銀行ATM/)
+    // 取引先が黙って空になり、取引先欄ごと隠れるのではなく、どちらも空のまま、取引先欄が出ている
+    expect(await row.findByText('科目の候補1件から選択')).toBeInTheDocument()
+    expect(row.getByRole('button', { name: /^取引先/ })).toBeInTheDocument()
+    fireEvent.click(row.getByRole('button', { name: /^取引先/ }))
+    expect(within(screen.getByRole('dialog', { name: '取引先' })).getByText('この摘要に一致した候補')).toBeInTheDocument()
+    fireEvent.click(within(screen.getByRole('dialog', { name: '取引先' })).getAllByRole('button', { name: 'セブン銀行' })[0])
+    expect(row.getByRole('button', { name: /^取引先: セブン銀行/ })).toBeInTheDocument()
+  })
+
+  it('一致したキーワードのうち最長のものが他のすべてを含むときは、そのルールの取引先・科目が自動で入る(AMAZON PRIME ⊃ AMAZON。計画Issue #260)', async () => {
+    makeMapping()
+    const transport = accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
+    const amazon = counterparties.create({ name: 'アマゾン' })
+    const prime = counterparties.create({ name: 'アマゾンプライム' })
+    keywordRules.create({ pattern: 'AMAZON', counterpartyId: amazon.id, accountId: food.id })
+    keywordRules.create({ pattern: 'AMAZONPRIME', counterpartyId: prime.id, accountId: transport.id })
+    renderScreen()
+
+    await chooseCsv(`${HEADER}2026/10/05,AMAZON PRIME 会費,-600,99400
+`)
+
+    const row = rowOf(/AMAZON PRIME/)
+    expect(await row.findByRole('button', { name: /^取引先: アマゾンプライム/ })).toBeInTheDocument()
+    expect(row.getByRole('button', { name: /^相手科目: 交通費/ })).toBeInTheDocument()
+    expect(row.queryByText(/候補.*件から選択/)).not.toBeInTheDocument()
+  })
+
   it('キーワードに科目が無ければ、取引先だけが入り、相手科目は空のまま(取引先から科目を補わない。計画Issue #219)', async () => {
     makeMapping()
     const cp = counterparties.create({ name: 'セブン' })

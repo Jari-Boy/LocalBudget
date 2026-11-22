@@ -45,6 +45,16 @@ describe('applyAccountKeywordsToRows', () => {
     expect(result.applied).toBe(1)
   })
 
+  it('取引先・相手科目の候補が残っている曖昧な行は、自動確定しないので変えない(計画Issue #260)', () => {
+    const accountCandidates = state({ candidateAccountIds: [CASH.id, FOOD.id] })
+    const counterpartyCandidates = state({ candidateCounterpartyIds: [7] })
+
+    const result = run({ rows: [accountCandidates, counterpartyCandidates], descriptions: ['ATM引出', 'ATM引出'] })
+
+    expect(result.states.map((s) => s.counterAccountId)).toEqual([null, null])
+    expect(result.applied).toBe(0)
+  })
+
   it('全角半角・大文字小文字・空白を無視してキーワードを照合する', () => {
     const result = run({ rows: [state()], descriptions: ['ａｔｍ 引出'], keywords: ['ATM'] })
 

@@ -34,6 +34,7 @@ import { collectUnreferencedTransactions } from '../../domain/statement-import/c
 import type { ApproximateDuplicateSearchOptions } from '../../domain/statement-import/duplicateDetection'
 import { normalizeDescriptionForMatching } from '../../domain/statement-import/estimateCounterparty'
 import { estimateKeywordRule, type KeywordRuleLookup } from '../../domain/statement-import/estimateKeywordRule'
+import { rankAccountCandidates } from '../../domain/statement-import/rankAccountCandidates'
 import { rankCounterpartyCandidates } from '../../domain/statement-import/rankCounterpartyCandidates'
 import type { KeywordRule } from '../../domain/keyword-rule/KeywordRule'
 import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
@@ -866,21 +867,25 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         : [],
     )
     const counterpartyNames = new Map((data?.counterparties ?? []).map((c) => [c.id, c.name] as const))
+    const accountNames = new Map(accounts.map((a) => [a.id, a.name] as const))
     return review.records.map((r) => {
       const estimate = estimateKeywordRule(r.record.description, ruleLookup)
       const counterpartyId = estimate.counterpartyId
       // 相手科目は、ルールが科目を持てばその科目、なければ取引先の既定の科目(docs/domain/statement-import.md 1.5)
       const counterAccountId = estimate.accountId
-      // 候補は、一致したキーワードが長い順 → 過去の使用件数が多い順 → 名前の五十音順に並べる(選ぶのは利用者。自動では割り当てない)
-      const candidates = rankCounterpartyCandidates({
-        rules: rulesByText.get(normalizeDescriptionForMatching(r.record.description)) ?? [],
-        usageCountOf: (id) => usageByCounterparty.get(id) ?? 0,
-        nameOf: (id) => counterpartyNames.get(id) ?? '',
-      })
+      // 曖昧な行(独立したキーワードが重なり、別々の取引先・科目に解決される。計画Issue #260)だけ、取引先・相手科目とも
+      // 一致した候補を選択欄の先頭に並べる(選ぶのは利用者。自動では割り当てない)。取引先は、一致したキーワードが長い順 →
+      // 過去の使用件数が多い順 → 名前の五十音順、相手科目は、一致したキーワードが長い順 → 名前の五十音順
+      const rules = estimate.ambiguous ? (rulesByText.get(normalizeDescriptionForMatching(r.record.description)) ?? []) : []
       return createInitialRowState({
         counterpartyId: resolveEligibleCounterpartyId(counterpartyId, counterAccountId, accounts),
         counterAccountId,
-        candidateCounterpartyIds: counterpartyId === null ? candidates : [],
+        candidateCounterpartyIds: rankCounterpartyCandidates({
+          rules,
+          usageCountOf: (id) => usageByCounterparty.get(id) ?? 0,
+          nameOf: (id) => counterpartyNames.get(id) ?? '',
+        }),
+        candidateAccountIds: rankAccountCandidates({ rules, nameOf: (id) => accountNames.get(id) ?? '' }),
       })
     })
   }
@@ -2273,6 +2278,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                               <TreeSelect
                                 label={t('colCounterAccount')}
                                 categories={categories.counterAccounts}
+                                // 摘要に複数のキーワードが重なって決まらなかった行は、一致した科目を先頭に出す(計画Issue #260)
+                                pinnedValues={
+                                  state.counterAccountId === null && state.candidateAccountIds.length > 0
+                                    ? state.candidateAccountIds.map(String)
+                                    : undefined
+                                }
+                                pinnedLabel={t('candidatesPinnedLabel')}
                                 favoriteKind="account"
                                 value={treeValue(state.counterAccountId)}
                                 placeholder={t('chooseDefinition')}
@@ -2281,6 +2293,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                 onCreate={() => setCreateTarget({ kind: 'counterAccount', apply: (id) => setCounterAccount(id) })}
                                 createLabel={t('createCounterAccount')}
                               />
+                              {state.counterAccountId === null && state.candidateAccountIds.length > 0 && (
+                                <span className="import-note">{t('noteAccountCandidates', { count: state.candidateAccountIds.length })}</span>
+                              )}
                               {accountSettingsId !== null && (
                                 <CounterpartySettingsPopup
                                   kind="account"
@@ -2310,7 +2325,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                     categories={categories.counterparties}
                                     // 摘要に複数のキーワードが一致して決まらなかった行は、一致した取引先を先頭に出す(計画Issue #236)
                                     pinnedValues={
-                                      state.counterpartyId === null && state.candidateCounterpartyIds.length > 1
+                                      state.counterpartyId === null && state.candidateCounterpartyIds.length > 0
                                         ? state.candidateCounterpartyIds.map(String)
                                         : undefined
                                     }
@@ -2337,7 +2352,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                     createLabel={t('createCounterparty')}
                                   />
                                 )}
-                                {showCounterparty && state.counterpartyId === null && state.candidateCounterpartyIds.length > 1 && (
+                                {showCounterparty && state.counterpartyId === null && state.candidateCounterpartyIds.length > 0 && (
                                   <span className="import-note">{t('noteCandidates', { count: state.candidateCounterpartyIds.length })}</span>
                                 )}
                                 {showCounterparty && offerLearn && (

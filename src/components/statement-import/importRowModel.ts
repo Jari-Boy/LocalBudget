@@ -25,6 +25,11 @@ export interface ImportRowState {
   initialCounterpartyId: number | null
   /** 摘要のパターンが複数の取引先に当たって決まらなかった場合の候補。1件も無ければ空 */
   candidateCounterpartyIds: number[]
+  /**
+   * 摘要のキーワードが独立して重なり、取引先・相手科目とも決まらなかった(曖昧な)場合の、相手科目の候補。
+   * 相手科目の選択欄の先頭に並べる(計画Issue #260)。1件も無ければ空
+   */
+  candidateAccountIds: number[]
   projectId: number | null
   householdMemberId: number | null
   settlementBatchId: number | null
@@ -59,6 +64,7 @@ export function createInitialRowState(params: {
   counterpartyId: number | null
   counterAccountId: number | null
   candidateCounterpartyIds: number[]
+  candidateAccountIds?: number[]
 }): ImportRowState {
   return {
     counterpartyId: params.counterpartyId,
@@ -66,6 +72,7 @@ export function createInitialRowState(params: {
     counterAccountTouched: false,
     initialCounterpartyId: params.counterpartyId,
     candidateCounterpartyIds: params.candidateCounterpartyIds,
+    candidateAccountIds: params.candidateAccountIds ?? [],
     projectId: null,
     householdMemberId: null,
     settlementBatchId: null,

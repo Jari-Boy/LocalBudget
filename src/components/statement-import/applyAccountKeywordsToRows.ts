@@ -51,6 +51,9 @@ export function applyAccountKeywordsToRows(params: {
       state.counterpartyId !== null ||
       state.counterAccountId !== null ||
       state.counterAccountTouched ||
+      // 候補が残っている曖昧な行は、自動確定しない原則(docs/domain/counterparties.md 1.3)により変えない(計画Issue #260)
+      state.candidateCounterpartyIds.length > 0 ||
+      state.candidateAccountIds.length > 0 ||
       !anyKeywordMatches(settings.keywords, descriptions[index])
     ) {
       return state
