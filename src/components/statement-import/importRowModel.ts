@@ -21,7 +21,7 @@ export interface ImportRowState {
   counterAccountId: number | null
   /** 相手科目をユーザーが手動で選んだか。trueの間は取引先の変更で相手科目を自動で追従させない(計画Issue #77) */
   counterAccountTouched: boolean
-  /** 初期表示時に推定した取引先。確定時に、これと違う取引先を選んだ行だけをパターン登録の候補にする */
+  /** 初期表示時に推定した取引先。キーワードの「N行に適用」で、自動で一致した行を上書きしないための記録に使う */
   initialCounterpartyId: number | null
   /** 摘要のパターンが複数の取引先に当たって決まらなかった場合の候補。1件も無ければ空 */
   candidateCounterpartyIds: number[]
@@ -34,20 +34,6 @@ export interface ImportRowState {
   approximateDecision: ApproximateDecision
   /** 「置き換える」で削除する登録済みの仕訳。候補が複数あるときに選ぶ(候補が1件なら選ばなくてもその1件) */
   replacementTargetId: number | null
-  /**
-   * 摘要の提案(確定時のキーワード登録、計画Issue #207)を残すか。ポップアップで「新規」として一覧に出る。
-   * 消すとfalseになり、確定時にも登録しない
-   */
-  learnOn: boolean
-  /** 提案の文字列。nullなら摘要そのまま */
-  learnPattern: string | null
-  /**
-   * 摘要の提案の科目を、ダイアログで選んだか。trueの間は提案の科目(learnAccountId)を使い、行の相手科目を変えても追従しない。
-   * falseの間は、行の相手科目(取引先を持てる科目のとき)が提案の科目になる
-   */
-  learnAccountTouched: boolean
-  /** ダイアログで選んだ提案の科目(learnAccountTouchedがtrueのときだけ意味を持つ。「指定しない」はnull) */
-  learnAccountId: number | null
 }
 
 export type RowStatus = 'new' | 'duplicate' | 'check' | 'skipped'
@@ -73,11 +59,6 @@ export function createInitialRowState(params: {
     includeDuplicate: false,
     approximateDecision: 'different_transaction',
     replacementTargetId: null,
-    // 摘要だけでは取引先が決まらなかった行は、既定でキーワードを登録しない(誤った学習を避ける)
-    learnOn: params.candidateCounterpartyIds.length < 2,
-    learnPattern: null,
-    learnAccountTouched: false,
-    learnAccountId: null,
   }
 }
 
@@ -98,11 +79,7 @@ export function isRowEdited(state: ImportRowState, initial: ImportRowState): boo
     state.comment !== initial.comment ||
     state.includeDuplicate !== initial.includeDuplicate ||
     state.approximateDecision !== initial.approximateDecision ||
-    state.replacementTargetId !== initial.replacementTargetId ||
-    state.learnOn !== initial.learnOn ||
-    state.learnPattern !== initial.learnPattern ||
-    state.learnAccountTouched !== initial.learnAccountTouched ||
-    state.learnAccountId !== initial.learnAccountId
+    state.replacementTargetId !== initial.replacementTargetId
   )
 }
 
@@ -249,25 +226,4 @@ export function applyBulkSetting(params: {
   })
 
   return { states: next, applied, skipped }
-}
-
-/**
- * 推定と違う取引先を選んだ行(推定が無かった行を含む)だけが、パターン登録の候補になる。
- * 候補の行には「取引先の設定」のリンクを出し、確定時に摘要を新しいパターンとして登録する(計画Issue #207)。
- */
-export function shouldOfferLearn(record: RowRecord, state: ImportRowState): boolean {
-  if (record.isExactDuplicate && !state.includeDuplicate) return false
-  return state.counterpartyId !== null && state.counterpartyId !== state.initialCounterpartyId
-}
-
-/**
- * 取引先を持てない(資産・負債の)相手科目を手で選んだ行は、摘要をその科目のキーワードにする提案の候補になる
- * (計画Issue #219、docs/decisions.md 2026-11-16 決定13)。候補の行には、取引先の設定と同じ「キーワードの設定」の
- * リンクを出し、確定時に摘要を新しい科目のキーワードとして登録する。取り込み済みで対象外の重複の行は対象にしない。
- */
-export function shouldOfferAccountLearn(record: RowRecord, state: ImportRowState, accounts: readonly Account[]): boolean {
-  if (record.isExactDuplicate && !state.includeDuplicate) return false
-  if (state.counterpartyId !== null || !state.counterAccountTouched) return false
-  const category = findAccount(accounts, state.counterAccountId)?.category
-  return category === 'asset' || category === 'liability'
 }

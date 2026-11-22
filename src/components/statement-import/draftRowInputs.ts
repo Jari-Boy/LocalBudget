@@ -23,10 +23,6 @@ export function extractDraftRowInput(state: ImportRowState): StatementImportDraf
     includeDuplicate: state.includeDuplicate,
     approximateDecision: state.approximateDecision,
     replacementTargetId: state.replacementTargetId,
-    learnOn: state.learnOn,
-    learnPattern: state.learnPattern,
-    learnAccountTouched: state.learnAccountTouched,
-    learnAccountId: state.learnAccountId,
   }
 }
 
@@ -108,9 +104,6 @@ export function applyDraftRowInput(params: {
     }
   }
 
-  const learnAccountMissing =
-    saved.learnAccountTouched && saved.learnAccountId !== null && !valid.accountIds.has(saved.learnAccountId)
-  if (learnAccountMissing) dropped = true
   // droppedは、すべての参照先の検証が済んでから返す(戻り値のオブジェクトの中で検証すると、数え漏れる)
   const projectId = reference(saved.projectId, valid.projectIds, computed.projectId)
   const householdMemberId = reference(saved.householdMemberId, valid.memberIds, computed.householdMemberId)
@@ -130,10 +123,6 @@ export function applyDraftRowInput(params: {
       includeDuplicate: record.isExactDuplicate ? saved.includeDuplicate : computed.includeDuplicate,
       approximateDecision: hasCandidates ? saved.approximateDecision : computed.approximateDecision,
       replacementTargetId,
-      learnOn: saved.learnOn,
-      learnPattern: saved.learnPattern,
-      learnAccountTouched: learnAccountMissing ? computed.learnAccountTouched : saved.learnAccountTouched,
-      learnAccountId: learnAccountMissing ? computed.learnAccountId : saved.learnAccountId,
     },
   }
 }
