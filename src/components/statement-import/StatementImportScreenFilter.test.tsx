@@ -3,11 +3,11 @@
  * StatementImportScreen の行の絞り込み(計画Issue #258)のコンポーネントテスト。
  * 仕訳一覧と同じ作りの絞り込みパネル(摘要の検索・期間・金額(マイナスも指定できる)・相手科目/取引先/プロジェクト/世帯メンバー/精算バッチの複数選択欄と「未設定」)で行を絞れること、
  * 複数の条件がANDで効くこと、条件の解除で全行に戻ること、タブの件数が「表示中 / 全体」になること、
- * 絞り込みで隠れた行のチェックが外れること、一括設定と確定が表示中の行だけに及ぶことを確認する。
+ * 表示されなくなった行(絞り込みで隠れた行・1ページ目に戻って見えなくなった行)のチェックが外れること、一括設定と確定が表示中の行だけに及ぶことを確認する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from 'sql.js'
 import { I18nextProvider } from 'react-i18next'
@@ -336,7 +336,7 @@ describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)',
     expect(hasRow(/池袋店/)).toBe(false)
   })
 
-  it('絞り込みで隠れた行のチェックは外れ、外した件数が一括設定の案内に出る。表示中の行のチェックは残る', async () => {
+  it('表示されなくなった行(絞り込みで隠れた行)のチェックは外れ、外した件数が一括設定の案内に出る。表示中の行のチェックは残る', async () => {
     renderScreen()
     await chooseCsv(CSV)
     fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
@@ -346,7 +346,7 @@ describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)',
 
     const bulk = screen.getByRole('group', { name: '選択した明細への一括設定' })
     expect(within(bulk).getByText('2件に一括設定')).toBeInTheDocument()
-    expect(within(bulk).getByText(/絞り込みで隠れた行のチェック2件を外しました/)).toBeInTheDocument()
+    expect(within(bulk).getByText(/表示されなくなった行のチェック2件を外しました/)).toBeInTheDocument()
   })
 
   it('絞り込み中の一括設定は、表示中の行にだけ反映され、隠れた行は変わらない', async () => {
@@ -402,5 +402,107 @@ describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)',
     const names = screen.getAllByRole('row', { name: /店/ }).map((r) => r.textContent ?? '')
     expect(names[0]).toContain('池袋店')
     expect(names.some((n) => n.includes('ローソン'))).toBe(false)
+  })
+
+  describe('絞り込み中でも、誤った行に作用しないこと(評価の指摘)', () => {
+    const bulkGroup = () => screen.queryByRole('group', { name: '選択した明細への一括設定' })
+    const leave = () => fireEvent.click(screen.getByRole('link', { name: '他の画面へ' }))
+    const box = (text: RegExp) => screen.getByRole('checkbox', { name: text })
+
+    it('入力で行が条件に合わなくなると(「未設定」で絞って科目を入れた行)、その行は見えなくなり、選択からも外れる', async () => {
+      renderScreen()
+      await chooseCsv(CSV)
+      chooseFilter('相手科目', '未設定')
+      fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
+      expect(within(bulkGroup()!).getByText('4件に一括設定')).toBeInTheDocument()
+
+      pickIn(rowOf(/新宿店/), '相手科目', '食費')
+
+      expect(hasRow(/新宿店/)).toBe(false)
+      expect(within(bulkGroup()!).getByText('3件に一括設定')).toBeInTheDocument()
+    })
+
+    it('一括設定で、選んだ行がすべて条件外になると、選択がなくなって一括設定の帯が消え、隠れた行は変わらない', async () => {
+      renderScreen()
+      await chooseCsv(CSV)
+      chooseFilter('相手科目', '未設定')
+      fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
+
+      pickIn(within(bulkGroup()!), '一括の相手科目', '食費')
+
+      expect(bulkGroup()).not.toBeInTheDocument()
+      expect(screen.getByText('条件に合う行がありません')).toBeInTheDocument()
+      clearFilter()
+      for (const text of [/新宿店/, /池袋店/, /ローソン/, /家賃/]) {
+        expect(rowOf(text).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
+      }
+    })
+
+    it('絞り込み中の Shift+クリックの範囲選択は、表示中の行だけが対象で、間にある隠れた行は選ばれない', async () => {
+      renderScreen()
+      await chooseCsv(CSV)
+      // 金額の上限 -500: 新宿店(-648)・池袋店(-520)・家賃(-50000)だけが残り、間のローソン(-432)が隠れる
+      fireEvent.change(panel().getByLabelText('金額の上限'), { target: { value: '-500' } })
+      expect(hasRow(/ローソン/)).toBe(false)
+
+      fireEvent.click(box(/新宿店を選択/))
+      fireEvent.click(box(/家賃を選択/), { shiftKey: true })
+      expect(within(bulkGroup()!).getByText('3件に一括設定')).toBeInTheDocument()
+
+      pickIn(within(bulkGroup()!), '一括の相手科目', '食費')
+      clearFilter()
+      expect(rowOf(/新宿店/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
+      expect(rowOf(/家賃/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
+      expect(rowOf(/ローソン/).getByRole('button', { name: /^相手科目/ })).not.toHaveTextContent('食費')
+    })
+
+    it('絞り込み中の確定で隠れた行が残るときは、「全件確定」の完了表示にならず、画面は初期化されず、残った行を続けて扱える', async () => {
+      renderScreen()
+      await chooseCsv(CSV)
+      for (const desc of [/新宿店/, /池袋店/, /ローソン/, /家賃/]) pickIn(rowOf(desc), '相手科目', '食費')
+      typeDescriptionFilter('セブン')
+
+      fireEvent.click(confirmButton(2))
+
+      await screen.findByText(/2件を確定しました/)
+      expect(screen.queryByText('確定しました。続けて明細を選択してください。')).not.toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: /^新規/ })).toBeInTheDocument()
+      clearFilter()
+      expect(confirmButton(2)).toBeInTheDocument()
+    })
+
+    it('絞り込み中に離れる前の「保存して移動」を押すと、隠れた行も含めて、入力済みの全件を確定して移動する', async () => {
+      renderScreen()
+      await chooseCsv(CSV)
+      pickIn(rowOf(/新宿店/), '相手科目', '食費')
+      pickIn(rowOf(/ローソン/), '相手科目', '食費')
+      typeDescriptionFilter('セブン')
+      expect(hasRow(/ローソン/)).toBe(false)
+
+      leave()
+      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+
+      await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/other'))
+      expect(entries.findAll().filter((e) => e.sourceType !== 'auto_balance_adjustment')).toHaveLength(2)
+      expect(new SqlJsStatementImportDraftRepository(db).findSummaries()).toHaveLength(1)
+    })
+
+    it('重複の行の「取り込む」で別のタブの行へ移るときは、行き先を見失わないよう、絞り込みを解除する', async () => {
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+      pickIn(rowOf(/スーパー/), '相手科目', '食費')
+      fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
+      await screen.findByText(/確定しました/)
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,ランチ,-800,96200\n`)
+      fireEvent.click(await screen.findByRole('tab', { name: /^重複/ }))
+      typeDescriptionFilter('スーパー')
+
+      fireEvent.click(rowOf(/スーパー/).getByRole('button', { name: '取り込む' }))
+
+      expect(panel().getByRole('searchbox', { name: '摘要で検索' })).toHaveValue('')
+      expect(screen.getByRole('tab', { name: /^新規/ })).toHaveAttribute('aria-selected', 'true')
+      expect(hasRow(/スーパー/)).toBe(true)
+      expect(hasRow(/ランチ/)).toBe(true)
+    })
   })
 })

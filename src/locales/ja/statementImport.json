@@ -233,7 +233,7 @@
   "filterClear": "条件をクリア",
   "filterCount": "{{count}}件",
   "filterNoMatch": "条件に合う行がありません",
-  "filterSelectionRemoved": "絞り込みで隠れた行のチェック{{count}}件を外しました。一括設定は表示中の行にだけ反映されます。",
+  "filterSelectionRemoved": "表示されなくなった行のチェック{{count}}件を外しました。一括設定は表示中の行にだけ反映されます。",
   "draftSave": "一時保存",
   "draftSaved": "一時保存しました({{time}})。取込先「{{account}}」のCSVと入力内容を保存しています。入力済みの行は確定していません。",
   "draftSaveError": "一時保存の操作に失敗しました。",

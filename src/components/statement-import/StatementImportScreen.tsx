@@ -1849,7 +1849,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     return allConfirmed ? { status: 'done' } : { status: 'partial', done: nextDone }
   }
 
-  // 残高照合(docs/domain/reconciliation.md 1.5)。確定版として置き換える旧仕訳と、取り込まない行は除く
+  // 残高照合(docs/domain/reconciliation.md 1.5)。確定版として置き換える旧仕訳と、取り込まない行は除く。
+  // 絞り込みの影響は受けない(計画Issue #258): 照合は取込全体の残高の連なりを確かめるもので、表示中の行だけでは意味を成さない。
+  // 確定は絞り込み中は表示中の行だけだが、照合の結果はいつも取込の全体を示す
   const replacedIds = new Set(
     visibleIndices.flatMap((i) => {
       const target = replacementTargetOf(records[i], session!.rows[i])
