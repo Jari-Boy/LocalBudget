@@ -104,6 +104,14 @@ describe('取引先の設定(キーワード)', () => {
     expect(result.states[0].counterpartyId).toBeNull()
   })
 
+  it('相手科目の候補だけが残っている曖昧な行(取引先の候補は1件以下)も、自動確定しないので変えない(計画Issue #260)', () => {
+    const ambiguous = state({ candidateAccountIds: [FOOD.id, NEWS.id] })
+
+    const result = run({ rows: [ambiguous], descriptions: ['新聞販売店A'] })
+
+    expect(result.states[0].counterpartyId).toBeNull()
+  })
+
   it('確定済みの行と、取り込み済みで対象外の重複の行は変えない', () => {
     const result = run({
       rows: [state(), state()],

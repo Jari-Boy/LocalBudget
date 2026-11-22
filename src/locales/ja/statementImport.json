@@ -48,6 +48,7 @@
   "noProjectOption": "プロジェクトなし",
   "noBatch": "精算バッチなし",
   "memberNone": "なし",
+  "noteAccountCandidates": "科目の候補{{count}}件から選択",
   "noteCandidates": "候補{{count}}件から選択",
   "candidatesPinnedLabel": "この摘要に一致した候補",
   "rowBatch": "{{desc}}の精算バッチ",

@@ -210,6 +210,31 @@ describe('摘要の自動学習の廃止(計画Issue #259)', () => {
   })
 })
 
+describe('相手科目の候補(曖昧な行。計画Issue #260)', () => {
+  it('候補を渡さなければ、取引先・相手科目の候補は空', () => {
+    const initial = createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [] })
+
+    expect(initial.candidateAccountIds).toEqual([])
+  })
+
+  it('相手科目の候補を渡せば、行の状態に持つ', () => {
+    const initial = createInitialRowState({
+      counterpartyId: null,
+      counterAccountId: null,
+      candidateCounterpartyIds: [1],
+      candidateAccountIds: [2, 3],
+    })
+
+    expect(initial.candidateAccountIds).toEqual([2, 3])
+  })
+
+  it('候補は推定の記録なので、変えても編集とはみなさない', () => {
+    const initial = createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [] })
+
+    expect(isRowEdited({ ...initial, candidateAccountIds: [9] }, initial)).toBe(false)
+  })
+})
+
 describe('isRowEdited', () => {
   const initial = createInitialRowState({ counterpartyId: 1, counterAccountId: 2, candidateCounterpartyIds: [] })
 

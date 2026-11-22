@@ -77,7 +77,8 @@ export function applyCounterpartySettingsToRows(params: {
     if (
       next.counterpartyId === null &&
       next.initialCounterpartyId === null &&
-      next.candidateCounterpartyIds.length < 2 &&
+      next.candidateCounterpartyIds.length === 0 &&
+      next.candidateAccountIds.length === 0 &&
       anyKeywordMatches(keywordTexts, descriptions[index]) &&
       resolveEligibleCounterpartyId(settings.counterpartyId, next.counterAccountId, accounts) !== null
     ) {
