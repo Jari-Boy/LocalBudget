@@ -5,7 +5,7 @@ import { anyKeywordMatches, matchesKeyword } from './counterpartyKeywordModel'
 import { resolveEligibleCounterpartyId, rowStatus, withCounterAccount, type ImportRowState } from './importRowModel'
 
 /**
- * 「ほかの行にも適用」(計画Issue #207)。取引先の設定(キーワードの一覧と、キーワードごとの科目)を、
+ * 「N行に適用」(計画Issue #207・#259。もとは取引先の設定全体の「ほかの行にも適用」)。取引先の設定(キーワードと、キーワードごとの科目)を、
  * 取り込み中のほかの行へ画面上だけで反映する。DBには書かない。DB・DOM非依存の純粋関数。
  *
  * - 取引先: キーワードのどれか1つでも摘要に含み、取引先が未設定で手で触っていない行にだけ設定する。
@@ -52,14 +52,26 @@ export function applyCounterpartySettingsToRows(params: {
   done: ReadonlySet<number>
   settings: CounterpartySettings
   accounts: readonly Account[]
+  /**
+   * trueなら、取引先が未入力の行だけに入れる(キーワード1件ごとの「N行に適用」。計画Issue #259)。
+   * すでに取引先がある行は、この取引先でも相手科目を変えない
+   */
+  fillOnly?: boolean
+  /**
+   * trueなら、すでにこの取引先を持つ行だけを対象にする(取引先は入れない)。キーワードの科目を変えたとき、
+   * その科目へ追従させるのに使う(計画Issue #259)
+   */
+  followOnly?: boolean
 }): ApplyCounterpartySettingsResult {
-  const { states, initialStates, records, descriptions, done, settings, accounts } = params
+  const { states, initialStates, records, descriptions, done, settings, accounts, fillOnly = false, followOnly = false } = params
   const keywordTexts = settings.keywords.map((k) => k.text)
   let applied = 0
   const nextInitials = [...initialStates]
 
   const nextStates = states.map((state, index) => {
     if (done.has(index) || ['duplicate', 'skipped'].includes(rowStatus(records[index], state))) return state
+    if (fillOnly && state.counterpartyId !== null) return state
+    if (followOnly && state.counterpartyId !== settings.counterpartyId) return state
     let next = state
 
     if (

@@ -733,6 +733,7 @@
   gap: 2px;
 }
 
+/* 先頭のタグは固定幅なので、入力欄の左端は登録済み・新規のどの行でもそろう */
 .import-settings__row {
   display: flex;
   gap: 8px;
@@ -779,6 +780,8 @@
 .import-tag--new {
   background: var(--color-accent-soft);
   color: var(--color-accent);
+  /* 一致した行の背景(同じ薄い色)に溶けて輪郭が消えないよう、枠線で形を残す */
+  box-shadow: inset 0 0 0 1px var(--color-accent);
 }
 
 .import-tag--registered {
@@ -940,4 +943,81 @@
 .import-link--danger {
   font-size: 13px;
   color: var(--color-danger);
+}
+
+/* キーワードのポップアップ(計画Issue #259): 入口のアイコン・一致した行の強調・行ごとの適用・ゴミ箱アイコン */
+.import-with-icon {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.import-with-icon > .tree-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.import-icon-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--color-text-muted, var(--color-text));
+  cursor: pointer;
+}
+
+.import-icon-btn:hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+.import-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.import-icon-btn--matched {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.import-icon-btn--danger:hover:not(:disabled) {
+  color: var(--color-danger);
+}
+
+.import-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 一致した行だけ余白が変わると入力欄がずれるので、余白は全行そろえ、一致した行は背景だけ変える */
+.import-settings__pattern {
+  padding: 4px 6px;
+  border-radius: var(--radius-md);
+}
+
+.import-settings__add {
+  padding: 0 6px;
+}
+
+.import-settings__pattern--matched {
+  background: var(--color-accent-soft);
+}
+
+.import-settings__matched {
+  flex: none;
+  min-width: 6em;
+  font-size: var(--font-size-xs);
+  color: var(--color-accent);
 }

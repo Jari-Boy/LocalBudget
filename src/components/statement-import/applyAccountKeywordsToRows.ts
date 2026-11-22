@@ -4,7 +4,7 @@ import { anyKeywordMatches } from './counterpartyKeywordModel'
 import { rowStatus, withCounterAccount, type ImportRowState } from './importRowModel'
 
 /**
- * 資産・負債の科目の「キーワードの設定」の「ほかの行にも適用」(計画Issue #219)。科目のキーワードを、取り込み中の
+ * 科目のキーワードの「N行に適用」(計画Issue #219・#259)。科目のキーワードを、取り込み中の
  * ほかの行へ画面上だけで反映する(DBには書かない)。DB・DOM非依存の純粋関数。
  *
  * - 科目のキーワードのどれか1つでも摘要に含み、取引先が無く、相手科目が未設定で手で触っていない行にだけ、その科目を入れる。

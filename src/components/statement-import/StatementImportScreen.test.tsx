@@ -5,10 +5,12 @@
  * (1つなら自動選択・複数なら選択)、定義に紐づく科目を初期値にした取込先の確認と変更(紐づく科目が無ければ
  * 選ぶまで一覧を出さない、取り込むと紐づけを追加)、一致する定義が無いときの画面内での定義の作成、1件1行の一覧、キーワードルールによる取引先・相手科目の推定と
  * (キーワードに紐づく科目の)初期入力、重複の行(入力・選択なし、「取り込む」で戻せる)、選択した行への一括設定
- * (対象外の件数)、確定版の候補の置き換え、残高照合、確定とキーワード登録、確定後に続けて次のCSVを
+ * (対象外の件数)、確定版の候補の置き換え、残高照合、確定、確定後に続けて次のCSVを
  * 取り込めることを、sql.jsのNode実装(createTestDatabase)を使って確認する。
  * CSVを選ぶ前の画面中央の「CSVを選択」ボタンと、編集中に新しいCSVを選ぼうとしたときの警告(計画Issue #193)、
  * 編集中に他の画面へ移ろうとしたときの未保存の警告(保存して移動・破棄して移動・キャンセル・設定オフ、計画Issue #193)も確認する。
+ * 計画Issue #259: 相手科目・取引先それぞれのキーワードのアイコンとポップアップ(一致の強調・入力を終えたときと閉じる操作での保存・
+ * キーワードごとの「N行に適用」)と、摘要の自動学習をしないことも確認する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -146,16 +148,12 @@ const pick = (scope: ReturnType<typeof within>, label: string, item: string) => 
   fireEvent.click(within(screen.getByRole('dialog', { name: label })).getByRole('button', { name: item }))
 }
 
-/** 行の「取引先の設定」(計画Issue #207)を開く。開いたあとのポップアップは settings() で、操作のたびに取り直して使う */
+/** 行の取引先のキーワードのアイコン(計画Issue #259)を押してポップアップを開く。開いたあとのポップアップは settings() で、操作のたびに取り直して使う */
 async function openCounterpartySettings(desc: string) {
-  fireEvent.click(rowOf(new RegExp(desc)).getByRole('button', { name: `${desc}の取引先の設定` }))
-  await screen.findByRole('dialog', { name: /^取引先の設定: / })
+  fireEvent.click(rowOf(new RegExp(desc)).getByRole('button', { name: `${desc}の取引先のキーワード` }))
+  await screen.findByRole('dialog', { name: /^取引先「.*」のキーワード$/ })
 }
-/** 行の科目を変えるとポップアップが閉じる場合があるので、閉じていれば開き直す */
-async function openCounterpartySettingsIfClosed(desc: string) {
-  if (screen.queryByRole('dialog', { name: /^取引先の設定: / }) === null) await openCounterpartySettings(desc)
-}
-const settings = () => within(screen.getByRole('dialog', { name: /^取引先の設定: / }))
+const settings = () => within(screen.getByRole('dialog', { name: /^取引先「.*」のキーワード$/ }))
 const confirmButton = (count: number) => screen.getByRole('button', { name: new RegExp(`^\\d+ / ${count} 件を「普通預金」に確定$`) })
 
 /** ダイアログの金融機関名欄で「新しい金融機関名を入力…」を選び、名前を入力する */
@@ -1120,25 +1118,23 @@ describe('StatementImportScreen', () => {
     expect(await screen.findByText(/帳簿と明細の残高は一致しています/)).toBeInTheDocument()
   })
 
-  it('取引先を選んだ行は、取引先の設定を開かなくても確定時に摘要が正規化されてキーワードに登録され、件数を伝える', async () => {
+  it('取引先を選んだ行でも、摘要は自動ではキーワードに登録されない(自動学習の廃止。計画Issue #259)', async () => {
     makeMapping()
     const cp = counterparties.create({ name: 'スーパーA' })
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n`)
     pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
     pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
-    // 行の下に割り込む設定行(キーワード登録のチェックなど)は無い
-    expect(screen.queryByLabelText('パターン登録')).not.toBeInTheDocument()
 
     fireEvent.click(confirmButton(1))
 
-    expect(await screen.findByText(/キーワードを1件登録しました/)).toBeInTheDocument()
-    // 空白を除いた形で保存するので、次回以降の取引先の推定(正規化した摘要への部分一致)に当たる
-    expect(keywordRules.findMatching('スーパー新宿店').map((p) => p.counterpartyId)).toEqual([cp.id])
+    expect(await screen.findByText(/確定しました/)).toBeInTheDocument()
+    expect(screen.queryByText(/キーワードを.*件登録/)).not.toBeInTheDocument()
+    expect(keywordRules.findByCounterparty(cp.id)).toEqual([])
   })
 
-  describe('取引先の設定(計画Issue #207)', () => {
-    /** 取引先を手で選んだ行(取引先の設定のリンクが出る行)を作る */
+  describe('キーワードのアイコンとポップアップ(計画Issue #259)', () => {
+    /** 取引先と相手科目を手で選んだ行を作る(キーワードは、指定しなければ1件も無い) */
     async function setupPickedRow(
       description = 'スーパー 新宿店',
       extra: (cpId: number) => void = () => undefined,
@@ -1154,293 +1150,9 @@ describe('StatementImportScreen', () => {
       return cp
     }
     const patternsOf = (cpId: number) => keywordRules.findByCounterparty(cpId).map((p) => p.pattern)
-
-    it('「取引先の設定」は推定と違う取引先を選んだ行にだけ出て、開くとタイトル・登録済みと新規のキーワードが並ぶ(確定時に登録の注記は出ない)', async () => {
-      makeMapping()
-      const cp = counterparties.create({ name: 'スーパーA' })
-      keywordRules.create({ pattern: 'ローソン', counterpartyId: cp.id })
-      renderScreen()
-      await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n2026/10/06,ローソン 渋谷,-500,96500\n`)
-      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
-      pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
-
-      // 「ローソン」のキーワードで自動マッチした行には、設定のリンクを出さない
-      expect(await rowOf(/ローソン 渋谷/).findByRole('button', { name: /^取引先: スーパーA/ })).toBeInTheDocument()
-      expect(rowOf(/ローソン 渋谷/).queryByRole('button', { name: /の取引先の設定$/ })).not.toBeInTheDocument()
-
-      await openCounterpartySettings('スーパー 新宿店')
-
-      expect(screen.getByRole('dialog', { name: '取引先の設定: スーパーA' })).toBeInTheDocument()
-      // 「キーワードを追加」で足したキーワードは入力を終えた時点で保存されるため、「確定時に登録」の注記は出さない(計画Issue #218)
-      expect(settings().queryByText(/この行を確定したときに登録されます/)).not.toBeInTheDocument()
-      expect(settings().getByText('取引先のキーワード')).toBeInTheDocument()
-      await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('ローソン'))
-      expect(settings().getByLabelText('キーワード2')).toHaveValue('スーパー 新宿店')
-      expect(settings().getByText('登録済み')).toBeInTheDocument()
-      expect(settings().getByText('新規')).toBeInTheDocument()
-      // 各キーワードを含む行の数(この明細で)
-      expect(settings().getAllByText('1行')).toHaveLength(2)
-    })
-
-    it('登録済みのキーワードの編集は、入力の途中では保存されず、入力を終えたとき(フォーカスを外す)に保存される', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }))
-      await openCounterpartySettings('スーパー 新宿店')
-      await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
-
-      fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'マルエツ新宿' } })
-      expect(patternsOf(cp.id)).toEqual(['マルエツ'])
-
-      fireEvent.blur(settings().getByLabelText('キーワード1'))
-
-      await waitFor(() => expect(patternsOf(cp.id)).toEqual(['マルエツ新宿']))
-    })
-
-    it('Enterでも入力を終えたことになり、フォーカスを外すのと重ねても二重には保存されない', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-      fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
-      fireEvent.change(settings().getByLabelText('キーワード2'), { target: { value: 'スーパー' } })
-
-      fireEvent.keyDown(settings().getByLabelText('キーワード2'), { key: 'Enter' })
-      fireEvent.blur(settings().getByLabelText('キーワード2'))
-
-      await waitFor(() => expect(patternsOf(cp.id)).toEqual(['スーパー']))
-      expect(screen.queryByText('保存できませんでした。もう一度お試しください。')).not.toBeInTheDocument()
-    })
-
-    it('登録済みのキーワードの削除は、押した時点でDBから消える', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }))
-      await openCounterpartySettings('スーパー 新宿店')
-      await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
-
-      fireEvent.click(settings().getByRole('button', { name: 'キーワード1を削除' }))
-
-      await waitFor(() => expect(patternsOf(cp.id)).toEqual([]))
-      expect(settings().queryByDisplayValue('マルエツ')).not.toBeInTheDocument()
-    })
-
-    it('「キーワードを追加」で足したキーワードは、入力を終えたときに(正規化して)保存され、「登録済み」になる', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-
-      fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
-      fireEvent.change(settings().getByLabelText('キーワード2'), { target: { value: 'スーパー 新宿' } })
-      expect(patternsOf(cp.id)).toEqual([])
-      fireEvent.blur(settings().getByLabelText('キーワード2'))
-
-      await waitFor(() => expect(patternsOf(cp.id)).toEqual(['スーパー新宿']))
-      expect(settings().getByText('登録済み')).toBeInTheDocument()
-    })
-
-    it('追加して何も入力しなかった空欄は、入力を終えると何も保存せずに取り除かれる', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-
-      fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
-      fireEvent.blur(settings().getByLabelText('キーワード2'))
-
-      expect(settings().queryByLabelText('キーワード2')).not.toBeInTheDocument()
-      expect(patternsOf(cp.id)).toEqual([])
-    })
-
-    it('摘要の提案(「新規」)は、開いただけでは保存されず、その行を確定したときに登録される', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-      expect(settings().getByLabelText('キーワード1')).toHaveValue('スーパー 新宿店')
-      expect(patternsOf(cp.id)).toEqual([])
-
-      fireEvent.click(confirmButton(1))
-
-      expect(await screen.findByText(/キーワードを1件登録しました/)).toBeInTheDocument()
-      expect(patternsOf(cp.id)).toEqual(['スーパー新宿店'])
-    })
-
-    it('摘要の提案を削除すると、確定しても登録されず、消した提案は復活しない', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-
-      fireEvent.click(settings().getByRole('button', { name: 'キーワード1を削除' }))
-      expect(settings().queryByLabelText('キーワード1')).not.toBeInTheDocument()
-      fireEvent.click(confirmButton(1))
-
-      await waitFor(() => expect(userEntries()).toHaveLength(1))
-      expect(patternsOf(cp.id)).toEqual([])
-    })
-
-    it('キーワードの科目は、選んだ時点でそのキーワード(ルール)に保存される(計画Issue #219)', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }))
-      await openCounterpartySettings('スーパー 新宿店')
-      await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
-      expect(keywordRules.findByCounterparty(cp.id)[0].accountId).toBeNull()
-
-      pick(settings(), 'キーワード1の科目', '食費')
-
-      await waitFor(() => expect(keywordRules.findByCounterparty(cp.id)[0].accountId).toBe(food.id))
-      expect(settings().getByRole('button', { name: /^キーワード1の科目: 食費/ })).toBeInTheDocument()
-    })
-
-    it('「取引先の設定」に、相手科目の初期値の欄は無く、キーワードごとに科目を選ぶ(選択肢は費用・収益の科目だけ。計画Issue #219)', async () => {
-      await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-
-      expect(settings().queryByText('相手科目の初期値')).not.toBeInTheDocument()
-      fireEvent.click(settings().getByRole('button', { name: /^キーワード1の科目/ }))
-      const tree = within(screen.getByRole('dialog', { name: 'キーワード1の科目' }))
-      expect(tree.getByRole('button', { name: '食費' })).toBeInTheDocument()
-      expect(tree.queryByRole('button', { name: '普通預金' })).not.toBeInTheDocument()
-    })
-
-    it('摘要の半角カナ・全角英数は標準化して表示し、摘要の提案(新規キーワード)にも標準化した文字列が入る', async () => {
-      makeMapping()
-      const cp = counterparties.create({ name: 'ファミマ' })
-      renderScreen()
-      await chooseCsv(`${HEADER}2026/10/05,ﾌｧﾐﾘｰﾏｰﾄ Ｓｕｉｃａ,-300,97000\n`)
-      pick(rowOf(/ファミリーマート/), '相手科目', '食費')
-      pick(rowOf(/ファミリーマート/), '取引先', 'ファミマ')
-
-      await openCounterpartySettings('ファミリーマート Suica')
-
-      expect(settings().getByLabelText('キーワード1')).toHaveValue('ファミリーマート Suica')
-      fireEvent.click(confirmButton(1))
-      await waitFor(() => expect(userEntries()).toHaveLength(1))
-      expect(keywordRules.findByCounterparty(cp.id).map((r) => r.pattern)).toEqual(['フアミリーマートSUICA'])
-    })
-
-    it('キーワードの科目の選択肢は、科目グループごとにまとまって表示される(フラットに並べない)', async () => {
-      const group = new SqlJsAccountGroupRepository(db).create({ name: '生活費', category: 'expense' })
-      accounts.create({ category: 'expense', name: '日用品費', isReconcilable: null, accountGroupId: group.id })
-      await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-
-      fireEvent.click(settings().getByRole('button', { name: /^キーワード1の科目/ }))
-
-      const tree = within(screen.getByRole('dialog', { name: 'キーワード1の科目' }))
-      fireEvent.click(tree.getByText('生活費'))
-      expect(tree.getByRole('button', { name: '日用品費' })).toBeInTheDocument()
-    })
-
-    it('摘要の提案(新規)の科目は、この行の相手科目が初期値で入り、選び直せる', async () => {
-      await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-
-      expect(settings().getByRole('button', { name: /^キーワード1の科目: 食費/ })).toBeInTheDocument()
-      expect(settings().getByRole('button', { name: /^キーワード1の科目: 食費/ })).toBeEnabled()
-    })
-
-    it('摘要の提案の科目をダイアログで選ぶと、行の相手科目にも入り、確定時にその科目でキーワードが登録される', async () => {
-      const transport = accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
-      const cp = await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-
-      pick(settings(), 'キーワード1の科目', '交通費')
-
-      expect(settings().getByRole('button', { name: /^キーワード1の科目: 交通費/ })).toBeInTheDocument()
-      expect(rowOf(/スーパー 新宿店/).getByRole('button', { name: /^相手科目: 交通費/ })).toBeInTheDocument()
-      fireEvent.click(confirmButton(1))
-      await waitFor(() => expect(userEntries()).toHaveLength(1))
-      expect(keywordRules.findByCounterparty(cp.id).map((r) => r.accountId)).toEqual([transport.id])
-    })
-
-    it('登録済みキーワードの科目をダイアログで選ぶと、その行の相手科目が手で選んだものでも、行に反映される', async () => {
-      accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
-      // 取引先と相手科目を手で選んだ行に、その取引先の登録済みキーワード(摘要に含まれる)がある
-      const cp = await setupPickedRow('マルエツ 新宿店')
-      keywordRules.create({ pattern: 'マルエツ', counterpartyId: cp.id })
-      await openCounterpartySettings('マルエツ 新宿店')
-      await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
-
-      pick(settings(), 'キーワード1の科目', '交通費')
-
-      await waitFor(() => expect(rowOf(/マルエツ 新宿店/).getByRole('button', { name: /^相手科目: 交通費/ })).toBeInTheDocument())
-    })
-
-    it('ダイアログで提案の科目を選んだあとに行の相手科目を変えても、キーワード側の科目は変わらない', async () => {
-      const transport = accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
-      const cp = await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-      pick(settings(), 'キーワード1の科目', '交通費')
-
-      pick(rowOf(/スーパー 新宿店/), '相手科目', '交通費')
-      pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
-
-      await openCounterpartySettingsIfClosed('スーパー 新宿店')
-      expect(settings().getByRole('button', { name: /^キーワード1の科目: 交通費/ })).toBeInTheDocument()
-      fireEvent.click(confirmButton(1))
-      await waitFor(() => expect(userEntries()).toHaveLength(1))
-      expect(keywordRules.findByCounterparty(cp.id).map((r) => r.accountId)).toEqual([transport.id])
-    })
-
-    it('ダイアログで提案の科目を選ぶ前なら、行の相手科目を変えると提案の科目も追従する', async () => {
-      accounts.create({ category: 'expense', name: '交通費', isReconcilable: null })
-      await setupPickedRow('スーパー 新宿店')
-
-      pick(rowOf(/スーパー 新宿店/), '相手科目', '交通費')
-      await openCounterpartySettings('スーパー 新宿店')
-
-      expect(settings().getByRole('button', { name: /^キーワード1の科目: 交通費/ })).toBeInTheDocument()
-    })
-
-    it('摘要の提案は、確定時に、取引先と行の相手科目を1つのルールとして登録する(計画Issue #219)', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店')
-
-      fireEvent.click(confirmButton(1))
-
-      await waitFor(() => expect(userEntries()).toHaveLength(1))
-      expect(keywordRules.findByCounterparty(cp.id).map((r) => [r.pattern, r.accountId])).toEqual([['スーパー新宿店', food.id]])
-    })
-
-    it('新規のキーワードが現在の摘要にマッチしない文字列でも、注意を出したうえで保存できる(計画Issue #236)', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-      fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
-
-      fireEvent.change(settings().getByLabelText('キーワード2'), { target: { value: 'ローソン' } })
-      expect(settings().getByText('現在の明細の摘要とはマッチしないキーワードです。')).toBeInTheDocument()
-      fireEvent.blur(settings().getByLabelText('キーワード2'))
-
-      await waitFor(() => expect(patternsOf(cp.id)).toEqual(['ローソン']))
-    })
-
-    it('新規のキーワードの科目は、取引先の登録済みキーワードで最も多い科目が初期値になる(計画Issue #236)', async () => {
-      await setupPickedRow('スーパー 新宿店', (id) => {
-        keywordRules.create({ pattern: 'マルエツ', counterpartyId: id, accountId: food.id })
-        keywordRules.create({ pattern: 'ライフ', counterpartyId: id, accountId: food.id })
-      })
-      await openCounterpartySettings('スーパー 新宿店')
-      await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
-
-      fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
-
-      // 登録済み2件に、摘要の提案(1件目に出る)があるので、新しい欄は4番目
-      const inputs = settings().getAllByLabelText(/^キーワード[0-9]+$/)
-      expect(settings().getByRole('button', { name: new RegExp('^キーワード' + inputs.length + 'の科目: 食費') })).toBeInTheDocument()
-    })
-
-    it('ほかのキーワード(ここでは摘要の提案)と、正規化すると同じになる文字列は、その旨を出して保存しない', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-      fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
-
-      fireEvent.change(settings().getByLabelText('キーワード2'), { target: { value: 'ｽｰﾊﾟｰ新宿店' } })
-      fireEvent.blur(settings().getByLabelText('キーワード2'))
-
-      expect(settings().getByText('同じキーワードがあります')).toBeInTheDocument()
-      expect(patternsOf(cp.id)).toEqual([])
-    })
-
-    it('登録済みのキーワードを空にして入力を終えると、その旨を出して保存しない(消すときは削除を使う)', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }))
-      await openCounterpartySettings('スーパー 新宿店')
-      await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
-
-      fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: '  ' } })
-      fireEvent.blur(settings().getByLabelText('キーワード1'))
-
-      expect(settings().getByText('キーワードを入力してください。消す場合は削除を押してください')).toBeInTheDocument()
-      expect(patternsOf(cp.id)).toEqual(['マルエツ'])
-    })
-
-    it('「ほかの行にも適用」は、一覧のキーワードを含み取引先が未設定の行にだけ取引先を設定して件数を示し、手で選んだ行は変えず、DBには書かない', async () => {
+    const iconOf = (desc: string, kind: '取引先' | '相手科目') => rowOf(new RegExp(desc)).getByRole('button', { name: `${desc}の${kind}のキーワード` })
+    /** 「ニチケイ」を含む行が複数ある明細で、先頭の行に取引先・相手科目を手で選び、そのポップアップを開いて「ニチケイ」を登録する */
+    async function setupApplyCase() {
       makeMapping()
       const cp = counterparties.create({ name: 'スーパーA' })
       const other = counterparties.create({ name: 'スーパーB' })
@@ -1454,150 +1166,519 @@ describe('StatementImportScreen', () => {
       pick(rowOf(/ニチケイ 4月/), '相手科目', '食費')
       pick(rowOf(/ニチケイ 4月/), '取引先', 'スーパーB')
       await openCounterpartySettings('ニチケイ 3月')
-      fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'ニチケイ' } })
-
-      fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
-
-      expect(settings().getByText('1行に適用しました')).toBeInTheDocument()
-      expect(rowOf(/ニチケイ 2月/).getByRole('button', { name: /^取引先: スーパーA/ })).toBeInTheDocument()
-      expect(rowOf(/別の店 1月/).queryByRole('button', { name: /^取引先: スーパーA/ })).not.toBeInTheDocument()
-      expect(rowOf(/ニチケイ 4月/).getByRole('button', { name: /^取引先: スーパーB/ })).toBeInTheDocument()
-      expect(patternsOf(cp.id)).toEqual([])
-      expect(patternsOf(other.id)).toEqual([])
-    })
-
-    it('適用した行は、確定時に摘要が重ねてキーワード登録されず、取引先の設定のリンクも出ない', async () => {
-      makeMapping()
-      const cp = counterparties.create({ name: 'スーパーA' })
-      renderScreen()
-      await chooseCsv(`${HEADER}2026/10/05,ニチケイ 3月,-1000,97000\n2026/10/06,ニチケイ 2月,-1000,96000\n`)
-      pick(rowOf(/ニチケイ 3月/), '相手科目', '食費')
-      pick(rowOf(/ニチケイ 3月/), '取引先', 'スーパーA')
-      pick(rowOf(/ニチケイ 2月/), '相手科目', '食費')
-      await openCounterpartySettings('ニチケイ 3月')
-      fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'ニチケイ' } })
-      fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
-      expect(rowOf(/ニチケイ 2月/).queryByRole('button', { name: /の取引先の設定$/ })).not.toBeInTheDocument()
-
-      fireEvent.click(confirmButton(2))
-
-      expect(await screen.findByText(/キーワードを1件登録しました/)).toBeInTheDocument()
-      expect(patternsOf(cp.id)).toEqual(['ニチケイ'])
-    })
-
-    it('キーワードの科目を選ぶと、そのキーワードに一致し取引先が同じで科目を手で選んでいない行にだけ、その時点で入る(「ほかの行にも適用」を押す必要はない。計画Issue #218・#219)', async () => {
-      makeMapping()
-      const supplies = accounts.create({ category: 'expense', name: '日用品費', isReconcilable: null })
-      accounts.create({ category: 'expense', name: '雑費', isReconcilable: null })
-      const cp = counterparties.create({ name: 'セブン' })
-      keywordRules.create({ pattern: 'セブン', counterpartyId: cp.id, accountId: food.id })
-      renderScreen()
-      await chooseCsv(
-        `${HEADER}2026/10/05,セブン 1,-100,97000\n2026/10/06,セブン 2,-100,96000\n2026/10/07,セブン 3,-100,95000\n2026/10/08,ローソン 4,-100,94000\n`,
-      )
-      // 3行目は科目を手で選んでいる。4行目は利用者が取引先を手で選んだ(設定のリンクが出る行)
-      pick(rowOf(/セブン 3/), '相手科目', '雑費')
-      pick(rowOf(/ローソン 4/), '取引先', 'セブン')
-      await openCounterpartySettings('ローソン 4')
-      await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('セブン'))
-
-      pick(settings(), 'キーワード1の科目', '日用品費')
-      await waitFor(() => expect(keywordRules.findByCounterparty(cp.id)[0].accountId).toBe(supplies.id))
-
-      // セブン1・セブン2(キーワードに一致し、取引先が同じで科目は未編集)に入る。キーワードに一致しないローソン4には入らない
-      await waitFor(() => expect(rowOf(/セブン 1/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument())
-      expect(rowOf(/セブン 2/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument()
-      expect(rowOf(/セブン 3/).getByRole('button', { name: /^相手科目: 雑費/ })).toBeInTheDocument()
-      expect(rowOf(/ローソン 4/).queryByRole('button', { name: /^相手科目: 日用品費/ })).not.toBeInTheDocument()
-    })
-
-    it('適用できる行が無いときは、その旨を示す', async () => {
-      await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-
-      fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
-
-      expect(settings().getByText('適用できる行はありませんでした')).toBeInTheDocument()
-    })
-
-    it('「閉じる」でポップアップが閉じ、もう一度開くと保存済みのキーワードが見える', async () => {
-      await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
       fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
-      fireEvent.change(settings().getByLabelText('キーワード2'), { target: { value: '新宿' } })
-      fireEvent.blur(settings().getByLabelText('キーワード2'))
-      await waitFor(() => expect(settings().getByText('登録済み')).toBeInTheDocument())
+      fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'ニチケイ' } })
+      fireEvent.blur(settings().getByLabelText('キーワード1'))
+      await waitFor(() => expect(patternsOf(cp.id)).toEqual(['ニチケイ']))
+      return { cp, other }
+    }
 
-      fireEvent.click(settings().getByRole('button', { name: '閉じる' }))
-      expect(screen.queryByRole('dialog', { name: /^取引先の設定: / })).not.toBeInTheDocument()
-      await openCounterpartySettings('スーパー 新宿店')
+    describe('入口のアイコン', () => {
+      it('相手科目と取引先の選択欄それぞれの右にアイコンが出て、未選択のアイコンは押せない', async () => {
+        makeMapping()
+        counterparties.create({ name: 'スーパーA' })
+        renderScreen()
+        await chooseCsv(`${HEADER}2026/10/05,スーパー 新宿店,-3000,97000\n`)
 
-      await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('新宿'))
+        expect(iconOf('スーパー 新宿店', '相手科目')).toBeDisabled()
+        expect(iconOf('スーパー 新宿店', '取引先')).toBeDisabled()
+
+        pick(rowOf(/スーパー 新宿店/), '相手科目', '食費')
+        expect(iconOf('スーパー 新宿店', '相手科目')).toBeEnabled()
+        expect(iconOf('スーパー 新宿店', '取引先')).toBeDisabled()
+
+        pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーA')
+        expect(iconOf('スーパー 新宿店', '取引先')).toBeEnabled()
+      })
+
+      it('重複の行(取り込み済みのため対象外)には、アイコンを出さない', async () => {
+        makeMapping()
+        renderScreen()
+        await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+        pick(rowOf(/スーパー/), '相手科目', '食費')
+        fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
+        await screen.findByText(/確定しました/)
+
+        await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+
+        expect(await rowOf(/スーパー/).findByText('取り込み済みのため対象外です')).toBeInTheDocument()
+        expect(rowOf(/スーパー/).queryByRole('button', { name: /のキーワード$/ })).not.toBeInTheDocument()
+      })
+
+      it('この行に一致したキーワードがある側のアイコンは強調され、ツールチップに一致したキーワードが出る', async () => {
+        makeMapping()
+        const cp = counterparties.create({ name: 'スーパーA' })
+        keywordRules.create({ pattern: 'ローソン', counterpartyId: cp.id })
+        renderScreen()
+        await chooseCsv(`${HEADER}2026/10/05,ローソン 渋谷,-500,97000\n2026/10/06,別の店,-500,96500\n`)
+
+        await waitFor(() => expect(iconOf('ローソン 渋谷', '取引先')).toHaveClass('import-icon-btn--matched'))
+        expect(iconOf('ローソン 渋谷', '取引先')).toHaveAttribute('title', expect.stringContaining('ローソン'))
+        // 一致したキーワードが無い行・科目側(このキーワードは科目を持たない)は強調しない
+        expect(iconOf('ローソン 渋谷', '相手科目')).not.toHaveClass('import-icon-btn--matched')
+        pick(rowOf(/別の店/), '取引先', 'スーパーA')
+        expect(iconOf('別の店', '取引先')).not.toHaveClass('import-icon-btn--matched')
+      })
+
+      it('自動で一致した行でもポップアップを開いて編集でき、一致したキーワードの行には「この行に一致」が出る', async () => {
+        makeMapping()
+        const cp = counterparties.create({ name: 'スーパーA' })
+        keywordRules.create({ pattern: 'ローソン', counterpartyId: cp.id })
+        keywordRules.create({ pattern: 'ファミマ', counterpartyId: cp.id })
+        renderScreen()
+        await chooseCsv(`${HEADER}2026/10/05,ローソン 渋谷,-500,97000\n`)
+        await waitFor(() => expect(iconOf('ローソン 渋谷', '取引先')).toBeEnabled())
+
+        await openCounterpartySettings('ローソン 渋谷')
+
+        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('ローソン'))
+        expect(settings().getAllByText('この行に一致')).toHaveLength(1)
+        fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'ローソン渋谷' } })
+        fireEvent.blur(settings().getByLabelText('キーワード1'))
+        await waitFor(() => expect(patternsOf(cp.id)).toEqual(['ローソン渋谷', 'ファミマ']))
+      })
     })
 
-    describe('保存に失敗したとき', () => {
-      /** 指定したメソッドだけ失敗するキーワードルールのRepository(ほかは本物のまま) */
-      const failing = (method: 'update' | 'create' | 'delete') =>
-        Object.assign(Object.create(keywordRules), {
-          [method]: () => {
-            throw new Error('保存の失敗')
-          },
-        }) as typeof keywordRules
-      const SAVE_ERROR = '保存できませんでした。もう一度お試しください。'
+    describe('ポップアップの見出し・幅・削除・保存ボタン', () => {
+      it('見出しは「取引先「X」のキーワード」で、幅は約720px、保存ボタンは無い', async () => {
+        await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }))
+        await openCounterpartySettings('スーパー 新宿店')
 
-      it('登録済みのキーワードの編集を保存できなかったら、ポップアップ内にエラーを出し、入力した内容は残す', async () => {
+        const dialog = screen.getByRole('dialog', { name: '取引先「スーパーA」のキーワード' })
+        expect(within(dialog).getByText('取引先「スーパーA」のキーワード')).toBeInTheDocument()
+        expect(dialog.style.width).toBe('720px')
+        expect(within(dialog).queryByRole('button', { name: /保存/ })).not.toBeInTheDocument()
+        // 全体の「ほかの行にも適用」は廃止した
+        expect(within(dialog).queryByRole('button', { name: 'ほかの行にも適用' })).not.toBeInTheDocument()
+      })
+
+      it('削除はaria-label付きのゴミ箱アイコンで、押した時点でDBから消える', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }))
+        await openCounterpartySettings('スーパー 新宿店')
+        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
+
+        const trash = settings().getByRole('button', { name: 'キーワード1を削除' })
+        expect(trash.querySelector('svg')).not.toBeNull()
+        fireEvent.click(trash)
+
+        await waitFor(() => expect(patternsOf(cp.id)).toEqual([]))
+        expect(settings().queryByDisplayValue('マルエツ')).not.toBeInTheDocument()
+      })
+
+      it('キーワードごとに科目を選べ(選択肢は費用・収益の科目だけで、科目グループごとにまとまる)、選んだ時点で保存される', async () => {
+        const group = new SqlJsAccountGroupRepository(db).create({ name: '生活費', category: 'expense' })
+        accounts.create({ category: 'expense', name: '日用品費', isReconcilable: null, accountGroupId: group.id })
+        const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }))
+        await openCounterpartySettings('スーパー 新宿店')
+        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
+        expect(keywordRules.findByCounterparty(cp.id)[0].accountId).toBeNull()
+
+        fireEvent.click(settings().getByRole('button', { name: /^キーワード1の科目/ }))
+        const tree = within(screen.getByRole('dialog', { name: 'キーワード1の科目' }))
+        expect(tree.queryByRole('button', { name: '普通預金' })).not.toBeInTheDocument()
+        fireEvent.click(tree.getByText('生活費'))
+        fireEvent.click(tree.getByRole('button', { name: '日用品費' }))
+
+        await waitFor(() => expect(keywordRules.findByCounterparty(cp.id)[0].accountId).not.toBeNull())
+        expect(settings().getByRole('button', { name: /^キーワード1の科目: 日用品費/ })).toBeInTheDocument()
+      })
+    })
+
+    describe('保存(入力を終えたときと、閉じる操作)', () => {
+      it('登録済みのキーワードの編集は、入力の途中では保存されず、入力を終えたとき(フォーカスを外す)に保存される', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }))
+        await openCounterpartySettings('スーパー 新宿店')
+        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
+
+        fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'マルエツ新宿' } })
+        expect(patternsOf(cp.id)).toEqual(['マルエツ'])
+
+        fireEvent.blur(settings().getByLabelText('キーワード1'))
+
+        await waitFor(() => expect(patternsOf(cp.id)).toEqual(['マルエツ新宿']))
+      })
+
+      it('Enterでも入力を終えたことになり、フォーカスを外すのと重ねても二重には保存されない', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店')
+        await openCounterpartySettings('スーパー 新宿店')
+        fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
+        fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'スーパー' } })
+
+        fireEvent.keyDown(settings().getByLabelText('キーワード1'), { key: 'Enter' })
+        fireEvent.blur(settings().getByLabelText('キーワード1'))
+
+        await waitFor(() => expect(patternsOf(cp.id)).toEqual(['スーパー']))
+        expect(screen.queryByText('保存できませんでした。もう一度お試しください。')).not.toBeInTheDocument()
+      })
+
+      it.each([
+        ['閉じるボタン', () => fireEvent.click(settings().getByRole('button', { name: '閉じる' }))],
+        ['Esc', () => fireEvent.keyDown(screen.getByRole('dialog', { name: /のキーワード$/ }), { key: 'Escape' })],
+        ['外側のクリック', () => fireEvent.pointerDown(document.body)],
+      ])('入力中の内容は、フォーカスを外す前に%sで閉じても保存される(破棄されない)', async (_name, close) => {
+        const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }))
+        await openCounterpartySettings('スーパー 新宿店')
+        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
+        fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'マルエツ新宿' } })
+        fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
+        fireEvent.change(settings().getByLabelText('キーワード2'), { target: { value: 'ライフ' } })
+
+        close()
+
+        await waitFor(() => expect(patternsOf(cp.id)).toEqual(['マルエツ新宿', 'ライフ']))
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: /のキーワード$/ })).not.toBeInTheDocument())
+      })
+
+      it('入力を終えてから閉じても、同じキーワードを二重に保存しない', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店')
+        await openCounterpartySettings('スーパー 新宿店')
+        fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
+        fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'スーパー' } })
+        fireEvent.blur(settings().getByLabelText('キーワード1'))
+        await waitFor(() => expect(patternsOf(cp.id)).toEqual(['スーパー']))
+
+        fireEvent.click(settings().getByRole('button', { name: '閉じる' }))
+
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: /のキーワード$/ })).not.toBeInTheDocument())
+        expect(patternsOf(cp.id)).toEqual(['スーパー'])
+      })
+
+      it('保存できない入力(登録済みのキーワードを空にした)があるときは、閉じずにその旨を出し、保存しない', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }))
+        await openCounterpartySettings('スーパー 新宿店')
+        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
+        fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: '  ' } })
+
+        fireEvent.click(settings().getByRole('button', { name: '閉じる' }))
+
+        expect(await settings().findByText('キーワードを入力してください。消す場合は削除を押してください')).toBeInTheDocument()
+        expect(screen.getByRole('dialog', { name: /のキーワード$/ })).toBeInTheDocument()
+        expect(patternsOf(cp.id)).toEqual(['マルエツ'])
+      })
+
+      it('追加して何も入力しなかった空欄は、入力を終えると何も保存せずに取り除かれる', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店')
+        await openCounterpartySettings('スーパー 新宿店')
+        fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
+        fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: '' } })
+
+        fireEvent.blur(settings().getByLabelText('キーワード1'))
+
+        expect(settings().queryByLabelText('キーワード1')).not.toBeInTheDocument()
+        expect(patternsOf(cp.id)).toEqual([])
+      })
+
+      it('ほかのキーワードと、正規化すると同じになる文字列は、その旨を出して保存しない', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'スーパー新宿店', counterpartyId: id }))
+        await openCounterpartySettings('スーパー 新宿店')
+        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('スーパー新宿店'))
+        fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
+
+        fireEvent.change(settings().getByLabelText('キーワード2'), { target: { value: 'ｽｰﾊﾟｰ新宿店' } })
+        fireEvent.blur(settings().getByLabelText('キーワード2'))
+
+        expect(settings().getByText('同じキーワードがあります')).toBeInTheDocument()
+        expect(patternsOf(cp.id)).toEqual(['スーパー新宿店'])
+      })
+
+      it('保存できなかったら、ポップアップ内にエラーを出し、入力した内容は残す', async () => {
+        const failing = (method: 'update' | 'create' | 'delete') =>
+          Object.assign(Object.create(keywordRules), {
+            [method]: () => {
+              throw new Error('保存の失敗')
+            },
+          }) as typeof keywordRules
+        const SAVE_ERROR = '保存できませんでした。もう一度お試しください。'
         const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }), failing('update'))
         await openCounterpartySettings('スーパー 新宿店')
         await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
 
         fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'マルエツ新宿' } })
-        fireEvent.blur(settings().getByLabelText('キーワード1'))
+        fireEvent.click(settings().getByRole('button', { name: '閉じる' }))
 
         expect(await settings().findByText(SAVE_ERROR)).toBeInTheDocument()
         expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ新宿')
+        expect(screen.getByRole('dialog', { name: /のキーワード$/ })).toBeInTheDocument()
         expect(patternsOf(cp.id)).toEqual(['マルエツ'])
       })
 
-      it('新規のキーワードを保存できなかったら、ポップアップ内にエラーを出し、「新規」のまま入力を残す', async () => {
-        const cp = await setupPickedRow('スーパー 新宿店', () => undefined, failing('create'))
-        await openCounterpartySettings('スーパー 新宿店')
-        fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
-
-        fireEvent.change(settings().getByLabelText('キーワード2'), { target: { value: 'スーパー' } })
-        fireEvent.blur(settings().getByLabelText('キーワード2'))
-
-        expect(await settings().findByText(SAVE_ERROR)).toBeInTheDocument()
-        expect(settings().getByLabelText('キーワード2')).toHaveValue('スーパー')
-        expect(settings().queryByText('登録済み')).not.toBeInTheDocument()
-        expect(patternsOf(cp.id)).toEqual([])
-      })
-
       it('登録済みのキーワードの削除を保存できなかったら、ポップアップ内にエラーを出し、一覧からは消さない', async () => {
-        const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }), failing('delete'))
+        const failingDelete = Object.assign(Object.create(keywordRules), {
+          delete: () => {
+            throw new Error('保存の失敗')
+          },
+        }) as typeof keywordRules
+        const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }), failingDelete)
         await openCounterpartySettings('スーパー 新宿店')
         await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
 
         fireEvent.click(settings().getByRole('button', { name: 'キーワード1を削除' }))
 
-        expect(await settings().findByText(SAVE_ERROR)).toBeInTheDocument()
+        expect(await settings().findByText('保存できませんでした。もう一度お試しください。')).toBeInTheDocument()
         expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ')
         expect(patternsOf(cp.id)).toEqual(['マルエツ'])
       })
 
       it('キーワードの科目を保存できなかったら、ポップアップ内にエラーを出し、科目は変わらない', async () => {
-        const cp = await setupPickedRow(
-          'スーパー 新宿店',
-          (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }),
-          failing('update'),
-        )
+        const failingUpdate = Object.assign(Object.create(keywordRules), {
+          update: () => {
+            throw new Error('保存の失敗')
+          },
+        }) as typeof keywordRules
+        const cp = await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }), failingUpdate)
         await openCounterpartySettings('スーパー 新宿店')
         await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
 
         pick(settings(), 'キーワード1の科目', '食費')
 
-        expect(await settings().findByText(SAVE_ERROR)).toBeInTheDocument()
+        expect(await settings().findByText('保存できませんでした。もう一度お試しください。')).toBeInTheDocument()
         expect(settings().getByRole('button', { name: /^キーワード1の科目: 指定なし/ })).toBeInTheDocument()
         expect(keywordRules.findByCounterparty(cp.id)[0].accountId).toBeNull()
+      })
+    })
+
+    describe('「キーワードを追加」と自動学習の廃止', () => {
+      it('取引先・科目を手で選んでも、摘要は「新規」のキーワードとして出ず、開いた時点では何も登録されていない', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店')
+        await openCounterpartySettings('スーパー 新宿店')
+
+        expect(settings().queryByLabelText('キーワード1')).not.toBeInTheDocument()
+        expect(settings().queryByText('新規')).not.toBeInTheDocument()
+        expect(patternsOf(cp.id)).toEqual([])
+      })
+
+      it('「キーワードを追加」を押すと、その行の摘要が初期値として入り、入力を終えたときに(正規化して)登録される', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店')
+        await openCounterpartySettings('スーパー 新宿店')
+
+        fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
+
+        expect(settings().getByLabelText('キーワード1')).toHaveValue('スーパー 新宿店')
+        expect(settings().getByText('新規')).toBeInTheDocument()
+        expect(patternsOf(cp.id)).toEqual([])
+        fireEvent.blur(settings().getByLabelText('キーワード1'))
+        await waitFor(() => expect(patternsOf(cp.id)).toEqual(['スーパー新宿店']))
+        expect(settings().getByText('登録済み')).toBeInTheDocument()
+      })
+
+      it('摘要の半角カナ・全角英数は標準化して初期値に入り、標準化した文字列で登録される', async () => {
+        makeMapping()
+        const cp = counterparties.create({ name: 'ファミマ' })
+        renderScreen()
+        await chooseCsv(`${HEADER}2026/10/05,ﾌｧﾐﾘｰﾏｰﾄ Ｓｕｉｃａ,-300,97000\n`)
+        pick(rowOf(/ファミリーマート/), '相手科目', '食費')
+        pick(rowOf(/ファミリーマート/), '取引先', 'ファミマ')
+        await openCounterpartySettings('ファミリーマート Suica')
+
+        fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
+
+        expect(settings().getByLabelText('キーワード1')).toHaveValue('ファミリーマート Suica')
+        fireEvent.click(settings().getByRole('button', { name: '閉じる' }))
+        await waitFor(() => expect(keywordRules.findByCounterparty(cp.id).map((r) => r.pattern)).toEqual(['フアミリーマートSUICA']))
+      })
+
+      it('新規のキーワードが現在の摘要にマッチしない文字列でも、注意を出したうえで保存できる(計画Issue #236)', async () => {
+        const cp = await setupPickedRow('スーパー 新宿店')
+        await openCounterpartySettings('スーパー 新宿店')
+        fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
+
+        fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'ローソン' } })
+        expect(settings().getByText('現在の明細の摘要とはマッチしないキーワードです。')).toBeInTheDocument()
+        fireEvent.blur(settings().getByLabelText('キーワード1'))
+
+        await waitFor(() => expect(patternsOf(cp.id)).toEqual(['ローソン']))
+      })
+
+      it('新規のキーワードの科目は、取引先の登録済みキーワードで最も多い科目が初期値になる(計画Issue #236)', async () => {
+        await setupPickedRow('スーパー 新宿店', (id) => {
+          keywordRules.create({ pattern: 'マルエツ', counterpartyId: id, accountId: food.id })
+          keywordRules.create({ pattern: 'ライフ', counterpartyId: id, accountId: food.id })
+        })
+        await openCounterpartySettings('スーパー 新宿店')
+        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
+
+        fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
+
+        expect(settings().getByRole('button', { name: /^キーワード3の科目: 食費/ })).toBeInTheDocument()
+      })
+    })
+
+    describe('キーワードごとの「N行に適用」', () => {
+      it('N は、そのキーワードを含み取引先が未入力のほかの行の数で、この行自身・手で選んだ行・含まない行は数えない', async () => {
+        await setupApplyCase()
+
+        // 3月の行(この行)・4月の行(別の取引先を手で選んだ)・別の店の行は数えず、2月の行だけ
+        expect(settings().getByRole('button', { name: '1行に適用' })).toBeEnabled()
+      })
+
+      it('押すと、N行に取引先が入って結果が出る。画面上だけでDBには書かず、手で選んだ行は上書きしない', async () => {
+        const { cp, other } = await setupApplyCase()
+
+        fireEvent.click(settings().getByRole('button', { name: '1行に適用' }))
+
+        expect(settings().getByText('1行に適用しました')).toBeInTheDocument()
+        expect(rowOf(/ニチケイ 2月/).getByRole('button', { name: /^取引先: スーパーA/ })).toBeInTheDocument()
+        expect(rowOf(/別の店 1月/).queryByRole('button', { name: /^取引先: スーパーA/ })).not.toBeInTheDocument()
+        expect(rowOf(/ニチケイ 4月/).getByRole('button', { name: /^取引先: スーパーB/ })).toBeInTheDocument()
+        // DBに書かれたのは、利用者が明示的に登録した「ニチケイ」だけ
+        expect(patternsOf(cp.id)).toEqual(['ニチケイ'])
+        expect(patternsOf(other.id)).toEqual([])
+        expect(keywordRules.findAll()).toHaveLength(1)
+        expect(userEntries()).toHaveLength(0)
+        // 適用したあとは、その行は入力済みなので、もう数えない
+        expect(settings().getByRole('button', { name: 'ほかに該当なし' })).toBeDisabled()
+      })
+
+      it('ツールチップに、何をどの行数に入れるかが出る', async () => {
+        await setupApplyCase()
+
+        const title = settings().getByRole('button', { name: '1行に適用' }).getAttribute('title') ?? ''
+
+        expect(title).toContain('ニチケイ')
+        expect(title).toContain('1行')
+        expect(title).toContain('スーパーA')
+      })
+
+      it('該当する行が無いキーワードは、ボタンを無効にして「ほかに該当なし」と出す', async () => {
+        await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'スーパー', counterpartyId: id }))
+        await openCounterpartySettings('スーパー 新宿店')
+        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('スーパー'))
+
+        expect(settings().getByRole('button', { name: 'ほかに該当なし' })).toBeDisabled()
+      })
+
+      it('押したキーワードだけで適用し、ほかのキーワードにだけ一致する行には入れない', async () => {
+        await setupApplyCase()
+        fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
+        fireEvent.change(settings().getByLabelText('キーワード2'), { target: { value: '別の店' } })
+        fireEvent.blur(settings().getByLabelText('キーワード2'))
+        await waitFor(() => expect(settings().getAllByRole('button', { name: '1行に適用' })).toHaveLength(2))
+
+        // 1つ目(ニチケイ)のボタンを押す
+        fireEvent.click(settings().getAllByRole('button', { name: '1行に適用' })[0])
+
+        expect(rowOf(/ニチケイ 2月/).getByRole('button', { name: /^取引先: スーパーA/ })).toBeInTheDocument()
+        expect(rowOf(/別の店 1月/).queryByRole('button', { name: /^取引先: スーパーA/ })).not.toBeInTheDocument()
+        // 2つ目(別の店)は、まだ適用できる
+        expect(settings().getByRole('button', { name: '1行に適用' })).toBeEnabled()
+      })
+
+      it('適用した行は、確定してもキーワードを重ねて登録しない', async () => {
+        const { cp } = await setupApplyCase()
+        fireEvent.click(settings().getByRole('button', { name: '1行に適用' }))
+        fireEvent.click(settings().getByRole('button', { name: '閉じる' }))
+        pick(rowOf(/ニチケイ 2月/), '相手科目', '食費')
+
+        fireEvent.click(confirmButton(4))
+
+        await waitFor(() => expect(userEntries().length).toBeGreaterThan(0))
+        expect(patternsOf(cp.id)).toEqual(['ニチケイ'])
+      })
+
+      it('キーワードに科目があれば、適用した行の相手科目にも入る', async () => {
+        const supplies = accounts.create({ category: 'expense', name: '日用品費', isReconcilable: null })
+        const { cp } = await setupApplyCase()
+        pick(settings(), 'キーワード1の科目', '日用品費')
+        await waitFor(() => expect(keywordRules.findByCounterparty(cp.id)[0].accountId).toBe(supplies.id))
+
+        fireEvent.click(settings().getByRole('button', { name: /行に適用$/ }))
+
+        expect(rowOf(/ニチケイ 2月/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument()
+      })
+    })
+
+    describe('科目のキーワード(科目アイコン)', () => {
+      /** 相手科目に指定した科目を手で選んだ行を作る(取引先は付かない) */
+      async function setupAccountRow(
+        accountName: string,
+        description = 'ATM引出 新宿',
+        extra: (accountId: number) => void = () => undefined,
+        keywordRepository: SqlJsKeywordRuleRepository = keywordRules,
+      ) {
+        makeMapping()
+        const created =
+          accountName === '現金' ? accounts.create({ category: 'asset', name: '現金', isReconcilable: false }) : food
+        extra(created.id)
+        renderScreen(undefined, undefined, keywordRepository)
+        await chooseCsv(`${HEADER}2026/10/05,${description},-10000,90000\n`)
+        pick(rowOf(new RegExp(description)), '相手科目', accountName)
+        return created
+      }
+      const accountPopup = () => within(screen.getByRole('dialog', { name: /^科目「.*」のキーワード$/ }))
+      const openAccountSettings = async (desc: string) => {
+        fireEvent.click(iconOf(desc, '相手科目'))
+        await screen.findByRole('dialog', { name: /^科目「.*」のキーワード$/ })
+      }
+      const accountKeywords = (accountId: number) => keywordRules.findByAccount(accountId).map((r) => r.pattern)
+
+      it('資産・負債の科目の行は、科目アイコンから「科目「現金」のキーワード」を開け、その科目のキーワードが並ぶ(摘要の提案は出ない)', async () => {
+        await setupAccountRow('現金', 'ATM引出 新宿', (id) => keywordRules.create({ pattern: 'セブン銀行', accountId: id }))
+
+        await openAccountSettings('ATM引出 新宿')
+
+        expect(screen.getByRole('dialog', { name: '科目「現金」のキーワード' })).toBeInTheDocument()
+        await waitFor(() => expect(accountPopup().getByLabelText('キーワード1')).toHaveValue('セブン銀行'))
+        expect(accountPopup().queryByLabelText('キーワード2')).not.toBeInTheDocument()
+        expect(accountPopup().queryByLabelText('キーワード1の科目')).not.toBeInTheDocument()
+      })
+
+      it('取引先なし・PL(費用・収益)の科目の行も、科目アイコンから科目キーワードを登録・編集できる(取引先つきのキーワードは含まない)', async () => {
+        const cp = counterparties.create({ name: 'スーパーA' })
+        const foodRule = await setupAccountRow('食費', 'スーパー 新宿店', (id) => {
+          keywordRules.create({ pattern: 'ライフ', accountId: id })
+          keywordRules.create({ pattern: 'マルエツ', counterpartyId: cp.id, accountId: id })
+        })
+
+        await openAccountSettings('スーパー 新宿店')
+
+        expect(screen.getByRole('dialog', { name: '科目「食費」のキーワード' })).toBeInTheDocument()
+        await waitFor(() => expect(accountPopup().getByLabelText('キーワード1')).toHaveValue('ライフ'))
+        expect(accountPopup().queryByDisplayValue('マルエツ')).not.toBeInTheDocument()
+        fireEvent.change(accountPopup().getByLabelText('キーワード1'), { target: { value: 'ライフ渋谷' } })
+        fireEvent.click(accountPopup().getByRole('button', { name: 'キーワードを追加' }))
+        fireEvent.click(accountPopup().getByRole('button', { name: '閉じる' }))
+
+        await waitFor(() => expect(accountKeywords(foodRule.id)).toEqual(['ライフ渋谷', 'マルエツ', 'スーパー新宿店']))
+        expect(keywordRules.findByAccount(foodRule.id).map((r) => r.counterpartyId)).toEqual([null, cp.id, null])
+      })
+
+      it('科目のキーワードの「N行に適用」は、そのキーワードを含み相手科目が未入力の行にだけ科目を入れる(DBには書かない)', async () => {
+        makeMapping()
+        const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
+        renderScreen()
+        await chooseCsv(
+          `${HEADER}2026/10/05,ATM引出 新宿,-10000,90000\n2026/10/06,ATM引出 渋谷,-5000,85000\n2026/10/07,別の店,-500,84500\n`,
+        )
+        pick(rowOf(/ATM引出 新宿/), '相手科目', '現金')
+        await openAccountSettings('ATM引出 新宿')
+        fireEvent.click(accountPopup().getByRole('button', { name: 'キーワードを追加' }))
+        fireEvent.change(accountPopup().getByLabelText('キーワード1'), { target: { value: 'ATM引出' } })
+        fireEvent.blur(accountPopup().getByLabelText('キーワード1'))
+        await waitFor(() => expect(accountKeywords(cash.id)).toEqual(['ATM引出']))
+
+        fireEvent.click(accountPopup().getByRole('button', { name: '1行に適用' }))
+
+        expect(accountPopup().getByText('1行に適用しました')).toBeInTheDocument()
+        expect(rowOf(/ATM引出 渋谷/).getByRole('button', { name: /^相手科目: 現金/ })).toBeInTheDocument()
+        expect(rowOf(/別の店/).queryByRole('button', { name: /^相手科目: 現金/ })).not.toBeInTheDocument()
+        expect(accountKeywords(cash.id)).toEqual(['ATM引出'])
+      })
+
+      it('科目のキーワードを保存できなかったら、ポップアップ内にエラーを出し、入力を残す', async () => {
+        const failingRules = Object.assign(Object.create(keywordRules), {
+          create: () => {
+            throw new Error('保存の失敗')
+          },
+        }) as typeof keywordRules
+        await setupAccountRow('現金', 'ATM引出 新宿', () => undefined, failingRules)
+        await openAccountSettings('ATM引出 新宿')
+        fireEvent.click(accountPopup().getByRole('button', { name: 'キーワードを追加' }))
+
+        fireEvent.change(accountPopup().getByLabelText('キーワード1'), { target: { value: 'ATM' } })
+        fireEvent.blur(accountPopup().getByLabelText('キーワード1'))
+
+        expect(await accountPopup().findByText('保存できませんでした。もう一度お試しください。')).toBeInTheDocument()
+        expect(accountPopup().getByLabelText('キーワード1')).toHaveValue('ATM')
       })
     })
 
@@ -1605,23 +1686,39 @@ describe('StatementImportScreen', () => {
       await setupPickedRow('スーパー 新宿店')
       await openCounterpartySettings('スーパー 新宿店')
 
-      fireEvent.keyDown(screen.getByRole('dialog', { name: /^取引先の設定: / }), { key: 'Escape' })
+      fireEvent.keyDown(screen.getByRole('dialog', { name: /のキーワード$/ }), { key: 'Escape' })
 
-      expect(screen.queryByRole('dialog', { name: /^取引先の設定: / })).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: /のキーワード$/ })).not.toBeInTheDocument())
     })
 
     it('ポップアップの外側を押すと閉じるが、中の操作(科目の選択など)では閉じない', async () => {
-      await setupPickedRow('スーパー 新宿店')
+      await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }))
       await openCounterpartySettings('スーパー 新宿店')
+      await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
 
       fireEvent.pointerDown(settings().getByLabelText('キーワード1'))
-      expect(screen.getByRole('dialog', { name: /^取引先の設定: / })).toBeInTheDocument()
+      expect(screen.getByRole('dialog', { name: /のキーワード$/ })).toBeInTheDocument()
 
       fireEvent.pointerDown(document.body)
-      expect(screen.queryByRole('dialog', { name: /^取引先の設定: / })).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: /のキーワード$/ })).not.toBeInTheDocument())
     })
 
-    it('開いたまま行の取引先を別の取引先に変えても、「取引先の設定」を1回押せば新しい取引先の設定が開く', async () => {
+    it('「閉じる」でポップアップが閉じ、もう一度開くと保存済みのキーワードが見える', async () => {
+      await setupPickedRow('スーパー 新宿店')
+      await openCounterpartySettings('スーパー 新宿店')
+      fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
+      fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: '新宿' } })
+      fireEvent.blur(settings().getByLabelText('キーワード1'))
+      await waitFor(() => expect(settings().getByText('登録済み')).toBeInTheDocument())
+
+      fireEvent.click(settings().getByRole('button', { name: '閉じる' }))
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: /のキーワード$/ })).not.toBeInTheDocument())
+      await openCounterpartySettings('スーパー 新宿店')
+
+      await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('新宿'))
+    })
+
+    it('開いたまま行の取引先を別の取引先に変えても、アイコンを1回押せば新しい取引先のキーワードが開く', async () => {
       makeMapping()
       counterparties.create({ name: 'スーパーA' })
       counterparties.create({ name: 'スーパーB' })
@@ -1632,34 +1729,15 @@ describe('StatementImportScreen', () => {
       await openCounterpartySettings('スーパー 新宿店')
 
       pick(rowOf(/スーパー 新宿店/), '取引先', 'スーパーB')
-      fireEvent.click(rowOf(/スーパー 新宿店/).getByRole('button', { name: 'スーパー 新宿店の取引先の設定' }))
+      fireEvent.click(iconOf('スーパー 新宿店', '取引先'))
 
-      expect(await screen.findByRole('dialog', { name: '取引先の設定: スーパーB' })).toBeInTheDocument()
+      expect(await screen.findByRole('dialog', { name: '取引先「スーパーB」のキーワード' })).toBeInTheDocument()
     })
 
-    it('摘要の提案を不正な文字列に直したまま確定しようとすると、確定せずにその旨を出し、直す(または削除する)と確定できる', async () => {
-      const cp = await setupPickedRow('スーパー 新宿店')
-      await openCounterpartySettings('スーパー 新宿店')
-      fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: '  ' } })
-      fireEvent.click(settings().getByRole('button', { name: '閉じる' }))
-
-      fireEvent.click(confirmButton(1))
-
-      expect(await screen.findByText('摘要から入るキーワードに問題があります。「取引先の設定」で直すか、削除してください。')).toBeInTheDocument()
-      expect(userEntries()).toHaveLength(0)
-
-      await openCounterpartySettings('スーパー 新宿店')
-      fireEvent.click(settings().getByRole('button', { name: 'キーワード1を削除' }))
-      fireEvent.click(confirmButton(1))
-
-      await waitFor(() => expect(userEntries()).toHaveLength(1))
-      expect(patternsOf(cp.id)).toEqual([])
-    })
-
-    describe('不具合の再現(計画Issue #218)', () => {
+    describe('キーワードの科目を変えたときの、ほかの行への反映(計画Issue #218)', () => {
       /**
        * 「ニチケイ」を含む行(キーワードに一致して取引先・科目が入る)が複数あり、最後の「別の店」の行で取引先を手で選んで
-       * 「取引先の設定」を開く。キーワードに一致した行には設定のリンクが出ないため(推定どおりの取引先のため)、手で選んだ行から開く
+       * 取引先のキーワードのポップアップを開く
        */
       async function setupFollowCase(csvRows: string) {
         makeMapping()
@@ -1673,9 +1751,7 @@ describe('StatementImportScreen', () => {
       }
 
       it('キーワードの科目を変えた時点で、そのキーワードに一致しその取引先を持つ行の科目が、再適用しなくても新しい科目に変わる', async () => {
-        const { supplies, cp } = await setupFollowCase(
-          '2026/10/05,ニチケイ 3月,-1000,97000\n2026/10/06,ニチケイ 2月,-1000,96000\n',
-        )
+        const { supplies, cp } = await setupFollowCase('2026/10/05,ニチケイ 3月,-1000,97000\n2026/10/06,ニチケイ 2月,-1000,96000\n')
         expect(await rowOf(/ニチケイ 2月/).findByRole('button', { name: /^相手科目: 食費/ })).toBeInTheDocument()
         pick(rowOf(/別の店/), '相手科目', '食費')
         pick(rowOf(/別の店/), '取引先', 'スーパーA')
@@ -1690,18 +1766,14 @@ describe('StatementImportScreen', () => {
         expect(settings().getByText('2行の相手科目をキーワードの科目にしました')).toBeInTheDocument()
       })
 
-      it('科目を手で選び直した行は、キーワードの科目を変えても追従させない。直前の適用の結果のメッセージは残さない', async () => {
-        const { supplies, cp } = await setupFollowCase(
-          '2026/10/05,ニチケイ 3月,-1000,97000\n2026/10/06,ニチケイ 2月,-1000,96000\n',
-        )
+      it('科目を手で選び直した行は、キーワードの科目を変えても追従させない', async () => {
+        const { supplies, cp } = await setupFollowCase('2026/10/05,ニチケイ 3月,-1000,97000\n2026/10/06,ニチケイ 2月,-1000,96000\n')
         expect(await rowOf(/ニチケイ 2月/).findByRole('button', { name: /^相手科目: 食費/ })).toBeInTheDocument()
         pick(rowOf(/ニチケイ 2月/), '相手科目', '雑費')
         pick(rowOf(/別の店/), '相手科目', '食費')
         pick(rowOf(/別の店/), '取引先', 'スーパーA')
         await openCounterpartySettings('別の店')
         await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('ニチケイ'))
-        fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
-        expect(settings().getByText('適用できる行はありませんでした')).toBeInTheDocument()
 
         pick(settings(), 'キーワード1の科目', '日用品費')
         await waitFor(() => expect(keywordRules.findByCounterparty(cp.id)[0].accountId).toBe(supplies.id))
@@ -1709,147 +1781,30 @@ describe('StatementImportScreen', () => {
         await waitFor(() => expect(rowOf(/ニチケイ 3月/).getByRole('button', { name: /^相手科目: 日用品費/ })).toBeInTheDocument())
         expect(rowOf(/ニチケイ 2月/).getByRole('button', { name: /^相手科目: 雑費/ })).toBeInTheDocument()
         expect(settings().getByText('1行の相手科目をキーワードの科目にしました')).toBeInTheDocument()
-        expect(settings().queryByText('適用できる行はありませんでした')).not.toBeInTheDocument()
       })
 
-      it('キーワードの科目を変えても反映する行が無いときは、直前の適用の結果のメッセージを消し、何も出さない', async () => {
+      it('キーワードの科目を変えると、直前の「N行に適用」の結果のメッセージは、科目の変更の結果に置き換わる', async () => {
         // 科目は画面を開く前に作っておく(開いたあとに作った科目は一覧に出ない)
         accounts.create({ category: 'expense', name: '日用品費', isReconcilable: null })
-        await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'マルエツ', counterpartyId: id }))
-        await openCounterpartySettings('スーパー 新宿店')
-        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('マルエツ'))
-        fireEvent.click(settings().getByRole('button', { name: 'ほかの行にも適用' }))
-        expect(settings().getByText('適用できる行はありませんでした')).toBeInTheDocument()
+        makeMapping()
+        const cp = counterparties.create({ name: 'スーパーA' })
+        renderScreen()
+        await chooseCsv(`${HEADER}2026/10/05,マルエツ 新宿店,-3000,97000\n2026/10/06,マルエツ 渋谷店,-3000,94000\n`)
+        pick(rowOf(/マルエツ 新宿店/), '相手科目', '食費')
+        pick(rowOf(/マルエツ 新宿店/), '取引先', 'スーパーA')
+        await openCounterpartySettings('マルエツ 新宿店')
+        fireEvent.click(settings().getByRole('button', { name: 'キーワードを追加' }))
+        fireEvent.change(settings().getByLabelText('キーワード1'), { target: { value: 'マルエツ' } })
+        fireEvent.blur(settings().getByLabelText('キーワード1'))
+        await waitFor(() => expect(patternsOf(cp.id)).toEqual(['マルエツ']))
+        fireEvent.click(settings().getByRole('button', { name: '1行に適用' }))
+        expect(settings().getByText('1行に適用しました')).toBeInTheDocument()
 
+        // 適用した行は科目を手で選んだ扱いではないが、キーワードの科目が「食費→日用品費」に変わると追従する
         pick(settings(), 'キーワード1の科目', '日用品費')
 
-        await waitFor(() => expect(settings().queryByText('適用できる行はありませんでした')).not.toBeInTheDocument())
+        await waitFor(() => expect(settings().queryByText('1行に適用しました')).not.toBeInTheDocument())
       })
-    })
-  })
-
-  describe('資産・負債の相手科目のキーワードの設定(計画Issue #219)', () => {
-    /** 相手科目に資産の「現金」を手で選んだ行を作る(取引先は付かない) */
-    async function setupCashRow(
-      description = 'ATM引出 新宿',
-      extra: (cashId: number) => void = () => undefined,
-      keywordRepository: SqlJsKeywordRuleRepository = keywordRules,
-    ) {
-      makeMapping()
-      const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
-      extra(cash.id)
-      renderScreen(undefined, undefined, keywordRepository)
-      await chooseCsv(`${HEADER}2026/10/05,${description},-10000,90000\n`)
-      pick(rowOf(new RegExp(description)), '相手科目', '現金')
-      return cash
-    }
-    const openAccountSettings = async (desc: string) => {
-      fireEvent.click(rowOf(new RegExp(desc)).getByRole('button', { name: `${desc}のキーワードの設定` }))
-      await screen.findByRole('dialog', { name: /^キーワードの設定: / })
-    }
-    const accountSettings = () => within(screen.getByRole('dialog', { name: /^キーワードの設定: / }))
-    const cashKeywords = (cashId: number) => keywordRules.findByAccount(cashId).map((r) => r.pattern)
-
-    it('相手科目が資産・負債の行には「キーワードの設定」のリンクが出る。収益・費用の行には出ない', async () => {
-      await setupCashRow('ATM引出 新宿')
-
-      expect(rowOf(/ATM引出/).getByRole('button', { name: 'ATM引出 新宿のキーワードの設定' })).toBeInTheDocument()
-      pick(rowOf(/ATM引出/), '相手科目', '食費')
-      expect(rowOf(/ATM引出/).queryByRole('button', { name: /のキーワードの設定$/ })).not.toBeInTheDocument()
-    })
-
-    it('開くと「キーワードの設定: 現金」に、科目の登録済みキーワードと、摘要の提案(新規)が並び、科目の選択欄は出ない', async () => {
-      await setupCashRow('ATM引出 新宿', (cashId) => keywordRules.create({ pattern: 'セブン銀行', accountId: cashId }))
-
-      await openAccountSettings('ATM引出 新宿')
-
-      await waitFor(() => expect(accountSettings().getByLabelText('キーワード1')).toHaveValue('セブン銀行'))
-      expect(accountSettings().getByLabelText('キーワード2')).toHaveValue('ATM引出 新宿')
-      expect(accountSettings().getByText('登録済み')).toBeInTheDocument()
-      expect(accountSettings().getByText('新規')).toBeInTheDocument()
-      expect(accountSettings().queryByLabelText('キーワード1の科目')).not.toBeInTheDocument()
-    })
-
-    it('新しいキーワードを入力して入力を終えると、その科目のキーワード(ルール)として保存される', async () => {
-      const cash = await setupCashRow('ATM引出 新宿')
-      await openAccountSettings('ATM引出 新宿')
-      fireEvent.click(accountSettings().getByRole('button', { name: 'キーワードを追加' }))
-
-      fireEvent.change(accountSettings().getByLabelText('キーワード2'), { target: { value: 'ATM' } })
-      fireEvent.blur(accountSettings().getByLabelText('キーワード2'))
-
-      await waitFor(() => expect(cashKeywords(cash.id)).toEqual(['ATM']))
-      expect(keywordRules.findByAccount(cash.id)[0].counterpartyId).toBeNull()
-    })
-
-    it('登録済みのキーワードは、削除できる', async () => {
-      const cash = await setupCashRow('ATM引出 新宿', (cashId) => keywordRules.create({ pattern: 'セブン銀行', accountId: cashId }))
-      await openAccountSettings('ATM引出 新宿')
-      await waitFor(() => expect(accountSettings().getByLabelText('キーワード1')).toHaveValue('セブン銀行'))
-
-      fireEvent.click(accountSettings().getByRole('button', { name: 'キーワード1を削除' }))
-
-      await waitFor(() => expect(cashKeywords(cash.id)).toEqual([]))
-    })
-
-    it('摘要の提案(新規)は、確定時に科目のキーワードとして登録される。消すと登録しない', async () => {
-      const cash = await setupCashRow('ATM引出 新宿')
-      await openAccountSettings('ATM引出 新宿')
-      fireEvent.click(accountSettings().getByRole('button', { name: 'キーワード1を削除' }))
-      fireEvent.click(accountSettings().getByRole('button', { name: '閉じる' }))
-
-      fireEvent.click(confirmButton(1))
-
-      await waitFor(() => expect(userEntries()).toHaveLength(1))
-      expect(cashKeywords(cash.id)).toEqual([])
-    })
-
-    it('摘要の提案を不正な文字列に直したまま確定しようとすると、確定せずにその旨を出す', async () => {
-      await setupCashRow('ATM引出 新宿')
-      await openAccountSettings('ATM引出 新宿')
-      fireEvent.change(accountSettings().getByLabelText('キーワード1'), { target: { value: '  ' } })
-      fireEvent.click(accountSettings().getByRole('button', { name: '閉じる' }))
-
-      fireEvent.click(confirmButton(1))
-
-      expect(await screen.findByText('摘要から入るキーワードに問題があります。「取引先の設定」で直すか、削除してください。')).toBeInTheDocument()
-      expect(userEntries()).toHaveLength(0)
-    })
-
-    it('「ほかの行にも適用」は、キーワードを含み、相手科目が未設定で手で触っていない行にだけ、その科目を入れる(DBには書かない)', async () => {
-      makeMapping()
-      const cash = accounts.create({ category: 'asset', name: '現金', isReconcilable: false })
-      renderScreen()
-      await chooseCsv(
-        `${HEADER}2026/10/05,ATM引出 新宿,-10000,90000\n2026/10/06,ATM引出 渋谷,-5000,85000\n2026/10/07,別の店,-500,84500\n`,
-      )
-      pick(rowOf(/ATM引出 新宿/), '相手科目', '現金')
-      await openAccountSettings('ATM引出 新宿')
-      fireEvent.change(accountSettings().getByLabelText('キーワード1'), { target: { value: 'ATM引出' } })
-
-      fireEvent.click(accountSettings().getByRole('button', { name: 'ほかの行にも適用' }))
-
-      expect(accountSettings().getByText('1行に適用しました')).toBeInTheDocument()
-      expect(rowOf(/ATM引出 渋谷/).getByRole('button', { name: /^相手科目: 現金/ })).toBeInTheDocument()
-      expect(rowOf(/別の店/).queryByRole('button', { name: /^相手科目: 現金/ })).not.toBeInTheDocument()
-      expect(cashKeywords(cash.id)).toEqual([])
-    })
-
-    it('新しいキーワードを保存できなかったら、ポップアップ内にエラーを出し、「新規」のまま入力を残す', async () => {
-      const failingRules = Object.assign(Object.create(keywordRules), {
-        create: () => {
-          throw new Error('保存の失敗')
-        },
-      }) as typeof keywordRules
-      await setupCashRow('ATM引出 新宿', () => undefined, failingRules)
-      await openAccountSettings('ATM引出 新宿')
-      fireEvent.click(accountSettings().getByRole('button', { name: 'キーワードを追加' }))
-
-      fireEvent.change(accountSettings().getByLabelText('キーワード2'), { target: { value: 'ATM' } })
-      fireEvent.blur(accountSettings().getByLabelText('キーワード2'))
-
-      expect(await accountSettings().findByText('保存できませんでした。もう一度お試しください。')).toBeInTheDocument()
-      expect(accountSettings().getByLabelText('キーワード2')).toHaveValue('ATM')
     })
   })
 
@@ -2173,7 +2128,7 @@ describe('StatementImportScreen', () => {
 
       await waitFor(() => expect(counterparties.findAll().map((c) => c.name)).toEqual(['新しい店']))
       expect(
-        await screen.findByText('取引先は追加しましたが、保存できなかったキーワードがあります。「取引先の設定」から追加してください。'),
+        await screen.findByText('取引先は追加しましたが、保存できなかったキーワードがあります。取引先のキーワードのアイコンから追加してください。'),
       ).toBeInTheDocument()
       expect(await rowOf(/スーパー 新宿店/).findByRole('button', { name: /^取引先: 新しい店/ })).toBeInTheDocument()
     })

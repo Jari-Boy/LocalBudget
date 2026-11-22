@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
@@ -6,10 +6,17 @@ import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 import { KeywordList, type KeywordListItem } from './KeywordList'
 
 export interface CounterpartySettingsPopupProps {
-  /** 取引先のキーワード(既定)か、資産・負債の科目のキーワード(計画Issue #219)か。リンク・タイトルの文言と、科目の選択欄の有無が変わる */
+  /** 取引先のキーワード(既定)か、科目のキーワード(取引先なしで、その科目を持つキーワード。計画Issue #219・#259)か。見出しの文言と、科目の選択欄の有無が変わる */
   kind?: 'counterparty' | 'account'
   isOpen: boolean
+  /** 取引先・科目が未選択のときはtrue(アイコンを押せなくする) */
+  disabled?: boolean
+  /** この行に一致したキーワードがある側のアイコンを強調する(計画Issue #259) */
+  highlighted?: boolean
+  /** アイコンのツールチップ(一致したキーワードがあれば、それを出す) */
+  tooltip?: string
   onToggle: () => void
+  /** 閉じる操作(閉じるボタン・Esc・外側クリック)。入力中の内容の保存は呼び出し側が行う */
   onClose: () => void
   counterpartyName: string
   /** 取引先の登録済みキーワードを読み込み中はnull */
@@ -18,7 +25,7 @@ export interface CounterpartySettingsPopupProps {
   accountCategories?: readonly TreeSelectCategory[]
   /** この行の摘要(リンクの名前に使う) */
   rowDescription: string
-  /** 「ほかの行にも適用」を押した結果の表示 */
+  /** 「N行に適用」を押した結果の表示 */
   message: string
   /** 保存に失敗したときの表示(入力した内容は残す) */
   saveError: string
@@ -27,20 +34,22 @@ export interface CounterpartySettingsPopupProps {
   onDelete: (key: string) => void
   onAdd: () => void
   onAccountChange: (key: string, accountId: number | null) => void
-  onApply: () => void
+  /** キーワードの行ごとの「N行に適用」(計画Issue #259) */
+  renderApply: (item: KeywordListItem) => ReactNode
 }
 
-const POPUP_WIDTH = 520
+const POPUP_WIDTH = 720
 
 /**
- * 取引先セルの下に置く「取引先の設定」のリンクと、押すと開くポップアップ(計画Issue #207)。
- * 取引先のキーワードの編集・削除・追加と、キーワードごとの科目の変更、ほかの行への適用ができる(計画Issue #219)。
- * 変更は操作した時点で保存される(「新規」のキーワードだけは、行を確定したときに登録される)。
+ * 相手科目・取引先の選択欄の右に置くキーワードのアイコンボタンと、押すと開くポップアップ(計画Issue #207・#259)。
+ * キーワードの編集・削除・追加と、キーワードごとの科目の変更、キーワードごとのほかの行への適用ができる(計画Issue #219)。
+ * 保存ボタンは無く、入力を終えたとき(フォーカスを外す・Enter)と閉じる操作で保存される。
  * ポップアップはTreeSelectと同じく画面に固定して描画し、表のoverflowで見切れないようにする。
  */
 export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps) {
   const kind = props.kind ?? 'counterparty'
   const { isOpen, onToggle, onClose, counterpartyName, items, accountCategories, rowDescription, message, saveError } = props
+  const disabled = props.disabled === true
   const { t } = useTranslation('statementImport')
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
@@ -91,18 +100,26 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
     triggerRef.current?.focus()
   }
 
+  const title = kind === 'account' ? t('settingsTitleAccount', { name: counterpartyName }) : t('settingsTitle', { name: counterpartyName })
+  const iconLabel = kind === 'account' ? t('keywordIconAccountLabel', { desc: rowDescription }) : t('keywordIconCounterpartyLabel', { desc: rowDescription })
+
   return (
     <>
       <button
         type="button"
         ref={triggerRef}
-        className="import-link import-marker"
+        className={`import-icon-btn${props.highlighted === true ? ' import-icon-btn--matched' : ''}`}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
-        aria-label={kind === 'account' ? t('settingsLinkAccountLabel', { desc: rowDescription }) : t('settingsLinkLabel', { desc: rowDescription })}
+        aria-label={iconLabel}
+        title={disabled ? t('keywordIconDisabledTitle', { kind: kind === 'account' ? t('keywordKindAccount') : t('keywordKindCounterparty') }) : (props.tooltip ?? iconLabel)}
+        disabled={disabled}
         onClick={onToggle}
       >
-        {kind === 'account' ? t('settingsLinkAccount') : t('settingsLink')} <span aria-hidden="true">▾</span>
+        <svg viewBox="0 0 16 16" aria-hidden="true" className="import-icon">
+          <path d="M2.5 8.5V3.5h5l6 6-5 5-6-6z" />
+          <circle cx="5.2" cy="6.2" r="0.9" />
+        </svg>
       </button>
       {isOpen &&
         createPortal(
@@ -110,13 +127,11 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
             ref={popupRef}
             style={popupStyle}
             role="dialog"
-            aria-label={kind === 'account' ? t('settingsTitleAccount', { name: counterpartyName }) : t('settingsTitle', { name: counterpartyName })}
+            aria-label={title}
             className="tree-select__popup import-settings"
             onKeyDown={handleKeyDown}
           >
-            <p className="import-settings__title">
-              {kind === 'account' ? t('settingsTitleAccount', { name: counterpartyName }) : t('settingsTitle', { name: counterpartyName })}
-            </p>
+            <p className="import-settings__title">{title}</p>
             {kind === 'account' && <p className="import-note">{t('settingsNoteAccount', { name: counterpartyName })}</p>}
             {items === null ? (
               <p className="import-note" role="status">
@@ -130,6 +145,7 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
                   onCommit={props.onCommit}
                   onDelete={props.onDelete}
                   onAdd={props.onAdd}
+                  renderApply={props.renderApply}
                   renderAccount={
                     accountCategories === undefined
                       ? undefined
@@ -160,9 +176,6 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
                   </span>
                 )}
                 <div className="import-settings__actions">
-                  <button type="button" className="import-btn import-btn--small" onClick={props.onApply}>
-                    {t('applyToOtherRows')}
-                  </button>
                   <button
                     type="button"
                     className="import-btn import-btn--small import-btn--primary"

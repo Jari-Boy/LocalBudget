@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Account } from '../../domain/account/Account'
 import { applyCounterpartySettingsToRows, type CounterpartySettings } from './applyCounterpartySettingsToRows'
-import { createInitialRowState, isRowEdited, shouldOfferLearn, type ImportRowState } from './importRowModel'
+import { createInitialRowState, isRowEdited, type ImportRowState } from './importRowModel'
 
 function account(id: number, overrides: Partial<Account>): Account {
   return {
@@ -53,6 +53,8 @@ function run(params: {
   done?: number[]
   records?: unknown[]
   initialRows?: ImportRowState[]
+  fillOnly?: boolean
+  followOnly?: boolean
 }) {
   return applyCounterpartySettingsToRows({
     states: params.rows,
@@ -62,6 +64,8 @@ function run(params: {
     done: new Set(params.done ?? []),
     settings: params.settings ?? settingsWith(),
     accounts: ACCOUNTS,
+    fillOnly: params.fillOnly,
+    followOnly: params.followOnly,
   })
 }
 
@@ -211,13 +215,12 @@ describe('キーワードの科目(計画Issue #219)', () => {
 })
 
 describe('反映した行の初期状態', () => {
-  it('反映した行は初期状態も更新し、未保存の編集とは見なされず、パターン登録の候補にもならない', () => {
+  it('反映した行は初期状態も更新し、未保存の編集とは見なされず', () => {
     const rows = [state()]
     const result = run({ rows, descriptions: ['新聞販売店A'], settings: settingsWith(NEWS.id), initialRows: rows })
 
     expect(isRowEdited(result.states[0], result.initialStates[0])).toBe(false)
     expect(result.initialStates[0]).toMatchObject({ counterpartyId: NEWS_SHOP, counterAccountId: NEWS.id })
-    expect(shouldOfferLearn(record(), result.states[0])).toBe(false)
   })
 
   it('コメントなど、反映の対象でない項目を手で編集していた行は、その編集を未保存のまま残す', () => {
@@ -237,5 +240,49 @@ describe('反映した行の初期状態', () => {
 
     expect(result.states[1]).toBe(rows[1])
     expect(result.initialStates[1]).toBe(rows[1])
+  })
+})
+
+describe('未入力の行だけに入れる(fillOnly。キーワード1件ごとの「N行に適用」、計画Issue #259)', () => {
+  it('すでにこの取引先の行の相手科目は、キーワードの科目と違っていても変えず、件数にも数えない', () => {
+    const sameShop = state({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: FOOD.id })
+    const empty = state()
+
+    const result = run({ rows: [sameShop, empty], descriptions: ['新聞販売店A 1月', '新聞販売店A 2月'], settings: settingsWith(NEWS.id), fillOnly: true })
+
+    expect(result.states[0].counterAccountId).toBe(FOOD.id)
+    expect(result.states[1]).toMatchObject({ counterpartyId: NEWS_SHOP, counterAccountId: NEWS.id })
+    expect(result.applied).toBe(1)
+  })
+
+  it('指定しない(既定)ときは、これまでどおりこの取引先の行の相手科目にも追従する', () => {
+    const sameShop = state({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: FOOD.id })
+
+    const result = run({ rows: [sameShop], descriptions: ['新聞販売店A 1月'], settings: settingsWith(NEWS.id) })
+
+    expect(result.states[0].counterAccountId).toBe(NEWS.id)
+    expect(result.applied).toBe(1)
+  })
+
+  it('別の取引先が入っている行は、取引先も相手科目も変えない', () => {
+    const other = state({ counterpartyId: OTHER_SHOP, initialCounterpartyId: null })
+
+    const result = run({ rows: [other], descriptions: ['新聞販売店A 1月'], settings: settingsWith(NEWS.id), fillOnly: true })
+
+    expect(result.states[0]).toMatchObject({ counterpartyId: OTHER_SHOP, counterAccountId: null })
+    expect(result.applied).toBe(0)
+  })
+})
+
+describe('すでにこの取引先の行だけを対象にする(followOnly。キーワードの科目の変更への追従、計画Issue #259)', () => {
+  it('取引先が未入力の行には取引先を入れず、この取引先の行の相手科目だけを新しい科目にする', async () => {
+    const sameShop = state({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: FOOD.id })
+    const empty = state()
+
+    const result = run({ rows: [sameShop, empty], descriptions: ['新聞販売店A 1月', '新聞販売店A 2月'], settings: settingsWith(NEWS.id), followOnly: true })
+
+    expect(result.states[0].counterAccountId).toBe(NEWS.id)
+    expect(result.states[1]).toMatchObject({ counterpartyId: null, counterAccountId: null })
+    expect(result.applied).toBe(1)
   })
 })

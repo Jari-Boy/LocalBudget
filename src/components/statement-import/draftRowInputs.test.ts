@@ -169,14 +169,9 @@ describe('applyDraftRowInput', () => {
     expect(restored.includeDuplicate).toBe(true)
   })
 
-  it('摘要の提案(キーワードの登録)の入力は、そのまま戻し、提案の科目が削除されていれば初期値に戻して数える', () => {
-    const ok = apply({ counterAccountId: 1, learnOn: false, learnPattern: 'スーパー', learnAccountTouched: true, learnAccountId: 1 })
-    const gone = apply({ counterAccountId: 1, learnAccountTouched: true, learnAccountId: 99 })
+  it('一時保存した行の入力に学習系の項目(摘要の提案)を持たず、再開した状態にも現れない', () => {
+    const { state } = apply({ counterAccountId: 1 })
 
-    expect(ok.state).toMatchObject({ learnOn: false, learnPattern: 'スーパー', learnAccountTouched: true, learnAccountId: 1 })
-    expect(ok.dropped).toBe(false)
-    expect(gone.state.learnAccountTouched).toBe(false)
-    expect(gone.state.learnAccountId).toBeNull()
-    expect(gone.dropped).toBe(true)
+    expect(Object.keys(state).filter((key) => key.startsWith('learn'))).toEqual([])
   })
 })

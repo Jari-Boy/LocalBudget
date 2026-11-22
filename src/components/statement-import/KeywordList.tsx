@@ -12,8 +12,10 @@ export interface KeywordListItem {
   error: KeywordError | null
   /** このキーワードに紐づく科目(費用・収益。なければnull)。科目の選択欄を出すときだけ使う(計画Issue #219) */
   accountId?: number | null
-  /** 科目を変えられないとき(摘要の提案など。その行の相手科目が使われる) */
+  /** 科目を変えられないとき */
   accountLocked?: boolean
+  /** この行(ポップアップを開いた明細の行)の摘要に一致するキーワードか。強調して「この行に一致」を出す(計画Issue #259) */
+  matched?: boolean
 }
 
 export interface KeywordListProps {
@@ -25,6 +27,8 @@ export interface KeywordListProps {
   onAdd: () => void
   /** 科目の欄を自前の部品で描く(取引先の追加ダイアログ。科目の新規登録つきの選択部品を使うため)。渡さなければ科目の欄は出さない */
   renderAccount?: (item: KeywordListItem, index: number) => ReactNode
+  /** キーワードの行ごとの操作欄(「N行に適用」。計画Issue #259)。渡さなければ出さない */
+  renderApply?: (item: KeywordListItem, index: number) => ReactNode
   /** 一覧の見出し(既定は「取引先のキーワード」)。科目のキーワードでは「キーワード」 */
   label?: string
 }
@@ -34,15 +38,16 @@ export interface KeywordListProps {
  * 取引先の追加ダイアログで同じものを使う。各行は「登録済み」「新規」のタグ・入力欄・含む行の数・削除、
  * 末尾に「キーワードを追加」。
  */
-export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, renderAccount, label }: KeywordListProps) {
+export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, renderAccount, renderApply, label }: KeywordListProps) {
   const { t } = useTranslation('statementImport')
+  const hasMatched = items.some((item) => item.matched === true)
   const errorText = (error: KeywordError) => (error === 'empty' ? t('patternErrorEmpty') : t('patternErrorDuplicate'))
 
   return (
     <div className="import-field">
       <span className="import-field__label">{label ?? t('settingsPatternsLabel')}</span>
       {items.map((item, index) => (
-        <div key={item.key} className="import-settings__pattern">
+        <div key={item.key} className={`import-settings__pattern${item.matched === true ? ' import-settings__pattern--matched' : ''}`}>
           <div className="import-settings__row">
             <span className={`import-tag ${item.kind === 'new' ? 'import-tag--new' : 'import-tag--registered'}`}>
               {item.kind === 'new' ? t('tagNew') : t('tagRegistered')}
@@ -62,16 +67,24 @@ export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, re
               }}
             />
             {renderAccount?.(item, index)}
+            {/* 一致の有無で入力欄の幅が変わらないよう、一致する行がひとつでもあれば、全行に同じ幅の枠を確保する */}
+            {hasMatched && (
+              <span className="import-settings__matched import-nowrap">{item.matched === true ? t('patternMatchedRow') : ''}</span>
+            )}
             <span className="import-note import-nowrap" title={t('patternRowsTitle')}>
               {t('patternRows', { count: item.count })}
             </span>
+            {renderApply?.(item, index)}
             <button
               type="button"
-              className="import-link"
+              className="import-icon-btn import-icon-btn--danger"
               aria-label={t('patternDeleteLabel', { index: index + 1 })}
+              title={t('patternDelete')}
               onClick={() => onDelete(item.key)}
             >
-              {t('patternDelete')}
+              <svg viewBox="0 0 16 16" aria-hidden="true" className="import-icon">
+                <path d="M3 4.5h10M6.5 4.5V3h3v1.5M5 4.5l.6 8h4.8l.6-8M7 7v3.5M9 7v3.5" />
+              </svg>
             </button>
           </div>
           {item.error !== null && <span className="import-error import-settings__error">{errorText(item.error)}</span>}
@@ -81,7 +94,7 @@ export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, re
           )}
         </div>
       ))}
-      <div>
+      <div className="import-settings__add">
         <button type="button" className="import-btn import-btn--small" onClick={onAdd}>
           {t('patternAdd')}
         </button>

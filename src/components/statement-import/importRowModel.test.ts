@@ -3,7 +3,7 @@
  * 行の状態(新規・重複・要確認)の判定、選択した行への一括設定(対象外の行の件数を返す。取引先は
  * 費用・収益の行だけ、精算バッチは一時勘定の行だけ、既定の世帯メンバーを持つ科目の行は世帯メンバーを
  * 変えない)、似た取引がある行の選び方(追加する・置き換える・保存しない)と、一覧の3グループ(重複・似た取引あり・
- * 問題なし)への分類、パターン登録の提案(取引先の設定のリンクを出す行、計画Issue #207)を検証する。
+ * 問題なし)への分類、摘要の自動学習をしないこと(計画Issue #259)を検証する。
  * 初期状態からの編集の有無(isRowEdited、未保存警告の判定、計画Issue #193)も検証する。
  * DB・DOM非依存、外部依存なし。
  */
@@ -16,8 +16,6 @@ import {
   replacementTargetOf,
   rowGroup,
   rowStatus,
-  shouldOfferAccountLearn,
-  shouldOfferLearn,
   type ImportRowState,
 } from './importRowModel'
 
@@ -204,18 +202,11 @@ describe('applyBulkSetting', () => {
   })
 })
 
-describe('パターン登録の提案(shouldOfferLearn)', () => {
-  it('推定と違う取引先を選んだ行(推定が無かった行を含む)だけ提案し、重複の行や取引先なしの行には出さない', () => {
-    expect(shouldOfferLearn(record(), state({ counterpartyId: 5, initialCounterpartyId: null }))).toBe(true)
-    expect(shouldOfferLearn(record(), state({ counterpartyId: 5, initialCounterpartyId: 5 }))).toBe(false)
-    expect(shouldOfferLearn(record(), state({ counterpartyId: null }))).toBe(false)
-    expect(shouldOfferLearn(record({ isExactDuplicate: true }), state({ counterpartyId: 5 }))).toBe(false)
-  })
+describe('摘要の自動学習の廃止(計画Issue #259)', () => {
+  it('行の状態は、摘要をキーワードとして提案・登録するための項目(learn系)を持たない', () => {
+    const initial = createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [] })
 
-  it('取引先の候補が複数あって決まらなかった行は、摘要の提案(確定時のキーワード登録)を既定でオフにする', () => {
-    expect(createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [1, 2] }).learnOn).toBe(false)
-    expect(createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [] }).learnOn).toBe(true)
-    expect(createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [] }).learnPattern).toBeNull()
+    expect(Object.keys(initial).filter((key) => key.startsWith('learn'))).toEqual([])
   })
 })
 
@@ -263,53 +254,17 @@ describe('isRowEdited', () => {
     for (const change of changes) expect(isRowEdited({ ...initial, ...change }, initial)).toBe(true)
   })
 
-  it('重複を取り込む・確定版の判断・摘要の提案の変更(消す、文字列を変える)をしたら、編集したとみなす', () => {
+  it('重複を取り込む・確定版の判断を変えたら、編集したとみなす', () => {
     const changes: Array<Partial<ImportRowState>> = [
       { includeDuplicate: true },
       { approximateDecision: 'confirmed_replacement' },
       { approximateDecision: 'skip' },
       { replacementTargetId: 3 },
-      { learnOn: !initial.learnOn },
-      { learnPattern: 'スーパー' },
     ]
     for (const change of changes) expect(isRowEdited({ ...initial, ...change }, initial)).toBe(true)
   })
 
   it('入力の記録(相手科目を手で選んだか)だけが違っても、値が同じなら編集とみなさない', () => {
     expect(isRowEdited({ ...initial, counterAccountTouched: true }, initial)).toBe(false)
-  })
-})
-
-describe('shouldOfferAccountLearn(資産・負債の相手科目を手で選んだ行は、摘要を科目のキーワードにする提案を出す。計画Issue #219)', () => {
-  const record = { isExactDuplicate: false, approximateCandidates: [] } as never
-  const accounts = [FOOD, SECURITIES]
-  const base = createInitialRowState({ counterpartyId: null, counterAccountId: null, candidateCounterpartyIds: [] })
-  const picked = (counterAccountId: number | null, overrides: Partial<ImportRowState> = {}): ImportRowState => ({
-    ...base,
-    counterAccountId,
-    counterAccountTouched: true,
-    ...overrides,
-  })
-
-  it('取引先が無く、資産・負債の相手科目を手で選んだ行は、提案を出す', () => {
-    expect(shouldOfferAccountLearn(record, picked(SECURITIES.id), accounts)).toBe(true)
-  })
-
-  it('相手科目を手で選んでいない(推定・未選択の)行は、提案を出さない', () => {
-    expect(shouldOfferAccountLearn(record, picked(SECURITIES.id, { counterAccountTouched: false }), accounts)).toBe(false)
-  })
-
-  it('収益・費用の相手科目の行は、提案を出さない(取引先のキーワードで扱う)', () => {
-    expect(shouldOfferAccountLearn(record, picked(FOOD.id), accounts)).toBe(false)
-  })
-
-  it('取引先がある行は、提案を出さない', () => {
-    expect(shouldOfferAccountLearn(record, picked(SECURITIES.id, { counterpartyId: 5 }), accounts)).toBe(false)
-  })
-
-  it('取り込み済みの重複で対象外の行は、提案を出さない', () => {
-    const duplicate = { isExactDuplicate: true, approximateCandidates: [] } as never
-
-    expect(shouldOfferAccountLearn(duplicate, picked(SECURITIES.id), accounts)).toBe(false)
   })
 })
