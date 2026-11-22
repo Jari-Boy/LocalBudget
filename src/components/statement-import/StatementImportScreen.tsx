@@ -82,13 +82,13 @@ import {
 import { ImportTabBar, type ImportTabItem } from './ImportTabBar'
 import { ImportPager } from './ImportPager'
 import {
+  batchFilterCategories,
   EMPTY_FILTER_INPUT,
   isRowFilterActive,
   matchesRowFilter,
   memberFilterCategories,
   pruneSelection,
   resolveFilterInput,
-  type FilterAxis,
   type ImportFilterInput,
   type ImportRowFilter,
 } from './importRowFilter'
@@ -1404,12 +1404,15 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     counterparty: categories.counterparties,
     project: categories.projects,
     member: memberFilterCategories(data.members),
+    batch: batchFilterCategories(data.batches),
   }
   const rowFilter = resolveFilterInput(rowFilterInput, filterCategories)
   /** 行が絞り込みの条件に合うか(計画Issue #258)。重複の行は入力欄を持たないので、科目などの条件には合わない */
   const matchesFilterWith = (filter: ImportRowFilter, i: number) =>
     matchesRowFilter(filter, {
       description: formatDescriptionForDisplay(records[i].record.description),
+      entryDate: records[i].record.entryDate,
+      amount: records[i].record.amount,
       inputs:
         statusOf(i) === 'duplicate'
           ? null
@@ -1419,6 +1422,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               projectId: session!.rows[i].projectId,
               // 画面に出しているメンバー: 科目に既定のメンバーがあればそのメンバー、無ければ行で選んだメンバー
               memberId: defaultMemberIdOf(session!.rows[i].counterAccountId, accountList) ?? session!.rows[i].householdMemberId,
+              // 精算バッチは、立替金・未払金の行だけが持つ(それ以外の行は、画面にも出さない)
+              batchId: isTaggableAccountId(session!.rows[i].counterAccountId, accountList) ? session!.rows[i].settlementBatchId : null,
             },
     })
   const rowFilterActive = isRowFilterActive(rowFilter)
@@ -1646,9 +1651,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     if (removed > 0) setBulkMessage(t('filterSelectionRemoved', { count: removed }))
     rangeAnchor.anchorRef.current = null
   }
-  const changeFilterValues = (axis: FilterAxis, values: string[]) =>
-    changeRowFilterInput({ ...rowFilterInput, values: { ...rowFilterInput.values, [axis]: values } })
-
   const applyBulk = (change: BulkChange) => {
     if (!session) return
     const result = applyBulkSetting({
@@ -2239,13 +2241,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
           <ImportRowFilterPanel
             input={rowFilterInput}
-            onDescriptionChange={(description) => changeRowFilterInput({ ...rowFilterInput, description })}
-            onValuesChange={changeFilterValues}
+            onChange={changeRowFilterInput}
             onClear={() => changeRowFilterInput(EMPTY_FILTER_INPUT)}
             counterAccountCategories={categories.counterAccounts}
             counterpartyCategories={categories.counterparties}
             projectCategories={categories.projects}
             members={data.members}
+            batches={data.batches}
             resultCount={shownTabIndices.length}
           />
 

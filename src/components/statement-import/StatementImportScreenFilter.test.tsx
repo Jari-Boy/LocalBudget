@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * StatementImportScreen の行の絞り込み(計画Issue #258)のコンポーネントテスト。
- * 仕訳一覧と同じ作りの絞り込みパネル(摘要の検索・相手科目/取引先/プロジェクト/世帯メンバーの複数選択欄と「未設定」)で行を絞れること、
+ * 仕訳一覧と同じ作りの絞り込みパネル(摘要の検索・期間・金額(マイナスも指定できる)・相手科目/取引先/プロジェクト/世帯メンバー/精算バッチの複数選択欄と「未設定」)で行を絞れること、
  * 複数の条件がANDで効くこと、条件の解除で全行に戻ること、タブの件数が「表示中 / 全体」になること、
  * 絞り込みで隠れた行のチェックが外れること、一括設定と確定が表示中の行だけに及ぶことを確認する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
@@ -250,6 +250,78 @@ describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)',
     clearFilter()
 
     expect(hasRow(/新宿店/)).toBe(true)
+  })
+
+  it('期間で絞り込むと、開始日・終了日を含む範囲の日付の行だけが表示される。片方だけの指定もできる', async () => {
+    renderScreen()
+    await chooseCsv(CSV)
+
+    fireEvent.change(panel().getByLabelText('期間の開始'), { target: { value: '2026-10-06' } })
+    fireEvent.change(panel().getByLabelText('期間の終了'), { target: { value: '2026-10-07' } })
+    expect(hasRow(/池袋店/)).toBe(true)
+    expect(hasRow(/ローソン/)).toBe(true)
+    expect(hasRow(/新宿店/)).toBe(false)
+    expect(hasRow(/家賃/)).toBe(false)
+    expect(within(screen.getByRole('tab', { name: /^新規/ })).getByText('2 / 4')).toBeInTheDocument()
+
+    fireEvent.change(panel().getByLabelText('期間の終了'), { target: { value: '' } })
+    expect(hasRow(/家賃/)).toBe(true)
+    expect(hasRow(/新宿店/)).toBe(false)
+  })
+
+  it('金額は符号つきのまま絞れて、マイナスの範囲も指定できる(支出はマイナス)', async () => {
+    renderScreen()
+    await chooseCsv(CSV)
+
+    fireEvent.change(panel().getByLabelText('金額の上限'), { target: { value: '-500' } })
+    expect(hasRow(/新宿店/)).toBe(true)
+    expect(hasRow(/池袋店/)).toBe(true)
+    expect(hasRow(/家賃/)).toBe(true)
+    expect(hasRow(/ローソン/)).toBe(false)
+
+    fireEvent.change(panel().getByLabelText('金額の下限'), { target: { value: '-1000' } })
+    expect(hasRow(/新宿店/)).toBe(true)
+    expect(hasRow(/池袋店/)).toBe(true)
+    expect(hasRow(/家賃/)).toBe(false)
+  })
+
+  it('プラスの金額で絞ると、支出(マイナス)の行は出ない', async () => {
+    renderScreen()
+    await chooseCsv(CSV)
+
+    fireEvent.change(panel().getByLabelText('金額の下限'), { target: { value: '0' } })
+
+    expect(screen.getByText('条件に合う行がありません')).toBeInTheDocument()
+  })
+
+  it('精算バッチは、選んだバッチの行と、「未割当」の行を出し分けられる', async () => {
+    new SqlJsSettlementBatchRepository(db).create({ name: '10月の立替', type: 'expense_splitting' })
+    renderScreen()
+    await chooseCsv(CSV)
+    pickIn(rowOf(/ローソン/), '相手科目', '立替金')
+    fireEvent.click(rowOf(/ローソン/).getByRole('button', { name: /の精算バッチ/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: /の精算バッチ/ })).getByRole('button', { name: '10月の立替' }))
+
+    chooseFilter('精算バッチ', '10月の立替')
+    expect(hasRow(/ローソン/)).toBe(true)
+    expect(hasRow(/家賃/)).toBe(false)
+
+    chooseFilter('精算バッチ', '10月の立替', '未割当')
+    expect(hasRow(/ローソン/)).toBe(false)
+    expect(hasRow(/家賃/)).toBe(true)
+  })
+
+  it('「条件をクリア」で、期間・金額の入力も空に戻る', async () => {
+    renderScreen()
+    await chooseCsv(CSV)
+    fireEvent.change(panel().getByLabelText('期間の開始'), { target: { value: '2026-10-07' } })
+    fireEvent.change(panel().getByLabelText('金額の下限'), { target: { value: '-1000' } })
+
+    clearFilter()
+
+    expect(panel().getByLabelText('期間の開始')).toHaveValue('')
+    expect(panel().getByLabelText('金額の下限')).toHaveValue('')
+    expect(hasRow(/家賃/)).toBe(true)
   })
 
   it('複数の軸の条件は、すべてに合う行だけを表示する(AND)', async () => {
