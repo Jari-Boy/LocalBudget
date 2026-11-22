@@ -41,9 +41,9 @@
 }
 
 /*
- * 一括編集バー(明細行単位の表の上)。選んだときだけ出て、タブ・絞り込み欄の下に固定する。バーの高さの分だけ、
- * 表の枠(JournalLineTable.css の max-height)を低くする(.journal-screen--bulk が --sticky-bulk-h に高さと間隔を入れる)。
- * 出入りで表の枠が上下にずれても、行が画面上で動かないよう、画面側がスクロール位置を相殺する(useKeepRowsInPlace)。
+ * 一括編集バー(明細行単位の表の上)。選んだときだけ出て、タブ・絞り込み欄の下に固定する。表の見出しの複製は、さらにその下に固定する
+ * (.journal-screen--bulk が --sticky-bulk-h にバーの高さと間隔を入れ、複製の固定位置 --floating-header-top に足される)。
+ * 出入りで表が上下にずれても、行が画面上で動かないよう、画面側がページのスクロール位置を補正する(useKeepRowsInPlace)。
  */
 .journal-screen__bulk-bar {
   position: sticky;

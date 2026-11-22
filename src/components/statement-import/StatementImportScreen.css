@@ -140,8 +140,8 @@
 }
 
 /*
- * 一括設定のバナー(表の上)。選んだときだけ出て、タブ・絞り込み欄の下に固定する。バナーの高さの分だけ、
- * 表の枠(.import-table-wrap の max-height)を低くする(.import-screen--bulk が --sticky-bulk-h に高さと間隔を入れる)。
+ * 一括設定のバナー(表の上)。選んだときだけ出て、タブ・絞り込み欄の下に固定する。表の見出しの複製は、さらにその下に固定する
+ * (.import-screen--bulk が --sticky-bulk-h にバナーの高さと間隔を入れ、複製の固定位置 --floating-header-top に足される)。
  * 出入りで表の枠が上下にずれても、行が画面上で動かないよう、画面側がスクロール位置を相殺する(useKeepRowsInPlace)。
  */
 .import-bulk-bar {
@@ -220,32 +220,21 @@
 }
 
 /*
- * 表は、画面の高さに収まるスクロールの枠にする(計画Issue #266)。枠の中で縦横にスクロールし、見出しは枠の上端に固定する
- * (横スクロール用の枠の中では、ページのスクロールで見出しを固定できないため)。横スクロールバーも常に画面の下に見える。
- * 高さは、画面の高さから、上部に固定したタブ・絞り込み欄・一括設定のバナーの分を引く。引く48pxは、ページを一番下までスクロールしたときに、
- * 枠の上端が固定したヘッダーの下に潜り込まないための余白(main の下の余白40px + 8px)。小さな画面でも表が潰れないよう、下限を設ける。
+ * 表の枠は横スクロールだけ(縦はページのスクロール)。見出しは、この枠の中では固定できないため(sticky は枠の縦スクロールにしか効かない)、
+ * 枠の外に複製を置いて固定する(FloatingTableHeader)。枠の内側にスクロールを作ると、枠の端でページのスクロールに引き継がれて
+ * 見出しが隠れて使いにくい(計画Issue #266)。
  */
 .import-table-wrap {
-  max-height: max(320px, calc(100dvh - var(--sticky-head-h, 0px) - var(--sticky-bulk-h, 0px) - 48px));
-  /* 画面内のジャンプ(scrollIntoView・キー操作)で、枠が固定したヘッダーの下に潜り込まないようにする */
-  scroll-margin-top: calc(var(--sticky-head-h, 0px) + var(--sticky-bulk-h, 0px) + 8px);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  overflow: auto;
+  overflow-x: auto;
 }
 
-/* 見出しは、枠の上端に固定する(セルに背景を付けて、下の行が透けないようにする) */
-.import-table thead {
-  position: sticky;
-  top: 0;
-  z-index: 3;
+/* 見出しの複製を固定する高さ: 上部に固定したタブ・絞り込み欄・一括設定のバナーの下(画面側が変数に入れる) */
+.import-tabpanel {
+  --floating-header-top: calc(var(--sticky-head-h, 0px) + var(--sticky-bulk-h, 0px));
 }
-
-.import-table thead th {
-  background: var(--color-surface);
-}
-
 .import-table {
   width: 100%;
   border-collapse: collapse;

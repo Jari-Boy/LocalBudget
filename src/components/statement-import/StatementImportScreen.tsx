@@ -82,6 +82,7 @@ import {
 import { ImportTabBar, type ImportTabItem } from './ImportTabBar'
 import { ImportPager } from './ImportPager'
 import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
+import { FloatingTableHeader } from '../common/sticky/FloatingTableHeader'
 import { useElementHeight } from '../common/sticky/useElementHeight'
 import { KeepRowsInPlace } from '../common/sticky/useKeepRowsInPlace'
 import {
@@ -327,8 +328,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   /** 上部に固定するタブ・絞り込み欄の容器と、その高さ(一括設定の領域の top に使う、計画Issue #266) */
   const [stickyElement, setStickyElement] = useState<HTMLDivElement | null>(null)
   const stickyHeight = useElementHeight(stickyElement)
-  /** 表のスクロールの枠。一括設定のバナーの出入りで、行が画面上で動かないようにスクロール位置を相殺する(計画Issue #266) */
+  /** 表の横スクロールの枠。一括設定のバナーの出入りで表が上下にずれる分を、ページのスクロールで補正する位置の基準にする(計画Issue #266) */
   const [importRegion, setImportRegion] = useState<HTMLDivElement | null>(null)
+  /** 本物の表。見出しの複製を固定する判断と、列幅の複製に使う(計画Issue #266) */
+  const [importTable, setImportTable] = useState<HTMLTableElement | null>(null)
   /** 開始状態に出す一時保存の一覧(計画Issue #231 フェーズ3)。取込先の科目ごとに1つ */
   const [drafts, setDrafts] = useState<StatementImportDraftSummary[]>([])
   /** いま開いている取込が、再開した(または保存した)一時保存のid。同じ取込先への保存し直しは、これなら確認なしで上書きする */
@@ -1898,6 +1901,37 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     </button>
   )
 
+  /** 表の見出し。本物の表と、ページのスクロールで固定する複製(FloatingTableHeader)で同じものを使う(計画Issue #266) */
+  const importHead = (
+  <thead>
+    <tr>
+      {showFileColumn && sortHeader('file', t('colFile'))}
+      <th style={{ width: 24 }}>
+        <input
+          type="checkbox"
+          aria-label={t('selectAll')}
+          checked={allSelected}
+          onChange={() => {
+            setBulkMessage('')
+            // 見出しのチェックは、表示中のページの行だけを選ぶ・外す(ほかのタブ・ページの行には及ばない。計画Issue #263)
+            setSelected(allSelected ? new Set() : new Set(selectableOrder))
+          }}
+        />
+      </th>
+      {sortHeader('date', t('colDate'))}
+      {sortHeader('description', t('colDescription'))}
+      {sortHeader('amount', t('colAmount'), 'import-num')}
+      {sortHeader('counterAccount', t('colCounterAccount'))}
+      {sortHeader('counterparty', t('colCounterpartyBatch'))}
+      {/* プロジェクト・メンバー・コメントは入力欄の列なので、並び替えの対象にしない */}
+      <th>{t('colProject')}</th>
+      <th>{t('colMember')}</th>
+      <th>{t('colComment')}</th>
+      {sortHeader('status', t('colStatus'))}
+    </tr>
+  </thead>
+  )
+
   /** 一括設定のバナーを出しているか(行を選んでいて、表示できる行がある) */
   const bulkBarShown = visibleIndices.length > 0 && selected.size > 0
 
@@ -2297,7 +2331,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
           </div>
 
           {/* バナーは選んだときだけ出て、タブの行・絞り込み欄の下に固定する。出入りで表の枠が上下にずれても、行は動かさない(KeepRowsInPlace、計画Issue #266) */}
-          <KeepRowsInPlace visible={bulkBarShown} region={importRegion} />
+          <KeepRowsInPlace visible={bulkBarShown} anchor={importRegion} />
           {bulkBarShown && (
             <div className="import-bulk-bar">
             <div role="group" aria-label={t('bulkGroup')} className="import-bulk">
@@ -2404,35 +2438,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             {shownTab === 'unreadable' ? (
               unreadablePanel
             ) : (
+          <>
+          {/* 見出しの複製。ページのスクロールで、本物の見出しが画面の上部より上へ出たときだけ固定して見せる(計画Issue #266) */}
+          <FloatingTableHeader scroller={importRegion} table={importTable} syncColumnWidths tableClassName="import-table">
+            {importHead}
+          </FloatingTableHeader>
           <div className="import-table-wrap" ref={setImportRegion}>
-            <table className="import-table" aria-label={t('tableLabel')}>
-              <thead>
-                <tr>
-                  {showFileColumn && sortHeader('file', t('colFile'))}
-                  <th style={{ width: 24 }}>
-                    <input
-                      type="checkbox"
-                      aria-label={t('selectAll')}
-                      checked={allSelected}
-                      onChange={() => {
-                        setBulkMessage('')
-                        // 見出しのチェックは、表示中のページの行だけを選ぶ・外す(ほかのタブ・ページの行には及ばない。計画Issue #263)
-                        setSelected(allSelected ? new Set() : new Set(selectableOrder))
-                      }}
-                    />
-                  </th>
-                  {sortHeader('date', t('colDate'))}
-                  {sortHeader('description', t('colDescription'))}
-                  {sortHeader('amount', t('colAmount'), 'import-num')}
-                  {sortHeader('counterAccount', t('colCounterAccount'))}
-                  {sortHeader('counterparty', t('colCounterpartyBatch'))}
-                  {/* プロジェクト・メンバー・コメントは入力欄の列なので、並び替えの対象にしない */}
-                  <th>{t('colProject')}</th>
-                  <th>{t('colMember')}</th>
-                  <th>{t('colComment')}</th>
-                  {sortHeader('status', t('colStatus'))}
-                </tr>
-              </thead>
+            <table className="import-table" aria-label={t('tableLabel')} ref={setImportTable}>
+              {importHead}
               <tbody>
                 {rowFilterActive && pageIndices.length === 0 && (
                   <tr>
@@ -2899,6 +2912,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               onPage={goToPage}
             />
           </div>
+          </>
             )}
           </div>
         </div>

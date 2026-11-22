@@ -2292,7 +2292,8 @@ describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
     await waitFor(() => expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue(`仕訳${PAGE - 1}`))
   })
 
-  describe('明細行単位で「さらに表示」した後の一括編集の選択', () => {
+  // 数百行の表を描いて何度も操作する重いテスト群。全体を並列で流して負荷が高いとき、既定の15秒に近づくため、この群だけ制限を延ばす
+  describe('明細行単位で「さらに表示」した後の一括編集の選択', { timeout: 30000 }, () => {
     const debitBoxes = () => screen.getAllByRole('checkbox', { name: '借方の行を選択' })
     const selectedCount = (n: number) => screen.queryByText(new RegExp(`(^|\\D)${n}行を選択中`))
 

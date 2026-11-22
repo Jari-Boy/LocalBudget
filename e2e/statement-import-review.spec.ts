@@ -403,7 +403,7 @@ test.describe('明細取込画面', () => {
       .toBe(-10500)
   })
 
-  test('一括設定のバナーが出入りしても行は動かない。表は画面に収まる枠で見出しが固定され、タブの行とバナーは画面の上部に固定される(計画Issue #266)', async ({ page }) => {
+  test('一括設定のバナーが出入りしても行は動かない。ページをスクロールすると、タブの行・バナー・表の見出しが上から順に固定され、見出しの列は行とずれない(計画Issue #266)', async ({ page }) => {
     await page.setViewportSize({ width: 1400, height: 720 })
     await page.goto('/')
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
@@ -414,33 +414,10 @@ test.describe('明細取込画面', () => {
     })
     await startImport(page, '普通預金', ['日付,摘要,金額,残高', ...rows, ''].join('\n'))
     await expect(page.getByText(/statement\.csv を読み込み済み。新規 45 件/)).toBeVisible()
-    const region = page.locator('.import-table-wrap')
-
-    // 表は画面の高さに収まる枠で、枠の中でスクロールできる。ページを一番下までスクロールしても枠の下端は画面の中にある
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-    expect((await region.boundingBox())!.y + (await region.boundingBox())!.height).toBeLessThanOrEqual(721)
-    expect(await region.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
-
-    // 枠の中でスクロールしても、見出しは枠の上端に固定される(表の下にも内容があるため、枠を固定したヘッダーの下に出してから確かめる)
-    await region.evaluate((el) => {
-      el.scrollIntoView({ block: 'start' })
-      el.scrollTop = 600
-    })
-    const header = page.getByRole('columnheader', { name: /^日付/ })
-    await expect(header).toBeInViewport({ ratio: 1 })
-    // 見出しは、固定したタブの行などに覆われず、一番手前に見えている
-    const cover = await header.evaluate((el) => {
-      const rect = el.getBoundingClientRect()
-      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
-      return { ok: el.contains(hit), hit: String(hit?.tagName) + '.' + String(hit?.className), rectTop: rect.top, rectH: rect.height }
-    })
-    expect(cover.ok, JSON.stringify(cover)).toBe(true)
-    const headerBox = await header.boundingBox()
-    const regionBox = await region.boundingBox()
-    expect(headerBox!.y).toBeGreaterThanOrEqual(regionBox!.y - 1)
-    expect(headerBox!.y).toBeLessThan(regionBox!.y + 60)
+    const floating = page.locator('.floating-table-header')
 
     // 最初のチェックでバナーが出ても、選んだ行の画面上の位置は動かない。解除しても動かない
+    await expect(floating).toHaveAttribute('data-stuck', 'false')
     const target = page.getByLabel('店20を選択')
     await target.scrollIntoViewIfNeeded()
     const before = await target.boundingBox()
@@ -453,26 +430,45 @@ test.describe('明細取込画面', () => {
     await expect(bulk).toHaveCount(0)
     expect(Math.abs((await target.boundingBox())!.y - before!.y)).toBeLessThan(1.5)
 
-    // バナーが出ているとき、スクロールしても、タブの行とバナーが画面の上部に見え続け、バナーはタブの行の下に並ぶ
+    // バナーを出してスクロールすると、タブの行・バナー・表の見出し(複製)が、上から順に重ならずに見え続ける
     await target.check()
     await expect(bulk).toBeVisible()
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+    await page.evaluate(() => window.scrollTo(0, 1500))
+    await expect(floating).toHaveAttribute('data-stuck', 'true')
     const tabs = page.getByRole('tablist')
+    const header = floating.getByRole('columnheader', { name: /^日付/ })
     await expect(tabs).toBeInViewport({ ratio: 1 })
     await expect(bulk).toBeInViewport({ ratio: 1 })
-    const tabsBox = await tabs.boundingBox()
-    const bulkBox = await bulk.boundingBox()
-    expect(tabsBox!.y).toBeLessThan(8)
-    expect(bulkBox!.y).toBeGreaterThanOrEqual(tabsBox!.y + tabsBox!.height - 1)
+    await expect(header).toBeInViewport({ ratio: 1 })
+    const tabsBox = (await tabs.boundingBox())!
+    const bulkBox = (await bulk.boundingBox())!
+    const headerBox = (await header.boundingBox())!
+    expect(tabsBox.y).toBeLessThan(8)
+    expect(bulkBox.y).toBeGreaterThanOrEqual(tabsBox.y + tabsBox.height - 1)
+    expect(headerBox.y).toBeGreaterThanOrEqual(bulkBox.y + bulkBox.height - 1)
+    // 見出しは他の要素に覆われず、一番手前に見えている
+    expect(
+      await header.evaluate((el) => {
+        const rect = el.getBoundingClientRect()
+        return el.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
+      }),
+    ).toBe(true)
 
-    // 絞り込み欄を開くと、バナーはその下に追従し、表の枠の下端も画面の中に収まる
-    await page.getByRole('button', { name: '絞り込みを開く' }).click()
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-    const filterBox = await page.getByRole('search', { name: '明細の絞り込み' }).boundingBox()
-    const bulkBoxOpen = await bulk.boundingBox()
-    const regionBoxOpen = await region.boundingBox()
-    expect(bulkBoxOpen!.y).toBeGreaterThanOrEqual(filterBox!.y + filterBox!.height - 1)
-    expect(regionBoxOpen!.y + regionBoxOpen!.height).toBeLessThanOrEqual(721)
+    // 見出しの列は、本物の行の列とずれない(列幅を本物の見出しから写している)。日付・摘要・金額の3列で確かめる(行のセルは、チェック=0、日付=1、摘要=2、金額=3)
+    const firstRow = page.getByRole('row', { name: /店01/ }).first()
+    for (const [headerName, cellIndex] of [
+      [/^日付/, 1],
+      [/^摘要/, 2],
+      [/^金額/, 3],
+    ] as const) {
+      const headerX = (await floating.getByRole('columnheader', { name: headerName }).boundingBox())!.x
+      const cellX = (await firstRow.getByRole('cell').nth(cellIndex).boundingBox())!.x
+      expect(Math.abs(headerX - cellX), String(headerName)).toBeLessThan(1.5)
+    }
+
+    // 表の先頭に戻ると、複製は消える
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await expect(floating).toHaveAttribute('data-stuck', 'false')
   })
   test('一覧のヘッダーの並び替えは、キーボード(Tab・Enter・Space)で操作でき、タブは選択中の1つだけがTabキーで止まる(計画Issue #231・#263)', async ({ page }) => {
     await page.goto('/')
