@@ -898,15 +898,44 @@ describe('StatementImportScreen', () => {
     })
   })
 
-  it('相手科目が未選択の行は確定に失敗し、理由を表示する', async () => {
-    makeMapping()
-    renderScreen()
-    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+  describe('確定時の未入力の行とエラー表示(計画Issue #263)', () => {
+    it('相手科目が未入力の行は、エラーにせず確定の対象から外し、行は表に残す', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,カフェ,-500,96500\n`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
 
-    fireEvent.click(await screen.findByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
+      fireEvent.click(await screen.findByRole('button', { name: /^\d+ \/ 2 件を「普通預金」に確定$/ }))
 
-    expect(await screen.findByText(/相手科目が未選択です/)).toBeInTheDocument()
-    expect(userEntries()).toHaveLength(0)
+      await screen.findByText(/1件を確定しました/)
+      expect(userEntries()).toHaveLength(1)
+      expect(screen.queryByText(/相手科目が未選択です/)).not.toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(rowOf(/カフェ/).getByLabelText('カフェのコメント')).toBeInTheDocument()
+    })
+
+    it('確定後に、確定した件数と、確定していない未入力の件数を、黄色の案内1行で出す', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,カフェ,-500,96500\n2026/10/07,本屋,-900,95600\n`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+
+      fireEvent.click(await screen.findByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
+
+      const notice = await screen.findByText(/1件を確定しました。未入力の2件は確定していません/)
+      expect(notice).toHaveClass('import-remaining')
+    })
+
+    it('入力済みの行が1件も無いときは、確定せず、確定できる行が無いことと未入力の件数を案内する', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
+
+      fireEvent.click(await screen.findByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
+
+      expect(await screen.findByText(/確定できる行がありません。未入力の1件は確定していません/)).toBeInTheDocument()
+      expect(userEntries()).toHaveLength(0)
+    })
   })
 
   describe('似た取引がある行(日付3日以内・金額3%以内の登録済みの取引)', () => {
@@ -1023,10 +1052,16 @@ describe('StatementImportScreen', () => {
       fireEvent.click(await radio('同じ取引なので、登録済みを削除して置き換える'))
       expect(rowOf(/スーパー/).getByText('要確認')).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
-      expect(await screen.findByText(/削除する登録済みの仕訳が未選択です/)).toBeInTheDocument()
+      // エラーは最下部の一覧ではなく、その行の似た取引の確認の中に出る(計画Issue #263)
+      const rowError = await screen.findByText(/削除する登録済みの仕訳が未選択です/)
+      expect(within(screen.getByRole('group', { name: 'スーパーの似た取引の確認' })).getByText(/削除する登録済みの仕訳が未選択です/)).toBe(rowError)
+      expect(rowError.closest('[role="alert"]')).not.toBeNull()
+      expect(rowOf(/スーパー/).getByText('要確認').closest('tr')).toHaveClass('import-row--error')
       expect(userEntries()).toHaveLength(2)
 
       fireEvent.change(screen.getByLabelText('削除する登録済みの仕訳'), { target: { value: String(other.id) } })
+      // 直すと、その行のエラーは消える
+      expect(screen.queryByText(/削除する登録済みの仕訳が未選択です/)).not.toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
 
       await screen.findByText(/確定しました/)
@@ -2627,7 +2662,7 @@ describe('StatementImportScreen', () => {
       // ランチは相手科目が未選択なので確定できず残る(部分確定)
       fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
 
-      await screen.findByText('2件を確定しました(1件失敗)')
+      await screen.findByText(/2件を確定しました。未入力の1件は確定していません/)
       expect(userEntries().filter((e) => e.sourceType === 'external_import')).toHaveLength(2)
       expect(userEntries().map((e) => e.memo)).toEqual(expect.arrayContaining(['スーパー', '家賃']))
       expect(screen.queryByRole('button', { name: /^問題なし/ })).not.toBeInTheDocument()
@@ -2645,7 +2680,7 @@ describe('StatementImportScreen', () => {
 
       fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
 
-      await screen.findByText('2件を確定しました(1件失敗)')
+      await screen.findByText(/2件を確定しました。未入力の1件は確定していません/)
       expect(groupToggle('似た取引あり')).toHaveAttribute('aria-expanded', 'false')
       expect(screen.queryByRole('row', { name: /ランチ/ })).not.toBeInTheDocument()
     })
@@ -2981,7 +3016,7 @@ describe('StatementImportScreen', () => {
         // ランチは相手科目が未選択なので確定できず残る(部分確定)
         fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }))
 
-        await screen.findByText('2件を確定しました(1件失敗)')
+        await screen.findByText(/2件を確定しました。未入力の1件は確定していません/)
         expect(screen.queryByRole('row', { name: /スーパー/ })).not.toBeInTheDocument()
         expect(screen.queryByRole('row', { name: /家賃/ })).not.toBeInTheDocument()
         // 残った行は未入力のままなので入力済みの色は付かず、入力すると付く
@@ -3084,7 +3119,7 @@ describe('StatementImportScreen', () => {
 
       fireEvent.click(confirmOf(2, 3))
 
-      await screen.findByText('2件を確定しました(1件失敗)')
+      await screen.findByText(/2件を確定しました。未入力の1件は確定していません/)
       expect(confirmOf(0, 1)).toBeInTheDocument()
     })
   })

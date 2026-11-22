@@ -480,7 +480,7 @@ describe('破棄と後始末', () => {
 
     fireEvent.click(confirmButton(1, 3))
 
-    await screen.findByText(/1件を確定しました\(2件失敗\)/)
+    await screen.findByText(/1件を確定しました。未入力の2件は確定していません/)
     expect(drafts.findSummaries()).toHaveLength(1)
   })
 })

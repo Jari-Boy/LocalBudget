@@ -201,9 +201,29 @@ interface LoadedCsv {
   bytes: Uint8Array
 }
 
-interface ConfirmFailure {
-  index: number
-  message: string
+/**
+ * 確定でエラーとして残すものは2つだけ(計画Issue #263)。confirm=登録時の例外、replacement=「置き換える」を選んだのに
+ * 削除する登録済みの仕訳が未選択。どちらも該当行の直下に出す。相手科目が未入力の行はエラーにせず、確定の対象から外す
+ */
+type RowErrorKind = 'confirm' | 'replacement'
+
+/** 行内エラーの先頭に添える丸の「!」。色だけに頼らず、エラーだと分かるようにする */
+function RowErrorIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v6M12 16.5v.01" />
+    </svg>
+  )
+}
+
+/** 直前の確定の結果。確定後の案内(黄色の1行)に出す件数 */
+interface ConfirmResult {
+  succeeded: number
+  /** 相手科目が未入力で、確定の対象から外した行の数 */
+  unfilled: number
+  /** 確定できなかった行(エラー)の数 */
+  failed: number
 }
 
 /**
@@ -315,7 +335,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [doneMessage, setDoneMessage] = useState('')
-  const [failures, setFailures] = useState<ConfirmFailure[]>([])
+  /** 確定できなかった行の番号 → エラーの種類。該当行の直下に出す(計画Issue #263) */
+  const [rowErrors, setRowErrors] = useState<Record<number, RowErrorKind>>({})
+  const [confirmResult, setConfirmResult] = useState<ConfirmResult | null>(null)
   const [createTarget, setCreateTarget] = useState<CreateTarget>(null)
   const [defaultAccountCreate, setDefaultAccountCreate] = useState<DefaultAccountCreate>(null)
   /** 開いているキーワードのポップアップ(計画Issue #207・#259)。登録済みのキーワードは開くたびにDBから読み込む */
@@ -503,10 +525,17 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const eligibleTargets = data.accounts.filter(isStatementImportEligibleAccount)
   const accountList = categories.counterAccountList
 
-  const updateRow = (index: number, update: (state: ImportRowState) => ImportRowState) =>
+  const updateRow = (index: number, update: (state: ImportRowState) => ImportRowState) => {
+    // 直したことが分かるよう、その行のエラーは入力を変えた時点で消す(計画Issue #263)
+    setRowErrors((prev) => {
+      if (prev[index] === undefined) return prev
+      const { [index]: _removed, ...rest } = prev
+      return rest
+    })
     setSession((prev) =>
       prev === null ? prev : { ...prev, rows: prev.rows.map((state, i) => (i === index ? update(state) : state)) },
     )
+  }
 
   const keywordOf = (text: string) => normalizeDescriptionForMatching(text)
   /** 取引先を持てる(費用・収益の)科目か。キーワードに紐づける科目はこの科目だけ */
@@ -1127,7 +1156,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setBusy(true)
     setError('')
     setDoneMessage('')
-    setFailures([])
+    setRowErrors({})
+    setConfirmResult(null)
     rowMemory.current.clear()
     resetDraftState()
     setSession(null)
@@ -1214,7 +1244,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setBusy(true)
     setError('')
     setDoneMessage('')
-    setFailures([])
+    setRowErrors({})
+    setConfirmResult(null)
     rowMemory.current.clear()
     resetDraftState()
     setSession(null)
@@ -1534,9 +1565,12 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setBusy(true)
     setError('')
     setDoneMessage('')
+    setRowErrors({})
+    setConfirmResult(null)
     const account = session.targetAccount
     const deleted = new Set<number>()
-    const failed: ConfirmFailure[] = []
+    const failed: Record<number, RowErrorKind> = {}
+    let unfilled = 0
     const succeeded = new Set<number>()
     // 同じ取込の行は同じ取込日時にそろえる(残高の基準点の並び順を取込単位で判定するため、計画Issue #205)
     const importedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
@@ -1544,14 +1578,15 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     for (const index of importable) {
       const { record, externalId } = records[index]
       const state = session.rows[index]
+      // 相手科目が未入力の行は、まだ入力していないだけなのでエラーにせず、確定の対象から外して表に残す(計画Issue #263)
       if (state.counterAccountId === null) {
-        failed.push({ index, message: t('counterAccountRequiredError') })
+        unfilled++
         continue
       }
       // 「置き換える」を選んだのに、削除する登録済みの仕訳が決まっていない行は、何も削除せず取り込まない
       const replacementTargetId = replacementTargetOf(records[index], state)
       if (state.approximateDecision === 'confirmed_replacement' && replacementTargetId === null) {
-        failed.push({ index, message: t('replacementTargetRequiredError') })
+        failed[index] = 'replacement'
         continue
       }
       try {
@@ -1584,9 +1619,10 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         )
         succeeded.add(index)
       } catch {
-        failed.push({ index, message: t('confirmError') })
+        failed[index] = 'confirm'
       }
     }
+    const failedCount = Object.keys(failed).length
 
     if (succeeded.size > 0) {
       // 選んで取り込んだ定義を、取込先の科目に紐づける(次回から候補の先頭に出る)
@@ -1594,7 +1630,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     }
     setSelected(new Set())
     const nextDone = new Set([...session.done, ...succeeded])
-    if (failed.length === 0) {
+    const allConfirmed = failedCount === 0 && unfilled === 0
+    if (allConfirmed) {
       // 全件確定できたら、画面を取り込み前の状態に戻し、続けて明細を選ぶよう促す。再開していた一時保存は、CSVの生データごと削除する
       const finishedDraftId = currentDraftId
       clearImportScreen()
@@ -1609,14 +1646,15 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     } else {
       setSession({ ...session, done: nextDone })
     }
-    setFailures(failed)
-    setDoneMessage(
-      failed.length === 0
-        ? t('confirmDone')
-        : t('confirmResultSummary', { successCount: succeeded.size, failureCount: failed.length }),
-    )
+    setRowErrors(failed)
+    if (allConfirmed) {
+      setDoneMessage(t('confirmDone'))
+    } else {
+      // 一部が残るときは、確定した件数と、確定していない件数を、一覧の上の案内で伝える(計画Issue #263)
+      setConfirmResult({ succeeded: succeeded.size, unfilled, failed: failedCount })
+    }
     setBusy(false)
-    return failed.length === 0 ? { status: 'done' } : { status: 'partial', done: nextDone }
+    return allConfirmed ? { status: 'done' } : { status: 'partial', done: nextDone }
   }
 
   // 残高照合(docs/domain/reconciliation.md 1.5)。確定版として置き換える旧仕訳と、取り込まない行は除く
@@ -1965,6 +2003,20 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             {skippedCount > 0 && t('summarySkipped', { count: skippedCount })}
           </p>
 
+          {confirmResult && (
+            // 確定のあとの案内。未入力の行はエラーではなく、確定していないだけなので黄色の注意として1行で伝える(計画Issue #263)
+            <p role="status" className="import-remaining">
+              {confirmResult.succeeded > 0
+                ? confirmResult.unfilled > 0
+                  ? t('confirmPartialSummary', { count: confirmResult.succeeded, unfilled: confirmResult.unfilled })
+                  : t('confirmSucceededOnly', { count: confirmResult.succeeded })
+                : confirmResult.unfilled > 0
+                  ? t('confirmNothingReady', { unfilled: confirmResult.unfilled })
+                  : null}
+              {confirmResult.failed > 0 && <span> {t('confirmFailedLine', { count: confirmResult.failed })}</span>}
+            </p>
+          )}
+
           {reconciliation && reconciliation.gaps.length === 0 && (
             <p role="status" className="import-summary">
               {t('balanceReconciled')}
@@ -2170,6 +2222,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                             // 入力済み(相手科目が決まっている)の行。重複・保存しない行は色分けの対象外(計画Issue #231 フェーズ2)
                             status === 'new' ? 'import-row--done' : '',
                             isSkipped ? 'import-row--skipped' : '',
+                            // 確定できなかった行は赤く縁取り、直下にエラーを出す(計画Issue #263)
+                            rowErrors[index] !== undefined ? 'import-row--error' : '',
                             flashIndex === index ? 'import-row--flash' : '',
                           ]
                             .filter(Boolean)
@@ -2440,10 +2494,20 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                         </td>
                       </tr>
                       {!isDup && reviewRecord.approximateCandidates.length > 0 && (
-                        <tr className={`import-sub import-sub--similar${status === 'new' ? ' import-sub--done' : ''}`}>
+                        <tr
+                          className={`import-sub import-sub--similar${status === 'new' ? ' import-sub--done' : ''}${
+                            rowErrors[index] === 'replacement' ? ' import-sub--error' : ''
+                          }`}
+                        >
                           <td />
                           <td colSpan={showFileColumn ? 10 : 9}>
                             <div role="group" aria-label={t('similarGroupLabel', { desc })} className="import-similar">
+                              {rowErrors[index] === 'replacement' && (
+                                <div role="alert" className="import-rowerror">
+                                  <RowErrorIcon />
+                                  {t('replacementTargetRequiredError')}
+                                </div>
+                              )}
                               <div className="import-similar__line">
                                 <span className="import-similar__title">
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2540,6 +2604,17 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                           <td />
                         </tr>
                       )}
+                      {rowErrors[index] === 'confirm' && (
+                        <tr className="import-sub import-sub--error">
+                          <td />
+                          <td colSpan={showFileColumn ? 10 : 9}>
+                            <div role="alert" className="import-rowerror">
+                              <RowErrorIcon />
+                              {t('confirmRowError')}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                     </Fragment>
                   )
                 })}
@@ -2575,14 +2650,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             ))}
           </ul>
         </section>
-      )}
-
-      {failures.length > 0 && (
-        <ul role="alert" className="import-error">
-          {failures.map((f) => (
-            <li key={f.index}>{t('confirmFailureItem', { index: f.index + 1, message: f.message })}</li>
-          ))}
-        </ul>
       )}
 
       {(session || doneMessage) && (
