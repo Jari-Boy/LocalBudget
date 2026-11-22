@@ -40,6 +40,7 @@ export interface KeywordListProps {
  */
 export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, renderAccount, renderApply, label }: KeywordListProps) {
   const { t } = useTranslation('statementImport')
+  const hasMatched = items.some((item) => item.matched === true)
   const errorText = (error: KeywordError) => (error === 'empty' ? t('patternErrorEmpty') : t('patternErrorDuplicate'))
 
   return (
@@ -66,7 +67,10 @@ export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, re
               }}
             />
             {renderAccount?.(item, index)}
-            {item.matched === true && <span className="import-settings__matched import-nowrap">{t('patternMatchedRow')}</span>}
+            {/* 一致の有無で入力欄の幅が変わらないよう、一致する行がひとつでもあれば、全行に同じ幅の枠を確保する */}
+            {hasMatched && (
+              <span className="import-settings__matched import-nowrap">{item.matched === true ? t('patternMatchedRow') : ''}</span>
+            )}
             <span className="import-note import-nowrap" title={t('patternRowsTitle')}>
               {t('patternRows', { count: item.count })}
             </span>
@@ -90,7 +94,7 @@ export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, re
           )}
         </div>
       ))}
-      <div>
+      <div className="import-settings__add">
         <button type="button" className="import-btn import-btn--small" onClick={onAdd}>
           {t('patternAdd')}
         </button>
