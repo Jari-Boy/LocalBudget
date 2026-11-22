@@ -40,6 +40,7 @@ import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
 import { chooseBatch, expectBatch, findBatchButton, queryBatchButton } from '../master/batchSelectTestHelpers'
 import { chooseMember, expectMember, findMemberButton, listMemberOptions } from '../master/memberSelectTestHelpers'
 import { StatementImportScreen } from './StatementImportScreen'
+import { IMPORT_PAGE_SIZE } from './importTabs'
 import { chooseTargetAccount, expectTargetAccount, findTargetAccountButton } from './targetAccountTestHelpers'
 
 let db: Database
@@ -2578,6 +2579,10 @@ describe('StatementImportScreen', () => {
     const manyRows = (n: number) =>
       HEADER + Array.from({ length: n }, (_, i) => `2026/10/05,店${String(i + 1).padStart(3, '0')},-100,100`).join('\n') + '\n'
     const tab = (name: string) => screen.getByRole('tab', { name: new RegExp(`^${name}`) })
+    /** 1ページの件数と、1ページに収まらない行数(1ページ分より10行多い) */
+    const PAGE = IMPORT_PAGE_SIZE
+    const TOTAL = PAGE + 10
+    const rowLabel = (n: number) => `店${String(n).padStart(3, '0')}`
 
     it('初期表示は「新規」タブが開いていて、件数と状態の札(似た取引・未入力)が出る。行のないタブは出さない', async () => {
       makeMapping()
@@ -2647,20 +2652,20 @@ describe('StatementImportScreen', () => {
       expect(screen.getByLabelText('家賃のコメント')).toHaveValue('10月分')
     })
 
-    it('1ページに表示するのは50件までで、「1–50 / N件」とページ番号を出し、次のページで残りを表示する', async () => {
+    it('1ページに表示するのは決めた件数までで、「1–N / M件」とページ番号を出し、次のページで残りを表示する', async () => {
       makeMapping()
       renderScreen()
-      await chooseCsv(manyRows(60))
+      await chooseCsv(manyRows(TOTAL))
 
-      expect(screen.getByText('1–50 / 60件')).toBeInTheDocument()
+      expect(screen.getByText(`1–${PAGE} / ${TOTAL}件`)).toBeInTheDocument()
       expect(screen.getAllByRole('row', { name: /店001/ }).length).toBeGreaterThan(0)
-      expect(screen.getAllByRole('row', { name: /店050/ }).length).toBeGreaterThan(0)
-      expect(screen.queryByRole('row', { name: /店051/ })).not.toBeInTheDocument()
+      expect(screen.getAllByRole('row', { name: new RegExp(rowLabel(PAGE)) }).length).toBeGreaterThan(0)
+      expect(screen.queryByRole('row', { name: new RegExp(rowLabel(PAGE + 1)) })).not.toBeInTheDocument()
 
       fireEvent.click(screen.getByRole('button', { name: '次のページ' }))
 
-      expect(screen.getByText('51–60 / 60件')).toBeInTheDocument()
-      expect(screen.getAllByRole('row', { name: /店051/ }).length).toBeGreaterThan(0)
+      expect(screen.getByText(`${PAGE + 1}–${TOTAL} / ${TOTAL}件`)).toBeInTheDocument()
+      expect(screen.getAllByRole('row', { name: new RegExp(rowLabel(PAGE + 1)) }).length).toBeGreaterThan(0)
       expect(screen.queryByRole('row', { name: /店001/ })).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: '2ページ目' })).toHaveAttribute('aria-current', 'page')
     })
@@ -2668,7 +2673,7 @@ describe('StatementImportScreen', () => {
     it('ページを切り替えても、ほかのページで入力した内容は残る', async () => {
       makeMapping()
       renderScreen()
-      await chooseCsv(manyRows(60))
+      await chooseCsv(manyRows(TOTAL))
       fireEvent.change(screen.getByLabelText('店001のコメント'), { target: { value: '1ページ目のメモ' } })
 
       fireEvent.click(screen.getByRole('button', { name: '次のページ' }))
@@ -2680,11 +2685,11 @@ describe('StatementImportScreen', () => {
     it('見出しのチェックは、表示中のページの行だけを選び、一括設定の対象もその行だけ。ページを切り替えると選択は外れる', async () => {
       makeMapping()
       renderScreen()
-      await chooseCsv(manyRows(60))
+      await chooseCsv(manyRows(TOTAL))
 
       fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
 
-      expect(within(screen.getByRole('group', { name: '選択した明細への一括設定' })).getByText('50件に一括設定')).toBeInTheDocument()
+      expect(within(screen.getByRole('group', { name: '選択した明細への一括設定' })).getByText(`${PAGE}件に一括設定`)).toBeInTheDocument()
 
       fireEvent.click(screen.getByRole('button', { name: '次のページ' }))
 
@@ -2695,18 +2700,18 @@ describe('StatementImportScreen', () => {
     it('確定の件数と確定は、見えていないページの行も含めた全件が対象で、確定した行は一覧から外れる', async () => {
       makeMapping()
       renderScreen()
-      await chooseCsv(manyRows(60))
-      // 1ページ目の50件をまとめて入力して、確定する
+      await chooseCsv(manyRows(TOTAL))
+      // 1ページ目の分(PAGE件)をまとめて入力して、確定する
       fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
       const bulk = within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
       fireEvent.click(bulk.getByRole('button', { name: /^一括の相手科目/ }))
       fireEvent.click(within(screen.getByRole('dialog', { name: '一括の相手科目' })).getByRole('button', { name: '食費' }))
 
-      expect(screen.getByRole('button', { name: '50 / 60 件を「普通預金」に確定' })).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: '50 / 60 件を「普通預金」に確定' }))
+      expect(screen.getByRole('button', { name: `${PAGE} / ${TOTAL} 件を「普通預金」に確定` })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: `${PAGE} / ${TOTAL} 件を「普通預金」に確定` }))
 
-      await screen.findByText(/50件を確定しました。未入力の10件は確定していません/)
-      expect(userEntries()).toHaveLength(50)
+      await screen.findByText(new RegExp(`${PAGE}件を確定しました。未入力の10件は確定していません`))
+      expect(userEntries()).toHaveLength(PAGE)
       // 残りの10件は、1ページ目に繰り上がる
       expect(screen.getByText('1–10 / 10件')).toBeInTheDocument()
     })
@@ -2714,13 +2719,13 @@ describe('StatementImportScreen', () => {
     it('新しいCSVを選び直すと、開くタブとページは最初(「新規」の1ページ目)に戻る', async () => {
       makeMapping()
       renderScreen()
-      await chooseCsv(manyRows(60))
+      await chooseCsv(manyRows(TOTAL))
       fireEvent.click(screen.getByRole('button', { name: '次のページ' }))
-      expect(screen.getByText('51–60 / 60件')).toBeInTheDocument()
+      expect(screen.getByText(`${PAGE + 1}–${TOTAL} / ${TOTAL}件`)).toBeInTheDocument()
 
-      await chooseCsv(manyRows(60))
+      await chooseCsv(manyRows(TOTAL))
 
-      await waitFor(() => expect(screen.getByText('1–50 / 60件')).toBeInTheDocument())
+      await waitFor(() => expect(screen.getByText(`1–${PAGE} / ${TOTAL}件`)).toBeInTheDocument())
     })
   })
 

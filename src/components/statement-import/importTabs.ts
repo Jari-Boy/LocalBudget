@@ -20,7 +20,7 @@ export type ImportTabKey = RowTab | 'unreadable'
  * 1ページに描く行の数(タブごと)。400件規模でも操作が重くならない件数として実測して決める(計画Issue #263)。
  * 値の根拠は docs/decisions.md の同Issueの項に書く。
  */
-export const IMPORT_PAGE_SIZE = 50
+export const IMPORT_PAGE_SIZE = 100
 
 type RowRecord = Pick<StatementImportReviewRecord, 'isExactDuplicate' | 'approximateCandidates'>
 
