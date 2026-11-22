@@ -226,3 +226,7 @@ Issue #187(`e2e/journal-entry.spec.ts`の「ランチ代」の`UNIQUE constraint
 
 **内容**: 検索欄などで日本語を変換しているとき、変換を確定するEnterも`keydown`イベントとして届く。これをそのまま「選択の確定」やフォームの送信に使うと、変換の途中で意図せず確定される。`event.nativeEvent.isComposing`が`true`、または`event.keyCode === 229`のときは何もせずに戻る(ブラウザによっては、変換確定の`keydown`で`isComposing`がすでに`false`になるため、`keyCode`の229も併せて見る)。あわせて、検索欄のEnterは`preventDefault()`して、囲んでいるフォームの送信に使わせない。`TreeSelect`の検索欄(1件に絞れたらEnterで確定)がこの形になっている。
 **参考**: `src/components/common/tree-select/TreeSelect.tsx`、`docs/decisions.md`「選択欄は共通部品(EntitySelect)に統一し、画面ごとに実体の<select>を書かない」、計画Issue #233
+
+## Playwrightで本物のブラウザの計測を取るときは、別ポートの開発サーバーを使う(計画Issue #253)
+
+**内容**: 描画の時間などをChromium(Playwright)で計測するときも、5173番に手動起動の開発サーバーが残っているとサンプルデータ入りの状態になり、計測の前提(件数)が崩れる。計測用のデータは別ポート(例: 5199)で`VITE_DISABLE_DEV_SEED`が効いた開発サーバーを起動し、そこへ件数を指定して投入して計る。開発ビルド(React開発ビルド)の値は本番より遅めに出るため、絶対値ではなく件数に対する傾向と比率で読む。手順の詳細は上の「手動で起動した`npm run dev`を残したままPlaywrightを流すと...」(計画Issue #207)と同じ。
