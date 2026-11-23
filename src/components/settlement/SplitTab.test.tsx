@@ -228,6 +228,15 @@ describe('SplitTab', () => {
     expect(row.queryByText(formatCurrency(700, 'JPY'))).not.toBeInTheDocument()
   })
 
+  it('仕訳のコメントを、摘要の右のコメントの列に出す(仕訳の先頭の行だけ)', () => {
+    const data = makeData()
+    data.entries = data.entries.map((e) => (e.id === 1 ? { ...e, comment: '割り勘にしたい分' } : e))
+    setup(data)
+
+    expect(screen.getByRole('columnheader', { name: /^コメント/ })).toBeInTheDocument()
+    expect(within(rowOf('ランチ')).getByText('割り勘にしたい分')).toBeInTheDocument()
+  })
+
   it('候補の摘要を押すと、仕訳画面へ移動せず、その仕訳の詳細をダイアログで表示し、選択状態は変えない', () => {
     setup()
 
@@ -557,5 +566,64 @@ describe('SplitTab: 割勘する行の150件ずつの表示(計画Issue #268)', 
 
     expect(checkboxCount()).toBe(150)
     expect(screen.getByRole('button', { name: 'さらに9件表示' })).toBeInTheDocument()
+  })
+})
+
+/**
+ * 候補の表の列幅の調整(仕訳一覧の明細行単位の表と同じつまみ・保存。ただし保存先は別、計画Issue #271)。
+ * 摘要など見出しの右端のつまみをキーボードで動かすと幅が変わり、localStorageに保存されて次回も復元されること、
+ * 借方と貸方の同じ種類の列が連動すること、「列幅を初期値に戻す」で戻ることを検証する。
+ */
+describe('SplitTab: 列幅の調整(計画Issue #271)', () => {
+  const STORAGE_KEY = 'localbudget:split-line-table-column-widths'
+  const handle = (name: string) => screen.getByRole('separator', { name })
+
+  afterEach(() => localStorage.removeItem(STORAGE_KEY))
+
+  it('見出しの右端に、日付・摘要・科目・取引先・世帯メンバー・金額の列幅のつまみがある', () => {
+    setup()
+
+    for (const name of ['日付', '摘要', 'コメント', '借方の科目', '貸方の科目', '借方の金額', '貸方の金額']) {
+      expect(handle(`${name}の列幅`)).toBeInTheDocument()
+    }
+  })
+
+  it('摘要のつまみを → キーで動かすと列幅が広がり、保存される。Home キーで初期の幅に戻る', () => {
+    setup()
+    const before = Number(handle('摘要の列幅').getAttribute('aria-valuenow'))
+
+    fireEvent.keyDown(handle('摘要の列幅'), { key: 'ArrowRight' })
+
+    expect(Number(handle('摘要の列幅').getAttribute('aria-valuenow'))).toBe(before + 8)
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}').memo).toBe(before + 8)
+    fireEvent.keyDown(handle('摘要の列幅'), { key: 'Home' })
+    expect(Number(handle('摘要の列幅').getAttribute('aria-valuenow'))).toBe(before)
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+  })
+
+  it('借方の科目の列幅を変えると、貸方の科目の列幅も同じ幅になる(借方・貸方で連動)', () => {
+    setup()
+
+    fireEvent.keyDown(handle('借方の科目の列幅'), { key: 'ArrowRight' })
+
+    expect(handle('貸方の科目の列幅').getAttribute('aria-valuenow')).toBe(handle('借方の科目の列幅').getAttribute('aria-valuenow'))
+  })
+
+  it('保存した列幅は、次に開いたときに復元される', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ memo: 300 }))
+    setup()
+
+    expect(handle('摘要の列幅').getAttribute('aria-valuenow')).toBe('300')
+  })
+
+  it('列幅を変えたときだけ「列幅を初期値に戻す」が出て、押すとすべて初期の幅に戻る', () => {
+    setup()
+    expect(screen.queryByRole('button', { name: '列幅を初期値に戻す' })).not.toBeInTheDocument()
+
+    fireEvent.keyDown(handle('摘要の列幅'), { key: 'ArrowLeft' })
+    fireEvent.click(screen.getByRole('button', { name: '列幅を初期値に戻す' }))
+
+    expect(screen.queryByRole('button', { name: '列幅を初期値に戻す' })).not.toBeInTheDocument()
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
   })
 })

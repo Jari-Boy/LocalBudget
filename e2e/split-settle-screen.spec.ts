@@ -168,6 +168,30 @@ test.describe('割勘タブ', () => {
     await expect(table.getByText('候補になる食事代の割勘')).toHaveCount(0)
   })
 
+  test('摘要の列幅を狭くでき、長い摘要は省略表示になる(列幅の調整、計画Issue #271)', async ({ page }) => {
+    await page.goto('/')
+    const data = await setupBaseData(page, '列幅テスト')
+    const longMemo = '列幅テストの長い長い長い長い長い長い長い長い長い長い長い長い長い長い摘要'
+    await createOriginalExpenseEntry(page, data, longMemo, 1000)
+
+    await openSplitSettle(page)
+    const table = page.getByRole('region', { name: '割勘する行' })
+    const memoCell = table.getByRole('button', { name: longMemo }).locator('xpath=ancestor::td')
+    const handle = table.getByRole('separator', { name: '摘要の列幅' })
+    const before = (await memoCell.boundingBox())!.width
+
+    // 初期の幅(220px)から、最小の幅(48px)まで ← キーで狭める。文字の長さに引きずられて広いままにならない
+    await handle.focus()
+    for (let i = 0; i < 25; i += 1) await handle.press('ArrowLeft')
+
+    const after = (await memoCell.boundingBox())!.width
+    expect(after).toBeLessThan(before - 100)
+    expect(after).toBeLessThanOrEqual(60)
+    // 摘要のボタンは、列からはみ出さない(省略表示)
+    const button = table.getByRole('button', { name: longMemo })
+    expect((await button.boundingBox())!.width).toBeLessThanOrEqual(after)
+  })
+
   test('世帯メンバーとの割勘を記録すると、履歴タブに相手・負担額・未精算で出る', async ({ page }) => {
     await page.goto('/')
     const data = await setupBaseData(page, '履歴テスト')

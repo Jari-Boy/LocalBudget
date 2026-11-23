@@ -637,8 +637,9 @@
   min-width: 0;
 }
 
-/* 明細行単位の表(仕訳一覧の明細行単位の表と同じ見た目)。借方・貸方の12列を内容の幅で並べ、枠の中で横スクロールする */
-.split-settle__line-table {
+/* 候補の表は仕訳一覧の明細行単位の表と同じく列幅を固定し(table-layout: fixed は journal-line-table__table が持つ)、列幅をつまみで調整できる。
+   幅を超える文字は省略表示。割勘仕訳のプレビューの表は列幅を固定せず、内容の幅で並べる */
+.split-settle__preview-table {
   table-layout: auto;
 }
 
@@ -716,4 +717,8 @@
 /* 仕訳一覧の表のクラス(journal-line-table)を借りるカードは、枠自体を横スクロールさせない(表の枠 .split-settle__scroll が横スクロールする)。枠が縦のスクロール領域になると、見出しの複製の固定が効かなくなるため(計画Issue #266・#271) */
 .split-settle__card.journal-line-table {
   overflow: visible;
+}
+
+.split-settle__preview-table tbody tr {
+  cursor: default;
 }

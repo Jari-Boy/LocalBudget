@@ -56,9 +56,9 @@ export function isDefaultColumnWidths(widths: ColumnWidths): boolean {
  * 保存した列幅を読み込む。何も保存されていない・壊れている・localStorageが使えないときは初期の列幅。
  * 一部の列の値が不正なときは、その列だけ初期値にして残りは復元する(範囲外の幅は丸める)。未知の列は無視する。
  */
-export function loadColumnWidths(): ColumnWidths {
+export function loadColumnWidths(storageKey: string = STORAGE_KEY): ColumnWidths {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(storageKey)
     if (raw === null) return { ...DEFAULT_COLUMN_WIDTHS }
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return { ...DEFAULT_COLUMN_WIDTHS }
@@ -74,11 +74,11 @@ export function loadColumnWidths(): ColumnWidths {
   }
 }
 
-/** 列幅を保存する。初期の列幅なら保存を消す(初期値に戻したことになる)。保存できなくても例外は出さない */
-export function saveColumnWidths(widths: ColumnWidths): void {
+/** 列幅を保存する(storageKeyを渡すと、別の表の列幅として別に保存する。割勘タブの表、計画Issue #271)。初期の列幅なら保存を消す(初期値に戻したことになる)。保存できなくても例外は出さない */
+export function saveColumnWidths(widths: ColumnWidths, storageKey: string = STORAGE_KEY): void {
   try {
-    if (isDefaultColumnWidths(widths)) localStorage.removeItem(STORAGE_KEY)
-    else localStorage.setItem(STORAGE_KEY, JSON.stringify(widths))
+    if (isDefaultColumnWidths(widths)) localStorage.removeItem(storageKey)
+    else localStorage.setItem(storageKey, JSON.stringify(widths))
   } catch {
     // 保存できなくても列幅の調整自体は動く(次回は初期の列幅に戻る)
   }

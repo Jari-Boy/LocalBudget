@@ -33,6 +33,9 @@ import { buildPartnerCategories, parsePartnerValue, toPartnerValue } from './spl
 import { buildSplitLineTableRows, selectableLineIdsBySide } from './splitLineTableModel'
 import { buildSplitPreviews } from './splitPreviewModel'
 import { StickyHeaderTable } from '../common/sticky/StickyHeaderTable'
+import { JournalLineTableResizeHandle } from '../journal-entry/JournalLineTableResizeHandle'
+import { useJournalLineTableColumns } from '../journal-entry/useJournalLineTableColumns'
+import type { ColumnKey } from '../journal-entry/journalLineTableColumns'
 import '../journal-entry/JournalLineTable.css'
 import './SplitSettleScreen.css'
 
@@ -73,6 +76,11 @@ const MODE_LABEL: Record<ExpenseSplittingAllocationMode, string> = {
 }
 
 const SIDE_LABEL: Record<JournalLineSide, string> = { debit: '借方', credit: '貸方' }
+
+/** 候補の表の列幅の保存先。仕訳一覧の明細行単位の表とは別に持つ(同じつまみ・同じ保存の仕組みを使う、計画Issue #271) */
+const COLUMN_WIDTHS_STORAGE_KEY = 'localbudget:split-line-table-column-widths'
+/** 行のチェックの列の幅(px)。固定で、列幅の調整の対象外 */
+const CHECK_COLUMN_WIDTH = 32
 
 /** 割勘する行の既定の摘要。精算バッチを新規作成するときの名前にもなる(精算タブで変更できる) */
 function defaultMemo(chosen: readonly SelectedSplitLine[]): string {
@@ -119,6 +127,8 @@ export function SplitTab({
   /** 絞り込み欄(開いているときだけある)の要素と高さ。右のパネルの追従位置に足す(計画Issue #266) */
   const [filterElement, setFilterElement] = useState<HTMLDivElement | null>(null)
   const filterHeight = useElementHeight(filterElement)
+  const columns = useJournalLineTableColumns(COLUMN_WIDTHS_STORAGE_KEY)
+  const { widths } = columns
 
   const relatedIds = useMemo(() => buildRelatedEntryIdsByEntryId(data.memberships), [data.memberships])
   const candidates = useMemo(
@@ -405,6 +415,20 @@ export function SplitTab({
     )
   }
 
+  /** 見出しの右端の列幅のつまみ。借方と貸方の同じ種類の列は連動する。表の幅は列幅の合計に固定するので、ドラッグ量はそのまま列の幅になる(scale 1) */
+  const resizeHandle = (key: ColumnKey, label: string) => (
+    <JournalLineTableResizeHandle
+      label={`${label}の列幅`}
+      value={widths[key]}
+      getScale={() => 1}
+      onResize={(width) => columns.resizeTo(key, width)}
+      onCommit={columns.commit}
+      onReset={() => columns.resetColumn(key)}
+    />
+  )
+  const tableWidth =
+    widths.date + widths.memo + widths.comment + 2 * (CHECK_COLUMN_WIDTH + widths.account + widths.partner + widths.member + widths.amount)
+
   return (
     <>
       {filterOpen && (
@@ -425,27 +449,73 @@ export function SplitTab({
             仕訳の明細行を選んで割勘します。費用・収益の行(借方・貸方とも)だけ選べます。割勘済みの行は表示しません。借方と貸方を
             一緒に選ぶと、貸方(返金・値引き・収益)を差し引いた額を割ります。
           </p>
+          {!columns.isDefault && (
+            <div className="split-settle__note split-settle__note--pad">
+              <button type="button" className="split-settle__add" onClick={columns.resetAll}>
+                列幅を初期値に戻す
+              </button>
+            </div>
+          )}
           <StickyHeaderTable
             frameClassName="split-settle__scroll"
             tableClassName="journal-line-table__table split-settle__line-table"
             floatingClassName="floating-table-header--lines"
+            tableStyle={{ width: tableWidth }}
             head={
-              <thead>
-                <tr>
-                  <th>日付</th>
-                  <th>摘要</th>
-                  <th className="journal-line-table__cell--check journal-line-table__debit-start">{sideHeadCheck('debit')}</th>
-                  <th>借方の科目</th>
-                  <th>取引先・精算バッチ</th>
-                  <th>世帯メンバー</th>
-                  <th className="journal-line-table__cell--amount">金額</th>
-                  <th className="journal-line-table__cell--check journal-line-table__credit-start">{sideHeadCheck('credit')}</th>
-                  <th>貸方の科目</th>
-                  <th>取引先・精算バッチ</th>
-                  <th>世帯メンバー</th>
-                  <th className="journal-line-table__cell--amount">金額</th>
-                </tr>
-              </thead>
+              <>
+                <colgroup>
+                  <col style={{ width: widths.date }} />
+                  <col style={{ width: widths.memo }} />
+                  <col style={{ width: widths.comment }} />
+                  {(['debit', 'credit'] as const).flatMap((side) => [
+                    <col key={`${side}-check`} style={{ width: CHECK_COLUMN_WIDTH }} />,
+                    <col key={`${side}-account`} style={{ width: widths.account }} />,
+                    <col key={`${side}-partner`} style={{ width: widths.partner }} />,
+                    <col key={`${side}-member`} style={{ width: widths.member }} />,
+                    <col key={`${side}-amount`} style={{ width: widths.amount }} />,
+                  ])}
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>
+                      日付
+                      {resizeHandle('date', '日付')}
+                    </th>
+                    <th>
+                      摘要
+                      {resizeHandle('memo', '摘要')}
+                    </th>
+                    <th>
+                      コメント
+                      {resizeHandle('comment', 'コメント')}
+                    </th>
+                    {(['debit', 'credit'] as const).flatMap((side) => [
+                      <th
+                        key={`${side}-check`}
+                        className={`journal-line-table__cell--check ${side === 'debit' ? 'journal-line-table__debit-start' : 'journal-line-table__credit-start'}`}
+                      >
+                        {sideHeadCheck(side)}
+                      </th>,
+                      <th key={`${side}-account`}>
+                        {`${SIDE_LABEL[side]}の科目`}
+                        {resizeHandle('account', `${SIDE_LABEL[side]}の科目`)}
+                      </th>,
+                      <th key={`${side}-partner`}>
+                        取引先・精算バッチ
+                        {resizeHandle('partner', `${SIDE_LABEL[side]}の取引先・精算バッチ`)}
+                      </th>,
+                      <th key={`${side}-member`}>
+                        世帯メンバー
+                        {resizeHandle('member', `${SIDE_LABEL[side]}の世帯メンバー`)}
+                      </th>,
+                      <th key={`${side}-amount`} className="journal-line-table__cell--amount">
+                        金額
+                        {resizeHandle('amount', `${SIDE_LABEL[side]}の金額`)}
+                      </th>,
+                    ])}
+                  </tr>
+                </thead>
+              </>
             }
           >
             <tbody>
@@ -460,6 +530,9 @@ export function SplitTab({
                           {memo === '' ? '(摘要なし)' : memo}
                         </button>
                       )}
+                    </td>
+                    <td className="journal-line-table__cell" title={row.isFirst ? (row.entry.comment ?? undefined) : undefined}>
+                      {row.isFirst ? (row.entry.comment ?? '') : ''}
                     </td>
                     {sideCells(row.debit, 'debit')}
                     {sideCells(row.credit, 'credit')}
@@ -658,7 +731,7 @@ export function SplitTab({
             </div>
             {previews.map((preview) => (
               <div key={preview.rowKey} className="split-settle__scroll">
-                <table className="journal-line-table__table split-settle__line-table" aria-label={`${preview.partnerName}さん分の割勘仕訳`}>
+                <table className="journal-line-table__table split-settle__preview-table" aria-label={`${preview.partnerName}さん分の割勘仕訳`}>
                   <thead>
                     <tr>
                       <th className="journal-line-table__debit-start">{`${preview.partnerName}さん分 借方の科目`}</th>
