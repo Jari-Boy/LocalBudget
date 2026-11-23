@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
-import { buildPartnerCategories, buildSplitHistoryRows, parsePartnerValue, toPartnerValue } from './splitSettleModel'
+import { buildPartnerCategories, buildSplitHistoryRows, parsePartnerValue, splitEvenly, toPartnerValue } from './splitSettleModel'
 
 const counterpartyCategories: TreeSelectCategory[] = [
   {
@@ -58,6 +58,32 @@ describe('buildPartnerCategories', () => {
     )
 
     expect(categories[0].nodes.map((n) => n.kind === 'item' && n.name)).toEqual(['妻'])
+  })
+})
+
+describe('buildPartnerCategories: 他の行で選んだ取引先の除外(計画Issue #271)', () => {
+  it('除外した取引先(グループの中のものも)は選択肢に出さず、グループは残す', () => {
+    const categories = buildPartnerCategories([], counterpartyCategories, new Set(), new Set([9, 10]))
+
+    const group = categories[1].nodes[0]
+    expect(group).toMatchObject({ kind: 'group', name: '友人' })
+    expect(group.kind === 'group' && group.children).toEqual([])
+    expect(categories[1].nodes).toHaveLength(1)
+  })
+})
+
+describe('splitEvenly', () => {
+  it('合計を人数で均等に分け、割り切れない端数は先の人から1ずつ多く配る', () => {
+    expect(splitEvenly(100, 2)).toEqual([50, 50])
+    expect(splitEvenly(100, 3)).toEqual([34, 33, 33])
+    expect(splitEvenly(1001, 3)).toEqual([334, 334, 333])
+    expect(splitEvenly(100, 1)).toEqual([100])
+  })
+
+  it('配分の合計は必ず元の合計と一致し、人数が0以下なら空配列、合計0なら全員0', () => {
+    expect(splitEvenly(7, 4).reduce((a, b) => a + b, 0)).toBe(7)
+    expect(splitEvenly(100, 0)).toEqual([])
+    expect(splitEvenly(0, 3)).toEqual([0, 0, 0])
   })
 })
 

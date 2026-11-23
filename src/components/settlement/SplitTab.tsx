@@ -29,7 +29,7 @@ import { useEscapeToClear } from '../common/range-selection/useEscapeToClear'
 import { useRangeSelection } from '../common/range-selection/useRangeSelection'
 import type { SplitSettleData, SplitSettleDerived, SplitSettleRepositories } from './splitSettleData'
 import { SPLIT_LIST_PAGE_SIZE } from './splitListPaging'
-import { buildPartnerCategories, parsePartnerValue, toPartnerValue } from './splitSettleModel'
+import { buildPartnerCategories, parsePartnerValue, splitEvenly, toPartnerValue } from './splitSettleModel'
 import { buildSplitLineTableRows, selectableLineIdsBySide } from './splitLineTableModel'
 import { buildSplitPreviews } from './splitPreviewModel'
 import { StickyHeaderTable } from '../common/sticky/StickyHeaderTable'
@@ -150,6 +150,9 @@ export function SplitTab({
   ])
   /** 1行目を自分で選んだら、以後は行の選択を変えても自動では上書きしない */
   const [firstRowTouched, setFirstRowTouched] = useState(false)
+  /** 割合・金額を自分で入力したら、以後は均等な初期値を入れ直さない(行を増減したら、また均等に入れ直す) */
+  const [ratiosTouched, setRatiosTouched] = useState(false)
+  const [amountsTouched, setAmountsTouched] = useState(false)
   const [mode, setMode] = useState<ExpenseSplittingAllocationMode>('ratio')
   const [batchId, setBatchId] = useState<number | 'new'>('new')
   const [memoInput, setMemoInput] = useState('')
@@ -196,6 +199,9 @@ export function SplitTab({
       ),
     [candidates, checkedIds],
   )
+  const net = chosen.reduce((sum, c) => sum + signedLineAmount(c.line), 0)
+  const debitTotal = chosen.filter((c) => c.line.side === 'debit').reduce((sum, c) => sum + c.line.amount, 0)
+  const creditTotal = chosen.filter((c) => c.line.side === 'credit').reduce((sum, c) => sum + c.line.amount, 0)
   /** 選んだ行の立替者(元の仕訳の起票者)のうち、行数がいちばん多い世帯メンバー(同数ならidが小さい人)。行を選んでいなければnull */
   const mostFrequentPayerId = useMemo(() => {
     const counts = new Map<number, number>()
@@ -206,26 +212,36 @@ export function SplitTab({
     }
     return best
   }, [chosen])
-  /** 画面の入力に、1行目の自動の世帯メンバーを反映した負担する人 */
-  const partners = useMemo<ExpenseSplittingParticipantRow[]>(
-    () =>
-      partnerInputs.map((p) =>
-        p.key === 1 && !firstRowTouched && mostFrequentPayerId !== null
-          ? { ...p, kind: 'householdMember', targetId: mostFrequentPayerId }
-          : p,
-      ),
-    [partnerInputs, firstRowTouched, mostFrequentPayerId],
-  )
-  const net = chosen.reduce((sum, c) => sum + signedLineAmount(c.line), 0)
-  const debitTotal = chosen.filter((c) => c.line.side === 'debit').reduce((sum, c) => sum + c.line.amount, 0)
-  const creditTotal = chosen.filter((c) => c.line.side === 'credit').reduce((sum, c) => sum + c.line.amount, 0)
+  /**
+   * 画面の入力に、自動の初期値を反映した負担する人。1行目の世帯メンバーは選んだ行の立替者で最も多い人、割合は人数で均等
+   * (100%を分ける)、金額は選んだ行の合計(差し引きの絶対値)を人数で均等に分けた額。自分で入力したら、その入力を使う
+   */
+  const partners = useMemo<ExpenseSplittingParticipantRow[]>(() => {
+    const evenRatios = splitEvenly(100, partnerInputs.length)
+    const evenAmounts = splitEvenly(Math.abs(net), partnerInputs.length)
+    return partnerInputs.map((p, i) => {
+      const withDefaults = {
+        ...p,
+        ratioInput: ratiosTouched ? p.ratioInput : String(evenRatios[i]),
+        amountInput: amountsTouched ? p.amountInput : String(evenAmounts[i]),
+      }
+      return p.key === 1 && !firstRowTouched && mostFrequentPayerId !== null
+        ? { ...withDefaults, kind: 'householdMember' as const, targetId: mostFrequentPayerId }
+        : withDefaults
+    })
+  }, [partnerInputs, firstRowTouched, mostFrequentPayerId, ratiosTouched, amountsTouched, net])
   const amountModeBlocked = chosen.length > 0 && net === 0
 
-  // 負担する人には、立て替えた本人も選べる(誰がどのくらい負担するかを全員分入れる)ので、世帯メンバーを除かない
-  const partnerCategories = useMemo(
-    () => buildPartnerCategories(data.members, derived.counterpartyCategories),
-    [data.members, derived.counterpartyCategories],
-  )
+  /** この行で選べる分担相手。他の行で選んだ世帯メンバー・取引先は除く(同じ人を二重に選べない)。この行の選択は残す */
+  const categoriesFor = (row: ExpenseSplittingParticipantRow) => {
+    const others = partners.filter((p) => p.key !== row.key && p.targetId !== null)
+    return buildPartnerCategories(
+      data.members,
+      derived.counterpartyCategories,
+      new Set(others.filter((p) => p.kind === 'householdMember').map((p) => p.targetId as number)),
+      new Set(others.filter((p) => p.kind === 'counterparty').map((p) => p.targetId as number)),
+    )
+  }
 
   // 人ごとの負担額(送信時と同じ計算)。計算できないとき(合計が合わないなど)は空にする
   const plan = planLineExpenseSplit({ selectedLines: chosen, accounts: data.accounts, participants: partners, allocationMode: mode })
@@ -238,7 +254,6 @@ export function SplitTab({
   const totalsMismatch =
     chosen.length > 0 &&
     ((mode === 'ratio' && Math.abs(ratioSum - 100) > 1e-9) || (mode === 'amount' && net !== 0 && amountSum !== Math.abs(net)))
-  const burdenTotal = plan.ok ? [...plan.burdens.values()].reduce((sum, n) => sum + n, 0) : null
   /** 負担の合計以外の、記録できない理由(選択・入力を直すと消える)。相手を選び終えるまでは出さない */
   const planError =
     chosen.length > 0 && allSelected && !plan.ok && plan.error !== 'ratioTotalMismatch' && plan.error !== 'amountTotalMismatch'
@@ -265,7 +280,20 @@ export function SplitTab({
 
   const patchPartner = (key: number, changes: Partial<ExpenseSplittingParticipantRow>) => {
     if (key === 1 && ('targetId' in changes || 'kind' in changes)) setFirstRowTouched(true)
-    setPartners((prev) => prev.map((p) => (p.key === key ? { ...p, ...changes } : p)))
+    // 初めて割合・金額を入力するときは、表示中の均等な初期値を、他の行の入力値として確定させる
+    const freezeRatios = 'ratioInput' in changes && !ratiosTouched
+    const freezeAmounts = 'amountInput' in changes && !amountsTouched
+    if ('ratioInput' in changes) setRatiosTouched(true)
+    if ('amountInput' in changes) setAmountsTouched(true)
+    setPartners((prev) =>
+      prev.map((p) => {
+        const shown = partners.find((x) => x.key === p.key)
+        let next = p
+        if (shown !== undefined && freezeRatios) next = { ...next, ratioInput: shown.ratioInput }
+        if (shown !== undefined && freezeAmounts) next = { ...next, amountInput: shown.amountInput }
+        return p.key === key ? { ...next, ...changes } : next
+      }),
+    )
     setFlash('')
     setError('')
   }
@@ -629,7 +657,7 @@ export function SplitTab({
                   <div className="split-settle__partner-pick">
                     <TreeSelect
                       label="分担相手"
-                      categories={partnerCategories}
+                      categories={categoriesFor(row)}
                       value={toPartnerValue(row)}
                       onChange={(value) => patchPartner(row.key, parsePartnerValue(value))}
                       placeholder="相手を選ぶ"
@@ -666,7 +694,11 @@ export function SplitTab({
                     className="split-settle__icon-btn"
                     aria-label={`${partnerName(row)}を分担相手から外す`}
                     disabled={partners.length <= 1}
-                    onClick={() => setPartners((prev) => prev.filter((p) => p.key !== row.key))}
+                    onClick={() => {
+                      setRatiosTouched(false)
+                      setAmountsTouched(false)
+                      setPartners((prev) => prev.filter((p) => p.key !== row.key))
+                    }}
                   >
                     ×
                   </button>
@@ -676,6 +708,8 @@ export function SplitTab({
                 type="button"
                 className="split-settle__add"
                 onClick={() => {
+                  setRatiosTouched(false)
+                  setAmountsTouched(false)
                   setPartners((prev) => [
                     ...prev,
                     { key: nextKey.current++, kind: 'householdMember', targetId: null, ratioInput: '', amountInput: '' },
@@ -722,20 +756,6 @@ export function SplitTab({
           </div>
 
           <div className="split-settle__commit">
-            <div className="split-settle__totals split-settle__totals--commit">
-              {mode === 'ratio' && (
-                <div className={`split-settle__line${totalsMismatch ? ' split-settle__line--warn' : ''}`}>
-                  <span>負担割合の合計</span>
-                  <span className="split-settle__num">{`${ratioSum}%`}</span>
-                </div>
-              )}
-              <div className={`split-settle__line split-settle__line--total${mode === 'amount' && totalsMismatch ? ' split-settle__line--warn' : ''}`}>
-                <span>負担額の合計</span>
-                <span className="split-settle__num">
-                  {formatCurrency(mode === 'amount' ? amountSum : (burdenTotal ?? 0), 'JPY')}
-                </span>
-              </div>
-            </div>
             <button
               type="button"
               className="split-settle__btn split-settle__btn--primary"

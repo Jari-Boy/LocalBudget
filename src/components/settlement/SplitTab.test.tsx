@@ -256,7 +256,7 @@ describe('SplitTab', () => {
     expect(screen.queryByRole('dialog', { name: '仕訳の詳細' })).not.toBeInTheDocument()
   })
 
-  it('行を選ぶと、選んだ合計と、負担額の合計を表示する', () => {
+  it('行を選ぶと、選んだ合計を表示する(分担の右下に、負担の合計は二重に出さない)', () => {
     setup()
 
     fireEvent.click(debitBox('ランチ'))
@@ -264,7 +264,8 @@ describe('SplitTab', () => {
 
     const panel = screen.getByRole('region', { name: '分担' })
     expect(within(panel).getByText('選択した合計').nextElementSibling).toHaveTextContent(formatCurrency(1200, 'JPY'))
-    expect(within(panel).getByText('負担額の合計').nextElementSibling).toHaveTextContent(formatCurrency(1200, 'JPY'))
+    expect(within(panel).queryByText('負担額の合計')).not.toBeInTheDocument()
+    expect(within(panel).queryByText('負担割合の合計')).not.toBeInTheDocument()
   })
 
   it('借方の行と貸方の行(返金)を一緒に選ぶと、貸方を差し引いた額を合計にして按分する', () => {
@@ -277,7 +278,7 @@ describe('SplitTab', () => {
     const panel = screen.getByRole('region', { name: '分担' })
     expect(within(panel).getByText('選択した合計').nextElementSibling).toHaveTextContent(formatCurrency(1000, 'JPY'))
     expect(within(panel).getByText('貸方の合計(差し引き)').nextElementSibling).toHaveTextContent(formatCurrency(-200, 'JPY'))
-    expect(within(panel).getByText('負担額の合計').nextElementSibling).toHaveTextContent(formatCurrency(1000, 'JPY'))
+    expect(within(panel).getByText('選択した合計').nextElementSibling).toHaveTextContent(formatCurrency(1000, 'JPY'))
   })
 
   it('選んだ行から作られる割勘仕訳のプレビューを、分担を選んだあとに表示する', () => {
@@ -361,11 +362,57 @@ describe('SplitTab', () => {
     fireEvent.change(screen.getByLabelText('妻の負担割合(%)'), { target: { value: '40' } })
 
     expect(screen.getByRole('button', { name: '割勘を記録' })).toBeDisabled()
-    expect(screen.getByText('負担割合の合計')).toBeInTheDocument()
-    expect(screen.getByText('負担割合の合計').nextElementSibling).toHaveTextContent('90%')
+    expect(screen.queryByText('負担割合の合計')).not.toBeInTheDocument()
     expect(screen.getByText(/合計を100%にしてください/)).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('妻の負担割合(%)'), { target: { value: '50' } })
     expect(screen.getByRole('button', { name: '割勘を記録' })).toBeEnabled()
+  })
+
+  it('他の行で選んだ人は、この行の分担相手の選択肢に出ない(同じ人を二重に選べない)。自分の行の選択は出る', () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    chooseOption(/^分担相手/, '妻', 0)
+
+    fireEvent.click(screen.getAllByRole('button', { name: /^分担相手/ })[1])
+    const second = within(screen.getByRole('dialog', { name: /分担相手/ }))
+    expect(second.queryByRole('button', { name: '妻' })).not.toBeInTheDocument()
+    expect(second.getByRole('button', { name: '夫' })).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+  })
+
+  it('負担する人の行数に応じて、割合は均等になる初期値が入る(2行は50%ずつ、3行は34・33・33%、1行は100%)。行を増減すると入れ直す', () => {
+    setup()
+    const ratios = () => screen.getAllByLabelText(/の負担割合/).map((e) => (e as HTMLInputElement).value)
+
+    expect(ratios()).toEqual(['50', '50'])
+    fireEvent.click(screen.getByRole('button', { name: '+ 分担相手を追加' }))
+    expect(ratios()).toEqual(['34', '33', '33'])
+    fireEvent.click(screen.getAllByRole('button', { name: /を分担相手から外す/ })[2])
+    fireEvent.click(screen.getAllByRole('button', { name: /を分担相手から外す/ })[1])
+    expect(ratios()).toEqual(['100'])
+  })
+
+  it('割合を自分で直したあとは、他の行の割合を自動で変えない。行を増減すると、また均等に入れ直す', () => {
+    setup()
+    const ratios = () => screen.getAllByLabelText(/の負担割合/).map((e) => (e as HTMLInputElement).value)
+    fireEvent.change(screen.getAllByLabelText(/の負担割合/)[0], { target: { value: '70' } })
+
+    expect(ratios()).toEqual(['70', '50'])
+    fireEvent.click(screen.getByRole('button', { name: '+ 分担相手を追加' }))
+    expect(ratios()).toEqual(['34', '33', '33'])
+  })
+
+  it('金額指定に切り替えると、選んだ行の合計を人数で均等に分けた金額が初期値で入る(端数は先の行へ)', () => {
+    setup(makeData([refundEntry()]))
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(creditBox('返品'))
+    fireEvent.change(screen.getByLabelText('按分の方法'), { target: { value: 'amount' } })
+    const amounts = () => screen.getAllByLabelText(/の負担額を入力/).map((e) => (e as HTMLInputElement).value)
+
+    expect(amounts()).toEqual(['500', '500'])
+    fireEvent.click(debitBox('ランチ'))
+    // 返品(貸方200)だけの選択になると、差し引きの200を均等に分けた100ずつになる
+    expect(amounts()).toEqual(['100', '100'])
   })
 
   it('金額指定では、負担額の合計が選んだ行の合計に合うまで「割勘を記録」を押せない', () => {
