@@ -10,6 +10,7 @@ import type { CounterpartyGroup } from '../../domain/counterparty-group/Counterp
 import type { CounterpartyGroupRepository } from '../../domain/counterparty-group/CounterpartyGroupRepository'
 import { traceExpenseSplittingHistory } from '../../domain/expense-splitting/traceExpenseSplittingHistory'
 import { checkExpenseSplittability } from '../../domain/expense-splitting/checkExpenseSplittability'
+import type { ExpenseSplitSourceLink } from '../../domain/expense-splitting/listSplittableLineEntries'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { HouseholdMemberRepository } from '../../domain/household-member/HouseholdMemberRepository'
 import type { JournalEntry, JournalLineSide } from '../../domain/journal/JournalEntry'
@@ -117,7 +118,8 @@ export type JournalScreenTab = 'list' | 'drafts' | 'proposals' | 'rules' | 'temp
 export interface JournalScreenProps {
   /** 科目の登録フォームで最初の残高を記録する先(計画Issue #205)。省略時は最初の残高の欄を出さない */
   accountBalanceRecordRepository?: MaybeAsync<Pick<AccountBalanceRecordRepository, 'create'>>
-  journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'update' | 'delete'>>
+  journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'update' | 'delete'>> &
+    Partial<MaybeAsync<Pick<JournalEntryRepository, 'findExpenseSplitSourceLinks'>>>
   journalEntryDraftRepository: MaybeAsync<
     Pick<JournalEntryDraftRpcApi, 'findAll' | 'create' | 'update' | 'delete' | 'confirm'>
   >
@@ -198,6 +200,8 @@ interface LoadedData {
   /** 仕訳テンプレートとそのグループ(計画Issue #201)。リポジトリを渡さないときは空 */
   templates: JournalTemplate[]
   templateGroups: JournalTemplateGroup[]
+  /** 割勘対象行の記録(どの行が割勘済みか、計画Issue #271) */
+  splitSourceLinks: ExpenseSplitSourceLink[]
 }
 
 type Selection =
@@ -312,7 +316,7 @@ export function JournalScreen(props: JournalScreenProps) {
   selectionRef.current = selection
 
   const fetchAll = async (): Promise<LoadedData> => {
-    const [entries, drafts, accounts, accountGroups, counterparties, counterpartyGroups, projects, projectGroups, members, batches, memberships, groups, proposals, rules, templates, templateGroups] =
+    const [entries, drafts, accounts, accountGroups, counterparties, counterpartyGroups, projects, projectGroups, members, batches, memberships, groups, proposals, rules, templates, templateGroups, splitSourceLinks] =
       await Promise.all([
         journalEntryRepository.findAll(),
         journalEntryDraftRepository.findAll(),
@@ -330,10 +334,12 @@ export function JournalScreen(props: JournalScreenProps) {
         props.recurringTransactionRuleRepository.findAll(),
         props.journalTemplateRepository === undefined ? [] : props.journalTemplateRepository.findAll(),
         props.journalTemplateGroupRepository === undefined ? [] : props.journalTemplateGroupRepository.findAll(),
+        journalEntryRepository.findExpenseSplitSourceLinks === undefined ? [] : journalEntryRepository.findExpenseSplitSourceLinks(),
       ])
     return {
       entries, drafts, accounts, accountGroups, counterparties, counterpartyGroups, projects, projectGroups,
       members, batches, memberships, groups, proposals: [...proposals], rules, templates, templateGroups,
+      splitSourceLinks,
     }
   }
 
@@ -917,6 +923,7 @@ export function JournalScreen(props: JournalScreenProps) {
         selectedEntry,
         data.accounts,
         [...relatedIds].map((id) => entriesById.get(id)).filter((e): e is JournalEntry => e !== undefined),
+        data.splitSourceLinks,
       )
     : null
 

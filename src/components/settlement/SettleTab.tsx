@@ -142,8 +142,14 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
   const direction = directionOverride ?? primaryDirection
   const directionSummary = summary[direction]
   const resolved = resolveSettlementTarget(summary, direction)
-  const side = direction === 'advance' ? 'credit' : 'debit'
-  const category = direction === 'advance' ? 'asset' : 'liability'
+  // 残高が負(相手へ返す向きの割勘、計画Issue #271)のときは、精算の向きも逆になる。立替金は借方・未払金は貸方の行で精算し、
+  // 残高との比較・差額は絶対値で行う。一時勘定は反対の区分の科目と同じ向きで扱う
+  const reversed = resolved.balance < 0
+  const baseSide = direction === 'advance' ? 'credit' : 'debit'
+  const side = reversed ? (baseSide === 'credit' ? 'debit' : 'credit') : baseSide
+  const baseCategory = direction === 'advance' ? 'asset' : 'liability'
+  const category = reversed ? (baseCategory === 'asset' ? 'liability' : 'asset') : baseCategory
+  const balanceToSettle = Math.abs(resolved.balance)
 
   const candidates: UnassignedAdvanceEntryCandidate[] =
     resolved.target !== null && directionSummary !== null
@@ -166,7 +172,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
   })
   const chosen = candidates.filter((c) => checkedLineIds.has(c.lineId))
   const total = chosen.reduce((sum, c) => sum + c.amount, 0)
-  const diff = total - resolved.balance
+  const diff = total - balanceToSettle
   const matched = total > 0 && diff === 0
   const mismatched = total > 0 && diff !== 0
 
@@ -220,6 +226,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
             entryHouseholdMemberId,
             resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(data.accounts, entryHouseholdMemberId),
             repositories,
+            reversed,
             candidates: chosen,
             diff,
             createAdjustment,
@@ -262,8 +269,8 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
   // 精算タブが紐づけるのは、残高を減らす側の行(立替金の貸方・未払金の借方)だけ。債権債務を生む側の行は
   // 割勘や仕訳画面で付けたものなので、ここでは解除できない
   const isSettlingLine = (l: { accountId: number; side: 'debit' | 'credit' }) =>
-    (l.accountId === summary.advance?.accountId && l.side === 'credit') ||
-    (l.accountId === summary.payable?.accountId && l.side === 'debit')
+    (l.accountId === summary.advance?.accountId && l.side === (reversed ? 'debit' : 'credit')) ||
+    (l.accountId === summary.payable?.accountId && l.side === (reversed ? 'credit' : 'debit'))
 
   // 精算で紐づけた行のタグだけを外して、未割当(候補)に戻す。仕訳は削除しない
   const unlinkLine = (entryId: number, lineId: number) => {
@@ -296,6 +303,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
             entryHouseholdMemberId,
             resolveLineHouseholdMemberId: createLineHouseholdMemberResolver(data.accounts, entryHouseholdMemberId),
             repositories,
+            reversed,
             counterAccountId: Number(draftAccount),
             amount,
             entryDate: draftDate,
@@ -540,6 +548,13 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
                 </button>
               )}
             </div>
+            {reversed && (
+              <p className="split-settle__note">
+                {`残高がマイナス(${formatCurrency(resolved.balance, 'JPY')})です。相手へ返す側の精算なので、${
+                  direction === 'advance' ? '立替金を借方に持つ' : '未払金を貸方に持つ'
+                }仕訳を選んでください。`}
+              </p>
+            )}
             {mismatched && (
               <p className="split-settle__note">
                 「精算完了」を選ぶと、差額を{adjustAccountName}に計上してバッチの残高を0にします。
@@ -558,7 +573,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
               aria-expanded={draftOpen}
               onClick={() => {
                 setDraftOpen((open) => !open)
-                if (!draftOpen && draftAmount === '') setDraftAmount(String(Math.max(resolved.balance, 0)))
+                if (!draftOpen && draftAmount === '') setDraftAmount(String(balanceToSettle))
               }}
             >
               + 精算の仕訳を起票

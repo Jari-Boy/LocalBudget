@@ -1,9 +1,14 @@
 import { useMemo, useRef, useState, type CSSProperties } from 'react'
-import type { Account } from '../../domain/account/Account'
+import type { JournalLineSide } from '../../domain/journal/JournalEntry'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import { filterJournalEntries } from '../../domain/journal/filterJournalEntries'
 import { buildRelatedEntryIdsByEntryId } from '../../domain/journal-link-group/buildRelatedEntryIdsByEntryId'
-import { listSplittableEntries, type SplittableEntry } from '../../domain/expense-splitting/listSplittableEntries'
+import {
+  listSplittableLineEntries,
+  signedLineAmount,
+  type SplittableLine,
+  type SplittableLineEntry,
+} from '../../domain/expense-splitting/listSplittableLineEntries'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { JournalFilterPanel } from '../common/journal-filter/JournalFilterPanel'
 import { ListLoadMore } from '../common/list-paging/ListLoadMore'
@@ -13,10 +18,10 @@ import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { EntryDetailDialog } from './EntryDetailDialog'
 import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
 import {
-  calculateParticipantAmounts,
   type ExpenseSplittingAllocationMode,
   type ExpenseSplittingParticipantRow,
 } from '../expense-splitting/expenseSplittingFormParticipant'
+import { planLineExpenseSplit, type SelectedSplitLine } from '../expense-splitting/planLineExpenseSplit'
 import { runInHistoryGroup } from '../../infrastructure/history/historyGroupRunner'
 import { submitExpenseSplit, type SubmitExpenseSplitError } from '../expense-splitting/submitExpenseSplit'
 import { BatchSelect } from '../master/BatchSelect'
@@ -25,7 +30,10 @@ import { useRangeSelection } from '../common/range-selection/useRangeSelection'
 import type { SplitSettleData, SplitSettleDerived, SplitSettleRepositories } from './splitSettleData'
 import { SPLIT_LIST_PAGE_SIZE } from './splitListPaging'
 import { buildPartnerCategories, parsePartnerValue, toPartnerValue } from './splitSettleModel'
+import { buildSplitLineTableRows, selectableLineIdsBySide } from './splitLineTableModel'
+import { buildSplitPreviews } from './splitPreviewModel'
 import { StickyHeaderTable } from '../common/sticky/StickyHeaderTable'
+import '../journal-entry/JournalLineTable.css'
 import './SplitSettleScreen.css'
 
 export interface SplitTabProps {
@@ -36,7 +44,7 @@ export interface SplitTabProps {
   today: string
   /** 書き込みのあとにデータを読み直す */
   onChanged: () => Promise<void>
-  /** 最初から選んだ状態にする仕訳(仕訳画面の「この仕訳を割勘」から来たとき) */
+  /** 最初から選んだ状態にする仕訳(仕訳画面の「この仕訳を割勘」から来たとき)。その仕訳の選べる行をすべて選ぶ */
   initialCheckedEntryIds?: readonly number[]
   /** 絞り込み条件。開閉ボタンがタブの行にあるため、親が持つ(計画Issue #266) */
   filter: JournalEntryFilter
@@ -46,11 +54,13 @@ export interface SplitTabProps {
 }
 
 const ERROR_TEXT: Record<SubmitExpenseSplitError, string> = {
-  expenseAccountNotFound: '費用の行がある仕訳を選んでください',
+  expenseAccountNotFound: '費用・収益の行を選んでください',
   requiredFieldMissing: '未収金(精算バッチ)の科目が見つかりません',
   advanceLiabilityAccountRequired: '未払金の科目が見つかりません',
   counterpartyTargetRequired: '分担相手を選んでください',
   noRecipient: '相手の負担額が0円です。割合や金額を確認してください',
+  amountNetZero: '選んだ行の借方と貸方が差し引きで0円のため、金額を指定できません。割合か均等で分けてください',
+  amountExceedsTotal: '指定した金額の合計が、選んだ行の差し引きの合計を超えています',
 }
 
 /** 割勘タブのバッチの先頭に固定する「新しいバッチを作成」(記録するときにバッチを作る既定の選択状態)。参照を安定させるため定数にする */
@@ -62,29 +72,38 @@ const MODE_LABEL: Record<ExpenseSplittingAllocationMode, string> = {
   amount: '金額を指定する',
 }
 
-/** 割勘する仕訳の既定の摘要。精算バッチを新規作成するときの名前にもなる(精算タブで変更できる) */
-function defaultMemo(entries: readonly SplittableEntry[]): string {
-  if (entries.length === 1) {
-    const memo = entries[0].entry.memo
+const SIDE_LABEL: Record<JournalLineSide, string> = { debit: '借方', credit: '貸方' }
+
+/** 割勘する行の既定の摘要。精算バッチを新規作成するときの名前にもなる(精算タブで変更できる) */
+function defaultMemo(chosen: readonly SelectedSplitLine[]): string {
+  const entryIds = new Set(chosen.map((c) => c.entry.id))
+  if (entryIds.size === 1) {
+    const memo = chosen[0].entry.memo
     return memo === null || memo === '' ? '割勘' : `${memo}の割勘`
   }
-  return `${entries.length}件の支出の割勘`
+  return `${chosen.length}行の割勘`
 }
 
-function payerAccountName(item: SplittableEntry, accounts: readonly Account[]): string {
-  const other = item.entry.lines.find((l) => !item.expenseLines.includes(l))
-  return accounts.find((a) => a.id === other?.accountId)?.name ?? ''
+/** 候補の中の、指定した仕訳の選べる行をすべて選んだ状態のid */
+function selectableLineIdsOfEntries(items: readonly SplittableLineEntry[], entryIds: readonly number[]): number[] {
+  const wanted = new Set(entryIds)
+  return items
+    .filter((i) => wanted.has(i.entry.id))
+    .flatMap((i) => i.lines.filter((l) => l.selectable).map((l) => l.line.id))
 }
 
 /**
- * 割勘タブ(計画Issue #153、承認済みモックアップ)。絞り込み欄はタブの行のボタンで開閉し(初期は閉、計画Issue #266)、割勘できる仕訳だけを
- * 候補に出す(割勘で作られた仕訳・割勘済みの仕訳・借方に費用の行がない仕訳は出ない)。
- * 仕訳を選び、分担相手(世帯メンバーと取引先をグループつきで選ぶ)と負担の割合で割勘を記録する。
- * 絞り込みで隠れた行も、チェック済みなら合計に含める。按分は割合のほか、均等・金額指定を選べる
- * (金額指定は仕訳を1件だけ選んだときのみ)。精算バッチは新規作成(既定)か既存から選ぶ。
+ * 割勘タブ(計画Issue #153、承認済みモックアップ。計画Issue #271で、仕訳単位の候補を仕訳の明細行単位にした)。
+ * 絞り込み欄はタブの行のボタンで開閉し(初期は閉、計画Issue #266)、割勘できる行だけを候補に出す。候補の表は
+ * 仕訳一覧の明細行単位の表と同じく、借方の行を左・貸方の行を右に並べ、各側の行にチェックを付ける。選べるのは費用・収益の行
+ * (借方・貸方とも)で、それ以外の行(支払元の資産の行など)はチェックできない。割勘済みの行は表示しない。
+ * 行を選び、分担相手(世帯メンバーと取引先をグループつきで選ぶ)と負担の割合で割勘を記録する。借方の行と貸方の行(返金・
+ * 値引き・収益)を一緒に選んだときは、貸方を差し引いた純額に対して按分する。絞り込みで隠れた行も、チェック済みなら合計に含める。
+ * 按分は割合のほか、均等・金額指定を選べる(金額指定は、純額が0円でないとき)。精算バッチは新規作成(既定)か既存から選ぶ。
  * 割勘仕訳の摘要は入力でき、空のときは既定の摘要を使う(新しい精算バッチを作るときは、その摘要がバッチ名になる)。
- * 候補は150件ずつ「さらにN件表示」で出し、チェック済みの仕訳が150件の外にあるときは、その仕訳が見える件数まで広げる
- * (合計に含まれる仕訳が見えなくならないため、計画Issue #268)。割勘履歴は履歴タブ(SplitHistoryTab)にある。
+ * 記録する前に、作られる割勘仕訳のプレビュー(読み取り専用)を出す。
+ * 候補は仕訳150件ずつ「さらにN件表示」で出し、チェック済みの行が150件の外にあるときは、その行が見える件数まで広げる
+ * (合計に含まれる行が見えなくならないため、計画Issue #268)。割勘履歴は履歴タブ(SplitHistoryTab)にある。
  */
 export function SplitTab({
   data,
@@ -100,7 +119,16 @@ export function SplitTab({
   /** 絞り込み欄(開いているときだけある)の要素と高さ。右のパネルの追従位置に足す(計画Issue #266) */
   const [filterElement, setFilterElement] = useState<HTMLDivElement | null>(null)
   const filterHeight = useElementHeight(filterElement)
-  const [checkedIds, setCheckedIds] = useState<ReadonlySet<number>>(() => new Set(initialCheckedEntryIds))
+
+  const relatedIds = useMemo(() => buildRelatedEntryIdsByEntryId(data.memberships), [data.memberships])
+  const candidates = useMemo(
+    () => listSplittableLineEntries(data.entries, data.accounts, relatedIds, data.sourceLinks),
+    [data.entries, data.accounts, relatedIds, data.sourceLinks],
+  )
+
+  const [checkedIds, setCheckedIds] = useState<ReadonlySet<number>>(
+    () => new Set(selectableLineIdsOfEntries(candidates, initialCheckedEntryIds)),
+  )
   const nextKey = useRef(2)
   const [partners, setPartners] = useState<ExpenseSplittingParticipantRow[]>([
     { key: 1, kind: 'householdMember', targetId: null, ratioInput: '50', amountInput: '' },
@@ -116,11 +144,6 @@ export function SplitTab({
   const [displayLimit, setDisplayLimit] = useState<number>(SPLIT_LIST_PAGE_SIZE.candidate)
   const [detailEntryId, setDetailEntryId] = useState<number | null>(null)
 
-  const relatedIds = useMemo(() => buildRelatedEntryIdsByEntryId(data.memberships), [data.memberships])
-  const candidates = useMemo(
-    () => listSplittableEntries(data.entries, data.accounts, relatedIds),
-    [data.entries, data.accounts, relatedIds],
-  )
   const shown = useMemo(() => {
     const visibleIds = new Set(
       filterJournalEntries(
@@ -134,8 +157,11 @@ export function SplitTab({
       .filter((c) => visibleIds.has(c.entry.id))
       .sort((a, b) => b.entry.entryDate.localeCompare(a.entry.entryDate) || b.entry.id - a.entry.id)
   }, [candidates, data.accounts, filter, derived.filterContext])
-  /** 表に出す件数。上限までだが、チェック済みの仕訳(絞り込みで隠れたものは数えない)が範囲の外にあるときは、いちばん後ろの仕訳が見えるまで広げる */
-  const lastCheckedIndex = shown.reduce((last, item, index) => (checkedIds.has(item.entry.id) ? index : last), -1)
+  /** 表に出す仕訳の件数。上限までだが、チェック済みの行(絞り込みで隠れたものは数えない)が範囲の外にあるときは、いちばん後ろの行が見えるまで広げる */
+  const lastCheckedIndex = shown.reduce(
+    (last, item, index) => (item.lines.some((l) => checkedIds.has(l.line.id)) ? index : last),
+    -1,
+  )
   const shownCount = resolveShownCount({
     total: shown.length,
     limit: displayLimit,
@@ -143,33 +169,69 @@ export function SplitTab({
     selectedIndex: lastCheckedIndex,
   })
   const visible = useMemo(() => shown.slice(0, shownCount), [shown, shownCount])
-  const chosen = candidates.filter((c) => checkedIds.has(c.entry.id))
-  const total = chosen.reduce((sum, c) => sum + c.amount, 0)
+  const rows = useMemo(() => buildSplitLineTableRows(visible), [visible])
+
+  /** 選んだ行(絞り込みで隠れた行も含む)。候補の並びのまま */
+  const chosen = useMemo<SelectedSplitLine[]>(
+    () =>
+      candidates.flatMap(({ entry, lines }) =>
+        lines.filter((l) => l.selectable && checkedIds.has(l.line.id)).map((l) => ({ entry, line: l.line })),
+      ),
+    [candidates, checkedIds],
+  )
+  const net = chosen.reduce((sum, c) => sum + signedLineAmount(c.line), 0)
+  const debitTotal = chosen.filter((c) => c.line.side === 'debit').reduce((sum, c) => sum + c.line.amount, 0)
+  const creditTotal = chosen.filter((c) => c.line.side === 'credit').reduce((sum, c) => sum + c.line.amount, 0)
   const payerIds = new Set(chosen.map((c) => c.entry.householdMemberId))
+  const amountModeBlocked = chosen.length > 0 && net === 0
 
   const partnerCategories = useMemo(
     () => buildPartnerCategories(data.members, derived.counterpartyCategories, payerIds),
-    // payerIdsは選んだ仕訳から毎回作る集合なので、中身の文字列で比べる
+    // payerIdsは選んだ行から毎回作る集合なので、中身の文字列で比べる
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data.members, derived.counterpartyCategories, [...payerIds].sort().join(',')],
   )
 
-  // 相手ごとの負担額。均等・割合は費用の行ごとに計算して足す(送信時と同じ計算)
+  // 相手ごとの負担額(送信時と同じ計算)。計算できないとき(金額指定で合計超過など)は金額指定の入力額をそのまま出す
+  const plan = planLineExpenseSplit({ selectedLines: chosen, accounts: data.accounts, participants: partners, allocationMode: mode })
   const shareByKey = new Map<number, number>()
   for (const row of partners) {
-    if (mode === 'amount') {
+    if (plan.ok) {
+      const planned = plan.recipients.find((r) => r.row.key === row.key)
+      shareByKey.set(row.key, planned === undefined ? 0 : planned.signedShares.reduce((sum, n) => sum + n, 0))
+    } else if (mode === 'amount') {
       shareByKey.set(row.key, Number(row.amountInput) || 0)
-      continue
+    } else {
+      shareByKey.set(row.key, 0)
     }
-    let sum = 0
-    for (const c of chosen) {
-      for (const expenseLine of c.expenseLines) {
-        sum += calculateParticipantAmounts(expenseLine.amount, partners, mode).get(String(row.key)) ?? 0
-      }
-    }
-    shareByKey.set(row.key, sum)
   }
   const totalShare = [...shareByKey.values()].reduce((sum, n) => sum + n, 0)
+  /** 選んでいる行の組み合わせでは記録できない理由(選択・入力を直すと消える) */
+  const planError = chosen.length > 0 && !plan.ok && (mode === 'amount' ? plan.error !== 'noRecipient' : false) ? plan.error : null
+
+  const batchLabel =
+    batchId === 'new'
+      ? memoInput.trim() === ''
+        ? chosen.length === 0
+          ? ''
+          : defaultMemo(chosen)
+        : memoInput.trim()
+      : (data.batches.find((b) => b.id === batchId)?.name ?? '')
+  const previews = useMemo(
+    () =>
+      buildSplitPreviews({
+        selectedLines: chosen,
+        accounts: data.accounts,
+        participants: partners,
+        allocationMode: mode,
+        today,
+        batchLabel,
+        accountName: (id) => data.accounts.find((a) => a.id === id)?.name ?? '',
+        memberName: (id) => data.members.find((m) => m.id === id)?.name ?? '',
+        counterpartyName: (id) => data.counterparties.find((c) => c.id === id)?.name ?? '',
+      }),
+    [chosen, data.accounts, data.members, data.counterparties, partners, mode, today, batchLabel],
+  )
 
   const patchPartner = (key: number, changes: Partial<ExpenseSplittingParticipantRow>) => {
     setPartners((prev) => prev.map((p) => (p.key === key ? { ...p, ...changes } : p)))
@@ -177,17 +239,20 @@ export function SplitTab({
     setError('')
   }
 
-  // 仕訳のチェックの Shift+クリック(範囲選択)・Ctrl/Cmd+クリック(トグル)・Shift+↑↓、Ctrl/Cmd+行のどこかを押す操作(計画Issue #235 D)
+  // 行のチェックの Shift+クリック(範囲選択)・Ctrl/Cmd+クリック(トグル)・Shift+↑↓。範囲は借方側・貸方側のそれぞれの中だけ
+  const selectableLines = visible.flatMap((item) => item.lines.filter((l) => l.selectable))
+  const sideByLineId = new Map(selectableLines.map((l) => [l.line.id, l.line.side]))
   const range = useRangeSelection<number>({
-    order: visible.map((item) => item.entry.id),
+    order: selectableLines.map((l) => l.line.id),
     selected: [...checkedIds],
     onChange: (next) => {
       setCheckedIds(new Set(next))
       setFlash('')
       setError('')
     },
+    scopeOf: (id) => sideByLineId.get(id),
   })
-  // Esc で仕訳のチェックをすべて外す
+  // Esc で行のチェックをすべて外す
   useEscapeToClear(
     checkedIds.size > 0
       ? () => {
@@ -209,6 +274,22 @@ export function SplitTab({
     setError('')
   }
 
+  /** 見出しのチェック: その側の表示中の選べる行をすべて選ぶ(すべて選択済みなら外す) */
+  const toggleSide = (side: JournalLineSide) => {
+    const ids = selectableLineIdsBySide(visible, side)
+    const allChecked = ids.length > 0 && ids.every((id) => checkedIds.has(id))
+    setCheckedIds((prev) => {
+      const next = new Set(prev)
+      for (const id of ids) {
+        if (allChecked) next.delete(id)
+        else next.add(id)
+      }
+      return next
+    })
+    setFlash('')
+    setError('')
+  }
+
   const commit = async () => {
     if (submitting || chosen.length === 0) return
     if (partners.some((p) => p.targetId === null)) {
@@ -221,7 +302,7 @@ export function SplitTab({
     try {
       const result = await runInHistoryGroup(repositories.history, 'expenseSplit.submit', () =>
         submitExpenseSplit({
-          originalEntries: chosen.map((c) => c.entry),
+          selectedLines: chosen,
           accounts: data.accounts,
           settlementBatches: data.batches,
           participants: partners,
@@ -249,11 +330,79 @@ export function SplitTab({
   }
 
   const detailEntry = data.entries.find((e) => e.id === detailEntryId)
+  const accountName = (id: number) => data.accounts.find((a) => a.id === id)?.name ?? '(不明な科目)'
+  const memberName = (id: number) => data.members.find((m) => m.id === id)?.name ?? ''
+  const partnerOf = (line: SplittableLine['line']) => {
+    if (line.counterpartyId !== null) return data.counterparties.find((c) => c.id === line.counterpartyId)?.name ?? ''
+    if (line.settlementBatchId !== null) return data.batches.find((b) => b.id === line.settlementBatchId)?.name ?? ''
+    return ''
+  }
 
   const partnerName = (row: ExpenseSplittingParticipantRow) => {
     if (row.targetId === null) return '未選択'
     if (row.kind === 'householdMember') return data.members.find((m) => m.id === row.targetId)?.name ?? '未選択'
     return data.counterparties.find((c) => c.id === row.targetId)?.name ?? '未選択'
+  }
+
+  /** 借方・貸方の側ごとのセル(チェック・科目・取引先/精算バッチ・世帯メンバー・金額)。選べない行は無効なチェックと理由 */
+  const sideCells = (item: SplittableLine | null, side: JournalLineSide) => {
+    const start = side === 'debit' ? 'journal-line-table__debit-start' : 'journal-line-table__credit-start'
+    if (item === null) {
+      return [
+        <td key="check" className={`journal-line-table__cell journal-line-table__cell--check ${start}`} />,
+        <td key="account" className="journal-line-table__cell" />,
+        <td key="partner" className="journal-line-table__cell" />,
+        <td key="member" className="journal-line-table__cell" />,
+        <td key="amount" className="journal-line-table__cell journal-line-table__cell--amount" />,
+      ]
+    }
+    const { line, selectable, reason } = item
+    const selected = checkedIds.has(line.id)
+    const selectedClass = selected ? ' journal-line-table__cell--bulk-selected' : ''
+    const dim = selectable ? '' : ' split-settle__cell--disabled'
+    return [
+      <td key="check" className={`journal-line-table__cell journal-line-table__cell--check ${start}${selectedClass}${dim}`}>
+        <input
+          type="checkbox"
+          className="journal-line-table__checkbox"
+          aria-label={`${SIDE_LABEL[side]}の${accountName(line.accountId)}の行を選択`}
+          checked={selected}
+          disabled={!selectable}
+          title={reason === 'not_profit_loss_account' ? '費用・収益の行ではないため選べません' : undefined}
+          {...(selectable ? range.checkboxProps(line.id) : {})}
+        />
+      </td>,
+      <td key="account" className={`journal-line-table__cell journal-line-table__cell--account${selectedClass}${dim}`}>
+        {accountName(line.accountId)}
+      </td>,
+      <td key="partner" className={`journal-line-table__cell${selectedClass}${dim}`}>
+        {partnerOf(line)}
+      </td>,
+      <td key="member" className={`journal-line-table__cell${selectedClass}${dim}`}>
+        {memberName(line.householdMemberId)}
+      </td>,
+      <td key="amount" className={`journal-line-table__cell journal-line-table__cell--amount${selectedClass}${dim}`}>
+        {formatCurrency(line.amount, 'JPY')}
+      </td>,
+    ]
+  }
+
+  const sideHeadCheck = (side: JournalLineSide) => {
+    const ids = selectableLineIdsBySide(visible, side)
+    const checkedCount = ids.filter((id) => checkedIds.has(id)).length
+    return (
+      <input
+        type="checkbox"
+        className="journal-line-table__checkbox"
+        aria-label={`${SIDE_LABEL[side]}の行をすべて選択`}
+        checked={ids.length > 0 && checkedCount === ids.length}
+        disabled={ids.length === 0}
+        ref={(element) => {
+          if (element) element.indeterminate = checkedCount > 0 && checkedCount < ids.length
+        }}
+        onChange={() => toggleSide(side)}
+      />
+    )
   }
 
   return (
@@ -269,49 +418,51 @@ export function SplitTab({
         </div>
       )}
 
-      {/* 右のパネルは、固定したタブの行と絞り込み欄の下に追従する(絞り込み欄の高さを --sticky-head-extra で渡す、計画Issue #266) */}
-      <div className="split-settle__body" style={{ '--sticky-head-extra': `${filterHeight}px` } as CSSProperties}>
-        <section aria-label="割勘する仕訳" className="split-settle__card split-settle__card--table">
+      {/* 候補の表(全幅)・分担・割勘仕訳のプレビューを縦に並べる。固定したタブの行と絞り込み欄の下に追従する高さを --sticky-head-extra で渡す(計画Issue #266) */}
+      <div className="split-settle__stack" style={{ '--sticky-head-extra': `${filterHeight}px` } as CSSProperties}>
+        <section aria-label="割勘する行" className="split-settle__card split-settle__card--table journal-line-table">
           <p className="split-settle__note split-settle__note--pad">
-            費用の行があり、まだ割勘していない仕訳だけを表示しています。費用の行が複数あれば、各行を同じ割合で割ります。
+            仕訳の明細行を選んで割勘します。費用・収益の行(借方・貸方とも)だけ選べます。割勘済みの行は表示しません。借方と貸方を
+            一緒に選ぶと、貸方(返金・値引き・収益)を差し引いた額を割ります。
           </p>
           <StickyHeaderTable
             frameClassName="split-settle__scroll"
-            tableClassName="split-settle__table"
-            floatingClassName="floating-table-header--bare"
+            tableClassName="journal-line-table__table split-settle__line-table"
+            floatingClassName="floating-table-header--lines"
             head={
               <thead>
                 <tr>
-                  <th>選択</th>
                   <th>日付</th>
                   <th>摘要</th>
-                  <th>支払元</th>
-                  <th className="split-settle__num">金額</th>
+                  <th className="journal-line-table__cell--check journal-line-table__debit-start">{sideHeadCheck('debit')}</th>
+                  <th>借方の科目</th>
+                  <th>取引先・精算バッチ</th>
+                  <th>世帯メンバー</th>
+                  <th className="journal-line-table__cell--amount">金額</th>
+                  <th className="journal-line-table__cell--check journal-line-table__credit-start">{sideHeadCheck('credit')}</th>
+                  <th>貸方の科目</th>
+                  <th>取引先・精算バッチ</th>
+                  <th>世帯メンバー</th>
+                  <th className="journal-line-table__cell--amount">金額</th>
                 </tr>
               </thead>
             }
           >
             <tbody>
-              {visible.map((item) => {
-                const memo = item.entry.memo ?? ''
+              {rows.map((row, index) => {
+                const memo = row.entry.memo ?? ''
                 return (
-                  <tr key={item.entry.id} {...range.selectingRowProps(item.entry.id)}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        aria-label={`${memo}を選択`}
-                        checked={checkedIds.has(item.entry.id)}
-                        {...range.checkboxProps(item.entry.id)}
-                      />
+                  <tr key={`${row.entry.id}:${index}`} className={row.isFirst && index > 0 ? 'split-settle__entry-start' : undefined}>
+                    <td className="journal-line-table__cell">{row.isFirst ? row.entry.entryDate : ''}</td>
+                    <td className="journal-line-table__cell">
+                      {row.isFirst && (
+                        <button type="button" className="journal-line-table__memo" onClick={() => setDetailEntryId(row.entry.id)}>
+                          {memo === '' ? '(摘要なし)' : memo}
+                        </button>
+                      )}
                     </td>
-                    <td className="split-settle__nowrap">{item.entry.entryDate}</td>
-                    <td>
-                      <button type="button" className="split-settle__link" onClick={() => setDetailEntryId(item.entry.id)}>
-                        {memo === '' ? '(摘要なし)' : memo}
-                      </button>
-                    </td>
-                    <td>{payerAccountName(item, data.accounts)}</td>
-                    <td className="split-settle__num">{formatCurrency(item.amount, 'JPY')}</td>
+                    {sideCells(row.debit, 'debit')}
+                    {sideCells(row.credit, 'credit')}
                   </tr>
                 )
               })}
@@ -325,140 +476,170 @@ export function SplitTab({
           />
         </section>
 
-        <section aria-label="分担" className="split-settle__card split-settle__side">
+        <section aria-label="分担" className="split-settle__card split-settle__panel-wide">
           <h2 className="split-settle__h2">分担</h2>
-          <div className="split-settle__line">
-            <span>選択した合計</span>
-            <span className="split-settle__num">{formatCurrency(total, 'JPY')}</span>
-          </div>
-
-          <div className="split-settle__field">
-            <label className="split-settle__label" htmlFor="split-mode">
-              按分の方法
-            </label>
-            <select
-              id="split-mode"
-              className="split-settle__control"
-              aria-label="按分の方法"
-              value={mode}
-              onChange={(e) => changeMode(e.target.value as ExpenseSplittingAllocationMode)}
-            >
-              {(['ratio', 'equal', 'amount'] as const).map((m) => (
-                <option key={m} value={m} disabled={m === 'amount' && chosen.length > 1}>
-                  {MODE_LABEL[m]}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="split-settle__partners">
-            <span className="split-settle__label">分担相手と負担割合</span>
-            {partners.map((row) => (
-              <div key={row.key} className="split-settle__partner">
-                <div className="split-settle__partner-pick">
-                  <TreeSelect
-                    label="分担相手"
-                    categories={partnerCategories}
-                    value={toPartnerValue(row)}
-                    onChange={(value) => patchPartner(row.key, parsePartnerValue(value))}
-                    placeholder="相手を選ぶ"
-                    onCreate={() => setCreateForRowKey(row.key)}
-                    createLabel="取引先を追加"
-                  />
+          <div className="split-settle__summary">
+            <div className="split-settle__line">
+              <span>選んだ行</span>
+              <span className="split-settle__num">{`${chosen.length}行`}</span>
+            </div>
+            {creditTotal > 0 && (
+              <>
+                <div className="split-settle__line split-settle__line--sub">
+                  <span>借方の合計</span>
+                  <span className="split-settle__num">{formatCurrency(debitTotal, 'JPY')}</span>
                 </div>
-                {mode === 'ratio' && (
-                  <>
-                    <input
-                      className="split-settle__control split-settle__control--narrow"
-                      inputMode="numeric"
-                      aria-label={`${partnerName(row)}の負担割合(%)`}
-                      value={row.ratioInput}
-                      onChange={(e) => patchPartner(row.key, { ratioInput: e.target.value })}
+                <div className="split-settle__line split-settle__line--sub">
+                  <span>貸方の合計(差し引き)</span>
+                  <span className="split-settle__num">{formatCurrency(-creditTotal, 'JPY')}</span>
+                </div>
+              </>
+            )}
+            <div className="split-settle__line">
+              <span>選択した合計</span>
+              <span className="split-settle__num">{formatCurrency(net, 'JPY')}</span>
+            </div>
+          </div>
+
+          <div className="split-settle__panel-grid">
+            <div className="split-settle__field">
+              <label className="split-settle__label" htmlFor="split-mode">
+                按分の方法
+              </label>
+              <select
+                id="split-mode"
+                className="split-settle__control"
+                aria-label="按分の方法"
+                value={mode}
+                onChange={(e) => changeMode(e.target.value as ExpenseSplittingAllocationMode)}
+              >
+                {(['ratio', 'equal', 'amount'] as const).map((m) => (
+                  <option key={m} value={m} disabled={m === 'amount' && amountModeBlocked}>
+                    {MODE_LABEL[m]}
+                  </option>
+                ))}
+              </select>
+              {amountModeBlocked && (
+                <span className="split-settle__note">借方と貸方が差し引きで0円のため、金額は指定できません。</span>
+              )}
+            </div>
+
+            <div className="split-settle__partners">
+              <span className="split-settle__label">分担相手と負担割合</span>
+              {partners.map((row) => (
+                <div key={row.key} className="split-settle__partner">
+                  <div className="split-settle__partner-pick">
+                    <TreeSelect
+                      label="分担相手"
+                      categories={partnerCategories}
+                      value={toPartnerValue(row)}
+                      onChange={(value) => patchPartner(row.key, parsePartnerValue(value))}
+                      placeholder="相手を選ぶ"
+                      onCreate={() => setCreateForRowKey(row.key)}
+                      createLabel="取引先を追加"
                     />
-                    <span className="split-settle__unit">%</span>
-                  </>
-                )}
-                {mode === 'amount' && (
-                  <input
-                    className="split-settle__control split-settle__control--amount"
-                    inputMode="numeric"
-                    aria-label={`${partnerName(row)}の負担額を入力`}
-                    value={row.amountInput}
-                    onChange={(e) => patchPartner(row.key, { amountInput: e.target.value })}
-                  />
-                )}
-                <span className="split-settle__num split-settle__share">
-                  {formatCurrency(shareByKey.get(row.key) ?? 0, 'JPY')}
-                </span>
-                <button
-                  type="button"
-                  className="split-settle__icon-btn"
-                  aria-label={`${partnerName(row)}を分担相手から外す`}
-                  disabled={partners.length <= 1}
-                  onClick={() => setPartners((prev) => prev.filter((p) => p.key !== row.key))}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
+                  </div>
+                  {mode === 'ratio' && (
+                    <>
+                      <input
+                        className="split-settle__control split-settle__control--narrow"
+                        inputMode="numeric"
+                        aria-label={`${partnerName(row)}の負担割合(%)`}
+                        value={row.ratioInput}
+                        onChange={(e) => patchPartner(row.key, { ratioInput: e.target.value })}
+                      />
+                      <span className="split-settle__unit">%</span>
+                    </>
+                  )}
+                  {mode === 'amount' && (
+                    <input
+                      className="split-settle__control split-settle__control--amount"
+                      inputMode="numeric"
+                      aria-label={`${partnerName(row)}の負担額を入力`}
+                      value={row.amountInput}
+                      onChange={(e) => patchPartner(row.key, { amountInput: e.target.value })}
+                    />
+                  )}
+                  <span className="split-settle__num split-settle__share">
+                    {formatCurrency(shareByKey.get(row.key) ?? 0, 'JPY')}
+                  </span>
+                  <button
+                    type="button"
+                    className="split-settle__icon-btn"
+                    aria-label={`${partnerName(row)}を分担相手から外す`}
+                    disabled={partners.length <= 1}
+                    onClick={() => setPartners((prev) => prev.filter((p) => p.key !== row.key))}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="split-settle__add"
+                onClick={() => {
+                  setPartners((prev) => [
+                    ...prev,
+                    { key: nextKey.current++, kind: 'householdMember', targetId: null, ratioInput: '', amountInput: '' },
+                  ])
+                  setFlash('')
+                }}
+              >
+                + 分担相手を追加
+              </button>
+            </div>
+
+            <div className="split-settle__field">
+              <label className="split-settle__label" htmlFor="split-memo">
+                摘要
+              </label>
+              <input
+                id="split-memo"
+                className="split-settle__control"
+                value={memoInput}
+                placeholder={chosen.length === 0 ? '' : defaultMemo(chosen)}
+                onChange={(e) => {
+                  setMemoInput(e.target.value)
+                  setFlash('')
+                }}
+              />
+              <span className="split-settle__note">
+                新しい精算バッチを作るときは、この摘要がバッチの名前になります。空のときは例の摘要を使います。
+              </span>
+            </div>
+
+            <div className="split-settle__field">
+              <span className="split-settle__label">精算バッチ</span>
+              {/* 「新しいバッチを作成」は操作ではなく既定の選択状態(記録するときに作る)なので、先頭に固定した項目にする */}
+              <BatchSelect
+                label="精算バッチ"
+                batches={data.batches}
+                value={String(batchId)}
+                leadingOptions={NEW_BATCH_OPTIONS}
+                onChange={(value) => setBatchId(value === 'new' ? 'new' : Number(value))}
+              />
+            </div>
+          </div>
+
+          <div className="split-settle__commit">
+            <div className="split-settle__line split-settle__line--total">
+              <span>相手の負担額</span>
+              <span className="split-settle__num">{formatCurrency(totalShare, 'JPY')}</span>
+            </div>
             <button
               type="button"
-              className="split-settle__add"
-              onClick={() => {
-                setPartners((prev) => [
-                  ...prev,
-                  { key: nextKey.current++, kind: 'householdMember', targetId: null, ratioInput: '', amountInput: '' },
-                ])
-                setFlash('')
-              }}
+              className="split-settle__btn split-settle__btn--primary"
+              disabled={submitting || chosen.length === 0}
+              onClick={() => void commit()}
             >
-              + 分担相手を追加
+              割勘を記録
             </button>
           </div>
-
-          <div className="split-settle__field">
-            <label className="split-settle__label" htmlFor="split-memo">
-              摘要
-            </label>
-            <input
-              id="split-memo"
-              className="split-settle__control"
-              value={memoInput}
-              placeholder={chosen.length === 0 ? '' : defaultMemo(chosen)}
-              onChange={(e) => {
-                setMemoInput(e.target.value)
-                setFlash('')
-              }}
-            />
-            <span className="split-settle__note">
-              新しい精算バッチを作るときは、この摘要がバッチの名前になります。空のときは例の摘要を使います。
-            </span>
-          </div>
-
-          <div className="split-settle__field">
-            <span className="split-settle__label">精算バッチ</span>
-            {/* 「新しいバッチを作成」は操作ではなく既定の選択状態(記録するときに作る)なので、先頭に固定した項目にする */}
-            <BatchSelect
-              label="精算バッチ"
-              batches={data.batches}
-              value={String(batchId)}
-              leadingOptions={NEW_BATCH_OPTIONS}
-              onChange={(value) => setBatchId(value === 'new' ? 'new' : Number(value))}
-            />
-          </div>
-
-          <div className="split-settle__line split-settle__line--total">
-            <span>相手の負担額</span>
-            <span className="split-settle__num">{formatCurrency(totalShare, 'JPY')}</span>
-          </div>
-          <button
-            type="button"
-            className="split-settle__btn split-settle__btn--primary"
-            disabled={submitting || chosen.length === 0}
-            onClick={() => void commit()}
-          >
-            割勘を記録
-          </button>
+          {planError !== null && (
+            <p role="status" className="split-settle__note">
+              {ERROR_TEXT[planError]}
+            </p>
+          )}
           {error !== '' && (
             <p role="alert" className="split-settle__error">
               {error}
@@ -466,6 +647,70 @@ export function SplitTab({
           )}
           {flash !== '' && <span className="split-settle__flash">{flash}</span>}
         </section>
+
+        {previews.length > 0 && (
+          <section aria-label="割勘仕訳のプレビュー" className="split-settle__card split-settle__card--table journal-line-table">
+            <div className="split-settle__preview-head">
+              <h2 className="split-settle__h2">割勘仕訳のプレビュー</h2>
+              <span className="split-settle__note">
+                {`取引日 ${today}・摘要「${memoInput.trim() === '' ? defaultMemo(chosen) : memoInput.trim()}」。分担相手ごとに1件の仕訳になります。`}
+              </span>
+            </div>
+            {previews.map((preview) => (
+              <div key={preview.rowKey} className="split-settle__scroll">
+                <table className="journal-line-table__table split-settle__line-table" aria-label={`${preview.partnerName}さん分の割勘仕訳`}>
+                  <thead>
+                    <tr>
+                      <th className="journal-line-table__debit-start">{`${preview.partnerName}さん分 借方の科目`}</th>
+                      <th>世帯メンバー</th>
+                      <th>取引先・精算バッチ</th>
+                      <th className="journal-line-table__cell--amount">金額</th>
+                      <th className="journal-line-table__credit-start">貸方の科目</th>
+                      <th>世帯メンバー</th>
+                      <th>取引先・精算バッチ</th>
+                      <th className="journal-line-table__cell--amount">金額</th>
+                      <th className="journal-line-table__credit-start">元の行</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.rows.map((row, i) => (
+                      <tr key={i}>
+                        <td className="journal-line-table__cell journal-line-table__debit-start">{row.debit?.accountName ?? ''}</td>
+                        <td className="journal-line-table__cell">{row.debit?.memberName ?? ''}</td>
+                        <td className="journal-line-table__cell">{row.debit?.partner ?? ''}</td>
+                        <td className="journal-line-table__cell journal-line-table__cell--amount">
+                          {row.debit === null ? '' : formatCurrency(row.debit.amount, 'JPY')}
+                        </td>
+                        <td className="journal-line-table__cell journal-line-table__credit-start">{row.credit?.accountName ?? ''}</td>
+                        <td className="journal-line-table__cell">{row.credit?.memberName ?? ''}</td>
+                        <td className="journal-line-table__cell">{row.credit?.partner ?? ''}</td>
+                        <td className="journal-line-table__cell journal-line-table__cell--amount">
+                          {row.credit === null ? '' : formatCurrency(row.credit.amount, 'JPY')}
+                        </td>
+                        <td className="journal-line-table__cell journal-line-table__credit-start split-settle__cell--source">{row.source}</td>
+                      </tr>
+                    ))}
+                    <tr className="split-settle__preview-total">
+                      <td className="journal-line-table__cell journal-line-table__debit-start" colSpan={3}>
+                        借方の合計
+                      </td>
+                      <td className="journal-line-table__cell journal-line-table__cell--amount">{formatCurrency(preview.debitTotal, 'JPY')}</td>
+                      <td className="journal-line-table__cell journal-line-table__credit-start" colSpan={3}>
+                        貸方の合計
+                      </td>
+                      <td className="journal-line-table__cell journal-line-table__cell--amount">{formatCurrency(preview.creditTotal, 'JPY')}</td>
+                      <td className="journal-line-table__cell journal-line-table__credit-start" />
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ))}
+            <p className="split-settle__note split-settle__note--pad">
+              貸方の行(返金・値引き・収益)は、費用・収益の付け替えを逆向きにします。未収金と未払金は、借方・貸方の差し引き(純額)で
+              1行ずつにします。
+            </p>
+          </section>
+        )}
       </div>
 
       {detailEntry !== undefined && (

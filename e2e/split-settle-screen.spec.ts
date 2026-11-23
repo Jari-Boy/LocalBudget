@@ -116,15 +116,23 @@ async function chooseFromTree(page: Page, triggerName: RegExp, optionName: strin
   await page.getByRole('dialog').getByRole('button', { name: optionName, exact: true }).click()
 }
 
+/** 摘要の行(仕訳の先頭の行)の、借方側のチェックボックス(計画Issue #271で明細行単位の表になった) */
+function debitCheckbox(page: Page, memo: string) {
+  return page
+    .getByRole('button', { name: memo, exact: true })
+    .locator('xpath=ancestor::tr')
+    .getByRole('checkbox', { name: /^借方の.*の行を選択$/ })
+}
+
 async function splitWithMember(page: Page, memo: string) {
-  await page.getByRole('checkbox', { name: `${memo}を選択` }).check()
+  await debitCheckbox(page, memo).check()
   await chooseFromTree(page, /^分担相手/, '割勘相手Bさん')
   await page.getByRole('button', { name: '割勘を記録' }).click()
   await expect(page.getByText('割勘を記録しました')).toBeVisible()
 }
 
 test.describe('割勘タブ', () => {
-  test('割勘できる仕訳だけが候補に出る(費用の行が無い仕訳・割勘仕訳自身は出ない)', async ({ page }) => {
+  test('割勘できる仕訳だけが候補に出る(費用・収益の行が無い仕訳・割勘仕訳自身は出ない)', async ({ page }) => {
     await page.goto('/')
     const data = await setupBaseData(page, '候補テスト')
     await createOriginalExpenseEntry(page, data, '候補になる食事代', 1000)
@@ -134,14 +142,14 @@ test.describe('割勘タブ', () => {
       const [member] = await client.householdMember.findAll()
       const accounts = await client.account.findAll()
       const cash = accounts.find((a) => a.name === '割勘用現金')!
-      const salary = await client.account.create({ category: 'revenue', name: '割勘用給与', isReconcilable: null })
+      const savings = await client.account.create({ category: 'asset', name: '割勘用預金', isReconcilable: false })
       await client.journalEntry.create({
         entryDate: '2026-08-02',
-        memo: '候補にならない給与',
+        memo: '候補にならない預金移動',
         householdMemberId: member.id,
         lines: [
           { householdMemberId: member.id, accountId: cash.id, side: 'debit', amount: 300000 },
-          { householdMemberId: member.id, accountId: salary.id, side: 'credit', amount: 300000 },
+          { householdMemberId: member.id, accountId: savings.id, side: 'credit', amount: 300000 },
         ],
       })
       await client.autoSave.flush()
@@ -149,9 +157,9 @@ test.describe('割勘タブ', () => {
     await page.reload()
 
     await openSplitSettle(page)
-    const table = page.getByRole('region', { name: '割勘する仕訳' })
+    const table = page.getByRole('region', { name: '割勘する行' })
     await expect(table.getByText('候補になる食事代')).toBeVisible()
-    await expect(table.getByText('候補にならない給与')).toHaveCount(0)
+    await expect(table.getByText('候補にならない預金移動')).toHaveCount(0)
 
     await splitWithMember(page, '候補になる食事代')
     await waitForJournalEntryCount(page, 3)
@@ -194,7 +202,7 @@ test.describe('割勘タブ', () => {
     await createOriginalExpenseEntry(page, data, '世帯外テストの食事代', 1000)
 
     await openSplitSettle(page)
-    await page.getByRole('checkbox', { name: '世帯外テストの食事代を選択' }).check()
+    await debitCheckbox(page, '世帯外テストの食事代').check()
     await chooseFromTree(page, /^分担相手/, '割勘相手の友人Cさん')
     await page.getByRole('button', { name: '割勘を記録' }).click()
     await expect(page.getByText('割勘を記録しました')).toBeVisible()
@@ -211,7 +219,7 @@ test.describe('割勘タブ', () => {
     await createOriginalExpenseEntry(page, data, '未選択テストの食事代', 1000)
 
     await openSplitSettle(page)
-    await page.getByRole('checkbox', { name: '未選択テストの食事代を選択' }).check()
+    await debitCheckbox(page, '未選択テストの食事代').check()
     await page.getByRole('button', { name: '割勘を記録' }).click()
 
     await expect(page.getByRole('alert')).toContainText('分担相手を選んでください')
@@ -225,8 +233,8 @@ test.describe('割勘タブ', () => {
     await createOriginalExpenseEntry(page, data, 'まとめ2', 600)
 
     await openSplitSettle(page)
-    await page.getByRole('checkbox', { name: 'まとめ1を選択' }).check()
-    await page.getByRole('checkbox', { name: 'まとめ2を選択' }).check()
+    await debitCheckbox(page, 'まとめ1').check()
+    await debitCheckbox(page, 'まとめ2').check()
     await chooseFromTree(page, /^分担相手/, '割勘相手Bさん')
     await page.getByRole('button', { name: '割勘を記録' }).click()
     await expect(page.getByText('割勘を記録しました')).toBeVisible()
@@ -250,7 +258,7 @@ test.describe('割勘タブ', () => {
 
     await waitForJournalEntryCount(page, 1)
     await page.getByRole('tab', { name: '割勘' }).click()
-    await expect(page.getByRole('region', { name: '割勘する仕訳' }).getByText('取り消しテストの食事代')).toBeVisible()
+    await expect(page.getByRole('region', { name: '割勘する行' }).getByText('取り消しテストの食事代')).toBeVisible()
   })
 })
 

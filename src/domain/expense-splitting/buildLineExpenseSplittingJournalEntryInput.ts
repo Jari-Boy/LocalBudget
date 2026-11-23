@@ -9,6 +9,8 @@ export interface LineExpenseSplitShare {
   /** 元の行のプロジェクト(イベント)。付け替えの行に引き継ぐ */
   projectId: number | null
   signedAmount: number
+  /** 元の行の立替者(元の仕訳の起票者)。付け替えの相手側・立替金(資産)の世帯メンバーになる */
+  payerMemberId: number
 }
 
 export type LineExpenseSplitRecipient =
@@ -19,8 +21,6 @@ export interface BuildLineExpenseSplittingJournalEntryInputParams {
   advanceAssetAccountId: number
   /** 世帯メンバーへの割勘で使う未払金(負債)科目。世帯外の相手では使わない */
   advanceLiabilityAccountId: number | null
-  /** 元の支出者(立替者)の世帯メンバー。割勘仕訳の起票者にもなる */
-  payerMemberId: number
   settlementBatchId: number
   entryDate: string
   memo: string | null
@@ -33,19 +33,20 @@ export interface BuildLineExpenseSplittingJournalEntryInputParams {
  * 1.3・1.4節の仕訳パターンを、行ごとに借方・貸方の向きを選べる形に一般化したもの。
  * - 借方の行(signedAmount > 0): 費用・収益を立替者から相手へ付け替え、相手の負担ぶんだけ立替金(資産)・未払金(負債)を増やす
  * - 貸方の行(signedAmount < 0。返金・値引き・収益): 付け替えも立替金・未払金も逆向きにする
- * 付け替えの行は元の行ごとに残す(元の行との対応を追えるようにするため、合算しない)。立替金・未払金の行は、
- * 借方・貸方の差し引き(純額)で1行ずつにまとめる(純額が0なら作らない)。純額が負なら借方・貸方が逆になる。
+ * 付け替えの行は元の行ごとに残す(元の行との対応を追えるようにするため、合算しない)。立替金(資産)は立替者ごと、
+ * 未払金(負債)は相手について、借方・貸方の差し引き(純額)で1行ずつにまとめる(純額が0なら作らない)。純額が負なら借方・貸方が逆になる。
  * 配分が0円の行は含めない。元の行のidは expenseSplitSourceLineIds に入れ、割勘対象行の記録として保存させる。
  */
 export function buildLineExpenseSplittingJournalEntryInput(
   params: BuildLineExpenseSplittingJournalEntryInputParams,
 ): CreateJournalEntryInput {
-  const { recipient, payerMemberId, settlementBatchId } = params
+  const { recipient, settlementBatchId } = params
   const shares = params.shares.filter((s) => s.signedAmount !== 0)
 
   const lines: JournalLineInput[] = []
   for (const share of shares) {
     const amount = Math.abs(share.signedAmount)
+    const payerMemberId = share.payerMemberId
     const forward = share.signedAmount > 0
     if (recipient.kind === 'householdMember') {
       lines.push(
@@ -76,31 +77,36 @@ export function buildLineExpenseSplittingJournalEntryInput(
     }
   }
 
-  const net = shares.reduce((sum, s) => sum + s.signedAmount, 0)
-  if (net !== 0) {
-    const receivable = net > 0
+  // 立替金(資産)は立替者ごとの純額、未払金(負債)は相手の純額(全体の差し引き)で、それぞれ1行にする
+  const netByPayer = new Map<number, number>()
+  for (const share of shares) {
+    netByPayer.set(share.payerMemberId, (netByPayer.get(share.payerMemberId) ?? 0) + share.signedAmount)
+  }
+  for (const [payerMemberId, net] of netByPayer) {
+    if (net === 0) continue
     lines.push({
       accountId: params.advanceAssetAccountId,
       householdMemberId: payerMemberId,
       settlementBatchId,
-      side: receivable ? 'debit' : 'credit',
+      side: net > 0 ? 'debit' : 'credit',
       amount: Math.abs(net),
     })
-    if (recipient.kind === 'householdMember' && params.advanceLiabilityAccountId !== null) {
-      lines.push({
-        accountId: params.advanceLiabilityAccountId,
-        householdMemberId: recipient.toMemberId,
-        settlementBatchId,
-        side: receivable ? 'credit' : 'debit',
-        amount: Math.abs(net),
-      })
-    }
+  }
+  const totalNet = shares.reduce((sum, s) => sum + s.signedAmount, 0)
+  if (totalNet !== 0 && recipient.kind === 'householdMember' && params.advanceLiabilityAccountId !== null) {
+    lines.push({
+      accountId: params.advanceLiabilityAccountId,
+      householdMemberId: recipient.toMemberId,
+      settlementBatchId,
+      side: totalNet > 0 ? 'credit' : 'debit',
+      amount: Math.abs(totalNet),
+    })
   }
 
   return {
     entryDate: params.entryDate,
     memo: params.memo,
-    householdMemberId: payerMemberId,
+    householdMemberId: shares[0]?.payerMemberId ?? 0,
     sourceType: 'expense_splitting',
     lines,
     expenseSplitSourceLineIds: shares.map((s) => s.sourceLineId),

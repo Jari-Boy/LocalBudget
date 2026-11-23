@@ -102,6 +102,7 @@ function makeData(extraEntries: JournalEntry[] = []): SplitSettleData {
     ] as never,
     batches: [],
     memberships: [],
+    sourceLinks: [],
   }
 }
 

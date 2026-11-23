@@ -1,14 +1,14 @@
 /**
- * checkExpenseSplittability(割勘できるかと、できない理由を返す純粋関数、計画Issue #149)と
- * findDebitExpenseLines(付け替え対象の借方の費用行をすべて返す関数)のユニットテスト。
- * 割勘できない3条件(割勘で作られた仕訳・割勘済みの仕訳・借方に費用の行がない仕訳)を
- * 理由を区別して返すこと、費用の行が複数ある仕訳も割勘できることを検証する。
+ * checkExpenseSplittability(仕訳を割勘できるかと、できない理由を返す純粋関数、計画Issue #149。計画Issue #271で明細行単位の
+ * 割勘に合わせた)のユニットテスト。割勘できない3条件(割勘で作られた仕訳・割勘済みの仕訳・費用または収益の行がない仕訳)を
+ * 理由を区別して返すこと、借方・貸方どちらの費用・収益の行でも割勘できること、行単位の割勘済み(割勘対象行の記録)で
+ * 一部の行だけ割勘済みなら残りの行で割勘できること、記録を持たない従来の割勘仕訳に繋がる仕訳は割勘済みとすることを検証する。
  * DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
 import type { Account } from '../account/Account'
 import type { JournalEntry, JournalLine } from '../journal/JournalEntry'
-import { checkExpenseSplittability, findDebitExpenseLines } from './checkExpenseSplittability'
+import { checkExpenseSplittability } from './checkExpenseSplittability'
 
 function account(id: number, category: Account['category']): Account {
   return {
@@ -66,20 +66,6 @@ function entry(id: number, lines: JournalLine[], sourceType: JournalEntry['sourc
   }
 }
 
-describe('findDebitExpenseLines', () => {
-  it('借方の費用行をすべて返す', () => {
-    const e = entry(1, [line(FOOD, 'debit', 700, 1), line(DAILY, 'debit', 300, 2), line(CASH, 'credit', 1000, 3)])
-
-    expect(findDebitExpenseLines(e, ACCOUNTS).map((l) => l.id)).toEqual([1, 2])
-  })
-
-  it('貸方の費用行(返金など)は含めない', () => {
-    const e = entry(1, [line(CASH, 'debit', 1000, 1), line(FOOD, 'credit', 1000, 2)])
-
-    expect(findDebitExpenseLines(e, ACCOUNTS)).toEqual([])
-  })
-})
-
 describe('checkExpenseSplittability', () => {
   it('借方に費用の行が1件ある仕訳は割勘できる', () => {
     const e = entry(1, [line(FOOD, 'debit'), line(CASH, 'credit')])
@@ -116,28 +102,52 @@ describe('checkExpenseSplittability', () => {
     expect(checkExpenseSplittability(e, ACCOUNTS, [manual])).toEqual({ splittable: true })
   })
 
-  it('借方に費用の行がない仕訳(収益だけの仕訳)は理由 no_debit_expense_line で割勘できない', () => {
-    const e = entry(1, [line(CASH, 'debit'), line(SALARY, 'credit')])
-
-    expect(checkExpenseSplittability(e, ACCOUNTS, [])).toEqual({
-      splittable: false,
-      reason: 'no_debit_expense_line',
-    })
-  })
-
-  it('費用の行が貸方だけの仕訳も理由 no_debit_expense_line で割勘できない', () => {
+  it('費用の行が貸方だけの仕訳(返金など)も割勘できる', () => {
     const e = entry(1, [line(CASH, 'debit'), line(FOOD, 'credit')])
 
+    expect(checkExpenseSplittability(e, ACCOUNTS, [])).toEqual({ splittable: true })
+  })
+
+  it('収益の行がある仕訳(収益だけの仕訳)も割勘できる', () => {
+    const e = entry(1, [line(CASH, 'debit'), line(SALARY, 'credit')])
+
+    expect(checkExpenseSplittability(e, ACCOUNTS, [])).toEqual({ splittable: true })
+  })
+
+  it('費用・収益の行がない仕訳は理由 no_profit_loss_line で割勘できない', () => {
+    const e = entry(1, [line(CASH, 'debit'), line(CASH, 'credit')])
+
     expect(checkExpenseSplittability(e, ACCOUNTS, [])).toEqual({
       splittable: false,
-      reason: 'no_debit_expense_line',
+      reason: 'no_profit_loss_line',
     })
   })
 
-  it('複数の条件に当たる場合は 割勘で作られた仕訳 → 割勘済み → 借方に費用なし の順で理由を返す', () => {
-    const splitWithoutExpense = entry(1, [line(CASH, 'debit'), line(SALARY, 'credit')], 'expense_splitting')
+  it('費用・収益の行が一部だけ割勘済み(割勘対象行の記録がある)なら、残りの行で割勘できる', () => {
+    const e = entry(1, [line(FOOD, 'debit', 700, 11), line(DAILY, 'debit', 300, 12), line(CASH, 'credit', 1000, 13)])
     const split = entry(2, [line(FOOD, 'debit')], 'expense_splitting')
-    const alreadySplitWithoutExpense = entry(3, [line(CASH, 'debit'), line(SALARY, 'credit')])
+
+    expect(checkExpenseSplittability(e, ACCOUNTS, [split], [{ splitEntryId: 2, sourceLineId: 11 }])).toEqual({
+      splittable: true,
+    })
+  })
+
+  it('費用・収益の行がすべて割勘済み(割勘対象行の記録がある)なら、理由 already_split で割勘できない', () => {
+    const e = entry(1, [line(FOOD, 'debit', 700, 11), line(DAILY, 'debit', 300, 12), line(CASH, 'credit', 1000, 13)])
+    const split = entry(2, [line(FOOD, 'debit')], 'expense_splitting')
+
+    expect(
+      checkExpenseSplittability(e, ACCOUNTS, [split], [
+        { splitEntryId: 2, sourceLineId: 11 },
+        { splitEntryId: 2, sourceLineId: 12 },
+      ]),
+    ).toEqual({ splittable: false, reason: 'already_split' })
+  })
+
+  it('複数の条件に当たる場合は 割勘で作られた仕訳 → 割勘済み → 費用・収益の行なし の順で理由を返す', () => {
+    const splitWithoutExpense = entry(1, [line(CASH, 'debit'), line(CASH, 'credit')], 'expense_splitting')
+    const split = entry(2, [line(FOOD, 'debit')], 'expense_splitting')
+    const alreadySplitWithoutExpense = entry(3, [line(CASH, 'debit'), line(CASH, 'credit')])
 
     expect(checkExpenseSplittability(splitWithoutExpense, ACCOUNTS, [])).toMatchObject({
       reason: 'is_expense_split_entry',

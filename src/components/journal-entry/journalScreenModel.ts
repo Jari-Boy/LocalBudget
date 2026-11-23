@@ -68,7 +68,7 @@ export function describeIncompleteReason(reason: IncompleteReason): string {
 const SPLIT_BLOCK_MESSAGES: Record<ExpenseSplitBlockReason, string> = {
   is_expense_split_entry: '割勘で作られた仕訳は割勘できません',
   already_split: 'この仕訳は割勘済みです',
-  no_debit_expense_line: '費用科目の行がないため割勘できません',
+  no_profit_loss_line: '費用・収益の行がないため割勘できません',
 }
 
 export function describeSplitBlock(reason: ExpenseSplitBlockReason): string {

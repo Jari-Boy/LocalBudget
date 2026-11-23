@@ -9,6 +9,7 @@ import type { CounterpartyGroup } from '../../domain/counterparty-group/Counterp
 import type { CounterpartyGroupRepository } from '../../domain/counterparty-group/CounterpartyGroupRepository'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { HouseholdMemberRepository } from '../../domain/household-member/HouseholdMemberRepository'
+import type { ExpenseSplitSourceLink } from '../../domain/expense-splitting/listSplittableLineEntries'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import type { JournalEntryFilterContext } from '../../domain/journal/JournalEntryFilter'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
@@ -31,7 +32,8 @@ import type { MaybeAsync } from '../master/maybeAsync'
 export interface SplitSettleRepositories {
   /** 割勘・精算(複数の書き込み)を操作履歴上1件にまとめる(計画Issue #202)。省略時はまとめない */
   history?: HistoryGroupApi
-  journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'update' | 'delete'>>
+  journalEntryRepository: MaybeAsync<Pick<JournalEntryRepository, 'findAll' | 'create' | 'update' | 'delete'>> &
+    Partial<MaybeAsync<Pick<JournalEntryRepository, 'findExpenseSplitSourceLinks'>>>
   journalEntryLinkGroupRepository: MaybeAsync<
     Pick<JournalEntryLinkGroupRepository, 'findAllMemberships' | 'joinOrCreateGroups'>
   >
@@ -56,6 +58,8 @@ export interface SplitSettleData {
   members: HouseholdMember[]
   batches: SettlementBatch[]
   memberships: JournalEntryLinkGroupMembership[]
+  /** 割勘対象行の記録(どの行が割勘済みか、計画Issue #271) */
+  sourceLinks: ExpenseSplitSourceLink[]
 }
 
 export async function loadSplitSettleData(repos: SplitSettleRepositories): Promise<SplitSettleData> {
@@ -70,6 +74,7 @@ export async function loadSplitSettleData(repos: SplitSettleRepositories): Promi
     members,
     batches,
     memberships,
+    sourceLinks,
   ] = await Promise.all([
     repos.journalEntryRepository.findAll(),
     repos.accountRepository.findAll(),
@@ -81,6 +86,9 @@ export async function loadSplitSettleData(repos: SplitSettleRepositories): Promi
     repos.householdMemberRepository.findAll(),
     repos.settlementBatchRepository.findAll(),
     repos.journalEntryLinkGroupRepository.findAllMemberships(),
+    repos.journalEntryRepository.findExpenseSplitSourceLinks === undefined
+      ? []
+      : repos.journalEntryRepository.findExpenseSplitSourceLinks(),
   ])
   return {
     entries,
@@ -93,6 +101,7 @@ export async function loadSplitSettleData(repos: SplitSettleRepositories): Promi
     members,
     batches,
     memberships,
+    sourceLinks,
   }
 }
 

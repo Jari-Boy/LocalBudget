@@ -121,7 +121,7 @@ describe('describeSplitBlock', () => {
   it('割勘できない理由ごとに文言を返す', () => {
     expect(describeSplitBlock('is_expense_split_entry')).toBe('割勘で作られた仕訳は割勘できません')
     expect(describeSplitBlock('already_split')).toBe('この仕訳は割勘済みです')
-    expect(describeSplitBlock('no_debit_expense_line')).toBe('費用科目の行がないため割勘できません')
+    expect(describeSplitBlock('no_profit_loss_line')).toBe('費用・収益の行がないため割勘できません')
   })
 })
 

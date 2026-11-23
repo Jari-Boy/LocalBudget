@@ -1,6 +1,7 @@
 import type { Account } from '../../domain/account/Account'
 import { hasAnySettlementActivity } from '../../domain/expense-splitting/hasAnySettlementActivity'
 import { isExpenseSplittingEntrySettled } from '../../domain/expense-splitting/isExpenseSplittingEntrySettled'
+import type { ExpenseSplitSourceLink } from '../../domain/expense-splitting/listSplittableLineEntries'
 import { listExpenseSplittingHistory } from '../../domain/expense-splitting/listExpenseSplittingHistory'
 import { resolveExpenseSplittingParticipant } from '../../domain/expense-splitting/resolveExpenseSplittingParticipant'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
@@ -71,7 +72,7 @@ export interface SplitHistoryRow {
   memo: string
   /** 分担相手の名前。特定できなければ空文字 */
   partner: string
-  /** 相手の負担額(立替金・未払金の行の金額) */
+  /** 相手の負担額(立替金・未払金の行の金額。相手へ返す向きの割勘は負) */
   amount: number
   /** 立替金・未払金の残高がすべて0 */
   isSettled: boolean
@@ -90,6 +91,7 @@ export function buildSplitHistoryRows(
   relatedEntryIdsByEntryId: ReadonlyMap<number, ReadonlySet<number>>,
   members: readonly { id: number; name: string }[],
   counterparties: readonly { id: number; name: string }[],
+  sourceLinks: readonly ExpenseSplitSourceLink[] = [],
 ): SplitHistoryRow[] {
   const accountsById = new Map(accounts.map((a) => [a.id, a]))
   const allLines = entries.flatMap((e) => e.lines)
@@ -99,10 +101,11 @@ export function buildSplitHistoryRows(
       return account?.isSystemManaged === true && account.category === category
     })
 
-  return listExpenseSplittingHistory(entries, accounts, relatedEntryIdsByEntryId)
+  return listExpenseSplittingHistory(entries, accounts, relatedEntryIdsByEntryId, sourceLinks)
     .map(({ splitEntry, originalEntries }) => {
       const assetLines = advanceLines(splitEntry, 'asset')
       const amountLines = assetLines.length > 0 ? assetLines : advanceLines(splitEntry, 'liability')
+      const increasingSide = assetLines.length > 0 ? 'debit' : 'credit'
       const participant = resolveExpenseSplittingParticipant(splitEntry, accounts)
       const partner =
         participant === undefined
@@ -121,7 +124,8 @@ export function buildSplitHistoryRows(
               ? (originalEntries[0].memo ?? '')
               : `${originalEntries.length}件の支出`,
         partner,
-        amount: amountLines.reduce((sum, l) => sum + l.amount, 0),
+        // 立替金(資産)は借方、未払金(負債)は貸方が増える向き。相手へ返す向きの割勘(貸方の行を割った)は負になる
+        amount: amountLines.reduce((sum, l) => sum + (l.side === increasingSide ? l.amount : -l.amount), 0),
         isSettled: isExpenseSplittingEntrySettled(splitEntry, accounts, allLines),
         canCancel: !hasAnySettlementActivity(splitEntry, accounts, allLines),
       }

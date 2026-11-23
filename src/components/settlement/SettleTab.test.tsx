@@ -160,6 +160,7 @@ function makeData(): SplitSettleData {
     ] as never,
     batches: [batch(1, '10月分 割勘(妻)'), batch(4, '9月分 割勘(妻)'), batch(5, '空のバッチ')],
     memberships: [],
+    sourceLinks: [],
   }
 }
 
@@ -614,5 +615,49 @@ describe('SettleTab: 候補の仕訳の範囲選択・Ctrl選択・Esc(計画Iss
     fireEvent.keyDown(candidateBoxes()[0], { key: 'Escape' })
     expect(checkedFlags().every((checked) => !checked)).toBe(true)
     expect(within(selected()).getByText('選択合計').parentElement).toHaveTextContent(yen(0))
+  })
+})
+
+describe('SettleTab: 残高が負の精算(相手へ返す向きの割勘、計画Issue #271)', () => {
+  /** 貸方の行(返金)を割った割勘: 夫の立替金は貸方に300、妻の未払金は借方に300(残高はどちらもマイナス300) */
+  function negativeData(): SplitSettleData {
+    const data = makeData()
+    data.batches = [batch(1, '返品の割勘(妻)')]
+    data.entries = [
+      entry(
+        100,
+        '2026-10-30',
+        '返品の割勘',
+        [
+          line(1001, 100, 'debit', 1, 300, { householdMemberId: 1 }),
+          line(1002, 100, 'credit', 1, 300, { householdMemberId: 2 }),
+          line(1003, 100, 'credit', ADVANCE, 300, { householdMemberId: 1, settlementBatchId: 1 }),
+          line(1004, 100, 'debit', PAYABLE, 300, { householdMemberId: 2, settlementBatchId: 1 }),
+        ],
+        'expense_splitting',
+      ),
+      // 夫が妻へ返す: 立替金を借方に持つ未割当の仕訳
+      entry(110, '2026-11-03', '妻へ返金', [
+        line(1101, 110, 'debit', ADVANCE, 300, { householdMemberId: 1 }),
+        line(1102, 110, 'credit', BANK, 300),
+      ]),
+    ]
+    return data
+  }
+
+  it('残高をマイナスで出し、相手へ返す側の精算であることを案内する', () => {
+    setup(negativeData())
+
+    expect(within(selected()).getByText((text) => text.includes('残高がマイナス') && text.includes('相手へ返す側の精算'))).toBeInTheDocument()
+  })
+
+  it('残高がマイナスのときは、立替金を借方に持つ仕訳を候補にし、残高の大きさと一致すれば精算完了にできる', async () => {
+    const { updated } = setup(negativeData())
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '妻へ返金を選択' }))
+
+    expect(within(selected()).getByText('✓ 残高と一致しています')).toBeInTheDocument()
+    fireEvent.click(within(selected()).getByRole('button', { name: '精算完了' }))
+    await waitFor(() => expect(updated.map((u) => u.id)).toContain(110))
   })
 })

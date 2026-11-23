@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 /**
- * 割勘タブ(SplitTab、計画Issue #153)のコンポーネントテスト。承認済みモックアップの構成で、
- * 絞り込み・割勘する仕訳の表・分担(相手と割合)が1画面に並ぶことを検証する。
- * 割勘できる仕訳だけが候補に出ること、選んだ仕訳の合計と相手の負担額が出ること、「割勘を記録」で
- * 仕訳が作られて画面が更新されること、相手を選ばないと記録できないことを、インメモリの偽Repository(vi.fn)で検証する。
- * 割勘履歴は履歴タブ(SplitHistoryTab、計画Issue #268)に移したので、そのテストは SplitHistoryTab.test.tsx にある。
- * 候補は150件ずつ「さらにN件表示」で出し、チェック済みの行が150件の外にあるときは選択行まで広げる(計画Issue #268)。
+ * 割勘タブ(SplitTab、計画Issue #153。計画Issue #271で明細行単位にした)のコンポーネントテスト。承認済みモックアップの構成で、
+ * 絞り込み・割勘する行の表(借方を左・貸方を右)・分担(相手と割合)・割勘仕訳のプレビューが縦に並ぶことを検証する。
+ * 費用・収益の行(借方・貸方とも)だけ選べて、それ以外の行はチェックできないこと、割勘済みの行は表示しないこと、
+ * 選んだ行の合計(借方と貸方は差し引き)と相手の負担額が出ること、「割勘を記録」で仕訳が作られて画面が更新されること、
+ * 相手を選ばないと記録できないことを、インメモリの偽Repository(vi.fn)で検証する。
+ * 割勘履歴は履歴タブ(SplitHistoryTab、計画Issue #268)にあり、そのテストは SplitHistoryTab.test.tsx にある。
+ * 候補は仕訳150件ずつ「さらにN件表示」で出し、チェック済みの行が150件の外にあるときは選択行まで広げる(計画Issue #268)。
  */
 import '@testing-library/jest-dom/vitest'
 import { useState } from 'react'
@@ -45,6 +46,7 @@ const accounts = [
   account(3, '立替金', 'asset', true),
   account(4, '未払金', 'liability', true),
   account(5, '給与', 'revenue'),
+  account(6, '現金', 'asset'),
 ]
 
 function line(
@@ -91,7 +93,7 @@ function makeData(extraEntries: JournalEntry[] = []): SplitSettleData {
   return {
     entries: [
       entry(1, '2026-10-05', 'ランチ', 'manual', [line(11, 1, 'debit', 1, 1200), line(12, 1, 'credit', 2, 1200)]),
-      entry(2, '2026-10-03', '10月の給与', 'manual', [line(21, 2, 'debit', 2, 300000), line(22, 2, 'credit', 5, 300000)]),
+      entry(2, '2026-10-03', '10月の振替', 'manual', [line(21, 2, 'debit', 2, 300000), line(22, 2, 'credit', 6, 300000)]),
       ...extraEntries,
     ],
     accounts,
@@ -106,6 +108,7 @@ function makeData(extraEntries: JournalEntry[] = []): SplitSettleData {
     ] as never,
     batches: [],
     memberships: [],
+    sourceLinks: [],
   }
 }
 
@@ -153,6 +156,15 @@ const splitEntry = () =>
     line(34, 3, 'credit', 4, 600, { householdMemberId: 2, settlementBatchId: 7 }),
   ])
 
+/** 摘要の行(仕訳の先頭の行)の、借方・貸方側のチェックボックス */
+const rowOf = (memo: string) => screen.getByRole('button', { name: memo }).closest('tr') as HTMLElement
+const debitBox = (memo: string) => within(rowOf(memo)).getByRole('checkbox', { name: /^借方の.*の行を選択$/ }) as HTMLInputElement
+const creditBox = (memo: string) => within(rowOf(memo)).getByRole('checkbox', { name: /^貸方の.*の行を選択$/ }) as HTMLInputElement
+
+/** 返品(貸方の費用の行): 食費 200 を貸方に持つ */
+const refundEntry = () =>
+  entry(4, '2026-10-04', '返品', 'manual', [line(41, 4, 'debit', 2, 200), line(42, 4, 'credit', 1, 200)])
+
 describe('SplitTab', () => {
   it('これまでの割勘(履歴)は割勘タブには出さない(履歴タブに移した、計画Issue #268)', () => {
     const data = makeData([splitEntry()])
@@ -167,31 +179,72 @@ describe('SplitTab', () => {
     expect(screen.queryByText('ランチの割勘')).not.toBeInTheDocument()
   })
 
-  it('割勘できる仕訳(借方に費用の行がある仕訳)だけを候補の表に出す', () => {
+  it('費用・収益の行がある仕訳だけを候補の表に出し、費用・収益でない行はチェックできない', () => {
     setup()
 
-    const table = screen.getByRole('region', { name: '割勘する仕訳' })
+    const table = screen.getByRole('region', { name: '割勘する行' })
     expect(within(table).getByText('ランチ')).toBeInTheDocument()
-    expect(within(table).queryByText('10月の給与')).not.toBeInTheDocument()
+    expect(within(table).queryByText('10月の振替')).not.toBeInTheDocument()
+    expect(debitBox('ランチ')).toBeEnabled()
+    expect(creditBox('ランチ')).toBeDisabled()
+    expect(creditBox('ランチ')).toHaveAttribute('title', '費用・収益の行ではないため選べません')
+  })
+
+  it('収益の行(貸方)も選べる行として出す', () => {
+    setup(makeData([entry(7, '2026-10-06', 'ポイント還元', 'manual', [line(71, 7, 'debit', 2, 500), line(72, 7, 'credit', 5, 500)])]))
+
+    expect(creditBox('ポイント還元')).toBeEnabled()
+    expect(debitBox('ポイント還元')).toBeDisabled()
+  })
+
+  it('割勘済みの行(割勘対象行の記録がある行)は表示せず、すべて割勘済みの仕訳は候補から消える', () => {
+    const data = makeData([splitEntry()])
+    data.memberships = [
+      { id: 1, linkGroupId: 1, journalEntryId: 1, createdAt: '' },
+      { id: 2, linkGroupId: 1, journalEntryId: 3, createdAt: '' },
+    ] as never
+    data.sourceLinks = [{ splitEntryId: 3, sourceLineId: 11 }]
+    setup(data)
+
+    expect(screen.queryByRole('button', { name: 'ランチ' })).not.toBeInTheDocument()
+  })
+
+  it('同じ仕訳の一部の行だけが割勘済みなら、残りの行は選べる', () => {
+    const multi = entry(8, '2026-10-07', 'まとめ買い', 'manual', [
+      line(81, 8, 'debit', 1, 700),
+      line(82, 8, 'debit', 1, 300),
+      line(83, 8, 'credit', 2, 1000),
+    ])
+    const data = makeData([multi, splitEntry()])
+    data.memberships = [
+      { id: 1, linkGroupId: 1, journalEntryId: 8, createdAt: '' },
+      { id: 2, linkGroupId: 1, journalEntryId: 3, createdAt: '' },
+    ] as never
+    data.sourceLinks = [{ splitEntryId: 3, sourceLineId: 81 }]
+    setup(data)
+
+    const row = within(rowOf('まとめ買い'))
+    expect(row.getByText(formatCurrency(300, 'JPY'))).toBeInTheDocument()
+    expect(row.queryByText(formatCurrency(700, 'JPY'))).not.toBeInTheDocument()
   })
 
   it('候補の摘要を押すと、仕訳画面へ移動せず、その仕訳の詳細をダイアログで表示し、選択状態は変えない', () => {
     setup()
 
-    fireEvent.click(within(screen.getByRole('region', { name: '割勘する仕訳' })).getByRole('button', { name: 'ランチ' }))
+    fireEvent.click(within(screen.getByRole('region', { name: '割勘する行' })).getByRole('button', { name: 'ランチ' }))
 
     const dialog = screen.getByRole('dialog', { name: '仕訳の詳細' })
     expect(dialog).toHaveTextContent('2026-10-05')
     expect(within(dialog).getByRole('region', { name: '借方' })).toHaveTextContent('食費')
-    expect(screen.getByRole('checkbox', { name: 'ランチを選択' })).not.toBeChecked()
+    expect(debitBox('ランチ')).not.toBeChecked()
     fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }))
     expect(screen.queryByRole('dialog', { name: '仕訳の詳細' })).not.toBeInTheDocument()
   })
 
-  it('仕訳を選ぶと、選んだ合計と、設定した割合での相手の負担額を表示する', () => {
+  it('行を選ぶと、選んだ合計と、設定した割合での相手の負担額を表示する', () => {
     setup()
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'ランチを選択' }))
+    fireEvent.click(debitBox('ランチ'))
     chooseOption(/^分担相手/, '妻')
 
     const panel = screen.getByRole('region', { name: '分担' })
@@ -199,10 +252,39 @@ describe('SplitTab', () => {
     expect(within(panel).getByText('相手の負担額').nextElementSibling).toHaveTextContent(formatCurrency(600, 'JPY'))
   })
 
-  it('「割勘を記録」で割勘仕訳を作り、元の仕訳と同じ関連仕訳グループへ合流して画面を更新する', async () => {
+  it('借方の行と貸方の行(返金)を一緒に選ぶと、貸方を差し引いた額を合計にして按分する', () => {
+    setup(makeData([refundEntry()]))
+
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(creditBox('返品'))
+    chooseOption(/^分担相手/, '妻')
+
+    const panel = screen.getByRole('region', { name: '分担' })
+    expect(within(panel).getByText('選択した合計').nextElementSibling).toHaveTextContent(formatCurrency(1000, 'JPY'))
+    expect(within(panel).getByText('貸方の合計(差し引き)').nextElementSibling).toHaveTextContent(formatCurrency(-200, 'JPY'))
+    expect(within(panel).getByText('相手の負担額').nextElementSibling).toHaveTextContent(formatCurrency(500, 'JPY'))
+  })
+
+  it('選んだ行から作られる割勘仕訳のプレビューを、分担を選んだあとに表示する', () => {
+    setup(makeData([refundEntry()]))
+
+    expect(screen.queryByRole('region', { name: '割勘仕訳のプレビュー' })).not.toBeInTheDocument()
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(creditBox('返品'))
+    chooseOption(/^分担相手/, '妻')
+
+    const preview = screen.getByRole('region', { name: '割勘仕訳のプレビュー' })
+    expect(within(preview).getByRole('table', { name: '妻さん分の割勘仕訳' })).toBeInTheDocument()
+    expect(within(preview).getByText('ランチ 食費(借方)')).toBeInTheDocument()
+    expect(within(preview).getByText('返品 食費(貸方)')).toBeInTheDocument()
+    // 借方600−貸方100の差し引き500が立替金・未払金になる(借方・貸方の合計は一致)
+    expect(within(preview).getAllByText(formatCurrency(500, 'JPY')).length).toBeGreaterThan(0)
+  })
+
+  it('「割勘を記録」で選んだ行だけの割勘仕訳を作り、元の仕訳と同じ関連仕訳グループへ合流して画面を更新する', async () => {
     const { repositories, onChanged } = setup()
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'ランチを選択' }))
+    fireEvent.click(debitBox('ランチ'))
     chooseOption(/^分担相手/, '妻')
     fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
 
@@ -211,6 +293,8 @@ describe('SplitTab', () => {
       expect.objectContaining({ name: 'ランチの割勘' }),
     )
     expect(repositories.journalEntryRepository.create).toHaveBeenCalledTimes(1)
+    const created = (repositories.journalEntryRepository.create.mock.calls as unknown as [{ expenseSplitSourceLineIds: number[] }][])[0][0]
+    expect(created.expenseSplitSourceLineIds).toEqual([11])
     expect(repositories.journalEntryLinkGroupRepository.joinOrCreateGroups).toHaveBeenCalledWith([1], [500])
     expect(screen.getByText('割勘を記録しました')).toBeInTheDocument()
   })
@@ -218,7 +302,7 @@ describe('SplitTab', () => {
   it('摘要を入力して割勘すると、その摘要が割勘仕訳の摘要と、新しく作る精算バッチの名前になる', async () => {
     const { repositories } = setup()
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'ランチを選択' }))
+    fireEvent.click(debitBox('ランチ'))
     chooseOption(/^分担相手/, '妻')
     fireEvent.change(screen.getByLabelText('摘要'), { target: { value: '10月の外食まとめ' } })
     fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
@@ -235,7 +319,7 @@ describe('SplitTab', () => {
   it('摘要が空のときは、既定の摘要(元の摘要+の割勘)を使い、入力欄の例としても見せる', () => {
     setup()
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'ランチを選択' }))
+    fireEvent.click(debitBox('ランチ'))
 
     expect(screen.getByLabelText('摘要')).toHaveAttribute('placeholder', 'ランチの割勘')
   })
@@ -262,7 +346,7 @@ describe('SplitTab', () => {
     data.batches = [{ id: 7, name: '9月の精算', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
     const { repositories } = setup(data)
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'ランチを選択' }))
+    fireEvent.click(debitBox('ランチ'))
     chooseOption(/^分担相手/, '妻')
     fireEvent.change(screen.getByLabelText('摘要'), { target: { value: '追加分' } })
     // 画面の上の絞り込みにも「精算バッチ」の欄があるので、既定で「新しいバッチを作成」が選ばれているほうのボタンを渡す
@@ -275,15 +359,15 @@ describe('SplitTab', () => {
     expect(repositories.settlementBatchRepository.create).not.toHaveBeenCalled()
   })
 
-  it('仕訳画面の「この仕訳を割勘」から来たときは、その仕訳を最初から選んだ状態にする', () => {
+  it('仕訳画面の「この仕訳を割勘」から来たときは、その仕訳の選べる行を最初から選んだ状態にする', () => {
     setup(makeData(), { initialCheckedEntryIds: [1] })
 
-    expect(screen.getByRole('checkbox', { name: 'ランチを選択' })).toBeChecked()
+    expect(debitBox('ランチ')).toBeChecked()
     const panel = screen.getByRole('region', { name: '分担' })
     expect(within(panel).getByText('選択した合計').nextElementSibling).toHaveTextContent(formatCurrency(1200, 'JPY'))
   })
 
-  it('仕訳を選んでいないと「割勘を記録」は押せない', () => {
+  it('行を選んでいないと「割勘を記録」は押せない', () => {
     setup()
 
     expect(screen.getByRole('button', { name: '割勘を記録' })).toBeDisabled()
@@ -292,7 +376,7 @@ describe('SplitTab', () => {
   it('分担相手を選ばずに記録しようとすると、何も作らずエラーを表示する', async () => {
     const { repositories } = setup()
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'ランチを選択' }))
+    fireEvent.click(debitBox('ランチ'))
     fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('分担相手を選んでください')
@@ -311,95 +395,85 @@ describe('SplitTab', () => {
     expect(screen.getAllByRole('button', { name: /を分担相手から外す/ })).toHaveLength(1)
   })
 
-  it('金額指定の按分に切り替えると、割合の代わりに相手ごとの金額を入力できる', () => {
-    setup()
+  it('金額指定の按分に切り替えると、割合の代わりに相手ごとの金額を入力できる(複数の行を選んでいても使える)', () => {
+    setup(makeData([refundEntry()]))
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(creditBox('返品'))
 
     fireEvent.change(screen.getByLabelText('按分の方法'), { target: { value: 'amount' } })
 
     expect(screen.queryByLabelText(/の負担割合/)).not.toBeInTheDocument()
     expect(screen.getByLabelText(/の負担額を入力/)).toBeInTheDocument()
   })
+
+  it('選んだ行の借方と貸方が差し引きで0円なら、金額を指定する按分は選べない', () => {
+    const same = entry(9, '2026-10-08', '相殺', 'manual', [line(91, 9, 'debit', 1, 300), line(92, 9, 'credit', 5, 300)])
+    setup(makeData([same]))
+
+    fireEvent.click(debitBox('相殺'))
+    fireEvent.click(creditBox('相殺'))
+
+    expect(screen.getByRole('option', { name: '金額を指定する' })).toBeDisabled()
+  })
 })
 
 /**
- * 割勘する仕訳のチェックの範囲選択・トグル選択・Esc での全解除、Ctrl/Cmd を押したまま行のどこかを押したときのチェックの操作
- * (計画Issue #235 D)。表の並びは日付の新しい順(ランチ 10/5 → コーヒー 10/4 → 映画 10/2)。
+ * 割勘する行のチェックの範囲選択・トグル選択・Esc での全解除(計画Issue #235 D)。範囲は借方側・貸方側のそれぞれの中だけ。
+ * 表の並びは日付の新しい順(ランチ 10/5 → コーヒー 10/4 → 映画 10/2)。
  */
-describe('SplitTab: 割勘する仕訳の範囲選択・Ctrl選択・Esc(計画Issue #235 D)', () => {
+describe('SplitTab: 割勘する行の範囲選択・Esc(計画Issue #235 D)', () => {
   const extra = () => [
     entry(5, '2026-10-04', 'コーヒー', 'manual', [line(51, 5, 'debit', 1, 400), line(52, 5, 'credit', 2, 400)]),
     entry(6, '2026-10-02', '映画', 'manual', [line(61, 6, 'debit', 1, 1800), line(62, 6, 'credit', 2, 1800)]),
   ]
-  const box = (memo: string) => screen.getByRole('checkbox', { name: `${memo}を選択` }) as HTMLInputElement
-  const flags = () => ['ランチ', 'コーヒー', '映画'].map((memo) => box(memo).checked)
+  const flags = () => ['ランチ', 'コーヒー', '映画'].map((memo) => debitBox(memo).checked)
 
-  it('Shift+クリックで、直前に選んだ仕訳から押した仕訳までが選ばれる', () => {
+  it('Shift+クリックで、直前に選んだ行から押した行までが選ばれる', () => {
     setup(makeData(extra()))
-    fireEvent.click(box('ランチ'))
-    fireEvent.click(box('映画'), { shiftKey: true })
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(debitBox('映画'), { shiftKey: true })
     expect(flags()).toEqual([true, true, true])
   })
 
-  it('Ctrl+クリックで離れた仕訳を選べ、Cmd+クリックでその仕訳だけ外せる', () => {
+  it('Ctrl+クリックで離れた行を選べ、Cmd+クリックでその行だけ外せる', () => {
     setup(makeData(extra()))
-    fireEvent.click(box('ランチ'))
-    fireEvent.click(box('映画'), { ctrlKey: true })
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(debitBox('映画'), { ctrlKey: true })
     expect(flags()).toEqual([true, false, true])
-    fireEvent.click(box('ランチ'), { metaKey: true })
+    fireEvent.click(debitBox('ランチ'), { metaKey: true })
     expect(flags()).toEqual([false, false, true])
   })
 
-  it('Ctrl+行の文字部分を押すと、その仕訳のチェックが切り替わる', () => {
+  it('チェックにフォーカスして Shift+↓ を押すと、次の行までが選ばれ、フォーカスが次のチェックへ移る', () => {
     setup(makeData(extra()))
-    const row = box('コーヒー').closest('tr') as HTMLElement
-    fireEvent.click(row.querySelectorAll('td')[1], { ctrlKey: true })
-    expect(flags()).toEqual([false, true, false])
-  })
-
-  it('Ctrl+摘要のボタンを押すと、詳細のダイアログは開かず、その仕訳のチェックが切り替わる', () => {
-    setup(makeData(extra()))
-    fireEvent.click(screen.getByRole('button', { name: 'コーヒー' }), { ctrlKey: true })
-    expect(flags()).toEqual([false, true, false])
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
-
-  it('チェックが1件でもあるときは、Ctrl を押さなくても、摘要のボタンを押すと詳細は開かず、その仕訳のチェックが切り替わる', () => {
-    setup(makeData(extra()))
-    fireEvent.click(box('ランチ'))
-    fireEvent.click(screen.getByRole('button', { name: 'コーヒー' }))
+    debitBox('ランチ').focus()
+    fireEvent.keyDown(debitBox('ランチ'), { key: 'ArrowDown', shiftKey: true })
     expect(flags()).toEqual([true, true, false])
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
-
-  it('Ctrl を押さずに摘要のボタンを押すと、従来どおり詳細のダイアログが開き、チェックは変わらない', () => {
-    setup(makeData(extra()))
-    fireEvent.click(screen.getByRole('button', { name: 'コーヒー' }))
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(flags()).toEqual([false, false, false])
-  })
-
-  it('チェックにフォーカスして Shift+↓ を押すと、次の仕訳までが選ばれ、フォーカスが次のチェックへ移る', () => {
-    setup(makeData(extra()))
-    box('ランチ').focus()
-    fireEvent.keyDown(box('ランチ'), { key: 'ArrowDown', shiftKey: true })
-    expect(flags()).toEqual([true, true, false])
-    expect(box('コーヒー')).toHaveFocus()
+    expect(debitBox('コーヒー')).toHaveFocus()
   })
 
   it('選んだあとに Esc を押すと、選択がすべて外れる', () => {
     setup(makeData(extra()))
-    fireEvent.click(box('ランチ'))
-    fireEvent.click(box('映画'), { shiftKey: true })
-    fireEvent.keyDown(box('映画'), { key: 'Escape' })
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(debitBox('映画'), { shiftKey: true })
+    fireEvent.keyDown(debitBox('映画'), { key: 'Escape' })
+    expect(flags()).toEqual([false, false, false])
+  })
+
+  it('借方の見出しのチェックで、表示中の借方の選べる行がすべて選ばれ、もう一度押すと外れる', () => {
+    setup(makeData(extra()))
+    fireEvent.click(screen.getByRole('checkbox', { name: '借方の行をすべて選択' }))
+    expect(flags()).toEqual([true, true, true])
+    fireEvent.click(screen.getByRole('checkbox', { name: '借方の行をすべて選択' }))
     expect(flags()).toEqual([false, false, false])
   })
 })
 
 /**
- * 割勘する仕訳の候補の150件ずつの表示(計画Issue #268)。候補は日付の新しい順で、
+ * 割勘する行の候補の150件(仕訳単位)ずつの表示(計画Issue #268)。候補は日付の新しい順で、
  * 先頭が「ランチ」(10/5)、続いて「支出{N-1}」…「支出0」(9/1、同じ日付なら id の大きい順)。
  */
-describe('SplitTab: 割勘する仕訳の150件ずつの表示(計画Issue #268)', () => {
+describe('SplitTab: 割勘する行の150件ずつの表示(計画Issue #268)', () => {
   /** 候補が total 件ある状態(ランチ+支出0〜支出{total-2}) */
   function manyCandidates(total: number): SplitSettleData {
     const extras = Array.from({ length: total - 1 }, (_, i) =>
@@ -410,7 +484,9 @@ describe('SplitTab: 割勘する仕訳の150件ずつの表示(計画Issue #268)
     )
     return makeData(extras)
   }
-  const checkboxCount = () => screen.getAllByRole('checkbox').length
+  /** 表に出ている、選べる行のチェックの数(見出しの全選択と、選べない行は数えない) */
+  const checkboxCount = () =>
+    screen.getAllByRole('checkbox', { name: /の行を選択$/ }).filter((c) => !(c as HTMLInputElement).disabled).length
 
   it('150件以下のときは全件を出し、「さらに表示」は出さない', () => {
     setup(manyCandidates(150))
@@ -439,16 +515,16 @@ describe('SplitTab: 割勘する仕訳の150件ずつの表示(計画Issue #268)
     expect(screen.queryByRole('button', { name: /^さらに/ })).not.toBeInTheDocument()
   })
 
-  it('チェック済みの仕訳が150件の外にあるときは、その仕訳が見える件数まで表示を広げる', () => {
-    // 支出0(id 100)は新しい順で160番目。最初から選んだ状態にすると、150件の外なので、その行を含む300件まで(全体の160件)広がる
+  it('チェック済みの行が150件の外にあるときは、その行が見える件数まで表示を広げる', () => {
+    // 支出0(id 100)は新しい順で160番目。最初から選んだ状態にすると、150件の外なので、その行を含む件数まで(全体の160件)広がる
     setup(manyCandidates(160), { initialCheckedEntryIds: [100] })
 
     expect(checkboxCount()).toBe(160)
-    expect(screen.getByRole('checkbox', { name: '支出0を選択' })).toBeChecked()
+    expect(debitBox('支出0')).toBeChecked()
     expect(screen.queryByRole('button', { name: /^さらに/ })).not.toBeInTheDocument()
   })
 
-  it('チェック済みの仕訳が150件の中にあるときは、表示を広げない', () => {
+  it('チェック済みの行が150件の中にあるときは、表示を広げない', () => {
     setup(manyCandidates(160), { initialCheckedEntryIds: [149] })
 
     expect(checkboxCount()).toBe(150)

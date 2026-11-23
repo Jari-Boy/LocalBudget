@@ -18,7 +18,6 @@ const PARTNER = 2
 const base = {
   advanceAssetAccountId: ASSET,
   advanceLiabilityAccountId: LIABILITY,
-  payerMemberId: PAYER,
   settlementBatchId: 5,
   entryDate: '2026-11-23',
   memo: '割勘',
@@ -34,7 +33,7 @@ describe('buildLineExpenseSplittingJournalEntryInput', () => {
     const input = buildLineExpenseSplittingJournalEntryInput({
       ...base,
       recipient: { kind: 'householdMember', toMemberId: PARTNER },
-      shares: [{ sourceLineId: 100, accountId: FOOD, projectId: null, signedAmount: 500 }],
+      shares: [{ sourceLineId: 100, accountId: FOOD, projectId: null, signedAmount: 500, payerMemberId: PAYER }],
     })
     expect(input.sourceType).toBe('expense_splitting')
     expect(input.expenseSplitSourceLineIds).toEqual([100])
@@ -50,7 +49,7 @@ describe('buildLineExpenseSplittingJournalEntryInput', () => {
     const input = buildLineExpenseSplittingJournalEntryInput({
       ...base,
       recipient: { kind: 'householdMember', toMemberId: PARTNER },
-      shares: [{ sourceLineId: 101, accountId: INCOME, projectId: null, signedAmount: -250 }],
+      shares: [{ sourceLineId: 101, accountId: INCOME, projectId: null, signedAmount: -250, payerMemberId: PAYER }],
     })
     expect(input.lines).toEqual([
       { accountId: INCOME, householdMemberId: PAYER, projectId: null, side: 'debit', amount: 250 },
@@ -65,8 +64,8 @@ describe('buildLineExpenseSplittingJournalEntryInput', () => {
       ...base,
       recipient: { kind: 'householdMember', toMemberId: PARTNER },
       shares: [
-        { sourceLineId: 100, accountId: FOOD, projectId: null, signedAmount: 1200 },
-        { sourceLineId: 101, accountId: INCOME, projectId: null, signedAmount: -250 },
+        { sourceLineId: 100, accountId: FOOD, projectId: null, signedAmount: 1200, payerMemberId: PAYER },
+        { sourceLineId: 101, accountId: INCOME, projectId: null, signedAmount: -250, payerMemberId: PAYER },
       ],
     })
     expect(input.expenseSplitSourceLineIds).toEqual([100, 101])
@@ -84,8 +83,8 @@ describe('buildLineExpenseSplittingJournalEntryInput', () => {
       ...base,
       recipient: { kind: 'householdMember', toMemberId: PARTNER },
       shares: [
-        { sourceLineId: 100, accountId: FOOD, projectId: null, signedAmount: 100 },
-        { sourceLineId: 101, accountId: INCOME, projectId: null, signedAmount: -400 },
+        { sourceLineId: 100, accountId: FOOD, projectId: null, signedAmount: 100, payerMemberId: PAYER },
+        { sourceLineId: 101, accountId: INCOME, projectId: null, signedAmount: -400, payerMemberId: PAYER },
       ],
     })
     const advance = input.lines.filter((l) => l.settlementBatchId === 5)
@@ -101,8 +100,8 @@ describe('buildLineExpenseSplittingJournalEntryInput', () => {
       ...base,
       recipient: { kind: 'householdMember', toMemberId: PARTNER },
       shares: [
-        { sourceLineId: 100, accountId: FOOD, projectId: null, signedAmount: 300 },
-        { sourceLineId: 101, accountId: INCOME, projectId: null, signedAmount: -300 },
+        { sourceLineId: 100, accountId: FOOD, projectId: null, signedAmount: 300, payerMemberId: PAYER },
+        { sourceLineId: 101, accountId: INCOME, projectId: null, signedAmount: -300, payerMemberId: PAYER },
       ],
     })
     expect(input.lines.some((l) => l.settlementBatchId === 5)).toBe(false)
@@ -114,8 +113,8 @@ describe('buildLineExpenseSplittingJournalEntryInput', () => {
       ...base,
       recipient: { kind: 'counterparty', counterpartyId: 7 },
       shares: [
-        { sourceLineId: 100, accountId: FOOD, projectId: 3, signedAmount: 500 },
-        { sourceLineId: 101, accountId: INCOME, projectId: null, signedAmount: -200 },
+        { sourceLineId: 100, accountId: FOOD, projectId: 3, signedAmount: 500, payerMemberId: PAYER },
+        { sourceLineId: 101, accountId: INCOME, projectId: null, signedAmount: -200, payerMemberId: PAYER },
       ],
     })
     expect(input.lines).toEqual([
@@ -131,18 +130,37 @@ describe('buildLineExpenseSplittingJournalEntryInput', () => {
       ...base,
       recipient: { kind: 'householdMember', toMemberId: PARTNER },
       shares: [
-        { sourceLineId: 100, accountId: FOOD, projectId: null, signedAmount: 500 },
-        { sourceLineId: 101, accountId: INCOME, projectId: null, signedAmount: 0 },
+        { sourceLineId: 100, accountId: FOOD, projectId: null, signedAmount: 500, payerMemberId: PAYER },
+        { sourceLineId: 101, accountId: INCOME, projectId: null, signedAmount: 0, payerMemberId: PAYER },
       ],
     })
     expect(input.expenseSplitSourceLineIds).toEqual([100])
+  })
+
+  it('立替者が行ごとに違うときは、立替金(資産)を立替者ごとの純額で作り、未払金(負債)は相手の純額1行にする', () => {
+    const input = buildLineExpenseSplittingJournalEntryInput({
+      ...base,
+      recipient: { kind: 'householdMember', toMemberId: PARTNER },
+      shares: [
+        { sourceLineId: 100, accountId: FOOD, projectId: null, signedAmount: 500, payerMemberId: PAYER },
+        { sourceLineId: 101, accountId: FOOD, projectId: null, signedAmount: -200, payerMemberId: 3 },
+      ],
+    })
+    expect(input.householdMemberId).toBe(PAYER)
+    const advance = input.lines.filter((l) => l.settlementBatchId === 5)
+    expect(advance).toEqual([
+      { accountId: ASSET, householdMemberId: PAYER, settlementBatchId: 5, side: 'debit', amount: 500 },
+      { accountId: ASSET, householdMemberId: 3, settlementBatchId: 5, side: 'credit', amount: 200 },
+      { accountId: LIABILITY, householdMemberId: PARTNER, settlementBatchId: 5, side: 'credit', amount: 300 },
+    ])
+    expect(balanced(input)).toBe(true)
   })
 
   it('プロジェクト(イベント)は付け替えの費用・収益の行に引き継ぐ', () => {
     const input = buildLineExpenseSplittingJournalEntryInput({
       ...base,
       recipient: { kind: 'householdMember', toMemberId: PARTNER },
-      shares: [{ sourceLineId: 100, accountId: FOOD, projectId: 3, signedAmount: 500 }],
+      shares: [{ sourceLineId: 100, accountId: FOOD, projectId: 3, signedAmount: 500, payerMemberId: PAYER }],
     })
     expect(input.lines.filter((l) => l.accountId === FOOD).map((l) => l.projectId)).toEqual([3, 3])
   })

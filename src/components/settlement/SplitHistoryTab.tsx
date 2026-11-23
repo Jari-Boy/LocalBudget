@@ -33,8 +33,8 @@ export function SplitHistoryTab({ data, repositories, onChanged }: SplitHistoryT
 
   const relatedIds = useMemo(() => buildRelatedEntryIdsByEntryId(data.memberships), [data.memberships])
   const historyRows = useMemo(
-    () => buildSplitHistoryRows(data.entries, data.accounts, relatedIds, data.members, data.counterparties),
-    [data.entries, data.accounts, relatedIds, data.members, data.counterparties],
+    () => buildSplitHistoryRows(data.entries, data.accounts, relatedIds, data.members, data.counterparties, data.sourceLinks),
+    [data.entries, data.accounts, relatedIds, data.members, data.counterparties, data.sourceLinks],
   )
 
   const openCount = historyRows.filter((r) => !r.isSettled).length

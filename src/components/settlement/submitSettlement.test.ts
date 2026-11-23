@@ -175,4 +175,46 @@ describe('createSettlementEntry', () => {
     expect(created[0].lines).toContainEqual(expect.objectContaining({ accountId: PAYABLE, side: 'debit', householdMemberId: 2 }))
     expect(created[0].lines).toContainEqual(expect.objectContaining({ accountId: BANK, side: 'credit', householdMemberId: 1 }))
   })
+
+  it('残高が負(相手へ返す向き。reversed)の立替金の精算は、立替金を借方・相手科目を貸方にする(計画Issue #271)', async () => {
+    const { repos, created } = fakeRepos()
+
+    await createSettlementEntry({
+      ...base,
+      direction: 'advance',
+      reversed: true,
+      accountId: ADVANCE,
+      target: { kind: 'householdMember', householdMemberId: 1 },
+      counterAccountId: BANK,
+      amount: 300,
+      entryDate: '2026-10-20',
+      memo: null,
+      repositories: repos,
+    })
+
+    expect(created[0].lines).toContainEqual(
+      expect.objectContaining({ accountId: ADVANCE, side: 'debit', amount: 300, settlementBatchId: 1 }),
+    )
+    expect(created[0].lines).toContainEqual(expect.objectContaining({ accountId: BANK, side: 'credit', amount: 300 }))
+  })
+
+  it('残高が負(reversed)の未払金の精算は、未払金を貸方・相手科目を借方にする(計画Issue #271)', async () => {
+    const { repos, created } = fakeRepos()
+
+    await createSettlementEntry({
+      ...base,
+      direction: 'payable',
+      reversed: true,
+      accountId: PAYABLE,
+      target: { kind: 'householdMember', householdMemberId: 2 },
+      counterAccountId: BANK,
+      amount: 300,
+      entryDate: '2026-10-20',
+      memo: null,
+      repositories: repos,
+    })
+
+    expect(created[0].lines).toContainEqual(expect.objectContaining({ accountId: PAYABLE, side: 'credit', householdMemberId: 2 }))
+    expect(created[0].lines).toContainEqual(expect.objectContaining({ accountId: BANK, side: 'debit', householdMemberId: 1 }))
+  })
 })

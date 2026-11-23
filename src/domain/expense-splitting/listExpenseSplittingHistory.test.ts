@@ -207,4 +207,36 @@ describe('listExpenseSplittingHistory', () => {
 
     expect(result.some((item) => item.originalEntries.some((entry) => entry.id === splitEntry.id))).toBe(false)
   })
+
+  it('割勘対象行の記録を持つ割勘仕訳は、割った行を持つ仕訳だけを元仕訳にする(同じグループに別の仕訳が混ざっていても)(計画Issue #271)', () => {
+    const e1 = buildOriginalEntry(1)
+    const e5 = buildOriginalEntry(5)
+    const split = buildSplitEntry(9)
+    // 以前の割勘でe1と同じグループに入った割勘仕訳が、e5ともグループで繋がった状態
+    const related = new Map([
+      [1, new Set([9])],
+      [5, new Set([9])],
+      [9, new Set([1, 5])],
+    ])
+
+    const result = listExpenseSplittingHistory([e1, e5, split], ACCOUNTS, related, [{ splitEntryId: 9, sourceLineId: 51 }])
+
+    expect(result).toHaveLength(1)
+    expect(result[0].originalEntries).toEqual([e5])
+  })
+
+  it('割勘対象行の記録を持たない従来の割勘仕訳は、これまでどおり関連仕訳グループで繋がる仕訳をすべて元仕訳にする', () => {
+    const e1 = buildOriginalEntry(1)
+    const e5 = buildOriginalEntry(5)
+    const split = buildSplitEntry(9)
+    const related = new Map([
+      [1, new Set([9])],
+      [5, new Set([9])],
+      [9, new Set([1, 5])],
+    ])
+
+    const result = listExpenseSplittingHistory([e1, e5, split], ACCOUNTS, related, [])
+
+    expect(result[0].originalEntries).toEqual([e1, e5])
+  })
 })

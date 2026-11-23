@@ -628,3 +628,87 @@
   align-items: flex-start;
   padding: 6px 0 10px;
 }
+
+/* 割勘タブ(計画Issue #271)。候補の表(全幅)・分担・割勘仕訳のプレビューを縦に並べる */
+.split-settle__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* 明細行単位の表(仕訳一覧の明細行単位の表と同じ見た目)。借方・貸方の12列を内容の幅で並べ、枠の中で横スクロールする */
+.split-settle__line-table {
+  table-layout: auto;
+}
+
+.split-settle__line-table tbody tr {
+  cursor: default;
+}
+
+/* 仕訳の境目は太めの線 */
+.split-settle__line-table tbody tr.split-settle__entry-start > td {
+  border-top: 2px solid var(--color-border);
+}
+
+/* 選べない行(支払元の資産の行など)は薄く表示する */
+.split-settle__cell--disabled {
+  color: var(--color-text-muted);
+}
+
+.split-settle__cell--source {
+  color: var(--color-text-muted);
+}
+
+.split-settle__panel-wide {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.split-settle__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 420px;
+}
+
+.split-settle__line--sub {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* 按分の方法・分担相手・摘要・精算バッチを、幅に応じて横に並べる */
+.split-settle__panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px 24px;
+  align-items: start;
+}
+
+.split-settle__commit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.split-settle__commit .split-settle__line--total {
+  border-top: 0;
+  padding-top: 0;
+  gap: 16px;
+}
+
+.split-settle__preview-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: baseline;
+  padding: 10px 12px 0;
+}
+
+.split-settle__preview-total td {
+  font-weight: 600;
+}

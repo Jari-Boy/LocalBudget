@@ -163,6 +163,36 @@ describe('buildSplitHistoryRows', () => {
     ])
   })
 
+  it('相手へ返す向きの割勘(貸方の行だけを割った)の負担額は、負の金額で表す(計画Issue #271)', () => {
+    const refund = entry(5, '2026-10-31', '返品の割勘', 'expense_splitting', [
+      line(51, 5, FOOD, 'debit', 300, { householdMemberId: 1 }),
+      line(52, 5, FOOD, 'credit', 300, { householdMemberId: 2 }),
+      line(53, 5, ADVANCE_ASSET, 'credit', 300, { householdMemberId: 1, settlementBatchId: 8 }),
+      line(54, 5, ADVANCE_LIABILITY, 'debit', 300, { householdMemberId: 2, settlementBatchId: 8 }),
+    ])
+    const rel = new Map([
+      [1, new Set([5])],
+      [5, new Set([1])],
+    ])
+
+    const [row] = buildSplitHistoryRows([original, refund], accounts, rel, members, [])
+
+    expect(row.amount).toBe(-300)
+  })
+
+  it('割勘対象行の記録を持つ割勘は、割った行を持つ仕訳だけを元の支出の日付に使う(計画Issue #271)', () => {
+    const other = entry(4, '2026-09-01', null, 'manual', [line(41, 4, FOOD, 'debit', 800), line(42, 4, CASH, 'credit', 800)])
+    const both = new Map([
+      [1, new Set([2])],
+      [4, new Set([2])],
+      [2, new Set([1, 4])],
+    ])
+
+    const [row] = buildSplitHistoryRows([original, other, split], accounts, both, members, [], [{ splitEntryId: 2, sourceLineId: 11 }])
+
+    expect(row.date).toBe('2026-10-05')
+  })
+
   it('立替金・未払金の残高がすべて0なら精算済みで、精算が進んだ割勘は取り消せない', () => {
     const settlement = entry(3, '2026-11-02', '精算', 'manual', [
       line(31, 3, CASH, 'debit', 600),
