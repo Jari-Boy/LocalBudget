@@ -31,6 +31,19 @@ function renderDialog(overrides: Partial<QuickCreateDialogProps> = {}) {
 const dialog = (name: string) => within(screen.getByRole('dialog', { name }))
 
 describe('QuickCreateDialog', () => {
+  it('背面は呼び出し元の中ではなくbody直下に出す(固定したタブ・バーなどの重なり順に左右されず、画面全体を暗くする。計画Issue #269)', () => {
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <div data-testid="host">
+          <QuickCreateDialog title="プロジェクトを追加" nameLabel="プロジェクト名" onSubmit={vi.fn()} onCancel={vi.fn()} />
+        </div>
+      </I18nextProvider>,
+    )
+
+    expect(container.querySelector('.import-dialog__backdrop')).toBeNull()
+    expect(document.body.querySelector(':scope > .import-dialog__backdrop')).not.toBeNull()
+  })
+
   it('名前の入力欄はほかの項目と同じ見た目(import-control)で、名前が空の間は追加できない', () => {
     renderDialog()
 

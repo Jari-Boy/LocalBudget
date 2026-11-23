@@ -10,6 +10,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import '../../infrastructure/i18n/i18n'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEditorLine, JournalEditorMaster } from './JournalEntryEditor'
 import { chooseBatch, expectBatch, findBatchButton, queryBatchButton } from '../master/batchSelectTestHelpers'
@@ -173,7 +174,7 @@ describe('JournalLinesEditor', () => {
     expect(onLinesChange.mock.calls.at(-1)![0][1].line.settlementBatchId).toBeNull()
   })
 
-  it('「+ 新しいバッチ」を押すと名前の入力欄が開き、作成すると、その行のバッチになる', async () => {
+  it('「+ 新しいバッチ」を押すとダイアログが開き、追加すると、その行のバッチになる', async () => {
     const onLinesChange = vi.fn()
     render(
       <Harness
@@ -185,11 +186,11 @@ describe('JournalLinesEditor', () => {
 
     fireEvent.click(findBatchButton('精算バッチ'))
     fireEvent.click(screen.getByRole('button', { name: '+ 新しいバッチ' }))
-    fireEvent.change(screen.getByLabelText('新しい精算バッチの名前'), { target: { value: '旅行' } })
-    fireEvent.click(screen.getByRole('button', { name: 'バッチを作成' }))
+    fireEvent.change(screen.getByLabelText('バッチ名'), { target: { value: '旅行' } })
+    fireEvent.click(screen.getByRole('button', { name: '追加' }))
 
     await waitFor(() => expect(onLinesChange.mock.calls.at(-1)![0][1].line.settlementBatchId).toBe(9))
-    expect(screen.queryByLabelText('新しい精算バッチの名前')).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })
 

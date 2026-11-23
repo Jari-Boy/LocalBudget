@@ -17,6 +17,7 @@ import { useJournalLineTableColumns, type JournalLineTableColumns } from './useJ
 import { JournalLineTableResizeHandle } from './JournalLineTableResizeHandle'
 import { pairLinesBySide } from './journalLineTableModel'
 import { summarizeBalance } from './journalScreenModel'
+import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import './JournalLineTable.css'
 
 /** 表に出す名前の解決(ID → 表示名)。該当がなければ空文字を返す(科目だけは「不明」を返してよい) */
@@ -52,6 +53,8 @@ export interface JournalLineTableEditing {
   onRequestCreateProject?: (apply: (id: number) => void) => void
   /** 渡すと、科目の選択ツリーに「+ 新規追加」を出す */
   onRequestCreateAccount?: (apply: (id: number) => void) => void
+  /** 渡すと、精算バッチの選択欄に「+ 新しいバッチ」を出す(計画Issue #269) */
+  onCreateBatch?: (name: string) => Promise<SettlementBatch>
 }
 
 /**
@@ -431,6 +434,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
           batches={master.batches}
           value={line.settlementBatchId == null ? '' : String(line.settlementBatchId)}
           emptyLabel="精算バッチなし"
+          onCreateBatch={editing.onCreateBatch}
           onChange={(value) => updateLine(key, (l) => ({ ...l, settlementBatchId: value === '' ? null : Number(value) }))}
         />
       ) : null,

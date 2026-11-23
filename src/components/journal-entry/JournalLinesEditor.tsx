@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { JournalLineSide } from '../../domain/journal/JournalEntry'
 import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
@@ -70,8 +69,6 @@ export function JournalLinesEditor({
   onRequestCreateProject,
   onRequestCreateAccount,
 }: JournalLinesEditorProps) {
-  const [creatingBatchKey, setCreatingBatchKey] = useState<number | null>(null)
-  const [newBatchName, setNewBatchName] = useState('')
   const accountById = new Map(master.accounts.map((a) => [a.id, a]))
   const memberById = new Map(master.members.map((m) => [m.id, m]))
   const balance = summarizeBalance(lines.map((l) => l.line))
@@ -89,14 +86,6 @@ export function JournalLinesEditor({
   /** 科目を変えたとき、その科目では持てない取引先・精算バッチ・メンバーの指定を外す */
   const changeAccount = (key: number, accountId: number | null) =>
     updateLine(key, (line) => applyAccountChange({ line, accountId, accountById, bookkeeperId }))
-
-  const createBatch = async (key: number) => {
-    if (onCreateBatch === undefined || newBatchName.trim() === '') return
-    const created = await onCreateBatch(newBatchName.trim())
-    updateLine(key, (line) => ({ ...line, settlementBatchId: created.id }))
-    setCreatingBatchKey(null)
-    setNewBatchName('')
-  }
 
   return (
     <>
@@ -185,8 +174,7 @@ export function JournalLinesEditor({
                           value={line.settlementBatchId == null ? '' : String(line.settlementBatchId)}
                           emptyLabel="精算バッチなし"
                           disabled={readOnlyLines}
-                          onCreate={onCreateBatch === undefined ? undefined : () => setCreatingBatchKey(key)}
-                          createLabel="新しいバッチ"
+                          onCreateBatch={onCreateBatch}
                           onChange={(value) =>
                             updateLine(key, (l) => ({ ...l, settlementBatchId: value === '' ? null : Number(value) }))
                           }
@@ -224,28 +212,6 @@ export function JournalLinesEditor({
                         />
                       )}
                     </div>
-                    {creatingBatchKey === key && (
-                      <div className="journal-editor__line-sub">
-                        <input
-                          className="journal-editor__control"
-                          aria-label="新しい精算バッチの名前"
-                          value={newBatchName}
-                          autoFocus
-                          onChange={(e) => setNewBatchName(e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          className="journal-editor__small-button"
-                          disabled={newBatchName.trim() === ''}
-                          onClick={() => void createBatch(key)}
-                        >
-                          バッチを作成
-                        </button>
-                        <button type="button" className="journal-editor__small-button" onClick={() => setCreatingBatchKey(null)}>
-                          やめる
-                        </button>
-                      </div>
-                    )}
                   </div>
                 )
               })}

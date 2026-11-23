@@ -527,7 +527,9 @@
 .import-dialog__backdrop {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  /* 固定したタブ・バー(z-index: 15〜20)より上、確認ダイアログ・選択のポップアップ(30)より下。20だと同点になり、
+     DOMで後ろにあるタブ・バーが背面の上に出て、そこだけ暗くならない(計画Issue #269の実機確認での指摘) */
+  z-index: 25;
   display: flex;
   align-items: center;
   justify-content: center;

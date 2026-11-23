@@ -702,6 +702,37 @@ describe('StatementImportScreen', () => {
       expectBatch('ランチの精算バッチ', '10月の立替', rowOf(/ランチ/))
       expectBatch('スーパーの精算バッチ', '精算バッチなし', rowOf(/スーパー/))
     })
+
+    it('行の選択欄の「+ 新しいバッチ」で名前を入れて追加すると、バッチが作られてその行に選ばれる(計画Issue #269)', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(TWO_ROWS)
+      pick(rowOf(/スーパー/), '相手科目', '立替金')
+      pick(rowOf(/ランチ/), '相手科目', '立替金')
+
+      fireEvent.click(findBatchButton('ランチの精算バッチ', rowOf(/ランチ/)))
+      fireEvent.click(screen.getByRole('button', { name: '+ 新しいバッチ' }))
+      fireEvent.change(screen.getByLabelText('バッチ名'), { target: { value: '12月の忘年会' } })
+      fireEvent.click(screen.getByRole('button', { name: '追加' }))
+
+      await waitFor(() => expectBatch('ランチの精算バッチ', '12月の忘年会', rowOf(/ランチ/)))
+      expect(batches.findAll().map((b) => b.name)).toEqual(['12月の忘年会'])
+      expectBatch('スーパーの精算バッチ', '精算バッチなし', rowOf(/スーパー/))
+    })
+
+    it('行の「+ 新しいバッチ」をキャンセルすると、バッチは作られず選択も変わらない(計画Issue #269)', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(TWO_ROWS)
+      pick(rowOf(/ランチ/), '相手科目', '立替金')
+
+      fireEvent.click(findBatchButton('ランチの精算バッチ', rowOf(/ランチ/)))
+      fireEvent.click(screen.getByRole('button', { name: '+ 新しいバッチ' }))
+      fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+
+      expect(batches.findAll()).toEqual([])
+      expectBatch('ランチの精算バッチ', '精算バッチなし', rowOf(/ランチ/))
+    })
   })
 
   it('精算バッチは立替金・未払金の行だけに出て、利用者が作った資産(有価証券など)の行には出ない', async () => {
