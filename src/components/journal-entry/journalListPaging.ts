@@ -1,8 +1,9 @@
 import type { JournalViewMode } from './journalViewMode'
 
 /**
- * 仕訳一覧の分割表示(「さらにN件表示」、計画Issue #253)の表示件数を決める。
- * 絞り込みと並べ替えは全件に対して今までどおり行い、描画だけをページ分ずつに分ける。
+ * 仕訳一覧の分割表示(「さらにN件表示」、計画Issue #253)の1回の表示件数。
+ * 表示件数を決める関数と「さらに表示」の部品は、割勘画面(計画Issue #268)と共通で
+ * `common/list-paging/` にある。
  */
 
 /**
@@ -13,25 +14,4 @@ import type { JournalViewMode } from './journalViewMode'
 export const JOURNAL_LIST_PAGE_SIZE: Record<JournalViewMode, number> = {
   entry: 150,
   line: 150,
-}
-
-/**
- * 実際に表示する件数。上限(`limit`)までだが、選択中の仕訳(`selectedIndex`、並べ替え後の0始まりの位置。
- * 選択が無ければ-1)が範囲の外にあるときは、その仕訳を含む最小のページ分まで広げる(選択中の仕訳が見えなくならないため)。
- * 全体件数(`total`)は超えない。
- */
-export function resolveShownCount(args: { total: number; limit: number; pageSize: number; selectedIndex: number }): number {
-  const { total, limit, pageSize, selectedIndex } = args
-  const needed = selectedIndex < 0 ? 0 : Math.ceil((selectedIndex + 1) / pageSize) * pageSize
-  return Math.min(total, Math.max(limit, needed))
-}
-
-/** 「さらに表示」を押した後の表示件数の上限 */
-export function nextDisplayLimit(shown: number, pageSize: number): number {
-  return shown + pageSize
-}
-
-/** 「さらにN件表示」のN。残りがページ分に満たなければ残りの件数。全件を表示済みなら0(ボタンを出さない) */
-export function moreButtonCount(args: { total: number; shown: number; pageSize: number }): number {
-  return Math.max(0, Math.min(args.pageSize, args.total - args.shown))
 }
