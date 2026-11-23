@@ -1,16 +1,15 @@
 /**
  * allocateSignedAcrossLines(1人の分担額を、符号付きの行の金額の比で各行へ配分する純粋関数、計画Issue #271)の
  * ユニットテスト。借方(+)と貸方(−)の行が混ざっても、配分額の合計が分担額と1円もずれないこと、
- * 端数が最大剰余法で配られること、全行が同じ向きのときは従来の配分(allocateAcrossLines)と同じになることを検証する。
+ * 端数が最大剰余法で配られること、全行が同じ向きのときは行の金額比になることを検証する。
  * DB非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
-import { allocateAcrossLines } from './allocateAcrossLines'
 import { allocateSignedAcrossLines } from './allocateSignedAcrossLines'
 
 describe('allocateSignedAcrossLines', () => {
-  it('借方の行だけのときは、行の金額比で配分する(allocateAcrossLinesと同じ結果)', () => {
-    expect(allocateSignedAcrossLines(1000, [2400, 1600])).toEqual(allocateAcrossLines(1000, [2400, 1600]))
+  it('借方の行だけのときは、行の金額比で配分する', () => {
+    expect(allocateSignedAcrossLines(1000, [2400, 1600])).toEqual([600, 400])
   })
 
   it('借方と貸方が混ざるときは、符号を保ったまま純額に対する割合で配分する', () => {

@@ -32,7 +32,7 @@ export function signedLineAmount(line: Pick<JournalLine, 'side' | 'amount'>): nu
 /**
  * 割勘タブの候補を、仕訳の明細行単位で返す(計画Issue #271)。選べる行は費用・収益の行(借方・貸方とも)で、
  * それ以外の行(資産・負債・純資産の行)は選べない行として残す。割勘済みの行(割勘対象行の記録に載っている行)は
- * 返さない。割勘で作られた仕訳、選べる行が残らない仕訳は返さない。
+ * 返さない。割勘で作られた仕訳、自動調整仕訳、選べる行が残らない仕訳は返さない。
  * 割勘対象行の記録を持たない従来の割勘仕訳(行単位化前に作ったもの)に関連仕訳グループで繋がる仕訳は、
  * どの行を割ったか分からないため、従来どおり仕訳全体を割勘済みとして返さない。
  * relatedEntryIdsByEntryIdは関連仕訳グループから組み立てた「仕訳id → 繋がる仕訳idの集合」。DBアクセスなしの純粋関数。
@@ -54,7 +54,8 @@ export function listSplittableLineEntries(
 
   const result: SplittableLineEntry[] = []
   for (const entry of entries) {
-    if (isExpenseSplitEntry(entry)) continue
+    // 割勘で作られた仕訳と、自動調整仕訳(利用者が編集・削除できない導出データ)は割勘の対象にしない
+    if (isExpenseSplitEntry(entry) || entry.sourceType === 'auto_balance_adjustment') continue
     const related = relatedEntryIdsByEntryId.get(entry.id) ?? new Set<number>()
     if ([...related].some((id) => legacySplitEntryIds.has(id))) continue
 

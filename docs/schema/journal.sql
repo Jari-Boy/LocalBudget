@@ -129,7 +129,8 @@ END;
 -- 1つの元の行を、相手ごとの複数の割勘仕訳が参照できる(主キーは仕訳と行の組)。
 -- 割勘仕訳を削除すると記録も消え、その行は割勘済みでなくなる(ON DELETE CASCADE)。
 -- 元の行は、記録がある間は削除できない(ON DELETE RESTRICT。行の削除・元の仕訳の削除を拒否する)。
--- 元の行の金額・科目・貸借の変更もトリガーで拒否する。
+-- 元の行の金額・貸借の変更もトリガーで拒否する。科目の付け替えは止めない(科目の統合が、元の行と割勘仕訳の行の科目を同時に付け替えるので整合が保たれる。
+-- 画面からの仕訳の編集で科目を変えるのは、リポジトリが拒否する)。
 CREATE TABLE expense_split_source_lines (
   split_entry_id INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
   source_line_id INTEGER NOT NULL REFERENCES journal_lines(id) ON DELETE RESTRICT,
@@ -140,10 +141,10 @@ CREATE INDEX idx_expense_split_source_lines_source ON expense_split_source_lines
 
 CREATE TRIGGER prevent_change_on_expense_split_source_line
 BEFORE UPDATE ON journal_lines
-WHEN (NEW.account_id != OLD.account_id OR NEW.side != OLD.side OR NEW.amount != OLD.amount)
+WHEN (NEW.side != OLD.side OR NEW.amount != OLD.amount)
   AND EXISTS (SELECT 1 FROM expense_split_source_lines WHERE source_line_id = OLD.id)
 BEGIN
-  SELECT RAISE(ABORT, 'expense split source line cannot change account, side or amount');
+  SELECT RAISE(ABORT, 'expense split source line cannot change side or amount');
 END;
 
 -- 関連仕訳グループ(多対多、計画Issue #138)。journal_entry_links(明細行単位のsettles/allocates

@@ -116,6 +116,11 @@ describe('listSplittableLineEntries', () => {
     expect(listSplittableLineEntries([e], ACCOUNTS, NO_RELATED, [])).toEqual([])
   })
 
+  it('自動調整仕訳(残高の基準点から自動で作られる導出データ)は出さない', () => {
+    const auto = entry(1, [line(1, FOOD, 'debit', 800), line(2, CASH, 'credit', 800)], 'auto_balance_adjustment')
+    expect(listSplittableLineEntries([auto], ACCOUNTS, NO_RELATED, [])).toEqual([])
+  })
+
   it('割勘で作られた仕訳そのものは出さない', () => {
     const split = entry(9, [line(1, FOOD, 'debit', 400), line(2, CASH, 'credit', 400)], 'expense_splitting')
     expect(listSplittableLineEntries([split], ACCOUNTS, NO_RELATED, [])).toEqual([])

@@ -7,6 +7,8 @@ import { isExpenseSplitEntry } from './isExpenseSplitEntry'
 export type ExpenseSplitBlockReason =
   /** 割勘で作られた仕訳(「割勘の割勘」を防ぐ) */
   | 'is_expense_split_entry'
+  /** 自動調整仕訳(残高の基準点から自動で作られる導出データ。利用者は編集・削除できない) */
+  | 'is_auto_balance_adjustment'
   /** 割勘済み(割勘対象行の記録がない従来の割勘仕訳に繋がる、または費用・収益の行がすべて割勘済み) */
   | 'already_split'
   /** 費用・収益の行がない(資産・負債だけの仕訳など) */
@@ -29,6 +31,7 @@ export function checkExpenseSplittability(
   sourceLinks: readonly ExpenseSplitSourceLink[] = [],
 ): ExpenseSplittability {
   if (isExpenseSplitEntry(entry)) return { splittable: false, reason: 'is_expense_split_entry' }
+  if (entry.sourceType === 'auto_balance_adjustment') return { splittable: false, reason: 'is_auto_balance_adjustment' }
   const splitEntryIdsWithLinks = new Set(sourceLinks.map((l) => l.splitEntryId))
   if (relatedEntries.some((r) => isExpenseSplitEntry(r) && !splitEntryIdsWithLinks.has(r.id))) {
     return { splittable: false, reason: 'already_split' }

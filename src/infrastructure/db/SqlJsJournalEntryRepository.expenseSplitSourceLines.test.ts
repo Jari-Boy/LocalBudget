@@ -20,6 +20,7 @@ let foodId: number
 let dailyId: number
 let cashId: number
 let advanceAssetId: number
+let taggableAssetId: number
 let memberId: number
 
 beforeEach(async () => {
@@ -32,6 +33,8 @@ beforeEach(async () => {
   dailyId = accounts.create({ category: 'expense', name: '日用品', isReconcilable: null }).id
   cashId = accounts.create({ category: 'asset', name: '現金', isReconcilable: false }).id
   advanceAssetId = accounts.create({ category: 'asset', name: '立替', isReconcilable: false }).id
+  // 精算バッチのタグを付けられるシステム管理の立替金
+  taggableAssetId = accounts.create({ category: 'asset', name: '未収金', isReconcilable: false, isSystemManaged: true }).id
 })
 
 function createOriginal(): JournalEntry {
@@ -169,5 +172,74 @@ describe('割勘済みの行の保護', () => {
     const split = createSplit([original.lines[0].id])
     repository.delete(split.id)
     expect(() => repository.delete(original.id)).not.toThrow()
+  })
+})
+
+describe('精算バッチ単位の一括削除(deleteBySettlementBatchId)と割勘対象行の記録(計画Issue #271)', () => {
+  const insertBatch = () => {
+    db.run("INSERT INTO settlement_batches (name, type) VALUES ('割勘バッチ', 'expense_splitting')")
+    return db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number
+  }
+
+  /** 精算バッチのタグ付きの立替金(借方)と現金(貸方)の割勘仕訳 */
+  const createTaggedSplit = (batchId: number, sourceLineIds: number[]) =>
+    repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-11-02',
+      sourceType: 'expense_splitting',
+      expenseSplitSourceLineIds: sourceLineIds,
+      lines: [
+        { householdMemberId: memberId, accountId: taggableAssetId, side: 'debit', amount: 100, settlementBatchId: batchId },
+        { householdMemberId: memberId, accountId: cashId, side: 'credit', amount: 100 },
+      ],
+    })
+
+  it('バッチの割勘仕訳をまとめて削除すると、割勘対象行の記録も消え、元の仕訳は残る', () => {
+    const original = createOriginal()
+    const batchId = insertBatch()
+    const split = createTaggedSplit(batchId, [original.lines[0].id])
+
+    repository.deleteBySettlementBatchId(batchId)
+
+    expect(repository.findById(split.id)).toBeNull()
+    expect(repository.findExpenseSplitSourceLinks()).toEqual([])
+    expect(repository.findById(original.id)).not.toBeNull()
+  })
+
+  it('バッチの中に、割勘済みの行を持つ別の仕訳があるときは、その仕訳と割勘仕訳を一緒に削除できる(順序によらず)', () => {
+    const batchId = insertBatch()
+    // バッチのタグ付きの仕訳(精算など)で、その費用の行を割勘した割勘仕訳も同じバッチ
+    const tagged = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-11-01',
+      lines: [
+        { householdMemberId: memberId, accountId: foodId, side: 'debit', amount: 300 },
+        { householdMemberId: memberId, accountId: taggableAssetId, side: 'credit', amount: 300, settlementBatchId: batchId },
+      ],
+    })
+    const split = createTaggedSplit(batchId, [tagged.lines[0].id])
+
+    repository.deleteBySettlementBatchId(batchId)
+
+    expect(repository.findById(tagged.id)).toBeNull()
+    expect(repository.findById(split.id)).toBeNull()
+  })
+
+  it('バッチの中に、バッチ外の割勘仕訳に割られている行を持つ仕訳があるときは、ExpenseSplitSourceLineLockedErrorで拒否し、何も削除しない', () => {
+    const batchId = insertBatch()
+    const tagged = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-11-01',
+      lines: [
+        { householdMemberId: memberId, accountId: foodId, side: 'debit', amount: 300 },
+        { householdMemberId: memberId, accountId: taggableAssetId, side: 'credit', amount: 300, settlementBatchId: batchId },
+      ],
+    })
+    // バッチの外(タグなし)の割勘仕訳が、tagged の費用の行を割っている
+    const outsideSplit = createSplit([tagged.lines[0].id])
+
+    expect(() => repository.deleteBySettlementBatchId(batchId)).toThrow(ExpenseSplitSourceLineLockedError)
+    expect(repository.findById(tagged.id)).not.toBeNull()
+    expect(repository.findById(outsideSplit.id)).not.toBeNull()
   })
 })

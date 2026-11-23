@@ -114,6 +114,15 @@ describe('checkExpenseSplittability', () => {
     expect(checkExpenseSplittability(e, ACCOUNTS, [])).toEqual({ splittable: true })
   })
 
+  it('自動調整仕訳は理由 is_auto_balance_adjustment で割勘できない(利用者が編集・削除できない導出データのため)', () => {
+    const e = entry(1, [line(FOOD, 'debit'), line(CASH, 'credit')], 'auto_balance_adjustment')
+
+    expect(checkExpenseSplittability(e, ACCOUNTS, [])).toEqual({
+      splittable: false,
+      reason: 'is_auto_balance_adjustment',
+    })
+  })
+
   it('費用・収益の行がない仕訳は理由 no_profit_loss_line で割勘できない', () => {
     const e = entry(1, [line(CASH, 'debit'), line(CASH, 'credit')])
 

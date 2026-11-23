@@ -17,9 +17,9 @@ export const MIGRATION_V8_EXPENSE_SPLIT_SOURCE_LINES: readonly MigrationStep[] =
   'CREATE INDEX idx_expense_split_source_lines_source ON expense_split_source_lines(source_line_id)',
   `CREATE TRIGGER prevent_change_on_expense_split_source_line
    BEFORE UPDATE ON journal_lines
-   WHEN (NEW.account_id != OLD.account_id OR NEW.side != OLD.side OR NEW.amount != OLD.amount)
+   WHEN (NEW.side != OLD.side OR NEW.amount != OLD.amount)
      AND EXISTS (SELECT 1 FROM expense_split_source_lines WHERE source_line_id = OLD.id)
    BEGIN
-     SELECT RAISE(ABORT, 'expense split source line cannot change account, side or amount');
+     SELECT RAISE(ABORT, 'expense split source line cannot change side or amount');
    END`,
 ]

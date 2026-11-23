@@ -3,7 +3,7 @@
  * 各行の配分は「分担額 × 行の金額 ÷ 行の金額の合計(純額)」で、符号は行の向きのまま。端数は最大剰余法で
  * 配る(小数部が大きい行から1円ずつ。同じ大きさなら先の行)。配分額の合計は必ず分担額と一致する。
  * 純額が0のときは配分の基準がないため、呼び出し側が事前に除くこと(その場合は全行0を返す)。
- * 全行が同じ向きなら、allocateAcrossLinesと同じ結果になる(貸方だけなら全行が負)。
+ * 全行が同じ向きなら、行の金額比での配分になる(貸方だけなら全行が負)。
  */
 export function allocateSignedAcrossLines(totalAmount: number, signedLineAmounts: readonly number[]): number[] {
   const net = signedLineAmounts.reduce((sum, amount) => sum + amount, 0)

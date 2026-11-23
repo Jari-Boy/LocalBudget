@@ -54,11 +54,14 @@ describe('スキーマ v7 → v8(割勘対象行の記録の追加)', () => {
     expect(db.exec('SELECT COUNT(*) FROM expense_split_source_lines')[0].values[0][0]).toBe(0)
   })
 
-  it('差分を流したあと、記録がある行の金額の変更はトリガーが拒否する', async () => {
+  it('差分を流したあと、記録がある行の金額・貸借の変更はトリガーが拒否し、科目の付け替え(科目の統合)は通す', async () => {
     const db = await createV7Database()
     runMigrations(db)
     db.run('INSERT INTO expense_split_source_lines (split_entry_id, source_line_id) VALUES (2, 1)')
     expect(() => db.run('UPDATE journal_lines SET amount = 700 WHERE id = 1')).toThrow(/cannot change/)
+    expect(() => db.run("UPDATE journal_lines SET side = 'credit' WHERE id = 1")).toThrow(/cannot change/)
     db.run('UPDATE journal_lines SET amount = 900 WHERE id = 2')
+    // 科目の統合は、元の行と割勘仕訳の行の科目を同時に付け替えるので、整合が保たれる。トリガーは科目の変更を止めない
+    db.run('UPDATE journal_lines SET account_id = 2 WHERE id = 1')
   })
 })

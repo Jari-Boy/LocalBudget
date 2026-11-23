@@ -189,6 +189,11 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     return (result?.values ?? []).map((row) => ({ splitEntryId: row[0] as number, sourceLineId: row[1] as number }))
   }
 
+  private isExpenseSplittingEntry(entryId: number): boolean {
+    const [result] = this.db.exec("SELECT 1 FROM journal_entries WHERE id = ? AND source_type = 'expense_splitting'", [entryId])
+    return result !== undefined
+  }
+
   /** 仕訳の明細行のうち、割勘対象行の記録がある(割勘済みの)行のid */
   private findLockedSourceLineIds(entryId: number): number[] {
     const [result] = this.db.exec(
@@ -223,12 +228,15 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
       )
       const entryIds = (entries?.values ?? []).map((row) => row[0] as number)
       const affected = entryIds.flatMap((entryId) => findAffectedAccountIdsOfEntry(this.db, entryId))
-      this.db.run(
-        `DELETE FROM journal_entries WHERE id IN (
-           SELECT DISTINCT journal_entry_id FROM journal_lines WHERE settlement_batch_id = ?
-         )`,
-        [settlementBatchId],
-      )
+      // 割勘仕訳を先に削除する(割勘対象行の記録がCASCADEで消える)。同じバッチの仕訳が割勘済みの行を持っていても、
+      // その割勘仕訳も同じバッチなら、記録が先に消えるので一緒に削除できる(計画Issue #271)
+      const splitEntryIds = entryIds.filter((id) => this.isExpenseSplittingEntry(id))
+      for (const id of splitEntryIds) this.db.run('DELETE FROM journal_entries WHERE id = ?', [id])
+      // 残りの仕訳に、バッチの外の割勘仕訳が割った行があるときは、生のFKエラーにせず理由つきで拒否する(ROLLBACKで何も削除しない)
+      const remainingIds = entryIds.filter((id) => !splitEntryIds.includes(id))
+      const lockedLineIds = remainingIds.flatMap((id) => this.findLockedSourceLineIds(id))
+      if (lockedLineIds.length > 0) throw new ExpenseSplitSourceLineLockedError(lockedLineIds)
+      for (const id of remainingIds) this.db.run('DELETE FROM journal_entries WHERE id = ?', [id])
       reconcileAutoBalanceAdjustments(this.db, affected)
       this.db.run('COMMIT')
     } catch (error) {
