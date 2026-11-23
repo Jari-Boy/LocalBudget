@@ -290,6 +290,41 @@ describe('SplitTab', () => {
     expect(within(preview).getAllByText(formatCurrency(500, 'JPY')).length).toBeGreaterThan(0)
   })
 
+  it('立替者が1人だけの行を選んだときは、その立替者を分担相手に選べない(自分との割勘を防ぐ)', () => {
+    setup()
+
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(screen.getByRole('button', { name: /^分担相手/ }))
+
+    const dialog = within(screen.getByRole('dialog', { name: /分担相手/ }))
+    expect(dialog.getByRole('button', { name: '妻' })).toBeInTheDocument()
+    expect(dialog.queryByRole('button', { name: '夫' })).not.toBeInTheDocument()
+  })
+
+  it('立替者が複数いる行を選んだときは、どの世帯メンバーも分担相手に選べる(自分が立て替えた行は割らない)', () => {
+    const wifePaid = { ...entry(5, '2026-10-04', 'コーヒー', 'manual', [line(51, 5, 'debit', 1, 400), line(52, 5, 'credit', 2, 400)]), householdMemberId: 2 }
+    setup(makeData([wifePaid]))
+
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(debitBox('コーヒー'))
+    fireEvent.click(screen.getByRole('button', { name: /^分担相手/ }))
+
+    const dialog = within(screen.getByRole('dialog', { name: /分担相手/ }))
+    expect(dialog.getByRole('button', { name: '夫' })).toBeInTheDocument()
+    expect(dialog.getByRole('button', { name: '妻' })).toBeInTheDocument()
+  })
+
+  it('選んだ行の数と合計は、ラベルを左・値を右にそろえた行で表示する', () => {
+    setup()
+
+    fireEvent.click(debitBox('ランチ'))
+
+    const panel = screen.getByRole('region', { name: '分担' })
+    expect(within(panel).getByText('選んだ行').nextElementSibling).toHaveTextContent('1行')
+    expect(within(panel).getByText('選択した合計').parentElement).toHaveClass('split-settle__line')
+    expect(within(panel).getByText('選択した合計').closest('.split-settle__totals')).not.toBeNull()
+  })
+
   it('「割勘を記録」で選んだ行だけの割勘仕訳を作り、元の仕訳と同じ関連仕訳グループへ合流して画面を更新する', async () => {
     const { repositories, onChanged } = setup()
 

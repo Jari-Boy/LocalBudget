@@ -668,7 +668,8 @@
   gap: 12px;
 }
 
-.split-settle__summary {
+/* 選んだ行の数・借方/貸方の合計・選択した合計。ラベルを左、値を右にそろえた縦並び(既存の .split-settle__summary は精算タブの横並びの行で別物) */
+.split-settle__totals {
   display: flex;
   flex-direction: column;
   gap: 4px;

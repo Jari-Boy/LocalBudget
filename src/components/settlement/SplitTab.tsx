@@ -192,14 +192,19 @@ export function SplitTab({
   const net = chosen.reduce((sum, c) => sum + signedLineAmount(c.line), 0)
   const debitTotal = chosen.filter((c) => c.line.side === 'debit').reduce((sum, c) => sum + c.line.amount, 0)
   const creditTotal = chosen.filter((c) => c.line.side === 'credit').reduce((sum, c) => sum + c.line.amount, 0)
+  /**
+   * 分担相手に選べない世帯メンバー(自分との割勘を防ぐ)。立替者が1人だけのときは、その立替者を除く。立替者が複数いるときは、
+   * 誰を相手にしても、その相手が立て替えた行だけを割らない(planLineExpenseSplit)ので、除かない(全員が選べなくなるのを防ぐ)
+   */
   const payerIds = new Set(chosen.map((c) => c.entry.householdMemberId))
+  const excludedPartnerIds = payerIds.size === 1 ? payerIds : new Set<number>()
   const amountModeBlocked = chosen.length > 0 && net === 0
 
   const partnerCategories = useMemo(
-    () => buildPartnerCategories(data.members, derived.counterpartyCategories, payerIds),
-    // payerIdsは選んだ行から毎回作る集合なので、中身の文字列で比べる
+    () => buildPartnerCategories(data.members, derived.counterpartyCategories, excludedPartnerIds),
+    // excludedPartnerIdsは選んだ行から毎回作る集合なので、中身の文字列で比べる
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.members, derived.counterpartyCategories, [...payerIds].sort().join(',')],
+    [data.members, derived.counterpartyCategories, [...excludedPartnerIds].sort().join(',')],
   )
 
   // 相手ごとの負担額(送信時と同じ計算)。計算できないとき(金額指定で合計超過など)は金額指定の入力額をそのまま出す
@@ -551,7 +556,7 @@ export function SplitTab({
 
         <section aria-label="分担" className="split-settle__card split-settle__panel-wide">
           <h2 className="split-settle__h2">分担</h2>
-          <div className="split-settle__summary">
+          <div className="split-settle__totals">
             <div className="split-settle__line">
               <span>選んだ行</span>
               <span className="split-settle__num">{`${chosen.length}行`}</span>

@@ -103,6 +103,40 @@ describe('planLineExpenseSplit', () => {
     ).toEqual({ ok: false, error: 'noRecipient' })
   })
 
+  it('相手が一部の行の立替者でもよい。その相手には、自分が立て替えた行の分は割り当てない(自分との割勘にしない)', () => {
+    const other = { entry: { ...ENTRY, id: 2, householdMemberId: 2 }, line: line(14, FOOD, 'debit', 1000) }
+    // 食費2000は立替者1、食費1000は立替者2。相手が2なら、立替者2の行は対象外で、立替者1の行だけを割る
+    const plan = planLineExpenseSplit({
+      selectedLines: [food, other],
+      accounts: ACCOUNTS,
+      participants: [row('50')],
+      allocationMode: 'ratio',
+    })
+    expect(plan).toEqual({ ok: true, recipients: [{ row: row('50'), signedShares: [1000, 0] }] })
+  })
+
+  it('金額指定でも、相手が立て替えた行を除いた行の純額に対して配分する', () => {
+    const other = { entry: { ...ENTRY, id: 2, householdMemberId: 2 }, line: line(14, FOOD, 'debit', 1000) }
+    const plan = planLineExpenseSplit({
+      selectedLines: [food, other],
+      accounts: ACCOUNTS,
+      participants: [row('', '600')],
+      allocationMode: 'amount',
+    })
+    // 相手2が立て替えていない行は食費2000だけ。600をその行へ配分する
+    expect(plan).toEqual({ ok: true, recipients: [{ row: row('', '600'), signedShares: [600, 0] }] })
+    expect(
+      planLineExpenseSplit({ selectedLines: [food, other], accounts: ACCOUNTS, participants: [row('', '2500')], allocationMode: 'amount' }),
+    ).toEqual({ ok: false, error: 'amountExceedsTotal' })
+  })
+
+  it('選んだ行がすべて相手の立替なら、割る行がなくnoRecipientを返す', () => {
+    const mine = { entry: { ...ENTRY, id: 2, householdMemberId: 2 }, line: line(14, FOOD, 'debit', 1000) }
+    expect(
+      planLineExpenseSplit({ selectedLines: [mine], accounts: ACCOUNTS, participants: [row('50')], allocationMode: 'ratio' }),
+    ).toEqual({ ok: false, error: 'noRecipient' })
+  })
+
   it('費用・収益でない行が混ざるとexpenseAccountNotFoundを返す', () => {
     expect(
       planLineExpenseSplit({ selectedLines: [food, cash], accounts: ACCOUNTS, participants: [row('50')], allocationMode: 'ratio' }),

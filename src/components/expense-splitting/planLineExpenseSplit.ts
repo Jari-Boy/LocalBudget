@@ -38,6 +38,7 @@ export type PlanLineExpenseSplitResult =
  *
  * 均等・割合は、行ごとに行の金額を按分する(借方の行は正、貸方の行は負の負担額になる)。金額指定は、選んだ行の借方を正・
  * 貸方を負とした純額に対して、人ごとに入力した金額を行へ純額に対する割合で配分する(allocateSignedAcrossLines)。
+ * 世帯メンバーの相手が自分で立て替えた行は、その相手の割当から除く(自分との割勘にしない)。金額指定の純額は、その行を除いて数える。
  * 純額が0なら基準がなく、人ごとの合計が純額を超えるときも、エラーを返す。分担相手が未選択の行(targetIdがnull)は
  * 計算に含めない。負担額がすべて0の相手は結果に含めない。
  */
@@ -57,27 +58,42 @@ export function planLineExpenseSplit(params: {
   }
 
   const signedAmounts = selectedLines.map(({ line }) => signedLineAmount(line))
-  const net = signedAmounts.reduce((sum, n) => sum + n, 0)
   const selectedRows = participants.filter((row) => row.targetId !== null)
+
+  /**
+   * この相手に割り当てる行。世帯メンバーの相手が自分で立て替えた行(元の仕訳の起票者が相手本人)は、自分との割勘になって
+   * 意味がないので除く。世帯外の相手(取引先)は、すべての行が対象
+   */
+  const eligibleFor = (row: ExpenseSplittingParticipantRow) =>
+    selectedLines.map(({ entry }) => !(row.kind === 'householdMember' && entry.householdMemberId === row.targetId))
 
   const signedSharesByRow = new Map<number, number[]>()
   if (allocationMode === 'amount') {
-    if (net === 0) return { ok: false, error: 'amountNetZero' }
-    const valid = selectedRows
-      .map((row) => ({ row, amount: Number(row.amountInput) }))
+    const entered = selectedRows
+      .map((row) => ({ row, amount: Number(row.amountInput), eligible: eligibleFor(row) }))
       .filter(({ amount }) => Number.isFinite(amount) && amount > 0)
-    if (valid.reduce((sum, { amount }) => sum + amount, 0) > Math.abs(net)) {
-      return { ok: false, error: 'amountExceedsTotal' }
+    for (const { row, amount, eligible } of entered) {
+      const eligibleAmounts = signedAmounts.filter((_, i) => eligible[i])
+      const eligibleNet = eligibleAmounts.reduce((sum, n) => sum + n, 0)
+      if (eligibleAmounts.length === 0) continue
+      if (eligibleNet === 0) return { ok: false, error: 'amountNetZero' }
+      if (amount > Math.abs(eligibleNet)) return { ok: false, error: 'amountExceedsTotal' }
+      const allocated = allocateSignedAcrossLines(Math.sign(eligibleNet) * amount, eligibleAmounts)
+      let next = 0
+      signedSharesByRow.set(row.key, eligible.map((isEligible) => (isEligible ? allocated[next++] : 0)))
     }
-    for (const { row, amount } of valid) {
-      signedSharesByRow.set(row.key, allocateSignedAcrossLines(Math.sign(net) * amount, signedAmounts))
+    // 人ごとの金額の合計が、全体の純額を超えるときもエラー(立替者の取り分が負になるため)
+    const net = signedAmounts.reduce((sum, n) => sum + n, 0)
+    if (net !== 0 && entered.reduce((sum, { amount }) => sum + amount, 0) > Math.abs(net)) {
+      return { ok: false, error: 'amountExceedsTotal' }
     }
   } else {
     const perLine = selectedLines.map(({ line }) => calculateParticipantAmounts(line.amount, participants, allocationMode))
     for (const row of selectedRows) {
+      const eligible = eligibleFor(row)
       signedSharesByRow.set(
         row.key,
-        perLine.map((amounts, i) => Math.sign(signedAmounts[i]) * (amounts.get(String(row.key)) ?? 0)),
+        perLine.map((amounts, i) => (eligible[i] ? Math.sign(signedAmounts[i]) * (amounts.get(String(row.key)) ?? 0) : 0)),
       )
     }
   }
