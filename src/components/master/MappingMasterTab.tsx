@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useEscapeDiscard } from '../common/unsaved-changes/useEscapeDiscard'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
@@ -350,8 +351,12 @@ function MappingPanel(props: MappingPanelProps) {
   // 入力が保存済みの値(新規作成は空の状態)と違う間は、画面を離れる前に確認する(計画Issue #190)。
   // 検証エラーが残っていて保存できないときは、「保存して移動」でも移動しない
   const baseline = props.isCreate ? emptyMappingForm() : props.initial.form
+  const dirty = JSON.stringify(form) !== JSON.stringify(baseline)
+  /** 入力を保存済みの値(新規作成は空の状態)に戻す(計画Issue #237) */
+  const cancel = () => setForm(baseline)
+  const escape = useEscapeDiscard({ dirty, onDiscard: cancel })
   const unsavedDialog = useUnsavedEditGuard({
-    dirty: JSON.stringify(form) !== JSON.stringify(baseline),
+    dirty,
     save: () => (reasons.length > 0 ? Promise.resolve(false) : props.onSave(form)),
   })
   const split = form.amountMode === 'debit_credit_split'
@@ -420,7 +425,7 @@ function MappingPanel(props: MappingPanelProps) {
   }
 
   return (
-    <section className="master-panel" aria-label={t('mappingTab.editTitle')}>
+    <section className="master-panel" aria-label={t('mappingTab.editTitle')} onKeyDown={escape.onKeyDown}>
       <h2 className="master-panel__title">{t('mappingTab.editTitle')}</h2>
       {notice && (
         <p role="status" className="master-flash">
@@ -725,6 +730,9 @@ function MappingPanel(props: MappingPanelProps) {
         >
           {t('accountTab.save')}
         </button>
+        <button type="button" className="master-btn" disabled={props.busy || !dirty} title={t('accountTab.cancelTitle')} onClick={cancel}>
+          {t('accountTab.cancel')}
+        </button>
         {!props.isCreate && (
           <>
             <button type="button" className="master-btn" disabled={props.busy || reasons.length > 0} onClick={() => void props.onDuplicate(form)}>
@@ -742,6 +750,7 @@ function MappingPanel(props: MappingPanelProps) {
         )}
       </div>
       {unsavedDialog}
+      {escape.dialog}
     </section>
   )
 }

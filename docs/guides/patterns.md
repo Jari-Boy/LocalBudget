@@ -505,3 +505,9 @@
 **原因**: 描画だけを絞っても、選択状態のIDの集合は表示範囲とは独立に残る。
 **対策**: 選択の対象は「表示中の行だけ」と決め、表示中でなくなった行のIDを選択から落とす(`JournalScreen`の`visibleLineIds`と`useEffect`)。落とすときは確認中の状態も取り消す。更新に失敗した行のように、表示中のまま残すべき選択は落とさない(落とす条件は「表示中でないID」だけにする)。
 **該当箇所(例)**: `src/components/journal-entry/JournalScreen.tsx`、`docs/decisions.md`「仕訳一覧は、全件の取得・絞り込みは今のまま維持し...」の決定7
+
+## 詳細パネルに「元に戻す」操作を足すとき、状態の持ち主ごとに戻し方を分けず、一部の入力だけ戻らない(計画Issue #237)
+
+**症状(予防)**: 名称は親が持ち、固有のフォームは子が持つ(`GroupedMasterTab`の`renderLeafExtra`)ように、入力の状態が複数の持ち主に分かれる画面で、名称だけ戻して固有のフォームが戻らない。また、選んだ時点で保存される項目(所属グループ・並び順・有効/無効)まで戻す対象と誤解する。
+**対策**: 「保存」で確定する入力だけを戻す対象とし、即時保存の項目は対象外と決めて記録する。子が持つ状態は親から書き換えず、子を`key`で作り直して保存済みの値から初期化し直す。Escで確認を出す規則は共通フック`useEscapeDiscard`(`src/components/common/unsaved-changes/`)を使い、画面ごとに`keydown`を書かない。ボタン名「キャンセル」はダイアログ・入力行にも使われるため、テストはその範囲に絞って探す。
+**該当箇所(例)**: `src/components/master/GroupedMasterTab.tsx`、`src/components/journal-entry/JournalScreen.tsx`、`docs/decisions.md` 2026-11-23「マスタと仕訳の詳細パネルに『キャンセル』と、Escでの破棄の確認を足す」

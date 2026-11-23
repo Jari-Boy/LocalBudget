@@ -537,7 +537,7 @@ describe('MappingMasterTab 未保存の編集の警告(計画Issue #190)', () =>
     await editCard()
     await openMapping('楽天銀行')
     expect(dialog()).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'キャンセル' }))
     expect(panel().getByLabelText('表示名')).toHaveValue('楽天カード(新)')
   })
 
@@ -605,3 +605,44 @@ describe('MappingMasterTab 未保存の編集の警告(計画Issue #190)', () =>
   })
 })
 
+
+describe('MappingMasterTab 詳細パネルのキャンセル(計画Issue #237)', () => {
+  it('変更が無い間は「キャンセル」が押せず、書き換えると押せて、押すと確認なしで保存済みの値に戻る', async () => {
+    makeMapping()
+    renderTab()
+    await openMapping('楽天カード')
+    expect(panel().getByRole('button', { name: 'キャンセル' })).toBeDisabled()
+    fireEvent.change(panel().getByLabelText('表示名'), { target: { value: '楽天カード(改)' } })
+
+    fireEvent.click(panel().getByRole('button', { name: 'キャンセル' }))
+
+    expect(panel().getByLabelText('表示名')).toHaveValue('楽天カード(確定)')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(panel().getByRole('button', { name: 'キャンセル' })).toBeDisabled()
+  })
+
+  it('変更があるときのEscは「変更を破棄しますか?」を出し、「破棄する」で戻り、「編集を続ける」では入力が残る', async () => {
+    makeMapping()
+    renderTab()
+    await openMapping('楽天カード')
+    fireEvent.change(panel().getByLabelText('表示名'), { target: { value: '楽天カード(改)' } })
+
+    fireEvent.keyDown(panel().getByLabelText('表示名'), { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: '変更を破棄しますか?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '編集を続ける' }))
+    expect(panel().getByLabelText('表示名')).toHaveValue('楽天カード(改)')
+
+    fireEvent.keyDown(panel().getByLabelText('表示名'), { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: '破棄する' }))
+    expect(panel().getByLabelText('表示名')).toHaveValue('楽天カード(確定)')
+  })
+
+  it('変更が無いときのEscは、何も出さない', async () => {
+    makeMapping()
+    renderTab()
+    await openMapping('楽天カード')
+    fireEvent.keyDown(panel().getByLabelText('表示名'), { key: 'Escape' })
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+})

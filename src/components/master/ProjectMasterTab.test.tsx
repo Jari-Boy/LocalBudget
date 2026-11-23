@@ -348,7 +348,7 @@ describe('ProjectMasterTab 未保存の編集の警告(計画Issue #190)', () =>
     await editOkinawa()
     await open('京都')
     expect(dialog()).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'キャンセル' }))
     expect(nameInput()).toHaveValue('沖縄家族旅行')
   })
 
@@ -386,7 +386,7 @@ describe('ProjectMasterTab 未保存の編集の警告(計画Issue #190)', () =>
     await editOkinawa()
     fireEvent.click(screen.getByRole('button', { name: 'プロジェクトを追加' }))
     expect(dialog()).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'キャンセル' }))
     expect(projects.findAll()).toHaveLength(2)
   })
 
@@ -394,7 +394,7 @@ describe('ProjectMasterTab 未保存の編集の警告(計画Issue #190)', () =>
     await editOkinawa()
     fireEvent.click(screen.getByRole('link', { name: '他の画面へ' }))
     expect(dialog()).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'キャンセル' }))
     expect(screen.getByTestId('where')).toHaveTextContent('/master/here')
     expect(nameInput()).toHaveValue('沖縄家族旅行')
   })

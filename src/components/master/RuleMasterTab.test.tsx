@@ -744,3 +744,54 @@ describe('操作に失敗したときのエラー表示(計画Issue #164)', () =
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })
+
+describe('RuleMasterTab 詳細パネルのキャンセル(計画Issue #237)', () => {
+  const editor = () => panel('定期仕訳の編集')
+
+  it('変更が無い間は「キャンセル」が押せず、書き換えると押せて、押すと確認なしで保存済みの値に戻る', async () => {
+    makeRule()
+    renderTab()
+    await open('家賃')
+    expect(editor().getByRole('button', { name: 'キャンセル' })).toBeDisabled()
+    fireEvent.change(editor().getByLabelText('名称'), { target: { value: '家賃(改)' } })
+
+    fireEvent.click(editor().getByRole('button', { name: 'キャンセル' }))
+
+    expect(editor().getByLabelText('名称')).toHaveValue('家賃')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(editor().getByRole('button', { name: 'キャンセル' })).toBeDisabled()
+  })
+
+  it('変更があるときのEscは「変更を破棄しますか?」を出し、「編集を続ける」で入力が残り、「破棄する」で戻る', async () => {
+    makeRule()
+    renderTab()
+    await open('家賃')
+    fireEvent.change(editor().getByLabelText('名称'), { target: { value: '家賃(改)' } })
+
+    fireEvent.keyDown(editor().getByLabelText('名称'), { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: '変更を破棄しますか?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '編集を続ける' }))
+    expect(editor().getByLabelText('名称')).toHaveValue('家賃(改)')
+
+    fireEvent.keyDown(editor().getByLabelText('名称'), { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: '破棄する' }))
+    expect(editor().getByLabelText('名称')).toHaveValue('家賃')
+  })
+
+  it('変更が無いときのEscは、何も出さない', async () => {
+    makeRule()
+    renderTab()
+    await open('家賃')
+
+    fireEvent.keyDown(editor().getByLabelText('名称'), { key: 'Escape' })
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('作成フォームには、これまでどおり「キャンセル」(作成をやめる)が1つだけある', async () => {
+    renderTab()
+    fireEvent.click(await screen.findByRole('button', { name: '定期仕訳を追加' }))
+
+    expect(panel('定期仕訳の追加').getAllByRole('button', { name: 'キャンセル' })).toHaveLength(1)
+  })
+})

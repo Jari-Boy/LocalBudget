@@ -221,7 +221,7 @@ describe('AccountMasterTab', () => {
     it('キャンセルすると、科目の名義も明細行も変わらない', async () => {
       const { cash } = await startChangingToWife()
 
-      fireEvent.click(await screen.findByRole('button', { name: 'キャンセル' }))
+      fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'キャンセル' }))
 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       expect(accounts.findById(cash.id)!.householdMemberId).toBeNull()
@@ -803,7 +803,7 @@ describe('AccountMasterTab 未保存の編集の警告(計画Issue #190)', () =>
     await editFood()
     await open('交通費')
     expect(dialog()).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'キャンセル' }))
     expect(dialog()).not.toBeInTheDocument()
     expect(nameInput()).toHaveValue('食料費')
   })
@@ -1118,7 +1118,7 @@ describe('AccountMasterTab: 残高の照合欄(計画Issue #205)', () => {
       fireEvent.click(add)
 
       expect(panel('科目の編集').getByLabelText('追加するキーワード')).toBeInTheDocument()
-      fireEvent.click(panel('科目の編集').getByRole('button', { name: 'キャンセル' }))
+      fireEvent.click(within(screen.getByLabelText('追加するキーワード').parentElement!).getByRole('button', { name: 'キャンセル' }))
       expect(panel('科目の編集').queryByLabelText('追加するキーワード')).not.toBeInTheDocument()
     })
 
@@ -1179,3 +1179,44 @@ describe('AccountMasterTab: 残高の照合欄(計画Issue #205)', () => {
   })
 })
 
+
+describe('AccountMasterTab 詳細パネルのキャンセル(計画Issue #237)', () => {
+  it('変更が無い間は「キャンセル」が押せず、書き換えると押せて、押すと確認なしで保存済みの値に戻る', async () => {
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    renderTab()
+    await open('食費')
+    expect(panel('科目の編集').getByRole('button', { name: 'キャンセル' })).toBeDisabled()
+    fireEvent.change(panel('科目の編集').getByLabelText('名称'), { target: { value: '食料費' } })
+
+    fireEvent.click(panel('科目の編集').getByRole('button', { name: 'キャンセル' }))
+
+    expect(panel('科目の編集').getByLabelText('名称')).toHaveValue('食費')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(panel('科目の編集').getByRole('button', { name: 'キャンセル' })).toBeDisabled()
+  })
+
+  it('変更があるときのEscは「変更を破棄しますか?」を出し、「破棄する」で戻り、「編集を続ける」では入力が残る', async () => {
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    renderTab()
+    await open('食費')
+    fireEvent.change(panel('科目の編集').getByLabelText('名称'), { target: { value: '食料費' } })
+
+    fireEvent.keyDown(panel('科目の編集').getByLabelText('名称'), { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: '変更を破棄しますか?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '編集を続ける' }))
+    expect(panel('科目の編集').getByLabelText('名称')).toHaveValue('食料費')
+
+    fireEvent.keyDown(panel('科目の編集').getByLabelText('名称'), { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: '破棄する' }))
+    expect(panel('科目の編集').getByLabelText('名称')).toHaveValue('食費')
+  })
+
+  it('変更が無いときのEscは、何も出さない', async () => {
+    accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
+    renderTab()
+    await open('食費')
+    fireEvent.keyDown(panel('科目の編集').getByLabelText('名称'), { key: 'Escape' })
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+})

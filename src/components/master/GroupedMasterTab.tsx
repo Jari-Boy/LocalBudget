@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FavoriteStarButton } from '../common/favorites/FavoriteStarButton'
 import type { FavoriteKind } from '../common/favorites/FavoritesContext'
 import { computeTreeNodeUpdates, type TreeNodeUpdate } from '../common/tree-table/computeTreeNodeUpdates'
+import { useEscapeDiscard } from '../common/unsaved-changes/useEscapeDiscard'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import { TreeCardList, type TreeCardContent } from '../common/tree-table/TreeCardList'
 import { TreeTable } from '../common/tree-table/TreeTable'
@@ -359,6 +360,8 @@ function NodePanel(props: NodePanelProps) {
   const [name, setName] = useState(node.name)
   /** 固有のフォームの状態(計画Issue #201)。無ければ名称だけが保存の対象 */
   const [extraForm, setExtraForm] = useState<LeafFormState | null>(null)
+  /** 「キャンセル」で増やし、固有のフォームを作り直して保存済みの値に戻す(計画Issue #237) */
+  const [resetCount, setResetCount] = useState(0)
   const nameDirty = name.trim() !== node.name
   /** 固有のフォームが不正か(理由の表示用) */
   const extraInvalid = extraForm !== null && !extraForm.valid
@@ -378,13 +381,21 @@ function NodePanel(props: NodePanelProps) {
     dirty: nameDirty || (extraForm?.dirty ?? false),
     save: saveAll,
   })
+  const dirty = nameDirty || (extraForm?.dirty ?? false)
+  /** 名称と固有のフォームを保存済みの値に戻す。所属グループ・並び順は選んだ時点で保存済みなので対象外 */
+  const cancel = () => {
+    setName(node.name)
+    setExtraForm(null)
+    setResetCount((n) => n + 1)
+  }
+  const escape = useEscapeDiscard({ dirty, onDiscard: cancel })
   const siblings = nodes.filter((n) => n.parentId === node.parentId)
   const index = siblings.findIndex((n) => n.id === node.id)
   const excludedIds = isGroup ? withDescendants(nodes, node.id) : []
   const title = isGroup ? t('groupedTab.editGroup') : t('groupedTab.editLeaf', { leaf: props.leafLabel })
 
   return (
-    <section className="master-panel" aria-label={title}>
+    <section className="master-panel" aria-label={title} onKeyDown={escape.onKeyDown}>
       <h2 className="master-panel__title">{title}</h2>
 
       <div className="master-field">
@@ -428,7 +439,7 @@ function NodePanel(props: NodePanelProps) {
         </button>
       </div>
 
-      {props.renderExtra?.({ setFormState: setExtraForm })}
+      <Fragment key={resetCount}>{props.renderExtra?.({ setFormState: setExtraForm })}</Fragment>
 
       {isGroup && (
         <div className="master-actions">
@@ -449,6 +460,9 @@ function NodePanel(props: NodePanelProps) {
           onClick={() => void saveAll()}
         >
           {t('accountTab.save')}
+        </button>
+        <button type="button" className="master-btn" disabled={busy || !dirty} title={t('accountTab.cancelTitle')} onClick={cancel}>
+          {t('accountTab.cancel')}
         </button>
         <button
           type="button"
@@ -471,6 +485,7 @@ function NodePanel(props: NodePanelProps) {
       {extraInvalid && extraForm?.reason !== undefined && <p className="master-note">{extraForm.reason}</p>}
       {props.blockedText !== '' && <p className="master-note">{props.blockedText}</p>}
       {unsavedDialog}
+      {escape.dialog}
     </section>
   )
 }

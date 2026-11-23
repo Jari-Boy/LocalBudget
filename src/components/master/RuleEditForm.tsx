@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useEscapeDiscard } from '../common/unsaved-changes/useEscapeDiscard'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
@@ -76,6 +77,10 @@ export function RuleEditForm(props: RuleEditFormProps) {
   const [form, setForm] = useState<RuleForm>(props.initial)
   const [resuming, setResuming] = useState(false)
   const [resumedOn, setResumedOn] = useState(props.today)
+  /** 編集中の入力が保存済みの値と違うか(計画Issue #237)。作成フォームでは「キャンセル」(作成をやめる)が別にあるため使わない */
+  const dirty = !props.isCreate && JSON.stringify(form) !== JSON.stringify(props.initial)
+  const cancel = () => setForm(props.initial)
+  const escape = useEscapeDiscard({ dirty, onDiscard: cancel })
   const set = <K extends keyof RuleForm>(key: K, value: RuleForm[K]) => setForm((f) => ({ ...f, [key]: value }))
   const num = (value: string): number | '' => (value === '' ? '' : Number(value))
   const title = t(props.isCreate ? 'ruleTab.createTitle' : 'ruleTab.editTitle')
@@ -122,7 +127,7 @@ export function RuleEditForm(props: RuleEditFormProps) {
   )
 
   return (
-    <section className="master-panel" aria-label={title}>
+    <section className="master-panel" aria-label={title} onKeyDown={escape.onKeyDown}>
       <div className="master-panel__heading">
         <span className="master-tag">{t('ruleTab.tag')}</span>
         <h2 className="master-panel__title">{title}</h2>
@@ -435,6 +440,15 @@ export function RuleEditForm(props: RuleEditFormProps) {
           <>
             <button
               type="button"
+              className="master-btn"
+              disabled={props.busy || !dirty}
+              title={t('accountTab.cancelTitle')}
+              onClick={cancel}
+            >
+              {t('accountTab.cancel')}
+            </button>
+            <button
+              type="button"
               className={`master-btn${props.armed ? ' master-btn--danger' : ''}`}
               disabled={props.busy || props.blockedText !== ''}
               onClick={props.onDelete}
@@ -463,6 +477,7 @@ export function RuleEditForm(props: RuleEditFormProps) {
         )}
       </div>
       {props.blockedText !== '' && <p className="master-note">{props.blockedText}</p>}
+      {escape.dialog}
     </section>
   )
 }
