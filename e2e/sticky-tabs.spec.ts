@@ -80,26 +80,6 @@ test.describe('各画面のタブ・絞り込み欄の上部固定', () => {
     expect(box.y + box.height).toBeLessThanOrEqual(721)
   })
 
-  test('割勘: 右の「分担」パネルは、固定したタブの行に覆われず、その下に追従する(絞り込み欄を開いても、その下)', async ({ page }) => {
-    await open(page)
-    await page.getByRole('navigation', { name: 'メインメニュー' }).getByRole('link', { name: '割勘・精算' }).click()
-    const panel = page.getByRole('region', { name: '分担' })
-    await expect(panel).toBeVisible()
-
-    // 割勘の本体(表と分担パネル)の途中までスクロールする。いちばん下は、本体の下の余白の部分で、パネルも本体と一緒に上へ抜ける
-    await makeTallAndScroll(page, '.split-settle__card--table')
-    await page.evaluate(() => window.scrollTo(0, 1500))
-
-    const tabs = (await page.getByRole('tablist', { name: '割勘・精算・履歴' }).boundingBox())!
-    await expect(panel).toBeInViewport({ ratio: 1 })
-    expect((await panel.boundingBox())!.y).toBeGreaterThanOrEqual(tabs.y + tabs.height - 1)
-
-    await page.getByRole('button', { name: '絞り込みを開く' }).click()
-    await page.evaluate(() => window.scrollTo(0, 1500))
-    const filter = (await page.getByRole('search', { name: '仕訳の絞り込み' }).boundingBox())!
-    expect((await panel.boundingBox())!.y).toBeGreaterThanOrEqual(filter.y + filter.height - 1)
-  })
-
   test('仕訳一覧: 右の詳細パネルは、固定したタブの行に覆われず、その下に追従する', async ({ page }) => {
     await open(page)
     await page.evaluate(async () => {
@@ -184,7 +164,7 @@ test.describe('各画面のタブ・絞り込み欄の上部固定', () => {
     await expect(toolbar.getByRole('textbox')).toBeInViewport({ ratio: 1 })
     await expect(toolbar.getByRole('button').first()).toBeInViewport({ ratio: 1 })
   })
-  test('割勘: 「割勘する仕訳」の表の見出しが固定される。絞り込み欄を開くと、その下に固定される', async ({ page }) => {
+  test('割勘: 「割勘する行」の表の見出しが固定される。絞り込み欄を開くと、その下に固定される', async ({ page }) => {
     await open(page)
     await page.evaluate(async () => {
       const { createDbClient } = await import('/src/infrastructure/rpc/createDbClient.ts')
@@ -207,8 +187,8 @@ test.describe('各画面のタブ・絞り込み欄の上部固定', () => {
     })
     await page.reload()
     await page.getByRole('navigation', { name: 'メインメニュー' }).getByRole('link', { name: '割勘・精算' }).click()
-    await expect(page.getByRole('region', { name: '割勘する仕訳' })).toBeVisible()
-    const floating = page.getByRole('region', { name: '割勘する仕訳' }).locator('.floating-table-header')
+    await expect(page.getByRole('region', { name: '割勘する行' })).toBeVisible()
+    const floating = page.getByRole('region', { name: '割勘する行' }).locator('.floating-table-header')
     await expect(floating).toHaveAttribute('data-stuck', 'false')
 
     await page.evaluate(() => window.scrollTo(0, 700))
@@ -218,7 +198,7 @@ test.describe('各画面のタブ・絞り込み欄の上部固定', () => {
     const tabs = page.getByRole('tablist', { name: '割勘・精算・履歴' })
     await expectHeaderStuckBelow(page, header, tabs)
     // 見出しの列は、本物の行の列とずれない(日付の列)
-    const firstRowDate = page.getByRole('region', { name: '割勘する仕訳' }).locator('tbody tr').first().getByRole('cell').nth(1)
+    const firstRowDate = page.getByRole('region', { name: '割勘する行' }).locator('tbody tr').first().getByRole('cell').nth(0)
     expect(Math.abs((await header.boundingBox())!.x - (await firstRowDate.boundingBox())!.x)).toBeLessThan(1.5)
 
     await page.getByRole('button', { name: '絞り込みを開く' }).click()

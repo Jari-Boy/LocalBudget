@@ -92,6 +92,11 @@ export interface CreateJournalEntryInput {
   generatedFromRuleId?: number | null
   /** 生成元の定期仕訳ルールでの調整前の期日(計画Issue #164)。generatedFromRuleIdとセットで指定する */
   recurringDueDate?: string | null
+  /**
+   * 割勘仕訳(sourceType = 'expense_splitting')が割った元の行のid(計画Issue #271)。仕訳と同じトランザクションで
+   * 割勘対象行の記録(expense_split_source_lines)に保存する。割勘済みの行の判定に使う
+   */
+  expenseSplitSourceLineIds?: readonly number[]
 }
 
 export interface CreateExternalTransactionRefTarget {

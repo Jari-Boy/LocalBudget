@@ -104,27 +104,45 @@ async function waitForJournalEntryCount(page: Page, expectedCount: number) {
 
 const MONEY_500 = /[¥￥]500/
 
+/** 起動時に自動作成される既定の世帯メンバーの名前(seedDefaultHouseholdMember) */
+const DEFAULT_MEMBER_NAME = '自分'
+
 /** サイドナビから割勘・精算画面を開く */
 async function openSplitSettle(page: Page) {
   await page.getByRole('navigation', { name: 'メインメニュー' }).getByRole('link', { name: '割勘・精算' }).click()
   await expect(page.getByRole('heading', { name: '割勘・精算' })).toBeVisible()
 }
 
-/** 選択ツリー(TreeSelect)のボタンを開き、名前の項目を選ぶ */
-async function chooseFromTree(page: Page, triggerName: RegExp, optionName: string) {
-  await page.getByRole('button', { name: triggerName }).first().click()
+/** 選択ツリー(TreeSelect)のボタンを開き、名前の項目を選ぶ。同じ名前のボタンが複数あるときは index 番目(0始まり) */
+async function chooseFromTree(page: Page, triggerName: RegExp, optionName: string, index = 0) {
+  await page.getByRole('button', { name: triggerName }).nth(index).click()
   await page.getByRole('dialog').getByRole('button', { name: optionName, exact: true }).click()
 }
 
+/** 負担する人を、1行目に相手(割勘の相手)・2行目に立て替えた本人(既定の世帯メンバー)として選ぶ。割合は初期値の50%ずつ */
+async function choosePayerAndPartner(page: Page, partnerName: string) {
+  await chooseFromTree(page, /^分担相手/, partnerName, 0)
+  await chooseFromTree(page, /^分担相手/, DEFAULT_MEMBER_NAME, 1)
+}
+
+/** 摘要の行(仕訳の先頭の行)の、借方側のチェックボックス(計画Issue #271で明細行単位の表になった) */
+function debitCheckbox(page: Page, memo: string) {
+  return page
+    .getByRole('button', { name: memo, exact: true })
+    .locator('xpath=ancestor::tr')
+    .getByRole('checkbox', { name: /^借方の.*の行を選択$/ })
+}
+
 async function splitWithMember(page: Page, memo: string) {
-  await page.getByRole('checkbox', { name: `${memo}を選択` }).check()
-  await chooseFromTree(page, /^分担相手/, '割勘相手Bさん')
+  await debitCheckbox(page, memo).check()
+  await choosePayerAndPartner(page, '割勘相手Bさん')
+  await page.getByLabel('摘要', { exact: true }).fill(`${memo}の割勘`)
   await page.getByRole('button', { name: '割勘を記録' }).click()
   await expect(page.getByText('割勘を記録しました')).toBeVisible()
 }
 
 test.describe('割勘タブ', () => {
-  test('割勘できる仕訳だけが候補に出る(費用の行が無い仕訳・割勘仕訳自身は出ない)', async ({ page }) => {
+  test('割勘できる仕訳だけが候補に出る(費用・収益の行が無い仕訳・割勘仕訳自身は出ない)', async ({ page }) => {
     await page.goto('/')
     const data = await setupBaseData(page, '候補テスト')
     await createOriginalExpenseEntry(page, data, '候補になる食事代', 1000)
@@ -134,14 +152,14 @@ test.describe('割勘タブ', () => {
       const [member] = await client.householdMember.findAll()
       const accounts = await client.account.findAll()
       const cash = accounts.find((a) => a.name === '割勘用現金')!
-      const salary = await client.account.create({ category: 'revenue', name: '割勘用給与', isReconcilable: null })
+      const savings = await client.account.create({ category: 'asset', name: '割勘用預金', isReconcilable: false })
       await client.journalEntry.create({
         entryDate: '2026-08-02',
-        memo: '候補にならない給与',
+        memo: '候補にならない預金移動',
         householdMemberId: member.id,
         lines: [
           { householdMemberId: member.id, accountId: cash.id, side: 'debit', amount: 300000 },
-          { householdMemberId: member.id, accountId: salary.id, side: 'credit', amount: 300000 },
+          { householdMemberId: member.id, accountId: savings.id, side: 'credit', amount: 300000 },
         ],
       })
       await client.autoSave.flush()
@@ -149,15 +167,39 @@ test.describe('割勘タブ', () => {
     await page.reload()
 
     await openSplitSettle(page)
-    const table = page.getByRole('region', { name: '割勘する仕訳' })
+    const table = page.getByRole('region', { name: '割勘する行' })
     await expect(table.getByText('候補になる食事代')).toBeVisible()
-    await expect(table.getByText('候補にならない給与')).toHaveCount(0)
+    await expect(table.getByText('候補にならない預金移動')).toHaveCount(0)
 
     await splitWithMember(page, '候補になる食事代')
     await waitForJournalEntryCount(page, 3)
     // 割勘した元の仕訳と、割勘仕訳自身(割勘の割勘)は候補から外れる
     await expect(table.getByText('候補になる食事代')).toHaveCount(0)
     await expect(table.getByText('候補になる食事代の割勘')).toHaveCount(0)
+  })
+
+  test('摘要の列幅を狭くでき、長い摘要は省略表示になる(列幅の調整、計画Issue #271)', async ({ page }) => {
+    await page.goto('/')
+    const data = await setupBaseData(page, '列幅テスト')
+    const longMemo = '列幅テストの長い長い長い長い長い長い長い長い長い長い長い長い長い長い摘要'
+    await createOriginalExpenseEntry(page, data, longMemo, 1000)
+
+    await openSplitSettle(page)
+    const table = page.getByRole('region', { name: '割勘する行' })
+    const memoCell = table.getByRole('button', { name: longMemo }).locator('xpath=ancestor::td')
+    const handle = table.getByRole('separator', { name: '摘要の列幅' })
+    const before = (await memoCell.boundingBox())!.width
+
+    // 初期の幅(220px)から、最小の幅(48px)まで ← キーで狭める。文字の長さに引きずられて広いままにならない
+    await handle.focus()
+    for (let i = 0; i < 25; i += 1) await handle.press('ArrowLeft')
+
+    const after = (await memoCell.boundingBox())!.width
+    expect(after).toBeLessThan(before - 100)
+    expect(after).toBeLessThanOrEqual(60)
+    // 摘要のボタンは、列からはみ出さない(省略表示)
+    const button = table.getByRole('button', { name: longMemo })
+    expect((await button.boundingBox())!.width).toBeLessThanOrEqual(after)
   })
 
   test('世帯メンバーとの割勘を記録すると、履歴タブに相手・負担額・未精算で出る', async ({ page }) => {
@@ -194,8 +236,9 @@ test.describe('割勘タブ', () => {
     await createOriginalExpenseEntry(page, data, '世帯外テストの食事代', 1000)
 
     await openSplitSettle(page)
-    await page.getByRole('checkbox', { name: '世帯外テストの食事代を選択' }).check()
-    await chooseFromTree(page, /^分担相手/, '割勘相手の友人Cさん')
+    await debitCheckbox(page, '世帯外テストの食事代').check()
+    await choosePayerAndPartner(page, '割勘相手の友人Cさん')
+    await page.getByLabel('摘要', { exact: true }).fill('世帯外テストの食事代の割勘')
     await page.getByRole('button', { name: '割勘を記録' }).click()
     await expect(page.getByText('割勘を記録しました')).toBeVisible()
 
@@ -211,7 +254,7 @@ test.describe('割勘タブ', () => {
     await createOriginalExpenseEntry(page, data, '未選択テストの食事代', 1000)
 
     await openSplitSettle(page)
-    await page.getByRole('checkbox', { name: '未選択テストの食事代を選択' }).check()
+    await debitCheckbox(page, '未選択テストの食事代').check()
     await page.getByRole('button', { name: '割勘を記録' }).click()
 
     await expect(page.getByRole('alert')).toContainText('分担相手を選んでください')
@@ -225,9 +268,10 @@ test.describe('割勘タブ', () => {
     await createOriginalExpenseEntry(page, data, 'まとめ2', 600)
 
     await openSplitSettle(page)
-    await page.getByRole('checkbox', { name: 'まとめ1を選択' }).check()
-    await page.getByRole('checkbox', { name: 'まとめ2を選択' }).check()
-    await chooseFromTree(page, /^分担相手/, '割勘相手Bさん')
+    await debitCheckbox(page, 'まとめ1').check()
+    await debitCheckbox(page, 'まとめ2').check()
+    await choosePayerAndPartner(page, '割勘相手Bさん')
+    await page.getByLabel('摘要', { exact: true }).fill('まとめの割勘')
     await page.getByRole('button', { name: '割勘を記録' }).click()
     await expect(page.getByText('割勘を記録しました')).toBeVisible()
 
@@ -250,7 +294,7 @@ test.describe('割勘タブ', () => {
 
     await waitForJournalEntryCount(page, 1)
     await page.getByRole('tab', { name: '割勘' }).click()
-    await expect(page.getByRole('region', { name: '割勘する仕訳' }).getByText('取り消しテストの食事代')).toBeVisible()
+    await expect(page.getByRole('region', { name: '割勘する行' }).getByText('取り消しテストの食事代')).toBeVisible()
   })
 })
 

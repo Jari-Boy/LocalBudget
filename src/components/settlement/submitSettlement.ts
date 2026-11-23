@@ -30,9 +30,19 @@ interface CommonParams {
   /** 明細行の世帯メンバーの決め方(科目の既定メンバー > 指定 > 起票者、計画Issue #169) */
   resolveLineHouseholdMemberId: LineHouseholdMemberResolver
   repositories: SettlementRepositories
+  /**
+   * 残高が負(相手へ返す向きの割勘、計画Issue #271。立替金が貸方残・未払金が借方残)のときtrue。精算の仕訳・調整仕訳の
+   * 一時勘定の向きを、通常とは逆(立替金は借方・未払金は貸方)にする。残高が負の一時勘定は、反対の区分の科目と同じ向きで精算する
+   */
+  reversed?: boolean
 }
 
-const categoryOf = (direction: SettlementDirection) => (direction === 'advance' ? 'asset' : 'liability')
+/** 精算の仕訳で使う、一時勘定の向きを決める区分。残高が負(reversed)のときは反対の区分として扱う */
+const categoryOf = (direction: SettlementDirection, reversed = false) => {
+  const category = direction === 'advance' ? 'asset' : 'liability'
+  if (!reversed) return category
+  return category === 'asset' ? 'liability' : 'asset'
+}
 
 export interface TagCandidatesParams extends CommonParams {
   candidates: readonly UnassignedAdvanceEntryCandidate[]
@@ -63,7 +73,7 @@ export async function tagCandidatesToBatch(params: TagCandidatesParams): Promise
   }
 
   if (params.createAdjustment && params.diff !== 0) {
-    const adjustment = resolveSettlementAdjustment(params.diff, categoryOf(params.direction))
+    const adjustment = resolveSettlementAdjustment(params.diff, categoryOf(params.direction, params.reversed))
     const created = await repositories.journalEntryRepository.create(
       buildSettlementJournalEntryInput({
         settlementBatchId: batchId,
@@ -102,7 +112,7 @@ export async function createSettlementEntry(params: CreateSettlementEntryParams)
     buildSettlementJournalEntryInput({
       settlementBatchId: params.batchId,
       settlementAccountId: params.accountId,
-      settlementAccountCategory: categoryOf(params.direction),
+      settlementAccountCategory: categoryOf(params.direction, params.reversed),
       counterAccountId: params.counterAccountId,
       amount: params.amount,
       settlementHouseholdMemberId: params.target.householdMemberId,

@@ -3,6 +3,7 @@ import type {
   JournalEntry,
   UpdateJournalEntryInput,
 } from './JournalEntry'
+import type { ExpenseSplitSourceLink } from '../expense-splitting/listSplittableLineEntries'
 
 /**
  * 仕訳(journal_entries/journal_lines)の永続化を担うRepositoryのポート(インターフェース)。
@@ -42,4 +43,10 @@ export interface JournalEntryRepository {
    * 仕訳が存在しない場合は何もしない。
    */
   deleteBySettlementBatchId(settlementBatchId: number): void
+  /**
+   * 割勘仕訳が元のどの明細行を割ったかの記録(expense_split_source_lines、計画Issue #271)をすべて返す。
+   * 割勘済みの行の判定に使う。割勘仕訳の作成時は CreateJournalEntryInput.expenseSplitSourceLineIds で同じトランザクションに保存する。
+   * 記録がある行の金額・科目・貸借の変更と、その行の削除・その行を持つ仕訳の削除は、ExpenseSplitSourceLineLockedErrorで拒否する
+   */
+  findExpenseSplitSourceLinks(): ExpenseSplitSourceLink[]
 }

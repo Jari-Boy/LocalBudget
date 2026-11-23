@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
 import { FloatingTableHeader } from './FloatingTableHeader'
 
 export interface StickyHeaderTableProps {
@@ -8,6 +8,8 @@ export interface StickyHeaderTableProps {
   tableClassName: string
   /** 見出しの複製の置き場に付けるクラス名。枠に罫線・角丸がない表では loating-table-header--bare を渡す(複製に罫線・角丸を付けない) */
   floatingClassName?: string
+  /** 表のインラインスタイル(本物の表と複製の両方に付く)。列幅を固定する表の幅など */
+  tableStyle?: CSSProperties
   'aria-label'?: string
   /** 見出し(`<thead>`、1行)。本物の表と、ページのスクロールで固定する複製で同じものを使う */
   head: ReactNode
@@ -21,16 +23,16 @@ export interface StickyHeaderTableProps {
  * 複製の列幅は本物の見出しから写す。複製は表の枠の直前に置くので、この部品が返す2つの要素を、表の高さ全体を囲む同じ親の中に置くこと。
  * 固定する高さは、上部に固定したタブの行などの下(CSS 変数 --sticky-head-h など。FloatingTableHeader.css を参照)。
  */
-export function StickyHeaderTable({ frameClassName, tableClassName, floatingClassName, 'aria-label': ariaLabel, head, children }: StickyHeaderTableProps) {
+export function StickyHeaderTable({ frameClassName, tableClassName, floatingClassName, tableStyle, 'aria-label': ariaLabel, head, children }: StickyHeaderTableProps) {
   const [frame, setFrame] = useState<HTMLDivElement | null>(null)
   const [table, setTable] = useState<HTMLTableElement | null>(null)
   return (
     <>
-      <FloatingTableHeader scroller={frame} table={table} syncColumnWidths className={floatingClassName} tableClassName={tableClassName}>
+      <FloatingTableHeader scroller={frame} table={table} syncColumnWidths className={floatingClassName} tableClassName={tableClassName} tableStyle={tableStyle}>
         {head}
       </FloatingTableHeader>
       <div className={frameClassName} ref={setFrame}>
-        <table className={tableClassName} aria-label={ariaLabel} ref={setTable}>
+        <table className={tableClassName} style={tableStyle} aria-label={ariaLabel} ref={setTable}>
           {head}
           {children}
         </table>

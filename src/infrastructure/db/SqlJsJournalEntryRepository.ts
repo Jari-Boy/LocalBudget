@@ -19,6 +19,8 @@ import {
   isAutoBalanceAdjustmentEntry,
   reconcileAutoBalanceAdjustments,
 } from './autoBalanceAdjustment'
+import { ExpenseSplitSourceLineLockedError } from '../../domain/journal/ExpenseSplitSourceLineLockedError'
+import type { ExpenseSplitSourceLink } from '../../domain/expense-splitting/listSplittableLineEntries'
 import { SqlJsExternalTransactionRefRepository } from './SqlJsExternalTransactionRefRepository'
 
 /**
@@ -87,6 +89,9 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     )
     const entryId = lastInsertRowId(this.db)
     insertLines(this.db, entryId, input.lines)
+    for (const sourceLineId of input.expenseSplitSourceLineIds ?? []) {
+      this.db.run('INSERT INTO expense_split_source_lines (split_entry_id, source_line_id) VALUES (?, ?)', [entryId, sourceLineId])
+    }
 
     if (input.externalTransactionRef) {
       // 単一INSERTのみでBEGIN/COMMITを持たないため、この既存トランザクションへ安全に合流する
@@ -131,6 +136,7 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     }
     this.assertSettlementBatchOnlyOnAdvanceAccounts(input.lines)
     assertLineIdsBelongToEntry(input.lines, current)
+    this.assertSourceLinesUnchanged(current, input.lines)
 
     this.db.run('BEGIN')
     try {
@@ -162,6 +168,8 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     if (isAutoBalanceAdjustmentEntry(this.db, id)) {
       throw new AutoBalanceAdjustmentEntryReadOnlyError(id)
     }
+    const lockedLineIds = this.findLockedSourceLineIds(id)
+    if (lockedLineIds.length > 0) throw new ExpenseSplitSourceLineLockedError(lockedLineIds)
     this.db.run('BEGIN')
     try {
       const affected = findAffectedAccountIdsOfEntry(this.db, id)
@@ -174,6 +182,43 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
     }
   }
 
+  findExpenseSplitSourceLinks(): ExpenseSplitSourceLink[] {
+    const [result] = this.db.exec(
+      'SELECT split_entry_id, source_line_id FROM expense_split_source_lines ORDER BY split_entry_id, source_line_id',
+    )
+    return (result?.values ?? []).map((row) => ({ splitEntryId: row[0] as number, sourceLineId: row[1] as number }))
+  }
+
+  private isExpenseSplittingEntry(entryId: number): boolean {
+    const [result] = this.db.exec("SELECT 1 FROM journal_entries WHERE id = ? AND source_type = 'expense_splitting'", [entryId])
+    return result !== undefined
+  }
+
+  /** 仕訳の明細行のうち、割勘対象行の記録がある(割勘済みの)行のid */
+  private findLockedSourceLineIds(entryId: number): number[] {
+    const [result] = this.db.exec(
+      `SELECT DISTINCT l.id FROM journal_lines l
+       JOIN expense_split_source_lines s ON s.source_line_id = l.id
+       WHERE l.journal_entry_id = ?`,
+      [entryId],
+    )
+    return (result?.values ?? []).map((row) => row[0] as number)
+  }
+
+  /** 割勘済みの行を、削除したり、金額・科目・貸借を変えたりする更新を拒否する(計画Issue #271) */
+  private assertSourceLinesUnchanged(current: JournalEntry, lines: readonly JournalLineInput[]): void {
+    const locked = new Set(this.findLockedSourceLineIds(current.id))
+    if (locked.size === 0) return
+    const violated = current.lines
+      .filter((existing) => locked.has(existing.id))
+      .filter((existing) => {
+        const next = lines.find((l) => l.id === existing.id)
+        return next === undefined || next.accountId !== existing.accountId || next.side !== existing.side || next.amount !== existing.amount
+      })
+      .map((existing) => existing.id)
+    if (violated.length > 0) throw new ExpenseSplitSourceLineLockedError(violated)
+  }
+
   deleteBySettlementBatchId(settlementBatchId: number): void {
     this.db.run('BEGIN')
     try {
@@ -183,12 +228,15 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
       )
       const entryIds = (entries?.values ?? []).map((row) => row[0] as number)
       const affected = entryIds.flatMap((entryId) => findAffectedAccountIdsOfEntry(this.db, entryId))
-      this.db.run(
-        `DELETE FROM journal_entries WHERE id IN (
-           SELECT DISTINCT journal_entry_id FROM journal_lines WHERE settlement_batch_id = ?
-         )`,
-        [settlementBatchId],
-      )
+      // 割勘仕訳を先に削除する(割勘対象行の記録がCASCADEで消える)。同じバッチの仕訳が割勘済みの行を持っていても、
+      // その割勘仕訳も同じバッチなら、記録が先に消えるので一緒に削除できる(計画Issue #271)
+      const splitEntryIds = entryIds.filter((id) => this.isExpenseSplittingEntry(id))
+      for (const id of splitEntryIds) this.db.run('DELETE FROM journal_entries WHERE id = ?', [id])
+      // 残りの仕訳に、バッチの外の割勘仕訳が割った行があるときは、生のFKエラーにせず理由つきで拒否する(ROLLBACKで何も削除しない)
+      const remainingIds = entryIds.filter((id) => !splitEntryIds.includes(id))
+      const lockedLineIds = remainingIds.flatMap((id) => this.findLockedSourceLineIds(id))
+      if (lockedLineIds.length > 0) throw new ExpenseSplitSourceLineLockedError(lockedLineIds)
+      for (const id of remainingIds) this.db.run('DELETE FROM journal_entries WHERE id = ?', [id])
       reconcileAutoBalanceAdjustments(this.db, affected)
       this.db.run('COMMIT')
     } catch (error) {

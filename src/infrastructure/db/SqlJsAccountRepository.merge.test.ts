@@ -77,6 +77,36 @@ describe('merge', () => {
     expect(count('journal_lines')).toBe(linesBefore)
   })
 
+  it('割勘済みの行(割勘対象行の記録がある行)がある統合元も統合でき、元の行と割勘仕訳の行の科目が同時に統合先へ付く(計画Issue #271)', () => {
+    const bus = repository.create({ category: 'expense', name: 'バス', isReconcilable: null })
+    const target = repository.create({ category: 'expense', name: '交通費', isReconcilable: null })
+    const original = entries.create({
+      entryDate: '2026-11-01',
+      householdMemberId: memberId,
+      lines: [
+        { householdMemberId: memberId, accountId: bus.id, side: 'debit', amount: 500 },
+        { householdMemberId: memberId, accountId: cashId, side: 'credit', amount: 500 },
+      ],
+    })
+    const split = entries.create({
+      entryDate: '2026-11-02',
+      householdMemberId: memberId,
+      sourceType: 'expense_splitting',
+      expenseSplitSourceLineIds: [original.lines[0].id],
+      lines: [
+        { householdMemberId: memberId, accountId: bus.id, side: 'debit', amount: 250 },
+        { householdMemberId: memberId, accountId: bus.id, side: 'credit', amount: 250 },
+      ],
+    })
+
+    repository.merge(target.id, [bus.id])
+
+    expect(lineAccountIds(original.id)).toEqual([target.id, cashId])
+    expect(lineAccountIds(split.id)).toEqual([target.id, target.id])
+    // 割勘済みの記録は残る(統合しても割勘済みのまま)
+    expect(entries.findExpenseSplitSourceLinks()).toEqual([{ splitEntryId: split.id, sourceLineId: original.lines[0].id }])
+  })
+
   it('複数の統合元を一度に統合先へ付け替える', () => {
     const target = repository.create({ category: 'expense', name: '交通費', isReconcilable: null })
     const bus = repository.create({ category: 'expense', name: 'バス代', isReconcilable: null })

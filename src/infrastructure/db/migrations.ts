@@ -22,6 +22,7 @@ import { MIGRATION_V4_NORMALIZE_DESCRIPTIONS } from './migrationV4NormalizeDescr
 import { MIGRATION_V5_STATEMENT_IMPORT_DRAFTS } from './migrationV5StatementImportDrafts'
 import { MIGRATION_V6_FAVORITES } from './migrationV6Favorites'
 import { MIGRATION_V7_NORMALIZE_KANA_KEYWORDS } from './migrationV7NormalizeKanaKeywords'
+import { MIGRATION_V8_EXPENSE_SPLIT_SOURCE_LINES } from './migrationV8ExpenseSplitSourceLines'
 
 /**
  * 最新スキーマと差分の2本立て(計画Issue #42、docs/decisions.md)。
@@ -41,7 +42,7 @@ export interface MigrationPlan {
   diffs: Readonly<Record<number, readonly MigrationStep[]>>
 }
 
-export const LATEST_SCHEMA_VERSION = 7
+export const LATEST_SCHEMA_VERSION = 8
 
 // household_members → accounts(household_membersを参照) → projects/counterparties
 // → settlement_batches(counterpartiesを参照) → journal(accounts/projects/counterparties/
@@ -86,6 +87,8 @@ export const SCHEMA_PLAN: MigrationPlan = {
     6: MIGRATION_V6_FAVORITES,
     // v7(計画Issue #236): キーワードの、ひらがな・カタカナの小書き文字の統一(表の形は変えない)
     7: MIGRATION_V7_NORMALIZE_KANA_KEYWORDS,
+    // v8(計画Issue #271): 割勘対象行の記録の表(expense_split_source_lines)と、記録がある行の変更を拒否するトリガーの追加
+    8: MIGRATION_V8_EXPENSE_SPLIT_SOURCE_LINES,
   },
 }
 

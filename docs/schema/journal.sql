@@ -123,6 +123,30 @@ END;
 -- 貸借バランス(借方合計=貸方合計)はDBで強制しない。journal.md 1.3参照。
 -- JournalEntryRepository がトランザクション書き込み前に検証する。
 
+-- 割勘対象行(計画Issue #271)。割勘仕訳(source_type = 'expense_splitting')が、元のどの明細行を割ったかの記録。
+-- 割勘済みの判定を行単位で持つためのもので、割勘仕訳の行と元の行の1対1の対応や科目一致・金額上限の検証は持たない
+-- (計画Issue #138で廃止したjournal_entry_linksとの違い。検証を持たない参照だけの表)。
+-- 1つの元の行を、相手ごとの複数の割勘仕訳が参照できる(主キーは仕訳と行の組)。
+-- 割勘仕訳を削除すると記録も消え、その行は割勘済みでなくなる(ON DELETE CASCADE)。
+-- 元の行は、記録がある間は削除できない(ON DELETE RESTRICT。行の削除・元の仕訳の削除を拒否する)。
+-- 元の行の金額・貸借の変更もトリガーで拒否する。科目の付け替えは止めない(科目の統合が、元の行と割勘仕訳の行の科目を同時に付け替えるので整合が保たれる。
+-- 画面からの仕訳の編集で科目を変えるのは、リポジトリが拒否する)。
+CREATE TABLE expense_split_source_lines (
+  split_entry_id INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+  source_line_id INTEGER NOT NULL REFERENCES journal_lines(id) ON DELETE RESTRICT,
+  PRIMARY KEY (split_entry_id, source_line_id)
+);
+
+CREATE INDEX idx_expense_split_source_lines_source ON expense_split_source_lines(source_line_id);
+
+CREATE TRIGGER prevent_change_on_expense_split_source_line
+BEFORE UPDATE ON journal_lines
+WHEN (NEW.side != OLD.side OR NEW.amount != OLD.amount)
+  AND EXISTS (SELECT 1 FROM expense_split_source_lines WHERE source_line_id = OLD.id)
+BEGIN
+  SELECT RAISE(ABORT, 'expense split source line cannot change side or amount');
+END;
+
 -- 関連仕訳グループ(多対多、計画Issue #138)。journal_entry_links(明細行単位のsettles/allocates
 -- リンク)は計画Issue #138で完全に撤廃した。残高計算・消込判定の役割は計画Issue #133で
 -- settlement_batch_idタグの集計方式に移管済みであり、残っていた表示系の役割(関連仕訳の

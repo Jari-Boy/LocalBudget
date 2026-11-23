@@ -22,8 +22,9 @@ export interface JournalLineTableColumns {
   isDefault: boolean
 }
 
-export function useJournalLineTableColumns(): JournalLineTableColumns {
-  const [widths, setWidths] = useState(loadColumnWidths)
+/** storageKeyを渡すと、列幅を別のキーで保存・復元する(割勘タブの表が、仕訳一覧の表と別に列幅を持つため、計画Issue #271) */
+export function useJournalLineTableColumns(storageKey?: string): JournalLineTableColumns {
+  const [widths, setWidths] = useState(() => loadColumnWidths(storageKey))
   const widthsRef = useRef(widths)
 
   const apply = (next: typeof widths) => {
@@ -35,14 +36,14 @@ export function useJournalLineTableColumns(): JournalLineTableColumns {
     widths,
     widthsRef,
     resizeTo: (key, width) => apply(resizeColumn(widthsRef.current, key, width)),
-    commit: () => saveColumnWidths(widthsRef.current),
+    commit: () => saveColumnWidths(widthsRef.current, storageKey),
     resetColumn: (key) => {
       apply({ ...widthsRef.current, [key]: DEFAULT_COLUMN_WIDTHS[key] })
-      saveColumnWidths(widthsRef.current)
+      saveColumnWidths(widthsRef.current, storageKey)
     },
     resetAll: () => {
       apply({ ...DEFAULT_COLUMN_WIDTHS })
-      saveColumnWidths(widthsRef.current)
+      saveColumnWidths(widthsRef.current, storageKey)
     },
     isDefault: isDefaultColumnWidths(widths),
   }

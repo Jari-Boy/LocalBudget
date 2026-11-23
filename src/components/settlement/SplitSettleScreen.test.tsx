@@ -8,7 +8,7 @@
  * 各タブの中身は SplitTab・SettleTab・SplitHistoryTab のテストで検証する。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import { SplitSettleScreen } from './SplitSettleScreen'
@@ -131,7 +131,7 @@ describe('SplitSettleScreen', () => {
     expect(screen.getByRole('status')).toHaveTextContent('読み込み中')
     expect(await screen.findByRole('heading', { name: '割勘・精算' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '割勘' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('region', { name: '割勘する仕訳' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '割勘する行' })).toBeInTheDocument()
   })
 
   it('「精算」タブに切り替えると精算バッチの一覧を出し、画面遷移はしない', async () => {
@@ -141,7 +141,7 @@ describe('SplitSettleScreen', () => {
     fireEvent.click(screen.getByRole('tab', { name: '精算' }))
 
     expect(screen.getByRole('tab', { name: '精算' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.queryByRole('region', { name: '割勘する仕訳' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '割勘する行' })).not.toBeInTheDocument()
     expect(screen.getByText('精算バッチはまだありません。割勘を記録すると作られます。')).toBeInTheDocument()
   })
 
@@ -156,9 +156,12 @@ describe('SplitSettleScreen', () => {
     await screen.findByRole('heading', { name: '割勘・精算' })
     expect(repositories.journalEntryRepository.findAll).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'ランチを選択' }))
-    fireEvent.click(screen.getByRole('button', { name: /^分担相手/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '借方の食費の行を選択' }))
+    fireEvent.click(screen.getAllByRole('button', { name: /^分担相手/ })[0])
     fireEvent.click(screen.getByRole('button', { name: '妻' }))
+    fireEvent.click(screen.getAllByRole('button', { name: /^分担相手/ })[1])
+    fireEvent.click(within(screen.getByRole('dialog', { name: /分担相手/ })).getByRole('button', { name: '夫' }))
+    fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチの割勘' } })
     fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
 
     await waitFor(() => expect(repositories.journalEntryRepository.findAll).toHaveBeenCalledTimes(2))
@@ -175,7 +178,7 @@ describe('SplitSettleScreen: 履歴タブ(計画Issue #268)', () => {
     expect(names).toEqual(['割勘', '精算', '履歴'])
   })
 
-  it('「履歴」タブに切り替えると過去の割勘を出し、割勘する仕訳は出さない。画面遷移はしない', async () => {
+  it('「履歴」タブに切り替えると過去の割勘を出し、割勘する行は出さない。画面遷移はしない', async () => {
     renderScreen()
     await screen.findByRole('heading', { name: '割勘・精算' })
 
@@ -184,7 +187,7 @@ describe('SplitSettleScreen: 履歴タブ(計画Issue #268)', () => {
     expect(screen.getByRole('tab', { name: '履歴' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('region', { name: '割勘履歴' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '過去の割勘' })).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: '割勘する仕訳' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '割勘する行' })).not.toBeInTheDocument()
   })
 
   it('割勘タブには、過去の割勘を出さない', async () => {

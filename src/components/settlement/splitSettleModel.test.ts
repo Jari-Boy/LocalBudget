@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 import type { Account } from '../../domain/account/Account'
 import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
-import { buildPartnerCategories, buildSplitHistoryRows, parsePartnerValue, toPartnerValue } from './splitSettleModel'
+import { buildPartnerCategories, buildSplitHistoryRows, parsePartnerValue, splitEvenly, toPartnerValue } from './splitSettleModel'
 
 const counterpartyCategories: TreeSelectCategory[] = [
   {
@@ -58,6 +58,32 @@ describe('buildPartnerCategories', () => {
     )
 
     expect(categories[0].nodes.map((n) => n.kind === 'item' && n.name)).toEqual(['妻'])
+  })
+})
+
+describe('buildPartnerCategories: 他の行で選んだ取引先の除外(計画Issue #271)', () => {
+  it('除外した取引先(グループの中のものも)は選択肢に出さず、グループは残す', () => {
+    const categories = buildPartnerCategories([], counterpartyCategories, new Set(), new Set([9, 10]))
+
+    const group = categories[1].nodes[0]
+    expect(group).toMatchObject({ kind: 'group', name: '友人' })
+    expect(group.kind === 'group' && group.children).toEqual([])
+    expect(categories[1].nodes).toHaveLength(1)
+  })
+})
+
+describe('splitEvenly', () => {
+  it('合計を人数で均等に分け、割り切れない端数は先の人から1ずつ多く配る', () => {
+    expect(splitEvenly(100, 2)).toEqual([50, 50])
+    expect(splitEvenly(100, 3)).toEqual([34, 33, 33])
+    expect(splitEvenly(1001, 3)).toEqual([334, 334, 333])
+    expect(splitEvenly(100, 1)).toEqual([100])
+  })
+
+  it('配分の合計は必ず元の合計と一致し、人数が0以下なら空配列、合計0なら全員0', () => {
+    expect(splitEvenly(7, 4).reduce((a, b) => a + b, 0)).toBe(7)
+    expect(splitEvenly(100, 0)).toEqual([])
+    expect(splitEvenly(0, 3)).toEqual([0, 0, 0])
   })
 })
 
@@ -161,6 +187,36 @@ describe('buildSplitHistoryRows', () => {
         canCancel: true,
       }),
     ])
+  })
+
+  it('相手へ返す向きの割勘(貸方の行だけを割った)の負担額は、負の金額で表す(計画Issue #271)', () => {
+    const refund = entry(5, '2026-10-31', '返品の割勘', 'expense_splitting', [
+      line(51, 5, FOOD, 'debit', 300, { householdMemberId: 1 }),
+      line(52, 5, FOOD, 'credit', 300, { householdMemberId: 2 }),
+      line(53, 5, ADVANCE_ASSET, 'credit', 300, { householdMemberId: 1, settlementBatchId: 8 }),
+      line(54, 5, ADVANCE_LIABILITY, 'debit', 300, { householdMemberId: 2, settlementBatchId: 8 }),
+    ])
+    const rel = new Map([
+      [1, new Set([5])],
+      [5, new Set([1])],
+    ])
+
+    const [row] = buildSplitHistoryRows([original, refund], accounts, rel, members, [])
+
+    expect(row.amount).toBe(-300)
+  })
+
+  it('割勘対象行の記録を持つ割勘は、割った行を持つ仕訳だけを元の支出の日付に使う(計画Issue #271)', () => {
+    const other = entry(4, '2026-09-01', null, 'manual', [line(41, 4, FOOD, 'debit', 800), line(42, 4, CASH, 'credit', 800)])
+    const both = new Map([
+      [1, new Set([2])],
+      [4, new Set([2])],
+      [2, new Set([1, 4])],
+    ])
+
+    const [row] = buildSplitHistoryRows([original, other, split], accounts, both, members, [], [{ splitEntryId: 2, sourceLineId: 11 }])
+
+    expect(row.date).toBe('2026-10-05')
   })
 
   it('立替金・未払金の残高がすべて0なら精算済みで、精算が進んだ割勘は取り消せない', () => {
