@@ -712,3 +712,8 @@
 .split-settle__preview-total td {
   font-weight: 600;
 }
+
+/* 仕訳一覧の表のクラス(journal-line-table)を借りるカードは、枠自体を横スクロールさせない(表の枠 .split-settle__scroll が横スクロールする)。枠が縦のスクロール領域になると、見出しの複製の固定が効かなくなるため(計画Issue #266・#271) */
+.split-settle__card.journal-line-table {
+  overflow: visible;
+}
