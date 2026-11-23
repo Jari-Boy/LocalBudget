@@ -1,5 +1,6 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
+import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 
@@ -23,6 +24,12 @@ export interface BatchSelectProps {
   /** 「+ 」の後ろに出す文言。既定は「新規追加」 */
   createLabel?: string
   disabled?: boolean
+  /**
+   * 渡すと、検索欄の直下に「+ 新しいバッチ」を出し、押すと名前だけの「精算バッチを追加」ダイアログを開く。
+   * 作れたら、そのバッチを選ぶ(onChangeを呼ぶ)。やめたり失敗したりしたら選択は変えない(計画Issue #269)。
+   * 呼び出し側は、作ったバッチをbatchesに反映する。onCreateと同時には使わない(onCreateが優先)
+   */
+  onCreateBatch?: (name: string) => Promise<SettlementBatch>
 }
 
 /**
@@ -43,7 +50,9 @@ export function BatchSelect({
   onCreate,
   createLabel,
   disabled,
+  onCreateBatch,
 }: BatchSelectProps) {
+  const [creating, setCreating] = useState(false)
   const categories = useMemo<TreeSelectCategory[]>(() => {
     // クローズ済み(is_active = false)は候補に出さない。現在の値だけは残す(計画Issue #249)
     const candidates = batches.filter((b) => String(b.id) === value || (b.isActive && (filter === undefined || filter(b))))
@@ -62,18 +71,37 @@ export function BatchSelect({
       },
     ]
   }, [batches, filter, value])
+  const openCreateDialog = onCreate === undefined && onCreateBatch !== undefined ? () => setCreating(true) : onCreate
+  const sameNameNotice = (name: string) =>
+    name !== '' && batches.some((b) => b.name === name) ? '同じ名前のバッチがあります(クローズ済みを含む)。このまま追加もできます。' : null
   return (
-    <TreeSelect
-      label={label}
-      categories={categories}
-      value={value}
-      onChange={onChange}
-      emptyLabel={emptyLabel}
-      leadingOptions={leadingOptions}
-      placeholder={placeholder ?? emptyLabel}
-      onCreate={onCreate}
-      createLabel={createLabel}
-      disabled={disabled}
-    />
+    <>
+      <TreeSelect
+        label={label}
+        categories={categories}
+        value={value}
+        onChange={onChange}
+        emptyLabel={emptyLabel}
+        leadingOptions={leadingOptions}
+        placeholder={placeholder ?? emptyLabel}
+        onCreate={openCreateDialog}
+        createLabel={onCreateBatch !== undefined ? '新しいバッチ' : createLabel}
+        disabled={disabled}
+      />
+      {creating && onCreateBatch !== undefined && (
+        <QuickCreateDialog
+          title="精算バッチを追加"
+          nameLabel="バッチ名"
+          nameNotice={sameNameNotice}
+          failedMessage="精算バッチの追加に失敗しました"
+          onSubmit={async (name) => {
+            const created = await onCreateBatch(name)
+            onChange(String(created.id))
+            setCreating(false)
+          }}
+          onCancel={() => setCreating(false)}
+        />
+      )}
+    </>
   )
 }

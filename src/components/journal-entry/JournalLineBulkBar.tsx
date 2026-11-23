@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import { createPortal } from 'react-dom'
 import { ConfirmDialog } from '../common/confirm-dialog/ConfirmDialog'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
@@ -35,6 +36,8 @@ export interface JournalLineBulkBarProps {
   onClearSelection: () => void
   /** 保存中。適用を押せなくする */
   busy: boolean
+  /** 渡すと、精算バッチの選択欄に「+ 新しいバッチ」を出す(計画Issue #269) */
+  onCreateBatch?: (name: string) => Promise<SettlementBatch>
 }
 
 /** 「なし(外す)」を表す選択ツリーの項目の値 */
@@ -98,6 +101,7 @@ export function JournalLineBulkBar({
   onApply,
   onClearSelection,
   busy,
+  onCreateBatch,
 }: JournalLineBulkBarProps) {
   const [moreOpen, setMoreOpen] = useState(false)
   const accountById = new Map(master.accounts.map((a) => [a.id, a]))
@@ -208,6 +212,7 @@ export function JournalLineBulkBar({
               emptyLabel={KEEP_LABEL}
               leadingOptions={CLEAR_OPTIONS}
               disabled={!rules.batchAllowed}
+              onCreateBatch={onCreateBatch}
               onChange={(v) => change({ batch: valueToChange(v) })}
             />
             {note(rules.batchAllowed, '未収金・未払金(精算バッチ)の行のみ')}

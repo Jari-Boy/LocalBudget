@@ -29,6 +29,10 @@ export interface QuickCreateDialogProps {
   children?: ReactNode
   /** 追加を押したときの追加の検証。falseなら作らずに残る */
   validate?: () => boolean
+  /** 名前の入力欄の下に出す注意(同名のバッチがあるなど)。nullなら出さない。追加は止めない(計画Issue #269) */
+  nameNotice?: (name: string) => string | null
+  /** 追加に失敗したときの文言。既定は取引先の文言 */
+  failedMessage?: string
 }
 
 /**
@@ -36,7 +40,18 @@ export interface QuickCreateDialogProps {
  * (計画Issue #151・#207)。科目の追加は登録フォーム(AccountCreateForm)を別に使う。
  * 入力欄・見出しは、ほかの項目と同じ見た目(import-control・import-field__label)にそろえる。
  */
-export function QuickCreateDialog({ title, nameLabel, onSubmit, onCancel, groupField, children, validate, initialName }: QuickCreateDialogProps) {
+export function QuickCreateDialog({
+  title,
+  nameLabel,
+  onSubmit,
+  onCancel,
+  groupField,
+  children,
+  validate,
+  initialName,
+  nameNotice,
+  failedMessage,
+}: QuickCreateDialogProps) {
   const { t } = useTranslation('statementImport')
   const nameId = useId()
   const [name, setName] = useState(initialName ?? '')
@@ -75,6 +90,14 @@ export function QuickCreateDialog({ title, nameLabel, onSubmit, onCancel, groupF
             {nameLabel}
           </label>
           <input id={nameId} className="import-control" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          {(() => {
+            const notice = nameNotice?.(name.trim()) ?? null
+            return notice === null ? null : (
+              <span role="status" className="import-note">
+                {notice}
+              </span>
+            )
+          })()}
         </div>
         {groupField && (
           <div className="import-field">
@@ -91,7 +114,7 @@ export function QuickCreateDialog({ title, nameLabel, onSubmit, onCancel, groupF
           </div>
         )}
         {children}
-        {failed && <p role="alert">{t('newCounterpartyError')}</p>}
+        {failed && <p role="alert">{failedMessage ?? t('newCounterpartyError')}</p>}
         <div className="import-dialog__actions">
           <button type="button" className="import-btn" onClick={onCancel}>
             {t('cancelButton')}

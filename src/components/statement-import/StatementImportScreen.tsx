@@ -157,7 +157,7 @@ export interface StatementImportScreenProps {
   projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll' | 'create'>>
   projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll' | 'create'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
-  settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll'>>
+  settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll' | 'create'>>
   /** 明細取込の一時保存(計画Issue #231 フェーズ3)。取込先の科目ごとに1つ。CSVの生データと、初期値から変えた行の入力を保存する */
   statementImportDraftRepository: MaybeAsync<
     Pick<StatementImportDraftRepository, 'findSummaries' | 'findById' | 'findByAccountId' | 'save' | 'delete'>
@@ -1698,6 +1698,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     },
   })
   /** 見出しのチェック: 表示中のページの行がすべて選ばれているか(全タブ・全ページの行ではない) */
+  /** 精算バッチをその場で作る(選択欄の「+ 新しいバッチ」。計画Issue #269)。作ったバッチは画面の候補に足す。作成の手段が無い画面では出さない */
+  const createBatch = async (name: string) => {
+    const created = await settlementBatchRepository.create({ name, type: 'expense_splitting' })
+    setData((prev) => (prev ? { ...prev, batches: [...prev.batches, created] } : prev))
+    return created
+  }
+
   const allSelected = selectableOrder.length > 0 && selectableOrder.every((i) => selected.has(i))
 
   /**
@@ -2408,6 +2415,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                     value=""
                     emptyLabel={t('bulkClear')}
                     placeholder={t('bulkBatchPlaceholder')}
+                    onCreateBatch={createBatch}
                     onChange={(v) => applyBulk({ field: 'settlementBatch', value: toId(v) })}
                   />
                   <input
@@ -2700,6 +2708,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                                     value={String(state.settlementBatchId ?? '')}
                                     emptyLabel={t('noBatch')}
                                     disabled={isSkipped}
+                                    onCreateBatch={createBatch}
                                     onChange={(v) => updateRow(index, (s) => ({ ...s, settlementBatchId: toId(v) }))}
                                   />
                                 )}
