@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useEscapeDiscard } from '../common/unsaved-changes/useEscapeDiscard'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
@@ -268,13 +269,17 @@ function MemberPanel(props: MemberPanelProps) {
   const { t } = useTranslation('master')
   const [name, setName] = useState(member.name)
   // 名称が保存済みの値と違う間は、画面を離れる前に確認する(計画Issue #190)
+  const dirty = name.trim() !== member.name
+  /** 名称を保存済みの値に戻す(計画Issue #237)。構成メンバー・有効/無効は選んだ時点で保存済みなので対象外 */
+  const cancel = () => setName(member.name)
+  const escape = useEscapeDiscard({ dirty, onDiscard: cancel })
   const unsavedDialog = useUnsavedEditGuard({
-    dirty: name.trim() !== member.name,
+    dirty,
     save: () => (name.trim() === '' ? Promise.resolve(false) : props.onSave(name.trim())),
   })
 
   return (
-    <section className="master-panel" aria-label={t('memberTab.edit')}>
+    <section className="master-panel" aria-label={t('memberTab.edit')} onKeyDown={escape.onKeyDown}>
       <h2 className="master-panel__title">{t('memberTab.edit')}</h2>
 
       <div className="master-field">
@@ -323,6 +328,9 @@ function MemberPanel(props: MemberPanelProps) {
         >
           {t('accountTab.save')}
         </button>
+        <button type="button" className="master-btn" disabled={busy || !dirty} title={t('accountTab.cancelTitle')} onClick={cancel}>
+          {t('accountTab.cancel')}
+        </button>
         <button
           type="button"
           className={`master-btn${props.armed ? ' master-btn--danger' : ''}`}
@@ -341,6 +349,7 @@ function MemberPanel(props: MemberPanelProps) {
 
       {props.blockedText !== '' && <p className="master-note">{props.blockedText}</p>}
       {unsavedDialog}
+      {escape.dialog}
     </section>
   )
 }

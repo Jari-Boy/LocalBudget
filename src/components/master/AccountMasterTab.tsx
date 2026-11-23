@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useEscapeDiscard } from '../common/unsaved-changes/useEscapeDiscard'
 import { useGuardedAction, useUnsavedEditGuard } from '../common/unsaved-changes/useUnsavedEditGuard'
 import type { Account, AccountCategory } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
@@ -650,10 +651,16 @@ function EditPanel(props: EditPanelProps) {
   })
   // 名称・名義が保存済みの値と違う間は、画面を離れる前に確認する。所属グループ・並び順・有効/無効・
   // 明細マッピングの紐づけは選んだ時点で即時に反映されるため、対象外(計画Issue #190)
+  const dirty =
+    name.trim() !== node.name || (memberEditable && memberInput !== (account?.householdMemberId?.toString() ?? ''))
+  /** 名称・名義を保存済みの値に戻す(計画Issue #237)。所属グループ・並び順などは選んだ時点で保存済みなので対象外 */
+  const cancel = () => {
+    setName(node.name)
+    setMemberInput(account?.householdMemberId?.toString() ?? '')
+  }
+  const escape = useEscapeDiscard({ dirty, onDiscard: cancel })
   const unsavedDialog = useUnsavedEditGuard({
-    dirty:
-      name.trim() !== node.name ||
-      (memberEditable && memberInput !== (account?.householdMemberId?.toString() ?? '')),
+    dirty,
     save: () => (name.trim() === '' ? Promise.resolve(false) : props.onSave(buildPatch())),
   })
   const siblings = nodes.filter((n) => n.category === node.category && n.parentId === node.parentId)
@@ -663,7 +670,7 @@ function EditPanel(props: EditPanelProps) {
   const title = t(isGroup ? 'accountTab.editGroup' : 'accountTab.editAccount')
 
   return (
-    <section className="master-panel" aria-label={title}>
+    <section className="master-panel" aria-label={title} onKeyDown={escape.onKeyDown}>
       <h2 className="master-panel__title">{title}</h2>
 
       <div className="master-field">
@@ -780,6 +787,9 @@ function EditPanel(props: EditPanelProps) {
         >
           {t('accountTab.save')}
         </button>
+        <button type="button" className="master-btn" disabled={busy || !dirty} title={t('accountTab.cancelTitle')} onClick={cancel}>
+          {t('accountTab.cancel')}
+        </button>
         {!isSystem && (
           <button
             type="button"
@@ -805,6 +815,7 @@ function EditPanel(props: EditPanelProps) {
         <p className="master-note">{t('accountTab.deleteInitialBalanceNote')}</p>
       )}
       {unsavedDialog}
+      {escape.dialog}
     </section>
   )
 }
