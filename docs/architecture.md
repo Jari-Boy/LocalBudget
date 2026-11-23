@@ -169,6 +169,8 @@ interface StorageAdapter {
 
 **実装状況(Issue #268、割勘画面の履歴タブと150件ずつの表示)**: 割勘・精算画面(`SplitSettleScreen`)のタブを「割勘」「精算」「履歴」の3つにし、割勘タブの最下部にあった「過去の割勘」を、精算の右どなりの履歴タブ(`SplitHistoryTab`)へ移した。履歴タブは未精算/精算済みの切り替え・取り消し(2回押し)・詳細ダイアログの状態を自分で持ち、絞り込みボタンは割勘タブのときだけ出す(位置は右端のまま)。最初に開くタブは`?tab=history`でも指定でき、旧URL`/journal/splitting/history`は`?tab=history`へリダイレクトする。割勘する仕訳の候補と割勘履歴は、仕訳一覧(#253)と同じ共通部品`ListLoadMore`で150件ずつ「さらにN件表示」にした(件数は`splitListPaging.ts`の`SPLIT_LIST_PAGE_SIZE`)。チェック済みの仕訳が150件の外にあるときは、その仕訳が見える件数まで表示を広げる。描画だけを絞り、全仕訳の読み込みと候補・履歴の導出は従来どおり全件のまま。判断は`docs/decisions.md` 2026-11-23(計画Issue #268)を参照。
 
+**実装状況(Issue #271、割勘を明細行単位に)**: 割勘タブの候補を仕訳の明細行単位の表にし、費用・収益の行(借方・貸方とも)を選んで起票できるようにした。割勘済みは行単位で持ち、別テーブル`expense_split_source_lines`(スキーマv8、`LATEST_SCHEMA_VERSION` = 8)に(割勘仕訳のid,元の行のid)を記録する。記録がある行の金額・貸借の変更は、`JournalEntryRepository`(`ExpenseSplitSourceLineLockedError`)とDBのトリガーで拒否し、削除は`ON DELETE RESTRICT`で守る。科目の統合は許す。起票の組み立ては`planLineExpenseSplit`・`buildLineExpenseSplittingJournalEntryInput`・`submitExpenseSplit`が担い、仕訳単位の旧関数は削除した。判断は`docs/decisions.md` 2026-11-23(計画Issue #271)を参照。
+
 **実装状況(Issue #263、明細取込の一覧のタブ分けとページ送り)**: 明細取込の一覧は、グループ見出しの開閉をやめ、「新規／重複／取り込まない行」のタブに分けた(従来の「似た取引あり」「問題なし」は「新規」に統合し、似た取引の行は先頭に寄せる)。描画だけをタブごとにページ番号で区切り(importTabs.tsのIMPORT_PAGE_SIZE、ImportPager)、行の状態・入力・確定の対象は全件のまま。選択(見出しのチェック・一括設定・範囲選択)は表示中のタブ・ページの行だけが対象。確定では、相手科目が未入力の行を失敗扱いにせず対象から外し、エラーは登録時の例外と「置き換える」の削除対象の未選択だけを該当行の直下に出す。判断と400行での実測は`docs/decisions.md` 2026-11-22(計画Issue #263)を参照。
 
 **実装状況(計画Issue #258、明細取込の一覧の行の絞り込み)**: 明細取込の一覧に、仕訳一覧の絞り込みと同じ作りの独立したパネル(`ImportRowFilterPanel`)を追加し、摘要・期間・金額(符号つき)・相手科目・取引先・プロジェクト・世帯メンバー・精算バッチで行を絞れるようにした。判定はDB・DOMに依存しない純粋関数(`importRowFilter.ts`)。設計は`docs/domain/statement-import.md` 1.6、判断は`docs/decisions.md` 2026-11-22(計画Issue #258)を参照。
