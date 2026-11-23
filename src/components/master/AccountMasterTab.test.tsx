@@ -307,6 +307,34 @@ describe('AccountMasterTab', () => {
     expect(accounts.findAll().some((a) => a.name === '食費')).toBe(true)
   })
 
+  it('グループを選んで右パネルの「+ 科目」を押すと、登録フォームの所属グループにそのグループが入り、登録した科目がそこに所属する(計画Issue #257)', async () => {
+    const cash = groups.create({ name: '現金・電子マネー', category: 'asset' })
+    renderTab()
+    await open('現金・電子マネー')
+
+    fireEvent.click(panel('グループの編集').getByRole('button', { name: '+ 科目' }))
+    const form = within(await screen.findByRole('form', { name: '科目を登録' }))
+    expect(form.getByRole('button', { name: '所属グループ: 現金・電子マネー' })).toBeInTheDocument()
+    fireEvent.change(form.getByLabelText('名称'), { target: { value: '財布' } })
+    fireEvent.click(form.getByRole('button', { name: '登録' }))
+
+    await waitFor(() => expect(accounts.findAll().some((a) => a.name === '財布')).toBe(true))
+    expect(accounts.findAll().find((a) => a.name === '財布')!.accountGroupId).toBe(cash.id)
+  })
+
+  it('「+ 科目」で入った所属グループは、これまでと同じ選択欄で変更でき、区分を変えると自動入力は外れて区分の既定に戻る(計画Issue #257)', async () => {
+    groups.create({ name: '現金・電子マネー', category: 'asset' })
+    groups.create({ name: '日常', category: 'expense' })
+    renderTab()
+    await open('現金・電子マネー')
+
+    fireEvent.click(panel('グループの編集').getByRole('button', { name: '+ 科目' }))
+    const form = within(await screen.findByRole('form', { name: '科目を登録' }))
+    fireEvent.change(form.getByLabelText('区分'), { target: { value: 'expense' } })
+
+    expect(form.queryByRole('button', { name: '所属グループ: 現金・電子マネー' })).not.toBeInTheDocument()
+  })
+
   it('資本の見出しには「科目を追加」が無い', async () => {
     renderTab()
 
