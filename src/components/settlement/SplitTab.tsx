@@ -694,9 +694,7 @@ export function SplitTab({
                       onChange={(e) => patchPartner(row.key, { amountInput: e.target.value })}
                     />
                   )}
-                  <span className="split-settle__num split-settle__share">
-                    {burdenOf(row.key) === null ? '' : formatCurrency(burdenOf(row.key) ?? 0, 'JPY')}
-                  </span>
+                  {/* ×は入力欄のすぐ右に置く。負担額の表示欄(空のこともある)より前に置くことで、金額が出ても位置が動かない */}
                   <button
                     type="button"
                     className="split-settle__icon-btn"
@@ -710,6 +708,9 @@ export function SplitTab({
                   >
                     ×
                   </button>
+                  <span className="split-settle__num split-settle__share">
+                    {burdenOf(row.key) === null ? '' : formatCurrency(burdenOf(row.key) ?? 0, 'JPY')}
+                  </span>
                 </div>
               ))}
               <button
