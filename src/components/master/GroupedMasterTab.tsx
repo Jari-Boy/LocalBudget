@@ -13,6 +13,7 @@ import { BulkSelectionPanel } from './BulkSelectionPanel'
 import { CATEGORY_ID_PREFIX, resolveTreeMove, topLevelIds, type TreeTableNode } from '../common/tree-table/treeTableModel'
 import { GroupNodeSelect } from './GroupNodeSelect'
 import { groupNodeId, leafNodeId, parseNodeId, type MasterTreeData } from './masterTreeNodes'
+import { resolveAddParentGroupId } from './resolveAddParentGroupId'
 import { StickyToolbar } from '../common/sticky/StickyToolbar'
 import './master.css'
 
@@ -174,18 +175,24 @@ export function GroupedMasterTab({
   const create = (kind: 'group' | 'leaf', parentGroupId: number | null) =>
     run(async () => {
       const id = kind === 'group' ? await actions.createGroup(parentGroupId) : await actions.createLeaf(parentGroupId)
+      // 一括操作パネルが残ると、追加した行の編集パネルが見えないため、チェックを外す(計画Issue #257)
+      setCheckedIds([])
       select(kind === 'group' ? groupNodeId(id) : leafNodeId(id))
     }, t('accountTab.createError'))
+
+  /** 左上の追加ボタン。親は、最後に選んだ行から決める(グループ=その直下、項目=その兄弟、未選択=最上位。計画Issue #257) */
+  const createFromSelection = (kind: 'group' | 'leaf') =>
+    guarded(() => void create(kind, resolveAddParentGroupId(tree.nodes, selectedId)))
 
   return (
     <div className={`master-split${splitClassName === undefined ? '' : ` ${splitClassName}`}`}>
       <div className="master-split__main">
         {/* 検索・追加ボタンの行は、スクロールしても画面の上部に固定する(計画Issue #266) */}
         <StickyToolbar className="master-actions">
-          <button type="button" className="master-btn" disabled={busy} onClick={() => guarded(() => void create('group', null))}>
+          <button type="button" className="master-btn" disabled={busy} onClick={() => createFromSelection('group')}>
             {t('groupedTab.addGroup')}
           </button>
-          <button type="button" className="master-btn" disabled={busy} onClick={() => guarded(() => void create('leaf', null))}>
+          <button type="button" className="master-btn" disabled={busy} onClick={() => createFromSelection('leaf')}>
             {t('groupedTab.addLeaf', { leaf: leafLabel })}
           </button>
           {renderCard === undefined && (
