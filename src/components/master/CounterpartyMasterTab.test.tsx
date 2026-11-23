@@ -139,7 +139,8 @@ describe('CounterpartyMasterTab', () => {
 
     expect(panel('取引先の編集').getByLabelText('追加するキーワード')).toBeInTheDocument()
     expect(panel('取引先の編集').getByRole('button', { name: /^追加するキーワードの科目/ })).toBeInTheDocument()
-    fireEvent.click(panel('取引先の編集').getByRole('button', { name: 'キャンセル' }))
+    // パネルの「キャンセル」と同名なので、キーワードの入力行の中のボタンに絞る
+    fireEvent.click(within(screen.getByLabelText('追加するキーワード').parentElement!).getByRole('button', { name: 'キャンセル' }))
     expect(panel('取引先の編集').queryByLabelText('追加するキーワード')).not.toBeInTheDocument()
     expect(panel('取引先の編集').getByRole('button', { name: 'キーワードを追加' })).toBeInTheDocument()
   })

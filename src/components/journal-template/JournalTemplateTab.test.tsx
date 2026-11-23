@@ -297,9 +297,23 @@ describe('JournalTemplateTab: 未保存の編集の警告(計画Issue #190)', ()
     fireEvent.click(screen.getByRole('button', { name: 'B' }))
 
     expect(dialog()).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'キャンセル' }))
     expect(dialog()).toBeNull()
     expect(panel().getByLabelText('名称')).toHaveValue('A')
+  })
+
+  it('摘要を書き換えて「キャンセル」を押すと、確認なしで保存済みの摘要に戻る(計画Issue #237)', async () => {
+    templates.create({ name: 'A', lines: blankLines() })
+    renderTab()
+    await open('A')
+    const description = panel().getByLabelText('摘要(任意)')
+    fireEvent.change(description, { target: { value: '編集中' } })
+
+    fireEvent.click(panel().getByRole('button', { name: 'キャンセル' }))
+
+    expect(panel().getByLabelText('摘要(任意)')).toHaveValue('')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(panel().getByRole('button', { name: 'キャンセル' })).toBeDisabled()
   })
 
   it('「保存して移動」で摘要を保存してから移る', async () => {

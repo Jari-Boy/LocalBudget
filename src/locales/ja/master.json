@@ -17,6 +17,8 @@
     "memberAll": "全員",
     "systemNote": "システム管理の科目です。名称、グループ、並び順を変更できます。",
     "save": "保存",
+    "cancel": "キャンセル",
+    "cancelTitle": "未保存の変更を元に戻します",
     "saved": "保存しました",
     "delete": "削除",
     "deleteGroup": "グループを削除",
