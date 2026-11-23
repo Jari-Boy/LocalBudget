@@ -694,7 +694,7 @@ export function SplitTab({
                       onChange={(e) => patchPartner(row.key, { amountInput: e.target.value })}
                     />
                   )}
-                  {/* ×は入力欄のすぐ右に置く。負担額の表示欄(空のこともある)より前に置くことで、金額が出ても位置が動かない */}
+                  {/* ×は入力欄のすぐ右に置く。負担額の表示欄より前に置くことで、金額が出ても位置が動かない。負担額が無いときは表示欄の幅を取らない */}
                   <button
                     type="button"
                     className="split-settle__icon-btn"
@@ -708,7 +708,7 @@ export function SplitTab({
                   >
                     ×
                   </button>
-                  <span className="split-settle__num split-settle__share">
+                  <span className={`split-settle__num split-settle__share${burdenOf(row.key) === null ? ' split-settle__share--empty' : ''}`}>
                     {burdenOf(row.key) === null ? '' : formatCurrency(burdenOf(row.key) ?? 0, 'JPY')}
                   </span>
                 </div>

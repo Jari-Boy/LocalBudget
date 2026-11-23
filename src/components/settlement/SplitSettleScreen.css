@@ -255,6 +255,11 @@
   font-size: var(--font-size-sm);
 }
 
+/* 負担額が無いとき(行を選んでいないとき)は、空の欄で分担相手と摘要の間を空けない */
+.split-settle__share--empty {
+  display: none;
+}
+
 .split-settle__icon-btn {
   font: inherit;
   font-size: 15px;
@@ -695,7 +700,7 @@
 .split-settle__panel-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 24px;
+  gap: 12px 20px;
   align-items: flex-start;
 }
 
