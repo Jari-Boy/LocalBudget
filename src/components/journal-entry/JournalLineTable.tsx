@@ -1,5 +1,4 @@
 import { useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import { FloatingTableHeader } from '../common/sticky/FloatingTableHeader'
 import type { JournalEntry, JournalLine, JournalLineSide } from '../../domain/journal/JournalEntry'
 import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
@@ -18,6 +17,7 @@ import { useJournalLineTableColumns, type JournalLineTableColumns } from './useJ
 import { JournalLineTableResizeHandle } from './JournalLineTableResizeHandle'
 import { pairLinesBySide } from './journalLineTableModel'
 import { summarizeBalance } from './journalScreenModel'
+import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import './JournalLineTable.css'
 
 /** 表に出す名前の解決(ID → 表示名)。該当がなければ空文字を返す(科目だけは「不明」を返してよい) */

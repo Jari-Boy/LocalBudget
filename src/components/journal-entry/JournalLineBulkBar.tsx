@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from 'react'
-import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import { createPortal } from 'react-dom'
 import { ConfirmDialog } from '../common/confirm-dialog/ConfirmDialog'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
@@ -18,6 +17,7 @@ import {
   type BulkPick,
   type BulkSelectedLine,
 } from './journalBulkEditModel'
+import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import './JournalLineBulkBar.css'
 
 export interface JournalLineBulkBarProps {
