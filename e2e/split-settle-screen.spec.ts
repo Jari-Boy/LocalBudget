@@ -1,8 +1,8 @@
 /**
  * 割勘・精算画面(計画Issue #153)のE2Eテスト。実ブラウザ(Chromium)で、サイドナビの「割勘・精算」から
- * 「割勘」「精算」の2タブを操作し、Web Worker + RPC層を経由して以下を検証する:
+ * 「割勘」「精算」「履歴」の3タブを操作し、Web Worker + RPC層を経由して以下を検証する:
  * (1)割勘できる仕訳だけが候補になる(費用の行が無い仕訳・割勘仕訳自身は出ない)、(2)世帯メンバーとの
- * 割勘の記録と割勘履歴への表示、(3)世帯外の相手(取引先)との割勘、(4)複数の仕訳をまとめた割勘が
+ * 割勘の記録と履歴タブへの表示、(3)世帯外の相手(取引先)との割勘、(4)複数の仕訳をまとめた割勘が
  * 相手ごとに1件の仕訳になる、(5)精算タブでの精算(方向ごとに精算の仕訳を起票して、バッチが精算済みになる)、
  * (6)精算前の割勘の取り消し(2回押し)。事前データは別Workerで作ってからreloadして反映する
  * (journal-entry.spec.tsと同じ方針)。旧「割勘対象選択」「割勘フォーム」「精算」「割勘履歴」の4画面の
@@ -160,7 +160,7 @@ test.describe('割勘タブ', () => {
     await expect(table.getByText('候補になる食事代の割勘')).toHaveCount(0)
   })
 
-  test('世帯メンバーとの割勘を記録すると、割勘履歴に相手・負担額・未精算で出る', async ({ page }) => {
+  test('世帯メンバーとの割勘を記録すると、履歴タブに相手・負担額・未精算で出る', async ({ page }) => {
     await page.goto('/')
     const data = await setupBaseData(page, '履歴テスト')
     await createOriginalExpenseEntry(page, data, '履歴テストの食事代', 1000)
@@ -169,6 +169,9 @@ test.describe('割勘タブ', () => {
     await splitWithMember(page, '履歴テストの食事代')
     await waitForJournalEntryCount(page, 2)
 
+    // 過去の割勘は割勘タブには出ず、精算の右どなりの「履歴」タブに出る
+    await expect(page.getByRole('region', { name: '割勘履歴' })).toHaveCount(0)
+    await page.getByRole('tab', { name: '履歴' }).click()
     const history = page.getByRole('region', { name: '割勘履歴' })
     await expect(history.getByRole('heading', { name: '過去の割勘' })).toBeVisible()
     const row = history.getByRole('row').filter({ hasText: '履歴テストの食事代' })
@@ -197,6 +200,7 @@ test.describe('割勘タブ', () => {
     await expect(page.getByText('割勘を記録しました')).toBeVisible()
 
     await waitForJournalEntryCount(page, 2)
+    await page.getByRole('tab', { name: '履歴' }).click()
     const row = page.getByRole('region', { name: '割勘履歴' }).getByRole('row').filter({ hasText: '世帯外テストの食事代' })
     await expect(row).toContainText('割勘相手の友人Cさん')
   })
@@ -231,7 +235,7 @@ test.describe('割勘タブ', () => {
     await waitForJournalEntryCount(page, 3)
   })
 
-  test('精算前の割勘は履歴から2回押して取り消せる', async ({ page }) => {
+  test('精算前の割勘は履歴タブから2回押して取り消せる', async ({ page }) => {
     await page.goto('/')
     const data = await setupBaseData(page, '取り消しテスト')
     await createOriginalExpenseEntry(page, data, '取り消しテストの食事代', 1000)
@@ -239,11 +243,13 @@ test.describe('割勘タブ', () => {
     await splitWithMember(page, '取り消しテストの食事代')
     await waitForJournalEntryCount(page, 2)
 
+    await page.getByRole('tab', { name: '履歴' }).click()
     const row = page.getByRole('region', { name: '割勘履歴' }).getByRole('row').filter({ hasText: '取り消しテストの食事代' })
     await row.getByRole('button', { name: 'この割勘を取り消す' }).click()
     await row.getByRole('button', { name: '本当に取り消す' }).click()
 
     await waitForJournalEntryCount(page, 1)
+    await page.getByRole('tab', { name: '割勘' }).click()
     await expect(page.getByRole('region', { name: '割勘する仕訳' }).getByText('取り消しテストの食事代')).toBeVisible()
   })
 })

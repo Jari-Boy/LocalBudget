@@ -6,6 +6,8 @@ import { buildRelatedEntryIdsByEntryId } from '../../domain/journal-link-group/b
 import { listSplittableEntries, type SplittableEntry } from '../../domain/expense-splitting/listSplittableEntries'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { JournalFilterPanel } from '../common/journal-filter/JournalFilterPanel'
+import { ListLoadMore } from '../common/list-paging/ListLoadMore'
+import { nextDisplayLimit, resolveShownCount } from '../common/list-paging/listPaging'
 import { useElementHeight } from '../common/sticky/useElementHeight'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { EntryDetailDialog } from './EntryDetailDialog'
@@ -21,12 +23,8 @@ import { BatchSelect } from '../master/BatchSelect'
 import { useEscapeToClear } from '../common/range-selection/useEscapeToClear'
 import { useRangeSelection } from '../common/range-selection/useRangeSelection'
 import type { SplitSettleData, SplitSettleDerived, SplitSettleRepositories } from './splitSettleData'
-import {
-  buildPartnerCategories,
-  buildSplitHistoryRows,
-  parsePartnerValue,
-  toPartnerValue,
-} from './splitSettleModel'
+import { SPLIT_LIST_PAGE_SIZE } from './splitListPaging'
+import { buildPartnerCategories, parsePartnerValue, toPartnerValue } from './splitSettleModel'
 import { StickyHeaderTable } from '../common/sticky/StickyHeaderTable'
 import './SplitSettleScreen.css'
 
@@ -85,7 +83,8 @@ function payerAccountName(item: SplittableEntry, accounts: readonly Account[]): 
  * 絞り込みで隠れた行も、チェック済みなら合計に含める。按分は割合のほか、均等・金額指定を選べる
  * (金額指定は仕訳を1件だけ選んだときのみ)。精算バッチは新規作成(既定)か既存から選ぶ。
  * 割勘仕訳の摘要は入力でき、空のときは既定の摘要を使う(新しい精算バッチを作るときは、その摘要がバッチ名になる)。
- * 下に割勘履歴を出し、精算が進んでいない割勘は2回押して取り消せる。
+ * 候補は150件ずつ「さらにN件表示」で出し、チェック済みの仕訳が150件の外にあるときは、その仕訳が見える件数まで広げる
+ * (合計に含まれる仕訳が見えなくならないため、計画Issue #268)。割勘履歴は履歴タブ(SplitHistoryTab)にある。
  */
 export function SplitTab({
   data,
@@ -112,9 +111,9 @@ export function SplitTab({
   const [submitting, setSubmitting] = useState(false)
   const [flash, setFlash] = useState('')
   const [error, setError] = useState('')
-  const [confirmingCancelId, setConfirmingCancelId] = useState<number | null>(null)
   const [createForRowKey, setCreateForRowKey] = useState<number | null>(null)
-  const [historyStatus, setHistoryStatus] = useState<'open' | 'settled'>('open')
+  /** 「さらに表示」で増やした表示件数の上限。絞り込み条件を変えると先頭の1ページ分に戻す */
+  const [displayLimit, setDisplayLimit] = useState<number>(SPLIT_LIST_PAGE_SIZE.candidate)
   const [detailEntryId, setDetailEntryId] = useState<number | null>(null)
 
   const relatedIds = useMemo(() => buildRelatedEntryIdsByEntryId(data.memberships), [data.memberships])
@@ -135,6 +134,15 @@ export function SplitTab({
       .filter((c) => visibleIds.has(c.entry.id))
       .sort((a, b) => b.entry.entryDate.localeCompare(a.entry.entryDate) || b.entry.id - a.entry.id)
   }, [candidates, data.accounts, filter, derived.filterContext])
+  /** 表に出す件数。上限までだが、チェック済みの仕訳(絞り込みで隠れたものは数えない)が範囲の外にあるときは、いちばん後ろの仕訳が見えるまで広げる */
+  const lastCheckedIndex = shown.reduce((last, item, index) => (checkedIds.has(item.entry.id) ? index : last), -1)
+  const shownCount = resolveShownCount({
+    total: shown.length,
+    limit: displayLimit,
+    pageSize: SPLIT_LIST_PAGE_SIZE.candidate,
+    selectedIndex: lastCheckedIndex,
+  })
+  const visible = useMemo(() => shown.slice(0, shownCount), [shown, shownCount])
   const chosen = candidates.filter((c) => checkedIds.has(c.entry.id))
   const total = chosen.reduce((sum, c) => sum + c.amount, 0)
   const payerIds = new Set(chosen.map((c) => c.entry.householdMemberId))
@@ -171,7 +179,7 @@ export function SplitTab({
 
   // 仕訳のチェックの Shift+クリック(範囲選択)・Ctrl/Cmd+クリック(トグル)・Shift+↑↓、Ctrl/Cmd+行のどこかを押す操作(計画Issue #235 D)
   const range = useRangeSelection<number>({
-    order: shown.map((item) => item.entry.id),
+    order: visible.map((item) => item.entry.id),
     selected: [...checkedIds],
     onChange: (next) => {
       setCheckedIds(new Set(next))
@@ -189,6 +197,11 @@ export function SplitTab({
         }
       : null,
   )
+
+  const changeFilter = (next: JournalEntryFilter) => {
+    setDisplayLimit(SPLIT_LIST_PAGE_SIZE.candidate)
+    onFilterChange(next)
+  }
 
   const changeMode = (next: ExpenseSplittingAllocationMode) => {
     setMode(next)
@@ -235,32 +248,7 @@ export function SplitTab({
     }
   }
 
-  const historyRows = useMemo(
-    () => buildSplitHistoryRows(data.entries, data.accounts, relatedIds, data.members, data.counterparties),
-    [data.entries, data.accounts, relatedIds, data.members, data.counterparties],
-  )
-
-  const openCount = historyRows.filter((r) => !r.isSettled).length
-  const settledCount = historyRows.length - openCount
-  const shownHistory = historyRows.filter((r) => r.isSettled === (historyStatus === 'settled'))
   const detailEntry = data.entries.find((e) => e.id === detailEntryId)
-
-  const cancelSplit = async (splitEntryId: number) => {
-    setConfirmingCancelId(null)
-    const splitEntry = data.entries.find((e) => e.id === splitEntryId)
-    await repositories.journalEntryRepository.delete(splitEntryId)
-    // 取り消した結果、紐づく仕訳が0件になった精算バッチは残さずに削除する
-    const batchIds = new Set(
-      (splitEntry?.lines ?? []).flatMap((l) => (l.settlementBatchId === null ? [] : [l.settlementBatchId])),
-    )
-    for (const batchId of batchIds) {
-      const stillUsed = data.entries.some(
-        (e) => e.id !== splitEntryId && e.lines.some((l) => l.settlementBatchId === batchId),
-      )
-      if (!stillUsed) await repositories.settlementBatchRepository.delete(batchId)
-    }
-    await onChanged()
-  }
 
   const partnerName = (row: ExpenseSplittingParticipantRow) => {
     if (row.targetId === null) return '未選択'
@@ -274,7 +262,7 @@ export function SplitTab({
         <div className="split-settle__filter" id="split-settle-filter" ref={setFilterElement}>
           <JournalFilterPanel
             filter={filter}
-            onChange={onFilterChange}
+            onChange={changeFilter}
             options={derived.filterOptions}
             resultCount={shown.length}
           />
@@ -304,7 +292,7 @@ export function SplitTab({
             }
           >
             <tbody>
-              {shown.map((item) => {
+              {visible.map((item) => {
                 const memo = item.entry.memo ?? ''
                 return (
                   <tr key={item.entry.id} {...range.selectingRowProps(item.entry.id)}>
@@ -329,6 +317,12 @@ export function SplitTab({
               })}
             </tbody>
           </StickyHeaderTable>
+          <ListLoadMore
+            total={shown.length}
+            shown={shownCount}
+            pageSize={SPLIT_LIST_PAGE_SIZE.candidate}
+            onMore={() => setDisplayLimit(nextDisplayLimit(shownCount, SPLIT_LIST_PAGE_SIZE.candidate))}
+          />
         </section>
 
         <section aria-label="分担" className="split-settle__card split-settle__side">
@@ -473,101 +467,6 @@ export function SplitTab({
           {flash !== '' && <span className="split-settle__flash">{flash}</span>}
         </section>
       </div>
-
-      <section aria-label="割勘履歴" className="split-settle__card split-settle__card--table">
-        <div className="split-settle__history-head">
-          <h2 className="split-settle__h2">過去の割勘</h2>
-          <div role="group" aria-label="精算状況で絞り込む" className="split-settle__filters">
-            {(
-              [
-                { key: 'open', label: '未精算', count: openCount },
-                { key: 'settled', label: '精算済み', count: settledCount },
-              ] as const
-            ).map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                aria-pressed={historyStatus === item.key}
-                className={`split-settle__btn split-settle__btn--small${historyStatus === item.key ? ' split-settle__btn--pressed' : ''}`}
-                onClick={() => {
-                  setHistoryStatus(item.key)
-                  setConfirmingCancelId(null)
-                }}
-              >
-                {item.label} {item.count}
-              </button>
-            ))}
-          </div>
-        </div>
-        {shownHistory.length === 0 && (
-          <p className="split-settle__empty">
-            {historyStatus === 'open' ? '未精算の割勘はありません' : '精算済みの割勘はありません'}
-          </p>
-        )}
-        <StickyHeaderTable
-          frameClassName="split-settle__scroll"
-          tableClassName="split-settle__table"
-          floatingClassName="floating-table-header--bare"
-          head={
-            <thead>
-              <tr>
-                <th>日付</th>
-                <th>摘要</th>
-                <th>相手</th>
-                <th className="split-settle__num">相手の負担額</th>
-                <th>状態</th>
-                <th>取り消し</th>
-              </tr>
-            </thead>
-          }
-        >
-          <tbody>
-            {shownHistory.map((row) => (
-              <tr key={row.splitEntryId}>
-                <td className="split-settle__nowrap">{row.date}</td>
-                <td>
-                  <button type="button" className="split-settle__link" onClick={() => setDetailEntryId(row.splitEntryId)}>
-                    {row.memo === '' ? '(摘要なし)' : row.memo}
-                  </button>
-                </td>
-                <td>{row.partner}</td>
-                <td className="split-settle__num">{formatCurrency(row.amount, 'JPY')}</td>
-                <td>{row.isSettled ? '精算済み' : '未精算'}</td>
-                <td>
-                  {!row.canCancel ? (
-                    <span className="split-settle__note">精算が進んでいるため取り消せません</span>
-                  ) : confirmingCancelId === row.splitEntryId ? (
-                    <span className="split-settle__confirm">
-                      <button
-                        type="button"
-                        className="split-settle__btn split-settle__btn--small"
-                        onClick={() => setConfirmingCancelId(null)}
-                      >
-                        やめる
-                      </button>
-                      <button
-                        type="button"
-                        className="split-settle__btn split-settle__btn--small split-settle__btn--danger"
-                        onClick={() => void cancelSplit(row.splitEntryId)}
-                      >
-                        本当に取り消す
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="split-settle__btn split-settle__btn--small"
-                      onClick={() => setConfirmingCancelId(row.splitEntryId)}
-                    >
-                      この割勘を取り消す
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </StickyHeaderTable>
-      </section>
 
       {detailEntry !== undefined && (
         <EntryDetailDialog
