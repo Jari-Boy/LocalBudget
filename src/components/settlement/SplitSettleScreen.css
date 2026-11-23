@@ -746,3 +746,133 @@
 .split-settle__commit-messages p {
   margin: 0;
 }
+
+/* 精算バッチのクローズ(計画Issue #249) */
+.split-settle__badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 18px;
+  background: var(--color-tag-neutral-bg);
+  color: var(--color-tag-neutral-text);
+  vertical-align: 1px;
+}
+
+.split-settle__badge--warn {
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
+  border: 1px solid var(--color-warning-line);
+}
+
+/* 精算タブの右上に出す、精算済みなのに残高があるバッチの数(赤丸) */
+.split-settle__dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--color-danger);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: 1px;
+  font-variant-numeric: tabular-nums;
+}
+
+.split-settle__settled-sub {
+  font-weight: 400;
+}
+
+.split-settle__closed-warn {
+  margin: 0;
+  padding: 8px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+  font-size: var(--font-size-base);
+  color: var(--color-warning-text);
+  background: var(--color-warning-soft);
+  border: 1px solid var(--color-warning-line);
+  border-radius: var(--radius-md);
+}
+
+.split-settle__suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.split-settle__suggest-text {
+  flex: 1 1 240px;
+  display: flex;
+  flex-direction: column;
+}
+
+.split-settle__close-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--color-warning-line);
+  background: var(--color-warning-soft);
+  border-radius: var(--radius-md);
+}
+
+.split-settle__note--warn-text {
+  color: var(--color-warning-text);
+}
+
+.split-settle__close-preview {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.split-settle__close-preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--color-border-soft);
+  font-size: var(--font-size-sm);
+}
+
+/* 「クローズしますか?」のダイアログ */
+.split-settle__dialog--small {
+  width: 480px;
+}
+
+.split-settle__dialog-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.split-settle__dialog-body {
+  margin: 0;
+  font-size: var(--font-size-base);
+  line-height: 1.8;
+}
+
+.split-settle__nowrap-phrase {
+  display: inline-block;
+}
+
+.split-settle__dialog--small .split-settle__dialog-actions {
+  gap: 8px;
+}
+

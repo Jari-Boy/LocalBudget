@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
+import { countClosedWithBalance } from '../../domain/settlement-batch/settlementBatchStatus'
+import { summarizeSettlementBatches } from '../../domain/settlement-batch/summarizeSettlementBatches'
 import { countActiveConditions } from '../common/journal-filter/journalFilterModel'
 import { useElementHeight } from '../common/sticky/useElementHeight'
 import { SettleTab } from './SettleTab'
@@ -56,6 +58,20 @@ export function SplitSettleScreen({
   }, [repositories])
 
   const derived = useMemo(() => (data === null ? null : deriveSplitSettle(data)), [data])
+  // クローズ済みなのに残高があるバッチの数。精算タブの赤丸に出す(計画Issue #249)
+  const closedWithBalance = useMemo(
+    () =>
+      data === null
+        ? 0
+        : countClosedWithBalance(
+            summarizeSettlementBatches(
+              data.batches,
+              data.entries.flatMap((e) => e.lines),
+              data.accounts,
+            ),
+          ),
+    [data],
+  )
 
   if (data === null || derived === null) return <p role="status">読み込み中...</p>
 
@@ -76,6 +92,11 @@ export function SplitSettleScreen({
               onClick={() => setTab(item.key)}
             >
               {item.label}
+              {item.key === 'settle' && closedWithBalance > 0 && (
+                <span className="split-settle__dot" aria-label={`、精算済みなのに残高があるバッチが${closedWithBalance}件`}>
+                  {closedWithBalance}
+                </span>
+              )}
             </button>
           ))}
         </div>

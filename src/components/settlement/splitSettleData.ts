@@ -44,7 +44,12 @@ export interface SplitSettleRepositories {
   projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll'>>
   projectGroupRepository: MaybeAsync<Pick<ProjectGroupRepository, 'findAll'>>
   householdMemberRepository: MaybeAsync<Pick<HouseholdMemberRepository, 'findAll'>>
-  settlementBatchRepository: MaybeAsync<Pick<SettlementBatchRepository, 'findAll' | 'create' | 'update' | 'delete'>>
+  settlementBatchRepository: MaybeAsync<
+    Pick<
+      SettlementBatchRepository,
+      'findAll' | 'create' | 'update' | 'delete' | 'deactivate' | 'activate' | 'recordCloseEntries' | 'findCloseEntryIds'
+    >
+  >
 }
 
 export interface SplitSettleData {
@@ -60,6 +65,8 @@ export interface SplitSettleData {
   memberships: JournalEntryLinkGroupMembership[]
   /** 割勘対象行の記録(どの行が割勘済みか、計画Issue #271) */
   sourceLinks: ExpenseSplitSourceLink[]
+  /** クローズ済みのバッチごとの、クローズ時に自動で作った振替仕訳のid(再オープンで削除する対象、計画Issue #249) */
+  closeEntries: { batchId: number; entryIds: number[] }[]
 }
 
 export async function loadSplitSettleData(repos: SplitSettleRepositories): Promise<SplitSettleData> {
@@ -90,6 +97,13 @@ export async function loadSplitSettleData(repos: SplitSettleRepositories): Promi
       ? []
       : repos.journalEntryRepository.findExpenseSplitSourceLinks(),
   ])
+  const closeEntries = (
+    await Promise.all(
+      batches
+        .filter((b) => !b.isActive)
+        .map(async (b) => ({ batchId: b.id, entryIds: await repos.settlementBatchRepository.findCloseEntryIds(b.id) })),
+    )
+  ).filter((c) => c.entryIds.length > 0)
   return {
     entries,
     accounts,
@@ -102,6 +116,7 @@ export async function loadSplitSettleData(repos: SplitSettleRepositories): Promi
     batches,
     memberships,
     sourceLinks,
+    closeEntries,
   }
 }
 

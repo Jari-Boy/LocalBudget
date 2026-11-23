@@ -2,7 +2,8 @@
 /**
  * BatchSelect(精算バッチを1つ選ぶ共通の選択欄、計画Issue #234)のコンポーネントテスト。
  * 階層のないバッチをフラットに並べ、先頭の特別な項目(なし・変更しない・新しいバッチを作成など)を固定し、
- * 「+ 新しいバッチ」の操作を出せ、検索1件でEnter確定できることを検証する。外部依存なし(バッチの配列だけを受け取る)。
+ * 「+ 新しいバッチ」の操作を出せ、検索1件でEnter確定できることを検証する。クローズ済みのバッチ(is_active = false)は候補に出さず、
+ * 現在の値のときだけ色付きの「Close」バッジ付きで残すことも検証する(計画Issue #249)。外部依存なし(バッチの配列だけを受け取る)。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -12,12 +13,12 @@ import { BatchSelect } from './BatchSelect'
 
 afterEach(cleanup)
 
-const batch = (id: number, name: string): SettlementBatch => ({
+const batch = (id: number, name: string, isActive = true): SettlementBatch => ({
   id,
   name,
   type: 'expense_splitting',
   counterpartyId: null,
-  isActive: true,
+  isActive,
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
 })
@@ -73,6 +74,35 @@ describe('BatchSelect', () => {
     expect(screen.getByRole('button', { name: '精算バッチ: 沖縄旅行の割勘' })).toBeInTheDocument()
     open()
     expect(screen.getAllByText('沖縄旅行の割勘').length).toBeGreaterThan(1)
+  })
+
+  it('クローズ済みのバッチは、候補に出ない(計画Issue #249)', () => {
+    const withClosed = [...batches, batch(4, '2025 沖縄旅行', false)]
+    render(<BatchSelect label="精算バッチ" batches={withClosed} value="" emptyLabel="精算バッチなし" onChange={vi.fn()} />)
+    open()
+    expect(screen.queryByText('2025 沖縄旅行')).toBeNull()
+    expect(screen.getByRole('button', { name: '10月の立替' })).toBeInTheDocument()
+  })
+
+  it('現在の値がクローズ済みのバッチなら、候補に残り、ボタンと候補に「Close」バッジを付ける', () => {
+    const withClosed = [...batches, batch(4, '2025 沖縄旅行', false)]
+    render(<BatchSelect label="精算バッチ" batches={withClosed} value="4" emptyLabel="精算バッチなし" onChange={vi.fn()} />)
+    expect(screen.getByRole('button', { name: '精算バッチ: 2025 沖縄旅行 (Close)' })).toBeInTheDocument()
+    open()
+    expect(screen.getAllByText('Close')).toHaveLength(2)
+  })
+
+  it('クローズされていないバッチには、Closeバッジを付けない', () => {
+    render(<BatchSelect label="精算バッチ" batches={batches} value="1" onChange={vi.fn()} />)
+    open()
+    expect(screen.queryByText('Close')).toBeNull()
+  })
+
+  it('filterを渡したときも、クローズ済みは候補に出ない', () => {
+    const withClosed = [...batches, batch(4, '2025 沖縄旅行', false)]
+    render(<BatchSelect label="精算バッチ" batches={withClosed} filter={() => true} value="" onChange={vi.fn()} />)
+    open()
+    expect(screen.queryByText('2025 沖縄旅行')).toBeNull()
   })
 
   it('leadingOptionsの特別な項目を先頭に出し、選ぶとその値で通知する', () => {

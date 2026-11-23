@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * 精算タブ(SettleTab、計画Issue #153)のコンポーネントテスト。承認済みモックアップの構成で、
- * 精算バッチを先に選び、一覧に未収金と未払金の残高が別々に出ること、「未精算」「精算済み」「すべて」の
- * 切り替え、方向のカード(未収金を減らす/未払金を減らす)、候補の仕訳の選択と一致・不一致の操作
+ * 精算バッチを先に選び、一覧に未収金と未払金の残高が別々に出ること、「未精算」「精算済み」(=クローズ済み、計画Issue #249)の
+ * 切り替え、残高0での「クローズしますか?」の案内、残高があるままのクローズ(振替仕訳の自動作成)と再オープン、方向のカード(未収金を減らす/未払金を減らす)、候補の仕訳の選択と一致・不一致の操作
  * (精算完了・未精算として残す・差額の計上)、候補の有無によらない精算の仕訳の起票、バッチ名と
  * 世帯外の相手の編集を、インメモリの偽Repository(vi.fn)で検証する。
  */
@@ -99,11 +99,11 @@ function entry(id: number, date: string, memo: string, lines: JournalLine[], sou
   }
 }
 
-function batch(id: number, name: string, counterpartyId: number | null = null): SettlementBatch {
-  return { id, name, type: 'expense_splitting', counterpartyId, isActive: true, createdAt: '', updatedAt: '' }
+function batch(id: number, name: string, counterpartyId: number | null = null, isActive = true): SettlementBatch {
+  return { id, name, type: 'expense_splitting', counterpartyId, isActive, createdAt: '', updatedAt: '' }
 }
 
-/** 10月分(未精算: 夫の立替金6000・妻の未払金6000)、9月分(精算済み)、空のバッチ */
+/** 10月分(未精算: 夫の立替金6000・妻の未払金6000)、9月分(残高0でクローズ済み=精算済み)、空のバッチ */
 function makeData(): SplitSettleData {
   return {
     entries: [
@@ -158,9 +158,10 @@ function makeData(): SplitSettleData {
       { id: 1, name: '夫' },
       { id: 2, name: '妻' },
     ] as never,
-    batches: [batch(1, '10月分 割勘(妻)'), batch(4, '9月分 割勘(妻)'), batch(5, '空のバッチ')],
+    batches: [batch(1, '10月分 割勘(妻)'), batch(4, '9月分 割勘(妻)', null, false), batch(5, '空のバッチ')],
     memberships: [],
     sourceLinks: [],
+    closeEntries: [],
   }
 }
 
@@ -180,6 +181,10 @@ function setup(data: SplitSettleData = makeData()) {
       create: vi.fn(),
       update: vi.fn(async () => ({})),
       delete: vi.fn(async () => {}),
+      deactivate: vi.fn(async () => ({})),
+      activate: vi.fn(async () => ({})),
+      recordCloseEntries: vi.fn(async () => {}),
+      findCloseEntryIds: vi.fn(async (): Promise<number[]> => []),
     },
     counterpartyRepository: { create: vi.fn(async () => ({ id: 20, name: '新しい人' })) },
   }
@@ -223,7 +228,14 @@ describe('SettleTab: 精算バッチの一覧', () => {
 
     expect(within(batchList()).getByRole('button', { name: '9月分 割勘(妻)' })).toBeInTheDocument()
     expect(within(batchList()).queryByRole('button', { name: '10月分 割勘(妻)' })).not.toBeInTheDocument()
-    expect(within(selected()).getByText('精算済みです。未収金と未払金の残高はどちらも0です。')).toBeInTheDocument()
+    expect(within(selected()).getByText(/精算済みです\(クローズ済み\)。選択欄の候補には出ません。/)).toBeInTheDocument()
+  })
+
+  it('状態の絞り込みは「未精算」と「精算済み」の2つだけで、精算済みはクローズ済みのこと', () => {
+    setup()
+
+    const filters = within(screen.getByRole('group', { name: '精算状況で絞り込む' })).getAllByRole('button')
+    expect(filters.map((b) => b.textContent)).toEqual(['未精算 2', '精算済み 1'])
   })
 
   it('精算済みのバッチでは、紐づく仕訳を閲覧でき、仕訳をクリックすると仕訳画面へ移動せずダイアログで開く', () => {
@@ -238,34 +250,142 @@ describe('SettleTab: 精算バッチの一覧', () => {
     expect(screen.queryByRole('dialog', { name: '仕訳の詳細' })).not.toBeInTheDocument()
   })
 
-  it('精算して残高が0になったバッチは、「精算済み」の一覧に移り、そのまま精算済みとして表示する', async () => {
+  /** 10月分を、立替金の方向だけ6000が残る状態にしておき、立替金を精算し切ると全体が0になる */
+  function dataSettledByTransfer() {
     const data = makeData()
-    // 10月分は立替金の方向だけ6000が残る状態にしておき、立替金を精算し切ると全体が0になる
-    data.entries = data.entries.map((e) =>
-      e.id === 100
-        ? { ...e, lines: e.lines.filter((l) => l.accountId !== PAYABLE) }
-        : e,
-    )
-    const view = setup(data)
-
-    fireEvent.click(screen.getByRole('checkbox', { name: '妻から振込を選択' }))
-    fireEvent.click(within(selected()).getByRole('button', { name: '精算完了' }))
-    await waitFor(() => expect(view.onChanged).toHaveBeenCalled())
-
-    // 親が読み直したデータ(妻から振込に10月分のタグが付いた状態)を渡し直す
+    data.entries = data.entries.map((e) => (e.id === 100 ? { ...e, lines: e.lines.filter((l) => l.accountId !== PAYABLE) } : e))
     const reloaded = {
       ...data,
       entries: data.entries.map((e) =>
-        e.id === 101
-          ? { ...e, lines: e.lines.map((l) => (l.id === 1012 ? { ...l, settlementBatchId: 1 } : l)) }
-          : e,
+        e.id === 101 ? { ...e, lines: e.lines.map((l) => (l.id === 1012 ? { ...l, settlementBatchId: 1 } : l)) } : e,
       ),
     }
-    view.rerender(reloaded)
+    return { data, reloaded }
+  }
 
-    expect(screen.getByRole('button', { name: '精算済み 2' })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(batchList()).getByRole('button', { name: '10月分 割勘(妻)' })).toBeInTheDocument()
-    expect(within(selected()).getByText('精算済みです。未収金と未払金の残高はどちらも0です。')).toBeInTheDocument()
+  /** 精算完了を押し、親が読み直したデータを渡し直して、残高が0になった状態にする */
+  async function settleToZero() {
+    const { data, reloaded } = dataSettledByTransfer()
+    const view = setup(data)
+    fireEvent.click(screen.getByRole('checkbox', { name: '妻から振込を選択' }))
+    fireEvent.click(within(selected()).getByRole('button', { name: '精算完了' }))
+    await waitFor(() => expect(view.onChanged).toHaveBeenCalled())
+    view.rerender(reloaded)
+    return view
+  }
+
+  it('精算して残高が0になったバッチは、未精算のまま「クローズしますか?」のダイアログを出し、一覧にクローズ待ちの印を付ける', async () => {
+    await settleToZero()
+
+    expect(screen.getByRole('dialog', { name: 'クローズの確認' })).toHaveTextContent('「10月分 割勘(妻)」の残高が0になりました。')
+    expect(screen.getByRole('button', { name: '未精算 2' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(batchList()).getByText('残高0 · クローズ待ち')).toBeInTheDocument()
+  })
+
+  it('ダイアログで「あとで」を選ぶと閉じ、パネルの案内とクローズ待ちの印は残る', async () => {
+    await settleToZero()
+
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'クローズの確認' })).getByRole('button', { name: 'あとで' }))
+
+    expect(screen.queryByRole('dialog', { name: 'クローズの確認' })).not.toBeInTheDocument()
+    expect(within(selected()).getByText('残高が0になりました。クローズしますか?')).toBeInTheDocument()
+    expect(within(batchList()).getByText('残高0 · クローズ待ち')).toBeInTheDocument()
+  })
+
+  it('ダイアログで「クローズする」を選ぶと、振替仕訳は作らずにクローズ済みにして、画面を更新する', async () => {
+    const view = await settleToZero()
+
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'クローズの確認' })).getByRole('button', { name: 'クローズする' }))
+
+    await waitFor(() => expect(view.repositories.settlementBatchRepository.deactivate).toHaveBeenCalledWith(1))
+    expect(view.repositories.journalEntryRepository.create).not.toHaveBeenCalled()
+    expect(view.repositories.settlementBatchRepository.recordCloseEntries).not.toHaveBeenCalled()
+  })
+})
+
+describe('SettleTab: クローズと再オープン(計画Issue #249)', () => {
+  const closeButton = () => within(selected()).getByRole('button', { name: 'このバッチをクローズ' })
+
+  it('残高があるバッチは、クローズを押すと「残高があります」と振替仕訳の内容を確認に出し、やめれば何も書かない', () => {
+    const view = setup()
+
+    fireEvent.click(closeButton())
+
+    expect(within(selected()).getByText(/残高があります/)).toBeInTheDocument()
+    expect(within(selected()).getByText('借方 雑損失 / 貸方 立替金')).toBeInTheDocument()
+    expect(within(selected()).getByText('借方 未払金 / 貸方 雑収入')).toBeInTheDocument()
+    fireEvent.click(within(selected()).getByRole('button', { name: 'やめる' }))
+    expect(within(selected()).queryByText(/残高があります/)).not.toBeInTheDocument()
+    expect(view.repositories.settlementBatchRepository.deactivate).not.toHaveBeenCalled()
+    expect(view.repositories.journalEntryRepository.create).not.toHaveBeenCalled()
+  })
+
+  it('確認で「仕訳を作ってクローズする」を押すと、振替仕訳を作って記録し、クローズ済みにして画面を更新する', async () => {
+    const view = setup()
+    fireEvent.click(closeButton())
+
+    fireEvent.click(within(selected()).getByRole('button', { name: '仕訳を作ってクローズする' }))
+
+    await waitFor(() => expect(view.repositories.settlementBatchRepository.deactivate).toHaveBeenCalledWith(1))
+    expect(view.repositories.journalEntryRepository.create).toHaveBeenCalledTimes(2)
+    expect(view.repositories.settlementBatchRepository.recordCloseEntries).toHaveBeenCalledWith(1, [900, 900])
+    expect(view.onChanged).toHaveBeenCalled()
+  })
+
+  it('クローズ済みのバッチは、再オープンで振替仕訳を削除して未精算に戻し、画面を更新する', async () => {
+    const data = makeData()
+    data.closeEntries = [{ batchId: 4, entryIds: [301, 302] }]
+    const view = setup(data)
+    view.repositories.settlementBatchRepository.findCloseEntryIds.mockResolvedValue([301, 302])
+    fireEvent.click(screen.getByRole('button', { name: '精算済み 1' }))
+
+    expect(within(selected()).getByText(/クローズ時の自動仕訳\(2件\)を削除し/)).toBeInTheDocument()
+    fireEvent.click(within(selected()).getByRole('button', { name: '再オープンして自動仕訳を削除' }))
+
+    await waitFor(() => expect(view.repositories.settlementBatchRepository.activate).toHaveBeenCalledWith(4))
+    expect(view.repositories.journalEntryRepository.delete).toHaveBeenCalledWith(301)
+    expect(view.repositories.journalEntryRepository.delete).toHaveBeenCalledWith(302)
+    expect(view.onChanged).toHaveBeenCalled()
+  })
+
+  it('振替仕訳が無いクローズ済みのバッチは、「再オープンする」で有効に戻すだけ', async () => {
+    const view = setup()
+    fireEvent.click(screen.getByRole('button', { name: '精算済み 1' }))
+
+    fireEvent.click(within(selected()).getByRole('button', { name: '再オープンする' }))
+
+    await waitFor(() => expect(view.repositories.settlementBatchRepository.activate).toHaveBeenCalledWith(4))
+    expect(view.repositories.journalEntryRepository.delete).not.toHaveBeenCalled()
+  })
+
+  it('クローズ済みなのに残高があるバッチは、精算済みの一覧で先頭に並び、残高ありの印と警告を出す', () => {
+    const data = makeData()
+    // 空のバッチ(5)をクローズ済みにし、クローズ後に残高が動いた想定の仕訳を足す
+    data.batches = [batch(1, '10月分 割勘(妻)'), batch(4, '9月分 割勘(妻)', null, false), batch(5, '空のバッチ', null, false)]
+    data.entries = [
+      ...data.entries,
+      entry(300, '2026-11-10', 'クローズ後に直した仕訳', [
+        line(3001, 300, 'debit', ADVANCE, 800, { householdMemberId: 1, settlementBatchId: 5 }),
+        line(3002, 300, 'credit', BANK, 800),
+      ]),
+    ]
+    setup(data)
+
+    fireEvent.click(screen.getByRole('button', { name: '精算済み 2' }))
+
+    const names = within(batchList()).getAllByRole('button', { name: /割勘|空の/ }).map((b) => b.textContent)
+    expect(names).toEqual(['空のバッチ', '9月分 割勘(妻)'])
+    expect(within(batchList()).getByText('残高あり')).toBeInTheDocument()
+    expect(within(selected()).getByText(/精算済みですが、残高が残っています/)).toBeInTheDocument()
+  })
+
+  it('クローズ済みのバッチでは、精算する仕訳を探す節とバッチの削除の節を出さない', () => {
+    setup()
+
+    fireEvent.click(screen.getByRole('button', { name: '精算済み 1' }))
+
+    expect(within(selected()).queryByText('精算する仕訳を探す')).not.toBeInTheDocument()
+    expect(within(selected()).queryByText('バッチの削除')).not.toBeInTheDocument()
   })
 })
 

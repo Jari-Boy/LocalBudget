@@ -283,3 +283,16 @@
   font-weight: 600;
   color: var(--color-text-muted);
 }
+
+/* 項目の名前の横に出す、色付きの小さな印(クローズ済みの精算バッチの「Close」など、計画Issue #249) */
+.tree-select__badge {
+  flex: none;
+  margin-left: 8px;
+  padding: 0 7px;
+  border-radius: 10px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 18px;
+  background: var(--color-tag-blue-bg);
+  color: var(--color-tag-blue-text);
+}

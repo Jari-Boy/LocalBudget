@@ -109,6 +109,7 @@ function makeData(extraEntries: JournalEntry[] = []): SplitSettleData {
     batches: [],
     memberships: [],
     sourceLinks: [],
+    closeEntries: [],
   }
 }
 
