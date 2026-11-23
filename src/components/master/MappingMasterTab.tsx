@@ -32,6 +32,7 @@ import { collectFinancialInstitutionNames } from '../../domain/statement-import/
 import { TreeSearchInput } from '../common/tree-table/TreeSearchInput'
 import { matchesSearch } from '../common/tree-table/filterTreeNodes'
 import { groupMappingDefinitionsByInstitution } from '../../domain/statement-import/groupMappingDefinitionsByInstitution'
+import { StickyToolbar } from '../common/sticky/StickyToolbar'
 
 export interface MappingMasterTabProps {
   importMappingDefinitionRepository: MaybeAsync<
@@ -184,7 +185,8 @@ export function MappingMasterTab({
   return (
     <div className="master-split">
       <div className="master-split__main">
-        <div className="master-actions">
+        {/* 検索・追加ボタンの行は、スクロールしても画面の上部に固定する(計画Issue #266) */}
+        <StickyToolbar className="master-actions">
           <label className="master-btn master-btn--primary">
             {t('mappingTab.add')}
             <input
@@ -196,7 +198,7 @@ export function MappingMasterTab({
             />
           </label>
           <TreeSearchInput value={query} onChange={setQuery} leafLabel={t('mappingTab.searchLeaf')} />
-        </div>
+        </StickyToolbar>
         <ul className="master-list">
           {groupMappingDefinitionsByInstitution(
             data.definitions.filter((d) =>

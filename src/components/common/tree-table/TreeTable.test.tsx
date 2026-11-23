@@ -313,7 +313,7 @@ describe('全選択のヘッダー・区分の見出し行の非表示(計画Iss
   it('ヘッダーの「すべて選択」を押すと、表示中の全行をチェックする', () => {
     const { onCheckedChange } = renderFlat([])
 
-    fireEvent.click(screen.getByLabelText('すべて選択'))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'すべて選択' }))
 
     expect(onCheckedChange).toHaveBeenCalledWith(['a', 'b'])
   })
@@ -321,8 +321,8 @@ describe('全選択のヘッダー・区分の見出し行の非表示(計画Iss
   it('全行がチェック済みのときにヘッダーを押すと、チェックをすべて外す', () => {
     const { onCheckedChange } = renderFlat(['a', 'b'])
 
-    expect(screen.getByLabelText('すべて選択')).toBeChecked()
-    fireEvent.click(screen.getByLabelText('すべて選択'))
+    expect(screen.getByRole('checkbox', { name: 'すべて選択' })).toBeChecked()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'すべて選択' }))
 
     expect(onCheckedChange).toHaveBeenCalledWith([])
   })
@@ -330,7 +330,7 @@ describe('全選択のヘッダー・区分の見出し行の非表示(計画Iss
   it('一部だけチェックしているときは、ヘッダーが中間状態(indeterminate)になる', () => {
     renderFlat(['a'])
 
-    expect((screen.getByLabelText('すべて選択') as HTMLInputElement).indeterminate).toBe(true)
+    expect((screen.getByRole('checkbox', { name: 'すべて選択' }) as HTMLInputElement).indeterminate).toBe(true)
   })
 
   it('showCategoryRows={false}なら、区分の見出し行(名前と件数)を出さない', () => {

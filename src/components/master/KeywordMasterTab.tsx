@@ -25,6 +25,7 @@ import {
   type KeywordSortState,
 } from './keywordRuleForm'
 import type { MaybeAsync } from './maybeAsync'
+import { StickyToolbar } from '../common/sticky/StickyToolbar'
 import './master.css'
 
 /** キーワードの取引先に選べるのは、有効な取引先(現在の値は、無効でも残る) */
@@ -225,7 +226,8 @@ export function KeywordMasterTab({
   return (
     <div className="master-split">
       <div className="master-split__main">
-        <div className="master-actions">
+        {/* 検索・追加ボタンの行は、スクロールしても画面の上部に固定する(計画Issue #266) */}
+        <StickyToolbar className="master-actions">
           <button
             type="button"
             className="master-btn"
@@ -244,7 +246,7 @@ export function KeywordMasterTab({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-        </div>
+        </StickyToolbar>
         {rules.length === 0 ? (
           <p className="master-note">{t('keywordTab.empty')}</p>
         ) : (

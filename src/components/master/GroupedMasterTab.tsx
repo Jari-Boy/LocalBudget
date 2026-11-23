@@ -12,6 +12,7 @@ import { BulkSelectionPanel } from './BulkSelectionPanel'
 import { CATEGORY_ID_PREFIX, resolveTreeMove, topLevelIds, type TreeTableNode } from '../common/tree-table/treeTableModel'
 import { GroupNodeSelect } from './GroupNodeSelect'
 import { groupNodeId, leafNodeId, parseNodeId, type MasterTreeData } from './masterTreeNodes'
+import { StickyToolbar } from '../common/sticky/StickyToolbar'
 import './master.css'
 
 /** 取引先・プロジェクトのように、区分が1つでグループ(入れ子可)と項目を持つマスタの操作 */
@@ -178,7 +179,8 @@ export function GroupedMasterTab({
   return (
     <div className={`master-split${splitClassName === undefined ? '' : ` ${splitClassName}`}`}>
       <div className="master-split__main">
-        <div className="master-actions">
+        {/* 検索・追加ボタンの行は、スクロールしても画面の上部に固定する(計画Issue #266) */}
+        <StickyToolbar className="master-actions">
           <button type="button" className="master-btn" disabled={busy} onClick={() => guarded(() => void create('group', null))}>
             {t('groupedTab.addGroup')}
           </button>
@@ -196,7 +198,7 @@ export function GroupedMasterTab({
               leafLabel={leafLabel}
             />
           )}
-        </div>
+        </StickyToolbar>
         {renderCard !== undefined ? (
           <TreeCardList
             categories={tree.categories}
