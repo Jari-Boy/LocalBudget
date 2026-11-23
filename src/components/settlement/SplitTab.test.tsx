@@ -535,6 +535,46 @@ describe('SplitTab', () => {
     expect(batchButton()).toHaveAccessibleName('精算バッチ: 新しいバッチを作成')
   })
 
+  it('「新しいバッチを作成」を選んでいるときだけ、精算バッチの下に「摘要がバッチの名前になります。」を出す(摘要の欄の下には出さない)', () => {
+    const data = makeData()
+    data.batches = [{ id: 7, name: '9月の精算', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
+    setup(data)
+    const note = () => screen.queryByText('摘要がバッチの名前になります。')
+
+    expect(note()).toBeInTheDocument()
+    // 摘要の欄の下ではなく、精算バッチの欄の中にある
+    expect(screen.getByLabelText('摘要').parentElement).not.toContainElement(note())
+    expect(screen.getByText('精算バッチ', { selector: 'span' }).parentElement).toContainElement(note())
+
+    chooseBatchFrom(screen.getByRole('button', { name: '精算バッチ: 新しいバッチを作成' }), '9月の精算')
+    expect(note()).not.toBeInTheDocument()
+
+    chooseBatchFrom(screen.getByRole('button', { name: '精算バッチ: 9月の精算' }), '新しいバッチを作成')
+    expect(note()).toBeInTheDocument()
+  })
+
+  it('割勘仕訳のプレビューの表は、列幅を固定した同じ列の構成にする(分担相手ごとの表で、金額などの縦線がそろう)', () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    chooseBothPartners()
+
+    const table = screen.getByRole('table', { name: '妻さん分の割勘仕訳' })
+    const cols = Array.from(table.querySelectorAll('colgroup col')) as HTMLElement[]
+    expect(cols).toHaveLength(8)
+    expect(cols.every((c) => c.style.width.endsWith('%'))).toBe(true)
+    expect(cols.reduce((sum, c) => sum + Number.parseFloat(c.style.width), 0)).toBeCloseTo(100)
+  })
+
+  it('摘要が空のときは、プレビューの見出しに「摘要「」」ではなく「摘要は未入力です」と出す', () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    chooseBothPartners()
+
+    const preview = screen.getByRole('region', { name: '割勘仕訳のプレビュー' })
+    expect(within(preview).getByText(/摘要は未入力です/)).toBeInTheDocument()
+    expect(within(preview).queryByText(/摘要「」/)).not.toBeInTheDocument()
+  })
+
   it('既存の精算バッチを選んだときも、入力した摘要は割勘仕訳の摘要になり、バッチは作らない', async () => {
     const data = makeData()
     data.batches = [{ id: 7, name: '9月の精算', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]

@@ -81,6 +81,8 @@ const SIDE_LABEL: Record<JournalLineSide, string> = { debit: '借方', credit: '
 
 /** 候補の表の列幅の保存先。仕訳一覧の明細行単位の表とは別に持つ(同じつまみ・同じ保存の仕組みを使う、計画Issue #271) */
 const COLUMN_WIDTHS_STORAGE_KEY = 'localbudget:split-line-table-column-widths'
+/** 割勘仕訳のプレビューの表の列幅(%)。借方・貸方とも「科目・世帯メンバー・取引先/精算バッチ・金額」。分担相手ごとの表で同じにして縦線をそろえる */
+const PREVIEW_COLUMN_PERCENTS = [14, 11, 14, 11, 14, 11, 14, 11]
 /** 行のチェックの列の幅(px)。固定で、列幅の調整の対象外 */
 const CHECK_COLUMN_WIDTH = 32
 
@@ -737,9 +739,6 @@ export function SplitTab({
                   setFlash('')
                 }}
               />
-              <span className="split-settle__note">
-                必須です。新しい精算バッチを作るときは、この摘要がバッチの名前になります。
-              </span>
             </div>
 
             <div className="split-settle__field">
@@ -752,6 +751,8 @@ export function SplitTab({
                 leadingOptions={NEW_BATCH_OPTIONS}
                 onChange={(value) => setBatchId(value === 'new' ? 'new' : Number(value))}
               />
+              {/* 新しいバッチを作るときだけ、摘要がバッチの名前になる */}
+              {batchId === 'new' && <span className="split-settle__note">摘要がバッチの名前になります。</span>}
             </div>
           </div>
 
@@ -790,12 +791,18 @@ export function SplitTab({
             <div className="split-settle__preview-head">
               <h2 className="split-settle__h2">割勘仕訳のプレビュー</h2>
               <span className="split-settle__note">
-                {`取引日 ${today}・摘要「${memoInput.trim()}」。分担相手ごとに1件の仕訳になります。`}
+                {`取引日 ${today}・${memoInput.trim() === '' ? '摘要は未入力です' : `摘要「${memoInput.trim()}」`}。分担相手ごとに1件の仕訳になります。`}
               </span>
             </div>
             {previews.map((preview) => (
               <div key={preview.rowKey} className="split-settle__scroll">
                 <table className="journal-line-table__table split-settle__preview-table" aria-label={`${preview.partnerName}さん分の割勘仕訳`}>
+                  {/* 列幅は割合で固定し、分担相手ごとの表で縦線(特に金額の列)をそろえる */}
+                  <colgroup>
+                    {PREVIEW_COLUMN_PERCENTS.map((percent, i) => (
+                      <col key={i} style={{ width: `${percent}%` }} />
+                    ))}
+                  </colgroup>
                   <thead>
                     <tr>
                       <th className="journal-line-table__debit-start">{`${preview.partnerName}さん分 借方の科目`}</th>

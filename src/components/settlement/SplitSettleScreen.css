@@ -638,9 +638,10 @@
 }
 
 /* 候補の表は仕訳一覧の明細行単位の表と同じく列幅を固定し(table-layout: fixed は journal-line-table__table が持つ)、列幅をつまみで調整できる。
-   幅を超える文字は省略表示。割勘仕訳のプレビューの表は列幅を固定せず、内容の幅で並べる */
+   幅を超える文字は省略表示。割勘仕訳のプレビューの表は、列幅を割合で固定し、分担相手ごとの表で縦線をそろえる */
 .split-settle__preview-table {
-  table-layout: auto;
+  table-layout: fixed;
+  width: 100%;
 }
 
 .split-settle__line-table tbody tr {
