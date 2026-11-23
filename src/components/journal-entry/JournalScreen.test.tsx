@@ -821,7 +821,7 @@ describe('JournalScreen', () => {
       fireEvent.click(screen.getByRole('button', { name: /家賃/ }))
       expect(leaveDialog()).toBeInTheDocument()
       expect(memoInput()).toHaveValue('ランチ(修正中)')
-      fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+      fireEvent.click(within(leaveDialog() as HTMLElement).getByRole('button', { name: 'キャンセル' }))
       expect(leaveDialog()).not.toBeInTheDocument()
       expect(memoInput()).toHaveValue('ランチ(修正中)')
       expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
@@ -1338,6 +1338,70 @@ describe('JournalScreen', () => {
  * (保存・キャンセル・削除の2回押し・貸借が合わない間は保存不可・既存の未保存ガード)、下書き・承認待ちタブには
  * 切替が出ないこと、選んだ表示方式がlocalStorageに保存され再訪時に復元されること(初期値は仕訳単位)を検証する。
  */
+describe('JournalScreen: 詳細パネルのキャンセルとEsc(計画Issue #237)', () => {
+  const cancelButton = () => within(detail()).getByRole('button', { name: 'キャンセル' })
+
+  it('既存の仕訳は、変更が無い間「キャンセル」が押せず、摘要を書き換えると押せて、押すと確認なしで保存済みの摘要に戻る', async () => {
+    const props = setup()
+    await ready()
+    expect(cancelButton()).toBeDisabled()
+    editMemo('ランチ(修正中)')
+    expect(cancelButton()).toBeEnabled()
+
+    fireEvent.click(cancelButton())
+
+    expect(memoInput()).toHaveValue('ランチ')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(cancelButton()).toBeDisabled()
+    expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
+  })
+
+  it('新規入力は、「キャンセル」で入力を破棄して空の新規入力に戻る', async () => {
+    setup()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: '手入力で起票' }))
+    editMemo('入力中')
+
+    fireEvent.click(cancelButton())
+
+    expect(memoInput()).toHaveValue('')
+    expect(within(detail()).getByRole('heading', { name: '新しい仕訳' })).toBeInTheDocument()
+  })
+
+  it('変更があるときのEscは「変更を破棄しますか?」を出し、「編集を続ける」で入力が残り、「破棄する」で戻る', async () => {
+    setup()
+    await ready()
+    editMemo('ランチ(修正中)')
+
+    fireEvent.keyDown(memoInput(), { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: '変更を破棄しますか?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '編集を続ける' }))
+    expect(memoInput()).toHaveValue('ランチ(修正中)')
+
+    fireEvent.keyDown(memoInput(), { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: '破棄する' }))
+    expect(memoInput()).toHaveValue('ランチ')
+  })
+
+  it('変更が無いときのEscは、何も出さない', async () => {
+    setup()
+    await ready()
+
+    fireEvent.keyDown(memoInput(), { key: 'Escape' })
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('下書きの詳細には「キャンセル」を出さない(「下書きを保存」「削除」という別の逃げ道があるため)', async () => {
+    setup()
+    await ready()
+    fireEvent.click(screen.getByRole('tab', { name: /下書き/ }))
+    await screen.findByRole('button', { name: '確定して仕訳にする' })
+
+    expect(within(detail()).queryByRole('button', { name: 'キャンセル' })).not.toBeInTheDocument()
+  })
+})
+
 describe('JournalScreen(明細行単位)', () => {
   const VIEW_KEY = 'localbudget:journal-view-mode'
   const viewToggle = () => screen.getByRole('group', { name: '表示方式' })
@@ -2156,7 +2220,7 @@ describe('JournalScreen: 明細から起票(計画Issue #214・#231)', () => {
     expect(leaveDialog()).toBeInTheDocument()
     expect(onStart).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    fireEvent.click(within(leaveDialog() as HTMLElement).getByRole('button', { name: 'キャンセル' }))
     expect(onStart).not.toHaveBeenCalled()
     expect(memoInput()).toHaveValue('ランチ(修正中)')
   })

@@ -56,6 +56,7 @@ import type { MaybeAsync } from '../master/maybeAsync'
 import { useEscapeToClear } from '../common/range-selection/useEscapeToClear'
 import { UnsavedChangesDialog } from '../common/unsaved-changes/UnsavedChangesDialog'
 import { useUnsavedChangesGuard } from '../common/unsaved-changes/unsavedChangesGuard'
+import { useEscapeDiscard } from '../common/unsaved-changes/useEscapeDiscard'
 import { loadUnsavedWarningEnabled } from '../common/unsaved-changes/unsavedWarningSetting'
 import { canCreateRuleFromEntry } from '../../domain/recurring-transaction/canCreateRuleFromEntry'
 import { AccountCreateForm } from '../master/AccountCreateForm'
@@ -640,6 +641,12 @@ export function JournalScreen(props: JournalScreenProps) {
   const clearSelectionOnEscape = useRef<(() => void) | null>(null)
   useEscapeToClear(() => clearSelectionOnEscape.current?.())
 
+  // 詳細パネルの「キャンセル」(確定済みの仕訳・新規入力。下書き・提案には出さない)。開いた時点の値で開き直す。
+  // 開き直す処理は、早期 return のあとで決まる(データが無ければ null)ため ref に入れる(計画Issue #237)
+  const cancelEdit = useRef<(() => void) | null>(null)
+  const canCancel = dirty && (selection?.kind === 'entry' || selection?.kind === 'new')
+  const escapeDiscard = useEscapeDiscard({ dirty: canCancel, onDiscard: () => cancelEdit.current?.() })
+
   if (data === null || derived === null) {
     return <p role="status">{tCommon('loading')}</p>
   }
@@ -1133,6 +1140,20 @@ export function JournalScreen(props: JournalScreenProps) {
   /** 選択した行に合わせて、選べなくなった項目の選択を外した、変える項目の選択 */
   const effectiveBulkPick = sanitizeBulkPick(bulkPick, bulkEditRules(bulkSelected, bulkPick, derived.accountById))
 
+  cancelEdit.current = () => open(selection, data)
+  /** 保存系のボタンの並びの末尾に置く(押し間違いを避ける) */
+  const cancelButton = (
+    <button
+      type="button"
+      className="journal-screen__button"
+      disabled={busy || !canCancel}
+      title="未保存の変更を元に戻します"
+      onClick={() => cancelEdit.current?.()}
+    >
+      キャンセル
+    </button>
+  )
+
   clearSelectionOnEscape.current =
     lineView && bulkSelected.length > 0 && !busy
       ? resetBulk
@@ -1507,7 +1528,7 @@ export function JournalScreen(props: JournalScreenProps) {
         </div>
 
         {!lineView && (
-        <section aria-label="仕訳の詳細" className="journal-screen__detail">
+        <section aria-label="仕訳の詳細" className="journal-screen__detail" onKeyDown={escapeDiscard.onKeyDown}>
           {editor === null || selection === null ? (
             <p className="journal-screen__note">仕訳を選ぶか、「手入力で起票」を押してください</p>
           ) : (
@@ -1600,6 +1621,7 @@ export function JournalScreen(props: JournalScreenProps) {
                     <button type="button" className="journal-screen__button journal-screen__button--primary" disabled={busy} onClick={() => void saveEntry(false)}>
                       保存
                     </button>
+                    {selection.kind === 'entry' && cancelButton}
                     {selection.kind === 'new' && (
                       <button type="button" className="journal-screen__button" disabled={busy} onClick={() => void saveEntry(true)}>
                         保存して続けて入力
@@ -1612,6 +1634,7 @@ export function JournalScreen(props: JournalScreenProps) {
                     下書きに保存
                   </button>
                 )}
+                {selection.kind === 'new' && cancelButton}
                 {selection.kind === 'entry' && selectedEntry && (
                   <>
                     <button
@@ -1691,6 +1714,7 @@ export function JournalScreen(props: JournalScreenProps) {
                   {error}
                 </p>
               )}
+              {escapeDiscard.dialog}
               {selection.kind === 'entry' && trails.length > 0 && (
                 <section aria-label="この支出から生まれた割勘" className="journal-screen__history">
                   <h3 className="journal-screen__history-title">この支出から生まれた割勘</h3>
