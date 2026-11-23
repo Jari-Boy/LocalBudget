@@ -664,12 +664,24 @@
   gap: 12px;
 }
 
-/* 選んだ行の数・借方/貸方の合計・選択した合計。ラベルを左、値を右にそろえた縦並び(既存の .split-settle__summary は精算タブの横並びの行で別物) */
+/* 選んだ行の数・借方/貸方の合計・選択した合計・負担の合計。ラベルと値を横に並べ、幅が足りなければ折り返して、高さを節約する
+   (既存の .split-settle__summary は精算タブの横並びの行で別物) */
 .split-settle__totals {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-width: 420px;
+  flex-wrap: wrap;
+  gap: 4px 28px;
+  align-items: baseline;
+}
+
+.split-settle__totals .split-settle__line {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+/* 合計が合っていない行と注記(立て替えた本人も入れて100%・純額に合わせる) */
+.split-settle__line--warn,
+.split-settle__note--warn {
+  color: var(--color-danger);
 }
 
 .split-settle__line--sub {

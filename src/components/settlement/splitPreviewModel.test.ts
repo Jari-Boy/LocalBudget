@@ -74,7 +74,9 @@ const ENTRY = {
 const food = { entry: ENTRY, line: line(10, FOOD, 'debit', 2400) }
 const income = { entry: ENTRY, line: line(11, INCOME, 'credit', 500) }
 
+/** 負担する人には、立て替えた本人(世帯メンバー1)も入れる(計画Issue #271) */
 const member = { key: 1, kind: 'householdMember' as const, targetId: 2, ratioInput: '50', amountInput: '' }
+const self = { key: 9, kind: 'householdMember' as const, targetId: 1, ratioInput: '50', amountInput: '' }
 
 const accountName = (id: number) => ({ [FOOD]: '食費', [INCOME]: '雑収入', [ASSET]: '未収金', [LIABILITY]: '未払金' })[id] ?? ''
 const memberName = (id: number) => ({ 1: '太郎', 2: '花子' })[id] ?? ''
@@ -92,7 +94,7 @@ const common = {
 
 describe('buildSplitPreviews', () => {
   it('世帯メンバー1人への割勘を、付け替えの行・立替金と未払金の純額の行に分けて返し、貸借を一致させる', () => {
-    const [preview] = buildSplitPreviews({ ...common, selectedLines: [food, income], participants: [member] })
+    const [preview] = buildSplitPreviews({ ...common, selectedLines: [food, income], participants: [member, self] })
     expect(preview.partnerName).toBe('花子')
     expect(preview.rows.map((r) => [r.debit?.accountName ?? null, r.debit?.amount ?? null, r.credit?.accountName ?? null, r.credit?.amount ?? null])).toEqual([
       ['食費', 1200, '食費', 1200],
@@ -104,7 +106,7 @@ describe('buildSplitPreviews', () => {
   })
 
   it('立替金・未払金の行には精算バッチ名を出す(元の行の列は持たない)', () => {
-    const [preview] = buildSplitPreviews({ ...common, selectedLines: [food, income], participants: [member] })
+    const [preview] = buildSplitPreviews({ ...common, selectedLines: [food, income], participants: [member, self] })
     expect(preview.rows[2].debit?.partner).toBe('2行の割勘')
     expect(preview.rows[2].credit?.partner).toBe('2行の割勘')
     expect(Object.keys(preview.rows[0])).toEqual(['debit', 'credit'])
@@ -114,7 +116,7 @@ describe('buildSplitPreviews', () => {
     const [preview] = buildSplitPreviews({
       ...common,
       selectedLines: [food],
-      participants: [{ key: 1, kind: 'counterparty', targetId: 9, ratioInput: '50', amountInput: '' }],
+      participants: [{ key: 1, kind: 'counterparty', targetId: 9, ratioInput: '50', amountInput: '' }, self],
     })
     expect(preview.partnerName).toBe('友人')
     expect(preview.rows.map((r) => [r.debit?.accountName ?? null, r.credit?.accountName ?? null])).toEqual([
@@ -128,13 +130,13 @@ describe('buildSplitPreviews', () => {
     const previews = buildSplitPreviews({
       ...common,
       selectedLines: [food],
-      participants: [member, { key: 2, kind: 'counterparty', targetId: 9, ratioInput: '20', amountInput: '' }],
+      participants: [{ ...member, ratioInput: '30' }, { key: 2, kind: 'counterparty', targetId: 9, ratioInput: '20', amountInput: '' }, self],
     })
     expect(previews).toHaveLength(2)
   })
 
   it('計算できない入力(行を選んでいない・負担額が0)のときは空を返す', () => {
-    expect(buildSplitPreviews({ ...common, selectedLines: [], participants: [member] })).toEqual([])
-    expect(buildSplitPreviews({ ...common, selectedLines: [food], participants: [{ ...member, ratioInput: '0' }] })).toEqual([])
+    expect(buildSplitPreviews({ ...common, selectedLines: [], participants: [member, self] })).toEqual([])
+    expect(buildSplitPreviews({ ...common, selectedLines: [food], participants: [{ ...member, ratioInput: '0' }, { ...self, ratioInput: '100' }] })).toEqual([])
   })
 })

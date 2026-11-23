@@ -104,16 +104,25 @@ async function waitForJournalEntryCount(page: Page, expectedCount: number) {
 
 const MONEY_500 = /[¥￥]500/
 
+/** 起動時に自動作成される既定の世帯メンバーの名前(seedDefaultHouseholdMember) */
+const DEFAULT_MEMBER_NAME = '自分'
+
 /** サイドナビから割勘・精算画面を開く */
 async function openSplitSettle(page: Page) {
   await page.getByRole('navigation', { name: 'メインメニュー' }).getByRole('link', { name: '割勘・精算' }).click()
   await expect(page.getByRole('heading', { name: '割勘・精算' })).toBeVisible()
 }
 
-/** 選択ツリー(TreeSelect)のボタンを開き、名前の項目を選ぶ */
-async function chooseFromTree(page: Page, triggerName: RegExp, optionName: string) {
-  await page.getByRole('button', { name: triggerName }).first().click()
+/** 選択ツリー(TreeSelect)のボタンを開き、名前の項目を選ぶ。同じ名前のボタンが複数あるときは index 番目(0始まり) */
+async function chooseFromTree(page: Page, triggerName: RegExp, optionName: string, index = 0) {
+  await page.getByRole('button', { name: triggerName }).nth(index).click()
   await page.getByRole('dialog').getByRole('button', { name: optionName, exact: true }).click()
+}
+
+/** 負担する人を、1行目に相手(割勘の相手)・2行目に立て替えた本人(既定の世帯メンバー)として選ぶ。割合は初期値の50%ずつ */
+async function choosePayerAndPartner(page: Page, partnerName: string) {
+  await chooseFromTree(page, /^分担相手/, partnerName, 0)
+  await chooseFromTree(page, /^分担相手/, DEFAULT_MEMBER_NAME, 1)
 }
 
 /** 摘要の行(仕訳の先頭の行)の、借方側のチェックボックス(計画Issue #271で明細行単位の表になった) */
@@ -126,7 +135,7 @@ function debitCheckbox(page: Page, memo: string) {
 
 async function splitWithMember(page: Page, memo: string) {
   await debitCheckbox(page, memo).check()
-  await chooseFromTree(page, /^分担相手/, '割勘相手Bさん')
+  await choosePayerAndPartner(page, '割勘相手Bさん')
   await page.getByLabel('摘要', { exact: true }).fill(`${memo}の割勘`)
   await page.getByRole('button', { name: '割勘を記録' }).click()
   await expect(page.getByText('割勘を記録しました')).toBeVisible()
@@ -228,7 +237,7 @@ test.describe('割勘タブ', () => {
 
     await openSplitSettle(page)
     await debitCheckbox(page, '世帯外テストの食事代').check()
-    await chooseFromTree(page, /^分担相手/, '割勘相手の友人Cさん')
+    await choosePayerAndPartner(page, '割勘相手の友人Cさん')
     await page.getByLabel('摘要', { exact: true }).fill('世帯外テストの食事代の割勘')
     await page.getByRole('button', { name: '割勘を記録' }).click()
     await expect(page.getByText('割勘を記録しました')).toBeVisible()
@@ -261,7 +270,7 @@ test.describe('割勘タブ', () => {
     await openSplitSettle(page)
     await debitCheckbox(page, 'まとめ1').check()
     await debitCheckbox(page, 'まとめ2').check()
-    await chooseFromTree(page, /^分担相手/, '割勘相手Bさん')
+    await choosePayerAndPartner(page, '割勘相手Bさん')
     await page.getByLabel('摘要', { exact: true }).fill('まとめの割勘')
     await page.getByRole('button', { name: '割勘を記録' }).click()
     await expect(page.getByText('割勘を記録しました')).toBeVisible()

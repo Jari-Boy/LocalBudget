@@ -2,11 +2,7 @@ import type { Account } from '../../domain/account/Account'
 import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
 import { allocateSignedAcrossLines } from '../../domain/expense-splitting/allocateSignedAcrossLines'
 import { signedLineAmount } from '../../domain/expense-splitting/listSplittableLineEntries'
-import {
-  calculateParticipantAmounts,
-  type ExpenseSplittingAllocationMode,
-  type ExpenseSplittingParticipantRow,
-} from './expenseSplittingFormParticipant'
+import type { ExpenseSplittingAllocationMode, ExpenseSplittingParticipantRow } from './expenseSplittingFormParticipant'
 
 /** 割勘する行1つ。entryは行を持つ元の仕訳(立替者・関連仕訳グループの特定に使う) */
 export interface SelectedSplitLine {
@@ -19,28 +15,38 @@ export type PlanLineExpenseSplitError =
   | 'noRecipient'
   /** 金額指定で、選んだ行の借方・貸方を差し引いた純額が0円(配分の基準がない) */
   | 'amountNetZero'
-  /** 金額指定の合計が、選んだ行の純額を超える */
-  | 'amountExceedsTotal'
+  /** 割合の合計が100%でない(立て替えた本人も、負担する人として入れる) */
+  | 'ratioTotalMismatch'
+  /** 金額の合計が、選んだ行の純額と合わない */
+  | 'amountTotalMismatch'
 
 export interface PlannedRecipient {
   row: ExpenseSplittingParticipantRow
-  /** 選んだ行ごとの相手の負担額。selectedLinesと同じ並びで、借方の行は正・貸方の行は負 */
+  /** 選んだ行ごとの、仕訳にする相手の負担額。selectedLinesと同じ並びで、借方の行は正・貸方の行は負。自分が立て替えた行は0 */
   signedShares: number[]
 }
 
 export type PlanLineExpenseSplitResult =
-  | { ok: true; recipients: PlannedRecipient[] }
+  | {
+      ok: true
+      /** 仕訳にする相手(立て替えた本人だけの行・負担が0の行は含まない) */
+      recipients: PlannedRecipient[]
+      /** 人ごとの負担額の合計(符号付き。自分が立て替えた行の分も含む。キーは行のkey)。画面の表示用 */
+      burdens: Map<number, number>
+    }
   | { ok: false; error: PlanLineExpenseSplitError }
 
 /**
- * 選んだ明細行と分担相手から、相手ごとの行ごとの負担額(符号付き)を決める(計画Issue #271)。submitExpenseSplit(書き込み)と
- * 割勘仕訳のプレビューが同じ計算を使う。DBアクセスなしの純粋関数。
+ * 選んだ明細行と、負担する人ごとの入力から、人ごとの行ごとの負担額(符号付き)を決める(計画Issue #271)。
+ * submitExpenseSplit(書き込み)と割勘仕訳のプレビューが同じ計算を使う。DBアクセスなしの純粋関数。
  *
- * 均等・割合は、行ごとに行の金額を按分する(借方の行は正、貸方の行は負の負担額になる)。金額指定は、選んだ行の借方を正・
- * 貸方を負とした純額に対して、人ごとに入力した金額を行へ純額に対する割合で配分する(allocateSignedAcrossLines)。
- * 世帯メンバーの相手が自分で立て替えた行は、その相手の割当から除く(自分との割勘にしない)。金額指定の純額は、その行を除いて数える。
- * 純額が0なら基準がなく、人ごとの合計が純額を超えるときも、エラーを返す。分担相手が未選択の行(targetIdがnull)は
- * 計算に含めない。負担額がすべて0の相手は結果に含めない。
+ * 負担する人には、立て替えた本人も入れる(誰がどのくらい負担するかを、全員分そろえて入力する)。割合は合計100%、金額は
+ * 合計が選んだ行の純額に合わないと、ratioTotalMismatch・amountTotalMismatchを返す(均等は入力した人だけで等分する)。
+ * 均等・割合は行ごとに行の金額を人数・割合で按分する(端数は最大剰余法で、合計は行の金額と一致する)。借方の行は正、
+ * 貸方の行は負の負担額になる。金額指定は、選んだ行の借方を正・貸方を負とした純額に対して、人ごとの金額を行へ純額に
+ * 対する割合で配分する(allocateSignedAcrossLines)。純額が0なら基準がなく、amountNetZeroを返す。
+ * 世帯メンバーの人が自分で立て替えた行(元の仕訳の起票者が本人)の分は、自分との割勘になって意味がないので仕訳にしない
+ * (その分は元のまま自分の負担として残る)。世帯外の相手(取引先)は、すべての行が対象。
  */
 export function planLineExpenseSplit(params: {
   selectedLines: readonly SelectedSplitLine[]
@@ -58,49 +64,44 @@ export function planLineExpenseSplit(params: {
   }
 
   const signedAmounts = selectedLines.map(({ line }) => signedLineAmount(line))
-  const selectedRows = participants.filter((row) => row.targetId !== null)
+  const net = signedAmounts.reduce((sum, n) => sum + n, 0)
+  const rows = participants.filter((row) => row.targetId !== null)
 
-  /**
-   * この相手に割り当てる行。世帯メンバーの相手が自分で立て替えた行(元の仕訳の起票者が相手本人)は、自分との割勘になって
-   * 意味がないので除く。世帯外の相手(取引先)は、すべての行が対象
-   */
-  const eligibleFor = (row: ExpenseSplittingParticipantRow) =>
-    selectedLines.map(({ entry }) => !(row.kind === 'householdMember' && entry.householdMemberId === row.targetId))
-
-  const signedSharesByRow = new Map<number, number[]>()
+  /** 行ごと・人ごとの、自分が立て替えた分を含む負担額(符号付き) */
+  const burdenSharesByRow = new Map<number, number[]>()
+  const burdens = new Map<number, number>()
   if (allocationMode === 'amount') {
-    const entered = selectedRows
-      .map((row) => ({ row, amount: Number(row.amountInput), eligible: eligibleFor(row) }))
-      .filter(({ amount }) => Number.isFinite(amount) && amount > 0)
-    for (const { row, amount, eligible } of entered) {
-      const eligibleAmounts = signedAmounts.filter((_, i) => eligible[i])
-      const eligibleNet = eligibleAmounts.reduce((sum, n) => sum + n, 0)
-      if (eligibleAmounts.length === 0) continue
-      if (eligibleNet === 0) return { ok: false, error: 'amountNetZero' }
-      if (amount > Math.abs(eligibleNet)) return { ok: false, error: 'amountExceedsTotal' }
-      const allocated = allocateSignedAcrossLines(Math.sign(eligibleNet) * amount, eligibleAmounts)
-      let next = 0
-      signedSharesByRow.set(row.key, eligible.map((isEligible) => (isEligible ? allocated[next++] : 0)))
-    }
-    // 人ごとの金額の合計が、全体の純額を超えるときもエラー(立替者の取り分が負になるため)
-    const net = signedAmounts.reduce((sum, n) => sum + n, 0)
-    if (net !== 0 && entered.reduce((sum, { amount }) => sum + amount, 0) > Math.abs(net)) {
-      return { ok: false, error: 'amountExceedsTotal' }
+    if (net === 0) return { ok: false, error: 'amountNetZero' }
+    const entered = rows.map((row) => ({ row, amount: Number(row.amountInput) }))
+    const total = entered.reduce((sum, { amount }) => sum + (Number.isFinite(amount) && amount > 0 ? amount : 0), 0)
+    if (total !== Math.abs(net)) return { ok: false, error: 'amountTotalMismatch' }
+    for (const { row, amount } of entered) {
+      const valid = Number.isFinite(amount) && amount > 0
+      burdenSharesByRow.set(row.key, valid ? allocateSignedAcrossLines(Math.sign(net) * amount, signedAmounts) : signedAmounts.map(() => 0))
+      burdens.set(row.key, valid ? Math.sign(net) * amount : 0)
     }
   } else {
-    const perLine = selectedLines.map(({ line }) => calculateParticipantAmounts(line.amount, participants, allocationMode))
-    for (const row of selectedRows) {
-      const eligible = eligibleFor(row)
-      signedSharesByRow.set(
-        row.key,
-        perLine.map((amounts, i) => (eligible[i] ? Math.sign(signedAmounts[i]) * (amounts.get(String(row.key)) ?? 0) : 0)),
-      )
+    const weights = rows.map((row) => (allocationMode === 'ratio' ? Math.max(0, Number(row.ratioInput) || 0) : 1))
+    if (allocationMode === 'ratio' && Math.abs(weights.reduce((sum, w) => sum + w, 0) - 100) > 1e-9) {
+      return { ok: false, error: 'ratioTotalMismatch' }
     }
+    // 行ごとに、行の金額を重みで按分する(端数は最大剰余法)。借方の行は正、貸方の行は負にする
+    const perLine = selectedLines.map(({ line }) => allocateSignedAcrossLines(line.amount, weights))
+    rows.forEach((row, rowIndex) => {
+      const shares = perLine.map((allocated, i) => Math.sign(signedAmounts[i]) * (allocated[rowIndex] ?? 0))
+      burdenSharesByRow.set(row.key, shares)
+      burdens.set(row.key, shares.reduce((sum, n) => sum + n, 0))
+    })
   }
 
-  const recipients = selectedRows
-    .filter((row) => (signedSharesByRow.get(row.key) ?? []).some((n) => n !== 0))
-    .map((row) => ({ row, signedShares: signedSharesByRow.get(row.key) as number[] }))
+  const recipients: PlannedRecipient[] = []
+  for (const row of rows) {
+    const burdenShares = burdenSharesByRow.get(row.key) ?? []
+    const signedShares = burdenShares.map((share, i) =>
+      row.kind === 'householdMember' && selectedLines[i].entry.householdMemberId === row.targetId ? 0 : share,
+    )
+    if (signedShares.some((n) => n !== 0)) recipients.push({ row, signedShares })
+  }
   if (recipients.length === 0) return { ok: false, error: 'noRecipient' }
-  return { ok: true, recipients }
+  return { ok: true, recipients, burdens }
 }

@@ -62,9 +62,10 @@ const ERROR_TEXT: Record<SubmitExpenseSplitError, string> = {
   advanceLiabilityAccountRequired: '未払金の科目が見つかりません',
   counterpartyTargetRequired: '分担相手を選んでください',
   noRecipient: '相手の負担額が0円です。割合や金額を確認してください',
+  ratioTotalMismatch: '負担割合の合計を100%にしてください',
+  amountTotalMismatch: '負担額の合計を、選んだ行の合計に合わせてください',
   memoRequired: '摘要を入力してください',
   amountNetZero: '選んだ行の借方と貸方が差し引きで0円のため、金額を指定できません。割合か均等で分けてください',
-  amountExceedsTotal: '指定した金額の合計が、選んだ行の差し引きの合計を超えています',
 }
 
 /** 割勘タブのバッチの先頭に固定する「新しいバッチを作成」(記録するときにバッチを作る既定の選択状態)。参照を安定させるため定数にする */
@@ -83,14 +84,15 @@ const COLUMN_WIDTHS_STORAGE_KEY = 'localbudget:split-line-table-column-widths'
 /** 行のチェックの列の幅(px)。固定で、列幅の調整の対象外 */
 const CHECK_COLUMN_WIDTH = 32
 
-/** 割勘する行の既定の摘要。精算バッチを新規作成するときの名前にもなる(精算タブで変更できる) */
-function defaultMemo(chosen: readonly SelectedSplitLine[]): string {
+/**
+ * 摘要の入力例(入力欄のplaceholder)。1つの仕訳の行だけを選んでいるときは「元の摘要+の割勘」。複数の仕訳の行を選んでいるときは、
+ * 入力例は出さない(空のまま入力させる)。摘要は必須で、空のまま記録はできない。新しい精算バッチを作るときの名前にもなる
+ */
+function memoExample(chosen: readonly SelectedSplitLine[]): string {
   const entryIds = new Set(chosen.map((c) => c.entry.id))
-  if (entryIds.size === 1) {
-    const memo = chosen[0].entry.memo
-    return memo === null || memo === '' ? '割勘' : `${memo}の割勘`
-  }
-  return `${chosen.length}行の割勘`
+  if (entryIds.size !== 1) return ''
+  const memo = chosen[0].entry.memo
+  return memo === null || memo === '' ? '割勘' : `${memo}の割勘`
 }
 
 /** 候補の中の、指定した仕訳の選べる行をすべて選んだ状態のid */
@@ -140,10 +142,14 @@ export function SplitTab({
   const [checkedIds, setCheckedIds] = useState<ReadonlySet<number>>(
     () => new Set(selectableLineIdsOfEntries(candidates, initialCheckedEntryIds)),
   )
-  const nextKey = useRef(2)
-  const [partners, setPartners] = useState<ExpenseSplittingParticipantRow[]>([
+  const nextKey = useRef(3)
+  // 負担する人。最初から2行で、割合は50%ずつ。1行目の世帯メンバーは、選んだ行の立替者のうち最も行数の多い人を自動で入れる
+  const [partnerInputs, setPartners] = useState<ExpenseSplittingParticipantRow[]>([
     { key: 1, kind: 'householdMember', targetId: null, ratioInput: '50', amountInput: '' },
+    { key: 2, kind: 'householdMember', targetId: null, ratioInput: '50', amountInput: '' },
   ])
+  /** 1行目を自分で選んだら、以後は行の選択を変えても自動では上書きしない */
+  const [firstRowTouched, setFirstRowTouched] = useState(false)
   const [mode, setMode] = useState<ExpenseSplittingAllocationMode>('ratio')
   const [batchId, setBatchId] = useState<number | 'new'>('new')
   const [memoInput, setMemoInput] = useState('')
@@ -190,40 +196,54 @@ export function SplitTab({
       ),
     [candidates, checkedIds],
   )
+  /** 選んだ行の立替者(元の仕訳の起票者)のうち、行数がいちばん多い世帯メンバー(同数ならidが小さい人)。行を選んでいなければnull */
+  const mostFrequentPayerId = useMemo(() => {
+    const counts = new Map<number, number>()
+    for (const c of chosen) counts.set(c.entry.householdMemberId, (counts.get(c.entry.householdMemberId) ?? 0) + 1)
+    let best: number | null = null
+    for (const [id, count] of [...counts].sort((a, b) => a[0] - b[0])) {
+      if (best === null || count > (counts.get(best) ?? 0)) best = id
+    }
+    return best
+  }, [chosen])
+  /** 画面の入力に、1行目の自動の世帯メンバーを反映した負担する人 */
+  const partners = useMemo<ExpenseSplittingParticipantRow[]>(
+    () =>
+      partnerInputs.map((p) =>
+        p.key === 1 && !firstRowTouched && mostFrequentPayerId !== null
+          ? { ...p, kind: 'householdMember', targetId: mostFrequentPayerId }
+          : p,
+      ),
+    [partnerInputs, firstRowTouched, mostFrequentPayerId],
+  )
   const net = chosen.reduce((sum, c) => sum + signedLineAmount(c.line), 0)
   const debitTotal = chosen.filter((c) => c.line.side === 'debit').reduce((sum, c) => sum + c.line.amount, 0)
   const creditTotal = chosen.filter((c) => c.line.side === 'credit').reduce((sum, c) => sum + c.line.amount, 0)
-  /**
-   * 分担相手に選べない世帯メンバー(自分との割勘を防ぐ)。立替者が1人だけのときは、その立替者を除く。立替者が複数いるときは、
-   * 誰を相手にしても、その相手が立て替えた行だけを割らない(planLineExpenseSplit)ので、除かない(全員が選べなくなるのを防ぐ)
-   */
-  const payerIds = new Set(chosen.map((c) => c.entry.householdMemberId))
-  const excludedPartnerIds = payerIds.size === 1 ? payerIds : new Set<number>()
   const amountModeBlocked = chosen.length > 0 && net === 0
 
+  // 負担する人には、立て替えた本人も選べる(誰がどのくらい負担するかを全員分入れる)ので、世帯メンバーを除かない
   const partnerCategories = useMemo(
-    () => buildPartnerCategories(data.members, derived.counterpartyCategories, excludedPartnerIds),
-    // excludedPartnerIdsは選んだ行から毎回作る集合なので、中身の文字列で比べる
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.members, derived.counterpartyCategories, [...excludedPartnerIds].sort().join(',')],
+    () => buildPartnerCategories(data.members, derived.counterpartyCategories),
+    [data.members, derived.counterpartyCategories],
   )
 
-  // 相手ごとの負担額(送信時と同じ計算)。計算できないとき(金額指定で合計超過など)は金額指定の入力額をそのまま出す
+  // 人ごとの負担額(送信時と同じ計算)。計算できないとき(合計が合わないなど)は空にする
   const plan = planLineExpenseSplit({ selectedLines: chosen, accounts: data.accounts, participants: partners, allocationMode: mode })
-  const shareByKey = new Map<number, number>()
-  for (const row of partners) {
-    if (plan.ok) {
-      const planned = plan.recipients.find((r) => r.row.key === row.key)
-      shareByKey.set(row.key, planned === undefined ? 0 : planned.signedShares.reduce((sum, n) => sum + n, 0))
-    } else if (mode === 'amount') {
-      shareByKey.set(row.key, Number(row.amountInput) || 0)
-    } else {
-      shareByKey.set(row.key, 0)
-    }
-  }
-  const totalShare = [...shareByKey.values()].reduce((sum, n) => sum + n, 0)
-  /** 選んでいる行の組み合わせでは記録できない理由(選択・入力を直すと消える) */
-  const planError = chosen.length > 0 && !plan.ok && (mode === 'amount' ? plan.error !== 'noRecipient' : false) ? plan.error : null
+  const burdenOf = (key: number): number | null => (plan.ok ? (plan.burdens.get(key) ?? 0) : null)
+  const allSelected = partners.every((p) => p.targetId !== null)
+
+  /** 入力した負担の合計(行を選んでいない・相手を選んでいない行も含む)。割合は100%、金額は選んだ行の純額に合うことを求める */
+  const ratioSum = partners.reduce((sum, p) => sum + (Number(p.ratioInput) || 0), 0)
+  const amountSum = partners.reduce((sum, p) => sum + (Number(p.amountInput) || 0), 0)
+  const totalsMismatch =
+    chosen.length > 0 &&
+    ((mode === 'ratio' && Math.abs(ratioSum - 100) > 1e-9) || (mode === 'amount' && net !== 0 && amountSum !== Math.abs(net)))
+  const burdenTotal = plan.ok ? [...plan.burdens.values()].reduce((sum, n) => sum + n, 0) : null
+  /** 負担の合計以外の、記録できない理由(選択・入力を直すと消える)。相手を選び終えるまでは出さない */
+  const planError =
+    chosen.length > 0 && allSelected && !plan.ok && plan.error !== 'ratioTotalMismatch' && plan.error !== 'amountTotalMismatch'
+      ? plan.error
+      : null
 
   const batchLabel =
     batchId === 'new' ? memoInput.trim() : (data.batches.find((b) => b.id === batchId)?.name ?? '')
@@ -244,6 +264,7 @@ export function SplitTab({
   )
 
   const patchPartner = (key: number, changes: Partial<ExpenseSplittingParticipantRow>) => {
+    if (key === 1 && ('targetId' in changes || 'kind' in changes)) setFirstRowTouched(true)
     setPartners((prev) => prev.map((p) => (p.key === key ? { ...p, ...changes } : p)))
     setFlash('')
     setError('')
@@ -602,7 +623,7 @@ export function SplitTab({
             </div>
 
             <div className="split-settle__partners">
-              <span className="split-settle__label">分担相手と負担割合</span>
+              <span className="split-settle__label">誰がどのくらい負担するか</span>
               {partners.map((row) => (
                 <div key={row.key} className="split-settle__partner">
                   <div className="split-settle__partner-pick">
@@ -638,7 +659,7 @@ export function SplitTab({
                     />
                   )}
                   <span className="split-settle__num split-settle__share">
-                    {formatCurrency(shareByKey.get(row.key) ?? 0, 'JPY')}
+                    {burdenOf(row.key) === null ? '' : formatCurrency(burdenOf(row.key) ?? 0, 'JPY')}
                   </span>
                   <button
                     type="button"
@@ -676,7 +697,7 @@ export function SplitTab({
                 required
                 aria-required="true"
                 value={memoInput}
-                placeholder={chosen.length === 0 ? '' : defaultMemo(chosen)}
+                placeholder={chosen.length === 0 ? '' : memoExample(chosen)}
                 onChange={(e) => {
                   setMemoInput(e.target.value)
                   setFlash('')
@@ -701,19 +722,36 @@ export function SplitTab({
           </div>
 
           <div className="split-settle__commit">
-            <div className="split-settle__line split-settle__line--total">
-              <span>相手の負担額</span>
-              <span className="split-settle__num">{formatCurrency(totalShare, 'JPY')}</span>
+            <div className="split-settle__totals split-settle__totals--commit">
+              {mode === 'ratio' && (
+                <div className={`split-settle__line${totalsMismatch ? ' split-settle__line--warn' : ''}`}>
+                  <span>負担割合の合計</span>
+                  <span className="split-settle__num">{`${ratioSum}%`}</span>
+                </div>
+              )}
+              <div className={`split-settle__line split-settle__line--total${mode === 'amount' && totalsMismatch ? ' split-settle__line--warn' : ''}`}>
+                <span>負担額の合計</span>
+                <span className="split-settle__num">
+                  {formatCurrency(mode === 'amount' ? amountSum : (burdenTotal ?? 0), 'JPY')}
+                </span>
+              </div>
             </div>
             <button
               type="button"
               className="split-settle__btn split-settle__btn--primary"
-              disabled={submitting || chosen.length === 0}
+              disabled={submitting || chosen.length === 0 || totalsMismatch}
               onClick={() => void commit()}
             >
               割勘を記録
             </button>
           </div>
+          {totalsMismatch && (
+            <p role="status" className="split-settle__note split-settle__note--warn">
+              {mode === 'ratio'
+                ? `負担割合の合計を100%にしてください(いま${ratioSum}%)。`
+                : `負担額の合計を${formatCurrency(Math.abs(net), 'JPY')}にしてください(いま${formatCurrency(amountSum, 'JPY')})。`}
+            </p>
+          )}
           {planError !== null && (
             <p role="status" className="split-settle__note">
               {ERROR_TEXT[planError]}

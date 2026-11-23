@@ -127,6 +127,7 @@ const base = {
   settlementBatches: [],
 }
 
+/** 世帯メンバー2の行(相手) */
 const memberRow = (ratio: string, amount = '') => ({
   key: 1,
   kind: 'householdMember' as const,
@@ -135,6 +136,17 @@ const memberRow = (ratio: string, amount = '') => ({
   amountInput: amount,
 })
 
+/** 世帯メンバー1(立替者本人)の行。負担する人には、立て替えた本人も入れる(計画Issue #271) */
+const selfRow = (ratio: string, amount = '') => ({
+  key: 99,
+  kind: 'householdMember' as const,
+  targetId: 1,
+  ratioInput: ratio,
+  amountInput: amount,
+})
+
+const SPLIT_50 = [memberRow('50'), selfRow('50')]
+
 describe('submitExpenseSplit', () => {
   it('世帯メンバー1人(50%)の割勘を1件の仕訳にし、元の行idを持たせ、新しい精算バッチを作って元の仕訳と同じグループに合流する', async () => {
     const { repos, created } = fakeRepos()
@@ -142,7 +154,7 @@ describe('submitExpenseSplit', () => {
     const result = await submitExpenseSplit({
       ...base,
       selectedLines: pick(original(1, 1000), 0),
-      participants: [memberRow('50')],
+      participants: SPLIT_50,
       repositories: repos,
     })
 
@@ -165,7 +177,7 @@ describe('submitExpenseSplit', () => {
     const { repos, created } = fakeRepos()
     const e = entryOf(1, [line(FOOD, 'debit', 600, 10), line(FOOD, 'debit', 400, 12), line(CASH, 'credit', 1000, 11)])
 
-    await submitExpenseSplit({ ...base, selectedLines: pick(e, 1), participants: [memberRow('50')], repositories: repos })
+    await submitExpenseSplit({ ...base, selectedLines: pick(e, 1), participants: SPLIT_50, repositories: repos })
 
     expect(created[0].expenseSplitSourceLineIds).toEqual([12])
     expect(created[0].lines.find((l) => l.accountId === ADVANCE_ASSET)?.amount).toBe(200)
@@ -180,6 +192,7 @@ describe('submitExpenseSplit', () => {
       participants: [
         { key: 1, kind: 'householdMember', targetId: 2, ratioInput: '30', amountInput: '' },
         { key: 2, kind: 'counterparty', targetId: 9, ratioInput: '20', amountInput: '' },
+        selfRow('50'),
       ],
       repositories: repos,
     })
@@ -193,7 +206,7 @@ describe('submitExpenseSplit', () => {
     await submitExpenseSplit({
       ...base,
       selectedLines: pick(original(1, 1000), 0),
-      participants: [{ key: 1, kind: 'counterparty', targetId: 9, ratioInput: '50', amountInput: '' }],
+      participants: [{ key: 1, kind: 'counterparty', targetId: 9, ratioInput: '50', amountInput: '' }, selfRow('50')],
       repositories: repos,
     })
 
@@ -210,7 +223,7 @@ describe('submitExpenseSplit', () => {
         { id: 5, name: '既存', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' },
       ],
       selectedLines: pick(original(1, 1000), 0),
-      participants: [{ key: 1, kind: 'counterparty', targetId: 9, ratioInput: '50', amountInput: '' }],
+      participants: [{ key: 1, kind: 'counterparty', targetId: 9, ratioInput: '50', amountInput: '' }, selfRow('50')],
       repositories: repos,
     })
 
@@ -222,7 +235,7 @@ describe('submitExpenseSplit', () => {
     const { repos, created } = fakeRepos()
     const e = withRefund(1, 1000, 400)
 
-    await submitExpenseSplit({ ...base, selectedLines: pick(e, 0, 2), participants: [memberRow('50')], repositories: repos })
+    await submitExpenseSplit({ ...base, selectedLines: pick(e, 0, 2), participants: SPLIT_50, repositories: repos })
 
     expect(created[0].expenseSplitSourceLineIds).toEqual([10, 12])
     // 借方1000の半分500と、貸方400の半分200(逆向き)の差し引きで立替金は300
@@ -234,7 +247,7 @@ describe('submitExpenseSplit', () => {
     const { repos, created } = fakeRepos()
     const e = withRefund(1, 1000, 400)
 
-    await submitExpenseSplit({ ...base, selectedLines: pick(e, 2), participants: [memberRow('50')], repositories: repos })
+    await submitExpenseSplit({ ...base, selectedLines: pick(e, 2), participants: SPLIT_50, repositories: repos })
 
     expect(created[0].lines.find((l) => l.accountId === ADVANCE_ASSET)).toMatchObject({ side: 'credit', amount: 200 })
     expect(created[0].lines.find((l) => l.accountId === ADVANCE_LIABILITY)).toMatchObject({ side: 'debit', amount: 200 })
@@ -248,7 +261,7 @@ describe('submitExpenseSplit', () => {
       ...base,
       allocationMode: 'amount',
       selectedLines: pick(e, 0, 2),
-      participants: [memberRow('', '300')],
+      participants: [memberRow('', '300'), selfRow('', '300')],
       repositories: repos,
     })
 
@@ -271,7 +284,22 @@ describe('submitExpenseSplit', () => {
     expect(repos.journalEntryRepository.create).not.toHaveBeenCalled()
   })
 
-  it('金額指定の合計が選んだ行の純額を超えるなら、何も書き込まずエラーを返す', async () => {
+  it('割合の合計が100%でなければ、何も書き込まずエラーを返す(立て替えた本人の分も入れて100%にする)', async () => {
+    const { repos } = fakeRepos()
+
+    const result = await submitExpenseSplit({
+      ...base,
+      selectedLines: pick(original(1, 1000), 0),
+      participants: [memberRow('50'), selfRow('40')],
+      repositories: repos,
+    })
+
+    expect(result).toEqual({ ok: false, error: 'ratioTotalMismatch' })
+    expect(repos.settlementBatchRepository.create).not.toHaveBeenCalled()
+    expect(repos.journalEntryRepository.create).not.toHaveBeenCalled()
+  })
+
+  it('金額指定の合計が選んだ行の純額と合わないなら、何も書き込まずエラーを返す', async () => {
     const { repos } = fakeRepos()
 
     const result = await submitExpenseSplit({
@@ -282,7 +310,7 @@ describe('submitExpenseSplit', () => {
       repositories: repos,
     })
 
-    expect(result).toEqual({ ok: false, error: 'amountExceedsTotal' })
+    expect(result).toEqual({ ok: false, error: 'amountTotalMismatch' })
     expect(repos.settlementBatchRepository.create).not.toHaveBeenCalled()
   })
 
@@ -292,7 +320,7 @@ describe('submitExpenseSplit', () => {
     const result = await submitExpenseSplit({
       ...base,
       selectedLines: pick(original(1, 1000), 1),
-      participants: [memberRow('50')],
+      participants: SPLIT_50,
       repositories: repos,
     })
 
@@ -308,7 +336,7 @@ describe('submitExpenseSplit', () => {
         ...base,
         memo,
         selectedLines: pick(original(1, 1000), 0),
-        participants: [memberRow('50')],
+        participants: SPLIT_50,
         repositories: repos,
       })
       expect(result).toEqual({ ok: false, error: 'memoRequired' })
@@ -338,7 +366,7 @@ describe('submitExpenseSplit', () => {
     const result = await submitExpenseSplit({
       ...base,
       selectedLines: pick(original(1, 1000), 0),
-      participants: [memberRow('0')],
+      participants: [memberRow('0'), selfRow('100')],
       repositories: repos,
     })
 
@@ -352,7 +380,7 @@ describe('submitExpenseSplit', () => {
     await submitExpenseSplit({
       ...base,
       selectedLines: [...pick(original(1, 1000), 0), ...pick(original(2, 600), 0)],
-      participants: [memberRow('50')],
+      participants: SPLIT_50,
       repositories: repos,
     })
 

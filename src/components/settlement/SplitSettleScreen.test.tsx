@@ -8,7 +8,7 @@
  * 各タブの中身は SplitTab・SettleTab・SplitHistoryTab のテストで検証する。
  */
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { JournalEntry } from '../../domain/journal/JournalEntry'
 import { SplitSettleScreen } from './SplitSettleScreen'
@@ -157,8 +157,10 @@ describe('SplitSettleScreen', () => {
     expect(repositories.journalEntryRepository.findAll).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole('checkbox', { name: '借方の食費の行を選択' }))
-    fireEvent.click(screen.getByRole('button', { name: /^分担相手/ }))
+    fireEvent.click(screen.getAllByRole('button', { name: /^分担相手/ })[0])
     fireEvent.click(screen.getByRole('button', { name: '妻' }))
+    fireEvent.click(screen.getAllByRole('button', { name: /^分担相手/ })[1])
+    fireEvent.click(within(screen.getByRole('dialog', { name: /分担相手/ })).getByRole('button', { name: '夫' }))
     fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチの割勘' } })
     fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
 

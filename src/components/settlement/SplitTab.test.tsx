@@ -143,9 +143,15 @@ function setup(data: SplitSettleData = makeData(), extraProps: { initialCheckedE
   return { repositories, onChanged }
 }
 
-const chooseOption = (triggerName: RegExp, optionName: string) => {
-  fireEvent.click(screen.getByRole('button', { name: triggerName }))
+const chooseOption = (triggerName: RegExp, optionName: string, index = 0) => {
+  fireEvent.click(screen.getAllByRole('button', { name: triggerName })[index])
   fireEvent.click(within(screen.getByRole('dialog', { name: /分担相手/ })).getByRole('button', { name: optionName }))
+}
+
+/** 負担する人を、1行目に妻・2行目に夫(立て替えた本人)として選ぶ(割合は初期値の50%ずつで、合計100%) */
+const chooseBothPartners = () => {
+  chooseOption(/^分担相手/, '妻', 0)
+  chooseOption(/^分担相手/, '夫', 1)
 }
 
 const splitEntry = () =>
@@ -250,15 +256,15 @@ describe('SplitTab', () => {
     expect(screen.queryByRole('dialog', { name: '仕訳の詳細' })).not.toBeInTheDocument()
   })
 
-  it('行を選ぶと、選んだ合計と、設定した割合での相手の負担額を表示する', () => {
+  it('行を選ぶと、選んだ合計と、負担額の合計を表示する', () => {
     setup()
 
     fireEvent.click(debitBox('ランチ'))
-    chooseOption(/^分担相手/, '妻')
+    chooseBothPartners()
 
     const panel = screen.getByRole('region', { name: '分担' })
     expect(within(panel).getByText('選択した合計').nextElementSibling).toHaveTextContent(formatCurrency(1200, 'JPY'))
-    expect(within(panel).getByText('相手の負担額').nextElementSibling).toHaveTextContent(formatCurrency(600, 'JPY'))
+    expect(within(panel).getByText('負担額の合計').nextElementSibling).toHaveTextContent(formatCurrency(1200, 'JPY'))
   })
 
   it('借方の行と貸方の行(返金)を一緒に選ぶと、貸方を差し引いた額を合計にして按分する', () => {
@@ -266,12 +272,12 @@ describe('SplitTab', () => {
 
     fireEvent.click(debitBox('ランチ'))
     fireEvent.click(creditBox('返品'))
-    chooseOption(/^分担相手/, '妻')
+    chooseBothPartners()
 
     const panel = screen.getByRole('region', { name: '分担' })
     expect(within(panel).getByText('選択した合計').nextElementSibling).toHaveTextContent(formatCurrency(1000, 'JPY'))
     expect(within(panel).getByText('貸方の合計(差し引き)').nextElementSibling).toHaveTextContent(formatCurrency(-200, 'JPY'))
-    expect(within(panel).getByText('相手の負担額').nextElementSibling).toHaveTextContent(formatCurrency(500, 'JPY'))
+    expect(within(panel).getByText('負担額の合計').nextElementSibling).toHaveTextContent(formatCurrency(1000, 'JPY'))
   })
 
   it('選んだ行から作られる割勘仕訳のプレビューを、分担を選んだあとに表示する', () => {
@@ -280,7 +286,7 @@ describe('SplitTab', () => {
     expect(screen.queryByRole('region', { name: '割勘仕訳のプレビュー' })).not.toBeInTheDocument()
     fireEvent.click(debitBox('ランチ'))
     fireEvent.click(creditBox('返品'))
-    chooseOption(/^分担相手/, '妻')
+    chooseBothPartners()
 
     const preview = screen.getByRole('region', { name: '割勘仕訳のプレビュー' })
     expect(within(preview).getByRole('table', { name: '妻さん分の割勘仕訳' })).toBeInTheDocument()
@@ -289,28 +295,103 @@ describe('SplitTab', () => {
     expect(within(preview).getAllByText(formatCurrency(500, 'JPY')).length).toBeGreaterThan(0)
   })
 
-  it('立替者が1人だけの行を選んだときは、その立替者を分担相手に選べない(自分との割勘を防ぐ)', () => {
+  it('立て替えた本人も、負担する人の1行として選べる(誰がどのくらい負担するかを全員分入れる)', () => {
     setup()
 
     fireEvent.click(debitBox('ランチ'))
-    fireEvent.click(screen.getByRole('button', { name: /^分担相手/ }))
-
-    const dialog = within(screen.getByRole('dialog', { name: /分担相手/ }))
-    expect(dialog.getByRole('button', { name: '妻' })).toBeInTheDocument()
-    expect(dialog.queryByRole('button', { name: '夫' })).not.toBeInTheDocument()
-  })
-
-  it('立替者が複数いる行を選んだときは、どの世帯メンバーも分担相手に選べる(自分が立て替えた行は割らない)', () => {
-    const wifePaid = { ...entry(5, '2026-10-04', 'コーヒー', 'manual', [line(51, 5, 'debit', 1, 400), line(52, 5, 'credit', 2, 400)]), householdMemberId: 2 }
-    setup(makeData([wifePaid]))
-
-    fireEvent.click(debitBox('ランチ'))
-    fireEvent.click(debitBox('コーヒー'))
-    fireEvent.click(screen.getByRole('button', { name: /^分担相手/ }))
+    fireEvent.click(screen.getAllByRole('button', { name: /^分担相手/ })[0])
 
     const dialog = within(screen.getByRole('dialog', { name: /分担相手/ }))
     expect(dialog.getByRole('button', { name: '夫' })).toBeInTheDocument()
     expect(dialog.getByRole('button', { name: '妻' })).toBeInTheDocument()
+  })
+
+  it('負担する人の欄は、最初から2行(割合は50%ずつ)ある', () => {
+    setup()
+
+    expect(screen.getAllByRole('button', { name: /^分担相手/ })).toHaveLength(2)
+    expect(screen.getAllByLabelText(/の負担割合/).map((e) => (e as HTMLInputElement).value)).toEqual(['50', '50'])
+  })
+
+  it('1行目の負担する人は、選んだ行の立替者のうち、最も行数の多い世帯メンバーが自動で入る(行を選ぶまでは未選択)', () => {
+    const wifePaid = (id: number, memo: string) => ({
+      ...entry(id, '2026-10-04', memo, 'manual', [line(id * 10 + 1, id, 'debit', 1, 400), line(id * 10 + 2, id, 'credit', 2, 400)]),
+      householdMemberId: 2,
+    })
+    setup(makeData([wifePaid(5, 'コーヒー'), wifePaid(6, '映画')]))
+    const triggers = () => screen.getAllByRole('button', { name: /^分担相手/ })
+
+    expect(triggers().map((t) => t.getAttribute('aria-label'))).toEqual(['分担相手: 相手を選ぶ', '分担相手: 相手を選ぶ'])
+    // 夫の行1つ(ランチ)と、妻の行2つ(コーヒー・映画)を選ぶと、行数の多い妻が1行目に入る。2行目は未選択のまま
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(debitBox('コーヒー'))
+    fireEvent.click(debitBox('映画'))
+
+    expect(triggers()[0]).toHaveAccessibleName('分担相手: 妻')
+    expect(triggers()[1]).toHaveAccessibleName('分担相手: 相手を選ぶ')
+  })
+
+  it('1行目を自分で選び直したら、行の選択を変えても自動では上書きしない', () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    expect(screen.getAllByRole('button', { name: /^分担相手/ })[0]).toHaveAccessibleName('分担相手: 夫')
+
+    chooseOption(/^分担相手/, '妻', 0)
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(debitBox('ランチ'))
+
+    expect(screen.getAllByRole('button', { name: /^分担相手/ })[0]).toHaveAccessibleName('分担相手: 妻')
+  })
+
+  it('負担する人の見出しや注記に「立て替えた本人も入れる」の説明は出さない', () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    chooseBothPartners()
+    fireEvent.change(screen.getByLabelText('妻の負担割合(%)'), { target: { value: '40' } })
+
+    expect(screen.queryByText(/立て替えた本人/)).not.toBeInTheDocument()
+  })
+
+  it('割合の合計が100%でないときは、合計と足りない旨を出し、「割勘を記録」を押せない。100%に直すと押せる', () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    chooseBothPartners()
+
+    expect(screen.getByRole('button', { name: '割勘を記録' })).toBeEnabled()
+    fireEvent.change(screen.getByLabelText('妻の負担割合(%)'), { target: { value: '40' } })
+
+    expect(screen.getByRole('button', { name: '割勘を記録' })).toBeDisabled()
+    expect(screen.getByText('負担割合の合計')).toBeInTheDocument()
+    expect(screen.getByText('負担割合の合計').nextElementSibling).toHaveTextContent('90%')
+    expect(screen.getByText(/合計を100%にしてください/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('妻の負担割合(%)'), { target: { value: '50' } })
+    expect(screen.getByRole('button', { name: '割勘を記録' })).toBeEnabled()
+  })
+
+  it('金額指定では、負担額の合計が選んだ行の合計に合うまで「割勘を記録」を押せない', () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    chooseBothPartners()
+    fireEvent.change(screen.getByLabelText('按分の方法'), { target: { value: 'amount' } })
+
+    fireEvent.change(screen.getByLabelText('妻の負担額を入力'), { target: { value: '500' } })
+    fireEvent.change(screen.getByLabelText('夫の負担額を入力'), { target: { value: '600' } })
+    expect(screen.getByRole('button', { name: '割勘を記録' })).toBeDisabled()
+    expect(screen.getByText(/合計を1,200円にしてください|合計を.*1,200.*にしてください/)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('夫の負担額を入力'), { target: { value: '700' } })
+    expect(screen.getByRole('button', { name: '割勘を記録' })).toBeEnabled()
+  })
+
+  it('各人の負担額を、その人の行の右に出す(立て替えた本人の分も)', () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    chooseBothPartners()
+
+    const wife = screen.getByLabelText('妻の負担割合(%)').closest('.split-settle__partner') as HTMLElement
+    const husband = screen.getByLabelText('夫の負担割合(%)').closest('.split-settle__partner') as HTMLElement
+    expect(within(wife).getByText(formatCurrency(600, 'JPY'))).toBeInTheDocument()
+    expect(within(husband).getByText(formatCurrency(600, 'JPY'))).toBeInTheDocument()
   })
 
   it('選んだ行の数と合計は、ラベルを左・値を右にそろえた行で表示する', () => {
@@ -328,7 +409,7 @@ describe('SplitTab', () => {
     const { repositories, onChanged } = setup()
 
     fireEvent.click(debitBox('ランチ'))
-    chooseOption(/^分担相手/, '妻')
+    chooseBothPartners()
     fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチの割勘' } })
     fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
 
@@ -347,7 +428,7 @@ describe('SplitTab', () => {
     const { repositories } = setup()
 
     fireEvent.click(debitBox('ランチ'))
-    chooseOption(/^分担相手/, '妻')
+    chooseBothPartners()
     fireEvent.change(screen.getByLabelText('摘要'), { target: { value: '10月の外食まとめ' } })
     fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
 
@@ -364,7 +445,7 @@ describe('SplitTab', () => {
     const { repositories } = setup()
 
     fireEvent.click(debitBox('ランチ'))
-    chooseOption(/^分担相手/, '妻')
+    chooseBothPartners()
     fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('摘要を入力してください')
@@ -379,6 +460,15 @@ describe('SplitTab', () => {
     fireEvent.click(debitBox('ランチ'))
 
     expect(screen.getByLabelText('摘要')).toHaveAttribute('placeholder', 'ランチの割勘')
+  })
+
+  it('複数の仕訳の行を選んだときは、摘要の入力例は出さない(空のまま入力させる)', () => {
+    setup(makeData([refundEntry()]))
+
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(creditBox('返品'))
+
+    expect(screen.getByLabelText('摘要')).toHaveAttribute('placeholder', '')
   })
 
   it('精算バッチは、既定で「新しいバッチを作成」が選ばれ、既存のバッチも候補に出て、選び直して戻せる', () => {
@@ -404,7 +494,7 @@ describe('SplitTab', () => {
     const { repositories } = setup(data)
 
     fireEvent.click(debitBox('ランチ'))
-    chooseOption(/^分担相手/, '妻')
+    chooseBothPartners()
     fireEvent.change(screen.getByLabelText('摘要'), { target: { value: '追加分' } })
     // 画面の上の絞り込みにも「精算バッチ」の欄があるので、既定で「新しいバッチを作成」が選ばれているほうのボタンを渡す
     chooseBatchFrom(screen.getByRole('button', { name: '精算バッチ: 新しいバッチを作成' }), '9月の精算')
@@ -440,16 +530,18 @@ describe('SplitTab', () => {
     expect(repositories.journalEntryRepository.create).not.toHaveBeenCalled()
   })
 
-  it('分担相手を追加でき、2人目以降は外せる(1人目は外せない)', () => {
+  it('負担する人を追加でき、1行になるまで外せる(最後の1行は外せない)', () => {
     setup()
+    const removeButtons = () => screen.getAllByRole('button', { name: /を分担相手から外す/ })
 
-    expect(screen.getByRole('button', { name: /を分担相手から外す/ })).toBeDisabled()
+    expect(removeButtons()).toHaveLength(2)
     fireEvent.click(screen.getByRole('button', { name: '+ 分担相手を追加' }))
+    expect(removeButtons()).toHaveLength(3)
+    fireEvent.click(removeButtons()[2])
+    fireEvent.click(removeButtons()[1])
 
-    const removeButtons = screen.getAllByRole('button', { name: /を分担相手から外す/ })
-    expect(removeButtons).toHaveLength(2)
-    fireEvent.click(removeButtons[1])
-    expect(screen.getAllByRole('button', { name: /を分担相手から外す/ })).toHaveLength(1)
+    expect(removeButtons()).toHaveLength(1)
+    expect(removeButtons()[0]).toBeDisabled()
   })
 
   it('金額指定の按分に切り替えると、割合の代わりに相手ごとの金額を入力できる(複数の行を選んでいても使える)', () => {
@@ -460,7 +552,7 @@ describe('SplitTab', () => {
     fireEvent.change(screen.getByLabelText('按分の方法'), { target: { value: 'amount' } })
 
     expect(screen.queryByLabelText(/の負担割合/)).not.toBeInTheDocument()
-    expect(screen.getByLabelText(/の負担額を入力/)).toBeInTheDocument()
+    expect(screen.getAllByLabelText(/の負担額を入力/)).toHaveLength(2)
   })
 
   it('選んだ行の借方と貸方が差し引きで0円なら、金額を指定する按分は選べない', () => {
