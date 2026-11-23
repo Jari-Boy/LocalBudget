@@ -5,7 +5,11 @@
  */
 .floating-table-header {
   position: sticky;
-  top: var(--floating-header-top, 0px);
+  /* 既定は、上部に固定したタブの行(--sticky-head-h)・絞り込み欄(--sticky-head-extra)・一括編集バー(--sticky-bulk-h)の下。画面ごとに --floating-header-top で上書きもできる */
+  top: var(
+    --floating-header-top,
+    calc(var(--sticky-head-h, 0px) + var(--sticky-head-extra, 0px) + var(--sticky-bulk-h, 0px))
+  );
   z-index: 4;
   height: 0;
 }
@@ -13,8 +17,9 @@
 .floating-table-header__clip {
   position: absolute;
   top: 0;
-  right: 0;
   left: 0;
+  /* 固定中は、表の枠の位置と幅に合わせて JS が left / width を入れる */
+  right: 0;
   overflow: hidden;
   /* 表の枠の上の角丸と罫線に合わせる */
   border: 1px solid var(--color-border);
@@ -28,4 +33,10 @@
 .floating-table-header[data-stuck='true'] .floating-table-header__clip {
   visibility: visible;
   box-shadow: 0 2px 4px rgba(23, 35, 31, 0.12);
+}
+
+/* 枠に罫線・角丸がない表(カードの中の表など)では、複製にも罫線・角丸を付けない */
+.floating-table-header--bare .floating-table-header__clip {
+  border: 0;
+  border-radius: 0;
 }

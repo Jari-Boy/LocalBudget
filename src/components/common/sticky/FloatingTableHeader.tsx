@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import './FloatingTableHeader.css'
 
 export interface FloatingTableHeaderProps {
@@ -32,8 +32,18 @@ export interface FloatingTableHeaderProps {
 export function FloatingTableHeader({ scroller, table, syncColumnWidths = false, className, tableClassName, tableStyle, children }: FloatingTableHeaderProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const cloneRef = useRef<HTMLTableElement>(null)
+  const clipRef = useRef<HTMLDivElement>(null)
   const [stuck, setStuck] = useState(false)
 
+  // 親が縦並びの flex で gap を持つとき、高さ0のこの置き場の分だけ余白が増える。その gap の分を打ち消す
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    const parent = root?.parentElement
+    if (root === null || parent === null || parent === undefined) return
+    const style = getComputedStyle(parent)
+    const gap = Number.parseFloat(style.rowGap)
+    root.style.marginBottom = style.display.includes('flex') && style.flexDirection.startsWith('column') && gap > 0 ? `${-gap}px` : ''
+  }, [])
   // 固定すべきかの判断: ページのスクロール・画面の大きさの変更のたびに、本物の見出しの位置と比べる
   useEffect(() => {
     const root = rootRef.current
@@ -46,7 +56,16 @@ export function FloatingTableHeader({ scroller, table, syncColumnWidths = false,
       // 本物の見出しが固定の位置より上へ出ていて、表の下端がまだ複製の下まである間だけ見せる
       const nextStuck = head.getBoundingClientRect().top < fixedTop - 0.5 && table.getBoundingClientRect().bottom > fixedTop + headerHeight
       setStuck(nextStuck)
-      if (nextStuck && syncColumnWidths) copyColumnWidths(table, cloneRef.current)
+      if (nextStuck) {
+        // 複製の位置と幅を、表の枠に合わせる(枠が親より狭い・ずれているときも、本物の見出しの真上に重なる)
+        const clip = clipRef.current
+        const scrollerRect = scroller?.getBoundingClientRect()
+        if (clip !== null && scrollerRect !== undefined) {
+          clip.style.left = `${scrollerRect.left - root.getBoundingClientRect().left}px`
+          clip.style.width = `${scrollerRect.width}px`
+        }
+        if (syncColumnWidths) copyColumnWidths(table, cloneRef.current)
+      }
     }
     update()
     window.addEventListener('scroll', update, { passive: true })
@@ -59,7 +78,7 @@ export function FloatingTableHeader({ scroller, table, syncColumnWidths = false,
       window.removeEventListener('resize', update)
       observer?.disconnect()
     }
-  }, [table, syncColumnWidths])
+  }, [table, scroller, syncColumnWidths])
 
   // 横スクロールの同期: 表の枠の横スクロールと同じだけ、複製を動かす(再描画せず直接動かす)
   useEffect(() => {
@@ -80,7 +99,7 @@ export function FloatingTableHeader({ scroller, table, syncColumnWidths = false,
       aria-hidden={!stuck}
       inert={!stuck}
     >
-      <div className="floating-table-header__clip">
+      <div ref={clipRef} className="floating-table-header__clip">
         <table ref={cloneRef} className={tableClassName} style={tableStyle}>
           {children}
         </table>

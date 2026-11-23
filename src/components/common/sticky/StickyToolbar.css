@@ -1,0 +1,12 @@
+/*
+ * 一覧の上の検索・追加ボタンの行(計画Issue #266)。スクロールしても画面の上部、固定したタブの行(--sticky-head-h)の下に固定する。
+ * 重なり順は、ポップアップ・ダイアログ(z-index: 30)より下、表の見出しの複製(z-index: 4)より上にする。
+ * 下の余白は、スクロールで下に隠れる行との間隔になる(背景で行を隠す)。
+ */
+.sticky-toolbar {
+  position: sticky;
+  top: var(--sticky-head-h, 0px);
+  z-index: 15;
+  padding-bottom: 8px;
+  background: var(--color-bg);
+}

@@ -167,6 +167,51 @@ describe('FloatingTableHeader', () => {
     expect(cloneTable().querySelectorAll('th')[0].style.width).toBe('')
     expect(cloneTable().style.tableLayout).toBe('')
   })
+  it('固定中は、複製の位置と幅を、表の枠(横スクロールの枠)に合わせる(枠が親より狭いときも、複製がはみ出さない)', () => {
+    render(<Harness />)
+    stubFloating()
+    const scroller = screen.getByTestId('scroller')
+    // 親(固定の要素)の左端が 40px、表の枠は左端 100px・幅 620px
+    floating().getBoundingClientRect = () => ({ ...rect(rects.floatingTop), left: 40 }) as DOMRect
+    scroller.getBoundingClientRect = () => ({ ...rect(0), left: 100, width: 620 }) as DOMRect
+
+    scrollPageTo({ floatingTop: 120, headTop: -300, tableBottom: 900 })
+
+    const clip = document.querySelector('.floating-table-header__clip') as HTMLElement
+    expect(clip.style.left).toBe('60px')
+    expect(clip.style.width).toBe('620px')
+  })
+  it('親が縦並びの flex で gap を持つとき、高さ0の複製の置き場の分だけ余白が増えないよう、gap の分を打ち消す', () => {
+    render(
+      <div style={{ display: 'flex', flexDirection: 'column', rowGap: '12px' }}>
+        <FloatingTableHeader scroller={null} table={null}>
+          <thead>
+            <tr>
+              <th>日付</th>
+            </tr>
+          </thead>
+        </FloatingTableHeader>
+      </div>,
+    )
+
+    expect(floating().style.marginBottom).toBe('-12px')
+  })
+
+  it('親が flex でなければ、余白は打ち消さない', () => {
+    render(
+      <div>
+        <FloatingTableHeader scroller={null} table={null}>
+          <thead>
+            <tr>
+              <th>日付</th>
+            </tr>
+          </thead>
+        </FloatingTableHeader>
+      </div>,
+    )
+
+    expect(floating().style.marginBottom).toBe('')
+  })
   it('複製の表にも、渡した見出しの中身(列見出し)が入っている', () => {
     render(<Harness />)
 
