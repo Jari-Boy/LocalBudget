@@ -721,6 +721,12 @@
   flex: 0 0 auto;
 }
 
+/* ラベルと最初の入力欄の間隔を、ほかの欄(.split-settle__fieldのgap: 4px)と同じにして、入力欄の上の枠線の高さをそろえる。
+   欄の中の行どうしの間隔(6px)は変えない */
+.split-settle__partners > .split-settle__label {
+  margin-bottom: -2px;
+}
+
 /* 「+ 分担相手を追加」は、欄の幅いっぱいに伸ばさず、文字の幅にする(ホバーの背景が空白まで広がらないように) */
 .split-settle__partners .split-settle__add {
   align-self: flex-start;
