@@ -99,6 +99,9 @@ test.describe('ルーティング基盤(ブラウザの戻る/進む・リロー
     await page.goto('/#/journal/splitting/settlement')
     await expect(page).toHaveURL(/#\/journal\/splitting\?tab=settle$/)
 
+    await page.goto('/#/journal/splitting/history')
+    await expect(page).toHaveURL(/#\/journal\/splitting\?tab=history$/)
+
     await page.goto('/#/journal/recurring')
     await expect(page).toHaveURL(/#\/journal\/entries\?tab=proposals$/)
   })

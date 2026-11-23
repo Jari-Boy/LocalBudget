@@ -4,11 +4,12 @@ import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
 import { countActiveConditions } from '../common/journal-filter/journalFilterModel'
 import { useElementHeight } from '../common/sticky/useElementHeight'
 import { SettleTab } from './SettleTab'
+import { SplitHistoryTab } from './SplitHistoryTab'
 import { SplitTab } from './SplitTab'
 import { deriveSplitSettle, loadSplitSettleData, type SplitSettleData, type SplitSettleRepositories } from './splitSettleData'
 import './SplitSettleScreen.css'
 
-export type SplitSettleTab = 'split' | 'settle'
+export type SplitSettleTab = 'split' | 'settle' | 'history'
 
 export interface SplitSettleScreenProps {
   repositories: SplitSettleRepositories
@@ -23,12 +24,14 @@ export interface SplitSettleScreenProps {
 const TABS: { key: SplitSettleTab; label: string }[] = [
   { key: 'split', label: '割勘' },
   { key: 'settle', label: '精算' },
+  { key: 'history', label: '履歴' },
 ]
 
 /**
  * 割勘・精算画面(計画Issue #153、承認済みモックアップ)。旧「割勘の対象選択」「割勘フォーム」
- * 「精算」「割勘履歴」の4画面を、「割勘」「精算」の2タブにまとめた1画面。タブの切り替えでは
- * URLを変えず、データはこの画面で1回読み込んで両タブに渡す。書き込みのあとは読み直す。
+ * 「精算」「割勘履歴」の4画面を、「割勘」「精算」の2タブにまとめた1画面。割勘履歴は、割勘タブの最下部に埋もれないよう
+ * 精算の右どなりの「履歴」タブに置く(計画Issue #268)。タブの切り替えではURLを変えず、データはこの画面で1回読み込んで
+ * 各タブに渡す。書き込みのあとは読み直す。
  */
 export function SplitSettleScreen({
   repositories,
@@ -62,7 +65,7 @@ export function SplitSettleScreen({
     <div className="split-settle" style={{ '--sticky-head-h': `${tabbarHeight}px` } as CSSProperties}>
       <h1 className="split-settle__title">割勘・精算</h1>
       <div className="split-settle__tabbar" ref={setTabbarElement}>
-        <div role="tablist" aria-label="割勘と精算" className="split-settle__tabs">
+        <div role="tablist" aria-label="割勘・精算・履歴" className="split-settle__tabs">
           {TABS.map((item) => (
             <button
               key={item.key}
@@ -97,6 +100,8 @@ export function SplitSettleScreen({
           onFilterChange={setFilter}
           filterOpen={filterOpen}
         />
+      ) : tab === 'history' ? (
+        <SplitHistoryTab data={data} repositories={repositories} onChanged={reload} />
       ) : (
         <SettleTab
           data={data}

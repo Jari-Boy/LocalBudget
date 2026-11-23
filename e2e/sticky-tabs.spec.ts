@@ -50,7 +50,7 @@ test.describe('各画面のタブ・絞り込み欄の上部固定', () => {
 
     await makeTallAndScroll(page, '.split-settle')
 
-    const tabs = page.getByRole('tablist', { name: '割勘と精算' })
+    const tabs = page.getByRole('tablist', { name: '割勘・精算・履歴' })
     const filter = page.getByRole('search', { name: '仕訳の絞り込み' })
     await expect(tabs).toBeInViewport({ ratio: 1 })
     await expect(filter).toBeInViewport({ ratio: 1 })
@@ -86,11 +86,11 @@ test.describe('各画面のタブ・絞り込み欄の上部固定', () => {
     const panel = page.getByRole('region', { name: '分担' })
     await expect(panel).toBeVisible()
 
-    // 割勘の本体(表と分担パネル)の途中までスクロールする。いちばん下は、本体の下の割勘履歴の部分で、パネルも本体と一緒に上へ抜ける
+    // 割勘の本体(表と分担パネル)の途中までスクロールする。いちばん下は、本体の下の余白の部分で、パネルも本体と一緒に上へ抜ける
     await makeTallAndScroll(page, '.split-settle__card--table')
     await page.evaluate(() => window.scrollTo(0, 1500))
 
-    const tabs = (await page.getByRole('tablist', { name: '割勘と精算' }).boundingBox())!
+    const tabs = (await page.getByRole('tablist', { name: '割勘・精算・履歴' }).boundingBox())!
     await expect(panel).toBeInViewport({ ratio: 1 })
     expect((await panel.boundingBox())!.y).toBeGreaterThanOrEqual(tabs.y + tabs.height - 1)
 
@@ -215,7 +215,7 @@ test.describe('各画面のタブ・絞り込み欄の上部固定', () => {
 
     await expect(floating).toHaveAttribute('data-stuck', 'true')
     const header = floating.getByRole('columnheader', { name: '日付' })
-    const tabs = page.getByRole('tablist', { name: '割勘と精算' })
+    const tabs = page.getByRole('tablist', { name: '割勘・精算・履歴' })
     await expectHeaderStuckBelow(page, header, tabs)
     // 見出しの列は、本物の行の列とずれない(日付の列)
     const firstRowDate = page.getByRole('region', { name: '割勘する仕訳' }).locator('tbody tr').first().getByRole('cell').nth(1)

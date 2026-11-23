@@ -1,0 +1,324 @@
+// @vitest-environment jsdom
+/**
+ * 履歴タブ(SplitHistoryTab、計画Issue #268)のコンポーネントテスト。割勘タブの最下部にあった「過去の割勘」を、
+ * 画面最上位の「履歴」タブに移したもの。
+ * これまでの割勘が相手・負担額・状態つきで出ること、「未精算」「精算済み」で分かれること、摘要から詳細ダイアログが開くこと、
+ * 取り消し(2回押し)で仕訳を削除し、紐づく仕訳が0件になった精算バッチも削除すること、
+ * 件数が150件を超えるときは150件ずつ「さらにN件表示」で出すことを、インメモリの偽Repository(vi.fn)で検証する。
+ */
+import '@testing-library/jest-dom/vitest'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Account } from '../../domain/account/Account'
+import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
+import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
+import { SplitHistoryTab } from './SplitHistoryTab'
+import type { SplitSettleData, SplitSettleRepositories } from './splitSettleData'
+
+afterEach(cleanup)
+
+function account(id: number, name: string, category: Account['category'], isSystemManaged = false): Account {
+  return {
+    id,
+    category,
+    name,
+    isReconcilable: null,
+    hasExternalStatement: null,
+    isActive: true,
+    isSystemManaged,
+    autoBalanceAdjustment: true,
+    householdMemberId: null,
+    accountGroupId: null,
+    sortOrder: id,
+    createdAt: '',
+    updatedAt: '',
+  }
+}
+
+const accounts = [
+  account(1, '食費', 'expense'),
+  account(2, '普通預金', 'asset'),
+  account(3, '立替金', 'asset', true),
+  account(4, '未払金', 'liability', true),
+  account(5, '給与', 'revenue'),
+]
+
+function line(
+  id: number,
+  entryId: number,
+  side: 'debit' | 'credit',
+  accountId: number,
+  amount: number,
+  overrides: Partial<JournalLine> = {},
+): JournalLine {
+  return {
+    id,
+    journalEntryId: entryId,
+    accountId,
+    projectId: null,
+    householdMemberId: 1,
+    counterpartyId: null,
+    settlementBatchId: null,
+    side,
+    amount,
+    createdAt: '',
+    ...overrides,
+  }
+}
+
+function entry(id: number, date: string, memo: string, sourceType: JournalEntry['sourceType'], lines: JournalLine[]): JournalEntry {
+  return {
+    id,
+    entryDate: date,
+    memo,
+    comment: null,
+    currency: 'JPY',
+    sourceType,
+    householdMemberId: 1,
+    generatedFromRuleId: null,
+    recurringDueDate: null,
+    createdAt: '',
+    updatedAt: '',
+    lines,
+  }
+}
+
+function makeData(extraEntries: JournalEntry[] = []): SplitSettleData {
+  return {
+    entries: [
+      entry(1, '2026-10-05', 'ランチ', 'manual', [line(11, 1, 'debit', 1, 1200), line(12, 1, 'credit', 2, 1200)]),
+      entry(2, '2026-10-03', '10月の給与', 'manual', [line(21, 2, 'debit', 2, 300000), line(22, 2, 'credit', 5, 300000)]),
+      ...extraEntries,
+    ],
+    accounts,
+    accountGroups: [],
+    counterparties: [{ id: 9, name: '友人A', isActive: true } as never],
+    counterpartyGroups: [],
+    projects: [],
+    projectGroups: [],
+    members: [
+      { id: 1, name: '夫' },
+      { id: 2, name: '妻' },
+    ] as never,
+    batches: [],
+    memberships: [],
+  }
+}
+
+function setup(data: SplitSettleData) {
+  const repositories = {
+    journalEntryRepository: { delete: vi.fn(async () => {}) },
+    settlementBatchRepository: { delete: vi.fn(async () => {}) },
+  }
+  const onChanged = vi.fn(async () => {})
+  render(
+    <SplitHistoryTab
+      data={data}
+      repositories={repositories as unknown as SplitSettleRepositories}
+      onChanged={onChanged}
+    />,
+  )
+  return { repositories, onChanged }
+}
+
+const splitEntry = () =>
+  entry(3, '2026-10-30', 'ランチの割勘', 'expense_splitting', [
+    line(31, 3, 'debit', 1, 600, { householdMemberId: 2 }),
+    line(32, 3, 'debit', 3, 600, { householdMemberId: 1, settlementBatchId: 7 }),
+    line(33, 3, 'credit', 1, 600, { householdMemberId: 1 }),
+    line(34, 3, 'credit', 4, 600, { householdMemberId: 2, settlementBatchId: 7 }),
+  ])
+
+/** 元の仕訳(id 1)と割勘(id 3)を関連づけ、必要なら割勘のバッチ7を精算し切った状態にする */
+function historyData(settled: boolean): SplitSettleData {
+  const data = makeData([
+    splitEntry(),
+    ...(settled
+      ? [
+          entry(4, '2026-11-02', '妻から振込', 'manual', [
+            line(41, 4, 'debit', 2, 600),
+            line(42, 4, 'credit', 3, 600, { householdMemberId: 1, settlementBatchId: 7 }),
+            line(43, 4, 'debit', 4, 600, { householdMemberId: 2, settlementBatchId: 7 }),
+            line(44, 4, 'credit', 2, 600),
+          ]),
+        ]
+      : []),
+  ])
+  data.memberships = [
+    { id: 1, linkGroupId: 1, journalEntryId: 1, createdAt: '' },
+    { id: 2, linkGroupId: 1, journalEntryId: 3, createdAt: '' },
+  ] as never
+  return data
+}
+
+/** 未精算の割勘が count 件ある状態。割勘「割勘0」〜「割勘{count-1}」は同じ日付で、id の大きい(番号の大きい)ものが上に並ぶ */
+function manySplitsData(count: number): SplitSettleData {
+  const data = makeData()
+  const memberships: { id: number; linkGroupId: number; journalEntryId: number; createdAt: string }[] = []
+  for (let i = 0; i < count; i++) {
+    const originalId = 100 + i
+    const splitId = 1000 + i
+    data.entries.push(
+      entry(originalId, '2026-09-01', `支出${i}`, 'manual', [
+        line(originalId * 10 + 1, originalId, 'debit', 1, 1000),
+        line(originalId * 10 + 2, originalId, 'credit', 2, 1000),
+      ]),
+      entry(splitId, '2026-10-30', `割勘${i}`, 'expense_splitting', [
+        line(splitId * 10 + 1, splitId, 'debit', 1, 500, { householdMemberId: 2 }),
+        line(splitId * 10 + 2, splitId, 'debit', 3, 500, { householdMemberId: 1, settlementBatchId: 7 }),
+        line(splitId * 10 + 3, splitId, 'credit', 1, 500, { householdMemberId: 1 }),
+        line(splitId * 10 + 4, splitId, 'credit', 4, 500, { householdMemberId: 2, settlementBatchId: 7 }),
+      ]),
+    )
+    memberships.push(
+      { id: i * 2 + 1, linkGroupId: i + 1, journalEntryId: originalId, createdAt: '' },
+      { id: i * 2 + 2, linkGroupId: i + 1, journalEntryId: splitId, createdAt: '' },
+    )
+  }
+  data.memberships = memberships as never
+  return data
+}
+
+describe('SplitHistoryTab: 表示', () => {
+  it('履歴には「過去の割勘」の見出しをつけ、過去の記録であることを示す', () => {
+    setup(historyData(false))
+
+    const history = screen.getByRole('region', { name: '割勘履歴' })
+    expect(within(history).getByRole('heading', { name: '過去の割勘' })).toBeInTheDocument()
+  })
+
+  it('これまでの割勘を、相手・負担額・状態つきで表示する', () => {
+    setup(historyData(false))
+
+    const history = screen.getByRole('region', { name: '割勘履歴' })
+    const row = within(history).getByText('ランチの割勘').closest('tr')!
+    expect(within(row).getByText('妻')).toBeInTheDocument()
+    expect(within(row).getByText(formatCurrency(600, 'JPY'))).toBeInTheDocument()
+    expect(within(row).getByText('未精算')).toBeInTheDocument()
+  })
+
+  it('「未精算」「精算済み」で分かれ、既定では未精算だけを出し、件数をボタンに表示する', () => {
+    setup(historyData(false))
+
+    const history = screen.getByRole('region', { name: '割勘履歴' })
+    expect(within(history).getByRole('button', { name: '未精算 1' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(history).getByRole('button', { name: '精算済み 0' })).toHaveAttribute('aria-pressed', 'false')
+    expect(within(history).getByText('ランチの割勘')).toBeInTheDocument()
+
+    fireEvent.click(within(history).getByRole('button', { name: '精算済み 0' }))
+    expect(within(history).queryByText('ランチの割勘')).not.toBeInTheDocument()
+    expect(within(history).getByText('精算済みの割勘はありません')).toBeInTheDocument()
+  })
+
+  it('精算し切った割勘は「精算済み」に分かれ、「未精算」には出ない', () => {
+    setup(historyData(true))
+
+    const history = screen.getByRole('region', { name: '割勘履歴' })
+    expect(within(history).queryByText('ランチの割勘')).not.toBeInTheDocument()
+    fireEvent.click(within(history).getByRole('button', { name: '精算済み 1' }))
+    expect(within(history).getByText('ランチの割勘')).toBeInTheDocument()
+  })
+
+  it('摘要を押すと、仕訳画面へ移動せず、その割勘仕訳の詳細をダイアログで表示し、閉じられる', () => {
+    setup(historyData(false))
+
+    fireEvent.click(screen.getByRole('button', { name: 'ランチの割勘' }))
+
+    const dialog = screen.getByRole('dialog', { name: '仕訳の詳細' })
+    expect(dialog).toHaveTextContent('2026-10-30')
+    expect(dialog).toHaveTextContent('ランチの割勘')
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }))
+    expect(screen.queryByRole('dialog', { name: '仕訳の詳細' })).not.toBeInTheDocument()
+  })
+})
+
+describe('SplitHistoryTab: 割勘の取り消しと精算バッチ', () => {
+  const cancel = () => {
+    fireEvent.click(screen.getByRole('button', { name: 'この割勘を取り消す' }))
+    fireEvent.click(screen.getByRole('button', { name: '本当に取り消す' }))
+  }
+
+  it('取り消しは2回押して確定し、仕訳を削除して画面を更新する', async () => {
+    const { repositories, onChanged } = setup(historyData(false))
+
+    fireEvent.click(screen.getByRole('button', { name: 'この割勘を取り消す' }))
+    expect(repositories.journalEntryRepository.delete).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '本当に取り消す' }))
+
+    await waitFor(() => expect(repositories.journalEntryRepository.delete).toHaveBeenCalledWith(3))
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  })
+
+  it('取り消した結果、精算バッチに紐づく仕訳が0件になるなら、精算バッチも削除する', async () => {
+    const data = historyData(false)
+    data.batches = [{ id: 7, name: 'ランチの割勘', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
+    const { repositories, onChanged } = setup(data)
+
+    cancel()
+
+    await waitFor(() => expect(repositories.settlementBatchRepository.delete).toHaveBeenCalledWith(7))
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+    expect(repositories.journalEntryRepository.delete).toHaveBeenCalledWith(3)
+  })
+
+  it('同じ精算バッチに別の仕訳が残っているなら、精算バッチは削除しない', async () => {
+    const data = historyData(false)
+    data.batches = [{ id: 7, name: 'ランチの割勘', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
+    data.entries.push(
+      entry(5, '2026-10-31', '別の割勘', 'expense_splitting', [
+        line(51, 5, 'debit', 3, 300, { householdMemberId: 1, settlementBatchId: 7 }),
+        line(52, 5, 'credit', 4, 300, { householdMemberId: 2, settlementBatchId: 7 }),
+      ]),
+    )
+    const { repositories, onChanged } = setup(data)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'この割勘を取り消す' })[0])
+    fireEvent.click(screen.getByRole('button', { name: '本当に取り消す' }))
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+    expect(repositories.settlementBatchRepository.delete).not.toHaveBeenCalled()
+  })
+})
+
+describe('SplitHistoryTab: 150件ずつの表示(計画Issue #268)', () => {
+  const rowCount = () => within(screen.getByRole('region', { name: '割勘履歴' })).getAllByRole('row').length - 1
+
+  it('150件以下のときは全件を出し、「さらに表示」は出さない', () => {
+    setup(manySplitsData(150))
+
+    expect(rowCount()).toBe(150)
+    expect(screen.queryByRole('button', { name: /^さらに/ })).not.toBeInTheDocument()
+  })
+
+  it('150件を超えるときは、新しい150件だけを出し、「150 / 160件を表示中」と「さらに10件表示」を出す', () => {
+    setup(manySplitsData(160))
+
+    expect(rowCount()).toBe(150)
+    expect(screen.getByText('割勘159')).toBeInTheDocument()
+    expect(screen.getByText('割勘10')).toBeInTheDocument()
+    expect(screen.queryByText('割勘9')).not.toBeInTheDocument()
+    expect(screen.getByText('150 / 160件を表示中')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'さらに10件表示' })).toBeInTheDocument()
+  })
+
+  it('「さらに10件表示」を押すと残りも出て、ボタンは消える', () => {
+    setup(manySplitsData(160))
+
+    fireEvent.click(screen.getByRole('button', { name: 'さらに10件表示' }))
+
+    expect(rowCount()).toBe(160)
+    expect(screen.getByText('割勘0')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^さらに/ })).not.toBeInTheDocument()
+  })
+
+  it('「未精算」「精算済み」を切り替えると、増やした表示件数は先頭の150件に戻る', () => {
+    setup(manySplitsData(160))
+    fireEvent.click(screen.getByRole('button', { name: 'さらに10件表示' }))
+    expect(rowCount()).toBe(160)
+
+    fireEvent.click(screen.getByRole('button', { name: '精算済み 0' }))
+    fireEvent.click(screen.getByRole('button', { name: '未精算 160' }))
+
+    expect(rowCount()).toBe(150)
+  })
+})

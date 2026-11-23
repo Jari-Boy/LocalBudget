@@ -268,7 +268,7 @@ export function AppRoutes() {
       <Route path="/journal/splitting/new" element={<Navigate to="/journal/splitting" replace />} />
       <Route path="/journal/splitting/new/form" element={<Navigate to="/journal/splitting" replace />} />
       <Route path="/journal/splitting/settlement" element={<Navigate to="/journal/splitting?tab=settle" replace />} />
-      <Route path="/journal/splitting/history" element={<Navigate to="/journal/splitting" replace />} />
+      <Route path="/journal/splitting/history" element={<Navigate to="/journal/splitting?tab=history" replace />} />
 
       <Route element={<AppShell pendingProposalCount={pendingProposalCount} />}>
       <Route
@@ -545,7 +545,7 @@ function JournalScreenRoute(props: JournalScreenRouteProps) {
 type SplitSettleScreenRouteProps = SplitSettleRepositories
 
 /**
- * 割勘・精算画面のルート(/journal/splitting)。URLの`tab`(settle)は最初に開くタブにだけ使い、
+ * 割勘・精算画面のルート(/journal/splitting)。URLの`tab`(settle・history)は最初に開くタブにだけ使い、
  * 画面内でのタブ切り替えではURLを変えない。仕訳画面の「この仕訳を割勘」からは、対象の仕訳のidを
  * `navigate()`の`state`で受け取り、割勘タブで最初から選んだ状態にする(計画Issue #153)。
  * 画面は渡されたRepositoryが変わるとデータを読み直すため、オブジェクトは作り直さない。
@@ -553,7 +553,8 @@ type SplitSettleScreenRouteProps = SplitSettleRepositories
 function SplitSettleScreenRoute(props: SplitSettleScreenRouteProps) {
   const location = useLocation()
   const [searchParams] = useSearchParams()
-  const initialTab: SplitSettleTab = searchParams.get('tab') === 'settle' ? 'settle' : 'split'
+  const tabParam = searchParams.get('tab')
+  const initialTab: SplitSettleTab = tabParam === 'settle' || tabParam === 'history' ? tabParam : 'split'
   const entryIds = (location.state as { entryIds?: number[] } | null)?.entryIds
 
   const repositories = useMemo(

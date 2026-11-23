@@ -1,0 +1,34 @@
+/* 一覧の末尾の「N / 全体件数を表示中」と「さらにN件表示」(計画Issue #253・#268)。値は design/tokens.css のトークンを使う */
+.list-load-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.list-load-more__note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.list-load-more__button {
+  font: inherit;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  min-height: var(--control-height);
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.list-load-more__button:hover {
+  background: var(--color-hover);
+}

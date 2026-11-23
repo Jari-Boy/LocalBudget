@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 /**
  * 割勘・精算画面(SplitSettleScreen、計画Issue #153)のコンポーネントテスト。
- * 「割勘」「精算」の2タブが画面遷移なしで切り替わること、開くタブを指定できること、読み込み中の表示、
+ * 「割勘」「精算」「履歴」の3タブが画面遷移なしで切り替わること、開くタブを指定できること、読み込み中の表示、
  * 書き込みのあとにデータを読み直すことを、インメモリの偽Repository(vi.fn)で検証する。
  * 割勘タブの絞り込み欄の開閉(計画Issue #266、初期は閉・タブの行のアイコンボタン・条件の保持と件数バッジ)も検証する。
- * 各タブの中身は SplitTab・SettleTab のテストで検証する。
+ * 履歴タブ(計画Issue #268)は、タブの並び・精算の右どなりであること・絞り込みボタンを出さないことを検証する。
+ * 各タブの中身は SplitTab・SettleTab・SplitHistoryTab のテストで検証する。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -67,7 +68,7 @@ function makeRepositories() {
   return repositories
 }
 
-function renderScreen(props: { initialTab?: 'split' | 'settle' } = {}) {
+function renderScreen(props: { initialTab?: 'split' | 'settle' | 'history' } = {}) {
   const repositories = makeRepositories()
   render(
     <SplitSettleScreen
@@ -95,7 +96,7 @@ describe('SplitSettleScreen: 絞り込み欄の開閉(計画Issue #266)', () => 
   it('開閉ボタンはタブ(tablist)と同じ行にあり、tablist の子ではない', async () => {
     renderScreen()
     await screen.findByRole('heading', { name: '割勘・精算' })
-    const tabs = screen.getByRole('tablist', { name: '割勘と精算' })
+    const tabs = screen.getByRole('tablist', { name: '割勘・精算・履歴' })
     const toggle = screen.getByRole('button', { name: '絞り込みを開く' })
     expect(tabs.parentElement).toContainElement(toggle)
     expect(tabs).not.toContainElement(toggle)
@@ -162,5 +163,54 @@ describe('SplitSettleScreen', () => {
 
     await waitFor(() => expect(repositories.journalEntryRepository.findAll).toHaveBeenCalledTimes(2))
     expect(await screen.findByText('割勘を記録しました')).toBeInTheDocument()
+  })
+})
+
+describe('SplitSettleScreen: 履歴タブ(計画Issue #268)', () => {
+  it('タブは「割勘」「精算」「履歴」の順に並び、履歴は精算の右どなりにある', async () => {
+    renderScreen()
+    await screen.findByRole('heading', { name: '割勘・精算' })
+
+    const names = screen.getAllByRole('tab').map((tab) => tab.textContent)
+    expect(names).toEqual(['割勘', '精算', '履歴'])
+  })
+
+  it('「履歴」タブに切り替えると過去の割勘を出し、割勘する仕訳は出さない。画面遷移はしない', async () => {
+    renderScreen()
+    await screen.findByRole('heading', { name: '割勘・精算' })
+
+    fireEvent.click(screen.getByRole('tab', { name: '履歴' }))
+
+    expect(screen.getByRole('tab', { name: '履歴' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('region', { name: '割勘履歴' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '過去の割勘' })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '割勘する仕訳' })).not.toBeInTheDocument()
+  })
+
+  it('割勘タブには、過去の割勘を出さない', async () => {
+    renderScreen()
+    await screen.findByRole('heading', { name: '割勘・精算' })
+
+    expect(screen.queryByRole('region', { name: '割勘履歴' })).not.toBeInTheDocument()
+  })
+
+  it('initialTab に history を渡すと、最初から履歴タブを開く', async () => {
+    renderScreen({ initialTab: 'history' })
+
+    expect(await screen.findByRole('tab', { name: '履歴' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('region', { name: '割勘履歴' })).toBeInTheDocument()
+  })
+
+  it('履歴タブには、絞り込みボタンを出さない。割勘タブへ戻すと条件は保たれている', async () => {
+    renderScreen()
+    await screen.findByRole('heading', { name: '割勘・精算' })
+    fireEvent.click(screen.getByRole('button', { name: '絞り込みを開く' }))
+    fireEvent.change(screen.getByRole('searchbox', { name: '摘要で検索' }), { target: { value: 'ランチ' } })
+
+    fireEvent.click(screen.getByRole('tab', { name: '履歴' }))
+    expect(screen.queryByRole('button', { name: /^絞り込みを(開く|閉じる)/ })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: '割勘' }))
+    expect(screen.getByRole('searchbox', { name: '摘要で検索' })).toHaveValue('ランチ')
   })
 })

@@ -102,15 +102,6 @@
   color: var(--color-text-muted);
 }
 
-/* 仕訳一覧の末尾の「N / 全体件数を表示中」と「さらにN件表示」(計画Issue #253) */
-.journal-screen__more {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 0;
-}
-
 /* 仕訳一覧タブの表示方式の切替(計画Issue #182) */
 /* 表示方式の切替と、その左隣の「列幅を初期値に戻す」(明細行単位のときだけ) */
 .journal-screen__view-bar {

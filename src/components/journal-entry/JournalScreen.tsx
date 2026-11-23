@@ -98,8 +98,9 @@ import { JournalLineTable, type JournalLineTableEditing, type JournalLineTableLo
 import { JournalMemberSelect } from './JournalMemberSelect'
 import { useJournalLineTableColumns } from './useJournalLineTableColumns'
 import { loadJournalViewMode, saveJournalViewMode, type JournalViewMode } from './journalViewMode'
-import { JournalListLoadMore } from './JournalListLoadMore'
-import { JOURNAL_LIST_PAGE_SIZE, nextDisplayLimit, resolveShownCount } from './journalListPaging'
+import { ListLoadMore } from '../common/list-paging/ListLoadMore'
+import { nextDisplayLimit, resolveShownCount } from '../common/list-paging/listPaging'
+import { JOURNAL_LIST_PAGE_SIZE } from './journalListPaging'
 import { RelatedEntriesSection } from './RelatedEntriesSection'
 import { describeTemplateExpansionWarnings, expandJournalTemplate } from './expandJournalTemplate'
 import type { JournalTemplate } from '../../domain/journal-template/JournalTemplate'
@@ -1456,7 +1457,7 @@ export function JournalScreen(props: JournalScreenProps) {
                   onToggleEntry: toggleBulkEntry,
                 }}
               />
-              <JournalListLoadMore
+              <ListLoadMore
                 total={matchedEntries.length}
                 shown={shownCount}
                 pageSize={pageSize}
@@ -1487,7 +1488,7 @@ export function JournalScreen(props: JournalScreenProps) {
           />
           )}
           {tab === 'list' && !lineView && (
-            <JournalListLoadMore
+            <ListLoadMore
               total={matchedEntries.length}
               shown={shownCount}
               pageSize={pageSize}
