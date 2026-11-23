@@ -161,6 +161,8 @@ export function SplitTab({
   const [submitting, setSubmitting] = useState(false)
   const [flash, setFlash] = useState('')
   const [error, setError] = useState('')
+  /** エラーを出す場所。摘要・分担相手の欄の近くか、それ以外は「割勘を記録」ボタンの隣 */
+  const [errorTarget, setErrorTarget] = useState<'memo' | 'partner' | 'commit'>('commit')
   const [createForRowKey, setCreateForRowKey] = useState<number | null>(null)
   /** 「さらに表示」で増やした表示件数の上限。絞り込み条件を変えると先頭の1ページ分に戻す */
   const [displayLimit, setDisplayLimit] = useState<number>(SPLIT_LIST_PAGE_SIZE.candidate)
@@ -354,10 +356,12 @@ export function SplitTab({
   const commit = async () => {
     if (submitting || chosen.length === 0) return
     if (partners.some((p) => p.targetId === null)) {
+      setErrorTarget('partner')
       setError(ERROR_TEXT.counterpartyTargetRequired)
       return
     }
     if (memoInput.trim() === '') {
+      setErrorTarget('memo')
       setError(ERROR_TEXT.memoRequired)
       return
     }
@@ -379,6 +383,7 @@ export function SplitTab({
         }),
       )
       if (!result.ok) {
+        setErrorTarget(result.error === 'memoRequired' ? 'memo' : result.error === 'counterpartyTargetRequired' ? 'partner' : 'commit')
         setError(ERROR_TEXT[result.error])
         return
       }
@@ -388,6 +393,7 @@ export function SplitTab({
       await onChanged()
       setFlash('割勘を記録しました')
     } catch {
+      setErrorTarget('commit')
       setError('割勘を記録できませんでした')
     } finally {
       setSubmitting(false)
@@ -721,6 +727,11 @@ export function SplitTab({
               >
                 + 分担相手を追加
               </button>
+              {error !== '' && errorTarget === 'partner' && (
+                <p role="alert" className="split-settle__error">
+                  {error}
+                </p>
+              )}
             </div>
 
             <div className="split-settle__field">
@@ -739,6 +750,11 @@ export function SplitTab({
                   setFlash('')
                 }}
               />
+              {error !== '' && errorTarget === 'memo' && (
+                <p role="alert" className="split-settle__error">
+                  {error}
+                </p>
+              )}
             </div>
 
             <div className="split-settle__field">
@@ -757,6 +773,26 @@ export function SplitTab({
           </div>
 
           <div className="split-settle__commit">
+            <div className="split-settle__commit-messages">
+              {totalsMismatch && (
+                <p role="status" className="split-settle__note split-settle__note--warn">
+                  {mode === 'ratio'
+                    ? `負担割合の合計を100%にしてください(いま${ratioSum}%)。`
+                    : `負担額の合計を${formatCurrency(Math.abs(net), 'JPY')}にしてください(いま${formatCurrency(amountSum, 'JPY')})。`}
+                </p>
+              )}
+              {planError !== null && (
+                <p role="status" className="split-settle__note">
+                  {ERROR_TEXT[planError]}
+                </p>
+              )}
+              {error !== '' && errorTarget === 'commit' && (
+                <p role="alert" className="split-settle__error">
+                  {error}
+                </p>
+              )}
+              {flash !== '' && <span className="split-settle__flash">{flash}</span>}
+            </div>
             <button
               type="button"
               className="split-settle__btn split-settle__btn--primary"
@@ -766,24 +802,6 @@ export function SplitTab({
               割勘を記録
             </button>
           </div>
-          {totalsMismatch && (
-            <p role="status" className="split-settle__note split-settle__note--warn">
-              {mode === 'ratio'
-                ? `負担割合の合計を100%にしてください(いま${ratioSum}%)。`
-                : `負担額の合計を${formatCurrency(Math.abs(net), 'JPY')}にしてください(いま${formatCurrency(amountSum, 'JPY')})。`}
-            </p>
-          )}
-          {planError !== null && (
-            <p role="status" className="split-settle__note">
-              {ERROR_TEXT[planError]}
-            </p>
-          )}
-          {error !== '' && (
-            <p role="alert" className="split-settle__error">
-              {error}
-            </p>
-          )}
-          {flash !== '' && <span className="split-settle__flash">{flash}</span>}
         </section>
 
         {previews.length > 0 && (

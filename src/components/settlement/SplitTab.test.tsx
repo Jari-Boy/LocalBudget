@@ -607,6 +607,49 @@ describe('SplitTab', () => {
     expect(screen.getByRole('button', { name: '割勘を記録' })).toBeDisabled()
   })
 
+  it('摘要のエラーは、摘要の入力欄のすぐ下に出す', async () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    chooseBothPartners()
+    fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('摘要を入力してください')
+    expect(screen.getByLabelText('摘要').parentElement).toContainElement(alert)
+  })
+
+  it('分担相手のエラーは、分担相手の欄(+ 分担相手を追加のボタンのある欄)の中に出す', async () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチの割勘' } })
+    fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('分担相手を選んでください')
+    expect(screen.getByRole('button', { name: '+ 分担相手を追加' }).parentElement).toContainElement(alert)
+  })
+
+  it('負担の合計・相手の負担額が0円などの、特定の欄に属さない注記とエラーは、「割勘を記録」ボタンの隣に出す', async () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    chooseBothPartners()
+    fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチの割勘' } })
+    const button = screen.getByRole('button', { name: '割勘を記録' })
+    const commit = button.parentElement as HTMLElement
+
+    // 負担割合の合計が100%でない注記
+    fireEvent.change(screen.getByLabelText('妻の負担割合(%)'), { target: { value: '40' } })
+    expect(within(commit).getByText(/合計を100%にしてください/)).toBeInTheDocument()
+
+    // 負担が全部自分の分(相手の負担額が0円)のときの記録エラー
+    fireEvent.change(screen.getByLabelText('妻の負担割合(%)'), { target: { value: '0' } })
+    fireEvent.change(screen.getByLabelText('夫の負担割合(%)'), { target: { value: '100' } })
+    fireEvent.click(button)
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('相手の負担額が0円です')
+    expect(commit).toContainElement(alert)
+  })
+
   it('分担相手を選ばずに記録しようとすると、何も作らずエラーを表示する', async () => {
     const { repositories } = setup()
 
