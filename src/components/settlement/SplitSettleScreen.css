@@ -698,6 +698,14 @@
   align-items: start;
 }
 
+/* 広い画面では、4つの欄(按分の方法・分担相手・摘要・精算バッチ)を同じ幅にせず、摘要を一番広くする。
+   按分の方法は選択肢が短く、分担相手の行は×を入力欄の右に寄せて幅が要らないため、その分を摘要に回す */
+@media (min-width: 1300px) {
+  .split-settle__panel-grid {
+    grid-template-columns: minmax(140px, 0.5fr) minmax(270px, 1fr) minmax(240px, 2fr) minmax(200px, 1fr);
+  }
+}
+
 .split-settle__commit {
   display: flex;
   flex-wrap: wrap;
