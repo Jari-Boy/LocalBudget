@@ -242,7 +242,7 @@
 }
 
 .split-settle__partner-pick {
-  flex: 1 1 130px;
+  flex: 0 0 140px;
   min-width: 0;
 }
 
@@ -690,20 +690,35 @@
   color: var(--color-text-muted);
 }
 
-/* 按分の方法・分担相手・摘要・精算バッチを、幅に応じて横に並べる */
+/* 按分の方法・分担相手・摘要・精算バッチを、幅に応じて横に並べる。欄ごとに列幅を割り振らず、中身の幅で並べ(分担相手の欄は
+   行の幅、追加ボタンも中身の幅)、余った幅は摘要が上限まで受け持つ。幅が足りなければ折り返す(計画Issue #249 の実機確認での指摘) */
 .split-settle__panel-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px 24px;
-  align-items: start;
+  align-items: flex-start;
 }
 
-/* 広い画面では、4つの欄(按分の方法・分担相手・摘要・精算バッチ)を同じ幅にせず、摘要を一番広くする。
-   按分の方法は選択肢が短く、分担相手の行は×を入力欄の右に寄せて幅が要らないため、その分を摘要に回す */
-@media (min-width: 1300px) {
-  .split-settle__panel-grid {
-    grid-template-columns: minmax(140px, 0.5fr) minmax(270px, 1fr) minmax(240px, 2fr) minmax(200px, 1fr);
-  }
+.split-settle__field--mode {
+  flex: 0 0 150px;
+}
+
+.split-settle__field--memo {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.split-settle__field--batch {
+  flex: 0 1 260px;
+}
+
+.split-settle__panel-grid .split-settle__partners {
+  flex: 0 0 auto;
+}
+
+/* 「+ 分担相手を追加」は、欄の幅いっぱいに伸ばさず、文字の幅にする(ホバーの背景が空白まで広がらないように) */
+.split-settle__partners .split-settle__add {
+  align-self: flex-start;
 }
 
 .split-settle__commit {
