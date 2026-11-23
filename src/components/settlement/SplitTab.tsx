@@ -636,7 +636,7 @@ export function SplitTab({
           </div>
 
           <div className="split-settle__panel-grid">
-            <div className="split-settle__field">
+            <div className="split-settle__field split-settle__field--mode">
               <label className="split-settle__label" htmlFor="split-mode">
                 按分の方法
               </label>
@@ -694,9 +694,7 @@ export function SplitTab({
                       onChange={(e) => patchPartner(row.key, { amountInput: e.target.value })}
                     />
                   )}
-                  <span className="split-settle__num split-settle__share">
-                    {burdenOf(row.key) === null ? '' : formatCurrency(burdenOf(row.key) ?? 0, 'JPY')}
-                  </span>
+                  {/* ×は入力欄のすぐ右に置く。負担額の表示欄より前に置くことで、金額が出ても位置が動かない。負担額が無いときは表示欄の幅を取らない */}
                   <button
                     type="button"
                     className="split-settle__icon-btn"
@@ -710,6 +708,9 @@ export function SplitTab({
                   >
                     ×
                   </button>
+                  <span className={`split-settle__num split-settle__share${burdenOf(row.key) === null ? ' split-settle__share--empty' : ''}`}>
+                    {burdenOf(row.key) === null ? '' : formatCurrency(burdenOf(row.key) ?? 0, 'JPY')}
+                  </span>
                 </div>
               ))}
               <button
@@ -734,7 +735,7 @@ export function SplitTab({
               )}
             </div>
 
-            <div className="split-settle__field">
+            <div className="split-settle__field split-settle__field--memo">
               <label className="split-settle__label" htmlFor="split-memo">
                 摘要
               </label>
@@ -757,7 +758,7 @@ export function SplitTab({
               )}
             </div>
 
-            <div className="split-settle__field">
+            <div className="split-settle__field split-settle__field--batch">
               <span className="split-settle__label">精算バッチ</span>
               {/* 「新しいバッチを作成」は操作ではなく既定の選択状態(記録するときに作る)なので、先頭に固定した項目にする */}
               <BatchSelect

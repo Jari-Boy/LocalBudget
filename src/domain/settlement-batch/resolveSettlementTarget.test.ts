@@ -10,7 +10,7 @@ import type { SettlementBatchSummary, SettlementDirectionSummary } from './summa
 import { resolveSettlementTarget } from './resolveSettlementTarget'
 
 function batch(counterpartyId: number | null): SettlementBatch {
-  return { id: 1, name: 'バッチ', type: 'expense_splitting', counterpartyId, createdAt: '', updatedAt: '' }
+  return { id: 1, name: 'バッチ', type: 'expense_splitting', counterpartyId, isActive: true, createdAt: '', updatedAt: '' }
 }
 
 function direction(

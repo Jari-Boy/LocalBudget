@@ -14,4 +14,12 @@ export interface SettlementBatchRepository {
   findAll(): SettlementBatch[]
   update(id: number, input: UpdateSettlementBatchInput): SettlementBatch
   delete(id: number): void
+  /** クローズする(is_activeを偽にする)。振替仕訳の作成は呼び出し側が行う(計画Issue #249) */
+  deactivate(id: number): SettlementBatch
+  /** 再オープンする(is_activeを真に戻す) */
+  activate(id: number): SettlementBatch
+  /** クローズ時に自動で作った振替仕訳(残りの残高を雑損失・雑収入へ振り替える仕訳)を、バッチに記録する */
+  recordCloseEntries(batchId: number, journalEntryIds: readonly number[]): void
+  /** バッチに記録した振替仕訳のid(仕訳が削除されていれば含まれない)。再オープンで削除する対象 */
+  findCloseEntryIds(batchId: number): number[]
 }

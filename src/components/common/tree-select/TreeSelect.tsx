@@ -96,6 +96,11 @@ function findItemName(categories: readonly TreeSelectCategory[], value: string):
   return isAmbiguous ? found.pathName : found.name
 }
 
+/** 項目の値に付いた印(badge)。無ければundefined(計画Issue #249) */
+function findItemBadge(categories: readonly TreeSelectCategory[], value: string): string | undefined {
+  return categories.flatMap((category) => collectItems(category.nodes)).find((node) => node.value === value)?.badge
+}
+
 /** 値(項目の値または「g:グループID」)の表示名。見つからなければ値そのもの */
 function nameOfValue(categories: readonly TreeSelectCategory[], value: string): string {
   if (value.startsWith(GROUP_VALUE_PREFIX)) {
@@ -191,6 +196,8 @@ export function TreeSelect(props: TreeSelectProps) {
       : selectedNames.length === 1
         ? selectedNames[0]
         : `${selectedNames[0]} ほか${selectedNames.length - 1}件`
+  // 単一選択で、選んだ項目に印(badge)があれば、ボタンにも出す
+  const selectedBadge = !isMulti && selectedValues.length === 1 ? findItemBadge(categories, selectedValues[0]) : undefined
   // 複数選択のときは、ホバーですべての選択を確認できるようにする
   const selectedTitle = selectedNames.length > 1 ? selectedNames.join('、') : undefined
 
@@ -302,11 +309,12 @@ export function TreeSelect(props: TreeSelectProps) {
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-controls={isOpen ? popupId : undefined}
-        aria-label={`${label}: ${selectedText}`}
+        aria-label={`${label}: ${selectedText}${selectedBadge === undefined ? '' : ` (${selectedBadge})`}`}
         disabled={disabled}
         onClick={() => (isOpen ? close() : open())}
       >
         <span className="tree-select__trigger-text">{selectedText}</span>
+        {selectedBadge !== undefined && <span className="tree-select__badge">{selectedBadge}</span>}
         <span aria-hidden="true" className="tree-select__caret">
           ▾
         </span>
@@ -459,6 +467,7 @@ export function TreeSelect(props: TreeSelectProps) {
                     onClick={() => choose(row.value)}
                   >
                     <span>{row.name}</span>
+                    {row.badge !== undefined && <span className="tree-select__badge">{row.badge}</span>}
                     {isMulti && (row.isSelected || row.isViaGroup) && (
                       <span aria-hidden="true" className="tree-select__check">
                         ✓

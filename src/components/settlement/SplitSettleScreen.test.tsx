@@ -5,6 +5,7 @@
  * 書き込みのあとにデータを読み直すことを、インメモリの偽Repository(vi.fn)で検証する。
  * 割勘タブの絞り込み欄の開閉(計画Issue #266、初期は閉・タブの行のアイコンボタン・条件の保持と件数バッジ)も検証する。
  * 履歴タブ(計画Issue #268)は、タブの並び・精算の右どなりであること・絞り込みボタンを出さないことを検証する。
+ * 精算タブには、クローズ済みなのに残高があるバッチの数を赤丸で出す(計画Issue #249)ことを検証する。
  * 各タブの中身は SplitTab・SettleTab・SplitHistoryTab のテストで検証する。
  */
 import '@testing-library/jest-dom/vitest'
@@ -63,6 +64,7 @@ function makeRepositories() {
       findAll: vi.fn(async () => []),
       create: vi.fn(async (input: { name: string }) => ({ id: 77, name: input.name })),
       update: vi.fn(),
+      findCloseEntryIds: vi.fn(async (): Promise<number[]> => []),
     },
   }
   return repositories
@@ -215,5 +217,48 @@ describe('SplitSettleScreen: 履歴タブ(計画Issue #268)', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '割勘' }))
     expect(screen.getByRole('searchbox', { name: '摘要で検索' })).toHaveValue('ランチ')
+  })
+})
+
+describe('SplitSettleScreen: 精算タブの赤丸(計画Issue #249)', () => {
+  /** クローズ済みのバッチ(id 9)に、残高(立替金の借方500)が付いている状態の画面を開く */
+  function renderWithClosedBatch(balance: number) {
+    const repositories = makeRepositories()
+    const batch = { id: 9, name: '旅行', type: 'expense_splitting', counterpartyId: null, isActive: false, createdAt: '', updatedAt: '' }
+    repositories.settlementBatchRepository.findAll = vi.fn(async () => [batch]) as never
+    const [entry] = [{ id: 40, entryDate: '2026-10-06', memo: '旅行の立替', comment: null, currency: 'JPY', sourceType: 'manual', householdMemberId: 1, createdAt: '', updatedAt: '',
+      lines: [
+        { id: 401, journalEntryId: 40, accountId: 3, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: 9, side: 'debit', amount: 500, createdAt: '' },
+        { id: 402, journalEntryId: 40, accountId: 2, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: null, side: 'credit', amount: 500, createdAt: '' },
+        ...(balance === 0
+          ? [{ id: 403, journalEntryId: 40, accountId: 3, projectId: null, householdMemberId: 1, counterpartyId: null, settlementBatchId: 9, side: 'credit', amount: 500, createdAt: '' }]
+          : []),
+      ],
+    }]
+    repositories.journalEntryRepository.findAll = vi.fn(async () => [entry]) as never
+    render(<SplitSettleScreen repositories={repositories as unknown as SplitSettleRepositories} today="2026-10-31" />)
+  }
+
+  it('クローズ済みなのに残高があるバッチの数を、精算タブに赤丸で出す', async () => {
+    renderWithClosedBatch(500)
+
+    const tab = await screen.findByRole('tab', { name: /^精算/ })
+    expect(within(tab).getByText('1')).toBeInTheDocument()
+    expect(tab).toHaveAccessibleName('精算、精算済みなのに残高があるバッチが1件')
+  })
+
+  it('クローズ済みで残高が0のバッチだけのときは、赤丸を出さない', async () => {
+    renderWithClosedBatch(0)
+
+    const tab = await screen.findByRole('tab', { name: '精算' })
+    expect(within(tab).queryByText('1')).not.toBeInTheDocument()
+  })
+
+  it('割勘タブと履歴タブには、赤丸を出さない', async () => {
+    renderWithClosedBatch(500)
+
+    await screen.findByRole('tab', { name: /^精算/ })
+    expect(screen.getByRole('tab', { name: '割勘' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '履歴' })).toBeInTheDocument()
   })
 })

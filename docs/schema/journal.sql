@@ -147,6 +147,18 @@ BEGIN
   SELECT RAISE(ABORT, 'expense split source line cannot change side or amount');
 END;
 
+-- クローズ時の振替仕訳(計画Issue #249)。残高が残ったままの精算バッチをクローズすると、残りの残高を雑損失・雑収入へ
+-- 振り替える仕訳を自動で作る。その仕訳を記録する表で、再オープンのときに、ここにある仕訳を削除して残高を元に戻す。
+-- 仕訳を削除すると記録も消える(ON DELETE CASCADE。画面から振替仕訳を消した場合は、再オープンで消す対象が減るだけ)。
+-- バッチ側は、仕訳に紐づくバッチの物理削除を禁止するトリガーがあるため、RESTRICTのままでよい。
+CREATE TABLE settlement_batch_close_entries (
+  settlement_batch_id INTEGER NOT NULL REFERENCES settlement_batches(id),
+  journal_entry_id    INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+  PRIMARY KEY (settlement_batch_id, journal_entry_id)
+);
+
+CREATE INDEX idx_settlement_batch_close_entries_entry ON settlement_batch_close_entries(journal_entry_id);
+
 -- 関連仕訳グループ(多対多、計画Issue #138)。journal_entry_links(明細行単位のsettles/allocates
 -- リンク)は計画Issue #138で完全に撤廃した。残高計算・消込判定の役割は計画Issue #133で
 -- settlement_batch_idタグの集計方式に移管済みであり、残っていた表示系の役割(関連仕訳の

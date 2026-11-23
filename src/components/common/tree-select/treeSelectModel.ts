@@ -20,6 +20,8 @@ export interface TreeSelectItemNode {
   parentValue?: string | null
   /** 「親 > 子」のパス表示名。閉じた状態で同名の項目を区別するときに使う */
   pathName?: string
+  /** 項目の名前の横に出す、色付きの小さな印(例: クローズ済みの精算バッチの「Close」、計画Issue #249)。選択の動作には関わらない */
+  badge?: string
 }
 
 export interface TreeSelectGroupNode {
@@ -68,6 +70,8 @@ export interface TreeSelectItemRow {
   section: 'favorite' | 'tree'
   /** お気に入りか(★の状態) */
   isFavorite: boolean
+  /** 項目の名前の横に出す印(TreeSelectItemNode.badge) */
+  badge?: string
   /**
    * 階層つきの項目の開閉(計画Issue #234)。子を持つ項目は開いている(open)か閉じている(closed)か、子を持たない項目はleaf。
    * 階層つきではない項目と、検索中の行には付かない。開閉の操作は、openOverridesの「h:値」で持つ
@@ -149,6 +153,7 @@ export function buildTreeSelectRows({
               isViaGroup: viaGroup,
               section: 'favorite',
               isFavorite: true,
+              badge: node.badge,
             },
           ]
         : []
@@ -207,6 +212,7 @@ export function buildTreeSelectRows({
       isViaGroup: false,
       section: 'tree',
       isFavorite: isFavorite(node.value),
+      badge: node.badge,
       ...(q === '' ? { fold: !parentValues.has(node.value) ? ('leaf' as const) : isFoldOpen(node.value) ? ('open' as const) : ('closed' as const) } : {}),
     })
     return rows
@@ -228,6 +234,7 @@ export function buildTreeSelectRows({
                 isViaGroup: viaGroup,
                 section: 'tree',
                 isFavorite: isFavorite(node.value),
+                badge: node.badge,
               },
             ]
           : []

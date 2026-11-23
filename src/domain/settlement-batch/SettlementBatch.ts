@@ -10,6 +10,11 @@ export interface SettlementBatch {
   type: SettlementBatchType
   /** 世帯外の相手との割勘バッチにのみ設定する。世帯メンバー間のバッチはnull */
   counterpartyId: number | null
+  /**
+   * クローズされていない(未精算)ならtrue、クローズ済み(精算済み)ならfalse(計画Issue #249)。利用者が決める状態で、
+   * 残高から計算した結果は保存しない。クローズ済みは選択欄の候補に出ない(現在の値は残す)
+   */
+  isActive: boolean
   createdAt: string
   updatedAt: string
 }

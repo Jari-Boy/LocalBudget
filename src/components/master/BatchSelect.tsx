@@ -28,7 +28,7 @@ export interface BatchSelectProps {
 /**
  * 精算バッチを1つ選ぶ共通の選択欄(計画Issue #234。MemberSelect・CounterpartySelectのバッチ版)。
  * 画面ごとに候補を組み立てず、バッチと絞り込み条件(filter)だけを渡す。バッチに階層は無いので、元の並び順のまま
- * フラットに並べる。検索(ひらがな/カタカナ等を区別しない)・矢印キー・1件に絞れたときのEnter確定・「+ 新規追加」は、
+ * フラットに並べる。クローズ済みのバッチは候補に出さず、現在の値のときだけ「Close」バッジ付きで残す(計画Issue #249)。検索(ひらがな/カタカナ等を区別しない)・矢印キー・1件に絞れたときのEnter確定・「+ 新規追加」は、
  * 部品(TreeSelect)の中で行う。現在の値のバッチは、filterに合わなくても候補に残す。
  */
 export function BatchSelect({
@@ -45,13 +45,20 @@ export function BatchSelect({
   disabled,
 }: BatchSelectProps) {
   const categories = useMemo<TreeSelectCategory[]>(() => {
-    const candidates = batches.filter((b) => String(b.id) === value || filter === undefined || filter(b))
+    // クローズ済み(is_active = false)は候補に出さない。現在の値だけは残す(計画Issue #249)
+    const candidates = batches.filter((b) => String(b.id) === value || (b.isActive && (filter === undefined || filter(b))))
     if (candidates.length === 0) return []
     return [
       {
         key: 'batches',
         name: '精算バッチ',
-        nodes: candidates.map((b) => ({ kind: 'item' as const, value: String(b.id), name: b.name, isActive: true })),
+        nodes: candidates.map((b) => ({
+          kind: 'item' as const,
+          value: String(b.id),
+          name: b.name,
+          isActive: true,
+          ...(b.isActive ? {} : { badge: 'Close' }),
+        })),
       },
     ]
   }, [batches, filter, value])

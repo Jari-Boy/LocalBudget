@@ -109,6 +109,7 @@ function makeData(extraEntries: JournalEntry[] = []): SplitSettleData {
     batches: [],
     memberships: [],
     sourceLinks: [],
+    closeEntries: [],
   }
 }
 
@@ -520,7 +521,7 @@ describe('SplitTab', () => {
 
   it('精算バッチは、既定で「新しいバッチを作成」が選ばれ、既存のバッチも候補に出て、選び直して戻せる', () => {
     const data = makeData()
-    data.batches = [{ id: 7, name: '9月の精算', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
+    data.batches = [{ id: 7, name: '9月の精算', type: 'expense_splitting', counterpartyId: null, isActive: true, createdAt: '', updatedAt: '' }]
     setup(data)
 
     const batchButton = () => screen.getByRole('button', { name: /^精算バッチ: (新しいバッチを作成|9月の精算)$/ })
@@ -537,7 +538,7 @@ describe('SplitTab', () => {
 
   it('「新しいバッチを作成」を選んでいるときだけ、精算バッチの下に「摘要がバッチの名前になります。」を出す(摘要の欄の下には出さない)', () => {
     const data = makeData()
-    data.batches = [{ id: 7, name: '9月の精算', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
+    data.batches = [{ id: 7, name: '9月の精算', type: 'expense_splitting', counterpartyId: null, isActive: true, createdAt: '', updatedAt: '' }]
     setup(data)
     const note = () => screen.queryByText('摘要がバッチの名前になります。')
 
@@ -577,7 +578,7 @@ describe('SplitTab', () => {
 
   it('既存の精算バッチを選んだときも、入力した摘要は割勘仕訳の摘要になり、バッチは作らない', async () => {
     const data = makeData()
-    data.batches = [{ id: 7, name: '9月の精算', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
+    data.batches = [{ id: 7, name: '9月の精算', type: 'expense_splitting', counterpartyId: null, isActive: true, createdAt: '', updatedAt: '' }]
     const { repositories } = setup(data)
 
     fireEvent.click(debitBox('ランチ'))

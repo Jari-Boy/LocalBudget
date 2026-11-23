@@ -82,6 +82,61 @@ describe('update', () => {
   })
 })
 
+describe('クローズ(is_active、計画Issue #249)', () => {
+  it('作成した精算バッチは、クローズされていない(isActive = true)', () => {
+    const created = repository.create({ name: '10月の割勘', type: 'expense_splitting' })
+
+    expect(created.isActive).toBe(true)
+  })
+
+  it('deactivateでクローズ済み(isActive = false)になり、activateでクローズされていない状態に戻る', () => {
+    const created = repository.create({ name: '10月の割勘', type: 'expense_splitting' })
+
+    expect(repository.deactivate(created.id).isActive).toBe(false)
+    expect(repository.findById(created.id)?.isActive).toBe(false)
+    expect(repository.activate(created.id).isActive).toBe(true)
+  })
+
+  it('クローズしても、バッチ名と世帯外の相手は変わらない', () => {
+    const counterpartyId = insertCounterparty(db, '田中さん')
+    const created = repository.create({ name: '飲み代', type: 'expense_splitting', counterpartyId })
+
+    const closed = repository.deactivate(created.id)
+
+    expect(closed).toMatchObject({ name: '飲み代', counterpartyId })
+  })
+})
+
+describe('クローズ時の振替仕訳の記録', () => {
+  it('記録した仕訳のidを、バッチごとに取り出せる', () => {
+    const a = repository.create({ name: 'A', type: 'expense_splitting' })
+    const b = repository.create({ name: 'B', type: 'expense_splitting' })
+    const [e1, e2, e3] = insertEntries(db, 3)
+
+    repository.recordCloseEntries(a.id, [e1, e2])
+    repository.recordCloseEntries(b.id, [e3])
+
+    expect(repository.findCloseEntryIds(a.id)).toEqual([e1, e2])
+    expect(repository.findCloseEntryIds(b.id)).toEqual([e3])
+  })
+
+  it('記録が無いバッチは空配列を返す', () => {
+    const a = repository.create({ name: 'A', type: 'expense_splitting' })
+
+    expect(repository.findCloseEntryIds(a.id)).toEqual([])
+  })
+
+  it('記録した仕訳を削除すると、記録からも消える', () => {
+    const a = repository.create({ name: 'A', type: 'expense_splitting' })
+    const [e1, e2] = insertEntries(db, 2)
+    repository.recordCloseEntries(a.id, [e1, e2])
+
+    db.run('DELETE FROM journal_entries WHERE id = ?', [e1])
+
+    expect(repository.findCloseEntryIds(a.id)).toEqual([e2])
+  })
+})
+
 describe('findAll', () => {
   it('作成した全ての精算バッチを返す', () => {
     repository.create({ name: '6月生活費', type: 'expense_splitting' })
@@ -131,4 +186,13 @@ function insertAccount(database: Database, category: string, name: string): numb
 function insertCounterparty(database: Database, name: string): number {
   database.run(`INSERT INTO counterparties (name) VALUES (?)`, [name])
   return lastInsertRowId(database)
+}
+
+function insertEntries(database: Database, count: number): number[] {
+  database.run(`INSERT INTO household_members (name) VALUES ('自分')`)
+  const memberId = lastInsertRowId(database)
+  return Array.from({ length: count }, () => {
+    database.run(`INSERT INTO journal_entries (entry_date, household_member_id) VALUES ('2026-07-01', ?)`, [memberId])
+    return lastInsertRowId(database)
+  })
 }

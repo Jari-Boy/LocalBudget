@@ -6,13 +6,12 @@ import {
 } from '../../domain/settlement/findUnassignedAdvanceEntriesForTarget'
 import { buildJournalEntryUpdateWithAssignedSettlementBatch } from '../../domain/settlement/buildJournalEntryUpdateWithAssignedSettlementBatch'
 import { resolveSettlementAdjustment } from '../../domain/settlement/resolveSettlementAdjustment'
+import { buildSettlementCloseEntries } from '../../domain/settlement-batch/buildSettlementCloseEntries'
 import { planSettlementBatchDeletion } from '../../domain/settlement-batch/planSettlementBatchDeletion'
 import { resolveSettlementTarget } from '../../domain/settlement-batch/resolveSettlementTarget'
-import {
-  summarizeSettlementBatch,
-  type SettlementBatchSummary,
-  type SettlementDirection,
-} from '../../domain/settlement-batch/summarizeSettlementBatch'
+import { isClosedWithBalance, isWaitingToClose, sortClosedWithBalanceFirst } from '../../domain/settlement-batch/settlementBatchStatus'
+import type { SettlementBatchSummary, SettlementDirection } from '../../domain/settlement-batch/summarizeSettlementBatch'
+import { summarizeSettlementBatches } from '../../domain/settlement-batch/summarizeSettlementBatches'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { JournalFilterPopup } from '../common/journal-filter/JournalFilterPopup'
 import { countActiveConditions } from '../common/journal-filter/journalFilterModel'
@@ -24,17 +23,18 @@ import { EntryDetailDialog } from './EntryDetailDialog'
 import { findAccountBySystemRole } from '../../domain/account/findAccountBySystemRole'
 import { createLineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
 import { runInHistoryGroup } from '../../infrastructure/history/historyGroupRunner'
+import { closeSettlementBatch, reopenSettlementBatch } from './closeSettlementBatch'
 import { createSettlementEntry, tagCandidatesToBatch } from './submitSettlement'
 import { StickyHeaderTable } from '../common/sticky/StickyHeaderTable'
 import './SplitSettleScreen.css'
 
 
-type StatusFilter = 'open' | 'settled' | 'all'
+/** 状態の絞り込み。精算済みはクローズ済みのこと(利用者が決める。残高が0かどうかでは決めない、計画Issue #249) */
+type StatusFilter = 'open' | 'settled'
 
 const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'open', label: '未精算' },
   { key: 'settled', label: '精算済み' },
-  { key: 'all', label: 'すべて' },
 ]
 
 const DIRECTIONS: { key: SettlementDirection; label: string; sub: string }[] = [
@@ -53,14 +53,21 @@ export interface SettleTabProps {
 }
 
 const matchesStatus = (summary: SettlementBatchSummary, key: StatusFilter) =>
-  key === 'all' || (key === 'settled' ? summary.isSettled : !summary.isSettled)
+  key === 'settled' ? !summary.batch.isActive : summary.batch.isActive
+
+/** 一覧に出す順。精算済みでは、クローズ後に残高が動いたバッチを先頭に出して気づけるようにする */
+const listFor = (summaries: readonly SettlementBatchSummary[], key: StatusFilter) => {
+  const matched = summaries.filter((s) => matchesStatus(s, key))
+  return key === 'settled' ? sortClosedWithBalanceFirst(matched) : matched
+}
 
 const signed = (amount: number) => (amount > 0 ? `+${formatCurrency(amount, 'JPY')}` : formatCurrency(amount, 'JPY'))
 
 /**
  * 精算タブ(計画Issue #153、承認済みモックアップ)。精算バッチを先に選び、一覧に立替金と未払金の
- * 残高を別々に出す(合算も相殺もしない)。「未精算」「精算済み」「すべて」で切り替え、精算済みは
- * 履歴として見られる(精算済みは、バッチの残高が0かどうかだけで判定する)。選んだバッチの
+ * 残高を別々に出す(合算も相殺もしない)。「未精算」「精算済み」で切り替える。精算済みはクローズ済みのバッチで、
+ * 利用者がクローズして決める(計画Issue #249。残高が0になったら「クローズしますか?」と促し、残高があるままでも
+ * 残りを雑損失・雑収入へ振り替える仕訳を自動で作ってクローズできる。再オープンでその仕訳を削除する)。選んだバッチの
  * 「立替金を減らす」「未払金を減らす」の2枚のカードで方向を切り替え、方向の残高と、選んだ仕訳の
  * 合計を比べる。一致すれば精算完了、不一致なら未精算として残すか、差額を雑収入・雑損失に計上して
  * 完了するかを選ぶ(docs/domain/settlement.md 1.9)。候補の有無によらず、精算の仕訳を起票できる。
@@ -81,6 +88,9 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
   const [submitting, setSubmitting] = useState(false)
   const [detailEntryId, setDetailEntryId] = useState<number | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [confirmingClose, setConfirmingClose] = useState(false)
+  /** 「クローズしますか?」のダイアログを出しているバッチ(残高が0になったとき) */
+  const [closeDialogId, setCloseDialogId] = useState<number | null>(null)
   const [confirmingUnlinkLineId, setConfirmingUnlinkLineId] = useState<number | null>(null)
   // 候補のチェックの範囲選択の基点。選択対象(候補)は、下の早期 return のあとで決まるため、基点だけをここで持つ(計画Issue #235 D)
   const rangeAnchor = useRangeAnchor<number>()
@@ -96,21 +106,21 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
 
   const allLines = useMemo(() => data.entries.flatMap((e) => e.lines), [data.entries])
   const summaries = useMemo(
-    () => data.batches.map((b) => summarizeSettlementBatch(b, allLines, data.accounts)),
+    () => summarizeSettlementBatches(data.batches, allLines, data.accounts),
     [data.batches, allLines, data.accounts],
   )
-  const listed = summaries.filter((s) => matchesStatus(s, statusFilter))
+  const listed = listFor(summaries, statusFilter)
   const summary = summaries.find((s) => s.batch.id === selectedId) ?? listed[0] ?? summaries[0] ?? null
 
-  // 精算して残高が0になったバッチは、精算済みの一覧に移して、そのまま選んだままにする
+  // 精算して残高が0になったバッチは、未精算のまま「クローズしますか?」と促す(精算済みへ移すのは利用者のクローズ)
   const effectiveId = summary?.batch.id ?? null
   const wasSettled = useRef<{ id: number; settled: boolean } | null>(null)
   useEffect(() => {
     if (summary === null) return
     if (selectedId === null) setSelectedId(summary.batch.id)
     const before = wasSettled.current
-    if (before !== null && before.id === summary.batch.id && !before.settled && summary.isSettled) {
-      setStatusFilter((current) => (current === 'open' ? 'settled' : current))
+    if (before !== null && before.id === summary.batch.id && !before.settled && isWaitingToClose(summary)) {
+      setCloseDialogId(summary.batch.id)
     }
     wasSettled.current = { id: summary.batch.id, settled: summary.isSettled }
   }, [effectiveId, summary?.isSettled]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -124,6 +134,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
     setCheckedLineIds(new Set())
     setDraftOpen(false)
     setConfirmingDelete(false)
+    setConfirmingClose(false)
     setConfirmingUnlinkLineId(null)
     setDraftAmount('')
     setFlash('')
@@ -189,10 +200,11 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
 
   const taggedEntries = data.entries.filter((e) => e.lines.some((l) => l.settlementBatchId === batch.id))
   const detailEntry = data.entries.find((e) => e.id === detailEntryId)
+  const closeDialogSummary = summaries.find((s) => s.batch.id === closeDialogId && isWaitingToClose(s))
   const taggedEntryIds = taggedEntries.map((e) => e.id)
   const entryHouseholdMemberId = resolved.target?.householdMemberId ?? data.members[0]?.id ?? null
 
-  const run = async (action: () => Promise<void>, done: string) => {
+  const run = async (action: () => Promise<void>, done: string, failed = '精算を記録できませんでした') => {
     if (submitting) return
     setSubmitting(true)
     setError('')
@@ -202,7 +214,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
       await onChanged()
       setFlash(done)
     } catch {
-      setError('精算を記録できませんでした')
+      setError(failed)
     } finally {
       setSubmitting(false)
     }
@@ -241,6 +253,65 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
           : '選択した仕訳をバッチに割り当てました',
     )
   }
+
+  const closeEntryIds = data.closeEntries.find((c) => c.batchId === batch.id)?.entryIds ?? []
+  const accountName = (id: number) => data.accounts.find((a) => a.id === id)?.name ?? ''
+  // 残高があるままクローズするときに自動で作る振替仕訳(確認に内容を見せる)
+  const closePreview =
+    batch.isActive && !summary.isSettled
+      ? buildSettlementCloseEntries({
+          summary,
+          accounts: data.accounts,
+          gainAccountId: gainId ?? 0,
+          lossAccountId: lossId ?? 0,
+          entryDate: today,
+          memo: null,
+        })
+      : []
+
+  // クローズする。残高があれば、残りを雑損失・雑収入へ振り替える仕訳を自動で作る(確認のあとだけ)。終わったら精算済みへ移して選んだままにする
+  const closeBatch = (target: SettlementBatchSummary) => {
+    if (!isWaitingToClose(target) && (gainId === null || lossId === null)) {
+      setError('差額を計上する科目(雑収入・雑損失)が見つかりません')
+      return
+    }
+    const taggedIds = data.entries.filter((e) => e.lines.some((l) => l.settlementBatchId === target.batch.id)).map((e) => e.id)
+    void run(
+      async () => {
+        await runInHistoryGroup(repositories.history, 'settlement.close', () =>
+          closeSettlementBatch({
+            summary: target,
+            accounts: data.accounts,
+            taggedEntryIds: taggedIds,
+            gainAccountId: gainId ?? 0,
+            lossAccountId: lossId ?? 0,
+            entryDate: today,
+            repositories,
+          }),
+        )
+        setCloseDialogId(null)
+        setStatusFilter('settled')
+        setSelectedId(target.batch.id)
+      },
+      target.isSettled ? 'クローズしました。精算済みに移りました' : 'クローズしました。残高を振り替える仕訳を作成しました',
+      'クローズできませんでした',
+    )
+  }
+
+  const reopenBatch = () =>
+    void run(
+      async () => {
+        await runInHistoryGroup(repositories.history, 'settlement.reopen', () =>
+          reopenSettlementBatch({ batchId: batch.id, repositories }),
+        )
+        setStatusFilter('open')
+        setSelectedId(batch.id)
+      },
+      closeEntryIds.length > 0
+        ? `再オープンしました。自動仕訳${closeEntryIds.length}件を削除し、残高を元に戻しました`
+        : '再オープンしました。未精算に戻りました',
+      '再オープンできませんでした',
+    )
 
   const deletion = planSettlementBatchDeletion(batch.id, data.entries)
 
@@ -339,12 +410,12 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
               className={`split-settle__btn split-settle__btn--small${statusFilter === item.key ? ' split-settle__btn--pressed' : ''}`}
               onClick={() => {
                 setStatusFilter(item.key)
-                const first = summaries.find((s) => matchesStatus(s, item.key))
+                const first = listFor(summaries, item.key)[0]
                 if (first !== undefined) setSelectedId(first.batch.id)
                 resetWorking()
               }}
             >
-              {item.label} {summaries.filter((s) => matchesStatus(s, item.key)).length}
+              {item.label} {listFor(summaries, item.key).length}
             </button>
           ))}
         </div>
@@ -377,6 +448,8 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
                   >
                     {s.batch.name}
                   </button>
+                  {isWaitingToClose(s) && <span className="split-settle__badge split-settle__badge--warn">残高0 · クローズ待ち</span>}
+                  {isClosedWithBalance(s) && <span className="split-settle__badge split-settle__badge--warn">残高あり</span>}
                   <div className="split-settle__note">
                     {counterpartyName(s.batch.counterpartyId) || '世帯内'}
                   </div>
@@ -449,11 +522,45 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
         </div>
 
         {!summary.hasLines && <p className="split-settle__note">このバッチが付いた明細はまだありません。</p>}
-        {summary.isSettled && (
-          <p className="split-settle__settled">精算済みです。未収金と未払金の残高はどちらも0です。</p>
+        {!batch.isActive && summary.isSettled && (
+          <p className="split-settle__settled">
+            精算済みです(クローズ済み)。選択欄の候補には出ません。
+            {closeEntryIds.length > 0 && (
+              <>
+                <br />
+                <span className="split-settle__settled-sub">
+                  クローズ時に残りの残高を、自動仕訳で振り替えました(下の「このバッチの仕訳」)。
+                </span>
+              </>
+            )}
+          </p>
+        )}
+        {isClosedWithBalance(summary) && (
+          <p className="split-settle__closed-warn" role="alert">
+            <strong>精算済みですが、残高が残っています。</strong>
+            <span>クローズ後に仕訳が編集された可能性があります。再オープンして精算し直してください。</span>
+          </p>
+        )}
+        {isWaitingToClose(summary) && (
+          <div className="split-settle__suggest">
+            <span className="split-settle__suggest-text">
+              <strong>残高が0になりました。クローズしますか?</strong>
+              <span className="split-settle__note">
+                クローズすると精算済みに移り、選択欄の候補に出なくなります(あとで再オープンできます)。
+              </span>
+            </span>
+            <button
+              type="button"
+              className="split-settle__btn split-settle__btn--small split-settle__btn--primary"
+              disabled={submitting}
+              onClick={() => closeBatch(summary)}
+            >
+              クローズする
+            </button>
+          </div>
         )}
 
-        {!summary.isSettled && (
+        {batch.isActive && !summary.isSettled && (
           <div className="split-settle__section">
             <h3 className="split-settle__h3">精算する仕訳を探す</h3>
             <div className="split-settle__popup-row">
@@ -642,6 +749,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
                     >
                       {entry.entryDate} {entry.memo ?? ''}
                     </button>
+                    {closeEntryIds.includes(entry.id) && <span className="split-settle__badge">自動仕訳</span>}
                     <span className="split-settle__note split-settle__tagged-account">
                       {l.side === 'debit' ? '借方' : '貸方'} {data.accounts.find((a) => a.id === l.accountId)?.name ?? ''}
                     </span>
@@ -690,7 +798,76 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
           )}
         </div>
 
-        {!summary.isSettled && (
+        <div className="split-settle__section">
+          <h3 className="split-settle__h3">バッチのクローズ</h3>
+          {!batch.isActive ? (
+            <>
+              <p className="split-settle__note">
+                {closeEntryIds.length > 0
+                  ? `再オープンすると、クローズ時の自動仕訳(${closeEntryIds.length}件)を削除し、バッチの残高を元に戻して、未精算に戻します。`
+                  : '再オープンすると未精算に戻り、また選択欄で選べるようになります。'}
+              </p>
+              <div>
+                <button type="button" className="split-settle__btn split-settle__btn--small" disabled={submitting} onClick={reopenBatch}>
+                  {closeEntryIds.length > 0 ? '再オープンして自動仕訳を削除' : '再オープンする'}
+                </button>
+              </div>
+            </>
+          ) : confirmingClose && closePreview.length > 0 ? (
+            <div className="split-settle__close-confirm">
+              <p className="split-settle__note split-settle__note--warn-text">
+                <strong>残高があります。</strong>
+                クローズすると、残りの残高を雑損失・雑収入へ振り替える仕訳を自動で作り、残高を0にして精算済みに移します。
+              </p>
+              <div className="split-settle__close-preview">
+                <span className="split-settle__label">作成される仕訳(取引日 {today})</span>
+                {closePreview.map((e, i) => {
+                  const debit = e.lines.find((l) => l.side === 'debit')
+                  const credit = e.lines.find((l) => l.side === 'credit')
+                  return (
+                    <div key={i} className="split-settle__close-preview-row">
+                      <span>{`借方 ${accountName(debit?.accountId ?? 0)} / 貸方 ${accountName(credit?.accountId ?? 0)}`}</span>
+                      <span className="split-settle__num">{formatCurrency(debit?.amount ?? 0, 'JPY')}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="split-settle__note">再オープンすると、この仕訳は削除されます。</p>
+              <span className="split-settle__confirm">
+                <button type="button" className="split-settle__btn split-settle__btn--small" onClick={() => setConfirmingClose(false)}>
+                  やめる
+                </button>
+                <button
+                  type="button"
+                  className="split-settle__btn split-settle__btn--small split-settle__btn--primary"
+                  disabled={submitting}
+                  onClick={() => closeBatch(summary)}
+                >
+                  仕訳を作ってクローズする
+                </button>
+              </span>
+            </div>
+          ) : (
+            <>
+              <p className="split-settle__note">
+                クローズすると精算済みに移ります。
+                {summary.isSettled ? '' : '残高があるときは、残りを雑損失・雑収入に振り替える仕訳を自動で作ります(確認が出ます)。'}
+              </p>
+              <div>
+                <button
+                  type="button"
+                  className="split-settle__btn split-settle__btn--small"
+                  disabled={submitting}
+                  onClick={() => (summary.isSettled || closePreview.length === 0 ? closeBatch(summary) : setConfirmingClose(true))}
+                >
+                  このバッチをクローズ
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {batch.isActive && !summary.isSettled && (
           <div className="split-settle__section">
             <h3 className="split-settle__h3">バッチの削除</h3>
             {!deletion.deletable ? (
@@ -737,6 +914,35 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
           </div>
         )}
       </section>
+
+      {closeDialogSummary !== undefined && (
+        <div className="split-settle__backdrop">
+          <div role="dialog" aria-label="クローズの確認" className="split-settle__dialog split-settle__dialog--small">
+            <h3 className="split-settle__dialog-title">クローズしますか?</h3>
+            <p className="split-settle__dialog-body">
+              「{closeDialogSummary.batch.name}」の残高が0になりました。
+              <br />
+              <span className="split-settle__nowrap-phrase">クローズすると精算済みになり、</span>
+              <span className="split-settle__nowrap-phrase">選択欄の候補に出なくなります。</span>
+              <br />
+              あとで再オープンもできます。
+            </p>
+            <div className="split-settle__dialog-actions">
+              <button type="button" className="split-settle__btn split-settle__btn--small" onClick={() => setCloseDialogId(null)}>
+                あとで
+              </button>
+              <button
+                type="button"
+                className="split-settle__btn split-settle__btn--small split-settle__btn--primary"
+                disabled={submitting}
+                onClick={() => closeBatch(closeDialogSummary)}
+              >
+                クローズする
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {detailEntry !== undefined && (
         <EntryDetailDialog

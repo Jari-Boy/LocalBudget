@@ -62,7 +62,7 @@ const master: JournalEditorMaster = {
     { id: 1, name: '太郎', isGroup: false, isActive: true, createdAt: '', updatedAt: '' },
     { id: 2, name: '花子', isGroup: false, isActive: true, createdAt: '', updatedAt: '' },
   ],
-  batches: [{ id: 30, name: '11月の割勘', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }],
+  batches: [{ id: 30, name: '11月の割勘', type: 'expense_splitting', counterpartyId: null, isActive: true, createdAt: '', updatedAt: '' }],
 }
 
 const lookup: JournalLineTableLookup = {

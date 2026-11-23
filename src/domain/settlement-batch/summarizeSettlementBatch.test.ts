@@ -19,6 +19,7 @@ const batch: SettlementBatch = {
   name: '10月分 割勘(妻)',
   type: 'expense_splitting',
   counterpartyId: null,
+  isActive: true,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 }
