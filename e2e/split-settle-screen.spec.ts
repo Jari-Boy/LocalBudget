@@ -320,15 +320,51 @@ test.describe('精算タブ', () => {
       await chooseFromTree(page, /^相手科目/, '割勘用現金')
       await expect(panel.getByLabel('金額')).toHaveValue('500')
       await panel.getByRole('button', { name: '起票してバッチに紐付け' }).click()
-      await expect(panel.getByText('仕訳を起票してバッチに紐付けました').or(panel.getByText('精算済みです'))).toBeVisible()
+      // 残高が0になった2回目は、結果の表示が「クローズしますか?」の案内に変わる
+      await expect(panel.getByText('仕訳を起票してバッチに紐付けました').or(panel.getByText('残高が0になりました。クローズしますか?'))).toBeVisible()
     }
 
-    await expect(panel.getByText('精算済みです。未収金と未払金の残高はどちらも0です。')).toBeVisible()
     await waitForJournalEntryCount(page, 4)
 
-    // 残高が0になったバッチは精算済みの一覧に移り、そのまま精算済みとして表示される
+    // 残高が0になっても、利用者がクローズするまでは未精算のまま。「クローズしますか?」と促される(計画Issue #249)
+    await expect(page.getByRole('dialog', { name: 'クローズの確認' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^未精算/ })).toHaveAttribute('aria-pressed', 'true')
+    await page.getByRole('dialog', { name: 'クローズの確認' }).getByRole('button', { name: 'クローズする' }).click()
+
+    // クローズすると精算済みの一覧に移り、そのまま精算済みとして表示される
+    await expect(panel.getByText(/精算済みです\(クローズ済み\)/)).toBeVisible()
     await expect(page.getByRole('button', { name: /^精算済み 1/ })).toHaveAttribute('aria-pressed', 'true')
     await expect(list.getByRole('button', { name: '精算テストの食事代の割勘' })).toBeVisible()
+  })
+
+  test('残高があるバッチをクローズすると、振替仕訳が自動で作られ、再オープンすると削除されて残高が元に戻る', async ({ page }) => {
+    await page.goto('/')
+    const data = await setupBaseData(page, 'クローズテスト')
+    await createOriginalExpenseEntry(page, data, 'クローズテストの食事代', 1000)
+    await openSplitSettle(page)
+    await splitWithMember(page, 'クローズテストの食事代')
+    await waitForJournalEntryCount(page, 2)
+
+    await page.getByRole('tab', { name: '精算' }).click()
+    const list = page.getByRole('region', { name: '精算バッチ一覧' })
+    await list.getByRole('button', { name: 'クローズテストの食事代の割勘' }).click()
+    const panel = page.getByRole('region', { name: '選択中の精算バッチ' })
+
+    // 残高(未収金500・未払金500)が残ったままクローズする。確認に、作られる仕訳の内容が出る
+    await panel.getByRole('button', { name: 'このバッチをクローズ' }).click()
+    await expect(panel.getByText('残高があります。', { exact: false })).toBeVisible()
+    await panel.getByRole('button', { name: '仕訳を作ってクローズする' }).click()
+
+    await expect(panel.getByText(/精算済みです\(クローズ済み\)/)).toBeVisible()
+    await expect(page.getByRole('button', { name: /^精算済み 1/ })).toHaveAttribute('aria-pressed', 'true')
+    await waitForJournalEntryCount(page, 4)
+
+    // 再オープンすると、自動仕訳が削除されて残高が元に戻り、未精算に戻る
+    await panel.getByRole('button', { name: '再オープンして自動仕訳を削除' }).click()
+    await expect(page.getByRole('button', { name: /^精算済み 0/ })).toBeVisible()
+    await expect(panel.getByText('再オープンしました。自動仕訳2件を削除し、残高を元に戻しました')).toBeVisible()
+    await waitForJournalEntryCount(page, 2)
+    await expect(list.getByRole('row').filter({ hasText: 'クローズテストの食事代の割勘' })).toContainText(MONEY_500)
   })
 
   test('精算で紐づけた行は、紐づけを解除でき、バッチの残高が元に戻る', async ({ page }) => {
