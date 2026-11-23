@@ -4,6 +4,8 @@
  * 仕訳一覧と同じ作りの絞り込みパネル(摘要の検索・期間・金額(マイナスも指定できる)・相手科目/取引先/プロジェクト/世帯メンバー/精算バッチの複数選択欄と「未設定」)で行を絞れること、
  * 複数の条件がANDで効くこと、条件の解除で全行に戻ること、タブの件数が「表示中 / 全体」になること、
  * 表示されなくなった行(絞り込みで隠れた行・1ページ目に戻って見えなくなった行)のチェックが外れること、一括設定と確定が表示中の行だけに及ぶことを確認する。
+ * 絞り込み欄の開閉(計画Issue #266)として、初期状態が閉じていること、タブの行のアイコンボタンでの開閉、閉じても条件が保たれ件数バッジが出ることも確認する
+ * (既存のテストは panel() が閉じていれば開いてから使う)。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -120,8 +122,12 @@ const pickIn = (scope: ReturnType<typeof within>, label: string, item: string) =
   fireEvent.click(scope.getByRole('button', { name: new RegExp(`^${label}`) }))
   fireEvent.click(within(screen.getByRole('dialog', { name: label })).getByRole('button', { name: item }))
 }
-/** 仕訳一覧と同じ作りの、明細の絞り込みパネル */
-const panel = () => within(screen.getByRole('search', { name: '明細の絞り込み' }))
+/** 仕訳一覧と同じ作りの、明細の絞り込みパネル。初期状態は「閉」(計画Issue #266)なので、閉じていれば開いてから返す */
+const panel = () => {
+  const opener = screen.queryByRole('button', { name: /^絞り込みを開く/ })
+  if (opener !== null) fireEvent.click(opener)
+  return within(screen.getByRole('search', { name: '明細の絞り込み' }))
+}
 /** パネルの選択欄を開き、項目を選んで(複数選択なので開いたまま)閉じる。選び済みの項目を選ぶと外れる */
 const chooseFilter = (label: string, ...items: string[]) => {
   const trigger = panel().getByRole('button', { name: new RegExp(`^${label}`) })
@@ -139,6 +145,43 @@ const typeDescriptionFilter = (text: string) =>
   fireEvent.change(panel().getByRole('searchbox', { name: '摘要で検索' }), { target: { value: text } })
 const clearFilter = () => fireEvent.click(panel().getByRole('button', { name: '条件をクリア' }))
 const confirmButton = (count: number) => screen.getByRole('button', { name: new RegExp(`^\\d+ / ${count} 件を「普通預金」に確定$`) })
+
+describe('StatementImportScreen: 絞り込み欄の開閉(計画Issue #266)', () => {
+  it('絞り込み欄は初期状態で閉じていて、タブの行のアイコンのボタンで開閉できる', async () => {
+    renderScreen()
+    await chooseCsv(CSV)
+    expect(screen.queryByRole('search', { name: '明細の絞り込み' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '絞り込みを開く' }))
+    expect(screen.getByRole('search', { name: '明細の絞り込み' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '絞り込みを閉じる' }))
+    expect(screen.queryByRole('search', { name: '明細の絞り込み' })).not.toBeInTheDocument()
+  })
+
+  it('開閉ボタンはタブ(tablist)と同じ行にあり、tablist の子ではない', async () => {
+    renderScreen()
+    await chooseCsv(CSV)
+    const tabs = screen.getByRole('tablist')
+    const toggle = screen.getByRole('button', { name: '絞り込みを開く' })
+    expect(tabs.parentElement).toContainElement(toggle)
+    expect(tabs).not.toContainElement(toggle)
+  })
+
+  it('閉じても入力済みの条件と絞り込みの結果は保たれ、ボタンの件数バッジで絞り込み中だと分かる', async () => {
+    renderScreen()
+    await chooseCsv(CSV)
+    typeDescriptionFilter('セブン')
+    fireEvent.click(screen.getByRole('button', { name: /^絞り込みを閉じる/ }))
+
+    expect(screen.queryByRole('search', { name: '明細の絞り込み' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '絞り込みを開く(1件適用中)' })).toBeInTheDocument()
+    expect(hasRow(/ローソン/)).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: /^絞り込みを開く/ }))
+    expect(screen.getByRole('searchbox', { name: '摘要で検索' })).toHaveValue('セブン')
+  })
+})
 
 describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)', () => {
   it('摘要で検索すると、表記ゆれ(ハイフンの有無)を含めて該当する行だけが表示され、条件をクリアすると全行に戻る', async () => {

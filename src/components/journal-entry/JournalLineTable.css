@@ -1,4 +1,9 @@
 /* 仕訳一覧の「明細行単位」の表(計画Issue #182)。色・余白は既存の仕訳一覧と同じデザイントークンを使う */
+/*
+ * 表の枠は横スクロールだけ(縦はページのスクロール)。見出しは、この枠の中では固定できないため(sticky は枠の縦スクロールにしか効かない)、
+ * 枠の外に複製を置いて固定する(FloatingTableHeader)。枠の内側にスクロールを作ると、枠の端でページのスクロールに引き継がれて
+ * 見出しが隠れて使いにくい(計画Issue #266)。
+ */
 .journal-line-table {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -7,8 +12,9 @@
   text-align: left;
   color: var(--color-text);
 }
-
 .journal-line-table-wrap {
+  /* 見出しの複製を固定する高さ: 上部に固定したタブ・絞り込み欄・一括編集バーの下(画面側が変数に入れる) */
+  --floating-header-top: calc(var(--sticky-head-h, 0px) + var(--sticky-bulk-h, 0px));
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -26,7 +32,8 @@
   font-size: var(--font-size-xs);
 }
 
-.journal-line-table th {
+.journal-line-table th,
+.floating-table-header--lines th {
   position: relative;
   padding: 8px 6px;
   background: var(--color-hover);
@@ -121,7 +128,8 @@
 }
 
 .journal-line-table__cell--amount,
-.journal-line-table th.journal-line-table__cell--amount {
+.journal-line-table th.journal-line-table__cell--amount,
+.floating-table-header--lines th.journal-line-table__cell--amount {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }

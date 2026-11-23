@@ -43,6 +43,7 @@ import { MemberSelect } from './MemberSelect'
 import { DefaultMemberChangeDialog } from './DefaultMemberChangeDialog'
 import { buildAccountTree, groupNodeId, leafNodeId, parseNodeId } from './masterTreeNodes'
 import type { MaybeAsync } from './maybeAsync'
+import { StickyToolbar } from '../common/sticky/StickyToolbar'
 import './master.css'
 
 export interface AccountMasterTabProps {
@@ -263,7 +264,8 @@ export function AccountMasterTab({
   return (
     <div className="master-split">
       <div className="master-split__main">
-        <div className="master-actions">
+        {/* 検索・追加ボタンの行は、スクロールしても画面の上部に固定する(計画Issue #266) */}
+        <StickyToolbar className="master-actions">
           <TreeSearchInput
             value={query}
             onChange={(next) => {
@@ -273,7 +275,7 @@ export function AccountMasterTab({
             }}
             leafLabel={t('accountTab.searchLeaf')}
           />
-        </div>
+        </StickyToolbar>
         <TreeTable
           categories={tree.categories}
           nodes={shownNodes}

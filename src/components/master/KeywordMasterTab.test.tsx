@@ -193,7 +193,7 @@ describe('KeywordMasterTab', () => {
     renderTab()
     await screen.findByRole('table')
 
-    fireEvent.click(screen.getByLabelText('すべて選択'))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'すべて選択' }))
 
     expect(screen.getByRole('region', { name: '一括操作' })).toBeInTheDocument()
     expect(screen.getByText('2件を選択中')).toBeInTheDocument()
@@ -236,7 +236,7 @@ describe('KeywordMasterTab', () => {
     rules.create({ pattern: 'AMAZON', counterpartyId: aeonId, accountId: foodId })
     renderTab()
     await screen.findByRole('table')
-    fireEvent.click(screen.getByLabelText('すべて選択'))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'すべて選択' }))
 
     const panel = within(screen.getByRole('region', { name: '一括操作' }))
     chooseEntity('科目', '現金', panel)
@@ -270,7 +270,7 @@ describe('KeywordMasterTab', () => {
     rules.create({ pattern: 'VISA', accountId: cashId })
     renderTab()
     await screen.findByRole('table')
-    fireEvent.click(screen.getByLabelText('すべて選択'))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'すべて選択' }))
 
     fireEvent.click(within(screen.getByRole('region', { name: '一括操作' })).getByRole('button', { name: '選択を解除' }))
 

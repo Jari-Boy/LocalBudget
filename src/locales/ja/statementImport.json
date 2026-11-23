@@ -73,6 +73,7 @@
   "bulkCommentLabel": "一括で設定するコメント",
   "bulkCommentApply": "コメントを適用",
   "bulkClearSelection": "選択を解除",
+  "bulkMore": "その他の項目",
   "bulkApplied": "{{count}}件に設定しました",
   "bulkAppliedWithSkipped": "{{count}}件に設定しました({{skipped}}件は対象外)",
   "createCounterAccount": "科目を新規追加",

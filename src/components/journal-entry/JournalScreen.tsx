@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { AccountGroup } from '../../domain/account-group/AccountGroup'
@@ -40,7 +40,11 @@ import type {
 import type { RecurringTransactionRuleRepository } from '../../domain/recurring-transaction/RecurringTransactionRuleRepository'
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
+import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
+import { useElementHeight } from '../common/sticky/useElementHeight'
+import { KeepRowsInPlace } from '../common/sticky/useKeepRowsInPlace'
 import { JournalFilterPanel, type JournalFilterOptions } from '../common/journal-filter/JournalFilterPanel'
+import { countActiveConditions } from '../common/journal-filter/journalFilterModel'
 import { JournalResultList } from '../common/journal-result/JournalResultList'
 import { AutoBalanceAdjustmentDetail } from './AutoBalanceAdjustmentDetail'
 import { describeAutoBalanceAdjustment } from '../../domain/journal/describeAutoBalanceAdjustment'
@@ -266,6 +270,13 @@ export function JournalScreen(props: JournalScreenProps) {
   /** 明細行単位の表の列幅(「列幅を初期値に戻す」ボタンと表で共有する) */
   const lineColumns = useJournalLineTableColumns()
   const [filter, setFilter] = useState<JournalEntryFilter>(props.initialFilter ?? {})
+  /** 絞り込み欄の開閉。初期状態は閉(条件があるときはボタンの件数バッジで分かる、計画Issue #266) */
+  const [filterOpen, setFilterOpen] = useState(false)
+  /** 上部に固定するタブ・絞り込み欄の容器と、その高さ(下の固定要素の top に使う、計画Issue #266) */
+  const [stickyElement, setStickyElement] = useState<HTMLDivElement | null>(null)
+  const stickyHeight = useElementHeight(stickyElement)
+  /** 明細行単位の表の枠。一括編集バーの出入りで表が上下にずれる分を、ページのスクロールで補正する位置の基準にする(計画Issue #266) */
+  const [lineRegion, setLineRegion] = useState<HTMLDivElement | null>(null)
   /** 「さらに表示」で増やした表示件数の上限。null は先頭の1ページ分(計画Issue #253)。絞り込み条件を変えると戻す */
   const [displayLimit, setDisplayLimit] = useState<number | null>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
@@ -1109,6 +1120,7 @@ export function JournalScreen(props: JournalScreenProps) {
     .filter((entry) => entry.sourceType !== 'auto_balance_adjustment') // 自動調整仕訳は一括編集の対象にしない(計画Issue #205)
     .flatMap((entry) => entry.lines.map((line) => ({ entry, line })))
   const bulkSelected = visibleLines.filter((s) => bulkLineIds.includes(s.line.id))
+  const bulkBarShown = lineView && bulkSelected.length > 0
   const bulkSelectedIds = new Set(bulkSelected.map((s) => s.line.id))
   /** 選択した行に合わせて、選べなくなった項目の選択を外した、変える項目の選択 */
   const effectiveBulkPick = sanitizeBulkPick(bulkPick, bulkEditRules(bulkSelected, bulkPick, derived.accountById))
@@ -1237,7 +1249,10 @@ export function JournalScreen(props: JournalScreenProps) {
         : ''
 
   return (
-    <div className="journal-screen">
+    <div
+      className={`journal-screen${bulkBarShown ? ' journal-screen--bulk' : ''}`}
+      style={{ '--sticky-head-h': `${stickyHeight}px` } as CSSProperties}
+    >
       <div className="journal-screen__head">
         <h1 className="journal-screen__title">仕訳</h1>
         <div className="journal-screen__actions">
@@ -1273,19 +1288,37 @@ export function JournalScreen(props: JournalScreenProps) {
 
       {props.banner}
 
-      <div role="tablist" aria-label="仕訳の種類" className="journal-screen__tabs">
-        {tabs.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.key}
-            className={`journal-screen__tab${tab === item.key ? ' journal-screen__tab--current' : ''}`}
-            onClick={() => switchTab(item.key)}
-          >
-            {item.label}
-          </button>
-        ))}
+      {/* タブの行と絞り込み欄は、スクロールしても画面の上部に固定する(計画Issue #266)。高さは下の固定要素(一括編集バー)の top に渡す */}
+      <div className="journal-screen__sticky" ref={setStickyElement}>
+      <div className="journal-screen__tabbar">
+        <div role="tablist" aria-label="仕訳の種類" className="journal-screen__tabs">
+          {tabs.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              role="tab"
+              aria-selected={tab === item.key}
+              className={`journal-screen__tab${tab === item.key ? ' journal-screen__tab--current' : ''}`}
+              onClick={() => switchTab(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        {tab === 'list' && (
+          <FilterToggleButton
+            open={filterOpen}
+            activeCount={countActiveConditions(filter)}
+            onToggle={() => setFilterOpen((v) => !v)}
+            controlsId="journal-screen-filter"
+          />
+        )}
+      </div>
+      {tab === 'list' && filterOpen && (
+        <div className="journal-screen__filter" id="journal-screen-filter">
+          <JournalFilterPanel filter={filter} onChange={changeFilter} options={filterOptions} resultCount={matchedEntries.length} />
+        </div>
+      )}
       </div>
 
       {tab === 'rules' && props.rulesPanel !== undefined ? (
@@ -1294,11 +1327,6 @@ export function JournalScreen(props: JournalScreenProps) {
         <div className="journal-screen__rules">{props.templatesPanel}</div>
       ) : (
         <>
-      {tab === 'list' && (
-        <div className="journal-screen__filter">
-          <JournalFilterPanel filter={filter} onChange={changeFilter} options={filterOptions} resultCount={matchedEntries.length} />
-        </div>
-      )}
       {note !== '' && <p className="journal-screen__note">{note}</p>}
 
       {tab === 'list' && (
@@ -1391,24 +1419,29 @@ export function JournalScreen(props: JournalScreenProps) {
                   {error}
                 </p>
               )}
+              {/* バーは選んだときだけ出て、タブの行・絞り込み欄の下に固定する。出入りで表の枠が上下にずれても、行は動かさない(KeepRowsInPlace、計画Issue #266) */}
+              <KeepRowsInPlace visible={bulkBarShown} anchor={lineRegion} />
               {bulkSelected.length > 0 && (
-                <JournalLineBulkBar
-                  selected={bulkSelected}
-                  pick={effectiveBulkPick}
-                  onPickChange={(next) => {
-                    setBulkPick(next)
-                    setBulkConfirming(false)
-                  }}
-                  master={master}
-                  confirming={bulkConfirming}
-                  onAskConfirm={() => setBulkConfirming(true)}
-                  onCancelConfirm={() => setBulkConfirming(false)}
-                  onApply={() => void applyBulk()}
-                  onClearSelection={resetBulk}
-                  busy={busy}
-                />
+                <div className="journal-screen__bulk-bar">
+                  <JournalLineBulkBar
+                    selected={bulkSelected}
+                    pick={effectiveBulkPick}
+                    onPickChange={(next) => {
+                      setBulkPick(next)
+                      setBulkConfirming(false)
+                    }}
+                    master={master}
+                    confirming={bulkConfirming}
+                    onAskConfirm={() => setBulkConfirming(true)}
+                    onCancelConfirm={() => setBulkConfirming(false)}
+                    onApply={() => void applyBulk()}
+                    onClearSelection={resetBulk}
+                    busy={busy}
+                  />
+                </div>
               )}
               <JournalLineTable
+                scrollRegionRef={setLineRegion}
                 columns={lineColumns}
                 entries={visibleEntries}
                 lookup={lineLookup}

@@ -208,11 +208,13 @@ describe('JournalLineTable(一括編集の行選択)', () => {
   })
 
   it('選択の列には列幅のつまみがなく、表の最小幅には選択の列(借方・貸方の2列、各32px)が加わる', () => {
-    const { container } = renderTable(makeBulk())
+    renderTable(makeBulk())
+    // 見出しの複製(ページのスクロールで固定する、計画Issue #266)は支援技術に出ないため、本物の表だけを数える
+    const table = screen.getByRole('table', { name: '仕訳の明細行' })
     expect(screen.getAllByRole('separator')).toHaveLength(14)
-    expect(container.querySelector('table')).toHaveStyle({ minWidth: `${totalTableWidth(DEFAULT_COLUMN_WIDTHS) + 64}px` })
+    expect(table).toHaveStyle({ minWidth: `${totalTableWidth(DEFAULT_COLUMN_WIDTHS) + 64}px` })
     // 日付〜コメントの4列 + (選択+5列) × 2
-    expect(container.querySelectorAll('col')).toHaveLength(16)
+    expect(table.querySelectorAll('col')).toHaveLength(16)
   })
 })
 

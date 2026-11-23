@@ -1,6 +1,7 @@
-import { Fragment } from 'react'
+import { Fragment, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation } from 'react-router'
+import { useElementHeight } from '../common/sticky/useElementHeight'
 import { GuardedLink, UnsavedChangesGuardProvider } from '../common/unsaved-changes/unsavedChangesGuard'
 import { AREAS, findActiveTab, findArea } from './areas'
 import './AppShell.css'
@@ -24,6 +25,9 @@ export function AppShell({ pendingProposalCount }: AppShellProps) {
   const { pathname } = useLocation()
   const currentArea = findArea(pathname)
   const activeTab = currentArea ? findActiveTab(currentArea, pathname) : undefined
+  /** 上部に固定する領域内のタブと、その高さ。右の詳細パネルの追従位置に使う(固定したタブに覆われて見切れないように、計画Issue #266) */
+  const [tabsElement, setTabsElement] = useState<HTMLElement | null>(null)
+  const tabsHeight = useElementHeight(tabsElement)
 
   return (
     <UnsavedChangesGuardProvider>
@@ -52,11 +56,11 @@ export function AppShell({ pendingProposalCount }: AppShellProps) {
             )
           })}
         </nav>
-        <main className="app-shell__main">
+        <main className="app-shell__main" style={{ '--sticky-head-h': `${tabsHeight}px` } as CSSProperties}>
           {/* 他の領域は各画面が見出しを持つ。マスタはタブごとの画面なので、枠がタイトルを出す */}
           {currentArea?.key === 'master' && <h1 className="app-shell__title">{t('nav.master')}</h1>}
           {currentArea && currentArea.tabs.length > 0 && (
-            <nav className="app-shell__tabs" aria-label={t('nav.areaTabs')}>
+            <nav className="app-shell__tabs" aria-label={t('nav.areaTabs')} ref={setTabsElement}>
               {currentArea.tabs.map((tab) => (
                 <GuardedLink
                   key={tab.to}

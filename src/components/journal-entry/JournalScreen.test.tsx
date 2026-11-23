@@ -13,6 +13,8 @@
  * 絞り込み条件の変更での先頭への復帰、選択中の仕訳が表示範囲の外にならないこと、明細行単位でも同じ分割になること、
  * 見出しのチェックが表示中の行だけを選ぶこと、2ページ目の行での行クリック・範囲選択、表示から外れた行のチェックが落ちること、
  * 表示中の最後の仕訳を削除したときの次の選択も検証する。
+ * 絞り込み欄の開閉(計画Issue #266)として、初期状態が閉じていること、アイコンのボタンでの開閉、閉じても条件が保たれ件数バッジが出ること、
+ * ボタンがタブと同じ行にあることも検証する(既存テストは memoSearch で開いてから検索欄を使う)。
  * 外部依存はインメモリの偽Repository(vi.fn)で置き換える。
  */
 import '@testing-library/jest-dom/vitest'
@@ -365,6 +367,51 @@ async function ready() {
 
 const detail = () => screen.getByRole('region', { name: '仕訳の詳細' })
 
+/** 絞り込み欄は初期状態が「閉」(計画Issue #266)。閉じていれば開いてから、摘要の検索欄を返す */
+function memoSearch(): HTMLElement {
+  // 一覧が大きいテストでも重くならないよう、役割ではなくラベルで探す(queryByRole は大きな DOM では遅い)
+  const opener = screen.queryByLabelText(/^絞り込みを開く/)
+  if (opener !== null) fireEvent.click(opener)
+  return screen.getByLabelText('摘要で検索')
+}
+
+describe('JournalScreen: 絞り込み欄の開閉(計画Issue #266)', () => {
+  it('絞り込み欄は初期状態で閉じていて、アイコンのボタンで開閉できる', async () => {
+    setup()
+    await ready()
+    expect(screen.queryByRole('search', { name: '仕訳の絞り込み' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '絞り込みを開く' }))
+    expect(screen.getByRole('search', { name: '仕訳の絞り込み' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '絞り込みを閉じる' }))
+    expect(screen.queryByRole('search', { name: '仕訳の絞り込み' })).not.toBeInTheDocument()
+  })
+
+  it('閉じても入力済みの条件は保たれ、ボタンの件数バッジで絞り込み中だと分かる', async () => {
+    setup()
+    await ready()
+    fireEvent.change(memoSearch(), { target: { value: '家賃' } })
+    fireEvent.click(screen.getByRole('button', { name: /^絞り込みを閉じる/ }))
+
+    expect(screen.getByRole('button', { name: '絞り込みを開く(1件適用中)' })).toBeInTheDocument()
+    expect(screen.getByTestId('filter-toggle-badge')).toHaveTextContent('1')
+    expect(screen.queryByText('ランチ')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^絞り込みを開く/ }))
+    expect(memoSearch()).toHaveValue('家賃')
+  })
+
+  it('開閉ボタンはタブと同じ行(タブの並びと同じ容器)にあり、専用の行を取らない。タブ(tablist)の子にはしない', async () => {
+    setup()
+    await ready()
+    const tabs = screen.getByRole('tablist', { name: '仕訳の種類' })
+    const toggle = screen.getByRole('button', { name: '絞り込みを開く' })
+    expect(tabs.parentElement).toContainElement(toggle)
+    expect(tabs).not.toContainElement(toggle)
+  })
+})
+
 describe('JournalScreen: 自動調整の仕訳(計画Issue #205)', () => {
   const autoEntry = () =>
     entry(5, '2026-09-30', '残高の自動調整(普通預金 09/01〜09/30)', 'auto_balance_adjustment', [
@@ -423,6 +470,9 @@ describe('JournalScreen', () => {
     await screen.findByRole('heading', { name: '仕訳', level: 1 })
     expect(await screen.findByText('家賃', { selector: '.journal-result-list__memo' })).toBeInTheDocument()
     expect(screen.queryByText('ランチ')).not.toBeInTheDocument()
+    // 絞り込み欄は閉じたまま、ボタンの件数バッジで条件が効いていると分かる(計画Issue #266)。開くと件数が出る
+    expect(screen.getByRole('button', { name: /^絞り込みを開く\(\d+件適用中\)$/ })).toBeInTheDocument()
+    memoSearch()
     expect(screen.getByText('1件')).toBeInTheDocument()
   })
 
@@ -501,7 +551,7 @@ describe('JournalScreen', () => {
   it('摘要で絞り込むと一覧が絞られ、件数が出る', async () => {
     setup()
     await ready()
-    fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '家賃' } })
+    fireEvent.change(memoSearch(), { target: { value: '家賃' } })
     expect(screen.queryByText('ランチ')).not.toBeInTheDocument()
     expect(screen.getByText('1件')).toBeInTheDocument()
   })
@@ -1377,7 +1427,7 @@ describe('JournalScreen(明細行単位)', () => {
 
     it('摘要で絞り込むと、明細行単位でも表が絞られ、件数が出る', async () => {
       await setupLineView()
-      fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '家賃' } })
+      fireEvent.change(memoSearch(), { target: { value: '家賃' } })
       expect(screen.queryByRole('button', { name: 'ランチ' })).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: '家賃' })).toBeInTheDocument()
       expect(screen.getByText('1件')).toBeInTheDocument()
@@ -1542,6 +1592,11 @@ describe('JournalScreen(明細行単位)', () => {
       fireEvent.click(within(screen.getByRole('dialog', { name: '一括編集の科目' })).getByRole('button', { name: option }))
     }
     const apply = () => within(bulkBar()).getByRole('button', { name: /行に適用$/ })
+    /** 科目・取引先以外の項目は「その他の項目」を開くと出る(計画Issue #266)。バーが出し直されると畳まれるので、使う直前に開く */
+    const openMore = () => fireEvent.click(within(bulkBar()).getByRole('button', { name: /^その他の項目/ }))
+    /** 適用の確認は、固定バーを高くしないよう、ダイアログで出る */
+    const confirmDialog = () => screen.getByRole('dialog', { name: '一括編集の確認' })
+    const queryConfirmDialog = () => screen.queryByRole('dialog', { name: '一括編集の確認' })
 
     it('明細行単位のときだけ、各行にチェックボックスが出る(仕訳単位には出ない)', async () => {
       await setupLineView()
@@ -1561,6 +1616,37 @@ describe('JournalScreen(明細行単位)', () => {
       expect(debitBox('ランチ')).not.toBeChecked()
     })
 
+    /**
+     * 計画Issue #266: バーは選んだときだけ出る(領域の確保や案内は出さない)。最初のチェックで表の枠が下がっても、
+     * 行が動かないようスクロール位置を相殺する(相殺は useKeepRowsInPlace のテストと、実ブラウザの E2E で検証する)。
+     * タブの行・絞り込み欄は上部に固定し、表は画面に収まるスクロールの枠にして見出しを固定する。
+     */
+    describe('バーの出入りと上部への固定(計画Issue #266)', () => {
+      it('未選択のときは、バーの領域も案内も出さない(選んだときだけバーが出る)', async () => {
+        await setupLineView()
+        expect(screen.queryByTestId('journal-bulk-slot')).not.toBeInTheDocument()
+        expect(screen.queryByText(/行にチェックを付けると/)).not.toBeInTheDocument()
+        expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
+        fireEvent.click(debitBox('ランチ'))
+        expect(bulkBar()).toBeInTheDocument()
+      })
+
+      it('バーは表(スクロールの枠)の上に出て、表の枠の外にある(バーは枠の中でスクロールされない)', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        const scrollRegion = lineTable().closest('.journal-line-table') as HTMLElement
+        expect(scrollRegion).not.toBeNull()
+        expect(scrollRegion).not.toContainElement(bulkBar())
+      })
+
+      it('タブの行と絞り込み欄は、ひとつの固定の容器にまとまっている(絞り込み欄を開いても同じ容器)', async () => {
+        await setupLineView()
+        const sticky = screen.getByRole('tablist', { name: '仕訳の種類' }).closest('.journal-screen__sticky')
+        expect(sticky).not.toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: '絞り込みを開く' }))
+        expect(within(sticky as HTMLElement).getByRole('search', { name: '仕訳の絞り込み' })).toBeInTheDocument()
+      })
+    })
     it('行を押さずにチェックだけでは、その仕訳の編集は始まらない', async () => {
       await setupLineView()
       fireEvent.click(debitBox('ランチ'))
@@ -1688,7 +1774,7 @@ describe('JournalScreen(明細行単位)', () => {
       it('テキスト入力欄にフォーカスがあるときの Esc では、選択を解除しない', async () => {
         await setupLineView()
         fireEvent.click(debitBox('ランチ'))
-        fireEvent.keyDown(screen.getByLabelText('摘要で検索'), { key: 'Escape' })
+        fireEvent.keyDown(memoSearch(), { key: 'Escape' })
         expect(bulkBar()).toBeInTheDocument()
         expect(debitBox('ランチ')).toBeChecked()
       })
@@ -1729,10 +1815,12 @@ describe('JournalScreen(明細行単位)', () => {
       it('食費(費用)の行だけを選ぶと精算バッチは選べず、立替金の行だけを選ぶと精算バッチを選べる', async () => {
         await setupLineView()
         fireEvent.click(debitBox('ランチ'))
+        openMore()
         expect(findBatchButton('一括編集の精算バッチ', within(bulkBar()))).toBeDisabled()
         expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeEnabled()
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('旅行の立替'))
+        openMore()
         expect(findBatchButton('一括編集の精算バッチ', within(bulkBar()))).toBeEnabled()
         expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
       })
@@ -1750,12 +1838,13 @@ describe('JournalScreen(明細行単位)', () => {
         const props = await setupLineView()
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('家賃'))
+        openMore()
         chooseMember('一括編集の世帯メンバー', '妻', within(bulkBar()))
 
         fireEvent.click(apply())
         expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
-        expect(within(bulkBar()).getByRole('alert')).toHaveTextContent('2行(2件の仕訳)を更新します。元に戻せません。')
-        fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
+        expect(confirmDialog()).toHaveTextContent('2行(2件の仕訳)を更新します。元に戻せません。')
+        fireEvent.click(within(confirmDialog()).getByRole('button', { name: '本当に更新する' }))
 
         await waitFor(() => expect(props.journalEntryRepository.update).toHaveBeenCalledTimes(2))
         const calls = props.journalEntryRepository.update.mock.calls as unknown as [number, { lines: { id?: number; householdMemberId: number }[] }][]
@@ -1772,13 +1861,14 @@ describe('JournalScreen(明細行単位)', () => {
       it('1回目のあとに「やめる」を押すと何も更新されず、項目を選び直しても確認は取り消される', async () => {
         const props = await setupLineView()
         fireEvent.click(debitBox('ランチ'))
+        openMore()
         chooseMember('一括編集の世帯メンバー', '妻', within(bulkBar()))
         fireEvent.click(apply())
-        fireEvent.click(within(bulkBar()).getByRole('button', { name: 'やめる' }))
-        expect(within(bulkBar()).queryByRole('alert')).not.toBeInTheDocument()
+        fireEvent.click(within(confirmDialog()).getByRole('button', { name: 'やめる' }))
+        expect(queryConfirmDialog()).not.toBeInTheDocument()
         fireEvent.click(apply())
         chooseMember('一括編集の世帯メンバー', '夫', within(bulkBar()))
-        expect(within(bulkBar()).queryByRole('alert')).not.toBeInTheDocument()
+        expect(queryConfirmDialog()).not.toBeInTheDocument()
         expect(props.journalEntryRepository.update).not.toHaveBeenCalled()
       })
 
@@ -1787,7 +1877,7 @@ describe('JournalScreen(明細行単位)', () => {
         fireEvent.click(debitBox('ランチ'))
         chooseAccount('家賃')
         fireEvent.click(apply())
-        fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
+        fireEvent.click(within(confirmDialog()).getByRole('button', { name: '本当に更新する' }))
         await waitFor(() => expect(props.journalEntryRepository.update).toHaveBeenCalledTimes(1))
         const [id, input] = props.journalEntryRepository.update.mock.calls[0] as unknown as [number, { lines: { accountId: number }[] }]
         expect(id).toBe(1)
@@ -1800,9 +1890,10 @@ describe('JournalScreen(明細行単位)', () => {
         props.journalEntryRepository.update.mockRejectedValueOnce(new Error('boom'))
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('家賃'))
+        openMore()
         chooseMember('一括編集の世帯メンバー', '妻', within(bulkBar()))
         fireEvent.click(apply())
-        fireEvent.click(within(bulkBar()).getByRole('button', { name: '本当に更新する' }))
+        fireEvent.click(within(confirmDialog()).getByRole('button', { name: '本当に更新する' }))
 
         expect(await screen.findByText('1行(1件の仕訳)を更新しました')).toBeInTheDocument()
         expect(screen.getByRole('alert')).toHaveTextContent(/更新できませんでした.*「ランチ」/)
@@ -1829,7 +1920,7 @@ describe('JournalScreen(明細行単位)', () => {
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('家賃'))
         expect(within(bulkBar()).getByText(/^2行を選択中/)).toBeInTheDocument()
-        fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '家賃' } })
+        fireEvent.change(memoSearch(), { target: { value: '家賃' } })
         expect(within(bulkBar()).getByText('1行を選択中(借方 1行・貸方 0行、1件の仕訳)')).toBeInTheDocument()
       })
 
@@ -2126,6 +2217,7 @@ describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
   it('絞り込み欄の「該当N件」は、表示中の件数ではなく、絞り込み後の全体件数を出す', async () => {
     setup({ entries: makeManyEntries(PAGE + 50) })
     await screen.findByText('仕訳1')
+    memoSearch()
     expect(screen.getByText(`${PAGE + 50}件`)).toBeInTheDocument()
   })
 
@@ -2150,7 +2242,7 @@ describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
     await screen.findByText('仕訳1')
     fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
     expect(listed(PAGE + 50)).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '仕訳' } })
+    fireEvent.change(memoSearch(), { target: { value: '仕訳' } })
     expect(listed(PAGE)).toBeInTheDocument()
     expect(listed(PAGE + 1)).not.toBeInTheDocument()
     expect(screen.getByText(`${PAGE} / ${PAGE + 50}件を表示中`)).toBeInTheDocument()
@@ -2163,12 +2255,13 @@ describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
     fireEvent.click(screen.getByRole('button', { name: `さらに${PAGE}件表示` }))
     fireEvent.click(screen.getByRole('button', { name: new RegExp(`仕訳${PAGE + 30}`) }))
     // 絞り込みを変えると先頭に戻るが、選択中の仕訳(2ページ目)は見えたままにする
-    fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '仕訳' } })
+    fireEvent.change(memoSearch(), { target: { value: '仕訳' } })
     expect(listed(PAGE + 30)).toBeInTheDocument()
     expect(listed(PAGE * 2)).toBeInTheDocument()
     expect(listed(PAGE * 2 + 1)).not.toBeInTheDocument()
     expect(screen.getByText(`${PAGE * 2} / ${total}件を表示中`)).toBeInTheDocument()
-  })
+    // 絞り込み欄を開く操作(計画Issue #266)が増えたぶん、全体を並列で流したときに既定の15秒に近づくため、この重い一覧のテストだけ制限を延ばす
+  }, 30000)
 
   it('明細行単位でも、初めは1ページ分の仕訳だけを描き、「さらに表示」で増やせる', async () => {
     localStorage.setItem('localbudget:journal-view-mode', 'line')
@@ -2199,7 +2292,8 @@ describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
     await waitFor(() => expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue(`仕訳${PAGE - 1}`))
   })
 
-  describe('明細行単位で「さらに表示」した後の一括編集の選択', () => {
+  // 数百行の表を描いて何度も操作する重いテスト群。全体を並列で流して負荷が高いとき、既定の15秒に近づくため、この群だけ制限を延ばす
+  describe('明細行単位で「さらに表示」した後の一括編集の選択', { timeout: 30000 }, () => {
     const debitBoxes = () => screen.getAllByRole('checkbox', { name: '借方の行を選択' })
     const selectedCount = (n: number) => screen.queryByText(new RegExp(`(^|\\D)${n}行を選択中`))
 
@@ -2236,7 +2330,7 @@ describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
       await openSecondPage()
       fireEvent.click(debitBoxes()[LINE_PAGE + 5])
       expect(selectedCount(1)).toBeInTheDocument()
-      fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '仕訳' } })
+      fireEvent.change(memoSearch(), { target: { value: '仕訳' } })
       fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
       expect(debitBoxes()[LINE_PAGE + 5]).not.toBeChecked()
       expect(screen.queryByText(/行を選択中/)).not.toBeInTheDocument()
@@ -2245,7 +2339,7 @@ describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
     it('絞り込み後も表示中の行のチェックは保たれる', async () => {
       await openSecondPage()
       fireEvent.click(debitBoxes()[2])
-      fireEvent.change(screen.getByLabelText('摘要で検索'), { target: { value: '仕訳' } })
+      fireEvent.change(memoSearch(), { target: { value: '仕訳' } })
       expect(debitBoxes()[2]).toBeChecked()
       expect(selectedCount(1)).toBeInTheDocument()
     })

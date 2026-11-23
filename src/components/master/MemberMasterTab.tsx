@@ -15,6 +15,8 @@ import type { MaybeAsync } from './maybeAsync'
 import { TreeSearchInput } from '../common/tree-table/TreeSearchInput'
 import { matchesSearch } from '../common/tree-table/filterTreeNodes'
 import { uniqueName } from './uniqueName'
+import { StickyHeaderTable } from '../common/sticky/StickyHeaderTable'
+import { StickyToolbar } from '../common/sticky/StickyToolbar'
 import './master.css'
 
 export interface MemberMasterTabProps {
@@ -150,7 +152,8 @@ export function MemberMasterTab({
   return (
     <div className="master-split">
       <div className="master-split__main">
-        <div className="master-actions">
+        {/* 検索・追加ボタンの行は、スクロールしても画面の上部に固定する(計画Issue #266) */}
+        <StickyToolbar className="master-actions">
           <button type="button" className="master-btn" disabled={busy} onClick={() => guarded(() => void add(false))}>
             {t('memberTab.addMember')}
           </button>
@@ -158,9 +161,12 @@ export function MemberMasterTab({
             {t('memberTab.addGroup')}
           </button>
           <TreeSearchInput value={query} onChange={setQuery} leafLabel={t('memberTab.searchLeaf')} />
-        </div>
-        <div className="master-table-wrap">
-          <table className="master-table">
+        </StickyToolbar>
+        {/* 見出しは、本物の表と、ページのスクロールで固定する複製(StickyHeaderTable)で同じものを使う(計画Issue #266) */}
+        <StickyHeaderTable
+          frameClassName="master-table-wrap"
+          tableClassName="master-table"
+          head={
             <thead>
               <tr>
                 <th>{t('accountTab.name')}</th>
@@ -168,26 +174,27 @@ export function MemberMasterTab({
                 <th>{t('memberTab.state')}</th>
               </tr>
             </thead>
-            <tbody>
-              {data.members.filter((m) => matchesSearch(query, m.name, typeText(m))).map((m) => (
-                <tr key={m.id} className={m.id === selectedId ? 'master-table__row--selected' : undefined}>
-                  <td>
-                    <button
-                      type="button"
-                      className="master-link"
-                      aria-current={m.id === selectedId ? 'true' : undefined}
-                      onClick={() => guarded(() => select(m.id))}
-                    >
-                      {m.name}
-                    </button>
-                  </td>
-                  <td>{typeText(m)}</td>
-                  <td>{m.isActive ? t('memberTab.active') : t('memberTab.inactive')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          }
+        >
+          <tbody>
+            {data.members.filter((m) => matchesSearch(query, m.name, typeText(m))).map((m) => (
+              <tr key={m.id} className={m.id === selectedId ? 'master-table__row--selected' : undefined}>
+                <td>
+                  <button
+                    type="button"
+                    className="master-link"
+                    aria-current={m.id === selectedId ? 'true' : undefined}
+                    onClick={() => guarded(() => select(m.id))}
+                  >
+                    {m.name}
+                  </button>
+                </td>
+                <td>{typeText(m)}</td>
+                <td>{m.isActive ? t('memberTab.active') : t('memberTab.inactive')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </StickyHeaderTable>
       </div>
 
       {error && (

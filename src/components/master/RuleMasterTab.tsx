@@ -41,6 +41,8 @@ import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
 import { AccountCreateForm } from './AccountCreateForm'
 import type { AccountBalanceRecordRepository } from '../../domain/reconciliation/AccountBalanceRecordRepository'
 import { RuleEditForm, type RuleStatus } from './RuleEditForm'
+import { StickyHeaderTable } from '../common/sticky/StickyHeaderTable'
+import { StickyToolbar } from '../common/sticky/StickyToolbar'
 import '../journal-entry/JournalEntryEditor.css'
 import './master.css'
 
@@ -243,7 +245,8 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
   return (
     <div className="master-split master-split--rule">
       <div className="master-split__main">
-        <div className="master-actions">
+        {/* 検索・追加ボタンの行は、スクロールしても画面の上部に固定する(計画Issue #266) */}
+        <StickyToolbar className="master-actions">
           <button
             type="button"
             className="master-btn master-btn--primary"
@@ -255,9 +258,12 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           >
             {t('ruleTab.add')}
           </button>
-        </div>
-        <div className="master-table-wrap">
-          <table className="master-table">
+        </StickyToolbar>
+        {/* 見出しは、本物の表と、ページのスクロールで固定する複製(StickyHeaderTable)で同じものを使う(計画Issue #266) */}
+        <StickyHeaderTable
+          frameClassName="master-table-wrap"
+          tableClassName="master-table"
+          head={
             <thead>
               <tr>
                 <th>{t('ruleTab.colName')}</th>
@@ -267,63 +273,64 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
                 <th>{t('ruleTab.colState')}</th>
               </tr>
             </thead>
-            <tbody>
-              {data.rules.map((rule) => {
-                const count = data.generatedCounts.get(rule.id) ?? 0
-                const next = nextRuleDate(rule, today, count)
-                const status = statusOf(rule, count, today)
-                return (
-                  <tr key={rule.id} className={rule.id === mode ? 'master-table__row--selected' : undefined}>
-                    <td className="master-table__nowrap">
-                      <button
-                        type="button"
-                        className="master-link"
-                        aria-current={rule.id === mode ? 'true' : undefined}
-                        onClick={() => {
-                          setMode(rule.id)
-                          setArmed(false)
-                          setError(null)
-                        }}
-                      >
-                        {rule.name}
-                      </button>
-                    </td>
-                    <td>
-                      {describeRecurringSchedule(rule, tRule)}
-                      {describeRecurringScheduleNotes(rule, tRule).map((note) => (
-                        <p key={note} className="master-note">
-                          {note}
-                        </p>
-                      ))}
-                    </td>
-                    <td className="master-table__nowrap">
-                      {yen(listAmountOf(rule, data.generatedCounts.get(rule.id) ?? 0))}
-                      {rule.amountMode === 'last_confirmed' && <p className="master-note">{t('ruleTab.lastConfirmed')}</p>}
-                      {rule.amountMode === 'schedule' && (
-                        <p className="master-note">
-                          {t('ruleTab.scheduleProgress', {
-                            n: Math.min((data.generatedCounts.get(rule.id) ?? 0) + 1, rule.schedule.length),
-                            total: rule.schedule.length,
-                          })}
-                        </p>
-                      )}
-                    </td>
-                    <td className="master-table__nowrap">{next === null ? '-' : slashDate(next)}</td>
-                    <td className="master-table__nowrap">
-                      {status === 'ended' ? (
-                        <span className="master-state--ended">{t('ruleTab.stateEnded')}</span>
-                      ) : status === 'active' ? (
-                        t('ruleTab.active')
-                      ) : (
-                        t('ruleTab.inactive')
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+          }
+        >
+          <tbody>
+            {data.rules.map((rule) => {
+              const count = data.generatedCounts.get(rule.id) ?? 0
+              const next = nextRuleDate(rule, today, count)
+              const status = statusOf(rule, count, today)
+              return (
+                <tr key={rule.id} className={rule.id === mode ? 'master-table__row--selected' : undefined}>
+                  <td className="master-table__nowrap">
+                    <button
+                      type="button"
+                      className="master-link"
+                      aria-current={rule.id === mode ? 'true' : undefined}
+                      onClick={() => {
+                        setMode(rule.id)
+                        setArmed(false)
+                        setError(null)
+                      }}
+                    >
+                      {rule.name}
+                    </button>
+                  </td>
+                  <td>
+                    {describeRecurringSchedule(rule, tRule)}
+                    {describeRecurringScheduleNotes(rule, tRule).map((note) => (
+                      <p key={note} className="master-note">
+                        {note}
+                      </p>
+                    ))}
+                  </td>
+                  <td className="master-table__nowrap">
+                    {yen(listAmountOf(rule, data.generatedCounts.get(rule.id) ?? 0))}
+                    {rule.amountMode === 'last_confirmed' && <p className="master-note">{t('ruleTab.lastConfirmed')}</p>}
+                    {rule.amountMode === 'schedule' && (
+                      <p className="master-note">
+                        {t('ruleTab.scheduleProgress', {
+                          n: Math.min((data.generatedCounts.get(rule.id) ?? 0) + 1, rule.schedule.length),
+                          total: rule.schedule.length,
+                        })}
+                      </p>
+                    )}
+                  </td>
+                  <td className="master-table__nowrap">{next === null ? '-' : slashDate(next)}</td>
+                  <td className="master-table__nowrap">
+                    {status === 'ended' ? (
+                      <span className="master-state--ended">{t('ruleTab.stateEnded')}</span>
+                    ) : status === 'active' ? (
+                      t('ruleTab.active')
+                    ) : (
+                      t('ruleTab.inactive')
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </StickyHeaderTable>
       </div>
 
       {mode !== null && (mode === 'create' || selectedRule) && (

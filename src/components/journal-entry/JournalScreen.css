@@ -1,5 +1,7 @@
 /* 仕訳画面(計画Issue #152)。値はdesign/tokens.cssのトークンを使う。 */
 .journal-screen {
+  /* スクロール位置の相殺(useKeepRowsInPlace)とブラウザのスクロールアンカーが二重にならないようにする */
+  overflow-anchor: none;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -22,11 +24,52 @@
   font-weight: 700;
 }
 
+/*
+ * タブの行と絞り込み欄は、スクロールしても画面の上部に固定する(計画Issue #266)。画面タイトルは固定しない。
+ * 重なり順は、ポップアップ・ダイアログ(z-index: 30)より下にする。高さは画面側が --sticky-head-h に入れ、
+ * その下に固定する一括編集バーの top になる。
+ */
+.journal-screen__sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 8px;
+  background: var(--color-bg);
+}
+
+/*
+ * 一括編集バー(明細行単位の表の上)。選んだときだけ出て、タブ・絞り込み欄の下に固定する。表の見出しの複製は、さらにその下に固定する
+ * (.journal-screen--bulk が --sticky-bulk-h にバーの高さと間隔を入れ、複製の固定位置 --floating-header-top に足される)。
+ * 出入りで表が上下にずれても、行が画面上で動かないよう、画面側がページのスクロール位置を補正する(useKeepRowsInPlace)。
+ */
+.journal-screen__bulk-bar {
+  position: sticky;
+  top: var(--sticky-head-h, 0px);
+  z-index: 15;
+  background: var(--color-bg);
+}
+
+.journal-screen--bulk {
+  /* バーの高さ(JournalLineBulkBar.css の .journal-line-bulk の height、60px) + 表との間隔(.journal-screen__list の gap、6px) */
+  --sticky-bulk-h: 66px;
+}
+/* タブの行。右端に絞り込みの開閉ボタンを置く(専用の行は取らない、計画Issue #266) */
+.journal-screen__tabbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
 .journal-screen__tabs {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  border-bottom: 1px solid var(--color-border);
 }
 
 .journal-screen__tab {

@@ -1,4 +1,5 @@
-import { useRef, type MouseEvent, type ReactNode } from 'react'
+import { useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { FloatingTableHeader } from '../common/sticky/FloatingTableHeader'
 import type { JournalEntry, JournalLine, JournalLineSide } from '../../domain/journal/JournalEntry'
 import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
@@ -84,6 +85,11 @@ export interface JournalLineTableProps {
   bulk?: JournalLineTableBulk
   /** 列幅の状態。画面が持って「列幅を初期値に戻す」ボタンと共有するときに渡す。渡さなければ表自身が持つ */
   columns?: JournalLineTableColumns
+  /**
+   * 表の横スクロールの枠を受け取る(計画Issue #266)。一括編集バーの出入りで表が上下にずれる分を、画面がページのスクロールで
+   * 補正して行が動かないようにするときの、位置の基準に使う
+   */
+  scrollRegionRef?: (element: HTMLDivElement | null) => void
   /** 選択中の仕訳。その仕訳のすべての行を強調する */
   selectedId: number | null
   /**
@@ -186,11 +192,14 @@ function BulkCheckbox({
  * すべての列を初期の幅に戻せる。
  * 表示用の名前解決(lookup)と編集内容(値と変更通知)だけを受け取り、DB・Repositoryには依存しない。
  */
-export function JournalLineTable({ entries, lookup, selectedId, onSelect, editing, bulk, columns }: JournalLineTableProps) {
+export function JournalLineTable({ entries, lookup, selectedId, onSelect, editing, bulk, columns, scrollRegionRef }: JournalLineTableProps) {
   // ---- 列幅の調整(フックは、仕訳がないときの早期returnより前に置く) ----
   const ownColumns = useJournalLineTableColumns()
   const { widths, widthsRef, resizeTo, commit, resetColumn } = columns ?? ownColumns
   const tableRef = useRef<HTMLTableElement>(null)
+  /** 表の横スクロールの枠と本物の表(見出しの複製を横スクロールに合わせ、固定の判断に使う、計画Issue #266) */
+  const [regionElement, setRegionElement] = useState<HTMLDivElement | null>(null)
+  const [tableElement, setTableElement] = useState<HTMLTableElement | null>(null)
   /** 一括編集の選択の列(借方・貸方の2列)の分の幅 */
   const checkColumnsWidth = bulk === undefined ? 0 : 2 * CHECK_COLUMN_WIDTH
   /** 画面に出ている表の幅 ÷ 列幅の合計(枠が広くて余った幅が各列に配られているとき、1より大きくなる) */
@@ -554,68 +563,96 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
     )
   }
 
+  // 見出しの列幅(colgroup)と見出し(thead)。本物の表と、ページのスクロールで固定する複製(FloatingTableHeader)で同じものを使う(計画Issue #266)
+  const colgroup = (
+    <colgroup>
+      {LEFT_COLUMN_KEYS.map((key) => (
+        <col key={key} style={{ width: widths[key] }} />
+      ))}
+      {[0, 1].flatMap((side) => [
+        hasCheck ? <col key={`${side}-check`} style={{ width: CHECK_COLUMN_WIDTH }} /> : null,
+        ...SIDE_COLUMN_KEYS.map((key) => <col key={`${side}-${key}`} style={{ width: widths[key] }} />),
+      ])}
+    </colgroup>
+  )
+  const thead = (
+    <thead>
+      <tr className="journal-line-table__group-head">
+        <td colSpan={4} />
+        <th colSpan={sideSpan} scope="colgroup" className="journal-line-table__debit-start">
+          借方
+        </th>
+        <th colSpan={sideSpan} scope="colgroup" className="journal-line-table__credit-start">
+          貸方
+        </th>
+      </tr>
+      <tr>
+        {LEFT_COLUMNS.map((name, i) => (
+          <th key={name} scope="col">
+            {name}
+            {resizeHandle(LEFT_COLUMN_KEYS[i], name)}
+          </th>
+        ))}
+        {[0, 1].flatMap((side) => {
+          const sideName: JournalLineSide = side === 0 ? 'debit' : 'credit'
+          return [
+            hasCheck ? (
+              <th key={`${side}-check`} scope="col" className={`journal-line-table__cell--check ${sideStartClass(sideName)}`}>
+                {sideHeadCheck(sideName)}
+              </th>
+            ) : null,
+            ...SIDE_COLUMNS.map((name, i) => (
+              <th
+                key={`${side}-${name}`}
+                scope="col"
+                className={[
+                  i === 0 && !hasCheck ? sideStartClass(sideName) : '',
+                  name === '金額' ? 'journal-line-table__cell--amount' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              >
+                {name}
+                {resizeHandle(SIDE_COLUMN_KEYS[i], `${SIDE_LABEL[sideName]}の${name}`)}
+              </th>
+            )),
+          ]
+        })}
+      </tr>
+    </thead>
+  )
+
   return (
     <div className="journal-line-table-wrap">
-      <div className="journal-line-table">
+      {/* 見出しの複製。ページのスクロールで、本物の見出しが画面の上部より上へ出たときだけ固定して見せる(計画Issue #266) */}
+      <FloatingTableHeader
+        scroller={regionElement}
+        table={tableElement}
+        className="floating-table-header--lines"
+        tableClassName="journal-line-table__table"
+        tableStyle={{ minWidth: totalTableWidth(widths) + checkColumnsWidth }}
+      >
+        {colgroup}
+        {thead}
+      </FloatingTableHeader>
+      <div
+        className="journal-line-table"
+        ref={(element) => {
+          setRegionElement(element)
+          scrollRegionRef?.(element)
+        }}
+      >
       <table
-        ref={tableRef}
+        ref={(element) => {
+          tableRef.current = element
+          setTableElement(element)
+        }}
         className="journal-line-table__table"
         aria-label="仕訳の明細行"
         style={{ minWidth: totalTableWidth(widths) + checkColumnsWidth }}
       >
-        <colgroup>
-          {LEFT_COLUMN_KEYS.map((key) => (
-            <col key={key} style={{ width: widths[key] }} />
-          ))}
-          {[0, 1].flatMap((side) => [
-            hasCheck ? <col key={`${side}-check`} style={{ width: CHECK_COLUMN_WIDTH }} /> : null,
-            ...SIDE_COLUMN_KEYS.map((key) => <col key={`${side}-${key}`} style={{ width: widths[key] }} />),
-          ])}
-        </colgroup>
-        <thead>
-          <tr className="journal-line-table__group-head">
-            <td colSpan={4} />
-            <th colSpan={sideSpan} scope="colgroup" className="journal-line-table__debit-start">
-              借方
-            </th>
-            <th colSpan={sideSpan} scope="colgroup" className="journal-line-table__credit-start">
-              貸方
-            </th>
-          </tr>
-          <tr>
-            {LEFT_COLUMNS.map((name, i) => (
-              <th key={name} scope="col">
-                {name}
-                {resizeHandle(LEFT_COLUMN_KEYS[i], name)}
-              </th>
-            ))}
-            {[0, 1].flatMap((side) => {
-              const sideName: JournalLineSide = side === 0 ? 'debit' : 'credit'
-              return [
-                hasCheck ? (
-                  <th key={`${side}-check`} scope="col" className={`journal-line-table__cell--check ${sideStartClass(sideName)}`}>
-                    {sideHeadCheck(sideName)}
-                  </th>
-                ) : null,
-                ...SIDE_COLUMNS.map((name, i) => (
-                  <th
-                    key={`${side}-${name}`}
-                    scope="col"
-                    className={[
-                      i === 0 && !hasCheck ? sideStartClass(sideName) : '',
-                      name === '金額' ? 'journal-line-table__cell--amount' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                  >
-                    {name}
-                    {resizeHandle(SIDE_COLUMN_KEYS[i], `${SIDE_LABEL[sideName]}の${name}`)}
-                  </th>
-                )),
-              ]
-            })}
-          </tr>
-        </thead>
+        {colgroup}
+        {thead}
         {entries.map((entry) => {
           const tag = SOURCE_TAGS[entry.sourceType]
           const isEditing = editing !== undefined && editing.entryId === entry.id

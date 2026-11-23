@@ -128,6 +128,9 @@ function setup(data: SplitSettleData = makeData(), extraProps: { initialCheckedE
       repositories={repositories as unknown as SplitSettleRepositories}
       today="2026-10-31"
       onChanged={onChanged}
+      filter={{}}
+      onFilterChange={() => {}}
+      filterOpen={false}
       {...extraProps}
     />,
   )

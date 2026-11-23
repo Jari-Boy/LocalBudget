@@ -3,6 +3,7 @@
  * 割勘・精算画面(SplitSettleScreen、計画Issue #153)のコンポーネントテスト。
  * 「割勘」「精算」の2タブが画面遷移なしで切り替わること、開くタブを指定できること、読み込み中の表示、
  * 書き込みのあとにデータを読み直すことを、インメモリの偽Repository(vi.fn)で検証する。
+ * 割勘タブの絞り込み欄の開閉(計画Issue #266、初期は閉・タブの行のアイコンボタン・条件の保持と件数バッジ)も検証する。
  * 各タブの中身は SplitTab・SettleTab のテストで検証する。
  */
 import '@testing-library/jest-dom/vitest'
@@ -77,6 +78,50 @@ function renderScreen(props: { initialTab?: 'split' | 'settle' } = {}) {
   )
   return { repositories }
 }
+
+describe('SplitSettleScreen: 絞り込み欄の開閉(計画Issue #266)', () => {
+  it('割勘タブの絞り込み欄は初期状態で閉じていて、タブの行のアイコンのボタンで開閉できる', async () => {
+    renderScreen()
+    await screen.findByRole('heading', { name: '割勘・精算' })
+    expect(screen.queryByRole('search', { name: '仕訳の絞り込み' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '絞り込みを開く' }))
+    expect(screen.getByRole('search', { name: '仕訳の絞り込み' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '絞り込みを閉じる' }))
+    expect(screen.queryByRole('search', { name: '仕訳の絞り込み' })).not.toBeInTheDocument()
+  })
+
+  it('開閉ボタンはタブ(tablist)と同じ行にあり、tablist の子ではない', async () => {
+    renderScreen()
+    await screen.findByRole('heading', { name: '割勘・精算' })
+    const tabs = screen.getByRole('tablist', { name: '割勘と精算' })
+    const toggle = screen.getByRole('button', { name: '絞り込みを開く' })
+    expect(tabs.parentElement).toContainElement(toggle)
+    expect(tabs).not.toContainElement(toggle)
+  })
+
+  it('入力した条件は、閉じても、精算タブへ移って戻っても保たれ、ボタンの件数バッジで絞り込み中だと分かる', async () => {
+    renderScreen()
+    await screen.findByRole('heading', { name: '割勘・精算' })
+    fireEvent.click(screen.getByRole('button', { name: '絞り込みを開く' }))
+    fireEvent.change(screen.getByRole('searchbox', { name: '摘要で検索' }), { target: { value: 'ランチ' } })
+    fireEvent.click(screen.getByRole('button', { name: /^絞り込みを閉じる/ }))
+    expect(screen.getByRole('button', { name: '絞り込みを開く(1件適用中)' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: '精算' }))
+    fireEvent.click(screen.getByRole('tab', { name: '割勘' }))
+
+    fireEvent.click(screen.getByRole('button', { name: /^絞り込みを開く/ }))
+    expect(screen.getByRole('searchbox', { name: '摘要で検索' })).toHaveValue('ランチ')
+  })
+
+  it('精算タブには、割勘用の絞り込みボタンを出さない', async () => {
+    renderScreen({ initialTab: 'settle' })
+    await screen.findByRole('heading', { name: '割勘・精算' })
+    expect(screen.queryByRole('button', { name: /^絞り込みを(開く|閉じる)/ })).not.toBeInTheDocument()
+  })
+})
 
 describe('SplitSettleScreen', () => {
   it('読み込みが終わるまで読み込み中を表示し、終わると割勘タブを出す', async () => {
