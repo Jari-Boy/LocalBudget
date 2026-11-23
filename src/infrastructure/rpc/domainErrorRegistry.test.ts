@@ -10,6 +10,7 @@ import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJour
 import { JournalLineHouseholdMemberRequiredError } from '../../domain/journal/JournalLineHouseholdMemberRequiredError'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { AutoBalanceAdjustmentEntryReadOnlyError } from '../../domain/journal/AutoBalanceAdjustmentEntryReadOnlyError'
+import { ExpenseSplitSourceLineLockedError } from '../../domain/journal/ExpenseSplitSourceLineLockedError'
 import { InvalidRecurringScheduleError } from '../../domain/recurring-transaction/InvalidRecurringScheduleError'
 import { InvalidJournalTemplateError } from '../../domain/journal-template/InvalidJournalTemplateError'
 import { RecurringTransactionHouseholdMemberRequiredError } from '../../domain/recurring-transaction/RecurringTransactionHouseholdMemberRequiredError'
@@ -89,6 +90,13 @@ describe('serializeDomainError / deserializeDomainError', () => {
 
     expect(revived).toBeInstanceOf(AutoBalanceAdjustmentEntryReadOnlyError)
     expect((revived as AutoBalanceAdjustmentEntryReadOnlyError).entryId).toBe(42)
+  })
+
+  it('ExpenseSplitSourceLineLockedErrorを行idごと往復する(計画Issue #271)', () => {
+    const revived = deserializeDomainError(serializeDomainError(new ExpenseSplitSourceLineLockedError([3, 5])))
+
+    expect(revived).toBeInstanceOf(ExpenseSplitSourceLineLockedError)
+    expect((revived as ExpenseSplitSourceLineLockedError).lineIds).toEqual([3, 5])
   })
 
   it('InvalidRecurringScheduleErrorのmessageを保持して往復する', () => {

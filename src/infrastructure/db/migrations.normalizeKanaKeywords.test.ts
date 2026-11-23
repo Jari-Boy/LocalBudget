@@ -9,11 +9,12 @@ import { describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { LATEST_SCHEMA_SQL, getUserVersion, runMigrations } from './migrations'
+import { toSchemaV7 } from './schemaV5ForTests'
 
 /** v6 のDB(最新のDDLを流し、user_version = 6にしたもの。v7は表の形を変えない) */
 async function createV6Database(): Promise<Database> {
   const db = await createTestDatabase()
-  for (const sql of LATEST_SCHEMA_SQL) db.run(sql)
+  for (const sql of LATEST_SCHEMA_SQL) db.run(toSchemaV7(sql))
   db.run('PRAGMA user_version = 6')
   db.run("INSERT INTO counterparties (id, name) VALUES (1, 'JR東日本'), (2, '東京メトロ')")
   db.run("INSERT INTO accounts (id, category, name, is_reconcilable) VALUES (10, 'expense', '交通費', NULL), (11, 'expense', '雑費', NULL)")
