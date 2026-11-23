@@ -46,7 +46,7 @@ const master: JournalEditorMaster = {
   counterpartyCategories: [],
   projectCategories: [],
   members: [{ id: 1, name: '夫', isGroup: false, isActive: true, createdAt: '', updatedAt: '' }],
-  batches: [{ id: 1, name: '6月の割勘', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }],
+  batches: [{ id: 1, name: '6月の割勘', type: 'expense_splitting', counterpartyId: null, isActive: true, createdAt: '', updatedAt: '' }],
 }
 
 const line = (key: number, side: 'debit' | 'credit', accountId: number | null, amount: string): JournalEditorLine => ({
@@ -153,7 +153,7 @@ describe('JournalLinesEditor', () => {
     render(
       <Harness
         initial={[line(1, 'debit', 1, '1200'), line(2, 'credit', 3, '1200')]}
-        onCreateBatch={async (name) => ({ id: 1, name, type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' })}
+        onCreateBatch={async (name) => ({ id: 1, name, type: 'expense_splitting', counterpartyId: null, isActive: true, createdAt: '', updatedAt: '' })}
       />,
     )
 
@@ -179,7 +179,7 @@ describe('JournalLinesEditor', () => {
       <Harness
         onLinesChange={onLinesChange}
         initial={[line(1, 'debit', 1, '1200'), line(2, 'credit', 3, '1200')]}
-        onCreateBatch={async (name) => ({ id: 9, name, type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' })}
+        onCreateBatch={async (name) => ({ id: 9, name, type: 'expense_splitting', counterpartyId: null, isActive: true, createdAt: '', updatedAt: '' })}
       />,
     )
 

@@ -18,7 +18,22 @@ export function toSchemaV5(sql: string): string {
  * 該当の記述が無いDDLには何もしない。
  */
 export function toSchemaV7(sql: string): string {
-  const v7 = sql.replace(/-- 割勘対象行\(計画Issue #271\)[\s\S]*?prevent_change_on_expense_split_source_line[\s\S]*?END;\n\n/, '')
+  const v7 = toSchemaV8(sql).replace(/-- 割勘対象行\(計画Issue #271\)[\s\S]*?prevent_change_on_expense_split_source_line[\s\S]*?END;\n\n/, '')
   if (v7.includes('expense_split_source_lines')) throw new Error('v7のDDLに割勘対象行の記述が残っている')
   return v7
+}
+
+/**
+ * テスト専用: 最新のDDLから、スキーマ v9(計画Issue #249)で足した精算バッチのクローズ(is_activeの列と、
+ * クローズ時の振替仕訳の表・インデックス)を取り除いて、v8 のDDLにする。v8 以前のDBを最新のDDLから作って
+ * 差分を流すテストが、v9 の差分と重ならないようにするために使う。該当の記述が無いDDLには何もしない。
+ */
+export function toSchemaV8(sql: string): string {
+  const v8 = sql
+    .replace(/ {2}-- クローズ\(計画Issue #249\)[\s\S]*?\n {2}is_active[^\n]*\n/, '')
+    .replace(/-- クローズ時の振替仕訳\(計画Issue #249\)[\s\S]*?idx_settlement_batch_close_entries_entry[^\n]*\n\n/, '')
+  if (v8.includes('settlement_batch_close_entries') || (v8.includes('CREATE TABLE settlement_batches') && v8.includes('is_active'))) {
+    throw new Error('v8のDDLにクローズの記述が残っている')
+  }
+  return v8
 }

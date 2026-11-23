@@ -102,6 +102,7 @@ function fakeRepos() {
         name: input.name,
         type: 'expense_splitting' as const,
         counterpartyId: input.counterpartyId ?? null,
+        isActive: true,
         createdAt: '',
         updatedAt: '',
       })),
@@ -220,7 +221,7 @@ describe('submitExpenseSplit', () => {
       ...base,
       settlementBatchId: 5,
       settlementBatches: [
-        { id: 5, name: '既存', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' },
+        { id: 5, name: '既存', type: 'expense_splitting', counterpartyId: null, isActive: true, createdAt: '', updatedAt: '' },
       ],
       selectedLines: pick(original(1, 1000), 0),
       participants: [{ key: 1, kind: 'counterparty', targetId: 9, ratioInput: '50', amountInput: '' }, selfRow('50')],

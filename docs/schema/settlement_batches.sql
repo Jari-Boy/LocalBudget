@@ -9,6 +9,10 @@ CREATE TABLE settlement_batches (
   -- 世帯外の相手との割勘バッチにのみ設定する(docs/domain/settlement.md参照)。
   -- 世帯メンバー間のバッチはhousehold_member_idが明細行側に既にあるためnullのまま。
   counterparty_id  INTEGER REFERENCES counterparties(id),
+  -- クローズ(計画Issue #249)。1が有効(未精算)、0がクローズ済み(精算済み)。ユーザーが明示的に決める状態で、
+  -- 残高から計算した結果は保存しない(確定後の仕訳の編集は自由なので、保存すると実際の残高と食い違う)。
+  -- クローズ済みのバッチは選択欄の候補に出ない(現在の値は残す)。
+  is_active        BOOLEAN NOT NULL DEFAULT TRUE,
   created_at       TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );

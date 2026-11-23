@@ -252,7 +252,7 @@ describe('SplitHistoryTab: 割勘の取り消しと精算バッチ', () => {
 
   it('取り消した結果、精算バッチに紐づく仕訳が0件になるなら、精算バッチも削除する', async () => {
     const data = historyData(false)
-    data.batches = [{ id: 7, name: 'ランチの割勘', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
+    data.batches = [{ id: 7, name: 'ランチの割勘', type: 'expense_splitting', counterpartyId: null, isActive: true, createdAt: '', updatedAt: '' }]
     const { repositories, onChanged } = setup(data)
 
     cancel()
@@ -264,7 +264,7 @@ describe('SplitHistoryTab: 割勘の取り消しと精算バッチ', () => {
 
   it('同じ精算バッチに別の仕訳が残っているなら、精算バッチは削除しない', async () => {
     const data = historyData(false)
-    data.batches = [{ id: 7, name: 'ランチの割勘', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }]
+    data.batches = [{ id: 7, name: 'ランチの割勘', type: 'expense_splitting', counterpartyId: null, isActive: true, createdAt: '', updatedAt: '' }]
     data.entries.push(
       entry(5, '2026-10-31', '別の割勘', 'expense_splitting', [
         line(51, 5, 'debit', 3, 300, { householdMemberId: 1, settlementBatchId: 7 }),

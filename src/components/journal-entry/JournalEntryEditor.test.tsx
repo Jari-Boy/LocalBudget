@@ -53,7 +53,7 @@ const master: JournalEditorMaster = {
     { id: 1, name: '夫', isGroup: false, isActive: true, createdAt: '', updatedAt: '' },
     { id: 2, name: '妻', isGroup: false, isActive: true, createdAt: '', updatedAt: '' },
   ],
-  batches: [{ id: 7, name: '旅行', type: 'expense_splitting', counterpartyId: null, createdAt: '', updatedAt: '' }],
+  batches: [{ id: 7, name: '旅行', type: 'expense_splitting', counterpartyId: null, isActive: true, createdAt: '', updatedAt: '' }],
 }
 
 function value(lines: JournalEditorValue['lines']): JournalEditorValue {

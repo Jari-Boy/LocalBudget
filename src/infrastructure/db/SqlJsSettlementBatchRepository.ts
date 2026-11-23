@@ -57,6 +57,33 @@ export class SqlJsSettlementBatchRepository implements SettlementBatchRepository
   delete(id: number): void {
     this.db.run('DELETE FROM settlement_batches WHERE id = ?', [id])
   }
+
+  deactivate(id: number): SettlementBatch {
+    this.db.run('UPDATE settlement_batches SET is_active = 0 WHERE id = ?', [id])
+    return this.findById(id)!
+  }
+
+  activate(id: number): SettlementBatch {
+    this.db.run('UPDATE settlement_batches SET is_active = 1 WHERE id = ?', [id])
+    return this.findById(id)!
+  }
+
+  recordCloseEntries(batchId: number, journalEntryIds: readonly number[]): void {
+    for (const entryId of journalEntryIds) {
+      this.db.run('INSERT INTO settlement_batch_close_entries (settlement_batch_id, journal_entry_id) VALUES (?, ?)', [
+        batchId,
+        entryId,
+      ])
+    }
+  }
+
+  findCloseEntryIds(batchId: number): number[] {
+    const [result] = this.db.exec(
+      'SELECT journal_entry_id FROM settlement_batch_close_entries WHERE settlement_batch_id = ? ORDER BY journal_entry_id',
+      [batchId],
+    )
+    return result ? result.values.map((row) => row[0] as number) : []
+  }
 }
 
 function lastInsertRowId(db: Database): number {
@@ -70,6 +97,7 @@ function mapRowToSettlementBatch(columns: string[], values: unknown[]): Settleme
     name: get<string>('name'),
     type: get<SettlementBatchType>('type'),
     counterpartyId: get<number | null>('counterparty_id'),
+    isActive: get<number>('is_active') === 1,
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),
   }

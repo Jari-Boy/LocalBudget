@@ -17,6 +17,7 @@ const batch = (id: number, name: string): SettlementBatch => ({
   name,
   type: 'expense_splitting',
   counterpartyId: null,
+  isActive: true,
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
 })

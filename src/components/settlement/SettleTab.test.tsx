@@ -100,7 +100,7 @@ function entry(id: number, date: string, memo: string, lines: JournalLine[], sou
 }
 
 function batch(id: number, name: string, counterpartyId: number | null = null): SettlementBatch {
-  return { id, name, type: 'expense_splitting', counterpartyId, createdAt: '', updatedAt: '' }
+  return { id, name, type: 'expense_splitting', counterpartyId, isActive: true, createdAt: '', updatedAt: '' }
 }
 
 /** 10月分(未精算: 夫の立替金6000・妻の未払金6000)、9月分(精算済み)、空のバッチ */
