@@ -159,6 +159,7 @@ describe('SplitSettleScreen', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: '借方の食費の行を選択' }))
     fireEvent.click(screen.getByRole('button', { name: /^分担相手/ }))
     fireEvent.click(screen.getByRole('button', { name: '妻' }))
+    fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチの割勘' } })
     fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
 
     await waitFor(() => expect(repositories.journalEntryRepository.findAll).toHaveBeenCalledTimes(2))

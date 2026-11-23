@@ -657,10 +657,6 @@
   color: var(--color-text-muted);
 }
 
-.split-settle__cell--source {
-  color: var(--color-text-muted);
-}
-
 .split-settle__panel-wide {
   padding: 18px;
   display: flex;

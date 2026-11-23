@@ -127,6 +127,7 @@ function debitCheckbox(page: Page, memo: string) {
 async function splitWithMember(page: Page, memo: string) {
   await debitCheckbox(page, memo).check()
   await chooseFromTree(page, /^分担相手/, '割勘相手Bさん')
+  await page.getByLabel('摘要', { exact: true }).fill(`${memo}の割勘`)
   await page.getByRole('button', { name: '割勘を記録' }).click()
   await expect(page.getByText('割勘を記録しました')).toBeVisible()
 }
@@ -228,6 +229,7 @@ test.describe('割勘タブ', () => {
     await openSplitSettle(page)
     await debitCheckbox(page, '世帯外テストの食事代').check()
     await chooseFromTree(page, /^分担相手/, '割勘相手の友人Cさん')
+    await page.getByLabel('摘要', { exact: true }).fill('世帯外テストの食事代の割勘')
     await page.getByRole('button', { name: '割勘を記録' }).click()
     await expect(page.getByText('割勘を記録しました')).toBeVisible()
 
@@ -260,6 +262,7 @@ test.describe('割勘タブ', () => {
     await debitCheckbox(page, 'まとめ1').check()
     await debitCheckbox(page, 'まとめ2').check()
     await chooseFromTree(page, /^分担相手/, '割勘相手Bさん')
+    await page.getByLabel('摘要', { exact: true }).fill('まとめの割勘')
     await page.getByRole('button', { name: '割勘を記録' }).click()
     await expect(page.getByText('割勘を記録しました')).toBeVisible()
 

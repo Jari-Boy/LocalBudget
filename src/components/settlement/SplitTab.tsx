@@ -62,6 +62,7 @@ const ERROR_TEXT: Record<SubmitExpenseSplitError, string> = {
   advanceLiabilityAccountRequired: '未払金の科目が見つかりません',
   counterpartyTargetRequired: '分担相手を選んでください',
   noRecipient: '相手の負担額が0円です。割合や金額を確認してください',
+  memoRequired: '摘要を入力してください',
   amountNetZero: '選んだ行の借方と貸方が差し引きで0円のため、金額を指定できません。割合か均等で分けてください',
   amountExceedsTotal: '指定した金額の合計が、選んだ行の差し引きの合計を超えています',
 }
@@ -225,13 +226,7 @@ export function SplitTab({
   const planError = chosen.length > 0 && !plan.ok && (mode === 'amount' ? plan.error !== 'noRecipient' : false) ? plan.error : null
 
   const batchLabel =
-    batchId === 'new'
-      ? memoInput.trim() === ''
-        ? chosen.length === 0
-          ? ''
-          : defaultMemo(chosen)
-        : memoInput.trim()
-      : (data.batches.find((b) => b.id === batchId)?.name ?? '')
+    batchId === 'new' ? memoInput.trim() : (data.batches.find((b) => b.id === batchId)?.name ?? '')
   const previews = useMemo(
     () =>
       buildSplitPreviews({
@@ -311,6 +306,10 @@ export function SplitTab({
       setError(ERROR_TEXT.counterpartyTargetRequired)
       return
     }
+    if (memoInput.trim() === '') {
+      setError(ERROR_TEXT.memoRequired)
+      return
+    }
     setSubmitting(true)
     setError('')
     setFlash('')
@@ -322,7 +321,7 @@ export function SplitTab({
           settlementBatches: data.batches,
           participants: partners,
           allocationMode: mode,
-          memo: memoInput.trim() === '' ? defaultMemo(chosen) : memoInput.trim(),
+          memo: memoInput.trim(),
           settlementBatchId: batchId,
           today,
           repositories,
@@ -674,6 +673,8 @@ export function SplitTab({
               <input
                 id="split-memo"
                 className="split-settle__control"
+                required
+                aria-required="true"
                 value={memoInput}
                 placeholder={chosen.length === 0 ? '' : defaultMemo(chosen)}
                 onChange={(e) => {
@@ -682,7 +683,7 @@ export function SplitTab({
                 }}
               />
               <span className="split-settle__note">
-                新しい精算バッチを作るときは、この摘要がバッチの名前になります。空のときは例の摘要を使います。
+                必須です。新しい精算バッチを作るときは、この摘要がバッチの名前になります。
               </span>
             </div>
 
@@ -731,7 +732,7 @@ export function SplitTab({
             <div className="split-settle__preview-head">
               <h2 className="split-settle__h2">割勘仕訳のプレビュー</h2>
               <span className="split-settle__note">
-                {`取引日 ${today}・摘要「${memoInput.trim() === '' ? defaultMemo(chosen) : memoInput.trim()}」。分担相手ごとに1件の仕訳になります。`}
+                {`取引日 ${today}・摘要「${memoInput.trim()}」。分担相手ごとに1件の仕訳になります。`}
               </span>
             </div>
             {previews.map((preview) => (
@@ -747,7 +748,6 @@ export function SplitTab({
                       <th>世帯メンバー</th>
                       <th>取引先・精算バッチ</th>
                       <th className="journal-line-table__cell--amount">金額</th>
-                      <th className="journal-line-table__credit-start">元の行</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -765,7 +765,6 @@ export function SplitTab({
                         <td className="journal-line-table__cell journal-line-table__cell--amount">
                           {row.credit === null ? '' : formatCurrency(row.credit.amount, 'JPY')}
                         </td>
-                        <td className="journal-line-table__cell journal-line-table__credit-start split-settle__cell--source">{row.source}</td>
                       </tr>
                     ))}
                     <tr className="split-settle__preview-total">
@@ -777,7 +776,6 @@ export function SplitTab({
                         貸方の合計
                       </td>
                       <td className="journal-line-table__cell journal-line-table__cell--amount">{formatCurrency(preview.creditTotal, 'JPY')}</td>
-                      <td className="journal-line-table__cell journal-line-table__credit-start" />
                     </tr>
                   </tbody>
                 </table>

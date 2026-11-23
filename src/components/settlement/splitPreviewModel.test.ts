@@ -1,6 +1,6 @@
 /**
  * splitPreviewModel(割勘仕訳のプレビューの組み立て、計画Issue #271)の純粋関数のユニットテスト。
- * 分担相手ごとに仕訳1件分のプレビューを作ること、付け替えの行を借方・貸方に対応づけて「元の行」の説明を添えること、
+ * 分担相手ごとに仕訳1件分のプレビューを作ること、付け替えの行を借方・貸方に対応づけること、
  * 立替金・未払金を純額の行にすること、貸借の合計が一致することを検証する(仕訳の組み立ては
  * buildLineExpenseSplittingJournalEntryInputと同じ)。DB・DOM非依存、外部依存なし。
  */
@@ -103,12 +103,11 @@ describe('buildSplitPreviews', () => {
     expect(preview.creditTotal).toBe(2400)
   })
 
-  it('付け替えの行には元の行の説明(摘要・科目・貸借)を添え、立替金・未払金の行には精算バッチ名を出す', () => {
+  it('立替金・未払金の行には精算バッチ名を出す(元の行の列は持たない)', () => {
     const [preview] = buildSplitPreviews({ ...common, selectedLines: [food, income], participants: [member] })
-    expect(preview.rows[0].source).toBe('スーパー 食費(借方)')
-    expect(preview.rows[1].source).toBe('スーパー 雑収入(貸方)')
     expect(preview.rows[2].debit?.partner).toBe('2行の割勘')
-    expect(preview.rows[2].source).toBe('上の差し引き')
+    expect(preview.rows[2].credit?.partner).toBe('2行の割勘')
+    expect(Object.keys(preview.rows[0])).toEqual(['debit', 'credit'])
   })
 
   it('世帯外の相手には、取引先付きの費用・収益の行と立替金の行を返す', () => {

@@ -29,6 +29,8 @@ export type SubmitExpenseSplitError =
   | 'requiredFieldMissing'
   | 'advanceLiabilityAccountRequired'
   | 'counterpartyTargetRequired'
+  /** 摘要が空(空白だけを含む)。摘要は必須で、新しい精算バッチの名前にもなる */
+  | 'memoRequired'
 
 export type SubmitExpenseSplitResult =
   | { ok: true; createdEntries: JournalEntry[] }
@@ -41,7 +43,7 @@ export interface SubmitExpenseSplitParams {
   settlementBatches: readonly SettlementBatch[]
   participants: readonly ExpenseSplittingParticipantRow[]
   allocationMode: ExpenseSplittingAllocationMode
-  /** 割勘仕訳の摘要。空欄なら無題。精算バッチを新規作成するときの名前にも使う */
+  /** 割勘仕訳の摘要。必須(空・空白だけならエラー)。精算バッチを新規作成するときの名前にも使う */
   memo: string
   /** 既存の精算バッチのid、または'new'(新しく作る) */
   settlementBatchId: number | 'new'
@@ -71,6 +73,7 @@ export async function submitExpenseSplit(params: SubmitExpenseSplitParams): Prom
   const advanceAssetAccountId = accounts.find((a) => a.category === 'asset' && a.isSystemManaged)?.id ?? null
   const advanceLiabilityAccountId = accounts.find((a) => a.category === 'liability' && a.isSystemManaged)?.id ?? null
 
+  if (memo.trim() === '') return { ok: false, error: 'memoRequired' }
   if (advanceAssetAccountId === null) return { ok: false, error: 'requiredFieldMissing' }
   if (
     participants.some((row) => row.kind === 'householdMember' && row.targetId !== null) &&
@@ -123,7 +126,7 @@ export async function submitExpenseSplit(params: SubmitExpenseSplitParams): Prom
       advanceLiabilityAccountId,
       settlementBatchId: resolvedSettlementBatchId,
       entryDate: today,
-      memo: memo.trim() === '' ? null : memo,
+      memo: memo.trim(),
       recipient,
       shares,
     })

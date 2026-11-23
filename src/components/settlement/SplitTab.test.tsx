@@ -284,8 +284,7 @@ describe('SplitTab', () => {
 
     const preview = screen.getByRole('region', { name: '割勘仕訳のプレビュー' })
     expect(within(preview).getByRole('table', { name: '妻さん分の割勘仕訳' })).toBeInTheDocument()
-    expect(within(preview).getByText('ランチ 食費(借方)')).toBeInTheDocument()
-    expect(within(preview).getByText('返品 食費(貸方)')).toBeInTheDocument()
+    expect(within(preview).queryByText('元の行')).not.toBeInTheDocument()
     // 借方600−貸方100の差し引き500が立替金・未払金になる(借方・貸方の合計は一致)
     expect(within(preview).getAllByText(formatCurrency(500, 'JPY')).length).toBeGreaterThan(0)
   })
@@ -330,6 +329,7 @@ describe('SplitTab', () => {
 
     fireEvent.click(debitBox('ランチ'))
     chooseOption(/^分担相手/, '妻')
+    fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチの割勘' } })
     fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
 
     await waitFor(() => expect(onChanged).toHaveBeenCalled())
@@ -360,7 +360,20 @@ describe('SplitTab', () => {
     expect(created.memo).toBe('10月の外食まとめ')
   })
 
-  it('摘要が空のときは、既定の摘要(元の摘要+の割勘)を使い、入力欄の例としても見せる', () => {
+  it('摘要は必須。空のまま記録しようとすると、何も作らずエラーを表示する', async () => {
+    const { repositories } = setup()
+
+    fireEvent.click(debitBox('ランチ'))
+    chooseOption(/^分担相手/, '妻')
+    fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('摘要を入力してください')
+    expect(screen.getByLabelText('摘要')).toBeRequired()
+    expect(repositories.settlementBatchRepository.create).not.toHaveBeenCalled()
+    expect(repositories.journalEntryRepository.create).not.toHaveBeenCalled()
+  })
+
+  it('摘要の入力欄には、入力の例として既定の摘要(元の摘要+の割勘)を見せるだけで、空のままでは使わない', () => {
     setup()
 
     fireEvent.click(debitBox('ランチ'))

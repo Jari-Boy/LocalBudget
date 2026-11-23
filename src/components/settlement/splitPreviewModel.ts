@@ -22,8 +22,6 @@ export interface SplitPreviewLine {
 export interface SplitPreviewRow {
   debit: SplitPreviewLine | null
   credit: SplitPreviewLine | null
-  /** 「元の行」の列の説明 */
-  source: string
 }
 
 export interface SplitPreview {
@@ -98,29 +96,20 @@ export function buildSplitPreviews(params: {
     const advance = input.lines.filter((l) => l.settlementBatchId != null)
     const rows: SplitPreviewRow[] = []
 
-    // 付け替えの行。世帯メンバーへは借方・貸方の2行1組、世帯外の相手へは1行ずつ。組ごとに、元の行の説明を添える
-    const sourceOf = (index: number): string => {
-      const { entry, line } = nonZero[index]
-      const memo = entry.memo === null || entry.memo === '' ? '(摘要なし)' : entry.memo
-      return `${memo} ${params.accountName(line.accountId)}(${line.side === 'debit' ? '借方' : '貸方'})`
-    }
+    // 付け替えの行。世帯メンバーへは借方・貸方の2行1組、世帯外の相手へは1行ずつ
     if (row.kind === 'householdMember') {
       for (let i = 0; i < nonZero.length; i++) {
         const pair = pairLinesBySide(profitLoss.slice(i * 2, i * 2 + 2))[0]
-        rows.push({ debit: pair.debit && view(pair.debit), credit: pair.credit && view(pair.credit), source: sourceOf(i) })
+        rows.push({ debit: pair.debit && view(pair.debit), credit: pair.credit && view(pair.credit) })
       }
     } else {
-      profitLoss.forEach((l, i) => {
-        rows.push({
-          debit: l.side === 'debit' ? view(l) : null,
-          credit: l.side === 'credit' ? view(l) : null,
-          source: sourceOf(i),
-        })
+      profitLoss.forEach((l) => {
+        rows.push({ debit: l.side === 'debit' ? view(l) : null, credit: l.side === 'credit' ? view(l) : null })
       })
     }
     // 立替金・未払金の行(純額)。借方を左・貸方を右に並べる
     pairLinesBySide(advance).forEach((pair) => {
-      rows.push({ debit: pair.debit && view(pair.debit), credit: pair.credit && view(pair.credit), source: '上の差し引き' })
+      rows.push({ debit: pair.debit && view(pair.debit), credit: pair.credit && view(pair.credit) })
     })
 
     const total = (side: 'debit' | 'credit') => input.lines.filter((l) => l.side === side).reduce((sum, l) => sum + l.amount, 0)

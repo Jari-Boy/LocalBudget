@@ -300,6 +300,23 @@ describe('submitExpenseSplit', () => {
     expect(repos.journalEntryRepository.create).not.toHaveBeenCalled()
   })
 
+  it('摘要が空(空白だけを含む)なら、何も書き込まずエラーを返す。摘要は必須', async () => {
+    const { repos } = fakeRepos()
+
+    for (const memo of ['', '   ']) {
+      const result = await submitExpenseSplit({
+        ...base,
+        memo,
+        selectedLines: pick(original(1, 1000), 0),
+        participants: [memberRow('50')],
+        repositories: repos,
+      })
+      expect(result).toEqual({ ok: false, error: 'memoRequired' })
+    }
+    expect(repos.settlementBatchRepository.create).not.toHaveBeenCalled()
+    expect(repos.journalEntryRepository.create).not.toHaveBeenCalled()
+  })
+
   it('相手を選んでいない世帯外の行があると、何も書き込まずエラーを返す', async () => {
     const { repos } = fakeRepos()
 
