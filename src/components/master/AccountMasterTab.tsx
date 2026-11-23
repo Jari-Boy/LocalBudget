@@ -117,7 +117,8 @@ export function AccountMasterTab({
   const [checkedIds, setCheckedIds] = useState<readonly string[]>([])
   /** 検索欄の文字列(計画Issue #219)。空でなければ一覧を絞り込み、その間はドラッグを無効にする */
   const [query, setQuery] = useState('')
-  const [creating, setCreating] = useState<AccountCategory | null>(null)
+  /** 開いている科目の登録フォーム。groupIdは、グループの右パネルの「+ 科目」で入れる所属グループ(計画Issue #257) */
+  const [creating, setCreating] = useState<{ category: AccountCategory; groupId: number | null } | null>(null)
   const [armedId, setArmedId] = useState<string | null>(null)
   const [flash, setFlash] = useState('')
   const [mergeResult, setMergeResult] = useState('')
@@ -321,7 +322,7 @@ export function AccountMasterTab({
                   onClick={() =>
                     guarded(() => {
                       setSelectedId(null)
-                      setCreating(key as AccountCategory)
+                      setCreating({ category: key as AccountCategory, groupId: null })
                     })
                   }
                 >
@@ -376,12 +377,13 @@ export function AccountMasterTab({
 
       {bulkCount < 2 && creating !== null && (
         <AccountCreateForm
-          key={creating}
+          key={`${creating.category}:${creating.groupId ?? ''}`}
           accountRepository={accountRepository}
           balanceRecordRepository={accountBalanceRecordRepository}
           groups={data.groups}
           householdMembers={data.members}
-          initialCategory={creating}
+          initialCategory={creating.category}
+          initialGroupId={creating.groupId}
           today={today}
           mappingLinking={{ definitions: data.definitions, repository: importMappingDefinitionRepository }}
           onCreated={(account, options) => {
@@ -483,7 +485,9 @@ export function AccountMasterTab({
           onAddSubgroup={() =>
             guarded(() => void addGroup(selected.category as AccountCategory, parseNodeId(selected.id).id))
           }
-          onAddAccount={() => guarded(() => setCreating(selected.category as AccountCategory))}
+          onAddAccount={() =>
+            guarded(() => setCreating({ category: selected.category as AccountCategory, groupId: parseNodeId(selected.id).id }))
+          }
           onDelete={() => {
             if (armedId !== selected.id) {
               setArmedId(selected.id)

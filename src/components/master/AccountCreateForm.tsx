@@ -38,6 +38,11 @@ export interface AccountCreateFormProps {
   householdMembers: readonly HouseholdMember[]
   /** 右パネルを開いた区分の見出しに合わせた初期の区分(equityは作成できないため資産にする) */
   initialCategory: AccountCategory
+  /**
+   * 所属グループの初期値(計画Issue #257。グループの右パネルの「+ 科目」で、選んでいたグループを入れる)。
+   * 初期の区分のアクティブなグループでなければ無視する。区分を変えると外れ、区分の既定に戻る
+   */
+  initialGroupId?: number | null
   /** 最初の残高の記録の日付の初期値(YYYY-MM-DD)。省略時は今日 */
   today?: string
   mappingLinking?: AccountMappingLinking
@@ -61,6 +66,7 @@ export function AccountCreateForm({
   groups,
   householdMembers,
   initialCategory,
+  initialGroupId = null,
   today,
   mappingLinking,
   onCreated,
@@ -73,7 +79,12 @@ export function AccountCreateForm({
       : 'asset',
   )
   const [name, setName] = useState('')
-  const [groupOverride, setGroupOverride] = useState<string | null>(null)
+  /** 渡された初期のグループ(初期の区分のアクティブなグループのときだけ有効) */
+  const initialGroupValue =
+    initialGroupId !== null && groups.some((g) => g.id === initialGroupId && g.category === initialCategory && g.isActive)
+      ? String(initialGroupId)
+      : null
+  const [groupOverride, setGroupOverride] = useState<string | null>(initialGroupValue)
   const [hasCsv, setHasCsv] = useState<'yes' | 'no'>('yes')
   const [hasBalance, setHasBalance] = useState<'yes' | 'no'>(initialCategory === 'liability' ? 'no' : 'yes')
   const [memberInput, setMemberInput] = useState('')
@@ -233,7 +244,8 @@ export function AccountCreateForm({
             value={hasCsv}
             onChange={(event) => {
               setHasCsv(event.target.value as 'yes' | 'no')
-              setGroupOverride(null)
+              // 外部明細の有無で既定のグループが変わるが、グループの「+ 科目」で入れた親は残す
+              setGroupOverride(category === initialCategory ? initialGroupValue : null)
             }}
           >
             <option value="yes">{t('createForm.yes')}</option>
