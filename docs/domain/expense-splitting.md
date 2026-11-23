@@ -54,7 +54,7 @@
 > **なぜ人・バッチごとに専用科目を作らないか**
 > 検討の初期段階では「未収入金(Aさん)」「未払金(Bさん)」のように人ごとの専用科目や、割勘バッチごとの一時的な科目を都度作成する案も検討したが、いずれも使い捨ての科目で科目一覧が肥大化する。精算バッチ(`settlement_batch_id`)を「どのバッチか」を表す軸として使えば、科目自体は`household_member_id`と組み合わせた汎用の2科目だけで足りる。
 >
-> 割勘バッチには「26/7生活費割勘」のような名前の`settlement_batches`レコード(`type = 'expense_splitting'`)を作成する([settlement.md 2章](./settlement.md#2-精算バッチマスタsettlement_batches)、計画Issue #133)。精算が終わり未収金(精算バッチ)の残高が0になると、非アクティブ化がユーザーに提案される。`settlement_batches`は`projects`(イベント専用)とは独立したテーブルであり、`settlement_batch_id`は`project_id`とは別カラムのため、割勘仕訳の費用側の行に元仕訳のイベント(`project_id`)を引き継ぐことと、未収金(精算バッチ)行に精算バッチ(`settlement_batch_id`)を付与することは互いに干渉しない([1.3](#13-世帯メンバー間の割勘)・[1.4](#14-世帯外の相手との割勘)参照)。
+> 割勘バッチには「26/7生活費割勘」のような名前の`settlement_batches`レコード(`type = 'expense_splitting'`)を作成する([settlement.md 2章](./settlement.md#2-精算バッチマスタsettlement_batches)、計画Issue #133)。精算が終わり未収金(精算バッチ)の残高が0になると、利用者に「クローズしますか?」と確認する(クローズ済み=精算済みで、選択欄の候補から外れる。[settlement.md 1.9](./settlement.md#19-精算画面の操作モデル計画issue-139)のクローズ節、計画Issue #249)。`settlement_batches`は`projects`(イベント専用)とは独立したテーブルであり、`settlement_batch_id`は`project_id`とは別カラムのため、割勘仕訳の費用側の行に元仕訳のイベント(`project_id`)を引き継ぐことと、未収金(精算バッチ)行に精算バッチ(`settlement_batch_id`)を付与することは互いに干渉しない([1.3](#13-世帯メンバー間の割勘)・[1.4](#14-世帯外の相手との割勘)参照)。
 
 ### 1.3 世帯メンバー間の割勘
 
@@ -159,7 +159,7 @@
 ### 1.6 他ドメインへの影響
 
 - [accounts.md 1.2 区分(5要素)](./accounts.md#12-区分5要素): 「未収金(精算バッチ)」を割勘専用の恒久的な一時勘定として位置づける
-- [settlement.md 2章 精算バッチマスタ](./settlement.md#2-精算バッチマスタsettlement_batches)(計画Issue #133): 割勘バッチの識別に`settlement_batches`を使う主要な動機。未収金(精算バッチ)の精算残高が0になった時点で非アクティブ化が提案される
+- [settlement.md 2章 精算バッチマスタ](./settlement.md#2-精算バッチマスタsettlement_batches)(計画Issue #133): 割勘バッチの識別に`settlement_batches`を使う主要な動機。未収金(精算バッチ)の精算残高が0になった時点でクローズが提案される(計画Issue #249)
 - [projects.md 1.2 紐づけ対象](./projects.md#12-紐づけ対象): 割勘仕訳の費用側の行に元仕訳のイベント(`project_id`)を引き継がせたい、という要求が`project_id`を全区分へ拡張した主要な動機
 - [journal.md 1.8 関連仕訳グループ](./journal.md#18-関連仕訳グループjournal_entry_link_groups): 割勘・精算の仕訳作成時の自動グルーピングが、関連仕訳グループの主要な作成契機の1つ(計画Issue #138)
 - [counterparties.md](./counterparties.md): 世帯外の相手を取引先として扱う([1.4](#14-世帯外の相手との割勘)参照)
