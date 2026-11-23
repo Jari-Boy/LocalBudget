@@ -25,6 +25,7 @@ import { findAccountBySystemRole } from '../../domain/account/findAccountBySyste
 import { createLineHouseholdMemberResolver } from '../../domain/journal/resolveLineHouseholdMemberId'
 import { runInHistoryGroup } from '../../infrastructure/history/historyGroupRunner'
 import { createSettlementEntry, tagCandidatesToBatch } from './submitSettlement'
+import { StickyHeaderTable } from '../common/sticky/StickyHeaderTable'
 import './SplitSettleScreen.css'
 
 
@@ -339,14 +340,20 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
             </button>
           ))}
         </div>
-        <table className="split-settle__table">
-          <thead>
-            <tr>
-              <th>バッチ名</th>
-              <th className="split-settle__num">未収金</th>
-              <th className="split-settle__num">未払金</th>
-            </tr>
-          </thead>
+        <StickyHeaderTable
+          frameClassName="split-settle__scroll"
+          tableClassName="split-settle__table"
+          floatingClassName="floating-table-header--bare"
+          head={
+            <thead>
+              <tr>
+                <th>バッチ名</th>
+                <th className="split-settle__num">未収金</th>
+                <th className="split-settle__num">未払金</th>
+              </tr>
+            </thead>
+          }
+        >
           <tbody>
             {listed.map((s) => (
               <tr key={s.batch.id} className={s.batch.id === batch.id ? 'split-settle__row--current' : undefined}>
@@ -375,7 +382,7 @@ export function SettleTab({ data, derived, repositories, today, onChanged }: Set
               </tr>
             ))}
           </tbody>
-        </table>
+        </StickyHeaderTable>
       </section>
 
       <section aria-label="選択中の精算バッチ" className="split-settle__card split-settle__panel">

@@ -27,6 +27,7 @@ import {
   parsePartnerValue,
   toPartnerValue,
 } from './splitSettleModel'
+import { StickyHeaderTable } from '../common/sticky/StickyHeaderTable'
 import './SplitSettleScreen.css'
 
 export interface SplitTabProps {
@@ -286,16 +287,22 @@ export function SplitTab({
           <p className="split-settle__note split-settle__note--pad">
             費用の行があり、まだ割勘していない仕訳だけを表示しています。費用の行が複数あれば、各行を同じ割合で割ります。
           </p>
-          <table className="split-settle__table">
-            <thead>
-              <tr>
-                <th>選択</th>
-                <th>日付</th>
-                <th>摘要</th>
-                <th>支払元</th>
-                <th className="split-settle__num">金額</th>
-              </tr>
-            </thead>
+          <StickyHeaderTable
+            frameClassName="split-settle__scroll"
+            tableClassName="split-settle__table"
+            floatingClassName="floating-table-header--bare"
+            head={
+              <thead>
+                <tr>
+                  <th>選択</th>
+                  <th>日付</th>
+                  <th>摘要</th>
+                  <th>支払元</th>
+                  <th className="split-settle__num">金額</th>
+                </tr>
+              </thead>
+            }
+          >
             <tbody>
               {shown.map((item) => {
                 const memo = item.entry.memo ?? ''
@@ -321,7 +328,7 @@ export function SplitTab({
                 )
               })}
             </tbody>
-          </table>
+          </StickyHeaderTable>
         </section>
 
         <section aria-label="分担" className="split-settle__card split-settle__side">
@@ -497,17 +504,23 @@ export function SplitTab({
             {historyStatus === 'open' ? '未精算の割勘はありません' : '精算済みの割勘はありません'}
           </p>
         )}
-        <table className="split-settle__table">
-          <thead>
-            <tr>
-              <th>日付</th>
-              <th>摘要</th>
-              <th>相手</th>
-              <th className="split-settle__num">相手の負担額</th>
-              <th>状態</th>
-              <th>取り消し</th>
-            </tr>
-          </thead>
+        <StickyHeaderTable
+          frameClassName="split-settle__scroll"
+          tableClassName="split-settle__table"
+          floatingClassName="floating-table-header--bare"
+          head={
+            <thead>
+              <tr>
+                <th>日付</th>
+                <th>摘要</th>
+                <th>相手</th>
+                <th className="split-settle__num">相手の負担額</th>
+                <th>状態</th>
+                <th>取り消し</th>
+              </tr>
+            </thead>
+          }
+        >
           <tbody>
             {shownHistory.map((row) => (
               <tr key={row.splitEntryId}>
@@ -553,7 +566,7 @@ export function SplitTab({
               </tr>
             ))}
           </tbody>
-        </table>
+        </StickyHeaderTable>
       </section>
 
       {detailEntry !== undefined && (

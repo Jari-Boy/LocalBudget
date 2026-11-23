@@ -80,6 +80,10 @@
 
 .split-settle__card--table {
   flex: 3 1 480px;
+}
+
+/* 表の横スクロール用の枠。カードではなく表の内側の枠で横スクロールさせ、見出しの複製(FloatingTableHeader)をカードの中に置けるようにする(計画Issue #266) */
+.split-settle__scroll {
   overflow-x: auto;
 }
 
@@ -101,7 +105,6 @@
 
 .split-settle__list {
   flex: 2 1 360px;
-  overflow-x: auto;
 }
 
 .split-settle__list-head {
