@@ -63,3 +63,17 @@ describe('ConfirmDialog', () => {
     expect(screen.getByRole('button', { name: 'やめる' })).toBeInTheDocument()
   })
 })
+
+describe('ConfirmDialog の初期フォーカス', () => {
+  it('focusConfirmを渡すと、開いた時点で実行ボタンにフォーカスが移る', () => {
+    setup({ focusConfirm: true })
+
+    expect(screen.getByRole('button', { name: '破棄する' })).toHaveFocus()
+  })
+
+  it('focusConfirmを渡さないときは、実行ボタンにフォーカスを移さない', () => {
+    setup()
+
+    expect(screen.getByRole('button', { name: '破棄する' })).not.toHaveFocus()
+  })
+})
