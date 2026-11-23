@@ -1,4 +1,5 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { EntitySelect, type EntityGroup } from '../common/entity-select/EntitySelect'
 
@@ -74,7 +75,8 @@ export function QuickCreateDialog({
     }
   }
 
-  return (
+  // body直下に出す。画面の中の入れ子の重なり順(固定したタブ・バーなど)に左右されず、全体を暗くするため(計画Issue #269の実機確認での指摘)
+  return createPortal(
     <>
     <div className="import-dialog__backdrop">
       <form
@@ -138,6 +140,7 @@ export function QuickCreateDialog({
         onCancel={() => setGroupDialogOpen(false)}
       />
     )}
-    </>
+    </>,
+    document.body,
   )
 }
