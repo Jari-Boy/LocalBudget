@@ -20,7 +20,13 @@ export function foldKana(nfkcText: string): string {
  * (docs/domain/counterparties.md 1.3 手順1: 全角半角統一・大文字小文字統一・空白除去。
  * 計画Issue #236で、ひらがな/カタカナと小書き文字の区別をしない規則を加えた)。
  * 照合そのものは estimateKeywordRule.ts(計画Issue #219)。
+ *
+ * 銀行の摘要には「シ+空白+独立した濁点」の形がある(「ワイシ ゙エイカート ゙」)。NFKCの時点では空白が間にあって
+ * 合成されないので、空白を取り除いたあとにNFCをかけて、結合文字の濁点・半濁点を1文字にまとめる(計画Issue #279)。
  */
 export function normalizeDescriptionForMatching(text: string): string {
-  return unifyKatakanaHyphen(foldKana(text.normalize('NFKC'))).toUpperCase().replace(/\s+/g, '')
+  return unifyKatakanaHyphen(foldKana(text.normalize('NFKC')))
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .normalize('NFC')
 }

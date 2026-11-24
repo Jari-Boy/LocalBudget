@@ -24,6 +24,8 @@ import { MIGRATION_V6_FAVORITES } from './migrationV6Favorites'
 import { MIGRATION_V7_NORMALIZE_KANA_KEYWORDS } from './migrationV7NormalizeKanaKeywords'
 import { MIGRATION_V8_EXPENSE_SPLIT_SOURCE_LINES } from './migrationV8ExpenseSplitSourceLines'
 import { MIGRATION_V9_SETTLEMENT_BATCH_CLOSE } from './migrationV9SettlementBatchClose'
+import { MIGRATION_V10_NORMALIZE_DETACHED_DAKUTEN_KEYWORDS } from './migrationV10NormalizeDetachedDakutenKeywords'
+import { MIGRATION_V11_NORMALIZE_DETACHED_DAKUTEN_DESCRIPTIONS } from './migrationV11NormalizeDetachedDakutenDescriptions'
 
 /**
  * 最新スキーマと差分の2本立て(計画Issue #42、docs/decisions.md)。
@@ -43,7 +45,7 @@ export interface MigrationPlan {
   diffs: Readonly<Record<number, readonly MigrationStep[]>>
 }
 
-export const LATEST_SCHEMA_VERSION = 9
+export const LATEST_SCHEMA_VERSION = 11
 
 // household_members → accounts(household_membersを参照) → projects/counterparties
 // → settlement_batches(counterpartiesを参照) → journal(accounts/projects/counterparties/
@@ -92,6 +94,10 @@ export const SCHEMA_PLAN: MigrationPlan = {
     8: MIGRATION_V8_EXPENSE_SPLIT_SOURCE_LINES,
     // v9(計画Issue #249): 精算バッチのクローズ(settlement_batches.is_active)と、クローズ時の振替仕訳の記録の表の追加
     9: MIGRATION_V9_SETTLEMENT_BATCH_CLOSE,
+    // v10(計画Issue #279): キーワードの、かな+空白+分離した濁点の再正規化(表の形は変えない)
+    10: MIGRATION_V10_NORMALIZE_DETACHED_DAKUTEN_KEYWORDS,
+    // v11(計画Issue #279): 取り込み済みの仕訳の摘要の、かな+空白+分離した濁点の整形(表の形は変えない)
+    11: MIGRATION_V11_NORMALIZE_DETACHED_DAKUTEN_DESCRIPTIONS,
   },
 }
 

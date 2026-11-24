@@ -29,6 +29,22 @@ describe('formatDescriptionForDisplay', () => {
     expect(formatDescriptionForDisplay('ファミリ‐マ−ト')).toBe('ファミリーマート')
   })
 
+  it('「かな+空白+分離した濁点」(U+309B / U+3099 / U+FF9E)を、1文字の濁点つきの文字にする(計画Issue #279)', () => {
+    expect(formatDescriptionForDisplay('ワイシ ゛エイカート ゛(カ')).toBe('ワイジエイカード(カ')
+    expect(formatDescriptionForDisplay('ワイシ ゙エイカート ゙(カ')).toBe('ワイジエイカード(カ')
+    expect(formatDescriptionForDisplay('ワイシ ﾞエイカート ﾞ(カ')).toBe('ワイジエイカード(カ')
+  })
+
+  it('半濁点(U+309C / U+309A / U+FF9F)も、空白をはさんでいても1文字にする', () => {
+    expect(formatDescriptionForDisplay('ハ ゜')).toBe('パ')
+    expect(formatDescriptionForDisplay('ハ ゚')).toBe('パ')
+    expect(formatDescriptionForDisplay('ハ ﾟ')).toBe('パ')
+  })
+
+  it('濁点と無関係な空白は、従来どおり1つにまとめるだけで詰めない', () => {
+    expect(formatDescriptionForDisplay('abc  def ガス  ホーム')).toBe('abc def ガス ホーム')
+  })
+
   it('カタカナにつづかないハイフン(電話番号・日付・英数字)は、ハイフンのまま残す', () => {
     expect(formatDescriptionForDisplay('ABC-123 03-1234-5678')).toBe('ABC-123 03-1234-5678')
     expect(formatDescriptionForDisplay('カード 2026-10-05')).toBe('カード 2026-10-05')

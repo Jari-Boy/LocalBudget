@@ -42,6 +42,28 @@ describe('normalizeDescriptionForMatching', () => {
     expect(normalizeDescriptionForMatching('ゕゖ')).toBe('カケ')
   })
 
+  it('「かな+空白+分離した濁点」(U+309B / U+3099 / U+FF9E)が、1文字の濁点つきの文字と同じになる(計画Issue #279)', () => {
+    const expected = normalizeDescriptionForMatching('ワイジェイカード')
+    expect(normalizeDescriptionForMatching('ワイシ ゛エイカート ゛(カ')).toBe(`${expected}(カ`)
+    expect(normalizeDescriptionForMatching('ワイシ ゙エイカート ゙(カ')).toBe(`${expected}(カ`)
+    expect(normalizeDescriptionForMatching('ワイシ ﾞエイカート ﾞ(カ')).toBe(`${expected}(カ`)
+  })
+
+  it('空白のない「かな+濁点」は従来どおり1文字にそろう', () => {
+    expect(normalizeDescriptionForMatching('ジ')).toBe('ジ')
+    expect(normalizeDescriptionForMatching('ｼﾞ')).toBe('ジ')
+  })
+
+  it('半濁点(U+309C / U+309A / U+FF9F)も、空白をはさんでいても1文字にそろう', () => {
+    expect(normalizeDescriptionForMatching('ハ ゜')).toBe('パ')
+    expect(normalizeDescriptionForMatching('ハ ゚')).toBe('パ')
+    expect(normalizeDescriptionForMatching('ハ ﾟ')).toBe('パ')
+  })
+
+  it('濁点と無関係な空白(英単語の後ろなど)は、従来どおり取り除かれるだけ', () => {
+    expect(normalizeDescriptionForMatching('abc def ガス')).toBe('ABCDEFガス')
+  })
+
   it('漢字・英数字・長音は変えない', () => {
     expect(normalizeDescriptionForMatching('東京 abc-1')).toBe('東京ABC-1')
     expect(normalizeDescriptionForMatching('コーヒー')).toBe('コーヒー')
