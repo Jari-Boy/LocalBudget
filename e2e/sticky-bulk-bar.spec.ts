@@ -128,6 +128,36 @@ test.describe('上部固定の一括編集バーとタブ、表の見出し(明�
     expect(header.y).toBeGreaterThanOrEqual(bar.y + bar.height - 1)
   })
 
+  /** 計画Issue #280: 2段構成のバーの高さは固定で、理由の有無で変わらず、表の見出しの固定位置(--sticky-bulk-h)と一致する */
+  test('2段構成のバーは、無効な項目の理由が出ても高さが変わらず、項目も枠からはみ出さず、見出しはバーの6px下に固定される', async ({ page }) => {
+    await openLineView(page)
+    await debitBoxes(page).nth(2).check()
+    await expect(bulkBar(page)).toBeVisible()
+    const withoutReason = await boxOf(bulkBar(page))
+    await expect(bulkBar(page).getByText('未収金・未払金(精算バッチ)の行のみ')).toBeVisible()
+
+    // 資産(現金)の貸方の行を足すと、取引先の理由も出る。それでも高さは変わらない
+    await page.getByRole('checkbox', { name: '貸方の行を選択' }).nth(2).check()
+    await expect(bulkBar(page).getByText('費用・収益の行のみ')).toBeVisible()
+    const withReason = await boxOf(bulkBar(page))
+    expect(withReason.height).toBe(withoutReason.height)
+    expect(withReason.height).toBe(124)
+
+    // 2段目の項目(ラベル・選択欄・理由)は、バーの枠の中に収まる
+    const overflow = await bulkBar(page).evaluate((bar) => {
+      const barRect = bar.getBoundingClientRect()
+      return Array.from(bar.querySelectorAll('.journal-line-bulk__field')).some((field) => field.getBoundingClientRect().bottom > barRect.bottom)
+    })
+    expect(overflow).toBe(false)
+
+    await page.evaluate(() => window.scrollTo(0, 900))
+    await expect(floatingHeader(page)).toHaveAttribute('data-stuck', 'true')
+    const bar = await boxOf(bulkBar(page))
+    const header = await boxOf(floatingHeader(page))
+    // 見出しの複製(の容器)は、バーの下端から表との間隔(6px)だけ下に固定される(重ならず、隙間も空かない)
+    expect(Math.abs(header.y - (bar.y + bar.height + 6))).toBeLessThan(3)
+  })
+
   test('絞り込み欄を開くと、バーと表の見出しは絞り込み欄の下に並び、重ならない', async ({ page }) => {
     await openLineView(page)
     await page.getByRole('button', { name: '絞り込みを開く' }).click()

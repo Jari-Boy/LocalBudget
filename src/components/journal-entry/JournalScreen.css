@@ -53,8 +53,19 @@
 }
 
 .journal-screen--bulk {
-  /* バーの高さ(JournalLineBulkBar.css の .journal-line-bulk の height、60px) + 表との間隔(.journal-screen__list の gap、6px) */
-  --sticky-bulk-h: 66px;
+  /*
+   * バーの高さ(--bulk-bar-h。JournalLineBulkBar.css の .journal-line-bulk の height になる)。2段構成(計画Issue #280)で、
+   * 1段目40px + 2段目80px(ラベル・選択欄36px・理由の欄) + 枠4px = 124px の固定値。
+   * 5項目が3列に折り返す幅(JournalLineBulkBar.css と同じ 900px 以下)では、2段目が2行になるので 204px にする。
+   */
+  --bulk-bar-h: 124px;
+  /* バーの高さ + 表との間隔(.journal-screen__list の gap、6px)。複製した表の見出しの固定位置(--floating-header-top)に足される */
+  --sticky-bulk-h: calc(var(--bulk-bar-h) + 6px);
+}
+@media (max-width: 900px) {
+  .journal-screen--bulk {
+    --bulk-bar-h: 204px;
+  }
 }
 /* タブの行。右端に絞り込みの開閉ボタンを置く(専用の行は取らない、計画Issue #266) */
 .journal-screen__tabbar {

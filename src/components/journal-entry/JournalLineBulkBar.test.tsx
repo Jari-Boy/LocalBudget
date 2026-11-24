@@ -16,7 +16,7 @@ import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntr
 import type { JournalEditorMaster } from './JournalEntryEditor'
 import { EMPTY_BULK_PICK, type BulkPick, type BulkSelectedLine } from './journalBulkEditModel'
 import { chooseMember, findMemberButton } from '../master/memberSelectTestHelpers'
-import { chooseBatch, findBatchButton, queryBatchButton } from '../master/batchSelectTestHelpers'
+import { chooseBatch, findBatchButton } from '../master/batchSelectTestHelpers'
 import { JournalLineBulkBar } from './JournalLineBulkBar'
 
 afterEach(cleanup)
@@ -98,9 +98,13 @@ interface HarnessProps {
   onAskConfirm?: () => void
   onCancelConfirm?: () => void
   onPick?: (pick: BulkPick) => void
+  masterOverride?: JournalEditorMaster
+  onRequestCreateAccount?: (apply: (id: number) => void) => void
+  onRequestCreateProject?: (apply: (id: number) => void) => void
+  onRequestCreateCounterparty?: (apply: (id: number) => void) => void
 }
 
-function Harness({ selected, initialPick = EMPTY_BULK_PICK, initialConfirming = false, busy = false, onApply, onClearSelection, onAskConfirm, onCancelConfirm, onPick }: HarnessProps) {
+function Harness({ selected, initialPick = EMPTY_BULK_PICK, initialConfirming = false, busy = false, onApply, onClearSelection, onAskConfirm, onCancelConfirm, onPick, masterOverride, onRequestCreateAccount, onRequestCreateProject, onRequestCreateCounterparty }: HarnessProps) {
   const [pick, setPick] = useState(initialPick)
   const [confirming, setConfirming] = useState(initialConfirming)
   return (
@@ -112,7 +116,10 @@ function Harness({ selected, initialPick = EMPTY_BULK_PICK, initialConfirming = 
         setConfirming(false)
         onPick?.(next)
       }}
-      master={master}
+      master={masterOverride ?? master}
+      onRequestCreateAccount={onRequestCreateAccount}
+      onRequestCreateProject={onRequestCreateProject}
+      onRequestCreateCounterparty={onRequestCreateCounterparty}
       confirming={confirming}
       onAskConfirm={() => {
         setConfirming(true)
@@ -137,41 +144,50 @@ function chooseTree(label: string, current: string, option: string) {
 
 const applyButton = () => screen.getByRole('button', { name: /に適用$|^適用$/ })
 
-/** 科目・取引先以外の項目(プロジェクト・精算バッチ・世帯メンバー)は「その他の項目」を開くと出る(計画Issue #266) */
-const openMore = () => fireEvent.click(screen.getByRole('button', { name: /^その他の項目/ }))
-
-/** バーを描き、「その他の項目」を開いた状態にして返す(全項目を操作するテスト用) */
+/** バーを描く(5項目は常に出ているので、開く操作は要らない。計画Issue #280) */
 function renderBar(ui: React.ReactElement) {
-  const result = render(ui)
-  openMore()
-  return result
+  return render(ui)
 }
 
 /** 確認は、固定バーを高くしないよう、ダイアログで出す */
 const confirmDialog = () => screen.getByRole('dialog', { name: '一括編集の確認' })
 
-describe('JournalLineBulkBar: コンパクトな表示(計画Issue #266)', () => {
-  it('初めは科目と取引先だけを出し、プロジェクト・精算バッチ・世帯メンバーは「その他の項目」に畳まれている', () => {
+/** 選択欄(ラベル付きの項目)を囲む要素。無効の理由がこの中に出ることを確かめるために使う */
+const fieldOf = (label: string) => screen.getByText(label, { selector: '.journal-line-bulk__label' }).closest('.journal-line-bulk__field') as HTMLElement
+
+describe('JournalLineBulkBar: 2段構成(計画Issue #280)', () => {
+  it('5項目(科目・プロジェクト・取引先・精算バッチ・世帯メンバー)が、初めからラベル付きで出ている', () => {
     render(<Harness selected={[sel(e1, 11)]} />)
+    for (const label of ['科目', 'プロジェクト', '取引先', '精算バッチ', '世帯メンバー']) {
+      expect(screen.getByText(label, { selector: '.journal-line-bulk__label' })).toBeInTheDocument()
+    }
     expect(screen.getByRole('button', { name: '一括編集の科目: 変更しない' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '一括編集のプロジェクト: 変更しない' })).not.toBeInTheDocument()
-    expect(queryBatchButton('一括編集の精算バッチ')).toBeNull()
-    expect(screen.getByRole('button', { name: /^その他の項目/ })).toHaveAttribute('aria-expanded', 'false')
-  })
-
-  it('「その他の項目」で残りの項目が開閉する', () => {
-    render(<Harness selected={[sel(e1, 11)]} />)
-    openMore()
-    expect(screen.getByRole('button', { name: /^その他の項目/ })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: '一括編集のプロジェクト: 変更しない' })).toBeInTheDocument()
-    openMore()
-    expect(screen.queryByRole('button', { name: '一括編集のプロジェクト: 変更しない' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeInTheDocument()
+    expect(findBatchButton('一括編集の精算バッチ')).toBeInTheDocument()
+    expect(findMemberButton('一括編集の世帯メンバー')).toBeInTheDocument()
   })
 
-  it('畳まれた項目を変えているときは、「その他の項目」に変えている数が出て、気づける', () => {
-    render(<Harness selected={[sel(e1, 11)]} initialPick={{ ...EMPTY_BULK_PICK, project: { kind: 'set', value: 30 } }} />)
-    expect(screen.getByRole('button', { name: 'その他の項目(1件変更中)' })).toBeInTheDocument()
+  it('「その他の項目」の開閉ボタンは無い', () => {
+    render(<Harness selected={[sel(e1, 11)]} />)
+    expect(screen.queryByRole('button', { name: /その他の項目/ })).not.toBeInTheDocument()
+  })
+
+  it('案内文は、Esc での解除の説明まで全文が出ている', () => {
+    render(<Harness selected={[sel(e1, 11)]} />)
+    expect(screen.getByText(/選択中は、行を押してもチェックを切り替えられます。Esc でも解除できます。/)).toBeInTheDocument()
+  })
+
+  it('無効な項目の理由は、その項目の欄の中に出る(欄の外にはみ出さない)', () => {
+    render(<Harness selected={[sel(e1, 11), sel(e1, 12)]} />)
+    expect(within(fieldOf('取引先')).getByText('費用・収益の行のみ')).toBeInTheDocument()
+    expect(within(fieldOf('精算バッチ')).getByText('未収金・未払金(精算バッチ)の行のみ')).toBeInTheDocument()
+  })
+
+  it('理由の欄は、理由が無いときも場所を空けておく(理由の有無で2段目の高さが変わらない)', () => {
+    render(<Harness selected={[sel(e1, 11)]} />)
+    expect(fieldOf('取引先').querySelector('.journal-line-bulk__why')).not.toBeNull()
+    expect(fieldOf('プロジェクト').querySelector('.journal-line-bulk__why')).not.toBeNull()
   })
 
   it('確認はバーの中ではなくダイアログで出る(バーの高さが増えない)', () => {
@@ -352,5 +368,96 @@ describe('JournalLineBulkBar', () => {
       renderBar(<Harness selected={[sel(e1, 11)]} initialPick={picked} initialConfirming busy />)
       expect(screen.getByRole('button', { name: '本当に更新する' })).toBeDisabled()
     })
+  })
+})
+
+describe('JournalLineBulkBar: マスタのその場追加(計画Issue #280)', () => {
+  const createButton = (label: string) => within(screen.getByRole('dialog', { name: label })).queryByRole('button', { name: '+ 新規追加' })
+  const open = (label: string, current = '変更しない') => fireEvent.click(screen.getByRole('button', { name: `${label}: ${current}` }))
+
+  it('科目・プロジェクト・取引先の選択欄の末尾に「+ 新規追加」が出る(世帯メンバーには出ない)', () => {
+    render(<Harness selected={[sel(e1, 11)]} onRequestCreateAccount={vi.fn()} onRequestCreateProject={vi.fn()} onRequestCreateCounterparty={vi.fn()} />)
+    for (const label of ['一括編集の科目', '一括編集のプロジェクト', '一括編集の取引先']) {
+      open(label)
+      expect(createButton(label)).toBeInTheDocument()
+      fireEvent.keyDown(screen.getByRole('dialog', { name: label }), { key: 'Escape' })
+    }
+    expect(screen.queryByRole('button', { name: '+ 新規追加' })).not.toBeInTheDocument()
+  })
+
+  it('追加の依頼先が渡されていない項目には、「+ 新規追加」を出さない', () => {
+    render(<Harness selected={[sel(e1, 11)]} />)
+    open('一括編集の科目')
+    expect(createButton('一括編集の科目')).not.toBeInTheDocument()
+  })
+
+  it('科目の「+ 新規追加」を押すと依頼が出て、作成されたidが科目として選ばれる', () => {
+    const onPick = vi.fn()
+    const onRequestCreateAccount = vi.fn()
+    render(<Harness selected={[sel(e1, 11)]} onPick={onPick} onRequestCreateAccount={onRequestCreateAccount} />)
+    open('一括編集の科目')
+    fireEvent.click(createButton('一括編集の科目') as HTMLElement)
+    expect(onRequestCreateAccount).toHaveBeenCalledTimes(1)
+    onRequestCreateAccount.mock.calls[0][0](1)
+    expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ accountId: 1 }))
+  })
+
+  it('プロジェクトの「+ 新規追加」で作成されたidが、プロジェクトとして選ばれる', () => {
+    const onPick = vi.fn()
+    const onRequestCreateProject = vi.fn()
+    render(<Harness selected={[sel(e1, 11)]} onPick={onPick} onRequestCreateProject={onRequestCreateProject} />)
+    open('一括編集のプロジェクト')
+    fireEvent.click(createButton('一括編集のプロジェクト') as HTMLElement)
+    onRequestCreateProject.mock.calls[0][0](30)
+    expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ project: { kind: 'set', value: 30 } }))
+  })
+
+  it('取引先の「+ 新規追加」で作成されたidが、取引先として選ばれる', () => {
+    const onPick = vi.fn()
+    const onRequestCreateCounterparty = vi.fn()
+    render(<Harness selected={[sel(e1, 11)]} onPick={onPick} onRequestCreateCounterparty={onRequestCreateCounterparty} />)
+    open('一括編集の取引先')
+    fireEvent.click(createButton('一括編集の取引先') as HTMLElement)
+    onRequestCreateCounterparty.mock.calls[0][0](8)
+    expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ counterparty: { kind: 'set', value: 8 } }))
+  })
+
+  it('取引先を選べない行(資産の行が混ざる)では、取引先の欄ごと押せないので、「+ 新規追加」にも届かない', () => {
+    render(<Harness selected={[sel(e1, 11), sel(e1, 12)]} onRequestCreateCounterparty={vi.fn()} />)
+    expect(screen.getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
+  })
+
+  it('作成した科目が選択欄の一覧に反映される前でも、先に選んでいた取引先の選択は落とさない(反映後に画面側が整理する)', () => {
+    const onPick = vi.fn()
+    const onRequestCreateAccount = vi.fn()
+    render(
+      <Harness
+        selected={[sel(e1, 11)]}
+        initialPick={{ ...EMPTY_BULK_PICK, counterparty: { kind: 'set', value: 8 } }}
+        onPick={onPick}
+        onRequestCreateAccount={onRequestCreateAccount}
+      />,
+    )
+    open('一括編集の科目')
+    fireEvent.click(createButton('一括編集の科目') as HTMLElement)
+    // まだ一覧に無い新しい科目のid(99)が、作成の完了で渡される
+    onRequestCreateAccount.mock.calls[0][0](99)
+    expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ accountId: 99, counterparty: { kind: 'set', value: 8 } }))
+  })
+
+  it('ダイアログを開いたまま(依頼しただけ)では、選択も確認中の状態も変わらない', () => {
+    const onPick = vi.fn()
+    render(
+      <Harness
+        selected={[sel(e1, 11)]}
+        initialPick={{ ...EMPTY_BULK_PICK, project: { kind: 'set', value: 30 } }}
+        onPick={onPick}
+        onRequestCreateAccount={vi.fn()}
+      />,
+    )
+    open('一括編集の科目')
+    fireEvent.click(createButton('一括編集の科目') as HTMLElement)
+    expect(onPick).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '一括編集のプロジェクト: 自宅' })).toBeInTheDocument()
   })
 })

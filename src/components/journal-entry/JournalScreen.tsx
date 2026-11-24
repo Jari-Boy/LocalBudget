@@ -1468,6 +1468,9 @@ export function JournalScreen(props: JournalScreenProps) {
                     onClearSelection={resetBulk}
                     busy={busy}
                     onCreateBatch={createBatch}
+                    onRequestCreateAccount={(apply) => setAccountDialog({ apply })}
+                    onRequestCreateProject={(apply) => setProjectDialog({ apply })}
+                    onRequestCreateCounterparty={(apply) => setCounterpartyDialog({ apply })}
                   />
                 </div>
               )}
