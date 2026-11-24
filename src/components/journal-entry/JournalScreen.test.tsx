@@ -1656,8 +1656,6 @@ describe('JournalScreen(明細行単位)', () => {
       fireEvent.click(within(screen.getByRole('dialog', { name: '一括編集の科目' })).getByRole('button', { name: option }))
     }
     const apply = () => within(bulkBar()).getByRole('button', { name: /行に適用$/ })
-    /** 科目・取引先以外の項目は「その他の項目」を開くと出る(計画Issue #266)。バーが出し直されると畳まれるので、使う直前に開く */
-    const openMore = () => fireEvent.click(within(bulkBar()).getByRole('button', { name: /^その他の項目/ }))
     /** 適用の確認は、固定バーを高くしないよう、ダイアログで出る */
     const confirmDialog = () => screen.getByRole('dialog', { name: '一括編集の確認' })
     const queryConfirmDialog = () => screen.queryByRole('dialog', { name: '一括編集の確認' })
@@ -1678,6 +1676,58 @@ describe('JournalScreen(明細行単位)', () => {
       fireEvent.click(within(bulkBar()).getByRole('button', { name: '選択を解除' }))
       expect(screen.queryByRole('region', { name: '一括編集' })).not.toBeInTheDocument()
       expect(debitBox('ランチ')).not.toBeChecked()
+    })
+
+    /**
+     * 計画Issue #280: 一括編集バーの科目・プロジェクト・取引先から、その場でマスタを追加できる。
+     * 既存の追加ダイアログ(明細行の表と共通)を使い、作成した項目をバーで選ぶ。選択した行と確認の状態は壊さない。
+     */
+    describe('バーからのマスタの追加(計画Issue #280)', () => {
+      const openProjectCreate = () => {
+        fireEvent.click(within(bulkBar()).getByRole('button', { name: '一括編集のプロジェクト: 変更しない' }))
+        fireEvent.click(within(screen.getByRole('dialog', { name: '一括編集のプロジェクト' })).getByRole('button', { name: /新規追加/ }))
+      }
+      const createDialog = () => within(screen.getByRole('dialog', { name: 'プロジェクトを追加' }))
+
+      it('プロジェクトの「+ 新規追加」で作ると、作ったプロジェクトがバーで選ばれ、選択した行はそのまま残る', async () => {
+        const props = await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        openProjectCreate()
+        fireEvent.change(createDialog().getByLabelText('プロジェクト名'), { target: { value: '夏の旅行' } })
+        fireEvent.click(createDialog().getByRole('button', { name: '追加' }))
+        await waitFor(() => expect(props.projectRepository.create).toHaveBeenCalledWith({ name: '夏の旅行', projectGroupId: null }))
+        expect(await within(bulkBar()).findByRole('button', { name: '一括編集のプロジェクト: 夏の旅行' })).toBeInTheDocument()
+        expect(debitBox('ランチ')).toBeChecked()
+        expect(apply()).toHaveTextContent('1行に適用')
+      })
+
+      it('追加のダイアログをキャンセルしても、何も作られず、選択した行と選んでいた項目が保たれる', async () => {
+        const props = await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        chooseAccount('食費')
+        openProjectCreate()
+        fireEvent.click(createDialog().getByRole('button', { name: 'キャンセル' }))
+        expect(props.projectRepository.create).not.toHaveBeenCalled()
+        expect(debitBox('ランチ')).toBeChecked()
+        expect(within(bulkBar()).getByRole('button', { name: '一括編集の科目: 食費' })).toBeInTheDocument()
+      })
+
+      it('追加のダイアログで Esc を押すと、ダイアログだけが閉じて、行の選択は解除されない', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        openProjectCreate()
+        const input = createDialog().getByLabelText('プロジェクト名')
+        fireEvent.keyDown(input, { key: 'Escape' })
+        expect(debitBox('ランチ')).toBeChecked()
+        expect(bulkBar()).toBeInTheDocument()
+      })
+
+      it('取引先を選べない行(資産の行が混ざる)では、取引先の欄が無効で、「+ 新規追加」は開けない', async () => {
+        await setupLineView()
+        fireEvent.click(debitBox('ランチ'))
+        fireEvent.click(creditBox('ランチ'))
+        expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
+      })
     })
 
     /**
@@ -1879,12 +1929,10 @@ describe('JournalScreen(明細行単位)', () => {
       it('食費(費用)の行だけを選ぶと精算バッチは選べず、立替金の行だけを選ぶと精算バッチを選べる', async () => {
         await setupLineView()
         fireEvent.click(debitBox('ランチ'))
-        openMore()
         expect(findBatchButton('一括編集の精算バッチ', within(bulkBar()))).toBeDisabled()
         expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeEnabled()
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('旅行の立替'))
-        openMore()
         expect(findBatchButton('一括編集の精算バッチ', within(bulkBar()))).toBeEnabled()
         expect(within(bulkBar()).getByRole('button', { name: '一括編集の取引先: 変更しない' })).toBeDisabled()
       })
@@ -1902,7 +1950,6 @@ describe('JournalScreen(明細行単位)', () => {
         const props = await setupLineView()
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('家賃'))
-        openMore()
         chooseMember('一括編集の世帯メンバー', '妻', within(bulkBar()))
 
         fireEvent.click(apply())
@@ -1925,7 +1972,6 @@ describe('JournalScreen(明細行単位)', () => {
       it('1回目のあとに「やめる」を押すと何も更新されず、項目を選び直しても確認は取り消される', async () => {
         const props = await setupLineView()
         fireEvent.click(debitBox('ランチ'))
-        openMore()
         chooseMember('一括編集の世帯メンバー', '妻', within(bulkBar()))
         fireEvent.click(apply())
         fireEvent.click(within(confirmDialog()).getByRole('button', { name: 'やめる' }))
@@ -1954,7 +2000,6 @@ describe('JournalScreen(明細行単位)', () => {
         props.journalEntryRepository.update.mockRejectedValueOnce(new Error('boom'))
         fireEvent.click(debitBox('ランチ'))
         fireEvent.click(debitBox('家賃'))
-        openMore()
         chooseMember('一括編集の世帯メンバー', '妻', within(bulkBar()))
         fireEvent.click(apply())
         fireEvent.click(within(confirmDialog()).getByRole('button', { name: '本当に更新する' }))
