@@ -2049,6 +2049,25 @@ describe('StatementImportScreen', () => {
       expect(accounts.findAll().some((a) => a.name === '新聞図書費' && a.category === 'expense')).toBe(true)
     })
 
+    it('取引先の追加ダイアログから開いた科目の登録ダイアログは、body直下に出て、入れ子用の重なり順のクラスが付く(計画Issue #287)', async () => {
+      await fillCounterpartyDialog()
+
+      openCreateAccount(/^キーワード1の科目/, 'キーワード1の科目')
+
+      const backdrop = screen.getByRole('dialog', { name: '科目を登録' }).parentElement!
+      expect(backdrop.parentElement).toBe(document.body)
+      expect(backdrop).toHaveClass('import-dialog__backdrop', 'import-dialog__backdrop--nested')
+    })
+
+    it('取引先の追加ダイアログから開いた科目の登録ダイアログの背面をクリックしても、下の取引先の追加ダイアログは閉じない(計画Issue #287)', async () => {
+      await fillCounterpartyDialog()
+
+      openCreateAccount(/^キーワード1の科目/, 'キーワード1の科目')
+      fireEvent.click(screen.getByRole('dialog', { name: '科目を登録' }).parentElement!)
+
+      expect(screen.getByRole('dialog', { name: '取引先を追加' })).toBeInTheDocument()
+    })
+
     it('取引先の追加ダイアログから科目を登録するとき、区分の既定は「費用」である', async () => {
       await fillCounterpartyDialog()
 
@@ -2066,6 +2085,18 @@ describe('StatementImportScreen', () => {
       fireEvent.click(within(screen.getByRole('dialog', { name: '相手科目' })).getByRole('button', { name: '+ 科目を新規追加' }))
 
       expect(within(screen.getByRole('dialog', { name: '科目を登録' })).getByLabelText('区分')).toHaveValue('expense')
+    })
+
+    it('表の相手科目から開いた科目の登録ダイアログも、body直下に出る(入れ子ではないので入れ子用のクラスは付かない。計画Issue #287)', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,ニチケイ 3月,-1000,97000\n`)
+      fireEvent.click(rowOf(/ニチケイ 3月/).getByRole('button', { name: /^相手科目/ }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '相手科目' })).getByRole('button', { name: '+ 科目を新規追加' }))
+
+      const backdrop = screen.getByRole('dialog', { name: '科目を登録' }).parentElement!
+      expect(backdrop.parentElement).toBe(document.body)
+      expect(backdrop).not.toHaveClass('import-dialog__backdrop--nested')
     })
 
     it('取込先の「+ 科目を新規追加」では、区分の既定は従来どおり「資産」のままである', async () => {

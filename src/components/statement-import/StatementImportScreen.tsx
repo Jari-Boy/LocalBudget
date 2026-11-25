@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
-import { flushSync } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
@@ -2998,9 +2998,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       {showMappingDialog && csv && (
         <MappingCreateDialog bytes={csv.bytes} institutionNames={institutionNames} onSave={saveMappingAndContinue} onCancel={() => setShowMappingDialog(false)} />
       )}
-      {defaultAccountCreate !== null && (
-        // 取引先の追加ダイアログの上に重ねて出す。登録した科目は初期値としてそのまま選ばれる
-        <div className="import-dialog__backdrop">
+      {defaultAccountCreate !== null &&
+        // 取引先の追加ダイアログ(body直下のポータル)の上に重ねて出す。同じくbody直下に出し、重なり順は入れ子用の数値(26)で明示する
+        // (DOM順に頼らない。計画Issue #287)。登録した科目は初期値としてそのまま選ばれる
+        createPortal(
+        <div className="import-dialog__backdrop import-dialog__backdrop--nested">
           <div role="dialog" aria-modal="true" aria-label={t('createAccountTitle')} className="import-dialog import-dialog--wide">
             <AccountCreateForm
               accountRepository={accountRepository}
@@ -3016,9 +3018,12 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               onCancel={() => setDefaultAccountCreate(null)}
             />
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
-      {(createTarget?.kind === 'counterAccount' || createTarget?.kind === 'targetAccount') && (
+      {(createTarget?.kind === 'counterAccount' || createTarget?.kind === 'targetAccount') &&
+        // 取引先の追加ダイアログと同じく、body直下に出す(描画方法をそろえる。計画Issue #287)
+        createPortal(
         <div className="import-dialog__backdrop">
           <div role="dialog" aria-modal="true" aria-label={t('createAccountTitle')} className="import-dialog import-dialog--wide">
             <AccountCreateForm
@@ -3043,7 +3048,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               onCancel={() => setCreateTarget(null)}
             />
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
