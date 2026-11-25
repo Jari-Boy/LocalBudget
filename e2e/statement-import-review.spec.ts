@@ -325,6 +325,38 @@ test.describe('明細取込画面', () => {
     await expect(rowOf(page, /スーパー/)).toBeVisible()
   })
 
+  test('取引先の追加ダイアログから科目の登録ダイアログを開くと、科目のダイアログが前面に出て操作でき、登録した科目がキーワードの科目に入る(計画Issue #287)', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
+    await setupAccountsAndMapping(page, BANK_AND_EXPENSE, { ...BANK_MAPPING, balanceColumn: undefined })
+    await startImport(page, '普通預金', '日付,摘要,金額\n2026/07/20,ニチケイ 3月,-1000\n')
+
+    await rowOf(page, /ニチケイ 3月/).getByRole('button', { name: /^取引先/ }).click()
+    await page.getByRole('dialog', { name: '取引先' }).getByRole('button', { name: '+ 取引先を新規追加' }).click()
+    const counterpartyDialog = page.getByRole('dialog', { name: '取引先を追加' })
+    await counterpartyDialog.getByRole('button', { name: 'キーワードを追加' }).click()
+    await counterpartyDialog.getByRole('button', { name: /^キーワード1の科目/ }).click()
+    await page.getByRole('dialog', { name: 'キーワード1の科目' }).getByRole('button', { name: '+ 科目を新規追加' }).click()
+
+    const accountDialog = page.getByRole('dialog', { name: '科目を登録' })
+    await expect(accountDialog).toBeVisible()
+
+    // DOM順に頼ると、たまたま前面に見えるだけでz-indexの実装漏れを検出できない。computed z-indexの数値そのもので、
+    // 取引先の追加ダイアログ < 入れ子の科目の登録ダイアログ < 確認ダイアログ・選択のポップアップ(30)を確かめる
+    const backdropZIndex = (dialog: Locator) =>
+      dialog.evaluate((el) => Number(getComputedStyle(el.parentElement!).zIndex))
+    const [counterpartyZ, accountZ] = await Promise.all([backdropZIndex(counterpartyDialog), backdropZIndex(accountDialog)])
+    expect(accountZ).toBeGreaterThan(counterpartyZ)
+    expect(accountZ).toBeLessThan(30)
+
+    // 実際にクリック・入力できる(ほかの要素に覆われていると、Playwrightのクリックは失敗する)
+    await accountDialog.getByLabel('名称').fill('新聞図書費')
+    await accountDialog.getByRole('button', { name: '登録' }).click()
+
+    await expect(accountDialog).toBeHidden()
+    await expect(counterpartyDialog.getByRole('button', { name: /^キーワード1の科目: 新聞図書費/ })).toBeVisible()
+  })
+
   test('取引先の推定・重複の行・一括設定を経て確定するまでの一連のフローが完結する', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()

@@ -568,6 +568,12 @@
   background: rgba(23, 35, 31, 0.4);
 }
 
+/* 取引先の追加ダイアログ(25)から開く科目の登録ダイアログ。DOM順に頼らず、数値で前面にする(計画Issue #287)。
+   確認ダイアログ・選択のポップアップ(30)より下のまま */
+.import-dialog__backdrop--nested {
+  z-index: 26;
+}
+
 .import-dialog {
   width: 420px;
   max-width: 100%;
