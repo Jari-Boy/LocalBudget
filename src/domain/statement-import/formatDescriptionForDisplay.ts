@@ -4,12 +4,18 @@
  * 照合用の正規化(normalizeDescriptionForMatching)と違い、大文字小文字と、語の間の空白は残す。
  */
 export function formatDescriptionForDisplay(text: string): string {
-  // 「シ+空白+独立した濁点」は、濁点の直前の空白だけを詰めて合成する(計画Issue #279)。ほかの空白は詰めない
-  return unifyKatakanaHyphen(text.normalize('NFKC'))
-    .replace(/\s+(?=[゙゚])/g, '')
-    .normalize('NFC')
+  return unifyKatakanaHyphen(composeDetachedDakuten(text.normalize('NFKC')))
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+/**
+ * 「シ+空白+独立した濁点」を、濁点の直前の空白だけを詰めて1文字に合成する(計画Issue #279)。ほかの空白は詰めない。
+ * NFKCをかけたあとの文字列に使う。長音への置換(unifyKatakanaHyphen)より前に行うこと。合成前は濁点が
+ * カタカナではないので、「ﾋ ﾞ-ﾌ ﾞ」のハイフンが長音にならない(計画Issue #291)。
+ */
+export function composeDetachedDakuten(nfkcText: string): string {
+  return nfkcText.replace(/\s+(?=[゙゚])/g, '').normalize('NFC')
 }
 
 /** カタカナ(長音を含む)につづくハイフン・ダッシュ類。NFKCのあとの文字に使う(全角ハイフンはNFKCで「-」になる) */

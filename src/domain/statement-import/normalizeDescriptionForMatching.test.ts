@@ -68,4 +68,12 @@ describe('normalizeDescriptionForMatching', () => {
     expect(normalizeDescriptionForMatching('東京 abc-1')).toBe('東京ABC-1')
     expect(normalizeDescriptionForMatching('コーヒー')).toBe('コーヒー')
   })
+
+  it('分離した濁点のあとのハイフンも長音にそろい、「ｳﾗｺｳﾗｸ ﾞﾋ ﾞ-ﾌ ﾞ」が「ウラコウラグビ-ブ」(キーワードの初期値)と一致する(計画Issue #291)', () => {
+    const expected = normalizeDescriptionForMatching('ウラコウラグビーブ')
+    expect(normalizeDescriptionForMatching('ｳﾗｺｳﾗｸ ﾞﾋ ﾞ-ﾌ ﾞ')).toBe(expected)
+    expect(normalizeDescriptionForMatching('ウラコウラク ゛ヒ ゛-フ ゛')).toBe(expected)
+    // 画面に出す初期値(ハイフンのまま)を正規化しても、同じ文字列になる
+    expect(normalizeDescriptionForMatching('ウラコウラグビ-ブ')).toBe(expected)
+  })
 })

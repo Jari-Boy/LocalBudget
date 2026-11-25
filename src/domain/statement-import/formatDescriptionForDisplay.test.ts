@@ -49,4 +49,9 @@ describe('formatDescriptionForDisplay', () => {
     expect(formatDescriptionForDisplay('ABC-123 03-1234-5678')).toBe('ABC-123 03-1234-5678')
     expect(formatDescriptionForDisplay('カード 2026-10-05')).toBe('カード 2026-10-05')
   })
+
+  it('分離した濁点のあとのハイフンも、長音にそろえる(計画Issue #291)', () => {
+    expect(formatDescriptionForDisplay('ｳﾗｺｳﾗｸ ﾞﾋ ﾞ-ﾌ ﾞ')).toBe('ウラコウラグビーブ')
+    expect(formatDescriptionForDisplay('ウラコウラク ゛ヒ ゛-フ ゛')).toBe('ウラコウラグビーブ')
+  })
 })
