@@ -8,7 +8,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ChevronDownIcon, EditIcon, EyeIcon, EyeOffIcon, TrashIcon } from './ActionIcons'
+import { ChevronDownIcon, EditIcon, EyeIcon, EyeOffIcon, SearchIcon, TrashIcon } from './ActionIcons'
 
 afterEach(cleanup)
 
@@ -19,6 +19,7 @@ describe('ActionIcons', () => {
     ['EyeIcon', EyeIcon],
     ['EyeOffIcon', EyeOffIcon],
     ['ChevronDownIcon', ChevronDownIcon],
+    ['SearchIcon', SearchIcon],
   ])('%sはaria-hidden="true"のsvgとしてレンダリングされる', (_name, Icon) => {
     const { container } = render(<Icon />)
     const svg = container.querySelector('svg')

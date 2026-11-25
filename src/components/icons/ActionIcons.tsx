@@ -46,6 +46,14 @@ export const EyeOffIcon = () => (
   </svg>
 )
 
+/** 虫眼鏡。摘要のウェブ検索リンク(計画Issue #283)用 */
+export const SearchIcon = () => (
+  <svg {...baseSvgProps}>
+    <circle cx="11" cy="11" r="7"></circle>
+    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+  </svg>
+)
+
 /** 行の展開/折りたたみ(内訳表示等)トグル用。aria-expandedに応じて呼び出し側のCSSで回転させる想定 */
 export const ChevronDownIcon = () => (
   <svg {...baseSvgProps}>

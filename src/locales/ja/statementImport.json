@@ -115,6 +115,8 @@
   "applyToOtherRowsNote": "キーワードを含み、取引先が未設定の行に、この取引先とキーワードの科目を入れます(画面上のみ。確定するまで保存されません)。",
   "keywordIconCounterpartyLabel": "{{desc}}の取引先のキーワード",
   "keywordIconAccountLabel": "{{desc}}の相手科目のキーワード",
+  "webSearchLabel": "「{{desc}}」をウェブ検索(新しいタブ)",
+  "webSearchTitle": "Googleで検索します(押したときだけ、新しいタブで開きます)",
   "keywordIconMatchedTooltip": "この行に一致: {{keywords}}",
   "keywordIconDisabledTitle": "{{kind}}を選ぶとキーワードを編集できます",
   "keywordKindCounterparty": "取引先",

@@ -271,6 +271,32 @@
   font-weight: 500;
 }
 
+/* 摘要の文字を左、ウェブ検索のリンク(計画Issue #283)を右端に置く。リンクはセルの右端に固定されるので、全行で縦にそろう */
+.import-desc-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.import-desc-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.import-web-search {
+  text-decoration: none;
+}
+
+.import-web-search:hover {
+  color: var(--color-accent);
+}
+
+.import-web-search:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
 .import-stack {
   display: flex;
   flex-direction: column;
