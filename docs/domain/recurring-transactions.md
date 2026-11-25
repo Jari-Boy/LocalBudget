@@ -1,3 +1,10 @@
+---
+type: Domain
+title: 定期仕訳ドメイン
+description: 家賃・サブスク・ローン返済など繰り返し発生する仕訳のルールと、提案・承認の流れ。
+resource: ../schema/recurring_transactions.sql
+tags: [domain, recurring-transactions]
+---
 # 定期仕訳ドメイン
 
 [domain.md](../domain.md)(エントリポイント)から分割された、定期仕訳(RecurringTransactionRule)に関する詳細設計。

@@ -1,3 +1,9 @@
+---
+type: Knowledge Log
+title: 技術知見
+description: sql.js・Web Worker・StorageAdapter・PWA 等の実装で得た技術知見を蓄積する追記専用のログ。
+tags: [guide, knowledge, history]
+---
 # 技術知見
 
 このドキュメントは、実装を進める中で得られた技術的な知見を蓄積するものである（sql.js・Web Worker RPC・StorageAdapter・Service Worker/PWA・File System Access API 等）。

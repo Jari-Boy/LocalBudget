@@ -1,3 +1,9 @@
+---
+type: Pattern Catalog
+title: 実装ミスパターン
+description: evaluator の指摘や実装中にハマった点から得た実装ミスパターンの蓄積。旧画面のパスは履歴として残す。
+tags: [guide, patterns, history]
+---
 # 実装ミスパターン
 
 このドキュメントは、`evaluator` のレビューで指摘された実装ミスや、実装中にハマった注意点を蓄積するものである。

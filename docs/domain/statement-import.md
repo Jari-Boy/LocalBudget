@@ -1,3 +1,10 @@
+---
+type: Domain
+title: 外部明細取込ドメイン
+description: 金融機関の明細(CSV)の取込フロー、マッピング定義、レビュー画面。
+resource: ../schema/statement_import.sql
+tags: [domain, statement-import]
+---
 # 外部明細取込ドメイン
 
 [domain.md](../domain.md)(エントリポイント)から分割された、外部明細取込に関する詳細設計。[architecture.md 12章](../architecture.md#12-起票方式外部明細取込マニュアル起票)の方針(取込データのフォーマットの差異をデータ駆動のマッピング定義で吸収する、レビュー画面必須)を具体化する。

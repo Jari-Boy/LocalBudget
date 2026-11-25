@@ -1,3 +1,12 @@
+---
+type: Domain
+title: 消込(Settlement)ドメイン
+description: 暫定記帳(未払金・未収金)とCSV到着後の消込、精算バッチ。
+resource:
+  - ../schema/settlement_batches.sql
+  - ../schema/journal.sql
+tags: [domain, settlement]
+---
 # 消込(Settlement)ドメイン
 
 [domain.md](../domain.md)(エントリポイント)から分割された、暫定計上(未払金・未収金)とCSV到着後の消込に関する詳細設計。

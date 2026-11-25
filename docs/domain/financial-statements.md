@@ -1,3 +1,9 @@
+---
+type: Domain
+title: 期間確定・財務諸表ドメイン
+description: 期間確定を設けない方針と、PL/BS等の財務諸表の生成方式・表示。
+tags: [domain, financial-statements]
+---
 # 期間確定・財務諸表ドメイン
 
 [domain.md](../domain.md)(エントリポイント)から分割された、期間確定・締めおよび財務諸表(FS)に関する詳細設計。

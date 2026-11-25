@@ -1,3 +1,9 @@
+---
+type: Architecture
+title: アーキテクチャ方針
+description: アプリ全体のアーキテクチャ方針(技術選定・永続化・DBアクセス層・テスト戦略など)とその理由・トレードオフ。
+tags: [architecture]
+---
 # アーキテクチャ方針
 
 このドキュメントは、ローカル家計簿PWAの全体アーキテクチャ方針を定めるものである。実装に着手する前に技術選定とその理由・トレードオフを明文化し、以後の設計判断の拠り所とする。
@@ -58,7 +64,7 @@ Service Worker
 | マルチタブ | StorageAdapter側の設計次第（要検討事項として残す） | `opfs-sahpool`は単一コネクション排他ロックで2タブ目が失敗しうる |
 | 大規模DBでの書き込み性能 | DB全体シリアライズのため劣化しやすい | 差分書き込みで高速 |
 
-**決定**: MVPでは`sql.js`を採用する。CLAUDE.mdが要求するTDD（テストファイルを先に書き、red→green→refactorで進める）を、DBアクセス層も含めてNode/Vitest上で実践できることを最優先する。
+**決定**: MVPでは`sql.js`を採用する。本プロジェクトの開発方針が要求するTDD（テストファイルを先に書き、red→green→refactorで進める）を、DBアクセス層も含めてNode/Vitest上で実践できることを最優先する。
 
 **再評価トリガー条件**（以下に該当したらOPFS系への移行を検討する）:
 - DBファイルサイズが大きくなり、書き込みのたびの全体シリアライズが体感できるレイテンシを生む
@@ -110,7 +116,7 @@ interface StorageAdapter {
 - **起動時の再接続**: ブラウザの再起動で権限が「確認が必要」に戻ることがあり、`requestPermission`にはユーザーのクリックが要る。`StorageGate`がWorkerを作る前に`resolveStartupStorage`で判定し、開けないときは「フォルダに再接続」画面を出す（再接続ボタンで権限を再取得、「ブラウザ保存に戻す」導線あり。ハンドルが残っていなければこの導線だけ）。
 - **切り替え**（`createStorageApi`、RPCの`storage`）: フォルダへは、今のデータを書き込む`copy`か、既存ファイルを開く`open`。`open`は`assertImportableDatabase`（`assertValidDatabaseSchema` → `runMigrations`の順、バックアップの読み込みと共通）を通らなければ何も変えない。ブラウザ内へは、フォルダの最新をコピーする`copy`か、ブラウザ内に残っている（フォルダに切り替えた時点の）データをそのまま使う`keep`。順序は「検証 → flush・stop → データの書き込み → ハンドルの保存 → 保存先の選択の保存」で、途中で失敗すれば保存先の選択を変えない。`flush()`・`stop()`の後に失敗した場合は、`AutoSaveController.resume()`で自動保存を再開してからエラーを伝える（再開しないと、画面は動くのに以後の変更が保存されない）。`resume()`は`stop()`で止めた状態を戻す。成功時は再開せず、再読み込みで起動し直す。成功後はページを再読み込みし、起動し直したWorkerが新しい保存先から読む（バックアップの読み込みと同じ方式）。フォルダに切り替えた後はIndexedDBへ並行して書き込まず、元のデータは削除しない。
 - **保存先欄の注記**: フォルダ保存中の保存先欄は、`FileSystemDirectoryHandle`がフルパスを返さないためフォルダ名のみを表示し、「表示できるのはフォルダ名のみ」の注記を添える。
-- **2タブの書き込み競合**: ページ（メインスレッド）がWeb Locks（`acquireWriteLock`、`local-budget-write`）の排他ロックを`ifAvailable`で1回だけ取る。取れなかったページが起動するWorkerには名前（`READ_ONLY_WORKER_NAME`）で伝え、Workerは保存を無視する読み取り専用の`StorageAdapter`で動く（`ReadOnlyStorageAdapter`）。画面の上部に警告（`ReadOnlyBanner`）を出し、保存先の切り替えは拒否する（`ReadOnlyStorageError`）。ブラウザ内・フォルダの両方に適用する。
+- **2タブの書き込み競合**: ページ（メインスレッド）がWeb Locks（`acquireWriteLock`、`local-budget-write`）の排他ロックを`ifAvailable`で1回だけ取る。取れなかったページが起動するWorkerには名前（`READ_ONLY_WORKER_NAME`）で伝え、Workerは保存を無視する読み取り専用の`StorageAdapter`で動く（`createReadOnlyStorageAdapter`）。画面の上部に警告（`ReadOnlyBanner`）を出し、保存先の切り替えは拒否する（`ReadOnlyStorageError`）。ブラウザ内・フォルダの両方に適用する。
 - **書き込み途中のクラッシュ**: `createWritable()`はスワップファイルへ書き、`close()`で初めて元のファイルに反映される（Chromiumの仕様）ため、書き込み中にクラッシュしても元のファイルは壊れない。独自の一時ファイル経由の書き込みは追加していない。
 - **クラウドAPIとの直接連携はしない**: 「アプリは外部サーバーと通信しない」原則を保つため、PCの同期クライアントが作るローカルフォルダを選ぶ方式のみ（`docs/decisions.md`の2026-11-10の判断）。
 
@@ -227,7 +233,7 @@ interface StorageAdapter {
 
 ## 10. テスト戦略
 
-CLAUDE.mdの方針（実装は必ずテストから書く。red→green→refactor、テストファイルにはファイル/関数レベルのドキュメントを必ず書く）を全レイヤーに適用する。
+本プロジェクトの開発方針（実装は必ずテストから書く。red→green→refactor、テストファイルにはファイル/関数レベルのドキュメントを必ず書く）を全レイヤーに適用する。
 
 | レイヤー                                                       | テスト内容                                                          | ツール               |
 | ---------------------------------------------------------- | -------------------------------------------------------------- | ----------------- |

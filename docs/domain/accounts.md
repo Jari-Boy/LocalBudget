@@ -1,3 +1,12 @@
+---
+type: Domain
+title: 勘定科目ドメイン
+description: 勘定科目(5区分・ライフサイクル・グルーピング)と、科目管理・口座登録のUX。
+resource:
+  - ../schema/accounts.sql
+  - ../schema/seed_markers.sql
+tags: [domain, accounts]
+---
 # 勘定科目ドメイン
 
 [domain.md](../domain.md)(エントリポイント)から分割された、勘定科目(Account)に関する詳細設計である。体系・ライフサイクル・マスタ(accounts / account_groups)・資産・負債・収益・費用の統合登録フローのUXを扱う。

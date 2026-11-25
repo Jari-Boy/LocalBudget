@@ -1,3 +1,10 @@
+---
+type: Domain
+title: プロジェクトドメイン
+description: 「何の目的で使ったお金か」を表すプロジェクト軸と、そのグルーピング。
+resource: ../schema/projects.sql
+tags: [domain, projects]
+---
 # プロジェクトドメイン
 
 [domain.md](../domain.md)(エントリポイント)から分割された、プロジェクト(Project)に関する詳細設計。

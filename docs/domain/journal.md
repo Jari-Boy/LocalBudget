@@ -1,3 +1,10 @@
+---
+type: Domain
+title: 仕訳ドメイン
+description: 仕訳・仕訳明細の構造、貸借バランス検証、金額と通貨、下書き、操作履歴。
+resource: ../schema/journal.sql
+tags: [domain, journal]
+---
 # 仕訳ドメイン
 
 [domain.md](../domain.md)(エントリポイント)から分割された、仕訳(JournalEntry)・仕訳明細(JournalLine)に関する詳細設計。

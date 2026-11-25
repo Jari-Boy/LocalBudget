@@ -1,3 +1,10 @@
+---
+type: Domain
+title: 突合(Reconciliation)ドメイン
+description: 外部明細(CSV)と仕訳の突合・重複取込防止・残高照合。
+resource: ../schema/reconciliation.sql
+tags: [domain, reconciliation]
+---
 # 突合(Reconciliation)ドメイン
 
 [domain.md](../domain.md)(エントリポイント)から分割された、外部明細との突合に関する詳細設計。
