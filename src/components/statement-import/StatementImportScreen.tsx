@@ -115,7 +115,9 @@ import { CounterpartySettingsPopup } from './CounterpartySettingsPopup'
 import { applyAccountKeywordsToRows } from './applyAccountKeywordsToRows'
 import { applyCounterpartySettingsToRows } from './applyCounterpartySettingsToRows'
 import { CounterpartyCreateDialog, type CounterpartyCreateInput } from './CounterpartyCreateDialog'
+import { buildWebSearchUrl } from '../../domain/statement-import/buildWebSearchUrl'
 import { formatDescriptionForDisplay } from '../../domain/statement-import/formatDescriptionForDisplay'
+import { SearchIcon } from '../icons/ActionIcons'
 import { countRowsContaining, matchesKeyword, mostFrequentAccountId, validateKeyword, type KeywordError } from './counterpartyKeywordModel'
 import type { KeywordListItem } from './KeywordList'
 import { mappingFormToInput } from '../master/mappingForm'
@@ -2536,7 +2538,22 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                           )}
                         </td>
                         <td className="import-nowrap">{reviewRecord.record.entryDate.replaceAll('-', '/')}</td>
-                        <td className="import-desc">{desc}</td>
+                        <td className="import-desc">
+                          {/* 摘要の右端に固定して、全行で縦にそろえる。押したときだけ別タブでGoogle検索(計画Issue #283) */}
+                          <div className="import-desc-box">
+                            <span className="import-desc-text">{desc}</span>
+                            <a
+                              className="import-icon-btn import-web-search"
+                              href={buildWebSearchUrl(desc)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label={t('webSearchLabel', { desc })}
+                              title={t('webSearchTitle')}
+                            >
+                              <SearchIcon />
+                            </a>
+                          </div>
+                        </td>
                         <td className="import-num">{signedYen(reviewRecord.record.amount)}</td>
                         {isDup ? (
                           <td colSpan={5} className="import-dup-note">

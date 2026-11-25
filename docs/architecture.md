@@ -178,7 +178,7 @@ interface StorageAdapter {
 ## 7. PWA構成
 
 - ビルドはVite、PWA化は`vite-plugin-pwa`（Workbox）を用いる。
-- Service Workerのキャッシュ戦略は、外部通信が存在しないためアプリシェル（HTML/CSS/JS/WASMバイナリ/アイコン）のprecacheのみとし、複雑なランタイムキャッシュ戦略は不要とする。
+- Service Workerのキャッシュ戦略は、アプリ自体の外部通信が存在しないため(利用者がリンクを押して別タブを開く操作はアプリの通信ではなく、Service Workerも介入しない。11章参照)アプリシェル（HTML/CSS/JS/WASMバイナリ/アイコン）のprecacheのみとし、複雑なランタイムキャッシュ戦略は不要とする。
 - 更新戦略は「ユーザー確認型（prompt for update）」を採用する。自動更新はDB書き込み中の強制リロードでトランザクションを破壊するリスクがあるため避ける。
 - Web App Manifestは標準構成（name/short_name/icons/display: standalone/theme_color等）とする。iOS Safariは`beforeinstallprompt`に対応しないため、「ホーム画面に追加」を促す独自UIを用意する。
 
@@ -240,6 +240,7 @@ CLAUDE.mdの方針（実装は必ずテストから書く。red→green→refact
 
 - サーバーが存在しないためWAF等の防御層はなく、XSSは即座に全データ漏洩に直結する。CSP（`script-src 'self'`、インラインスクリプト禁止、`dangerouslySetInnerHTML`原則禁止）を最初から厳格に設定する。
 - クライアントのみで完結するアプリでは、悪意あるnpm依存関係が直接ユーザーの家計データを外部送信できてしまうため、サプライチェーンリスクが相対的に主要な脅威となる。`npm audit`の定期実行、lockfileの固定、依存追加時のレビューを方針とする。
+- **利用者操作起点の外部リンクの例外**: 「アプリは外部サーバーと通信しない」原則は、アプリ自身の通信(fetch・XHR・WebSocket・先読み等)を指す。利用者がリンクを押したときだけ、ブラウザが別タブで外部サイトを開くのは、アプリの通信ではないので原則と矛盾しない。この種のリンクは、`target="_blank"`と`rel="noopener noreferrer"`を付け(アプリのURLをRefererに残さない)、自動では開かず、先読みもしない。CSPの`default-src 'self'`はナビゲーションを制限しないため変更は不要。ただし、リンクの検索語や宛先に家計データ(摘要の氏名等)が入るため、押したときだけ送られることが利用者に分かる画面にする。最初の適用は明細取込画面の摘要のウェブ検索(計画Issue #283、`docs/decisions.md`の2026-11-25の判断)。
 - 暗号化については「9. 既知の制約・将来課題」を参照。MVPでは非対応。
 
 **実装状況（Issue #30）**: `index.html`に`Content-Security-Policy`のmetaタグ（`default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'self'`）を追加した。ホスティング先が未定でHTTPヘッダーでのCSP配信ができないため、metaタグを採用している（将来ホスティング先が確定しHTTPヘッダーでの配信に切り替え可能になった場合、`frame-ancestors`等metaタグでは指定できないディレクティブの追加も含めて再検討する）。`script-src`には`'wasm-unsafe-eval'`を含める必要があった。sql.js（SQLite WASM）の`WebAssembly.instantiate`は`script-src 'self'`のみでは`CompileError`でAbortすることを実機検証で確認しており、任意JS文字列の実行を許す`'unsafe-eval'`とは異なりWASM実行のみを許可する`'wasm-unsafe-eval'`であればXSS対策としての厳格さ（任意コード注入の禁止）を損なわずに済む（詳細は`docs/guides/knowledge.md`）。Vite dev serverはCSSモジュールのHMRのため`<style>`タグをJSから動的に注入し、`style-src`未指定によるCSP違反がdev server実行時のみ発生する（本番ビルドでは発生しない）ため、`vite.config.ts`に`command === 'serve'`時のみ`style-src 'self' 'unsafe-inline'`を緩和する`relaxCspForDevServer`プラグインを追加した（詳細は`docs/guides/knowledge.md`・`docs/decisions.md`）。`dangerouslySetInnerHTML`原則禁止は`.oxlintrc.json`に`react/no-danger`・`react/no-danger-with-children`を`error`として追加し、lintで機械的に強制するようにした。動作検証はCSP metaタグの内容検証と、sql.js（WASM）を使ったWorker RPCがCSP制約下でCSP違反を出さずに動作することの両方をPlaywright（実ブラウザ）で行う（`e2e/csp.spec.ts`）。サプライチェーンリスク対策として、GitHub Actionsに`lint-and-typecheck`・`test`・`e2e`・`audit`（`npm audit --audit-level=high`）の4jobからなるCI（`.github/workflows/ci.yml`、push main・pull_requestトリガー）と、依存関係に変更が無い期間も新規脆弱性を検出するための週次スケジュール実行（`.github/workflows/scheduled-audit.yml`、毎週月曜0:00 UTC + `workflow_dispatch`）を追加した。依存関係の管理方針（lockfileの固定・依存追加時のレビュー観点・`npm audit`の自動実行）は`CONTRIBUTING.md`に明文化した。
