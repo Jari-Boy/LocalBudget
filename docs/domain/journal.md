@@ -2,7 +2,10 @@
 type: Domain
 title: 仕訳ドメイン
 description: 仕訳・仕訳明細の構造、貸借バランス検証、金額と通貨、下書き、操作履歴。
-resource: ../schema/journal.sql
+resource:
+  - ../schema/journal.sql
+  - ../../src/domain/journal
+  - ../../src/domain/journal-link-group
 tags: [domain, journal]
 ---
 # 仕訳ドメイン

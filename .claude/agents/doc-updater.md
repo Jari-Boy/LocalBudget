@@ -11,6 +11,10 @@ model: sonnet
 コードは変更しません。ドキュメントファイルのみ編集します。
 CLAUDE.md は更新しません（ルール・制約は手動管理）。
 
+`docs/` は Open Knowledge Format(OKF)v0.2 のバンドルとして管理している（計画Issue #284、実証実験）。
+更新のたびに、frontmatter・`index.md`・`log.md` の保守と `npm run docs:check` の実行を行う（下記「OKF の保守」）。
+規約の詳細は `docs/guides/okf-conventions.md` を Read して従う。
+
 ## トリガーと更新対象の対応表
 
 呼び出し元から「トリガー種別」を受け取り、対応する対象ファイルのみを更新する。
@@ -18,7 +22,7 @@ CLAUDE.md は更新しません（ルール・制約は手動管理）。
 | トリガー | 更新対象ファイル | 変更取得方法 |
 |---|---|---|
 | `schema` | `docs/schema/*.sql`, `docs/domain/*.md`（対応する集約のもの） | 変更した集約名を呼び出し元から受け取り、対象ファイルを Read |
-| `pr` | `docs/domain/*.md`, `docs/architecture.md`, `docs/decisions.md`, `docs/guides/patterns.md`, `docs/guides/knowledge.md` | `git diff main...HEAD` |
+| `pr` | `docs/domain/*.md`, `docs/architecture.md`, `docs/decisions.md`, `docs/guides/patterns.md`, `docs/guides/knowledge.md`（加えて、OKF の保守が必要なときは `docs/index.md`, `docs/log.md`, 各文書の frontmatter） | `git diff main...HEAD` |
 | `after-pr` | 同上（`pr` と同じ） | `git show HEAD`（マージコミット） |
 | `all`（/update-docs） | 上記すべて | `git diff main...HEAD` |
 
@@ -82,10 +86,24 @@ sql.js・Web Worker RPC・StorageAdapter・Service Worker/PWA・ブラウザ API
 - ブラウザ API の互換性・挙動のクセに関する新知見がある
 - 外部連携（CSV フォーマット等）の仕様が判明した
 
-### 4. 更新サマリーを返す
+### 4. OKF の保守（全トリガー共通）
+
+3 で docs を更新した場合、次を行う。更新対象が無かった場合も、`docs:check` だけは実行する（実装側の移動・削除による `resource` の不在を検出するため）。
+
+1. **frontmatter**: 文書の趣旨が変わったなら `description` を直す。`title` は本文の H1 と一致させる。`type` の値は規約の一覧から選ぶ（一覧に無い値を勝手に増やさない）。
+2. **文書を追加したとき**: frontmatter（`type`・`title`・`description`・`tags`）を付け、`docs/index.md` の該当する節に `* [タイトル](./相対パス) - 説明` を1行追加する。
+3. **文書を削除・改名・統合したとき**: `docs/index.md`、他の文書からのリンク、`resource` を直す。
+4. **`docs/log.md`**: ファイルの追加・削除・構造の変更・規約の変更があったときだけ、当日の日付（`## YYYY-MM-DD`）の見出しの下に1行追記する。同じ日付の見出しがあればその下に足す。新しい日付は先頭に置く。通常の本文の追記は書かない。
+5. **`resource`**: 実装のディレクトリ・ファイルを移動・削除する変更があれば、`docs/domain/*.md` の `resource` を実体に合わせる。履歴ログ（`decisions.md`・`guides/knowledge.md`・`guides/patterns.md`）には `resource` を付けない。
+6. **検査**: `npm run docs:check` を実行する。違反があれば、直せるものは直して再実行する。直せない（判断が要る）ものは、サマリーに違反の内容を載せて呼び出し元に返す。
+
+`stale_after`・`verified`・`generated` は使わない（方針と理由は `docs/guides/okf-conventions.md`）。
+
+### 5. 更新サマリーを返す
 
 更新したファイルと変更内容を箇条書きで返す。
 更新対象に変更なしと判断したファイルは「変更なし」と明記する。
+`npm run docs:check` の結果（適合、または違反の一覧）を必ず載せる。
 
 ## 更新しないもの
 
@@ -95,7 +113,8 @@ sql.js・Web Worker RPC・StorageAdapter・Service Worker/PWA・ブラウザ API
 
 ## ルール
 
-- 既存の記述を削除しない（追記・修正のみ）
+- 既存の記述を削除しない（追記・修正のみ）。frontmatter・`index.md`・`log.md` の保守は、この制約の対象外
+- `docs/log.md` と `docs/index.md` は OKF の予約ファイル名。これらを概念文書として使わない
 - 日付は変更した当日の日付を記入する
 - 1つのドキュメントに複数の変更がある場合はまとめて更新する
 - 「更新が必要かどうか迷う」場合は更新しない（誤った情報を追記するリスクを避ける）

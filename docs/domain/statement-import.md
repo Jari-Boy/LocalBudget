@@ -2,7 +2,9 @@
 type: Domain
 title: 外部明細取込ドメイン
 description: 金融機関の明細(CSV)の取込フロー、マッピング定義、レビュー画面。
-resource: ../schema/statement_import.sql
+resource:
+  - ../schema/statement_import.sql
+  - ../../src/domain/statement-import
 tags: [domain, statement-import]
 ---
 # 外部明細取込ドメイン

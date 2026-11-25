@@ -5,6 +5,8 @@ description: 勘定科目(5区分・ライフサイクル・グルーピング)�
 resource:
   - ../schema/accounts.sql
   - ../schema/seed_markers.sql
+  - ../../src/domain/account
+  - ../../src/domain/account-group
 tags: [domain, accounts]
 ---
 # 勘定科目ドメイン

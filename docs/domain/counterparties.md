@@ -5,6 +5,9 @@ description: 取引先マスタと、摘要のキーワードルールによる�
 resource:
   - ../schema/counterparties.sql
   - ../schema/keyword_rules.sql
+  - ../../src/domain/counterparty
+  - ../../src/domain/counterparty-group
+  - ../../src/domain/keyword-rule
 tags: [domain, counterparties]
 ---
 # 取引先ドメイン

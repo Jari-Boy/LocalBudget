@@ -2,7 +2,10 @@
 type: Domain
 title: プロジェクトドメイン
 description: 「何の目的で使ったお金か」を表すプロジェクト軸と、そのグルーピング。
-resource: ../schema/projects.sql
+resource:
+  - ../schema/projects.sql
+  - ../../src/domain/project
+  - ../../src/domain/project-group
 tags: [domain, projects]
 ---
 # プロジェクトドメイン

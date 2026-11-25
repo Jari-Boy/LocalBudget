@@ -2,7 +2,9 @@
 type: Domain
 title: 経費割勘(按分)ドメイン
 description: 複数人で分担する支出の按分(割勘)と、未収金(精算バッチ)を経由した精算。
-resource: ../schema/journal.sql
+resource:
+  - ../schema/journal.sql
+  - ../../src/domain/expense-splitting
 tags: [domain, expense-splitting]
 ---
 # 経費割勘(按分)ドメイン

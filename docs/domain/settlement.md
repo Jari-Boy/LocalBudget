@@ -5,6 +5,8 @@ description: 暫定記帳(未払金・未収金)とCSV到着後の消込、精�
 resource:
   - ../schema/settlement_batches.sql
   - ../schema/journal.sql
+  - ../../src/domain/settlement
+  - ../../src/domain/settlement-batch
 tags: [domain, settlement]
 ---
 # 消込(Settlement)ドメイン

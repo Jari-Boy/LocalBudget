@@ -2,7 +2,10 @@
 type: Domain
 title: 仕訳テンプレートドメイン
 description: よく使う仕訳のひな形(仕訳テンプレート)と、そこからの起票。
-resource: ../schema/journal_templates.sql
+resource:
+  - ../schema/journal_templates.sql
+  - ../../src/domain/journal-template
+  - ../../src/domain/journal-template-group
 tags: [domain, journal-templates]
 ---
 # 仕訳テンプレートドメイン

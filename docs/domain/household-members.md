@@ -2,7 +2,9 @@
 type: Domain
 title: 世帯メンバードメイン
 description: 世帯メンバー(個人・グループ)マスタと、明細行の世帯メンバーの決め方。
-resource: ../schema/household_members.sql
+resource:
+  - ../schema/household_members.sql
+  - ../../src/domain/household-member
 tags: [domain, household-members]
 ---
 # 世帯メンバードメイン

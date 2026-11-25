@@ -2,6 +2,8 @@
 type: Domain
 title: 期間確定・財務諸表ドメイン
 description: 期間確定を設けない方針と、PL/BS等の財務諸表の生成方式・表示。
+resource:
+  - ../../src/domain/financial-statement
 tags: [domain, financial-statements]
 ---
 # 期間確定・財務諸表ドメイン

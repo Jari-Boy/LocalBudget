@@ -5,7 +5,7 @@ okf_version: "0.2"
 # ローカル家計簿PWA ドキュメント
 
 このディレクトリは [Open Knowledge Format(OKF)v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) のバンドルとして管理している(計画Issue #284、実証実験)。
-更新履歴は [log.md](./log.md)。
+運用の約束(frontmatter の付け方・`resource` の扱い・準拠チェック)は [docs の OKF 運用規約](./guides/okf-conventions.md)、実験の評価は [OKF 導入の実証実験](./guides/okf-experiment.md)、更新履歴は [log.md](./log.md)。
 
 ## 設計方針
 
@@ -34,6 +34,8 @@ okf_version: "0.2"
 * [技術知見](./guides/knowledge.md) - sql.js・Web Worker・StorageAdapter・PWA 等の実装で得た技術知見を蓄積する追記専用のログ。
 * [実装ミスパターン](./guides/patterns.md) - evaluator の指摘や実装中にハマった点から得た実装ミスパターンの蓄積。旧画面のパスは履歴として残す。
 * [スキーマ変更ガイド](./guides/schema-migration.md) - スキーマ変更の手順(最新スキーマと差分の書き方、凍結前後の運用)。
+* [docs の OKF 運用規約](./guides/okf-conventions.md) - docs を Open Knowledge Format v0.2 のバンドルとして保つための約束(frontmatter の付け方・type の値・resource の扱い・stale_after と verified の方針・準拠チェック・仕様変更への追随手順)。
+* [OKF 導入の実証実験](./guides/okf-experiment.md) - docs を OKF v0.2 に準拠させる実証実験の目的・評価観点・判定基準と、導入後の所見・継続か見直しかの結論の記録。
 
 ## スキーマ(DDL)
 
