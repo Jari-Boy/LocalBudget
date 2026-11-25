@@ -116,7 +116,7 @@
   "keywordIconCounterpartyLabel": "{{desc}}の取引先のキーワード",
   "keywordIconAccountLabel": "{{desc}}の相手科目のキーワード",
   "webSearchLabel": "「{{desc}}」をウェブ検索(新しいタブ)",
-  "webSearchTitle": "Googleで検索します(押したときだけ、新しいタブで開きます)",
+  "webSearchTitle": "Googleで検索",
   "keywordIconMatchedTooltip": "この行に一致: {{keywords}}",
   "keywordIconDisabledTitle": "{{kind}}を選ぶとキーワードを編集できます",
   "keywordKindCounterparty": "取引先",
