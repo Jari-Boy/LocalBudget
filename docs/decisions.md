@@ -1,3 +1,9 @@
+---
+type: Decision Log
+title: 意思決定ログ
+description: 実装フェーズで生じた個別の設計判断を時系列で記録した追記専用の意思決定ログ。過去の状態を指す記述は履歴として残す。
+tags: [decision-log, history]
+---
 # 意思決定ログ
 
 このドキュメントは、実装を進める中で生じた設計判断を時系列で記録するものである。
@@ -1910,3 +1916,14 @@
 4. 「アプリは外部と通信しない」原則は、アプリ自身の通信を指すものとし、利用者がリンクを押して別タブを開く操作は例外として明記した(architecture.md 11章)。CSPは変更しない。
 **却下した案**: `window.open`のボタン(上記)、摘要から店名だけを抽出して検索する案(抽出規則が推測になり、過剰)。
 **影響**: `StatementImportScreen`の摘要セルの構造が変わった(`import-desc-box`の中に文字とリンク)。`ActionIcons`に`SearchIcon`を追加した。摘要には個人情報(氏名等)が含まれ得るが、送られるのは利用者が押したときだけである。
+
+## 2026-11-25: docsをOKF v0.2のバンドルとして管理し、準拠チェックは自作する。resourceは現行文書だけに付け、stale_after・verifiedは使わない(計画Issue #284)
+
+**背景**: docsを Open Knowledge Format(OKF)v0.2 のバンドルにする実証実験を始めた。frontmatter・index.md・log.md の付与と、準拠を保つ検査(`npm run docs:check`、CIの`docs-check`ジョブ)が要る。運用の詳細は`docs/guides/okf-conventions.md`に置いた。
+**決定**:
+1. frontmatterの解析は自作する(`scripts/docs-check/checkDocs.mjs`)。解釈するのは`キー: 値`・インライン配列・ブロック配列だけで、入れ子の値は生の文字列として保持する。OKFにlintが無く、検査はSPECの適合条件とパス存在の確認に絞るため、YAMLライブラリは足さない(依存を増やさない)。複雑な構造が要る段階で拡張かライブラリ導入を再検討する。
+2. `resource`は現行の概念文書(`domain/*.md`等)だけに付ける。`decisions.md`・`guides/knowledge.md`・`guides/patterns.md`は過去の状態を指す記述を意図的に含むため付けない。目的は実装側のリネーム・削除によるdocsの乖離検知で、内容の一致は検査しない。
+3. `stale_after`・`verified`(`generated`も)は使わない。期限を能動的に更新する運用主体がなく、一斉に陳腐化して警告が常態化する。AIの自己申告の`verified`は信頼の信号にならない。段階4の振り返りで再評価する。
+4. `log.md`には、ファイルの追加・削除・構造の変更・規約の変更だけを書く。本文の通常の追記は、decisions.mdとIssue・PRの履歴に残るため書かない。
+**却下した案**: YAMLライブラリ(js-yaml等)の導入、全文書への`stale_after`付与。
+**影響**: docsを変更するたびに`docs:check`が走る(doc-updaterとCI)。概念文書を足したら、frontmatterとindex.mdへの1行追加が要る。

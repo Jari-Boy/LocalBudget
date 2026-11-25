@@ -1,3 +1,9 @@
+---
+type: Domain Overview
+title: 家計簿ドメイン設計書
+description: 複式簿記ドメイン全体の方針と、各ドメイン詳細(docs/domain/)への入口。
+tags: [domain, entry-point]
+---
 # 家計簿ドメイン設計書
 
 家計簿アプリ / Local-first・Double-entry・Open-source

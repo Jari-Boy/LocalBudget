@@ -1,3 +1,15 @@
+---
+type: Domain
+title: 取引先ドメイン
+description: 取引先マスタと、摘要のキーワードルールによる取引先・科目の推定。
+resource:
+  - ../schema/counterparties.sql
+  - ../schema/keyword_rules.sql
+  - ../../src/domain/counterparty
+  - ../../src/domain/counterparty-group
+  - ../../src/domain/keyword-rule
+tags: [domain, counterparties]
+---
 # 取引先ドメイン
 
 [domain.md](../domain.md)(エントリポイント)から分割された、取引先(Counterparty)に関する詳細設計。

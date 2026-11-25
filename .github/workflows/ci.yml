@@ -18,6 +18,17 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
 
+  # docs/ を OKF v0.2 のバンドルとして保つための準拠チェック(計画Issue #284、docs/guides/okf-conventions.md)。
+  # frontmatter・index.md・log.md の構造と、resource が指すパスの存在を検査する。
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/check-docs.mjs
+
   test:
     runs-on: ubuntu-latest
     steps:

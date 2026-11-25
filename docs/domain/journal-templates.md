@@ -1,3 +1,13 @@
+---
+type: Domain
+title: 仕訳テンプレートドメイン
+description: よく使う仕訳のひな形(仕訳テンプレート)と、そこからの起票。
+resource:
+  - ../schema/journal_templates.sql
+  - ../../src/domain/journal-template
+  - ../../src/domain/journal-template-group
+tags: [domain, journal-templates]
+---
 # 仕訳テンプレートドメイン
 
 [domain.md](../domain.md)(エントリポイント)から分割された、仕訳テンプレート(JournalTemplate)に関する詳細設計。計画Issue #201。

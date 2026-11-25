@@ -1,3 +1,12 @@
+---
+type: Domain
+title: 予算ドメイン
+description: 勘定科目ごとの月次予算額と、実績との比較。
+resource:
+  - ../schema/budgets.sql
+  - ../../src/domain/budget
+tags: [domain, budgets]
+---
 # 予算ドメイン
 
 [domain.md](../domain.md)(エントリポイント)から分割された、予算(Budget)に関する詳細設計。
