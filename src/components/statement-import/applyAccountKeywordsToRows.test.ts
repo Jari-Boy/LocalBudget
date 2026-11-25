@@ -24,7 +24,7 @@ const state = (overrides: Partial<ImportRowState> = {}): ImportRowState => ({
   ...overrides,
 })
 
-function run(params: { rows: ImportRowState[]; descriptions: string[]; keywords?: string[]; done?: number[]; records?: unknown[]; initialRows?: ImportRowState[] }) {
+function run(params: { rows: ImportRowState[]; descriptions: string[]; keywords?: string[]; done?: number[]; records?: unknown[]; initialRows?: ImportRowState[]; overwrite?: boolean }) {
   return applyAccountKeywordsToRows({
     states: params.rows,
     initialStates: params.initialRows ?? params.rows,
@@ -33,6 +33,7 @@ function run(params: { rows: ImportRowState[]; descriptions: string[]; keywords?
     done: new Set(params.done ?? []),
     settings: { accountId: CASH.id, keywords: params.keywords ?? ['ATM'] },
     accounts: ACCOUNTS,
+    overwrite: params.overwrite,
   })
 }
 
@@ -105,5 +106,42 @@ describe('applyAccountKeywordsToRows', () => {
     expect(isRowEdited(result.states[0], result.initialStates[0])).toBe(false)
     expect(result.initialStates[0].counterAccountId).toBe(CASH.id)
     expect(result.states[1]).toBe(rows[1])
+  })
+})
+
+describe('applyAccountKeywordsToRows(overwrite: 入力済みの行も上書きする、計画Issue #291)', () => {
+  it('相手科目を手で選んだ行・取引先がある行・候補が残る行も、キーワードに一致すれば、科目を上書きする(手で選んだ扱いにはしない)', () => {
+    const rows = [
+      state({ counterAccountId: FOOD.id, counterAccountTouched: true }),
+      state({ counterpartyId: 7, counterAccountId: FOOD.id }),
+      state({ candidateAccountIds: [CASH.id, FOOD.id], candidateCounterpartyIds: [7] }),
+    ]
+    const result = run({ rows, descriptions: ['ATM引出', 'ATM引出', 'ATM引出'], overwrite: true })
+
+    for (const s of result.states) expect(s).toMatchObject({ counterAccountId: CASH.id, counterAccountTouched: false, candidateAccountIds: [], candidateCounterpartyIds: [] })
+    // 資産の科目は取引先を持てないので、取引先は外れる
+    expect(result.states[1].counterpartyId).toBeNull()
+    expect(result.initialStates[0].counterAccountId).toBe(CASH.id)
+    expect(result.applied).toBe(3)
+  })
+
+  it('キーワードに一致しない行・確定済みの行・重複の行は変えない', () => {
+    const rows = [state({ counterAccountId: FOOD.id }), state({ counterAccountId: FOOD.id }), state({ counterAccountId: FOOD.id })]
+    const result = run({
+      rows,
+      descriptions: ['別の店', 'ATM引出', 'ATM引出'],
+      done: [1],
+      records: [record(), record(), record({ isExactDuplicate: true })],
+      overwrite: true,
+    })
+
+    expect(result.states).toEqual(rows)
+    expect(result.applied).toBe(0)
+  })
+
+  it('すでに同じ科目の行は、変わらないので件数に数えない', () => {
+    const result = run({ rows: [state({ counterAccountId: CASH.id })], descriptions: ['ATM引出'], overwrite: true })
+
+    expect(result.applied).toBe(0)
   })
 })

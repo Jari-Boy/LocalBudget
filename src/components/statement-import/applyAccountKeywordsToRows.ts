@@ -40,14 +40,21 @@ export function applyAccountKeywordsToRows(params: {
   done: ReadonlySet<number>
   settings: AccountKeywordSettings
   accounts: readonly Account[]
+  /**
+   * trueなら、入力済みの行も上書きする(「N行を上書き」。計画Issue #291)。キーワードに一致する行は、取引先・手で選んだ科目・
+   * 曖昧な候補があっても、この科目にする(候補は空にし、科目は手で選んだ扱いにしない)。確定済み・重複の行は対象外
+   */
+  overwrite?: boolean
 }): ApplyAccountKeywordsResult {
-  const { states, initialStates, records, descriptions, done, settings, accounts } = params
+  const { states, initialStates, records, descriptions, done, settings, accounts, overwrite = false } = params
   let applied = 0
   const nextInitials = [...initialStates]
 
   const nextStates = states.map((state, index) => {
     if (done.has(index) || ['duplicate', 'skipped'].includes(rowStatus(records[index], state))) return state
-    if (
+    if (overwrite) {
+      if (!anyKeywordMatches(settings.keywords, descriptions[index])) return state
+    } else if (
       state.counterpartyId !== null ||
       state.counterAccountId !== null ||
       state.counterAccountTouched ||
@@ -60,7 +67,12 @@ export function applyAccountKeywordsToRows(params: {
     }
 
     // 科目を手で選んだ扱いにはしない(確定時に、摘要が重ねてキーワード登録されないように)
-    const next = { ...withCounterAccount(state, settings.accountId, accounts), counterAccountTouched: false }
+    const next = {
+      ...withCounterAccount(state, settings.accountId, accounts),
+      counterAccountTouched: false,
+      ...(overwrite ? { candidateAccountIds: [], candidateCounterpartyIds: [] } : {}),
+    }
+    if (overwrite && SYNCED_KEYS.every((key) => state[key] === next[key])) return state
     applied++
     const initial = { ...nextInitials[index] }
     for (const key of SYNCED_KEYS) {

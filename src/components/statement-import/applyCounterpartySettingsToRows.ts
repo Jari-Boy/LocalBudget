@@ -62,16 +62,61 @@ export function applyCounterpartySettingsToRows(params: {
    * その科目へ追従させるのに使う(計画Issue #259)
    */
   followOnly?: boolean
+  /**
+   * trueなら、入力済みの行も上書きする(「N行を上書き」。計画Issue #291)。キーワードに一致する行は、取引先・手で選んだ科目・
+   * 曖昧な候補があっても、この取引先とキーワードの科目にする(候補は空にし、科目は手で選んだ扱いにしない)。
+   * キーワードに科目が無いときは相手科目を変えず、その科目で取引先を持てない行は変えない。確定済み・重複の行は対象外
+   */
+  overwrite?: boolean
 }): ApplyCounterpartySettingsResult {
-  const { states, initialStates, records, descriptions, done, settings, accounts, fillOnly = false, followOnly = false } = params
+  const { states, initialStates, records, descriptions, done, settings, accounts, fillOnly = false, followOnly = false, overwrite = false } = params
   const keywordTexts = settings.keywords.map((k) => k.text)
   let applied = 0
   const nextInitials = [...initialStates]
+
+  /** 入力済みでも上書きする。変わった行はfinishで初期状態に写して返す */
+  const overwriteRow = (state: ImportRowState, index: number): ImportRowState => {
+    const matched = settings.keywords
+      .filter((k) => matchesKeyword(k.text, descriptions[index]))
+      .sort((a, b) => b.text.length - a.text.length)[0]
+    if (matched === undefined) return state
+    const keywordAccount = matched.accountId === null ? undefined : accounts.find((a) => a.id === matched.accountId)
+    let next = state
+    if (keywordAccount !== undefined && isCounterpartyEligibleCategory(keywordAccount.category)) {
+      next = { ...withCounterAccount(next, keywordAccount.id, accounts), counterAccountTouched: false }
+    }
+    if (resolveEligibleCounterpartyId(settings.counterpartyId, next.counterAccountId, accounts) === null) return state
+    next = {
+      ...next,
+      counterpartyId: settings.counterpartyId,
+      initialCounterpartyId: settings.counterpartyId,
+      candidateCounterpartyIds: [],
+      candidateAccountIds: [],
+    }
+    // 画面に見える値が変わらない行は、元の行をそのまま返す(件数に数えない)
+    const changed =
+      state.counterpartyId !== next.counterpartyId ||
+      state.counterAccountId !== next.counterAccountId ||
+      state.candidateCounterpartyIds.length > 0 ||
+      state.candidateAccountIds.length > 0
+    return changed ? finish(state, next, index) : state
+  }
+
+  const finish = (state: ImportRowState, next: ImportRowState, index: number): ImportRowState => {
+    applied++
+    const initial = { ...nextInitials[index] }
+    for (const key of SYNCED_KEYS) {
+      if (state[key] !== next[key]) (initial as Record<string, unknown>)[key] = next[key]
+    }
+    nextInitials[index] = initial
+    return next
+  }
 
   const nextStates = states.map((state, index) => {
     if (done.has(index) || ['duplicate', 'skipped'].includes(rowStatus(records[index], state))) return state
     if (fillOnly && state.counterpartyId !== null) return state
     if (followOnly && state.counterpartyId !== settings.counterpartyId) return state
+    if (overwrite) return overwriteRow(state, index)
     let next = state
 
     if (
@@ -102,14 +147,7 @@ export function applyCounterpartySettingsToRows(params: {
       next = { ...withCounterAccount(next, keywordAccount.id, accounts), counterAccountTouched: false }
     }
 
-    if (next === state) return state
-    applied++
-    const initial = { ...nextInitials[index] }
-    for (const key of SYNCED_KEYS) {
-      if (state[key] !== next[key]) (initial as Record<string, unknown>)[key] = next[key]
-    }
-    nextInitials[index] = initial
-    return next
+    return next === state ? state : finish(state, next, index)
   })
 
   return { states: nextStates, initialStates: nextInitials, applied }
