@@ -271,20 +271,25 @@
   font-weight: 500;
 }
 
-/* 摘要の文字を左、ウェブ検索のリンク(計画Issue #283)を右端に置く。リンクはセルの右端に固定されるので、全行で縦にそろう */
-.import-desc-box {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+/*
+ * 摘要の文字を左、ウェブ検索のリンク(計画Issue #283)をセルの右端に置く。
+ * 摘要セルは他の列と同じ上揃えなので、リンクは文字の高さではなく行の高さの中央になるよう、セルを基準に絶対配置する。
+ * 右端に固定されるので全行で縦にそろい、文字がリンクの下に潜らないよう、右の余白(28px + 間の8px)を空ける。
+ */
+.import-table .import-desc {
+  position: relative;
+  padding-right: 42px;
 }
 
 .import-desc-text {
-  min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .import-web-search {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
   text-decoration: none;
 }
 
