@@ -1684,6 +1684,77 @@ describe('StatementImportScreen', () => {
       })
     })
 
+    describe('キーワードごとの「N行を上書き」(計画Issue #291)', () => {
+      const OVERWRITE_DIALOG = 'キーワードに一致する行を上書きしますか?'
+      const dialog = () => within(screen.getByRole('dialog', { name: OVERWRITE_DIALOG }))
+
+      it('N は、そのキーワードを含むほかの行の数で、取引先を手で選んだ行も数える(この行自身・含まない行は数えない)', async () => {
+        await setupApplyCase()
+
+        // 2月の行(未入力)と4月の行(別の取引先を手で選んだ)の2行。3月の行(この行)・別の店の行は数えない
+        expect(settings().getByRole('button', { name: '入力済みも含めて2行を上書き' })).toBeEnabled()
+        // 「N行に適用」は未入力の2月の行だけの1行のまま
+        expect(settings().getByRole('button', { name: '1行に適用' })).toBeEnabled()
+      })
+
+      it('押すと確認ダイアログが出て、押しただけでは行を書き換えない。入力済みの行数も伝える', async () => {
+        await setupApplyCase()
+
+        fireEvent.click(settings().getByRole('button', { name: '入力済みも含めて2行を上書き' }))
+
+        expect(dialog().getByText(/取引先「スーパーA」/)).toBeInTheDocument()
+        expect(dialog().getByText(/入力済みの行\(1行\)も書き換わります/)).toBeInTheDocument()
+        expect(rowOf(/ニチケイ 4月/).getByRole('button', { name: /^取引先: スーパーB/ })).toBeInTheDocument()
+        expect(rowOf(/ニチケイ 2月/).queryByRole('button', { name: /^取引先: スーパーA/ })).not.toBeInTheDocument()
+      })
+
+      it('確認で「上書きする」を押すと、手で選んだ行も取引先が書き換わり、結果が出る。DBには書かない', async () => {
+        const { cp, other } = await setupApplyCase()
+        fireEvent.click(settings().getByRole('button', { name: '入力済みも含めて2行を上書き' }))
+
+        fireEvent.click(dialog().getByRole('button', { name: '2行を上書きする' }))
+
+        expect(screen.queryByRole('dialog', { name: OVERWRITE_DIALOG })).not.toBeInTheDocument()
+        expect(settings().getByText('2行を上書きしました')).toBeInTheDocument()
+        expect(rowOf(/ニチケイ 2月/).getByRole('button', { name: /^取引先: スーパーA/ })).toBeInTheDocument()
+        expect(rowOf(/ニチケイ 4月/).getByRole('button', { name: /^取引先: スーパーA/ })).toBeInTheDocument()
+        expect(rowOf(/別の店 1月/).queryByRole('button', { name: /^取引先: スーパーA/ })).not.toBeInTheDocument()
+        expect(patternsOf(cp.id)).toEqual(['ニチケイ'])
+        expect(patternsOf(other.id)).toEqual([])
+        expect(userEntries()).toHaveLength(0)
+        // 上書きしたあとは、どの行も同じ取引先なので、もう数えない
+        expect(settings().getByRole('button', { name: '上書きできるほかの行はありません' })).toBeDisabled()
+      })
+
+      it('確認でキャンセルすると、何も書き換えない', async () => {
+        await setupApplyCase()
+        fireEvent.click(settings().getByRole('button', { name: '入力済みも含めて2行を上書き' }))
+
+        fireEvent.click(dialog().getByRole('button', { name: 'キャンセル' }))
+
+        expect(screen.queryByRole('dialog', { name: OVERWRITE_DIALOG })).not.toBeInTheDocument()
+        expect(rowOf(/ニチケイ 4月/).getByRole('button', { name: /^取引先: スーパーB/ })).toBeInTheDocument()
+        expect(rowOf(/ニチケイ 2月/).queryByRole('button', { name: /^取引先: スーパーA/ })).not.toBeInTheDocument()
+      })
+
+      it('確認ダイアログを操作しても、キーワードのポップアップは閉じない', async () => {
+        await setupApplyCase()
+        fireEvent.click(settings().getByRole('button', { name: '入力済みも含めて2行を上書き' }))
+
+        fireEvent.pointerDown(screen.getByRole('dialog', { name: OVERWRITE_DIALOG }))
+
+        expect(screen.getByRole('dialog', { name: /^取引先「.*」のキーワード$/ })).toBeInTheDocument()
+      })
+
+      it('該当する行が無いキーワードは、ボタンを無効にして理由を出す', async () => {
+        await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'スーパー', counterpartyId: id }))
+        await openCounterpartySettings('スーパー 新宿店')
+        await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('スーパー'))
+
+        expect(settings().getByRole('button', { name: '上書きできるほかの行はありません' })).toBeDisabled()
+      })
+    })
+
     describe('キーワードごとの「N行に適用」', () => {
       it('N は、そのキーワードを含み取引先が未入力のほかの行の数で、この行自身・手で選んだ行・含まない行は数えない', async () => {
         await setupApplyCase()

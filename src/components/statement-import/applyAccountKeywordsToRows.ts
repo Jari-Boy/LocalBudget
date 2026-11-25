@@ -45,13 +45,15 @@ export function applyAccountKeywordsToRows(params: {
    * 曖昧な候補があっても、この科目にする(候補は空にし、科目は手で選んだ扱いにしない)。確定済み・重複の行は対象外
    */
   overwrite?: boolean
+  /** 対象から外す行(キーワードのポップアップを開いた行。この行は自分で入力・確認している) */
+  excludeIndex?: number
 }): ApplyAccountKeywordsResult {
-  const { states, initialStates, records, descriptions, done, settings, accounts, overwrite = false } = params
+  const { states, initialStates, records, descriptions, done, settings, accounts, overwrite = false, excludeIndex } = params
   let applied = 0
   const nextInitials = [...initialStates]
 
   const nextStates = states.map((state, index) => {
-    if (done.has(index) || ['duplicate', 'skipped'].includes(rowStatus(records[index], state))) return state
+    if (index === excludeIndex || done.has(index) || ['duplicate', 'skipped'].includes(rowStatus(records[index], state))) return state
     if (overwrite) {
       if (!anyKeywordMatches(settings.keywords, descriptions[index])) return state
     } else if (

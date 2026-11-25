@@ -68,8 +68,10 @@ export function applyCounterpartySettingsToRows(params: {
    * キーワードに科目が無いときは相手科目を変えず、その科目で取引先を持てない行は変えない。確定済み・重複の行は対象外
    */
   overwrite?: boolean
+  /** 対象から外す行(キーワードのポップアップを開いた行。この行は自分で入力・確認している) */
+  excludeIndex?: number
 }): ApplyCounterpartySettingsResult {
-  const { states, initialStates, records, descriptions, done, settings, accounts, fillOnly = false, followOnly = false, overwrite = false } = params
+  const { states, initialStates, records, descriptions, done, settings, accounts, fillOnly = false, followOnly = false, overwrite = false, excludeIndex } = params
   const keywordTexts = settings.keywords.map((k) => k.text)
   let applied = 0
   const nextInitials = [...initialStates]
@@ -113,7 +115,7 @@ export function applyCounterpartySettingsToRows(params: {
   }
 
   const nextStates = states.map((state, index) => {
-    if (done.has(index) || ['duplicate', 'skipped'].includes(rowStatus(records[index], state))) return state
+    if (index === excludeIndex || done.has(index) || ['duplicate', 'skipped'].includes(rowStatus(records[index], state))) return state
     if (fillOnly && state.counterpartyId !== null) return state
     if (followOnly && state.counterpartyId !== settings.counterpartyId) return state
     if (overwrite) return overwriteRow(state, index)

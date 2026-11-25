@@ -56,6 +56,7 @@ function run(params: {
   fillOnly?: boolean
   followOnly?: boolean
   overwrite?: boolean
+  excludeIndex?: number
 }) {
   return applyCounterpartySettingsToRows({
     states: params.rows,
@@ -68,6 +69,7 @@ function run(params: {
     fillOnly: params.fillOnly,
     followOnly: params.followOnly,
     overwrite: params.overwrite,
+    excludeIndex: params.excludeIndex,
   })
 }
 
@@ -340,5 +342,15 @@ describe('applyCounterpartySettingsToRows(overwrite: 入力済みの行も上書
     const result = run({ rows: [same], descriptions: ['新聞販売店A'], settings: settingsWith(NEWS.id), overwrite: true })
 
     expect(result.applied).toBe(0)
+  })
+
+  it('excludeIndexで指定した行(キーワードのポップアップを開いた行)は、一致しても上書きしない', () => {
+    const own = state({ counterpartyId: OTHER_SHOP, counterAccountId: FOOD.id, counterAccountTouched: true })
+    const other = state({ counterpartyId: OTHER_SHOP, counterAccountId: FOOD.id })
+    const result = run({ rows: [own, other], descriptions: ['新聞販売店A', '新聞販売店A'], settings: settingsWith(NEWS.id), overwrite: true, excludeIndex: 0 })
+
+    expect(result.states[0]).toBe(own)
+    expect(result.states[1]).toMatchObject({ counterpartyId: NEWS_SHOP, counterAccountId: NEWS.id })
+    expect(result.applied).toBe(1)
   })
 })

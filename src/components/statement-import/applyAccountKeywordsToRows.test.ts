@@ -24,7 +24,7 @@ const state = (overrides: Partial<ImportRowState> = {}): ImportRowState => ({
   ...overrides,
 })
 
-function run(params: { rows: ImportRowState[]; descriptions: string[]; keywords?: string[]; done?: number[]; records?: unknown[]; initialRows?: ImportRowState[]; overwrite?: boolean }) {
+function run(params: { rows: ImportRowState[]; descriptions: string[]; keywords?: string[]; done?: number[]; records?: unknown[]; initialRows?: ImportRowState[]; overwrite?: boolean; excludeIndex?: number }) {
   return applyAccountKeywordsToRows({
     states: params.rows,
     initialStates: params.initialRows ?? params.rows,
@@ -34,6 +34,7 @@ function run(params: { rows: ImportRowState[]; descriptions: string[]; keywords?
     settings: { accountId: CASH.id, keywords: params.keywords ?? ['ATM'] },
     accounts: ACCOUNTS,
     overwrite: params.overwrite,
+    excludeIndex: params.excludeIndex,
   })
 }
 
@@ -143,5 +144,14 @@ describe('applyAccountKeywordsToRows(overwrite: 入力済みの行も上書き�
     const result = run({ rows: [state({ counterAccountId: CASH.id })], descriptions: ['ATM引出'], overwrite: true })
 
     expect(result.applied).toBe(0)
+  })
+
+  it('excludeIndexで指定した行(キーワードのポップアップを開いた行)は、一致しても上書きしない', () => {
+    const rows = [state({ counterAccountId: FOOD.id }), state({ counterAccountId: FOOD.id })]
+    const result = run({ rows, descriptions: ['ATM引出', 'ATM引出'], overwrite: true, excludeIndex: 0 })
+
+    expect(result.states[0]).toBe(rows[0])
+    expect(result.states[1].counterAccountId).toBe(CASH.id)
+    expect(result.applied).toBe(1)
   })
 })

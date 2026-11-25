@@ -95,3 +95,55 @@ describe('KeywordList(この行に一致・削除・キーワードごとの操�
     expect(screen.getByRole('button', { name: '適用:ハヤカケン' })).toBeInTheDocument()
   })
 })
+
+describe('KeywordList(右側の列を固定幅にそろえる。計画Issue #291)', () => {
+  const rowsOf = () => Array.from(document.querySelectorAll('.import-settings__row:not(.import-settings__row--head)'))
+  const ITEMS: KeywordListItem[] = [
+    { key: 'r1', kind: 'registered', text: 'スイカ', count: 4, error: null, matched: true },
+    { key: 'r2', kind: 'registered', text: 'ハヤカケン', count: 120, error: null, matched: false },
+    { key: 'n1', kind: 'new', text: 'エキナカ', count: 0, error: null, matched: false },
+  ]
+  const applyCell = (item: KeywordListItem) => (
+    <>
+      <button type="button">{item.count}</button>
+      <button type="button">上書き{item.count}</button>
+    </>
+  )
+
+  it('一致の有無・件数の桁数・操作の文言が行ごとに違っても、全行が同じ列の構成(同じクラス)になる', () => {
+    renderList(ITEMS, { renderApply: applyCell })
+
+    const classNames = new Set(rowsOf().map((row) => row.className))
+    expect(rowsOf()).toHaveLength(3)
+    expect(classNames.size).toBe(1)
+  })
+
+  it('操作欄(renderApply)があるときだけ、「含む行」「適用」「上書き」の列見出しを出す', () => {
+    renderList(ITEMS, { renderApply: applyCell })
+    expect(screen.getByText('含む行')).toBeInTheDocument()
+    expect(screen.getByText('適用')).toBeInTheDocument()
+    expect(screen.getByText('上書き')).toBeInTheDocument()
+
+    cleanup()
+    renderList(ITEMS)
+    expect(screen.queryByText('含む行')).not.toBeInTheDocument()
+  })
+
+  it('一致した行にはアイコンと読み上げ用の「この行に一致」を出し、一致しない行は同じ幅の空の枠を残す', () => {
+    renderList(ITEMS, { renderApply: applyCell })
+
+    const cells = rowsOf().map((row) => row.querySelector('.import-settings__matched'))
+    expect(cells.every((cell) => cell !== null)).toBe(true)
+    expect(cells[0]?.querySelector('svg')).not.toBeNull()
+    expect(cells[0]).toHaveTextContent('この行に一致')
+    expect(cells[1]?.querySelector('svg')).toBeNull()
+    expect(cells[1]).toBeEmptyDOMElement()
+  })
+
+  it('一致した行がひとつも無いときは、一致の列を作らない', () => {
+    renderList([{ key: 'r1', kind: 'registered', text: 'スイカ', count: 1, error: null }], { renderApply: applyCell })
+
+    expect(document.querySelector('.import-settings__matched')).toBeNull()
+  })
+})
+
