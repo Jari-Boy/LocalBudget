@@ -137,7 +137,7 @@ export interface JournalScreenProps {
     >
   >
   accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll' | 'create'>>
-  accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
+  accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll' | 'create'>>
   counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll' | 'create'>>
   counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll' | 'create'>>
   projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll' | 'create'>>
@@ -1850,6 +1850,11 @@ export function JournalScreen(props: JournalScreenProps) {
               groups={data.accountGroups}
               householdMembers={data.members}
               initialCategory="expense"
+              onCreateGroup={async (input) => {
+                const created = await props.accountGroupRepository.create(input)
+                setData((prev) => (prev === null ? prev : { ...prev, accountGroups: [...prev.accountGroups, created] }))
+                return created
+              }}
               onCreated={(created) => {
                 setData((prev) => (prev === null ? prev : { ...prev, accounts: [...prev.accounts, created] }))
                 accountDialog.apply(created.id)

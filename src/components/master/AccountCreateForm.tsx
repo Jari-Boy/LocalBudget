@@ -1,7 +1,8 @@
 import { useCallback, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Account, AccountCategory } from '../../domain/account/Account'
-import type { AccountGroup } from '../../domain/account-group/AccountGroup'
+import type { AccountGroup, CreateAccountGroupInput } from '../../domain/account-group/AccountGroup'
+import { QuickCreateDialog } from '../statement-import/QuickCreateDialog'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { ImportMappingDefinition } from '../../domain/statement-import/ImportMappingDefinition'
 import type { ImportMappingDefinitionRepository } from '../../domain/statement-import/ImportMappingDefinitionRepository'
@@ -46,6 +47,11 @@ export interface AccountCreateFormProps {
   /** 最初の残高の記録の日付の初期値(YYYY-MM-DD)。省略時は今日 */
   today?: string
   mappingLinking?: AccountMappingLinking
+  /**
+   * 渡すと、所属グループの選択欄に「+ グループを新規追加」を出す(計画Issue #290)。名前・登録中の区分・親グループ(null=最上位)で
+   * 科目グループを作って返す。呼び出し側は作ったグループを groups に加えて渡し直す。作ったグループはそのまま選ばれる
+   */
+  onCreateGroup?: (input: CreateAccountGroupInput) => Promise<AccountGroup>
   /** 登録できたとき。leavingは、未保存の確認の「保存して移動」で登録したとき(呼び出し側が別の移動を続けるため、登録した科目を選び直さない) */
   onCreated: (account: Account, options?: { leaving?: boolean }) => void
   onCancel: () => void
@@ -69,6 +75,7 @@ export function AccountCreateForm({
   initialGroupId = null,
   today,
   mappingLinking,
+  onCreateGroup,
   onCreated,
   onCancel,
 }: AccountCreateFormProps) {
@@ -85,6 +92,7 @@ export function AccountCreateForm({
       ? String(initialGroupId)
       : null
   const [groupOverride, setGroupOverride] = useState<string | null>(initialGroupValue)
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false)
   const [hasCsv, setHasCsv] = useState<'yes' | 'no'>('yes')
   const [hasBalance, setHasBalance] = useState<'yes' | 'no'>(initialCategory === 'liability' ? 'no' : 'yes')
   const [memberInput, setMemberInput] = useState('')
@@ -186,6 +194,7 @@ export function AccountCreateForm({
     : t('createForm.reconcileOff')
 
   return (
+    <>
     <form className="master-panel" aria-label={t('createForm.title')} onSubmit={handleSubmit}>
       <h2 className="master-panel__title">{t('createForm.title')}</h2>
 
@@ -230,6 +239,8 @@ export function AccountCreateForm({
           value={groupValue === '' ? null : Number(groupValue)}
           onChange={(id) => setGroupOverride(id === null ? '' : String(id))}
           emptyLabel={t('createForm.groupNone')}
+          onCreate={onCreateGroup ? () => setGroupDialogOpen(true) : undefined}
+          createLabel={t('createForm.groupCreate')}
         />
       </div>
 
@@ -374,5 +385,26 @@ export function AccountCreateForm({
       </div>
       {unsavedDialog}
     </form>
+    {onCreateGroup && groupDialogOpen && (
+      // グループの追加は、この登録フォームの外に重ねて出す(submitがこのフォームに伝わらないよう、フォームの子にしない)
+      <QuickCreateDialog
+        nested
+        title={t('createForm.groupCreateTitle')}
+        nameLabel={t('createForm.groupCreateName')}
+        groupField={{
+          label: t('createForm.groupParent'),
+          // 親は登録中の区分のグループだけ(区分をまたぐ親は選べない)
+          groups: groups.filter(isGroupOfCategory),
+          emptyLabel: t('createForm.groupParentTop'),
+        }}
+        onSubmit={async (groupName, parentGroupId) => {
+          const created = await onCreateGroup({ name: groupName, category, parentGroupId })
+          setGroupOverride(String(created.id))
+          setGroupDialogOpen(false)
+        }}
+        onCancel={() => setGroupDialogOpen(false)}
+      />
+    )}
+    </>
   )
 }

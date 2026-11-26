@@ -36,6 +36,8 @@ export interface QuickCreateDialogProps {
   nameNotice?: (name: string) => string | null
   /** 追加に失敗したときの文言。既定は取引先の文言 */
   failedMessage?: string
+  /** 別のダイアログ(科目の登録フォームなど)の上に重ねて出すとき。背面の重なり順を1段上げる(計画Issue #287・#290) */
+  nested?: boolean
 }
 
 /**
@@ -54,6 +56,7 @@ export function QuickCreateDialog({
   initialName,
   nameNotice,
   failedMessage,
+  nested,
 }: QuickCreateDialogProps) {
   const { t } = useTranslation('statementImport')
   const nameId = useId()
@@ -80,7 +83,7 @@ export function QuickCreateDialog({
   // body直下に出す。画面の中の入れ子の重なり順(固定したタブ・バーなど)に左右されず、全体を暗くするため(計画Issue #269の実機確認での指摘)
   return createPortal(
     <>
-    <div className="import-dialog__backdrop">
+    <div className={`import-dialog__backdrop${nested ? ' import-dialog__backdrop--nested' : ''}`}>
       <form
         role="dialog"
         aria-modal="true"
