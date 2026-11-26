@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { HistoryOperation, UndoPreview } from '../../infrastructure/history/OperationHistory'
+import { OperationDetailBlock, OperationSubject } from './HistoryDetail'
 import { describeUndoSteps, summarizeImpact } from './historyDisplay'
 import './HistoryScreen.css'
+
+/** 内容を詳しく出す(操作の詳細がある)ときに、件数の表示を省く仕訳の表 */
+const JOURNAL_TABLES: ReadonlySet<string> = new Set(['journal_entries', 'journal_lines'])
 
 type MaybeAsync<T> = T | Promise<T>
 
@@ -167,6 +171,7 @@ export function HistoryScreen({ history }: HistoryScreenProps) {
                       <span className="history__dot" aria-hidden="true" />
                       <span className="history__row-body">
                         <span className="history__row-title">{titleOf(operation)}</span>
+                        <OperationSubject operation={operation} />
                         {impact.journalEntries >= LARGE_IMPACT && (
                           <span className="history__tag history__tag--warn">
                             {t('list.impactEntries', { count: impact.journalEntries })}
@@ -252,15 +257,19 @@ function PanelBody({ preview, step, busy, titleOf, tableName, onGo, onCancel, on
           {operations.map((operation, index) => (
             <li key={operation.id}>
               <span className="history__step-no">{index + 1}</span>
-              <span>
+              <div>
                 <span className="history__row-title">{titleOf(operation)}</span>{' '}
                 <span className="history__time">{timeOf(operation)}</span>
-                {describeUndoSteps(operation).map((s) => (
-                  <span key={`${s.table}:${s.action}`} className="history__step-detail">
-                    → {t(`action.${s.action}`, { table: tableName(s.table), count: s.count })}
-                  </span>
-                ))}
-              </span>
+                <OperationDetailBlock operation={operation} />
+                {describeUndoSteps(operation)
+                  // 仕訳の内容を詳しく出す操作では、仕訳の表の件数は重複するので省く(それ以外の表は出す)
+                  .filter((s) => operation.detail === undefined || !JOURNAL_TABLES.has(s.table))
+                  .map((s) => (
+                    <span key={`${s.table}:${s.action}`} className="history__step-detail">
+                      → {t(`action.${s.action}`, { table: tableName(s.table), count: s.count })}
+                    </span>
+                  ))}
+              </div>
             </li>
           ))}
         </ol>

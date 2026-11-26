@@ -48,6 +48,10 @@ export interface OperationDetail {
   entries: EntryChange[]
   /** 変更した仕訳が使った科目と、その仕訳の件数(多い順) */
   accountUsage: AccountUsage[]
+  /** 変更した仕訳すべての日付の範囲(操作のあとの日付。削除は削除前の日付) */
+  dateRange: { from: string; to: string }
+  /** 作成・編集・削除それぞれの仕訳の件数(全件分。entriesは先頭の数件だけなので、全体の内訳はここから分かる) */
+  kinds: Record<EntryChange['kind'], number>
 }
 
 /** CSV取込の確定に添える情報(取込画面が確定時に渡す) */
@@ -141,6 +145,9 @@ export function buildOperationDetail(db: Database, records: readonly RowRecord[]
   )
   const changes: EntryChange[] = []
   const usage = new Map<string, number>()
+  const kinds: Record<EntryChange['kind'], number> = { created: 0, updated: 0, deleted: 0 }
+  let dateFrom: string | null = null
+  let dateTo: string | null = null
   try {
     for (const entryId of [...affected].sort((a, b) => a - b)) {
       headerStatement.bind([entryId])
@@ -181,7 +188,11 @@ export function buildOperationDetail(db: Database, records: readonly RowRecord[]
       else kind = 'updated'
 
       changes.push({ kind, entryId, before, after })
-      const used = new Set((after ?? before)!.lines.map((line) => line.accountName))
+      kinds[kind] += 1
+      const current = (after ?? before)!
+      if (dateFrom === null || current.date < dateFrom) dateFrom = current.date
+      if (dateTo === null || current.date > dateTo) dateTo = current.date
+      const used = new Set(current.lines.map((line) => line.accountName))
       for (const name of used) usage.set(name, (usage.get(name) ?? 0) + 1)
     }
   } finally {
@@ -189,8 +200,10 @@ export function buildOperationDetail(db: Database, records: readonly RowRecord[]
     linesStatement.free()
   }
 
-  if (changes.length === 0) return undefined
+  if (changes.length === 0 || dateFrom === null || dateTo === null) return undefined
   return {
+    dateRange: { from: dateFrom, to: dateTo },
+    kinds,
     entryTotal: changes.length,
     entries: changes.slice(0, DETAIL_ENTRY_LIMIT),
     accountUsage: [...usage.entries()]

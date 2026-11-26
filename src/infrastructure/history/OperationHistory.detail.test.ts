@@ -197,6 +197,35 @@ describe('大量の操作の要約', () => {
     ].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)))
   })
 
+  it('作成・編集・削除それぞれの仕訳の件数を、全件分持つ', () => {
+    const kept = createEntry({ amount: 100 })
+    const doomed = createEntry({ amount: 200 })
+    history.beginGroup('expenseSplit.submit')
+    createEntry({ amount: 300 })
+    journal.delete(doomed.id)
+    journal.update(kept.id, {
+      entryDate: '2026-11-02',
+      lines: kept.lines.map((line) => ({
+        id: line.id,
+        householdMemberId: line.householdMemberId,
+        accountId: line.accountId,
+        side: line.side,
+        amount: line.amount,
+      })),
+    })
+    history.endGroup()
+
+    expect(history.list()[0].detail?.kinds).toEqual({ created: 1, updated: 1, deleted: 1 })
+  })
+
+  it('変更した仕訳すべての日付の範囲(最も古い日付と新しい日付)を持つ', () => {
+    history.beginGroup('statementImport.confirm')
+    for (const date of ['2026-11-12', '2026-11-03', '2026-11-25', '2026-11-09']) createEntry({ amount: 100, date })
+    history.endGroup()
+
+    expect(history.list()[0].detail?.dateRange).toEqual({ from: '2026-11-03', to: '2026-11-25' })
+  })
+
   it('同じ操作の中で作ってから消した仕訳は、詳細に出さない', () => {
     history.beginGroup('expenseSplit.submit')
     const entry = createEntry({ amount: 500 })
