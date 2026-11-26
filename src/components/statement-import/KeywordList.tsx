@@ -27,7 +27,10 @@ export interface KeywordListProps {
   onAdd: () => void
   /** 科目の欄を自前の部品で描く(取引先の追加ダイアログ。科目の新規登録つきの選択部品を使うため)。渡さなければ科目の欄は出さない */
   renderAccount?: (item: KeywordListItem, index: number) => ReactNode
-  /** キーワードの行ごとの操作欄(「N行に適用」。計画Issue #259)。渡さなければ出さない */
+  /**
+   * キーワードの行ごとの操作欄(「N行に適用」「N行を上書き」の2つのボタン。計画Issue #259・#291)。渡さなければ出さない。
+   * 2つのボタンは、固定幅の2列(適用・上書き)にそのまま並べる(行ごとに幅が変わって入力欄がずれないよう、列の幅は固定)
+   */
   renderApply?: (item: KeywordListItem, index: number) => ReactNode
   /** 一覧の見出し(既定は「取引先のキーワード」)。科目のキーワードでは「キーワード」 */
   label?: string
@@ -37,18 +40,44 @@ export interface KeywordListProps {
  * 取引先のキーワード(取引先のパターン)の一覧(計画Issue #207)。明細取込の「取引先の設定」と
  * 取引先の追加ダイアログで同じものを使う。各行は「登録済み」「新規」のタグ・入力欄・含む行の数・削除、
  * 末尾に「キーワードを追加」。
+ * 右側の列(一致・含む行・適用・上書き・削除)は固定幅で、一致の有無・件数の桁数・操作の文言が行ごとに違っても、
+ * 入力欄・科目欄の左右の位置が全行でそろう(計画Issue #291)。列の幅はCSS(.import-settings__row)が決める。
  */
 export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, renderAccount, renderApply, label }: KeywordListProps) {
   const { t } = useTranslation('statementImport')
   const hasMatched = items.some((item) => item.matched === true)
   const errorText = (error: KeywordError) => (error === 'empty' ? t('patternErrorEmpty') : t('patternErrorDuplicate'))
+  // 列の構成(科目・一致・操作の有無)はリスト全体で決め、全行と見出しで同じクラスにする
+  const rowClass = [
+    'import-settings__row',
+    renderAccount !== undefined ? 'import-settings__row--account' : '',
+    hasMatched ? 'import-settings__row--matched' : '',
+    renderApply !== undefined ? 'import-settings__row--apply' : '',
+  ]
+    .filter((name) => name !== '')
+    .join(' ')
 
   return (
     <div className="import-field">
       <span className="import-field__label">{label ?? t('settingsPatternsLabel')}</span>
+      {renderApply !== undefined && (
+        // アイコンだけのボタンの意味が分かるよう、右側の列に見出しを付ける(読み上げには各ボタンのaria-labelを使う)
+        <div className="import-settings__pattern">
+          <div className={`${rowClass} import-settings__row--head`} aria-hidden="true">
+            <span />
+            <span />
+            {renderAccount !== undefined && <span />}
+            {hasMatched && <span />}
+            <span className="import-settings__head-cell">{t('colKeywordRows')}</span>
+            <span className="import-settings__head-cell">{t('colKeywordApply')}</span>
+            <span className="import-settings__head-cell">{t('colKeywordOverwrite')}</span>
+            <span />
+          </div>
+        </div>
+      )}
       {items.map((item, index) => (
         <div key={item.key} className={`import-settings__pattern${item.matched === true ? ' import-settings__pattern--matched' : ''}`}>
-          <div className="import-settings__row">
+          <div className={rowClass}>
             <span className={`import-tag ${item.kind === 'new' ? 'import-tag--new' : 'import-tag--registered'}`}>
               {item.kind === 'new' ? t('tagNew') : t('tagRegistered')}
             </span>
@@ -67,11 +96,21 @@ export function KeywordList({ items, onTextChange, onCommit, onDelete, onAdd, re
               }}
             />
             {renderAccount?.(item, index)}
-            {/* 一致の有無で入力欄の幅が変わらないよう、一致する行がひとつでもあれば、全行に同じ幅の枠を確保する */}
+            {/* 一致の有無で入力欄の幅が変わらないよう、一致する行がひとつでもあれば、全行に同じ幅の枠を確保する(一致しない行は空の枠) */}
             {hasMatched && (
-              <span className="import-settings__matched import-nowrap">{item.matched === true ? t('patternMatchedRow') : ''}</span>
+              <span className="import-settings__matched">
+                {item.matched === true && (
+                  <>
+                    <svg viewBox="0 0 16 16" aria-hidden="true" className="import-icon">
+                      <circle cx="8" cy="8" r="6" />
+                      <path d="M5.3 8.2l1.8 1.8 3.6-3.8" />
+                    </svg>
+                    <span className="import-sr-only">{t('patternMatchedRow')}</span>
+                  </>
+                )}
+              </span>
             )}
-            <span className="import-note import-nowrap" title={t('patternRowsTitle')}>
+            <span className="import-note import-settings__count" title={t('patternRowsTitle')}>
               {t('patternRows', { count: item.count })}
             </span>
             {renderApply?.(item, index)}

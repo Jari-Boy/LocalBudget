@@ -100,6 +100,7 @@ import {
 import { ImportRowFilterPanel } from './ImportRowFilterPanel'
 import { compareBySort, cycleSort, type ImportSort, type SortKey, type SortableRow } from './importRowSort'
 import { ConfirmDialog } from '../common/confirm-dialog/ConfirmDialog'
+import { countFilledRowsOverwritten } from './overwriteSummary'
 import type {
   StatementImportDraft,
   StatementImportDraftRowInput,
@@ -392,6 +393,16 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [settingsMessage, setSettingsMessage] = useState('')
   /** ポップアップでの保存に失敗したときの表示 */
   const [settingsSaveError, setSettingsSaveError] = useState('')
+  /** 「N行を上書き」の確認待ち(計画Issue #291)。確認までは行を書き換えない。確認の間にポップアップが閉じても、対象を覚えておく */
+  const [overwriteConfirm, setOverwriteConfirm] = useState<{
+    view: SettingsView
+    item: KeywordListItem
+    /** 取引先のキーワードなら取引先の名前、科目のキーワードなら科目の名前 */
+    name: string
+    count: number
+    /** 書き換わる行のうち、すでに取引先か相手科目が入っている行の数 */
+    filled: number
+  } | null>(null)
   /** 保存中のキーワード(入力を終えたときのフォーカス外れとEnterで二重に保存しないため) */
   const savingKeys = useRef(new Set<string>())
   /** 閉じる操作での保存が、保存を待つ間に開いた別のポップアップを閉じないよう、最新の「開いているポップアップ」を持つ */
@@ -881,7 +892,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
    * 件数の表示と適用の実行が食い違わないよう、同じ関数で数える。入れるのは、そのキーワードを含み、取引先
    * (科目側のキーワードなら相手科目)が未入力で、手で触っていない行。この行自身は入力済みなので含まない
    */
-  function keywordApplyResult(view: SettingsView, item: KeywordListItem) {
+  function keywordApplyResult(view: SettingsView, item: KeywordListItem, overwrite = false) {
     if (!session) return null
     if (item.error !== null || item.text.trim() === '') return null
     const common = {
@@ -892,14 +903,38 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       done: session.done,
       accounts: accountList,
     }
+    // 上書きは、入力済みの行も対象にする。ポップアップを開いた行は、自分で入力・確認しているので対象にしない(計画Issue #291)
+    const overwriteOptions = overwrite ? { overwrite: true, excludeIndex: view.index } : {}
     if (view.counterpartyId === null) {
-      return view.accountId === null ? null : applyAccountKeywordsToRows({ ...common, settings: { accountId: view.accountId, keywords: [item.text] } })
+      return view.accountId === null
+        ? null
+        : applyAccountKeywordsToRows({ ...common, settings: { accountId: view.accountId, keywords: [item.text] }, ...overwriteOptions })
     }
     return applyCounterpartySettingsToRows({
       ...common,
       settings: { counterpartyId: view.counterpartyId, keywords: [{ text: item.text, accountId: item.accountId ?? null }] },
-      fillOnly: true,
+      fillOnly: !overwrite,
+      ...overwriteOptions,
     })
+  }
+
+  /** 「N行を上書き」を押したとき。確認ダイアログを出す(押しただけでは行を書き換えない。計画Issue #291) */
+  function requestKeywordOverwrite(view: SettingsView, item: KeywordListItem, name: string) {
+    if (!session) return
+    const result = keywordApplyResult(view, item, true)
+    if (result === null || result.applied === 0) return
+    setOverwriteConfirm({ view, item, name, count: result.applied, filled: countFilledRowsOverwritten(session.rows, result.states) })
+  }
+
+  /** 確認で「上書きする」を押したとき。確認の間に行が変わりうるので、その時点の行に対して計算し直す */
+  function confirmKeywordOverwrite() {
+    const target = overwriteConfirm
+    setOverwriteConfirm(null)
+    if (!session || target === null) return
+    const result = keywordApplyResult(target.view, target.item, true)
+    if (result === null) return
+    setSession({ ...session, rows: result.states, initialRows: result.initialStates })
+    setSettingsMessage(result.applied > 0 ? t('overwriteDone', { count: result.applied }) : t('overwriteNone'))
   }
 
   function applyKeywordToOtherRows(view: SettingsView, item: KeywordListItem) {
@@ -910,32 +945,48 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     setSettingsMessage(result.applied > 0 ? t('applyDone', { count: result.applied }) : t('applyNone'))
   }
 
-  /** キーワードの行ごとの「N行に適用」。0行なら無効にして「ほかに該当なし」と出す */
+  /**
+   * キーワードの行ごとの「適用」「上書き」の2つのアイコンボタン(計画Issue #259・#291)。アイコンの横に件数を出し、
+   * 0行なら無効にして、理由をaria-labelとツールチップに出す。適用は未入力の行だけ、上書きは入力済みの行も対象にする
+   */
   function renderKeywordApply(view: SettingsView, name: string) {
     return (item: KeywordListItem) => {
       const count = keywordApplyResult(view, item)?.applied ?? 0
-      const accountName = item.accountId == null ? undefined : accountList.find((a) => a.id === item.accountId)?.name
-      const title =
-        count === 0
-          ? t('applyKeywordNoneTitle')
-          : view.counterpartyId === null
-            ? t('applyKeywordTitleAccount', { keyword: item.text, count, name })
-            : t('applyKeywordTitleCounterparty', {
-                keyword: item.text,
-                count,
-                name,
-                account: accountName === undefined ? '' : t('applyKeywordTitleWithAccount', { account: accountName }),
-              })
+      const overwriteCount = keywordApplyResult(view, item, true)?.applied ?? 0
+      // ホバーの説明は、何を更新するボタンかだけを短く伝える。件数はボタンの表示とaria-label、書き換える内容は上書きの確認ダイアログにある
+      // 適用は未入力の行だけが対象なので、0行のときは「未入力の行はありません」。含む行そのものが無いのは、上書き(右)のほうで伝える
+      const title = count === 0 ? t('applyKeywordNoneUnfilledTitle') : t('applyKeywordTitle')
+      const applyLabel = count === 0 ? t('applyKeywordNone') : t('applyKeywordCount', { count })
+      const overwriteLabel = overwriteCount === 0 ? t('overwriteKeywordNone') : t('overwriteKeywordCount', { count: overwriteCount })
       return (
-        <button
-          type="button"
-          className="import-btn import-btn--small import-nowrap"
-          disabled={count === 0}
-          title={title}
-          onClick={() => applyKeywordToOtherRows(view, item)}
-        >
-          {count === 0 ? t('applyKeywordNone') : t('applyKeywordCount', { count })}
-        </button>
+        <>
+          <button
+            type="button"
+            className="import-kw-btn"
+            disabled={count === 0}
+            aria-label={applyLabel}
+            title={title}
+            onClick={() => applyKeywordToOtherRows(view, item)}
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true" className="import-icon">
+              <path d="M8 2.5v7M5 6.8l3 3 3-3M3 13h10" />
+            </svg>
+            <span aria-hidden="true">{count}</span>
+          </button>
+          <button
+            type="button"
+            className="import-kw-btn import-kw-btn--danger"
+            disabled={overwriteCount === 0}
+            aria-label={overwriteLabel}
+            title={overwriteCount === 0 ? t('overwriteKeywordNoneTitle') : t('overwriteKeywordTitle')}
+            onClick={() => requestKeywordOverwrite(view, item, name)}
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true" className="import-icon">
+              <path d="M3.2 7a5 5 0 0 1 9-1.7M12.6 2.6v2.8H9.8M12.8 9a5 5 0 0 1-9 1.7M3.4 13.4v-2.8h2.8" />
+            </svg>
+            <span aria-hidden="true">{overwriteCount}</span>
+          </button>
+        </>
       )
     }
   }
@@ -1967,6 +2018,34 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       style={{ '--sticky-head-h': `${stickyHeight}px` } as CSSProperties}
     >
       {unsavedDialog}
+      {overwriteConfirm !== null &&
+        createPortal(
+          // キーワードのポップアップ(z-index 30)より前に出すため、body直下に出し、背面を31にする(import-overwrite-confirm。計画Issue #291)
+          <div className="import-overwrite-confirm">
+            <ConfirmDialog
+              title={t('overwriteConfirmTitle')}
+              message={[
+                overwriteConfirm.view.counterpartyId === null
+                  ? t('overwriteConfirmAccount', { keyword: overwriteConfirm.item.text, count: overwriteConfirm.count, name: overwriteConfirm.name })
+                  : t('overwriteConfirmCounterparty', {
+                      keyword: overwriteConfirm.item.text,
+                      count: overwriteConfirm.count,
+                      name: overwriteConfirm.name,
+                      account:
+                        overwriteConfirm.item.accountId == null
+                          ? ''
+                          : t('overwriteConfirmWithAccount', { account: accountList.find((a) => a.id === overwriteConfirm.item.accountId)?.name ?? '' }),
+                    }),
+                overwriteConfirm.filled > 0 ? t('overwriteConfirmFilled', { filled: overwriteConfirm.filled }) : '',
+                t('overwriteConfirmNote'),
+              ].join('')}
+              confirmLabel={t('overwriteConfirmButton', { count: overwriteConfirm.count })}
+              onConfirm={confirmKeywordOverwrite}
+              onCancel={() => setOverwriteConfirm(null)}
+            />
+          </div>,
+          document.body,
+        )}
       {draftDialog?.kind === 'overwrite' && (
         <ConfirmDialog
           title={t('draftOverwriteTitle')}

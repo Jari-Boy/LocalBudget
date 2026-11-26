@@ -84,8 +84,8 @@ export function CounterpartySettingsPopup(props: CounterpartySettingsPopupProps)
     if (!isOpen) return
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Element
-      // 中の科目選択(TreeSelect)のポップアップは別の場所に描画されるので、外側のクリックとは見なさない
-      if (target.closest('.tree-select__popup') || popupRef.current?.contains(target) || triggerRef.current?.contains(target)) return
+      // 中の科目選択(TreeSelect)のポップアップと、上書きの確認ダイアログは別の場所に描画されるので、外側のクリックとは見なさない
+      if (target.closest('.tree-select__popup') || target.closest('.import-overwrite-confirm') || popupRef.current?.contains(target) || triggerRef.current?.contains(target)) return
       onClose()
     }
     document.addEventListener('pointerdown', onPointerDown)

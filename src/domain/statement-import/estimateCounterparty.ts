@@ -1,4 +1,4 @@
-import { unifyKatakanaHyphen } from './formatDescriptionForDisplay'
+import { composeDetachedDakuten, unifyKatakanaHyphen } from './formatDescriptionForDisplay'
 
 /** カタカナ・ひらがなの小書き文字と、対応する大きい文字(カタカナ)。ヵ・ヶ・ゕ・ゖも カ・ケ にそろえる */
 const SMALL_KANA_TO_LARGE: Readonly<Record<string, string>> = {
@@ -22,10 +22,10 @@ export function foldKana(nfkcText: string): string {
  * 照合そのものは estimateKeywordRule.ts(計画Issue #219)。
  *
  * 銀行の摘要には「シ+空白+独立した濁点」の形がある(「ワイシ ゙エイカート ゙」)。NFKCの時点では空白が間にあって
- * 合成されないので、空白を取り除いたあとにNFCをかけて、結合文字の濁点・半濁点を1文字にまとめる(計画Issue #279)。
+ * 合成されないので、濁点の直前の空白を詰めてNFCで1文字にまとめる(計画Issue #279)。長音への置換より前に行う(計画Issue #291)。
  */
 export function normalizeDescriptionForMatching(text: string): string {
-  return unifyKatakanaHyphen(foldKana(text.normalize('NFKC')))
+  return unifyKatakanaHyphen(foldKana(composeDetachedDakuten(text.normalize('NFKC'))))
     .toUpperCase()
     .replace(/\s+/g, '')
     .normalize('NFC')

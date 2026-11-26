@@ -55,6 +55,8 @@ function run(params: {
   initialRows?: ImportRowState[]
   fillOnly?: boolean
   followOnly?: boolean
+  overwrite?: boolean
+  excludeIndex?: number
 }) {
   return applyCounterpartySettingsToRows({
     states: params.rows,
@@ -66,6 +68,8 @@ function run(params: {
     accounts: ACCOUNTS,
     fillOnly: params.fillOnly,
     followOnly: params.followOnly,
+    overwrite: params.overwrite,
+    excludeIndex: params.excludeIndex,
   })
 }
 
@@ -283,6 +287,70 @@ describe('すでにこの取引先の行だけを対象にする(followOnly。�
 
     expect(result.states[0].counterAccountId).toBe(NEWS.id)
     expect(result.states[1]).toMatchObject({ counterpartyId: null, counterAccountId: null })
+    expect(result.applied).toBe(1)
+  })
+})
+
+describe('applyCounterpartySettingsToRows(overwrite: 入力済みの行も上書きする、計画Issue #291)', () => {
+  it('取引先が別の行・手で選んだ科目の行も、キーワードに一致すれば、取引先とキーワードの科目に上書きする(手で選んだ扱いにはしない)', () => {
+    const other = state({ counterpartyId: OTHER_SHOP, initialCounterpartyId: OTHER_SHOP, counterAccountId: FOOD.id, counterAccountTouched: true })
+    const result = run({ rows: [other], descriptions: ['新聞販売店A 11月'], settings: settingsWith(NEWS.id), overwrite: true })
+
+    expect(result.states[0]).toMatchObject({ counterpartyId: NEWS_SHOP, counterAccountId: NEWS.id, counterAccountTouched: false })
+    expect(result.initialStates[0]).toMatchObject({ counterpartyId: NEWS_SHOP, initialCounterpartyId: NEWS_SHOP, counterAccountId: NEWS.id })
+    expect(result.applied).toBe(1)
+  })
+
+  it('取引先・科目の候補が残っている曖昧な行も、上書きして候補を空にする', () => {
+    const ambiguous = state({ candidateCounterpartyIds: [1, 2], candidateAccountIds: [FOOD.id, NEWS.id] })
+    const result = run({ rows: [ambiguous], descriptions: ['新聞販売店A'], settings: settingsWith(NEWS.id), overwrite: true })
+
+    expect(result.states[0]).toMatchObject({ counterpartyId: NEWS_SHOP, counterAccountId: NEWS.id, candidateCounterpartyIds: [], candidateAccountIds: [] })
+  })
+
+  it('キーワードに科目が無いときは、相手科目を変えずに取引先だけ上書きする', () => {
+    const other = state({ counterpartyId: OTHER_SHOP, counterAccountId: FOOD.id, counterAccountTouched: true })
+    const result = run({ rows: [other], descriptions: ['新聞販売店A'], overwrite: true })
+
+    expect(result.states[0]).toMatchObject({ counterpartyId: NEWS_SHOP, counterAccountId: FOOD.id })
+  })
+
+  it('取引先を持てない科目(資産)の行で、キーワードに科目が無いときは、変えない', () => {
+    const bank = state({ counterAccountId: BANK.id, counterAccountTouched: true })
+    const result = run({ rows: [bank], descriptions: ['新聞販売店A'], overwrite: true })
+
+    expect(result.states[0]).toBe(bank)
+    expect(result.applied).toBe(0)
+  })
+
+  it('キーワードに一致しない行・確定済みの行・重複の行は変えない', () => {
+    const rows = [state({ counterpartyId: OTHER_SHOP }), state({ counterpartyId: OTHER_SHOP }), state({ counterpartyId: OTHER_SHOP })]
+    const result = run({
+      rows,
+      descriptions: ['別の店', '新聞販売店A', '新聞販売店A'],
+      done: [1],
+      records: [record(), record(), record({ isExactDuplicate: true })],
+      overwrite: true,
+    })
+
+    expect(result.states).toEqual(rows)
+    expect(result.applied).toBe(0)
+  })
+
+  it('すでに同じ取引先・同じ科目の行は、変わらないので件数に数えない', () => {
+    const same = state({ counterpartyId: NEWS_SHOP, counterAccountId: NEWS.id })
+    const result = run({ rows: [same], descriptions: ['新聞販売店A'], settings: settingsWith(NEWS.id), overwrite: true })
+
+    expect(result.applied).toBe(0)
+  })
+
+  it('excludeIndexで指定した行(キーワードのポップアップを開いた行)は、一致しても上書きしない', () => {
+    const own = state({ counterpartyId: OTHER_SHOP, counterAccountId: FOOD.id, counterAccountTouched: true })
+    const other = state({ counterpartyId: OTHER_SHOP, counterAccountId: FOOD.id })
+    const result = run({ rows: [own, other], descriptions: ['新聞販売店A', '新聞販売店A'], settings: settingsWith(NEWS.id), overwrite: true, excludeIndex: 0 })
+
+    expect(result.states[0]).toBe(own)
+    expect(result.states[1]).toMatchObject({ counterpartyId: NEWS_SHOP, counterAccountId: NEWS.id })
     expect(result.applied).toBe(1)
   })
 })
