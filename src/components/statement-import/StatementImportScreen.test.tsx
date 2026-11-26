@@ -39,6 +39,7 @@ import { SqlJsStatementImportDraftRepository } from '../../infrastructure/db/Sql
 import { UnsavedGuardHarness } from '../master/UnsavedGuardHarness'
 import { chooseBatch, expectBatch, findBatchButton, queryBatchButton } from '../master/batchSelectTestHelpers'
 import { chooseMember, expectMember, findMemberButton, listMemberOptions } from '../master/memberSelectTestHelpers'
+import type { HistoryGroupApi } from '../../infrastructure/history/historyGroupRunner'
 import { StatementImportScreen } from './StatementImportScreen'
 import { IMPORT_PAGE_SIZE } from './importTabs'
 import { chooseTargetAccount, expectTargetAccount, findTargetAccountButton } from './targetAccountTestHelpers'
@@ -55,6 +56,8 @@ let memberId: number
 let bank: ReturnType<SqlJsAccountRepository['create']>
 let food: ReturnType<SqlJsAccountRepository['create']>
 let onEditMappings: () => void
+/** 操作履歴のグループAPI。履歴の記録を確かめるテストだけが差し替える(計画Issue #295) */
+let historyStub: HistoryGroupApi | undefined
 
 /** 利用者が作った仕訳(取引後残高の基準点から自動で入る調整仕訳は除く、計画Issue #205) */
 function userEntries() {
@@ -80,6 +83,7 @@ beforeEach(async () => {
   food = accounts.create({ category: 'expense', name: '食費', isReconcilable: null })
   accounts.create({ category: 'asset', name: '立替金', isReconcilable: false, isSystemManaged: true })
   onEditMappings = vi.fn()
+  historyStub = undefined
 })
 
 afterEach(cleanup)
@@ -107,6 +111,7 @@ function renderScreen(
         settlementBatchRepository={batches}
         statementImportDraftRepository={new SqlJsStatementImportDraftRepository(db)}
         onEditMappings={onEditMappings}
+        history={historyStub}
       />
       </UnsavedGuardHarness>
     </I18nextProvider>,
@@ -771,6 +776,26 @@ describe('StatementImportScreen', () => {
 
     fireEvent.change(screen.getByLabelText('CSVを選択'), { target: { files: [csvFile(`${HEADER}2026/10/07,カフェ,-500,96700\n`, 'next.csv')] } })
     expect(await screen.findByText(/next\.csv を読み込み済み/)).toBeInTheDocument()
+  })
+
+  it('確定すると、金融機関・取込先の科目・ファイルごとの確定件数を、操作履歴の取込の操作に添える(計画Issue #295)', async () => {
+    const endGroup = vi.fn()
+    historyStub = { beginGroup: vi.fn(), endGroup }
+    makeMapping({ formatGroupId: '楽天カード' })
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,カフェ,-500,96500\n`)
+    pick(rowOf(/スーパー/), '相手科目', '食費')
+    pick(rowOf(/カフェ/), '相手科目', '食費')
+
+    fireEvent.click(screen.getByRole('button', { name: /^\d+ \/ 2 件を「普通預金」に確定$/ }))
+    await screen.findByText(/確定しました/)
+
+    expect(endGroup).toHaveBeenCalledWith({
+      kind: 'statementImport',
+      institution: '楽天カード',
+      targetAccountName: '普通預金',
+      files: [{ name: 'statement.csv', count: 2 }],
+    })
   })
 
   it('科目に名義があるときは、名義を表示のみで出し(選択欄は出さない)、その人の明細として確定する(計画Issue #193)', async () => {

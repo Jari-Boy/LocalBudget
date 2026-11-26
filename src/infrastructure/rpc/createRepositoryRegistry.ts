@@ -53,6 +53,7 @@ import {
   type OperationHistory,
   type UndoPreview,
 } from '../history/OperationHistory'
+import type { OperationMeta } from '../history/operationDetail'
 import { createOnboardingApi, type OnboardingRpcApi } from './createOnboardingApi'
 import {
   createRecurringTransactionProposalApi,
@@ -104,7 +105,8 @@ export interface HistoryRpcApi {
   /** 選んだ操作とそれ以降を新しい順に戻す(全体で1トランザクション)。戻した操作数を返す */
   undoTo(operationId: number): number
   beginGroup(label: string): void
-  endGroup(): void
+  /** グループを閉じる。metaを渡すと、その操作にCSV取込のファイル・金融機関などを添える(計画Issue #295) */
+  endGroup(meta?: OperationMeta): void
 }
 
 export interface RepositoryRegistry {
@@ -251,7 +253,7 @@ export function createRepositoryRegistry(
       previewUndoTo: (operationId) => history.previewUndoTo(operationId),
       undoTo: (operationId) => history.undoTo(operationId),
       beginGroup: (label) => history.beginGroup(label),
-      endGroup: () => history.endGroup(),
+      endGroup: (meta) => history.endGroup(meta),
     },
     onboarding: createOnboardingApi(db),
   }

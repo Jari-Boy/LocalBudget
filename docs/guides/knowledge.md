@@ -236,3 +236,9 @@ Issue #187(`e2e/journal-entry.spec.ts`の「ランチ代」の`UNIQUE constraint
 ## Playwrightで本物のブラウザの計測を取るときは、別ポートの開発サーバーを使う(計画Issue #253)
 
 **内容**: 描画の時間などをChromium(Playwright)で計測するときも、5173番に手動起動の開発サーバーが残っているとサンプルデータ入りの状態になり、計測の前提(件数)が崩れる。計測用のデータは別ポート(例: 5199)で`VITE_DISABLE_DEV_SEED`が効いた開発サーバーを起動し、そこへ件数を指定して投入して計る。開発ビルド(React開発ビルド)の値は本番より遅めに出るため、絶対値ではなく件数に対する傾向と比率で読む。手順の詳細は上の「手動で起動した`npm run dev`を残したままPlaywrightを流すと...」(計画Issue #207)と同じ。
+
+## 操作履歴のTEMPトリガーは、`json_object`と書き込みの瞬間のサブクエリで前後の行と関連名を残せる。同じ操作で触れた行の「操作前」は最初の書き込みの前の値(計画Issue #295)
+
+**内容**: sql.jsのTEMPトリガー(`OperationHistory`、計画Issue #202)の本体では、`json_object('col', OLD.col, ...)`で前後の行をJSON文字列にでき、`(SELECT name FROM accounts WHERE id = NEW.account_id)`のようなサブクエリで関連行の名前も書き込みの瞬間に引ける。科目が後で削除・統合・取消されても、記録済みのJSONには当時の名前が残る。表示時にIDから引き直す方式は、削除・取消のあとで名前を引けないため使えない。同じ操作の中で同じ行を複数回書き換えると、行ごとの記録(`__undo_log`の`row_id`・`before_json`・`after_json`)が複数できる。「操作前」には最初の書き込みの前の値を使い、「操作後」にはDBの現在の内容を使う(途中経過の値は使わない)。このため、操作の要約(`buildOperationDetail`)は操作の確定直後に組み立てる必要があり、時間が空くと現在の内容が別の操作の結果になる。なお、`runInHistoryGroup`の第4引数`getMeta`が値でなく取得関数なのは、CSV取込の確定件数のような添える情報が、確定処理の結果が出てから初めて決まるため。
+
+**参考**: `src/infrastructure/history/OperationHistory.ts`・`operationDetail.ts`・`historyGroupRunner.ts`、`docs/decisions.md`「操作履歴に操作の詳細(どの仕訳をどう変えたか)を持たせる」

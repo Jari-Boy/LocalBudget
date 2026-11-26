@@ -53,6 +53,30 @@ beforeEach(async () => {
   foodId = registry.account.create({ category: 'expense', name: '食費', isReconcilable: null }).id
 })
 
+describe('操作の詳細とメタ情報(計画Issue #295)', () => {
+  it('仕訳の作成は、一覧に作成した仕訳の内容(科目名つき)が詳細として付く', () => {
+    newEntry(1000)
+
+    expect(registry.history.list()[0].detail?.entries[0]).toMatchObject({
+      kind: 'created',
+      after: { lines: [{ accountName: '食費', amount: 1000 }, { accountName: '現金', amount: 1000 }] },
+    })
+  })
+
+  it('endGroupに渡したメタ情報が、その操作に付いて一覧から読める', () => {
+    registry.history.beginGroup('statementImport.confirm')
+    newEntry(1000)
+    registry.history.endGroup({
+      kind: 'statementImport',
+      institution: '楽天カード',
+      targetAccountName: '現金',
+      files: [{ name: 'a.csv', count: 1 }],
+    })
+
+    expect(registry.history.list()[0].meta).toMatchObject({ institution: '楽天カード', files: [{ name: 'a.csv', count: 1 }] })
+  })
+})
+
 describe('履歴への記録', () => {
   it('Repository経由の書き込みが「リポジトリ名.メソッド名」の操作として記録される', () => {
     newEntry(1000)

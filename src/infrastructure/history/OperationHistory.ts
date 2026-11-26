@@ -1,4 +1,11 @@
 import type { Database } from 'sql.js'
+import {
+  buildOperationDetail,
+  DETAIL_ROW_JSON,
+  type OperationDetail,
+  type OperationMeta,
+  type RowRecord,
+} from './operationDetail'
 
 /** 履歴に保持する操作の既定の上限(計画Issue #202: 50〜100件の範囲で50件) */
 export const DEFAULT_HISTORY_LIMIT = 50
@@ -19,6 +26,10 @@ export interface HistoryOperation {
   /** 記録した時刻(ISO 8601) */
   recordedAt: string
   changes: TableChange[]
+  /** どの仕訳をどう変えたか(計画Issue #295)。仕訳に触れない操作には付かない */
+  detail?: OperationDetail
+  /** 操作グループに添えられた情報(CSV取込のファイル・金融機関など)。無ければ付かない */
+  meta?: OperationMeta
 }
 
 export interface UndoPreview {
@@ -43,7 +54,8 @@ export interface OperationHistory {
   record<T>(label: string, fn: () => T): T
   /** 以降のrecordを1件の操作にまとめ始める(バッチ操作用)。endGroupまで入れ子にしても1件 */
   beginGroup(label: string): void
-  endGroup(): void
+  /** グループを閉じて1件の操作にする。metaを渡すと、その操作に添える(取込のファイル・金融機関など) */
+  endGroup(meta?: OperationMeta): void
   /** 新しい順 */
   list(): HistoryOperation[]
   previewUndoTo(operationId: number): UndoPreview
@@ -64,6 +76,13 @@ interface UndoRecord {
   op: 'insert' | 'update' | 'delete'
   /** この書き込みを打ち消すSQL */
   sql: string
+}
+
+/** 一時表から取り出した直後の記録。逆操作に加えて、詳細を作るための前後の行(JSON)を持つ */
+interface DrainedRecord extends UndoRecord {
+  rowId: number
+  beforeJson: string | null
+  afterJson: string | null
 }
 
 interface StoredOperation extends HistoryOperation {
@@ -108,18 +127,22 @@ export function createOperationHistory(
   let nextId = 1
   let groupDepth = 0
   let groupLabel = ''
-  let groupRecords: UndoRecord[] = []
+  let groupRecords: DrainedRecord[] = []
 
   installTriggers(db)
 
   /** 一時テーブルの記録をメモリへ移す(一時テーブルは空になる) */
-  function drain(): UndoRecord[] {
-    const rows = db.exec(`SELECT tbl, op, undo_sql FROM temp.${LOG_TABLE} ORDER BY seq`)[0]?.values ?? []
+  function drain(): DrainedRecord[] {
+    const rows =
+      db.exec(`SELECT tbl, op, undo_sql, row_id, before_json, after_json FROM temp.${LOG_TABLE} ORDER BY seq`)[0]?.values ?? []
     if (rows.length > 0) db.exec(`DELETE FROM temp.${LOG_TABLE}`)
-    return rows.map(([table, op, sql]) => ({
+    return rows.map(([table, op, sql, rowId, beforeJson, afterJson]) => ({
       table: table as string,
       op: op as UndoRecord['op'],
       sql: sql as string,
+      rowId: rowId as number,
+      beforeJson: beforeJson as string | null,
+      afterJson: afterJson as string | null,
     }))
   }
 
@@ -146,21 +169,38 @@ export function createOperationHistory(
     return [...byTable.values()]
   }
 
-  function commitOperation(label: string, records: UndoRecord[]): void {
+  function commitOperation(label: string, records: DrainedRecord[], meta?: OperationMeta): void {
     if (records.length === 0) return
+    const rowRecords: RowRecord[] = records.map((r) => ({
+      table: r.table,
+      rowId: r.rowId,
+      before: r.beforeJson,
+      after: r.afterJson,
+    }))
+    const detail = buildOperationDetail(db, rowRecords)
     operations.push({
       id: nextId++,
       label,
       recordedAt: new Date().toISOString(),
       changes: summarize(records),
-      undo: records,
+      // 行ごとの前後のJSONは、詳細を作ったら捨てる(取消に要るのは逆操作のSQLだけ)
+      undo: records.map(({ table, op, sql }) => ({ table, op, sql })),
+      ...(detail ? { detail } : {}),
+      ...(meta ? { meta } : {}),
     })
     while (operations.length > limit) operations.shift()
   }
 
   function toPublic(operation: StoredOperation): HistoryOperation {
-    const { id, label, recordedAt, changes } = operation
-    return { id, label, recordedAt, changes: changes.map((c) => ({ ...c })) }
+    const { id, label, recordedAt, changes, detail, meta } = operation
+    return {
+      id,
+      label,
+      recordedAt,
+      changes: changes.map((c) => ({ ...c })),
+      ...(detail ? { detail } : {}),
+      ...(meta ? { meta } : {}),
+    }
   }
 
   function indexOf(operationId: number): number {
@@ -193,14 +233,14 @@ export function createOperationHistory(
       groupDepth += 1
     },
 
-    endGroup(): void {
+    endGroup(meta?: OperationMeta): void {
       if (groupDepth === 0) return
       groupDepth -= 1
       if (groupDepth > 0) return
       // グループの途中でrecordを通らなかった書き込みも、ここで取り込む
       ensureInstalled()
       groupRecords.push(...drain())
-      commitOperation(groupLabel, groupRecords)
+      commitOperation(groupLabel, groupRecords, meta)
       groupRecords = []
     },
 
@@ -276,7 +316,10 @@ function installTriggers(db: Database): void {
        seq INTEGER PRIMARY KEY AUTOINCREMENT,
        tbl TEXT NOT NULL,
        op TEXT NOT NULL,
-       undo_sql TEXT NOT NULL
+       undo_sql TEXT NOT NULL,
+       row_id INTEGER NOT NULL,
+       before_json TEXT,
+       after_json TEXT
      )`,
   )
   db.exec(`CREATE TEMP TABLE IF NOT EXISTS ${CTL_TABLE} (suppress INTEGER NOT NULL)`)
@@ -297,8 +340,17 @@ function installTriggers(db: Database): void {
     if (columns.length === 0) continue
     const t = quoteIdent(table)
     const when = `WHEN (SELECT suppress FROM ${CTL_TABLE}) = 0`
-    const log = (op: string, undoExpr: string) =>
-      `INSERT INTO ${LOG_TABLE} (tbl, op, undo_sql) VALUES (${sqlLiteral(table)}, '${op}', ${undoExpr});`
+    // 詳細(計画Issue #295)を取る表だけ、書き込みの前後の行をJSONで残す。ほかの表はNULL
+    const rowJson = DETAIL_ROW_JSON[table]
+    const log = (op: 'insert' | 'update' | 'delete', undoExpr: string) => {
+      const rowId = op === 'insert' ? 'NEW.rowid' : 'OLD.rowid'
+      const before = rowJson && op !== 'insert' ? rowJson('OLD') : 'NULL'
+      const after = rowJson && op !== 'delete' ? rowJson('NEW') : 'NULL'
+      return (
+        `INSERT INTO ${LOG_TABLE} (tbl, op, undo_sql, row_id, before_json, after_json) ` +
+        `VALUES (${sqlLiteral(table)}, '${op}', ${undoExpr}, ${rowId}, ${before}, ${after});`
+      )
+    }
 
     const oldValues = columns.map((c) => `quote(OLD.${quoteIdent(c)})`).join(` || ',' || `)
     const columnList = columns.map(quoteIdent).join(',')

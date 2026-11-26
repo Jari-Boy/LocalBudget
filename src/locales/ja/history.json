@@ -12,7 +12,27 @@
     "empty": "戻せる操作はまだありません",
     "emptyHint": "仕訳やマスタの操作を行うと、ここに表示されます",
     "willUndo": "戻る",
-    "impactEntries": "仕訳{{count}}件に影響"
+    "impactEntries": "仕訳{{count}}件に影響",
+    "noMemo": "(摘要なし)",
+    "subjectMany": "仕訳 {{count}}件を{{verb}}",
+    "subjectDate": "({{date}})",
+    "subjectRange": "({{from}} 〜 {{to}})",
+    "fileMore": "{{name}} ほか{{count}}ファイル",
+    "changed": "変更: ",
+    "verb": {
+      "created": "作成",
+      "updated": "変更",
+      "deleted": "削除",
+      "mixed": "変更"
+    },
+    "field": {
+      "date": "日付",
+      "memo": "摘要",
+      "comment": "コメント",
+      "amount": "金額",
+      "account": "科目",
+      "lines": "明細"
+    }
   },
   "panel": {
     "heading": "戻す範囲",
@@ -28,7 +48,38 @@
     "clearButton": "選択を解除",
     "confirmText": "{{count}}件の操作を取り消します。この操作は、やり直し(Redo)できません。保存まで1回で行い、途中で失敗した場合は何も変わりません。",
     "confirmButton": "{{count}}件を戻して保存する",
-    "cancelButton": "キャンセル"
+    "cancelButton": "キャンセル",
+    "diff": {
+      "created": "この操作で作成された内容(戻すと削除されます)",
+      "updated": "この操作で変わった内容(戻すと左の値になります)",
+      "deleted": "この操作で削除された内容(戻すと復元されます)",
+      "many": {
+        "created": "この操作で作成された仕訳 {{count}}件(戻すとすべて削除されます)",
+        "updated": "この操作で変わった仕訳 {{count}}件(戻すとすべて元の内容になります)",
+        "deleted": "この操作で削除された仕訳 {{count}}件(戻すとすべて復元されます)",
+        "mixed": "この操作で変わった仕訳 {{count}}件(戻すとすべて元の状態になります)"
+      },
+      "institution": "金融機関",
+      "target": "取込先",
+      "files": "ファイル",
+      "accounts": "使った科目",
+      "restAccounts": "ほか{{accounts}}科目",
+      "count": "{{count}}件",
+      "sampleHead": "仕訳(先頭の{{count}}件)",
+      "more": "ほか{{count}}件"
+    }
+  },
+  "diff": {
+    "none": "なし",
+    "field": {
+      "date": "日付",
+      "memo": "摘要",
+      "comment": "コメント"
+    },
+    "side": {
+      "debit": "借方",
+      "credit": "貸方"
+    }
   },
   "done": "{{count}}件の操作を戻して、保存しました。",
   "error": {

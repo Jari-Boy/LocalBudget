@@ -50,4 +50,40 @@ describe('runInHistoryGroup', () => {
   it('履歴APIが無ければ関数だけ実行する', async () => {
     expect(await runInHistoryGroup(undefined, 'x', async () => 'ok')).toBe('ok')
   })
+
+  it('メタ情報の取得関数を渡すと、関数の実行後に取得した値をendGroupへ渡す(計画Issue #295)', async () => {
+    const received: unknown[] = []
+    const api = {
+      beginGroup: async () => {},
+      endGroup: async (meta?: unknown) => {
+        received.push(meta)
+      },
+    }
+    let meta: { kind: 'statementImport'; institution: string | null; targetAccountName: string; files: [] } | undefined
+
+    await runInHistoryGroup(
+      api,
+      'statementImport.confirm',
+      async () => {
+        meta = { kind: 'statementImport', institution: '楽天カード', targetAccountName: '楽天カード(未払金)', files: [] }
+      },
+      () => meta,
+    )
+
+    expect(received).toEqual([{ kind: 'statementImport', institution: '楽天カード', targetAccountName: '楽天カード(未払金)', files: [] }])
+  })
+
+  it('メタ情報の取得関数を渡さなければ、endGroupにはメタ情報が渡らない', async () => {
+    const received: unknown[] = []
+    const api = {
+      beginGroup: async () => {},
+      endGroup: async (meta?: unknown) => {
+        received.push(meta)
+      },
+    }
+
+    await runInHistoryGroup(api, 'x', async () => 1)
+
+    expect(received).toEqual([undefined])
+  })
 })

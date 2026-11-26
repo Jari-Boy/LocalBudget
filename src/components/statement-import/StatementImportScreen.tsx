@@ -40,6 +40,7 @@ import type { KeywordRule } from '../../domain/keyword-rule/KeywordRule'
 import type { KeywordRuleRepository } from '../../domain/keyword-rule/KeywordRuleRepository'
 import { resolveMultiFileMappingCandidates, type MultiFileMappingMatch } from '../../domain/statement-import/resolveMultiFileMappingCandidates'
 import { runInHistoryGroup, type HistoryGroupApi } from '../../infrastructure/history/historyGroupRunner'
+import type { OperationMeta } from '../../infrastructure/history/operationDetail'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { useEscapeToClear } from '../common/range-selection/useEscapeToClear'
 import { createRangeSelection, useRangeAnchor } from '../common/range-selection/useRangeSelection'
@@ -363,6 +364,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   /** 名義の無い科目で選んだ「誰の明細か」。どの科目で選んだかを持ち、科目が変わったら無効になる */
   const [ownerChoice, setOwnerChoice] = useState<{ accountId: number; memberId: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  /** 直近の確定で、操作履歴の取込の操作に添える情報(確定の結果から作る。計画Issue #295) */
+  const confirmMetaRef = useRef<OperationMeta | undefined>(undefined)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   // 明細の範囲選択の基点。選択対象(表示中の行)は、読み込み前の早期 return のあとで決まるため、基点だけをここ(早期 return の前)で持つ
   const rangeAnchor = useRangeAnchor<number>()
@@ -1823,7 +1826,13 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   /** 確定(docs/domain/statement-import.md 1.5手順7)。1件が失敗しても残りの確定を続ける(継続処理方式) */
   async function handleConfirm(options: { all?: boolean } = {}): Promise<ConfirmOutcome> {
-    return runInHistoryGroup(history, 'statementImport.confirm', () => confirmImpl(options.all === true))
+    confirmMetaRef.current = undefined
+    return runInHistoryGroup(
+      history,
+      'statementImport.confirm',
+      () => confirmImpl(options.all === true),
+      () => confirmMetaRef.current,
+    )
   }
 
   /** allがtrueなら、絞り込みに関わらず全件が対象。通常は、絞り込み中は表示中の行だけ(計画Issue #258) */
@@ -1892,6 +1901,18 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     const failedCount = Object.keys(failed).length
 
     if (succeeded.size > 0) {
+      // 操作履歴の取込の操作に、金融機関・取込先・ファイルごとの確定件数を添える(計画Issue #295)
+      const countByFile = new Map<string, number>()
+      for (const index of succeeded) {
+        const name = records[index].fileName
+        countByFile.set(name, (countByFile.get(name) ?? 0) + 1)
+      }
+      confirmMetaRef.current = {
+        kind: 'statementImport',
+        institution: session.definition.formatGroupId,
+        targetAccountName: account.name,
+        files: [...countByFile.entries()].map(([name, count]) => ({ name, count })),
+      }
       // 選んで取り込んだ定義を、取込先の科目に紐づける(次回から候補の先頭に出る)
       await Promise.resolve(importMappingDefinitionRepository.linkAccount(session.definition.id, account.id))
     }

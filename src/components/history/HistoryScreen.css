@@ -350,3 +350,127 @@
     position: static;
   }
 }
+
+/* ---- 操作の詳細(計画Issue #295、承認済みモックアップ): 一覧の対象名と、右パネルの前→後・内容の一覧 ---- */
+.history__row-sub {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.history__changed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.history__tag--neutral {
+  background: var(--color-tag-neutral-bg);
+  color: var(--color-tag-neutral-text);
+}
+
+.history__diff {
+  margin-top: 6px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.history__diff-caption {
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--color-field-subtle);
+  border-bottom: 1px solid var(--color-border-soft);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.history__diff-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history__diff-rows li {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border-soft);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.history__diff-rows li:last-child {
+  border-bottom: 0;
+}
+
+.history__diff-rows--four li {
+  grid-template-columns: 78px minmax(0, 1fr) 64px auto;
+}
+
+.history__diff-label {
+  color: var(--color-text-muted);
+}
+
+.history__diff-value {
+  overflow-wrap: anywhere;
+}
+
+.history__diff-block {
+  display: block;
+}
+
+.history__diff-count {
+  color: var(--color-text-muted);
+}
+
+.history__diff-change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.history__old,
+.history__new {
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+}
+
+.history__old {
+  background: var(--color-danger-soft);
+}
+
+.history__new {
+  background: var(--color-accent-soft);
+}
+
+.history__diff-arrow {
+  color: var(--color-text-muted);
+}
+
+.history__diff-amount {
+  text-align: right;
+}
+
+.history__diff-subhead {
+  margin: 0;
+  padding: 4px 8px;
+  border-top: 1px solid var(--color-border-soft);
+  border-bottom: 1px solid var(--color-border-soft);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.history__diff-more {
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--color-field-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
