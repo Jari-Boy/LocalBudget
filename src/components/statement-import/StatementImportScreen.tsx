@@ -954,7 +954,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       const count = keywordApplyResult(view, item)?.applied ?? 0
       const overwriteCount = keywordApplyResult(view, item, true)?.applied ?? 0
       // ホバーの説明は、何を更新するボタンかだけを短く伝える。件数はボタンの表示とaria-label、書き換える内容は上書きの確認ダイアログにある
-      const title = count === 0 ? t('applyKeywordNoneTitle') : t('applyKeywordTitle')
+      // 適用は未入力の行だけが対象なので、0行のときは「未入力の行はありません」。含む行そのものが無いのは、上書き(右)のほうで伝える
+      const title = count === 0 ? t('applyKeywordNoneUnfilledTitle') : t('applyKeywordTitle')
       const applyLabel = count === 0 ? t('applyKeywordNone') : t('applyKeywordCount', { count })
       const overwriteLabel = overwriteCount === 0 ? t('overwriteKeywordNone') : t('overwriteKeywordCount', { count: overwriteCount })
       return (
@@ -977,7 +978,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             className="import-kw-btn import-kw-btn--danger"
             disabled={overwriteCount === 0}
             aria-label={overwriteLabel}
-            title={overwriteCount === 0 ? overwriteLabel : t('overwriteKeywordTitle')}
+            title={overwriteCount === 0 ? t('overwriteKeywordNoneTitle') : t('overwriteKeywordTitle')}
             onClick={() => requestKeywordOverwrite(view, item, name)}
           >
             <svg viewBox="0 0 16 16" aria-hidden="true" className="import-icon">

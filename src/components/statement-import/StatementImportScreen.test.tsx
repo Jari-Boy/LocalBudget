@@ -1757,7 +1757,9 @@ describe('StatementImportScreen', () => {
         await openCounterpartySettings('スーパー 新宿店')
         await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('スーパー'))
 
-        expect(settings().getByRole('button', { name: '上書きできるほかの行はありません' })).toBeDisabled()
+        const button = settings().getByRole('button', { name: '上書きできるほかの行はありません' })
+        expect(button).toBeDisabled()
+        expect(button).toHaveAttribute('title', 'このキーワードを含む行はありません。')
       })
     })
 
@@ -1793,12 +1795,22 @@ describe('StatementImportScreen', () => {
         expect(settings().getByRole('button', { name: '1行に適用' })).toHaveAttribute('title', 'このキーワードを含む未入力の行を更新')
       })
 
-      it('該当する行が無いキーワードは、ボタンを無効にして「ほかに該当なし」と出す', async () => {
+      it('該当する行が無いキーワードは、ボタンを無効にして「ほかに該当なし」と出し、ホバーでは「未入力の行はありません」と伝える', async () => {
         await setupPickedRow('スーパー 新宿店', (id) => keywordRules.create({ pattern: 'スーパー', counterpartyId: id }))
         await openCounterpartySettings('スーパー 新宿店')
         await waitFor(() => expect(settings().getByLabelText('キーワード1')).toHaveValue('スーパー'))
 
-        expect(settings().getByRole('button', { name: 'ほかに該当なし' })).toBeDisabled()
+        const button = settings().getByRole('button', { name: 'ほかに該当なし' })
+        expect(button).toBeDisabled()
+        expect(button).toHaveAttribute('title', 'このキーワードを含む未入力の行はありません。')
+      })
+
+      it('含む行はあるが、すべて入力済みで適用できないときも、ホバーは「未入力の行はありません」(上書きは押せる)', async () => {
+        await setupApplyCase()
+        fireEvent.click(settings().getByRole('button', { name: '1行に適用' }))
+
+        // 4月の行は手で選んだので、適用はもう0行。上書きの対象としては残る
+        expect(settings().getByRole('button', { name: 'ほかに該当なし' })).toHaveAttribute('title', 'このキーワードを含む未入力の行はありません。')
       })
 
       it('押したキーワードだけで適用し、ほかのキーワードにだけ一致する行には入れない', async () => {
