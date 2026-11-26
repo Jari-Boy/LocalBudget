@@ -9,10 +9,12 @@ export interface QuickCreateGroupField {
   /** 選べるグループ。候補の組み立てと階層のインデントは共通の選択欄が行う */
   groups: readonly EntityGroup[]
   /**
-   * 渡すと、選択欄の末尾に「+ グループを新規追加」を出す。名前だけで最上位のグループを作り、作ったグループのidを返す
-   * (入れ子や並び順はグループ管理画面で整える)。作ったグループはそのまま選ばれる
+   * 渡すと、選択欄の末尾に「+ グループを新規追加」を出す。名前と親グループ(未選択ならnull=最上位)でグループを作り、
+   * 作ったグループのidを返す(計画Issue #290)。作ったグループはそのまま選ばれる
    */
-  onCreate?: (name: string) => Promise<number>
+  onCreate?: (name: string, parentGroupId: number | null) => Promise<number>
+  /** 未選択の項目の表示。既定は「未分類」。親グループの選択欄では「最上位」 */
+  emptyLabel?: string
 }
 
 export interface QuickCreateDialogProps {
@@ -108,7 +110,7 @@ export function QuickCreateDialog({
               label={groupField.label}
               groups={groupField.groups}
               value={groupId}
-              emptyLabel={t('groupUnclassified')}
+              emptyLabel={groupField.emptyLabel ?? t('groupUnclassified')}
               onChange={setGroupId}
               onCreate={groupField.onCreate ? () => setGroupDialogOpen(true) : undefined}
               createLabel={t('createGroup')}
@@ -132,8 +134,9 @@ export function QuickCreateDialog({
       <QuickCreateDialog
         title={t('createGroupTitle', { group: groupField.label })}
         nameLabel={t('createGroupName')}
-        onSubmit={async (groupName) => {
-          const createdId = await groupField.onCreate!(groupName)
+        groupField={{ label: t('parentGroupLabel'), groups: groupField.groups, emptyLabel: t('parentGroupTop') }}
+        onSubmit={async (groupName, parentGroupId) => {
+          const createdId = await groupField.onCreate!(groupName, parentGroupId)
           setGroupId(createdId)
           setGroupDialogOpen(false)
         }}

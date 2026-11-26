@@ -1804,15 +1804,15 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     if (keywordSaveFailed) setError(t('newKeywordSaveError'))
   }
 
-  /** 追加ダイアログのグループ欄から、名前だけで最上位のグループをその場で作る(入れ子や並び順はグループ管理画面で) */
-  async function createCounterpartyGroup(name: string): Promise<number> {
-    const created = await Promise.resolve(counterpartyGroupRepository.create({ name }))
+  /** 追加ダイアログのグループ欄から、名前と親グループ(nullなら最上位)でグループをその場で作る(並び順はグループ管理画面で) */
+  async function createCounterpartyGroup(name: string, parentGroupId: number | null): Promise<number> {
+    const created = await Promise.resolve(counterpartyGroupRepository.create({ name, parentGroupId }))
     setData((prev) => (prev ? { ...prev, counterpartyGroups: [...prev.counterpartyGroups, created] } : prev))
     return created.id
   }
 
-  async function createProjectGroup(name: string): Promise<number> {
-    const created = await Promise.resolve(projectGroupRepository.create({ name }))
+  async function createProjectGroup(name: string, parentGroupId: number | null): Promise<number> {
+    const created = await Promise.resolve(projectGroupRepository.create({ name, parentGroupId }))
     setData((prev) => (prev ? { ...prev, projectGroups: [...prev.projectGroups, created] } : prev))
     return created.id
   }

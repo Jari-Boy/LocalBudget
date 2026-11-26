@@ -110,6 +110,8 @@
   "createGroup": "グループを新規追加",
   "createGroupTitle": "{{group}}を追加",
   "createGroupName": "グループ名",
+  "parentGroupLabel": "親グループ",
+  "parentGroupTop": "最上位",
   "counterpartyGroupLabel": "取引先グループ",
   "projectGroupLabel": "プロジェクトグループ",
   "useRowAccount": "この行の科目を入れる",

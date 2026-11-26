@@ -747,7 +747,7 @@ describe('JournalScreen', () => {
       fireEvent.click(within(screen.getByRole('dialog', { name: '取引先グループ' })).getByRole('button', { name: '+ グループを新規追加' }))
       fireEvent.change(dialog('取引先グループを追加').getByLabelText('グループ名'), { target: { value: '新しい系' } })
       fireEvent.click(dialog('取引先グループを追加').getByRole('button', { name: '追加' }))
-      await waitFor(() => expect(props.counterpartyGroupRepository.create).toHaveBeenCalledWith({ name: '新しい系' }))
+      await waitFor(() => expect(props.counterpartyGroupRepository.create).toHaveBeenCalledWith({ name: '新しい系', parentGroupId: null }))
       expect(await dialog('取引先を追加').findByRole('button', { name: /^取引先グループ: 新しい系/ })).toBeInTheDocument()
       fireEvent.change(dialog('取引先を追加').getByLabelText('取引先名'), { target: { value: '新しい店' } })
       fireEvent.click(dialog('取引先を追加').getByRole('button', { name: '追加' }))

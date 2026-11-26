@@ -1882,8 +1882,8 @@ export function JournalScreen(props: JournalScreenProps) {
           groupField={{
             label: 'プロジェクトグループ',
             groups: data?.projectGroups ?? [],
-            onCreate: async (name) => {
-              const created = await props.projectGroupRepository.create({ name })
+            onCreate: async (name, parentGroupId) => {
+              const created = await props.projectGroupRepository.create({ name, parentGroupId })
               setData((prev) => (prev === null ? prev : { ...prev, projectGroups: [...prev.projectGroups, created] }))
               return created.id
             },
@@ -1904,8 +1904,8 @@ export function JournalScreen(props: JournalScreenProps) {
           groupField={{
             label: '取引先グループ',
             groups: data?.counterpartyGroups ?? [],
-            onCreate: async (name) => {
-              const created = await props.counterpartyGroupRepository.create({ name })
+            onCreate: async (name, parentGroupId) => {
+              const created = await props.counterpartyGroupRepository.create({ name, parentGroupId })
               setData((prev) => (prev === null ? prev : { ...prev, counterpartyGroups: [...prev.counterpartyGroups, created] }))
               return created.id
             },
