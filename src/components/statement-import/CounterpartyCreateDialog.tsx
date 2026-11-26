@@ -24,8 +24,8 @@ export interface CounterpartyCreateDialogProps {
   /** 「含む行の数」の対象にする、未確定の行の摘要 */
   descriptions: readonly string[]
   groups: readonly EntityGroup[]
-  /** 取引先グループをその場で作る(名前だけ、最上位)。作ったグループのidを返す */
-  onCreateGroup: (name: string) => Promise<number>
+  /** 取引先グループをその場で作る(名前と親グループ。nullなら最上位)。作ったグループのidを返す */
+  onCreateGroup: (name: string, parentGroupId: number | null) => Promise<number>
   accountCategories: readonly TreeSelectCategory[]
   /**
    * 渡すと、各キーワードの科目の選択肢の末尾に「+ 科目を新規追加」を出す(計画Issue #218)。

@@ -60,7 +60,7 @@ export interface RuleMasterTabProps {
     >
   >
   accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll' | 'create'>>
-  accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
+  accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll' | 'create'>>
   counterpartyRepository: MaybeAsync<Pick<CounterpartyRepository, 'findAll' | 'create'>>
   counterpartyGroupRepository: MaybeAsync<Pick<CounterpartyGroupRepository, 'findAll' | 'create'>>
   projectRepository: MaybeAsync<Pick<ProjectRepository, 'findAll' | 'create'>>
@@ -400,8 +400,8 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           groupField={{
             label: '取引先グループ',
             groups: data.counterpartyGroups,
-            onCreate: async (name) => {
-              const created = await Promise.resolve(counterpartyGroupRepository.create({ name }))
+            onCreate: async (name, parentGroupId) => {
+              const created = await Promise.resolve(counterpartyGroupRepository.create({ name, parentGroupId }))
               setData((prev) => (prev === null ? prev : { ...prev, counterpartyGroups: [...prev.counterpartyGroups, created] }))
               return created.id
             },
@@ -425,6 +425,11 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
               householdMembers={data.members}
               initialCategory="expense"
               today={today}
+              onCreateGroup={async (input) => {
+                const created = await Promise.resolve(accountGroupRepository.create(input))
+                setData((prev) => (prev === null ? prev : { ...prev, accountGroups: [...prev.accountGroups, created] }))
+                return created
+              }}
               onCreated={(created) => {
                 setData((prev) => (prev === null ? prev : { ...prev, accounts: [...prev.accounts, created] }))
                 accountDialog.apply(created.id)
@@ -442,8 +447,8 @@ export function RuleMasterTab(props: RuleMasterTabProps) {
           groupField={{
             label: 'プロジェクトグループ',
             groups: data.projectGroups,
-            onCreate: async (name) => {
-              const created = await Promise.resolve(projectGroupRepository.create({ name }))
+            onCreate: async (name, parentGroupId) => {
+              const created = await Promise.resolve(projectGroupRepository.create({ name, parentGroupId }))
               setData((prev) => (prev === null ? prev : { ...prev, projectGroups: [...prev.projectGroups, created] }))
               return created.id
             },

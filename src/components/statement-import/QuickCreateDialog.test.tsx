@@ -3,7 +3,7 @@
  * QuickCreateDialog(取引先・プロジェクトを名前でその場に追加する共通のダイアログ、計画Issue #151・#207)のコンポーネントテスト。
  * 取込・仕訳・ルール・割勘の4画面で使うため、グループの選択欄を渡さない画面(割勘)ではグループ欄が出ないこと、
  * 名前の入力欄がほかの項目と同じ見た目であること、グループを選んで作ること、その場でのグループの新規作成
- * (名前だけ・キャンセルで何も作らない・作ったグループがそのまま選ばれる)、追加を止める検証、作成の失敗の表示を確認する。
+ * (名前と親グループ(既定は最上位)・キャンセルで何も作らない・作ったグループがそのまま選ばれる。計画Issue #290)、追加を止める検証、作成の失敗の表示を確認する。
  * 外部依存はなし(Repositoryは持たず、呼び出し側のコールバックをvi.fnで置き換える)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -110,10 +110,35 @@ describe('QuickCreateDialog', () => {
     fireEvent.change(dialog('プロジェクトグループを追加').getByLabelText('グループ名'), { target: { value: '新しい系' } })
     fireEvent.click(dialog('プロジェクトグループを追加').getByRole('button', { name: '追加' }))
 
-    await waitFor(() => expect(onCreateGroup).toHaveBeenCalledWith('新しい系'))
+    await waitFor(() => expect(onCreateGroup).toHaveBeenCalledWith('新しい系', null))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'プロジェクトグループを追加' })).not.toBeInTheDocument())
     fireEvent.click(dialog('プロジェクトを追加').getByRole('button', { name: '追加' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('夏', 9))
+  })
+
+  it('グループの追加に「親グループ」欄があり、既定は最上位(未選択)で、既存のグループを親に選べる', async () => {
+    const onCreateGroup = vi.fn(async () => 9)
+    renderDialog({ groupField: { label: 'プロジェクトグループ', groups: GROUPS, onCreate: onCreateGroup } })
+
+    fireEvent.click(screen.getByRole('button', { name: /^プロジェクトグループ/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクトグループ' })).getByRole('button', { name: '+ グループを新規追加' }))
+    expect(dialog('プロジェクトグループを追加').getByRole('button', { name: /^親グループ: 最上位/ })).toBeInTheDocument()
+    fireEvent.change(dialog('プロジェクトグループを追加').getByLabelText('グループ名'), { target: { value: '国内' } })
+    fireEvent.click(dialog('プロジェクトグループを追加').getByRole('button', { name: /^親グループ/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '親グループ' })).getByRole('button', { name: '旅行系' }))
+    fireEvent.click(dialog('プロジェクトグループを追加').getByRole('button', { name: '追加' }))
+
+    await waitFor(() => expect(onCreateGroup).toHaveBeenCalledWith('国内', 3))
+  })
+
+  it('グループの追加の「親グループ」欄には、「+ グループを新規追加」を出さない(入れ子にしない)', () => {
+    renderDialog({ groupField: { label: 'プロジェクトグループ', groups: GROUPS, onCreate: vi.fn(async () => 9) } })
+
+    fireEvent.click(screen.getByRole('button', { name: /^プロジェクトグループ/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'プロジェクトグループ' })).getByRole('button', { name: '+ グループを新規追加' }))
+    fireEvent.click(dialog('プロジェクトグループを追加').getByRole('button', { name: /^親グループ/ }))
+
+    expect(within(screen.getByRole('dialog', { name: '親グループ' })).queryByRole('button', { name: '+ グループを新規追加' })).not.toBeInTheDocument()
   })
 
   it('グループの追加をキャンセルすると、グループを作らず、選択も変わらない', () => {

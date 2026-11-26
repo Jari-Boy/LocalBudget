@@ -9,10 +9,12 @@ export interface QuickCreateGroupField {
   /** 選べるグループ。候補の組み立てと階層のインデントは共通の選択欄が行う */
   groups: readonly EntityGroup[]
   /**
-   * 渡すと、選択欄の末尾に「+ グループを新規追加」を出す。名前だけで最上位のグループを作り、作ったグループのidを返す
-   * (入れ子や並び順はグループ管理画面で整える)。作ったグループはそのまま選ばれる
+   * 渡すと、選択欄の末尾に「+ グループを新規追加」を出す。名前と親グループ(未選択ならnull=最上位)でグループを作り、
+   * 作ったグループのidを返す(計画Issue #290)。作ったグループはそのまま選ばれる
    */
-  onCreate?: (name: string) => Promise<number>
+  onCreate?: (name: string, parentGroupId: number | null) => Promise<number>
+  /** 未選択の項目の表示。既定は「未分類」。親グループの選択欄では「最上位」 */
+  emptyLabel?: string
 }
 
 export interface QuickCreateDialogProps {
@@ -34,6 +36,8 @@ export interface QuickCreateDialogProps {
   nameNotice?: (name: string) => string | null
   /** 追加に失敗したときの文言。既定は取引先の文言 */
   failedMessage?: string
+  /** 別のダイアログ(科目の登録フォームなど)の上に重ねて出すとき。背面の重なり順を1段上げる(計画Issue #287・#290) */
+  nested?: boolean
 }
 
 /**
@@ -52,6 +56,7 @@ export function QuickCreateDialog({
   initialName,
   nameNotice,
   failedMessage,
+  nested,
 }: QuickCreateDialogProps) {
   const { t } = useTranslation('statementImport')
   const nameId = useId()
@@ -78,7 +83,7 @@ export function QuickCreateDialog({
   // body直下に出す。画面の中の入れ子の重なり順(固定したタブ・バーなど)に左右されず、全体を暗くするため(計画Issue #269の実機確認での指摘)
   return createPortal(
     <>
-    <div className="import-dialog__backdrop">
+    <div className={`import-dialog__backdrop${nested ? ' import-dialog__backdrop--nested' : ''}`}>
       <form
         role="dialog"
         aria-modal="true"
@@ -108,7 +113,7 @@ export function QuickCreateDialog({
               label={groupField.label}
               groups={groupField.groups}
               value={groupId}
-              emptyLabel={t('groupUnclassified')}
+              emptyLabel={groupField.emptyLabel ?? t('groupUnclassified')}
               onChange={setGroupId}
               onCreate={groupField.onCreate ? () => setGroupDialogOpen(true) : undefined}
               createLabel={t('createGroup')}
@@ -132,8 +137,9 @@ export function QuickCreateDialog({
       <QuickCreateDialog
         title={t('createGroupTitle', { group: groupField.label })}
         nameLabel={t('createGroupName')}
-        onSubmit={async (groupName) => {
-          const createdId = await groupField.onCreate!(groupName)
+        groupField={{ label: t('parentGroupLabel'), groups: groupField.groups, emptyLabel: t('parentGroupTop') }}
+        onSubmit={async (groupName, parentGroupId) => {
+          const createdId = await groupField.onCreate!(groupName, parentGroupId)
           setGroupId(createdId)
           setGroupDialogOpen(false)
         }}

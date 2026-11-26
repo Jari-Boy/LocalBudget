@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { Account } from '../../domain/account/Account'
 import type { AccountRepository } from '../../domain/account/AccountRepository'
 import type { AccountGroupRepository } from '../../domain/account-group/AccountGroupRepository'
-import type { AccountGroup } from '../../domain/account-group/AccountGroup'
+import type { AccountGroup, CreateAccountGroupInput } from '../../domain/account-group/AccountGroup'
 import type { Counterparty } from '../../domain/counterparty/Counterparty'
 import type { CounterpartyRepository } from '../../domain/counterparty/CounterpartyRepository'
 import type { CounterpartyGroup } from '../../domain/counterparty-group/CounterpartyGroup'
@@ -141,7 +141,7 @@ export interface StatementImportScreenProps {
   /** 確定(複数の仕訳の作成)を操作履歴上1件にまとめる(計画Issue #202)。省略時はまとめない */
   history?: HistoryGroupApi
   accountRepository: MaybeAsync<Pick<AccountRepository, 'findAll' | 'create'>>
-  accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll'>>
+  accountGroupRepository: MaybeAsync<Pick<AccountGroupRepository, 'findAll' | 'create'>>
   importMappingDefinitionRepository: MaybeAsync<
     Pick<ImportMappingDefinitionRepository, 'findAll' | 'create' | 'linkAccount'>
   >
@@ -1804,15 +1804,22 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     if (keywordSaveFailed) setError(t('newKeywordSaveError'))
   }
 
-  /** 追加ダイアログのグループ欄から、名前だけで最上位のグループをその場で作る(入れ子や並び順はグループ管理画面で) */
-  async function createCounterpartyGroup(name: string): Promise<number> {
-    const created = await Promise.resolve(counterpartyGroupRepository.create({ name }))
+  /** 追加ダイアログのグループ欄から、名前と親グループ(nullなら最上位)でグループをその場で作る(並び順はグループ管理画面で) */
+  async function createCounterpartyGroup(name: string, parentGroupId: number | null): Promise<number> {
+    const created = await Promise.resolve(counterpartyGroupRepository.create({ name, parentGroupId }))
     setData((prev) => (prev ? { ...prev, counterpartyGroups: [...prev.counterpartyGroups, created] } : prev))
     return created.id
   }
 
-  async function createProjectGroup(name: string): Promise<number> {
-    const created = await Promise.resolve(projectGroupRepository.create({ name }))
+  /** 科目の登録フォームの所属グループ欄から、科目グループをその場で作る(計画Issue #290) */
+  async function createAccountGroup(input: CreateAccountGroupInput): Promise<AccountGroup> {
+    const created = await Promise.resolve(accountGroupRepository.create(input))
+    setData((prev) => (prev ? { ...prev, accountGroups: [...prev.accountGroups, created] } : prev))
+    return created
+  }
+
+  async function createProjectGroup(name: string, parentGroupId: number | null): Promise<number> {
+    const created = await Promise.resolve(projectGroupRepository.create({ name, parentGroupId }))
     setData((prev) => (prev ? { ...prev, projectGroups: [...prev.projectGroups, created] } : prev))
     return created.id
   }
@@ -3110,6 +3117,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               groups={data.accountGroups}
               householdMembers={data.members}
               initialCategory="expense"
+              onCreateGroup={createAccountGroup}
               onCreated={(created) => {
                 setData((prev) => (prev ? { ...prev, accounts: [...prev.accounts, created] } : prev))
                 defaultAccountCreate(created.id)
@@ -3133,6 +3141,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               householdMembers={data.members}
               // 取込先は資産、相手科目は費用が既定(計画Issue #218)
               initialCategory={createTarget.kind === 'targetAccount' ? 'asset' : 'expense'}
+              onCreateGroup={createAccountGroup}
               mappingLinking={{
                 definitions: allDefinitions,
                 repository: importMappingDefinitionRepository,
