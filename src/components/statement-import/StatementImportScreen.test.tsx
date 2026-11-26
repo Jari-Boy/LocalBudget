@@ -1697,6 +1697,12 @@ describe('StatementImportScreen', () => {
         expect(settings().getByRole('button', { name: '1行に適用' })).toBeEnabled()
       })
 
+      it('ツールチップに、入力済みの行も含めてすべて更新するボタンだと出る', async () => {
+        await setupApplyCase()
+
+        expect(settings().getByRole('button', { name: '入力済みも含めて2行を上書き' })).toHaveAttribute('title', 'このキーワードを含むすべての行を更新')
+      })
+
       it('押すと確認ダイアログが出て、押しただけでは行を書き換えない。入力済みの行数も伝える', async () => {
         await setupApplyCase()
 
@@ -1781,14 +1787,10 @@ describe('StatementImportScreen', () => {
         expect(settings().getByRole('button', { name: 'ほかに該当なし' })).toBeDisabled()
       })
 
-      it('ツールチップに、何をどの行数に入れるかが出る', async () => {
+      it('ツールチップに、何を更新するボタンかが出る(未入力の行だけ。件数は表示とaria-labelにある)', async () => {
         await setupApplyCase()
 
-        const title = settings().getByRole('button', { name: '1行に適用' }).getAttribute('title') ?? ''
-
-        expect(title).toContain('ニチケイ')
-        expect(title).toContain('1行')
-        expect(title).toContain('スーパーA')
+        expect(settings().getByRole('button', { name: '1行に適用' })).toHaveAttribute('title', 'このキーワードを含む未入力の行を更新')
       })
 
       it('該当する行が無いキーワードは、ボタンを無効にして「ほかに該当なし」と出す', async () => {

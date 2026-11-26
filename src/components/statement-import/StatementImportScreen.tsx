@@ -953,18 +953,8 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     return (item: KeywordListItem) => {
       const count = keywordApplyResult(view, item)?.applied ?? 0
       const overwriteCount = keywordApplyResult(view, item, true)?.applied ?? 0
-      const accountName = item.accountId == null ? undefined : accountList.find((a) => a.id === item.accountId)?.name
-      const title =
-        count === 0
-          ? t('applyKeywordNoneTitle')
-          : view.counterpartyId === null
-            ? t('applyKeywordTitleAccount', { keyword: item.text, count, name })
-            : t('applyKeywordTitleCounterparty', {
-                keyword: item.text,
-                count,
-                name,
-                account: accountName === undefined ? '' : t('applyKeywordTitleWithAccount', { account: accountName }),
-              })
+      // ホバーの説明は、何を更新するボタンかだけを短く伝える。件数はボタンの表示とaria-label、書き換える内容は上書きの確認ダイアログにある
+      const title = count === 0 ? t('applyKeywordNoneTitle') : t('applyKeywordTitle')
       const applyLabel = count === 0 ? t('applyKeywordNone') : t('applyKeywordCount', { count })
       const overwriteLabel = overwriteCount === 0 ? t('overwriteKeywordNone') : t('overwriteKeywordCount', { count: overwriteCount })
       return (
@@ -987,7 +977,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
             className="import-kw-btn import-kw-btn--danger"
             disabled={overwriteCount === 0}
             aria-label={overwriteLabel}
-            title={overwriteCount === 0 ? overwriteLabel : t('overwriteKeywordTitle', { keyword: item.text, count: overwriteCount, name })}
+            title={overwriteCount === 0 ? overwriteLabel : t('overwriteKeywordTitle')}
             onClick={() => requestKeywordOverwrite(view, item, name)}
           >
             <svg viewBox="0 0 16 16" aria-hidden="true" className="import-icon">
