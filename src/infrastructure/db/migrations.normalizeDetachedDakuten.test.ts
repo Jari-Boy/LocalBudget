@@ -11,11 +11,12 @@ import { describe, expect, it } from 'vitest'
 import type { Database } from 'sql.js'
 import { createTestDatabase } from './createTestDatabase'
 import { LATEST_SCHEMA_SQL, LATEST_SCHEMA_VERSION, getUserVersion, runMigrations } from './migrations'
+import { toSchemaV11 } from './schemaV5ForTests'
 
-/** v9 のDB(最新のDDLを流し、user_version = 9にしたもの。v10・v11は表の形を変えない) */
+/** v9 のDB(最新のDDLを流し、user_version = 9にしたもの。v10・v11は表の形を変えない。v12で足した列は取り除く) */
 async function createV9Database(): Promise<Database> {
   const db = await createTestDatabase()
-  for (const sql of LATEST_SCHEMA_SQL) db.run(sql)
+  for (const sql of LATEST_SCHEMA_SQL) db.run(toSchemaV11(sql))
   db.run('PRAGMA user_version = 9')
   db.run("INSERT INTO household_members (id, name) VALUES (1, '自分')")
   db.run("INSERT INTO counterparties (id, name) VALUES (1, 'YJカード'), (2, '別の取引先')")
@@ -27,15 +28,15 @@ const rules = (db: Database) => db.exec('SELECT id, pattern, counterparty_id, ac
 const memos = (db: Database) => (db.exec('SELECT id, memo FROM journal_entries ORDER BY id')[0]?.values ?? []).map((v) => [v[0], v[1]])
 
 describe('スキーマ v9 → v10(キーワードの分離した濁点の再正規化)', () => {
-  it('分離した濁点を含むキーワードが1文字にそろい、バージョンが11になる', async () => {
+  it('分離した濁点を含むキーワードが1文字にそろい、バージョンが最新になる', async () => {
     const db = await createV9Database()
     db.run("INSERT INTO keyword_rules (id, pattern, counterparty_id, account_id) VALUES (1, 'ワイシ ゙エイカート ゙', 1, NULL)")
 
     runMigrations(db)
 
     expect(rules(db)).toEqual([[1, 'ワイジエイカード', 1, null]])
-    expect(getUserVersion(db)).toBe(11)
-    expect(LATEST_SCHEMA_VERSION).toBe(11)
+    expect(getUserVersion(db)).toBe(LATEST_SCHEMA_VERSION)
+    expect(LATEST_SCHEMA_VERSION).toBeGreaterThanOrEqual(11)
   })
 
   it('同じ取引先で、分離した濁点と1文字の濁点のキーワードが重なれば1件にまとまり、科目付きを残す', async () => {

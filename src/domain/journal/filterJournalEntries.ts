@@ -38,6 +38,7 @@ export function filterJournalEntries(
   const projectIdSet = isActive(filter.projectIds) ? new Set(filter.projectIds) : null
   const counterpartyIdSet = isActive(filter.counterpartyIds) ? new Set(filter.counterpartyIds) : null
   const sourceTypeSet = isActive(filter.sourceTypes) ? new Set(filter.sourceTypes) : null
+  const institutionNameSet = isActive(filter.financialInstitutionNames) ? new Set(filter.financialInstitutionNames) : null
   const accountGroupSet = isActive(filter.accountGroupIds)
     ? expandGroupIds(context.accountGroups ?? [], filter.accountGroupIds)
     : null
@@ -76,7 +77,15 @@ export function filterJournalEntries(
       if (filter.amountMax !== undefined && amount > filter.amountMax) return false
     }
 
-    if (sourceTypeSet !== null && !sourceTypeSet.has(entry.sourceType)) return false
+    // 出どころの軸: 作成経路と取り込んだ金融機関は、どちらかに該当すればよい(OR、計画Issue #289)
+    if (sourceTypeSet !== null || institutionNameSet !== null) {
+      const matchesSourceType = sourceTypeSet?.has(entry.sourceType) ?? false
+      const matchesInstitution =
+        institutionNameSet !== null &&
+        entry.sourceType === 'external_import' &&
+        institutionNameSet.has(entry.financialInstitutionName ?? null)
+      if (!matchesSourceType && !matchesInstitution) return false
+    }
     // 項目指定とグループ指定は同じ軸の中でOR(計画Issue #203)。どちらか一方でも指定があれば、
     // いずれかの明細行が項目指定またはグループ指定のどちらかに該当することを求める
     if (accountIdSet !== null || accountGroupSet !== null) {

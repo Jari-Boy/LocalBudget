@@ -51,6 +51,12 @@ export interface JournalEntry {
    * この値で求める。(generatedFromRuleId, recurringDueDate)はDBの一意制約で二重生成を防ぐ
    */
   recurringDueDate: string | null
+  /**
+   * 取り込んだ金融機関の名前(計画Issue #289)。外部明細から取り込んだ仕訳で、取込時に分かっていた場合だけ非null
+   * (取込の記録 external_transaction_refs.financial_institution_name の読み出し)。手入力など取込でない仕訳・
+   * 金融機関が不明な取込済みの仕訳はnull。テストの組み立て用に省略もできる(省略はnullと同じ扱い)
+   */
+  financialInstitutionName?: string | null
   createdAt: string
   updatedAt: string
   lines: JournalLine[]
@@ -108,6 +114,8 @@ export interface CreateExternalTransactionRefTarget {
   externalBalanceAfter?: number | null
   rowOrder?: number | null
   isSettled?: boolean | null
+  /** 取込時の金融機関名(計画Issue #289)。取込に使った定義の金融機関名 */
+  financialInstitutionName?: string | null
   /** 取込日時。同じ取込の行で同じ値にそろえる(並び順の判定を取込単位で行うため、計画Issue #205) */
   importedAt?: string
 }

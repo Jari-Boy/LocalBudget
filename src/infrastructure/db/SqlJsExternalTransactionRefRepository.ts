@@ -25,8 +25,8 @@ export class SqlJsExternalTransactionRefRepository implements ExternalTransactio
     this.db.run(
       `INSERT INTO external_transaction_refs
          (account_id, journal_entry_id, external_id, entry_date, description, amount,
-          external_balance_after, row_order, is_settled, imported_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`,
+          external_balance_after, row_order, is_settled, financial_institution_name, imported_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`,
       [
         input.accountId,
         input.journalEntryId,
@@ -37,6 +37,7 @@ export class SqlJsExternalTransactionRefRepository implements ExternalTransactio
         input.externalBalanceAfter ?? null,
         input.rowOrder ?? null,
         boolToSql(input.isSettled ?? null),
+        input.financialInstitutionName ?? null,
         input.importedAt ?? null,
       ],
     )
@@ -98,6 +99,7 @@ function mapRowToExternalTransactionRef(
     externalBalanceAfter: get<number | null>('external_balance_after'),
     rowOrder: get<number | null>('row_order'),
     isSettled: sqlToBool(get<number | null>('is_settled')),
+    financialInstitutionName: get<string | null>('financial_institution_name'),
     importedAt: get<string>('imported_at'),
   }
 }

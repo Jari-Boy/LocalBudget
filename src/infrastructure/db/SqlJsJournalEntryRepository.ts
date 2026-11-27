@@ -105,7 +105,7 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
   }
 
   findById(id: number): JournalEntry | null {
-    const [headerResult] = this.db.exec('SELECT * FROM journal_entries WHERE id = ?', [id])
+    const [headerResult] = this.db.exec(`${SELECT_ENTRY_WITH_INSTITUTION} WHERE id = ?`, [id])
     if (!headerResult) return null
 
     const entry = mapRowToJournalEntry(headerResult.columns, headerResult.values[0])
@@ -114,7 +114,7 @@ export class SqlJsJournalEntryRepository implements JournalEntryRepository {
   }
 
   findAll(): JournalEntry[] {
-    const [headerResult] = this.db.exec('SELECT * FROM journal_entries ORDER BY id')
+    const [headerResult] = this.db.exec(`${SELECT_ENTRY_WITH_INSTITUTION} ORDER BY id`)
     if (!headerResult) return []
 
     return headerResult.values.map((values) => {
@@ -358,6 +358,15 @@ function lastInsertRowId(db: Database): number {
   return db.exec('SELECT last_insert_rowid() AS id')[0].values[0][0] as number
 }
 
+/**
+ * 仕訳の読み出し。取り込んだ金融機関の名前(取込の記録 external_transaction_refs.financial_institution_name、計画Issue #289)を
+ * 副問い合わせで添える(取込の記録は仕訳1件に高々1件。無ければNULL)。
+ */
+const SELECT_ENTRY_WITH_INSTITUTION = `SELECT journal_entries.*,
+  (SELECT r.financial_institution_name FROM external_transaction_refs r WHERE r.journal_entry_id = journal_entries.id LIMIT 1)
+    AS financial_institution_name
+  FROM journal_entries`
+
 function mapRowToJournalEntry(columns: string[], values: unknown[]): JournalEntry {
   const get = <T,>(name: string): T => values[columns.indexOf(name)] as T
   return {
@@ -370,6 +379,7 @@ function mapRowToJournalEntry(columns: string[], values: unknown[]): JournalEntr
     householdMemberId: get<number>('household_member_id'),
     generatedFromRuleId: get<number | null>('generated_from_rule_id'),
     recurringDueDate: get<string | null>('recurring_due_date'),
+    financialInstitutionName: get<string | null>('financial_institution_name'),
     createdAt: get<string>('created_at'),
     updatedAt: get<string>('updated_at'),
     lines: [],

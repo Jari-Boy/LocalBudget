@@ -1,4 +1,7 @@
 import type { JournalEntryFilter } from '../../../domain/journal/JournalEntryFilter'
+import type { JournalEntry } from '../../../domain/journal/JournalEntry'
+import { collectFinancialInstitutionNames } from '../../../domain/statement-import/financialInstitution'
+import { SOURCE_TAGS } from '../journal-result/journalResultModel'
 import { GROUP_VALUE_PREFIX } from '../tree-select/treeSelectModel'
 
 /**
@@ -140,6 +143,68 @@ export function setSingleValue(
   return { ...filter, sourceTypes: [value as NonNullable<JournalEntryFilter['sourceTypes']>[number]] }
 }
 
+/** 「出どころ」の選択ツリーで、金融機関を表す値の接頭辞(「inst:名前」。名前が空の「inst:」は、金融機関が不明な取込済み) */
+const INSTITUTION_VALUE_PREFIX = 'inst:'
+
+/** 出どころの選択肢1件(階層つきの項目はdepth・parentValueを持つ) */
+export interface SourceFilterChoice {
+  value: string
+  name: string
+  depth?: number
+  parentValue?: string | null
+}
+
+/**
+ * 出どころの選択欄の値(作成経路と金融機関)の取り出し(計画Issue #289)。作成経路はそのまま、金融機関は「inst:名前」、
+ * 金融機関が不明な取込済みは「inst:」の値にする。
+ */
+export function getSourceValues(filter: JournalEntryFilter): string[] {
+  return [
+    ...(filter.sourceTypes ?? []).map(String),
+    ...(filter.financialInstitutionNames ?? []).map((name) => `${INSTITUTION_VALUE_PREFIX}${name ?? ''}`),
+  ]
+}
+
+/** 出どころの選択欄の値の配列を、作成経路(sourceTypes)と金融機関(financialInstitutionNames)に振り分ける。空配列で両方を消す */
+export function setSourceValues(filter: JournalEntryFilter, values: readonly string[]): JournalEntryFilter {
+  const next = without(filter, ['sourceTypes', 'financialInstitutionNames'])
+  const institutions = values.filter((value) => value.startsWith(INSTITUTION_VALUE_PREFIX))
+  const sourceTypes = values.filter((value) => !value.startsWith(INSTITUTION_VALUE_PREFIX))
+  if (sourceTypes.length > 0) next.sourceTypes = sourceTypes as NonNullable<JournalEntryFilter['sourceTypes']>
+  if (institutions.length > 0) {
+    next.financialInstitutionNames = institutions.map((value) => value.slice(INSTITUTION_VALUE_PREFIX.length) || null)
+  }
+  return next
+}
+
+/**
+ * 出どころの選択肢を作る(計画Issue #289)。作成経路をSOURCE_TAGSの順に並べ、取込済みの仕訳に金融機関名があれば、
+ * 「外部明細(すべて)」を親、各金融機関(マッピング定義の候補と同じ順)を子にして階層で並べる。金融機関が不明な取込済みの仕訳も
+ * あるときは、最後の子に「外部明細(金融機関が不明)」を足す。取込済みの仕訳に金融機関が無ければ、従来どおり平らな並び。
+ */
+export function buildSourceFilterChoices(
+  entries: readonly Pick<JournalEntry, 'sourceType' | 'financialInstitutionName'>[],
+): SourceFilterChoice[] {
+  const imported = entries.filter((entry) => entry.sourceType === 'external_import')
+  // 金融機関名の並べ方は、マッピング定義の選択候補(collectFinancialInstitutionNames)と同じにそろえる
+  const names = collectFinancialInstitutionNames(imported.flatMap((entry) => (entry.financialInstitutionName ? [entry.financialInstitutionName] : [])))
+  const hasUnknown = imported.some((entry) => !entry.financialInstitutionName)
+
+  return Object.entries(SOURCE_TAGS).flatMap(([value, tag]): SourceFilterChoice[] => {
+    if (value !== 'external_import' || names.length === 0) return [{ value, name: tag.label }]
+    const children: SourceFilterChoice[] = names.map((name) => ({
+      value: `${INSTITUTION_VALUE_PREFIX}${name}`,
+      name,
+      depth: 1,
+      parentValue: value,
+    }))
+    if (hasUnknown) {
+      children.push({ value: INSTITUTION_VALUE_PREFIX, name: `${tag.label}(金融機関が不明)`, depth: 1, parentValue: value })
+    }
+    return [{ value, name: `${tag.label}(すべて)`, depth: 0, parentValue: null }, ...children]
+  })
+}
+
 const hasItems = (list: readonly unknown[] | undefined) => (list?.length ?? 0) > 0
 
 /** 有効な条件の数。期間・金額は範囲として、各軸(科目・科目グループ等)は1件として数える。 */
@@ -153,7 +218,7 @@ export function countActiveConditions(filter: JournalEntryFilter): number {
     hasItems(filter.projectIds) || hasItems(filter.projectGroupIds),
     hasItems(filter.householdMemberIds),
     hasItems(filter.settlementBatchIds),
-    hasItems(filter.sourceTypes),
+    hasItems(filter.sourceTypes) || hasItems(filter.financialInstitutionNames),
   ]
   return conditions.filter(Boolean).length
 }

@@ -146,6 +146,7 @@ CSVの1行(またはCSVから生成された仕訳)を「外部取引」とし�
 | `external_balance_after` | 取引後残高      | 任意。CSVに残高列がある場合のみ格納。基準点になる([1.5](#15-残高照合)参照)                                                                                                                                |
 | `row_order`              | 取込時のCSV上の行の順番 | 任意(既存データはNULLでid順で代用、計画Issue #205)。0始まり。同じ日の複数行の「最後の残高」とCSVの並び順の判定に使う([1.5](#15-残高照合)) |
 | `is_settled`             | 確定済みか      | 任意(NULL許容)。[statement-import.md 1.2](./statement-import.md#12-中間表現importedrecord)の`ImportedRecord.is_settled`をそのまま引き継ぐ。確定版候補のサジェスト([statement-import.md 1.6 重複防止フロー](./statement-import.md#16-重複防止フロー))にのみ使い、FS集計には関与しない           |
+| `financial_institution_name` | 取込時の金融機関名(スナップショット) | 任意(NULL許容、スキーマv12、計画Issue #289)。取込に使ったマッピング定義の`format_group_id`を取込時点の名前のまま複写する。定義への外部キーは張らず、定義の削除・改名・統合の影響を受けない。既存データはNULL(不明)のままで、画面では従来の「外部明細」と表示する。仕訳の読み出しでは`JournalEntry.financialInstitutionName`(省略可)として返す |
 | `imported_at`            | 取込日時       |                                                                                                                                                                       |
 
 同一口座内で`external_id`は重複登録できない(重複防止の要)。

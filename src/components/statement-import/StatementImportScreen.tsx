@@ -1894,6 +1894,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
               comment: state.comment,
               rowOrder: index,
               importedAt,
+              financialInstitutionName: session.definition.formatGroupId,
               entryHouseholdMemberId,
               // 明細行の世帯メンバー: 科目の既定メンバー > 相手科目の行に選んだ世帯メンバー > 起票者(計画Issue #169)
               resolveLineHouseholdMemberId: createLineHouseholdMemberResolver([account, ...accountList], entryHouseholdMemberId),

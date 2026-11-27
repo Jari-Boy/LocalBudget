@@ -126,6 +126,7 @@ describe('共通のヘッダー情報', () => {
       externalBalanceAfter: 9850,
       rowOrder: null,
       isSettled: true,
+      financialInstitutionName: null,
     })
   })
 
@@ -265,5 +266,29 @@ describe('摘要(memo)の標準化', () => {
 
     expect(input.memo).toBe('ファミリーマート Suica')
     expect(input.externalTransactionRef?.description).toBe('ﾌｧﾐﾘ-ﾏ-ﾄ Ｓｕｉｃａ')
+  })
+})
+
+describe('金融機関名(計画Issue #289)', () => {
+  const base = {
+    record: record(),
+    externalId: 'HASH-001',
+    targetAccountId: 1,
+    targetAccountCategory: 'asset' as const,
+    counterAccountId: 2,
+    entryHouseholdMemberId: 99,
+    resolveLineHouseholdMemberId,
+  }
+
+  it('取込に使った定義の金融機関名を、取込の記録(externalTransactionRef)にそのまま持たせる', () => {
+    const input = buildConfirmedJournalEntryInput({ ...base, financialInstitutionName: '三井住友銀行' })
+
+    expect(input.externalTransactionRef?.financialInstitutionName).toBe('三井住友銀行')
+  })
+
+  it('金融機関名を渡さなければ、取込の記録の金融機関名は null になる', () => {
+    const input = buildConfirmedJournalEntryInput(base)
+
+    expect(input.externalTransactionRef?.financialInstitutionName).toBeNull()
   })
 })

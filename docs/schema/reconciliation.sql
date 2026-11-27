@@ -15,6 +15,9 @@ CREATE TABLE external_transaction_refs (
   -- 並び順(昇順/降順)の判定に使う。既存データはNULLでid順で代用する
   row_order               INTEGER,
   is_settled              BOOLEAN,
+  -- 取込時の金融機関名(計画Issue #289)。取込に使ったマッピング定義の format_group_id を、取込時点の名前のまま写す。
+  -- 定義への外部キーは張らない(定義を削除・改名しても、過去の仕訳の表示を変えない)。既存データ・不明は NULL
+  financial_institution_name TEXT,
   imported_at             TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
