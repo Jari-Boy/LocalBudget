@@ -22,7 +22,7 @@ import type { ProjectGroupRepository } from '../../domain/project-group/ProjectG
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import type { SettlementBatchRepository } from '../../domain/settlement-batch/SettlementBatchRepository'
 import type { JournalFilterOptions } from '../common/journal-filter/JournalFilterPanel'
-import { SOURCE_TAGS } from '../common/journal-result/journalResultModel'
+import { buildSourceFilterChoices } from '../common/journal-filter/journalFilterModel'
 import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
 import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../master/masterTreeNodes'
@@ -162,7 +162,7 @@ export function deriveSplitSettle(data: SplitSettleData): SplitSettleDerived {
       projectCategories,
       members: data.members.map((m) => ({ value: String(m.id), name: m.name })),
       batches: data.batches.map((b) => ({ value: String(b.id), name: b.name })),
-      sourceTypes: Object.entries(SOURCE_TAGS).map(([value, tag]) => ({ value, name: tag.label })),
+      sourceTypes: buildSourceFilterChoices(data.entries),
     },
     counterpartyCategories,
     accountCategories,

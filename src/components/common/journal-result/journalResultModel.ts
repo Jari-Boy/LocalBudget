@@ -31,10 +31,22 @@ export const SOURCE_TAGS: Record<JournalEntrySourceType, SourceTag> = {
 
 export const DRAFT_TAG: SourceTag = { label: '下書き', ...YELLOW }
 
+/**
+ * 出どころのタグ。外部明細から取り込んだ仕訳は、取り込んだ金融機関名が分かればそれを文言にする(色は外部明細のまま、
+ * 計画Issue #289)。分からない仕訳と、取込でない出どころは、従来のタグ。
+ */
+export function resolveSourceTag(sourceType: JournalEntrySourceType, financialInstitutionName?: string | null): SourceTag {
+  const tag = SOURCE_TAGS[sourceType]
+  if (sourceType !== 'external_import' || !financialInstitutionName) return tag
+  return { ...tag, label: financialInstitutionName }
+}
+
 export interface JournalResultItem {
   id: number
   /** 'draft'は未確定の下書き(確定済みの仕訳の作成経路とは別) */
   sourceType: JournalEntrySourceType | 'draft'
+  /** 取り込んだ金融機関名(計画Issue #289)。取込済みで分かる仕訳だけ。出どころタグの文言になる */
+  financialInstitutionName?: string | null
   memo: string
   amount: number
   currency: string
@@ -76,6 +88,7 @@ export function toJournalResultItem(
   return {
     id: entry.id,
     sourceType: entry.sourceType,
+    financialInstitutionName: entry.financialInstitutionName ?? null,
     memo: entry.memo && entry.memo !== '' ? entry.memo : NO_MEMO,
     amount: entry.lines.filter((line) => line.side === 'debit').reduce((sum, line) => sum + line.amount, 0),
     currency: entry.currency,

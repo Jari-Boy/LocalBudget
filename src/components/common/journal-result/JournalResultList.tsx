@@ -2,7 +2,7 @@ import { useEffect, useRef, type KeyboardEvent } from 'react'
 import { formatCurrency } from '../../../infrastructure/i18n/formatCurrency'
 import { formatDate } from '../../../infrastructure/i18n/formatDate'
 import { useRangeSelection } from '../range-selection/useRangeSelection'
-import { DRAFT_TAG, SOURCE_TAGS, type JournalResultItem } from './journalResultModel'
+import { DRAFT_TAG, resolveSourceTag, type JournalResultItem } from './journalResultModel'
 import './JournalResultList.css'
 
 export type SelectionMode = 'none' | 'single' | 'multiple'
@@ -147,7 +147,7 @@ function Row({
   hideAccounts: boolean
   onPick: () => void
 }) {
-  const tag = item.sourceType === 'draft' ? DRAFT_TAG : SOURCE_TAGS[item.sourceType]
+  const tag = item.sourceType === 'draft' ? DRAFT_TAG : resolveSourceTag(item.sourceType, item.financialInstitutionName)
   const content = (
     <>
       <span className="journal-result-list__line">

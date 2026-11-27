@@ -4,7 +4,7 @@ import type { JournalEntry, JournalLine, JournalLineSide } from '../../domain/jo
 import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
 import { formatDate } from '../../infrastructure/i18n/formatDate'
-import { SOURCE_TAGS } from '../common/journal-result/journalResultModel'
+import { resolveSourceTag } from '../common/journal-result/journalResultModel'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import { BatchSelect } from '../master/BatchSelect'
 import { useRangeSelection } from '../common/range-selection/useRangeSelection'
@@ -658,7 +658,7 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
         {colgroup}
         {thead}
         {entries.map((entry) => {
-          const tag = SOURCE_TAGS[entry.sourceType]
+          const tag = resolveSourceTag(entry.sourceType, entry.financialInstitutionName)
           const isEditing = editing !== undefined && editing.entryId === entry.id
           const memo = entry.memo !== null && entry.memo !== '' ? entry.memo : '(摘要なし)'
           const selected = entry.id === selectedId

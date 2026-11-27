@@ -75,6 +75,7 @@ describe('toJournalResultItem', () => {
     expect(toJournalResultItem(entry(), nameOf)).toEqual({
       id: 7,
       sourceType: 'manual',
+      financialInstitutionName: null,
       memo: 'ランチ',
       amount: 1000,
       currency: 'JPY',

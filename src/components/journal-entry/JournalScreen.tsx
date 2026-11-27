@@ -45,11 +45,11 @@ import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
 import { useElementHeight } from '../common/sticky/useElementHeight'
 import { KeepRowsInPlace } from '../common/sticky/useKeepRowsInPlace'
 import { JournalFilterPanel, type JournalFilterOptions } from '../common/journal-filter/JournalFilterPanel'
-import { countActiveConditions } from '../common/journal-filter/journalFilterModel'
+import { buildSourceFilterChoices, countActiveConditions } from '../common/journal-filter/journalFilterModel'
 import { JournalResultList } from '../common/journal-result/JournalResultList'
 import { AutoBalanceAdjustmentDetail } from './AutoBalanceAdjustmentDetail'
 import { describeAutoBalanceAdjustment } from '../../domain/journal/describeAutoBalanceAdjustment'
-import { SOURCE_TAGS, DRAFT_TAG, type JournalResultItem } from '../common/journal-result/journalResultModel'
+import { SOURCE_TAGS, DRAFT_TAG, resolveSourceTag, type JournalResultItem } from '../common/journal-result/journalResultModel'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
 import { buildAccountTree, buildCounterpartyTree, buildProjectTree } from '../master/masterTreeNodes'
 import type { MaybeAsync } from '../master/maybeAsync'
@@ -378,7 +378,7 @@ export function JournalScreen(props: JournalScreenProps) {
       projectCategories,
       members: data.members.map((m) => ({ value: String(m.id), name: m.name })),
       batches: data.batches.map((b) => ({ value: String(b.id), name: b.name })),
-      sourceTypes: Object.entries(SOURCE_TAGS).map(([value, tag]) => ({ value, name: tag.label })),
+      sourceTypes: buildSourceFilterChoices(data.entries),
     }
     const master: JournalEditorMaster = {
       accounts: data.accounts,
@@ -1251,7 +1251,7 @@ export function JournalScreen(props: JournalScreenProps) {
 
   const sourceTag =
     selection?.kind === 'entry' && selectedEntry
-      ? SOURCE_TAGS[selectedEntry.sourceType]
+      ? resolveSourceTag(selectedEntry.sourceType, selectedEntry.financialInstitutionName)
       : selection?.kind === 'draft'
         ? DRAFT_TAG
         : selection?.kind === 'proposal'

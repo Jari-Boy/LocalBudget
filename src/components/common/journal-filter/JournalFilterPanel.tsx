@@ -5,6 +5,7 @@ import {
   countActiveConditions,
   getBatchValues,
   getMultiValues,
+  getSourceValues,
   getTreeValues,
   NO_BATCH_VALUE,
   setAmount,
@@ -12,6 +13,7 @@ import {
   setDate,
   setMemo,
   setMultiValues,
+  setSourceValues,
   setTreeValues,
 } from './journalFilterModel'
 import './JournalFilterPanel.css'
@@ -20,6 +22,9 @@ import './JournalFilterPanel.css'
 export interface JournalFilterChoice {
   value: string
   name: string
+  /** 階層つきの選択肢(出どころの金融機関など、計画Issue #289)。深さ(最上位が0)と親の値。TreeSelectの階層つき項目としてインデントして並ぶ */
+  depth?: number
+  parentValue?: string | null
 }
 
 export interface JournalFilterOptions {
@@ -48,7 +53,13 @@ const flat = (choices: readonly JournalFilterChoice[]): TreeSelectCategory[] => 
   {
     key: 'flat',
     name: '',
-    nodes: choices.map((c) => ({ kind: 'item' as const, value: c.value, name: c.name, isActive: true })),
+    nodes: choices.map((c) => ({
+      kind: 'item' as const,
+      value: c.value,
+      name: c.name,
+      isActive: true,
+      ...(c.depth === undefined ? {} : { depth: c.depth, parentValue: c.parentValue ?? null }),
+    })),
   },
 ]
 
@@ -188,8 +199,8 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount, hid
               label="出どころ"
               categories={flat(options.sourceTypes)}
               multiple
-              values={getMultiValues(filter, 'sourceTypes')}
-              onValuesChange={(values) => onChange(setMultiValues(filter, 'sourceTypes', values))}
+              values={getSourceValues(filter)}
+              onValuesChange={(values) => onChange(setSourceValues(filter, values))}
               emptyLabel="指定なし"
             />
           </Field>
