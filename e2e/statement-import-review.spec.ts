@@ -410,6 +410,8 @@ test.describe('明細取込画面', () => {
     const bulk = page.getByRole('group', { name: '選択した明細への一括設定' })
     await expect(bulk).toContainText('2件に一括設定')
     await pickTree(page, bulk, '一括の相手科目', 'エンタメ費')
+    // 選んだだけでは行に反映されず、「N行に適用」を押すと反映される(計画Issue #300)
+    await bulk.getByRole('button', { name: '2行に適用' }).click()
     await expect(bulk).toContainText('2件に設定しました')
 
     await page.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }).click()

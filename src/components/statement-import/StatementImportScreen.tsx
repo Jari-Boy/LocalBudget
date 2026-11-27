@@ -49,6 +49,7 @@ import type { AccountBalanceRecordRepository } from '../../domain/reconciliation
 import { AccountCreateForm } from '../master/AccountCreateForm'
 import { buildTreeSelectCategories } from '../master/buildTreeSelectCategories'
 import { AccountSelect } from '../master/AccountSelect'
+import { BulkBarField, BulkBarFrame } from '../common/bulk-bar/BulkBarFrame'
 import { BatchSelect } from '../master/BatchSelect'
 import { MappingDefinitionSelect } from './MappingDefinitionSelect'
 import { MemberSelect } from '../master/MemberSelect'
@@ -57,7 +58,6 @@ import type { MappingForm } from '../master/mappingForm'
 import type { MaybeAsync } from '../master/maybeAsync'
 import { isStatementImportEligibleAccount, isStatementImportCounterAccountEligible } from './statementImportEligibility'
 import {
-  applyBulkSetting,
   createInitialRowState,
   defaultMemberIdOf,
   isRowEdited,
@@ -68,9 +68,19 @@ import {
   rowStatus,
   withCounterAccount,
   type ApproximateDecision,
-  type BulkChange,
   type ImportRowState,
 } from './importRowModel'
+import {
+  BULK_CLEAR_VALUE,
+  EMPTY_IMPORT_BULK_PICK,
+  applyImportBulkPick,
+  importBulkRules,
+  isImportBulkPickEmpty,
+  pickChangeToValue,
+  sanitizeImportBulkPick,
+  valueToPickChange,
+  type ImportBulkPick,
+} from './importBulkPickModel'
 import {
   IMPORT_PAGE_SIZE,
   buildTabIndices,
@@ -223,6 +233,9 @@ type CreateTarget =
   | { kind: 'counterparty'; rowIndex: number; apply: (id: number) => void }
   | null
 
+/** 一括編集の選択欄の先頭に固定して出す「なし(外す)」(計画Issue #300)。参照を安定させるためモジュールの定数にする */
+const bulkClearOptions = [{ value: BULK_CLEAR_VALUE, label: 'なし(外す)' }]
+
 /** 取引先の追加ダイアログの相手科目の初期値から開く科目の登録(計画Issue #218)。登録できた科目のidを返す先 */
 type DefaultAccountCreate = ((accountId: number) => void) | null
 
@@ -327,8 +340,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   const [rowFilterInput, setRowFilterInput] = useState<ImportFilterInput>(EMPTY_FILTER_INPUT)
   /** 行の絞り込み欄の開閉。初期状態は閉(条件があるときはボタンの件数バッジで分かる、計画Issue #266) */
   const [rowFilterOpen, setRowFilterOpen] = useState(false)
-  /** 一括設定の「その他の項目」(プロジェクト・世帯メンバー・精算バッチ・コメント)の開閉(計画Issue #266) */
-  const [bulkMoreOpen, setBulkMoreOpen] = useState(false)
   /** 上部に固定するタブ・絞り込み欄の容器と、その高さ(一括設定の領域の top に使う、計画Issue #266) */
   const [stickyElement, setStickyElement] = useState<HTMLDivElement | null>(null)
   const stickyHeight = useElementHeight(stickyElement)
@@ -381,7 +392,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
         }
       : null,
   )
-  const [bulkComment, setBulkComment] = useState('')
+  /** 一括編集のバーで選んだ項目(計画Issue #300)。「N行に適用」を押すまで行には反映されない。選択が空になったら「変更しない」に戻す */
+  const [bulkPick, setBulkPick] = useState<ImportBulkPick>(EMPTY_IMPORT_BULK_PICK)
+  useEffect(() => {
+    if (selected.size === 0) setBulkPick(EMPTY_IMPORT_BULK_PICK)
+  }, [selected.size])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [doneMessage, setDoneMessage] = useState('')
@@ -1723,14 +1738,18 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     if (removed > 0) setBulkMessage(t('filterSelectionRemoved', { count: removed }))
     rangeAnchor.anchorRef.current = null
   }
-  const applyBulk = (change: BulkChange) => {
+  /** 一括編集のバーの「N行に適用」。選んだ項目(選べなくなった項目は除く)を、選択した対象行に反映する(計画Issue #300) */
+  const applyBulk = () => {
     if (!session) return
-    const result = applyBulkSetting({
+    const result = applyImportBulkPick({
       states: session.rows,
       records,
       selected,
       accounts: accountList,
-      change,
+      pick: sanitizeImportBulkPick(
+        bulkPick,
+        importBulkRules({ states: session.rows, records, selected, pick: bulkPick, accounts: accountList }),
+      ),
     })
     setSession({ ...session, rows: result.states })
     setBulkMessage(
@@ -2023,6 +2042,18 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   /** 一括設定のバナーを出しているか(行を選んでいて、表示できる行がある) */
   const bulkBarShown = visibleIndices.length > 0 && selected.size > 0
+  /** 一括編集で選べる項目(選択した行と、選んだ科目から決まる。計画Issue #300) */
+  const bulkRules = session
+    ? importBulkRules({ states: session.rows, records, selected, pick: bulkPick, accounts: accountList })
+    : null
+  /** 選べなくなった項目を「変更しない」に戻した、いまの選択 */
+  const effectiveBulkPick = bulkRules ? sanitizeImportBulkPick(bulkPick, bulkRules) : bulkPick
+  const bulkPickEmpty = isImportBulkPickEmpty(effectiveBulkPick)
+  /** 取引先の追加ダイアログを開く行(摘要と相手科目の初期値に使う)。選択した対象行の先頭 */
+  const bulkCreateRowIndex = session
+    ? ([...selected].sort((x, y) => x - y).find((i) => statusOf(i) !== 'duplicate' && statusOf(i) !== 'skipped') ?? [...selected][0])
+    : undefined
+  const changeBulkPick = (patch: Partial<ImportBulkPick>) => setBulkPick((prev) => ({ ...prev, ...patch }))
 
   const noMatchTitle = csvs.length > 1 ? t('noMatchTitleMulti') : t('noMatchTitle', { fileName: csv?.fileName ?? '' })
 
@@ -2449,98 +2480,135 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
           {/* バナーは選んだときだけ出て、タブの行・絞り込み欄の下に固定する。出入りで表の枠が上下にずれても、行は動かさない(KeepRowsInPlace、計画Issue #266) */}
           <KeepRowsInPlace visible={bulkBarShown} anchor={importRegion} />
-          {bulkBarShown && (
+          {bulkBarShown && bulkRules && (
             <div className="import-bulk-bar">
-            <div role="group" aria-label={t('bulkGroup')} className="import-bulk">
-              <div className="import-bulk__summary">
-                <span className="import-bulk__count">{t('bulkCount', { count: selected.size })}</span>
-                {bulkMessage && (
-                  <span role="status" className="import-bulk__message">
-                    {bulkMessage}
-                  </span>
-                )}
-              </div>
-              <TreeSelect
-                label={t('bulkCounterAccount')}
-                categories={categories.counterAccounts}
-                favoriteKind="account"
-                value=""
-                placeholder={t('bulkCounterAccountPlaceholder')}
-                onChange={(v) => v !== '' && applyBulk({ field: 'counterAccount', value: Number(v) })}
-                onCreate={() =>
-                  setCreateTarget({ kind: 'counterAccount', apply: (id) => applyBulk({ field: 'counterAccount', value: id }) })
+              <BulkBarFrame
+                ariaLabel={t('bulkGroup')}
+                role="group"
+                summary={
+                  <>
+                    <strong className="bulk-bar__count">{t('bulkCount', { count: selected.size })}</strong>
+                    {bulkMessage ? (
+                      <span role="status" className="bulk-bar__message">
+                        {bulkMessage}
+                      </span>
+                    ) : (
+                      <span className="bulk-bar__hint">{t('bulkHint')}</span>
+                    )}
+                  </>
                 }
-                createLabel={t('createCounterAccount')}
-              />
-              <TreeSelect
-                label={t('bulkCounterparty')}
-                categories={categories.counterparties}
-                favoriteKind="counterparty"
-                value=""
-                emptyLabel={t('bulkClear')}
-                placeholder={t('bulkCounterpartyPlaceholder')}
-                onChange={(v) => applyBulk({ field: 'counterparty', value: toId(v) })}
-              />
-              <button
-                type="button"
-                className="import-btn"
-                aria-expanded={bulkMoreOpen}
-                onClick={() => setBulkMoreOpen((open) => !open)}
-              >
-                {`${t('bulkMore')} ${bulkMoreOpen ? '▴' : '▾'}`}
-              </button>
-              <button
-                type="button"
-                className="import-btn import-bulk__clear"
-                onClick={() => {
+                onClearSelection={() => {
                   setSelected(new Set())
                   setBulkMessage('')
                 }}
+                applyLabel={bulkPickEmpty || bulkRules.targetCount === 0 ? t('bulkApplyEmpty') : t('bulkApplyCount', { count: bulkRules.targetCount })}
+                applyDisabled={bulkPickEmpty || bulkRules.targetCount === 0}
+                onApply={applyBulk}
+                columns={6}
               >
-                {t('bulkClearSelection')}
-              </button>
-              {/* プロジェクト・世帯メンバー・精算バッチ・コメントは、バナーの下に重ねて出す(表を押し下げない) */}
-              {bulkMoreOpen && (
-                <div className="import-bulk__more">
+                {/* 対象の行が無い(重複・保存しない行だけを選んでいる)ときは、どの項目も選べず、その理由を出す。選べない項目は理由を項目の下に出す */}
+                <BulkBarField label={t('bulkFieldCounterAccount')} reason={bulkRules.targetCount === 0 ? t('bulkWhyNoTarget') : undefined}>
+                  <TreeSelect
+                    label={t('bulkCounterAccount')}
+                    categories={categories.counterAccounts}
+                    favoriteKind="account"
+                    value={treeValue(effectiveBulkPick.counterAccountId)}
+                    emptyLabel={t('bulkKeep')}
+                    placeholder={t('bulkKeep')}
+                    disabled={!bulkRules.accountAllowed}
+                    onChange={(v) => changeBulkPick({ counterAccountId: v === '' ? null : Number(v) })}
+                    onCreate={() =>
+                      setCreateTarget({ kind: 'counterAccount', apply: (id) => changeBulkPick({ counterAccountId: id }) })
+                    }
+                    createLabel={t('createCounterAccount')}
+                  />
+                </BulkBarField>
+                <BulkBarField label={t('bulkFieldProject')} reason={bulkRules.targetCount === 0 ? t('bulkWhyNoTarget') : undefined}>
                   <TreeSelect
                     label={t('bulkProject')}
                     categories={categories.projects}
                     favoriteKind="project"
-                    value=""
-                    emptyLabel={t('bulkClear')}
-                    placeholder={t('bulkProjectPlaceholder')}
-                    onChange={(v) => applyBulk({ field: 'project', value: toId(v) })}
+                    value={pickChangeToValue(effectiveBulkPick.project)}
+                    emptyLabel={t('bulkKeep')}
+                    leadingOptions={bulkClearOptions}
+                    placeholder={t('bulkKeep')}
+                    disabled={!bulkRules.projectAllowed}
+                    onChange={(v) => changeBulkPick({ project: valueToPickChange(v) })}
+                    onCreate={() =>
+                      setCreateTarget({ kind: 'project', apply: (id) => changeBulkPick({ project: { kind: 'set', value: id } }) })
+                    }
+                    createLabel={t('createProject')}
                   />
-                  <MemberSelect
-                    label={t('bulkMember')}
-                    members={data.members}
-                    value=""
-                    emptyLabel={t('bulkClear')}
-                    placeholder={t('bulkMemberPlaceholder')}
-                    onChange={(v) => applyBulk({ field: 'householdMember', value: toId(v) })}
+                </BulkBarField>
+                <BulkBarField
+                  label={t('bulkFieldCounterparty')}
+                  reason={bulkRules.targetCount === 0 ? t('bulkWhyNoTarget') : bulkRules.counterpartyAllowed ? undefined : t('bulkWhyCounterparty')}
+                >
+                  <TreeSelect
+                    label={t('bulkCounterparty')}
+                    categories={categories.counterparties}
+                    favoriteKind="counterparty"
+                    value={pickChangeToValue(effectiveBulkPick.counterparty)}
+                    emptyLabel={t('bulkKeep')}
+                    leadingOptions={bulkClearOptions}
+                    placeholder={t('bulkKeep')}
+                    disabled={!bulkRules.counterpartyAllowed}
+                    onChange={(v) => changeBulkPick({ counterparty: valueToPickChange(v) })}
+                    onCreate={
+                      bulkCreateRowIndex === undefined
+                        ? undefined
+                        : () =>
+                            setCreateTarget({
+                              kind: 'counterparty',
+                              rowIndex: bulkCreateRowIndex,
+                              apply: (id) => changeBulkPick({ counterparty: { kind: 'set', value: id } }),
+                            })
+                    }
+                    createLabel={t('createCounterparty')}
                   />
+                </BulkBarField>
+                <BulkBarField
+                  label={t('bulkFieldBatch')}
+                  reason={bulkRules.targetCount === 0 ? t('bulkWhyNoTarget') : bulkRules.batchAllowed ? undefined : t('bulkWhyBatch')}
+                >
                   <BatchSelect
                     label={t('bulkBatch')}
                     batches={data.batches}
-                    value=""
-                    emptyLabel={t('bulkClear')}
-                    placeholder={t('bulkBatchPlaceholder')}
+                    value={pickChangeToValue(effectiveBulkPick.batch)}
+                    emptyLabel={t('bulkKeep')}
+                    leadingOptions={bulkClearOptions}
+                    placeholder={t('bulkKeep')}
+                    disabled={!bulkRules.batchAllowed}
                     onCreateBatch={createBatch}
-                    onChange={(v) => applyBulk({ field: 'settlementBatch', value: toId(v) })}
+                    onChange={(v) => changeBulkPick({ batch: valueToPickChange(v) })}
                   />
+                </BulkBarField>
+                <BulkBarField
+                  label={t('bulkFieldMember')}
+                  reason={bulkRules.targetCount === 0 ? t('bulkWhyNoTarget') : bulkRules.memberAllowed ? undefined : t('bulkWhyMember')}
+                >
+                  <MemberSelect
+                    label={t('bulkMember')}
+                    members={data.members}
+                    value={pickChangeToValue(effectiveBulkPick.member)}
+                    emptyLabel={t('bulkKeep')}
+                    leadingOptions={bulkClearOptions}
+                    placeholder={t('bulkKeep')}
+                    disabled={!bulkRules.memberAllowed}
+                    onChange={(v) => changeBulkPick({ member: valueToPickChange(v) })}
+                  />
+                </BulkBarField>
+                <BulkBarField label={t('bulkFieldComment')} reason={bulkRules.targetCount === 0 ? t('bulkWhyNoTarget') : undefined}>
                   <input
-                    className="import-control import-control--small"
+                    className="import-control import-control--small bulk-bar__input"
                     aria-label={t('bulkCommentLabel')}
-                    placeholder={t('commentPlaceholder')}
-                    value={bulkComment}
-                    onChange={(e) => setBulkComment(e.target.value)}
+                    placeholder={t('bulkKeep')}
+                    value={effectiveBulkPick.comment}
+                    disabled={!bulkRules.commentAllowed}
+                    onChange={(e) => changeBulkPick({ comment: e.target.value })}
                   />
-                  <button type="button" className="import-btn" onClick={() => applyBulk({ field: 'comment', value: bulkComment })}>
-                    {t('bulkCommentApply')}
-                  </button>
-                </div>
-              )}
-            </div>
+                </BulkBarField>
+              </BulkBarFrame>
             </div>
           )}
 

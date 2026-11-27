@@ -33,6 +33,19 @@ export const EMPTY_IMPORT_BULK_PICK: ImportBulkPick = {
   comment: '',
 }
 
+/** 選択欄で「なし(外す)」を表す項目の値(id の文字列と重ならない) */
+export const BULK_CLEAR_VALUE = '__clear'
+
+/** 選び方を、選択欄の値にする。「変更しない」は空文字 */
+export function pickChangeToValue(change: PickChange<number>): string {
+  return change.kind === 'keep' ? '' : change.kind === 'clear' ? BULK_CLEAR_VALUE : String(change.value)
+}
+
+/** 選択欄の値を、選び方にする */
+export function valueToPickChange(value: string): PickChange<number> {
+  return value === '' ? { kind: 'keep' } : value === BULK_CLEAR_VALUE ? { kind: 'clear' } : { kind: 'set', value: Number(value) }
+}
+
 /** 何も選んでいない(すべて「変更しない」)か */
 export function isImportBulkPickEmpty(pick: ImportBulkPick): boolean {
   return (

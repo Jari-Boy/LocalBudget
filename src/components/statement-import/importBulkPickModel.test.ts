@@ -10,11 +10,14 @@ import { describe, expect, it } from 'vitest'
 import type { Account } from '../../domain/account/Account'
 import { createInitialRowState, type ImportRowState } from './importRowModel'
 import {
+  BULK_CLEAR_VALUE,
   EMPTY_IMPORT_BULK_PICK,
   applyImportBulkPick,
   importBulkRules,
   isImportBulkPickEmpty,
+  pickChangeToValue,
   sanitizeImportBulkPick,
+  valueToPickChange,
   type ImportBulkPick,
 } from './importBulkPickModel'
 
@@ -51,6 +54,20 @@ function state(overrides: Partial<ImportRowState> = {}): ImportRowState {
 }
 
 const pick = (overrides: Partial<ImportBulkPick> = {}): ImportBulkPick => ({ ...EMPTY_IMPORT_BULK_PICK, ...overrides })
+
+describe('選択欄の値との変換(pickChangeToValue / valueToPickChange)', () => {
+  it('「変更しない」は空文字、「外す」は専用の値、「この値にする」はidの文字列になる', () => {
+    expect(pickChangeToValue({ kind: 'keep' })).toBe('')
+    expect(pickChangeToValue({ kind: 'clear' })).toBe(BULK_CLEAR_VALUE)
+    expect(pickChangeToValue({ kind: 'set', value: 7 })).toBe('7')
+  })
+
+  it('選択欄の値から、同じ選び方に戻せる', () => {
+    expect(valueToPickChange('')).toEqual({ kind: 'keep' })
+    expect(valueToPickChange(BULK_CLEAR_VALUE)).toEqual({ kind: 'clear' })
+    expect(valueToPickChange('7')).toEqual({ kind: 'set', value: 7 })
+  })
+})
 
 describe('isImportBulkPickEmpty', () => {
   it('すべて「変更しない」なら空、どれか1つでも選べば空ではない', () => {
