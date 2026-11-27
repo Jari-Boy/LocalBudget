@@ -146,7 +146,7 @@ test.describe('上部固定の一括編集バーとタブ、表の見出し(明�
     // 2段目の項目(ラベル・選択欄・理由)は、バーの枠の中に収まる
     const overflow = await bulkBar(page).evaluate((bar) => {
       const barRect = bar.getBoundingClientRect()
-      return Array.from(bar.querySelectorAll('.journal-line-bulk__field')).some((field) => field.getBoundingClientRect().bottom > barRect.bottom)
+      return Array.from(bar.querySelectorAll('.bulk-bar__field')).some((field) => field.getBoundingClientRect().bottom > barRect.bottom)
     })
     expect(overflow).toBe(false)
 
