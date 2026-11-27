@@ -26,7 +26,7 @@ tags: [guide, schema]
 
 デプロイの仕組みが無いため、凍結は手作業とする。**初回の本番デプロイの直前に、次の手順を必ず行う**(忘れると、以後の差分の書き忘れをCIが検出できない)。
 
-1. `main` が最新で、`npx vitest run` が通ることと、`LATEST_SCHEMA_VERSION` が凍結するバージョンであることを確認する(v2〜v11の差分を足したため、現在は11。1から始めたい場合は、v2〜v11の差分の扱いを先に決める)。
+1. `main` が最新で、`npx vitest run` が通ることと、`LATEST_SCHEMA_VERSION` が凍結するバージョンであることを確認する(v2〜v12の差分を足したため、現在は12。1から始めたい場合は、v2〜v12の差分の扱いを先に決める)。
 2. `npm run schema:freeze` を実行する。`src/infrastructure/db/schemaFixtures/v{N}.sql`(N = `LATEST_SCHEMA_VERSION`。スキーマと、起動時の初期投入データ)が作られる。凍結済みのバージョンのファイルは上書きしない(公開済みスキーマの記録は不変)。
 3. 生成された `v{N}.sql` を確認してコミットする。
 4. 次の「凍結時の後片付け」を行う。
@@ -72,6 +72,8 @@ SQLiteは、これらを `ALTER TABLE` で変えられない。**テーブルを
 データ変換は**差分(マイグレーション)側**で行う。起動時の初期投入(seed)は冪等(何度流しても同じ結果)なままにし、既存データの書き換えには使わない。
 
 記録(表の形を変えないデータ変換): v3・v4・v7はキーワードと取込済みの摘要の標準化、v10(計画Issue #279)は`keyword_rules.pattern`を「かな+空白+分離した濁点・半濁点」を1文字にまとめる規則で再正規化(重なりのまとめ方はv3・v4・v7と同じ)、v11(同)は取込済み(`source_type = 'external_import'`)の`journal_entries.memo`の同じ形を整える。突合用の`external_transaction_refs.description`と`external_id`は変えない。規則は凍結された差分の中に写して持つ。
+
+記録(列の追加): v12(計画Issue #289)は`external_transaction_refs.financial_institution_name`(TEXT、NULL許容)を追加する。取込時の金融機関名のスナップショットで、既存データはNULLのまま(画面では「外部明細」と表示)。
 
 ## 5. 補足
 

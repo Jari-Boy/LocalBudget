@@ -77,6 +77,7 @@ tags: [domain, journal]
 > | `accountIds`・`householdMemberIds`・`projectIds`・`counterpartyIds` | 複数選択。いずれかに一致すればよい(OR)。従来の単一指定(`accountId`等)は互換のため残し、同じ軸で両方を指定すると両方を満たす仕訳だけを返す(AND) |
 > | `settlementBatchIds` | 精算バッチ。数値はそのバッチのタグが付いた明細行を持つ仕訳、`null`は**未割当**(精算バッチのタグが付いた明細行が仕訳内に1行も無い)。複数指定はOR |
 > | `sourceTypes` | 作成経路([1.7](#17-作成経路source_type))。割勘(`expense_splitting`)を含む |
+> | `financialInstitutionNames` | 取込時の金融機関名(計画Issue #289)。`null`は金融機関が不明な取込済み(名前が無い`external_transaction_refs`を持つ仕訳)。複数指定はOR。**作成経路(`sourceTypes`)とはOR**(どちらかに該当すればよい)。絞り込みの「出どころ」欄は、「外部明細(すべて)」を親、各金融機関と「外部明細(金融機関が不明)」を子とする階層(共通のTreeSelectの階層つき項目) |
 > | `accountGroupIds`・`counterpartyGroupIds`・`projectGroupIds` | グループ指定。指定したグループと配下(入れ子を含む)のグループに属する科目・取引先・プロジェクトを含む仕訳を対象にする。**同じ軸の項目指定(`accountIds`等)と併用したときはOR**(どちらかに該当すればよい、計画Issue #203)。展開は`expandGroupIds`で、グループ・取引先・プロジェクトのマスタは`filterJournalEntries`の第4引数(`JournalEntryFilterContext`)で渡す(科目は第2引数のaccountsの`account_group_id`を使う) |
 >
 > **判定は仕訳全体で行う**: 軸の間はAND、軸の内側(複数選択、同じ軸の項目指定とグループ指定の併用を含む)はOR。互換用の単一指定(`accountId`等)だけは従来どおりANDのまま。各軸は仕訳内のどの明細行で満たしてもよく、複数の軸を別々の明細行で満たしてもヒットする(例: クレジットカードの行と食費の行を持つ仕訳が「楽天カードで払った食費」にヒットする)。空配列は絞り込みなしとして扱う。
@@ -163,6 +164,8 @@ tags: [domain, journal]
 | `expense_splitting` | 割勘機能で作った仕訳([expense-splitting.md](./expense-splitting.md)、計画Issue #149)。割勘かどうかは科目構成ではなくこの値で判定する。精算の仕訳は分類を増やさず、口座明細からなら`external_import`、手で起票したものなら`manual`とする |
 
 `source_type`は仕訳の作成経路を表す。以前は[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)が「この仕訳はis_reconcilable = trueの科目に記帳してよいか」を判定する根拠にしていたが、計画Issue #145でその制限を廃止したため、現在は一覧の出どころ表示など、経路を区別する用途に使う。
+
+> **出どころタグの表示(計画Issue #289)**: `external_import`の仕訳は、取込時の金融機関名([reconciliation.md 2.1](./reconciliation.md#21-フィールド定義)の`financial_institution_name`、`JournalEntry.financialInstitutionName`)があればその名前を出どころタグに表示し(色は外部明細の青のまま)、無ければ従来の「外部明細」と表示する。
 
 > **なぜ`external_transaction_refs`の存在ではなく`source_type`で判定したか(旧ルールの経緯)**
 > 以前は「is_reconcilable = trueの科目を使う行に対応する`external_transaction_refs`があるか」を根拠にしていたが、これは「作成経路(この仕訳はどうやって生まれたか)」と「外部データとの突合材料(この科目の残高は外部の何と一致するはずか)」という別々の関心事を1つのテーブルに同居させていた。両者が食い違うケース(初期残高・残高調整の仕訳のように、is_reconcilable = true科目を使う仕訳でも対応する外部CSV行が存在しない場合等)で無理が生じていた。`source_type`は前者(作成経路)だけを担い、`external_transaction_refs`([reconciliation.md 2章](./reconciliation.md#2-突合マスタexternal_transaction_refs)参照)は後者(突合材料)だけを担うことで関心事を分離する。仕訳が複数のis_reconcilable = true科目にまたがる場合(口座間振替等)も、仕訳単位の`source_type`が1回チェックされるだけで済み、行ごとに参照の有無を確認する必要がない。
