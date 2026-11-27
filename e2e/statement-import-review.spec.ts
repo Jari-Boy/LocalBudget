@@ -487,6 +487,14 @@ test.describe('明細取込画面', () => {
         return el.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
       }),
     ).toBe(true)
+    // バーと見出しの間の隙間にも背景が敷かれ、下の行が透けて見えない(隙間の中ほどの点が、バーの領域に属する)
+    expect(
+      await bulk.evaluate((el) => {
+        const rect = el.getBoundingClientRect()
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.bottom + 8)
+        return hit !== null && hit.closest('.import-bulk-bar') !== null
+      }),
+    ).toBe(true)
 
     // 見出しの列は、本物の行の列とずれない(列幅を本物の見出しから写している)。日付・摘要・金額の3列で確かめる(行のセルは、チェック=0、日付=1、摘要=2、金額=3)
     const firstRow = page.getByRole('row', { name: /店01/ }).first()

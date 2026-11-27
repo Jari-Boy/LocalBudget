@@ -150,6 +150,12 @@
   top: var(--sticky-head-h, 0px);
   z-index: 15;
   background: var(--color-bg);
+  /*
+   * バーと表の見出しの複製との間(.import-screen の gap、16px)にも背景を敷く。敷かないと、固定中は
+   * その隙間から、スクロールで通り過ぎる表の行が透けて見える。余白を足した分は、負のマージンで相殺して、並びは変えない。
+   */
+  padding-bottom: 16px;
+  margin-bottom: -16px;
 }
 
 .import-screen--bulk {
