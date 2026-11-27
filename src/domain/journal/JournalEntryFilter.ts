@@ -50,6 +50,12 @@ export interface JournalEntryFilter {
   settlementBatchIds?: readonly (number | null)[]
   /** 作成経路(source_type)がこれらのどれかである仕訳のみを対象にする */
   sourceTypes?: readonly JournalEntrySourceType[]
+  /**
+   * 取り込んだ金融機関名(計画Issue #289)。外部明細から取り込んだ仕訳で、金融機関名がこれらのどれかと一致する仕訳を対象にする。
+   * `null`は「金融機関が不明な取込済みの仕訳」(取込時に金融機関名を持たない仕訳)を表す。
+   * 作成経路(sourceTypes)と同じ「出どころ」の軸で、両方を指定した場合はどちらかに該当すればよい(OR)
+   */
+  financialInstitutionNames?: readonly (string | null)[]
 
   /** いずれかの明細行の科目が、これらの科目グループまたはその配下(入れ子を含む)に属する仕訳のみを対象にする */
   accountGroupIds?: readonly number[]
