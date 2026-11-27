@@ -69,7 +69,7 @@ export function createInitialRowState(params: {
   }
 }
 
-type RowRecord = Pick<StatementImportReviewRecord, 'isExactDuplicate' | 'approximateCandidates'>
+export type RowRecord = Pick<StatementImportReviewRecord, 'isExactDuplicate' | 'approximateCandidates'>
 
 /**
  * 初期状態から利用者が入力を変えたか(未保存の警告の判定、計画Issue #193)。推定した初期値のままなら
