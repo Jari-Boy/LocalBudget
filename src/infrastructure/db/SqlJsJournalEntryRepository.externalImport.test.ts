@@ -129,6 +129,55 @@ describe('externalTransactionRefを渡した場合', () => {
   })
 })
 
+describe('取込の記録の金融機関名(計画Issue #289)', () => {
+  function createImported(externalId: string, financialInstitutionName?: string | null) {
+    return repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-08-01',
+      memo: externalId,
+      sourceType: 'external_import',
+      lines: [
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 150 },
+        { householdMemberId: memberId, accountId: bankAccountId, side: 'credit', amount: 150 },
+      ],
+      externalTransactionRef: {
+        accountId: bankAccountId,
+        externalId,
+        entryDate: '2026-08-01',
+        description: externalId,
+        amount: -150,
+        ...(financialInstitutionName === undefined ? {} : { financialInstitutionName }),
+      },
+    })
+  }
+
+  it('取込時に渡した金融機関名が、仕訳の読み出し(findById・findAll)で financialInstitutionName として返る', () => {
+    const entry = createImported('HASH-BANK', '三井住友銀行')
+
+    expect(repository.findById(entry.id)!.financialInstitutionName).toBe('三井住友銀行')
+    expect(repository.findAll().find((e) => e.id === entry.id)!.financialInstitutionName).toBe('三井住友銀行')
+  })
+
+  it('金融機関名を渡さない取込の仕訳は、financialInstitutionName が null になる', () => {
+    const entry = createImported('HASH-NONE')
+
+    expect(repository.findById(entry.id)!.financialInstitutionName).toBeNull()
+  })
+
+  it('取込でない仕訳(手入力)は、financialInstitutionName が null になる', () => {
+    const entry = repository.create({
+      householdMemberId: memberId,
+      entryDate: '2026-08-01',
+      lines: [
+        { householdMemberId: memberId, accountId: foodExpenseAccountId, side: 'debit', amount: 100 },
+        { householdMemberId: memberId, accountId: bankAccountId, side: 'credit', amount: 100 },
+      ],
+    })
+
+    expect(repository.findById(entry.id)!.financialInstitutionName).toBeNull()
+  })
+})
+
 describe('externalTransactionRefを渡さない場合', () => {
   it('external_transaction_refsには何も書き込まれない(通常のマニュアル起票と同じ挙動)', () => {
     const accounts = new SqlJsAccountRepository(db)

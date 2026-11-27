@@ -29,11 +29,22 @@ export function toSchemaV7(sql: string): string {
  * 差分を流すテストが、v9 の差分と重ならないようにするために使う。該当の記述が無いDDLには何もしない。
  */
 export function toSchemaV8(sql: string): string {
-  const v8 = sql
+  const v8 = toSchemaV11(sql)
     .replace(/ {2}-- クローズ\(計画Issue #249\)[\s\S]*?\n {2}is_active[^\n]*\n/, '')
     .replace(/-- クローズ時の振替仕訳\(計画Issue #249\)[\s\S]*?idx_settlement_batch_close_entries_entry[^\n]*\n\n/, '')
   if (v8.includes('settlement_batch_close_entries') || (v8.includes('CREATE TABLE settlement_batches') && v8.includes('is_active'))) {
     throw new Error('v8のDDLにクローズの記述が残っている')
   }
   return v8
+}
+
+/**
+ * テスト専用: 最新のDDLから、スキーマ v12(計画Issue #289)で足した取込の記録の金融機関名の列(とその直前のコメント)を
+ * 取り除いて、v11 のDDLにする。v11 以前のDBを最新のDDLから作って差分を流すテストが、v12 の差分(列の追加)と
+ * 重ならないようにするために使う。該当の記述が無いDDLには何もしない。
+ */
+export function toSchemaV11(sql: string): string {
+  const v11 = sql.replace(/ {2}-- 取込時の金融機関名\(計画Issue #289\)[\s\S]*?\n {2}financial_institution_name[^\n]*\n/, '')
+  if (v11.includes('financial_institution_name')) throw new Error('v11のDDLに金融機関名の記述が残っている')
+  return v11
 }

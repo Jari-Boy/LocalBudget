@@ -26,6 +26,8 @@ export interface BuildConfirmedJournalEntryInputParams {
   /** CSV上の行の順番(0始まり)と、同じ取込で共通の取込日時(計画Issue #205。残高の基準点の並び順判定に使う) */
   rowOrder?: number | null
   importedAt?: string
+  /** 取込に使ったマッピング定義の金融機関名(format_group_id、計画Issue #289)。取込の記録に残す。不明ならnull */
+  financialInstitutionName?: string | null
   /** 起票者(CreateJournalEntryInput.householdMemberId、計画Issue #88)。解決は呼び出し側の責務 */
   entryHouseholdMemberId: number
   /**
@@ -86,6 +88,7 @@ export function buildConfirmedJournalEntryInput(
       rowOrder: params.rowOrder ?? null,
       ...(params.importedAt === undefined ? {} : { importedAt: params.importedAt }),
       isSettled: record.isSettled,
+      financialInstitutionName: params.financialInstitutionName ?? null,
     },
   }
 }
