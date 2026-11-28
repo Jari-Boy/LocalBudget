@@ -1010,16 +1010,18 @@ describe('StatementImportScreen', () => {
 
     const clickChoose = () => fireEvent.click(screen.getAllByRole('button', { name: 'CSVを選択' })[0])
 
-    it('編集していなければ、確認なしでファイル選択を開く', async () => {
+    it('未編集でも、取り込める行が未保存のままなら確認が出て、「破棄して移動」でファイル選択を開く(計画Issue #293)', async () => {
       makeMapping()
       renderScreen()
       await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
 `)
 
       clickChoose()
+      expect(openPicker).not.toHaveBeenCalled()
+      expect(screen.getByRole('dialog', { name: '未保存の変更があります' })).toBeInTheDocument()
 
+      fireEvent.click(screen.getByRole('button', { name: '破棄して移動' }))
       expect(openPicker).toHaveBeenCalledTimes(1)
-      expect(screen.queryByRole('dialog', { name: '未保存の変更があります' })).not.toBeInTheDocument()
     })
 
     it('編集中は確認が出て、「キャンセル」ではファイル選択を開かず、「破棄して移動」で開く', async () => {
@@ -1058,7 +1060,7 @@ describe('StatementImportScreen', () => {
   describe('編集中に他の画面へ移ろうとしたときの警告(計画Issue #193)', () => {
     const leave = () => fireEvent.click(screen.getByRole('link', { name: '他の画面へ' }))
 
-    it('編集していなければ、確認なしで移動する', async () => {
+    it('CSVを選んだ直後(未編集)でも、確認が出て、移動しない(計画Issue #293)', async () => {
       makeMapping()
       renderScreen()
       await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
@@ -1066,8 +1068,35 @@ describe('StatementImportScreen', () => {
 
       leave()
 
+      expect(screen.getByRole('dialog', { name: '未保存の変更があります' })).toBeInTheDocument()
+      expect(screen.getByTestId('where')).toHaveTextContent('/master/here')
+    })
+
+    it('取り込める行をすべて確定したあとは、確認なしで移動する(計画Issue #293)', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+      fireEvent.click(await screen.findByRole('button', { name: /^\d+ \/ 1 件を「普通預金」に確定$/ }))
+      await screen.findByText(/確定しました。続けて明細を選択してください。/)
+
+      leave()
+
       expect(screen.getByTestId('where')).toHaveTextContent('/other')
       expect(screen.queryByRole('dialog', { name: '未保存の変更があります' })).not.toBeInTheDocument()
+    })
+
+    it('「マッピングを編集」も、未編集のときから確認を通す。警告の設定が「出さない」なら出さない(計画Issue #293)', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
+`)
+
+      fireEvent.click(screen.getByRole('button', { name: 'マッピングを編集' }))
+
+      expect(onEditMappings).not.toHaveBeenCalled()
+      expect(screen.getByRole('dialog', { name: '未保存の変更があります' })).toBeInTheDocument()
     })
 
     it('行を編集していると確認が出て、「キャンセル」で画面に残り、「破棄して移動」で何も確定せず移動する', async () => {

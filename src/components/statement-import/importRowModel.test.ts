@@ -4,7 +4,8 @@
  * 費用・収益の行だけ、精算バッチは一時勘定の行だけ、既定の世帯メンバーを持つ科目の行は世帯メンバーを
  * 変えない)、似た取引がある行の選び方(追加する・置き換える・保存しない)と、一覧の3グループ(重複・似た取引あり・
  * 問題なし)への分類、摘要の自動学習をしないこと(計画Issue #259)を検証する。
- * 初期状態からの編集の有無(isRowEdited、未保存警告の判定、計画Issue #193)も検証する。
+ * 初期状態からの編集の有無(isRowEdited、計画Issue #193)と、離脱時の未保存警告を出すかの判定(hasUnsavedRows、
+ * 編集の有無を問わず、取り込める行が確定も一時保存もされずに残っているか。計画Issue #293)も検証する。
  * DB・DOM非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
@@ -12,6 +13,7 @@ import type { Account } from '../../domain/account/Account'
 import {
   applyBulkSetting,
   createInitialRowState,
+  hasUnsavedRows,
   isRowEdited,
   replacementTargetOf,
   rowGroup,
@@ -266,5 +268,54 @@ describe('isRowEdited', () => {
 
   it('入力の記録(相手科目を手で選んだか)だけが違っても、値が同じなら編集とみなさない', () => {
     expect(isRowEdited({ ...initial, counterAccountTouched: true }, initial)).toBe(false)
+  })
+})
+
+describe('hasUnsavedRows(離脱時の未保存警告の判定、計画Issue #293)', () => {
+  const initial = createInitialRowState({ counterpartyId: null, counterAccountId: 2, candidateCounterpartyIds: [] })
+  const clean = { externalId: 'a', isExactDuplicate: false, approximateCandidates: [] }
+  const duplicate = { externalId: 'b', isExactDuplicate: true, approximateCandidates: [] }
+  const similar = {
+    externalId: 'c',
+    isExactDuplicate: false,
+    approximateCandidates: [{ journalEntryId: 1 }],
+  } as unknown as typeof clean
+  const run = (
+    records: Array<typeof clean>,
+    rows: ImportRowState[],
+    options: { done?: number[]; saved?: Array<[string, ImportRowState]> } = {},
+  ) => hasUnsavedRows({ records, rows, done: new Set(options.done ?? []), savedStates: new Map(options.saved ?? []) })
+
+  it('未編集でも、取り込める行が確定も一時保存もされず残っていれば、未保存とみなす', () => {
+    expect(run([clean], [initial])).toBe(true)
+  })
+
+  it('重複(取り込まない)の行だけなら、失うものが無いので未保存とみなさない', () => {
+    expect(run([duplicate], [initial])).toBe(false)
+  })
+
+  it('「取り込まない」を選んだ行だけなら、未保存とみなさない', () => {
+    expect(run([similar], [{ ...initial, approximateDecision: 'skip' }])).toBe(false)
+  })
+
+  it('重複の行を「取り込む」にしたら、取り込める行なので未保存とみなす', () => {
+    expect(run([duplicate], [{ ...initial, includeDuplicate: true }])).toBe(true)
+  })
+
+  it('確定済みの行は対象外で、一部だけ確定して残りが未保存なら未保存とみなす', () => {
+    expect(run([clean], [initial], { done: [0] })).toBe(false)
+    expect(run([clean, { ...clean, externalId: 'x' }], [initial, initial], { done: [0] })).toBe(true)
+  })
+
+  it('取り込める行をすべて一時保存した状態と同じなら、未保存とみなさない', () => {
+    expect(run([clean], [initial], { saved: [['a', initial]] })).toBe(false)
+  })
+
+  it('一時保存したあとに行を変えて保存した状態と異なれば、未保存とみなす', () => {
+    expect(run([clean], [{ ...initial, comment: 'メモ' }], { saved: [['a', initial]] })).toBe(true)
+  })
+
+  it('行が1つも無ければ、未保存とみなさない', () => {
+    expect(run([], [])).toBe(false)
   })
 })

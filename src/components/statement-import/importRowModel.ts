@@ -72,7 +72,7 @@ export function createInitialRowState(params: {
 export type RowRecord = Pick<StatementImportReviewRecord, 'isExactDuplicate' | 'approximateCandidates'>
 
 /**
- * 初期状態から利用者が入力を変えたか(未保存の警告の判定、計画Issue #193)。推定した初期値のままなら
+ * 初期状態から利用者が入力を変えたか(一時保存する入力の判定、計画Issue #193。未保存の警告の判定は hasUnsavedRows)。推定した初期値のままなら
  * 失うものは無いので編集とみなさない。相手科目を手で選んだかの記録(counterAccountTouched)など、
  * 値が変わらないものは比較しない。
  */
@@ -88,6 +88,25 @@ export function isRowEdited(state: ImportRowState, initial: ImportRowState): boo
     state.approximateDecision !== initial.approximateDecision ||
     state.replacementTargetId !== initial.replacementTargetId
   )
+}
+
+/**
+ * 離脱時に未保存の警告を出すか(計画Issue #293)。取り込める行(重複・取り込まない行を除く)が、
+ * 確定も一時保存もされずに残っているとき。編集の有無は問わない(CSVを選んだ直後も、離脱すると取込作業が失われる)。
+ * 一時保存した時点の状態(savedStates)と同じ行は、失うものが無いので対象外。
+ */
+export function hasUnsavedRows(params: {
+  records: ReadonlyArray<RowRecord & { externalId: string }>
+  rows: readonly ImportRowState[]
+  done: ReadonlySet<number>
+  savedStates: ReadonlyMap<string, ImportRowState>
+}): boolean {
+  return params.records.some((record, index) => {
+    if (params.done.has(index)) return false
+    const status = rowStatus(record, params.rows[index])
+    if (status === 'duplicate' || status === 'skipped') return false
+    return params.savedStates.get(record.externalId) !== params.rows[index]
+  })
 }
 
 export function rowStatus(record: RowRecord, state: ImportRowState): RowStatus {

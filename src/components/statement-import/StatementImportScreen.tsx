@@ -60,7 +60,7 @@ import { isStatementImportEligibleAccount, isStatementImportCounterAccountEligib
 import {
   createInitialRowState,
   defaultMemberIdOf,
-  isRowEdited,
+  hasUnsavedRows,
   isTaggableAccountId,
   replacementTargetOf,
   resolveEligibleCounterpartyId,
@@ -522,17 +522,18 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     )
   }, [session?.targetAccount.id, session?.targetAccount.isReconcilable, hasStatementBalance, journalEntryRepository, externalTransactionRefRepository]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 未保存の警告(計画Issue #193)。取り込んだ行の入力を初期状態から変えて、まだ確定していないとき。
+  // 未保存の警告(計画Issue #193、#293で編集の有無を問わない判定に変更)。取り込める行(重複・取り込まない行を除く)が、
+  // 確定も一時保存もされずに残っているとき。CSVを選んだ直後(未編集)でも出す。
   // 「保存して移動」は、確定できる行を確定する(確定できない行が残るときは移動しない)
-  // 一時保存した状態と同じ行は、失うものが無いので未保存の編集とみなさない(計画Issue #231 フェーズ3)
+  // 一時保存した状態と同じ行は、失うものが無いので対象外(計画Issue #231 フェーズ3)
   const hasUnsavedEdits =
     session !== null &&
-    session.rows.some(
-      (state, index) =>
-        !session.done.has(index) &&
-        isRowEdited(state, session.initialRows[index]) &&
-        draftSavedStates.current.get(session.review.records[index].externalId) !== state,
-    )
+    hasUnsavedRows({
+      records: session.review.records,
+      rows: session.rows,
+      done: session.done,
+      savedStates: draftSavedStates.current,
+    })
   // 警告の説明に出す件数: 取り込み対象の全件と、そのうち確定できる(入力済みの)件数
   const guardCounts = { ready: 0, total: 0 }
   if (session) {
