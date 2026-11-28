@@ -6,6 +6,7 @@
  *   - 置き換え関係(supersedes / partially_supersedes / superseded_by / partially_superseded_by)の参照先が実在し、
  *     双方向で対応し、日付の前後関係が逆転していない
  *   - 全面的に置き換えられた決定(superseded_by あり)だけが `status: deprecated` を持つ
+ *   - 本文中の `decisions/YYYY-MM-DD-NN.md` という参照が、実在する決定を指す
  *   - index.md が、すべての決定を「現行の決定」「置き換え済みの決定」の正しい節に1回ずつ載せている
  *
  * ファイルシステムには触れない純粋関数。呼び出し側(checkBundle)が { path, text } の配列を渡す。
@@ -144,6 +145,20 @@ function checkDecisionIndex(indexPath, indexFile, decisions) {
   return violations
 }
 
+/** 本文中の `decisions/YYYY-MM-DD-NN.md` という参照(インラインコード・Markdown リンクの別を問わない)が、実在する決定を指すか検査する。 */
+function checkDecisionReferences(files, byId) {
+  const violations = []
+  for (const { path, text } of files) {
+    const reported = new Set()
+    for (const match of text.matchAll(/decisions\/(\d{4}-\d{2}-\d{2}-\d{2})\.md/g)) {
+      if (byId.has(match[1]) || reported.has(match[1])) continue
+      reported.add(match[1])
+      violations.push(violation(path, 'decision-ref-not-found', `存在しない決定を参照している: ${match[1]}`))
+    }
+  }
+  return violations
+}
+
 /**
  * docs/decisions/ 配下の決定ファイルと index.md を検査する。rootDir はバンドルルート(例: 'docs')。
  * 解析できない frontmatter は概念文書の検査(checkConceptDocument)が報告するため、ここでは対象から外す。
@@ -166,5 +181,6 @@ export function checkDecisions(files, { rootDir }) {
   const violations = []
   for (const decision of decisions) violations.push(...checkDecisionFile(decision.path, decision, byId))
   violations.push(...checkDecisionIndex(indexPath, indexFile, decisions))
+  violations.push(...checkDecisionReferences(files, byId))
   return violations
 }

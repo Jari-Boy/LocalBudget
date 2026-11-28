@@ -75,7 +75,7 @@ tags: [guide, patterns, history]
 ## 確立済みの「書き込み直前バリデーション」規約を新しい集約に適用する際、呼び出し忘れ・関連ファイルのdocstring更新漏れが連鎖しやすい
 
 **症状**: `assertJournalBalance`(`SqlJsJournalEntryRepository.create`/`update`が書き込み直前に呼び出し、失敗時は`UnbalancedJournalEntryError`を投げてDBに一切書き込まない、`docs/domain/journal.md` 1.3)という確立済み規約があるにもかかわらず、新しい集約でDBアクセス不要な同種の純粋バリデーション関数(例: `assertValidRecurringSchedule`)を実装した際、(1) その関数自体は実装・単体テストされるが、肝心のRepository実装(`create`/`update`)からは呼び出されておらず、自身のテスト内でのみ実行される実質デッドコードのまま提出される、(2) 呼び出し忘れの指摘を受けて実装側(`SqlJsXxxRepository.ts`)のdocstringだけ修正し、ポート側(ドメイン層の`XxxRepository.ts`インターフェース)のdocstringが「DDL側で強制され、実装は例外をそのまま伝播させる」という古い記述のまま矛盾して残る、という2段階の指摘漏れが連続して起きた。
-**原因**: 純粋なバリデーション関数自体を実装しテストすることに意識が向きやすく、それをRepository実装から呼び出す「配線」の工程が独立したチェック項目として意識されにくい。また、ポート(インターフェース)とインフラ実装(sql.js実装)の2ファイルに同じ制約について同内容のdocstringが重複して存在する構成(`docs/decisions/`「AccountRepositoryをドメイン層とインフラ層に分離する」参照)では、片方を修正した際にもう片方も同時に見直す意識が働きにくい。
+**原因**: 純粋なバリデーション関数自体を実装しテストすることに意識が向きやすく、それをRepository実装から呼び出す「配線」の工程が独立したチェック項目として意識されにくい。また、ポート(インターフェース)とインフラ実装(sql.js実装)の2ファイルに同じ制約について同内容のdocstringが重複して存在する構成(`docs/decisions/2026-07-31-02.md`「AccountRepositoryをドメイン層とインフラ層に分離する」参照)では、片方を修正した際にもう片方も同時に見直す意識が働きにくい。
 **対策**: DBアクセス不要な純粋バリデーション関数を新設する際は、実装計画時点で「この関数はどのRepositoryメソッドの書き込み直前から呼び出されるか」を明示し、関数自身の単体テストとは別に、呼び出し元のRepository層テストで対応するドメインエラーの`instanceof`が実際にスローされることを検証する(関数自身の単体テストだけでは配線漏れを検出できない)。また、Repositoryのポート(`src/domain/<集約>/<集約>Repository.ts`)とsql.js実装(`src/infrastructure/db/SqlJs<集約>Repository.ts`)は同一の制約について同じ内容のdocstringを持つ構成であるため、一方の記述を修正した際は必ずもう一方も読み合わせて矛盾がないか確認する。evaluatorのレビュー時も、既存の確立済み規約(`assertJournalBalance`等)がある場合はその呼び出し箇所・関連ファイル全てへの反映漏れがないか横展開でチェックする。
 **該当箇所（例）**: `src/infrastructure/db/SqlJsRecurringTransactionRuleRepository.ts`(`create`/`update`冒頭の`assertValidRecurringSchedule`呼び出し、コミット52ab664で追加)、`src/domain/recurring-transaction/RecurringTransactionRuleRepository.ts`(ポート側docstring、コミットd1270c3で修正)、Issue #18 Review Attempt 1・Attempt 2(evaluator FAIL指摘)
 
@@ -193,7 +193,7 @@ tags: [guide, patterns, history]
 **原因**: 各フィールドの判定を独立した逐次処理として実装すると、「あるフィールドが確定した列は他フィールドの候補から除外すべき」という制約が、まだ処理していない後続フィールドの確定結果には適用されない。1パスのループでは処理の途中で「全フィールドの確定状況」を把握できないため、後から確定するフィールドの情報を先行フィールドの判定にフィードバックできない。
 **対策**: 複数の項目(フィールド)が共通の候補プール(本件では「CSVの列」)から排他的に割り当てられる推測・マッチングロジックを実装する際は、1パスの処理順ベースの実装を避け、(1)全項目についてまず高確度の判定(本件ではヘッダーキーワードマッチング)を先に行い確定済み項目・使用済みリソースを洗い出す、(2)未確定の項目についてのみ、確定済みで使用中のリソースを除外した上でフォールバック判定を行う、という2パス構成にする。実装後は、フィールドの処理順序(配列の並び)を入れ替えても結果が変わらないことを直接検証するテスト、または処理順に依存し得る具体的なfixture(本件のような、先行フィールド候補に後続フィールドの確定列が紛れ込みうる列構成)でのテストを追加する。
 **該当箇所（例）**: `src/domain/statement-import/inferMappingDefinitionDraft.ts`(`claimedColumns`による2パス方式)、`docs/decisions/2026-08-03-06.md`「列マッピング推測の候補確定は2パス方式(ヘッダー確定列を先に全フィールド分claimしてからフォールバック候補を生成)とし、フィールドの処理順に依存しない結果にする」、Issue #48 Implementation Attempt 1(実装中に自己発見、evaluator指摘ではない)
-- 続報(2026-08-03、コミット9ec2454): 2パス方式の実装後も、`claimedColumns`による除外はヘッダーの曖昧マッチ(1件に絞れなかったヘッダー候補)を絞り込む経路には適用されておらず、型ベースのフォールバック経路にのみ適用されていた非対称な実装が残っていた(evaluatorレビューPASS後、実データでの動作検証で発覚)。共通の候補プールから複数フィールドが割り当てを行う設計で、候補確定の経路が複数(本件ではヘッダー一意マッチ・ヘッダー曖昧マッチの絞り込み・型フォールバックの3経路)ある場合は、除外ロジック(`claimedColumns`)を全経路に一貫して適用できているか確認する必要がある。さらに、独立した経路(ヘッダー曖昧マッチの絞り込み結果と型フォールバックの結果)がそれぞれ`debitColumn`・`creditColumn`を偶然同一の列に解決してしまい、実際には1列の符号付き金額であるにもかかわらず`debit_credit_split`と誤判定される問題も判明した。「各フィールドは独立した経路で解決されるため互いに整合しているはず」という前提は成り立たず、解決結果同士の意味的な整合性(本件では「出金列と入金列は異なる列であるべき」)を事後的に検証するチェックを別途設ける必要がある。詳細は`docs/decisions/`2026-08-03の各エントリ参照。
+- 続報(2026-08-03、コミット9ec2454): 2パス方式の実装後も、`claimedColumns`による除外はヘッダーの曖昧マッチ(1件に絞れなかったヘッダー候補)を絞り込む経路には適用されておらず、型ベースのフォールバック経路にのみ適用されていた非対称な実装が残っていた(evaluatorレビューPASS後、実データでの動作検証で発覚)。共通の候補プールから複数フィールドが割り当てを行う設計で、候補確定の経路が複数(本件ではヘッダー一意マッチ・ヘッダー曖昧マッチの絞り込み・型フォールバックの3経路)ある場合は、除外ロジック(`claimedColumns`)を全経路に一貫して適用できているか確認する必要がある。さらに、独立した経路(ヘッダー曖昧マッチの絞り込み結果と型フォールバックの結果)がそれぞれ`debitColumn`・`creditColumn`を偶然同一の列に解決してしまい、実際には1列の符号付き金額であるにもかかわらず`debit_credit_split`と誤判定される問題も判明した。「各フィールドは独立した経路で解決されるため互いに整合しているはず」という前提は成り立たず、解決結果同士の意味的な整合性(本件では「出金列と入金列は異なる列であるべき」)を事後的に検証するチェックを別途設ける必要がある。詳細は`docs/decisions/2026-08-03-09.md`2026-08-03の各エントリ参照。
 
 ## ヒューリスティックな推測ロジックは、evaluatorレビューをPASSしたテストfixtureだけでは実データでの精度不足を検出できないことがある
 
@@ -330,8 +330,8 @@ tags: [guide, patterns, history]
 **原因**: JavaScriptでは、ある関数呼び出しの引数として渡す別の関数呼び出しは、外側の関数(ここでは`Promise.resolve`)自体が呼ばれるより先に評価される。つまり`Promise.resolve(fn())`は`const result = fn(); Promise.resolve(result)`と等価であり、`fn()`が同期的にthrowした場合`Promise.resolve`が呼ばれることすらなく、その場でJSの同期例外として伝播する。`.catch()`はPromiseチェーンに繋がれたハンドラであり、Promiseそのものが一度も生成されない(式の評価自体が例外で中断する)以上呼び出されようがない。sql.jsのRepositoryメソッドは全て同期API(`db.run`/`db.exec`を直接呼ぶ)であり、DDL制約(CHECK/TRIGGER)違反時は同期的にthrowする設計(`docs/architecture.md` 5.1節)であるため、Repository呼び出しをPromiseチェーンでラップするUIコードはこの罠に特に踏み込みやすい。
 **対策**: Repositoryメソッド呼び出しをPromiseチェーンでラップする際は、`Promise.resolve(fn())`ではなく`Promise.resolve().then(() => fn())`の形を使う。`.then()`コールバック内でのthrowは、コールバック自体がマイクロタスクとして非同期に実行されるため、必ずそのPromiseチェーンのrejectionとして扱われる。この書き方であれば、`fn`が同期的に例外を投げる場合(sql.jsの制約違反等)・非同期(Promiseを返しrejectする)場合のいずれであっても`.catch()`で一律に捕捉できる。実装時は、対象のRepositoryメソッドが同期的に例外を投げるケース(DDLトリガー・CHECK制約違反等)をテストで再現し、`.catch()`のエラーハンドラ(UIのエラー表示)が実際に呼ばれることを確認する(正常系のテスト、または非同期に失敗するモックを使うテストだけでは、この罠は再現・検出できない)。
 **該当箇所（例）**: `src/components/household-member-management/HouseholdMemberManagementScreen.tsx`(全操作関数、コミットef2f502で`Promise.resolve().then(() => ...)`へ修正)、`src/components/household-member-management/HouseholdMemberManagementScreen.group.test.tsx`(is_group変更禁止トリガーのエラー表示を検証する回帰テスト)、`docs/decisions/2026-08-13-02.md`「非同期の書き込み操作は必ずPromise.resolve().then(() => fn())で開始し、Promise.resolve(fn())は使わない」、Issue #37(実装中に自己発見)。同型のパターン(未修正)が`src/components/counterparty-management/CounterpartyManagementScreen.tsx`(Issue #38)にも残っている。
-- 再発例: `src/components/account-list/AccountListScreen.tsx`の`submitEdit`・`deleteAccount`・`deactivateAccount`(計画Issue #95 Implementation Attempt 1)が、既存の確立済み規約(`docs/decisions/`に明記済み)にもかかわらず`Promise.resolve(fn())`のまま新規実装され、evaluatorのレビューで同一区分内の重複科目名への変更(UNIQUE制約違反、同期例外)を実機相当のテストで再現されFAIL指摘された(重大度HIGH、`isSubmitting`が解除されずボタンが恒久的に無効化されるフリーズも併発)。Attempt 2で3関数とも`Promise.resolve().then(() => fn())`へ修正し、UNIQUE制約違反を実際に発生させる回帰テストを追加してPASSした。既に文書化済みの規約であっても、新しい管理画面(CRUD操作を持つ一覧・編集画面)を実装するたびに同じ罠を踏む再発が続いている(`CounterpartyManagementScreen`に続き3例目)ため、新規の管理画面を実装する計画時点で本パターンの存在を明示的に確認する運用を徹底する必要がある。
-- 再発例: `RecurringTransactionRuleManagementScreen`の`submitForm`・`deleteRule`・`deactivateRule`、`RecurringTransactionProposalReviewScreen`の`confirmProposal`(計画Issue #39 Implementation Attempt 1)が、同じく`Promise.resolve(fn())`のまま新規実装され、evaluatorのレビューでFAIL指摘された(4例目)。Attempt 2で4箇所とも`Promise.resolve().then(() => fn())`へ修正し(コミットffafcc9)、同期例外時に`isSubmitting`が解除されることを確認する回帰テストを追加した(コミット3599689)。新しいCRUD画面を実装するIssueが4件連続でこの罠を踏んでおり、`docs/decisions/`に規約が明記されているだけでは実装時に参照されない状態が続いている。今後は新規CRUD画面の実装着手時(計画段階)に本パターンの箇条書きをチェックリストとして明示的に参照する運用が必要。
+- 再発例: `src/components/account-list/AccountListScreen.tsx`の`submitEdit`・`deleteAccount`・`deactivateAccount`(計画Issue #95 Implementation Attempt 1)が、既存の確立済み規約(`docs/decisions/2026-08-13-02.md`に明記済み)にもかかわらず`Promise.resolve(fn())`のまま新規実装され、evaluatorのレビューで同一区分内の重複科目名への変更(UNIQUE制約違反、同期例外)を実機相当のテストで再現されFAIL指摘された(重大度HIGH、`isSubmitting`が解除されずボタンが恒久的に無効化されるフリーズも併発)。Attempt 2で3関数とも`Promise.resolve().then(() => fn())`へ修正し、UNIQUE制約違反を実際に発生させる回帰テストを追加してPASSした。既に文書化済みの規約であっても、新しい管理画面(CRUD操作を持つ一覧・編集画面)を実装するたびに同じ罠を踏む再発が続いている(`CounterpartyManagementScreen`に続き3例目)ため、新規の管理画面を実装する計画時点で本パターンの存在を明示的に確認する運用を徹底する必要がある。
+- 再発例: `RecurringTransactionRuleManagementScreen`の`submitForm`・`deleteRule`・`deactivateRule`、`RecurringTransactionProposalReviewScreen`の`confirmProposal`(計画Issue #39 Implementation Attempt 1)が、同じく`Promise.resolve(fn())`のまま新規実装され、evaluatorのレビューでFAIL指摘された(4例目)。Attempt 2で4箇所とも`Promise.resolve().then(() => fn())`へ修正し(コミットffafcc9)、同期例外時に`isSubmitting`が解除されることを確認する回帰テストを追加した(コミット3599689)。新しいCRUD画面を実装するIssueが4件連続でこの罠を踏んでおり、`docs/decisions/2026-08-13-02.md`に規約が明記されているだけでは実装時に参照されない状態が続いている。今後は新規CRUD画面の実装着手時(計画段階)に本パターンの箇条書きをチェックリストとして明示的に参照する運用が必要。
 
 ## 新しいライフサイクル操作(非アクティブ化)を実装して初めて、既存の複数画面の選択欄フィルタ漏れが顕在化する
 
@@ -370,7 +370,7 @@ tags: [guide, patterns, history]
 **症状**: 入力(entryChoice/hasExternalStatement等)によってステップ数・内容が動的に変わるステップベースのウィザード(`AccountRegistrationFlow`)で、あるステップのボタンのonClickハンドラが「状態の更新(`setEntryChoice`等)」と「次のステップへ進む(`goNext`)」を同一ハンドラ内で同時に呼ぶ設計にすると、`goNext`が呼ばれた時点でそのレンダーが計算した`steps`配列はまだ直前の`setState`が反映される前の(更新前の)状態を基にしたものになっている。この状態で`goNext`に`Math.min(index + 1, steps.length - 1)`のような素朴な上限クランプを実装すると、更新後は本来ステップ数が増えるはずの箇所で更新前の(短い)`steps.length`を基準に頭打ちになり、以後ステップが一切進まなくなる。
 **原因**: Reactの1回のレンダー内では、直前の`setState`呼び出しがまだ反映されておらず、そのレンダーで計算された派生値(本件の`steps`)は「更新前の状態」を基にしたものである。`goNext`の呼び出し元(onClickハンドラ)は状態更新と同一ハンドラ内にあるため直感的には「更新後のstepsを基準にクランプすればよい」ように見えるが、実際にはハンドラ実行中のクロージャが参照する`steps`は常に更新前の値であり、次のレンダーで初めて更新後の`steps`が計算される。
 **対策**: ステップ配列が状態によって動的に変わる(入力ごとに配列の長さ・内容が変わる)ウィザードでは、`goNext`側で`steps.length`を基準にした上限クランプを実装せず単純なインクリメントに留める。次のレンダーで新しい状態から再計算された`steps`に対して`stepIndex`が参照されるため、クランプを省略しても表示側(`steps[stepIndex]`)は安全に動作する。範囲外アクセス防止が必要な場合は`goNext`側ではなく表示側(`steps[stepIndex] ?? 最終ステップ`等)で行う。
-**該当箇所（例）**: `src/components/account-registration/AccountRegistrationFlow.tsx`(`goNext`実装直前のコメント)、`docs/decisions/`「ステップベースのウィザードでsteps配列を状態から都度計算する場合、goNextに上限クランプをかけない」、計画Issue #102実装中に自己発見(evaluator指摘ではない)
+**該当箇所（例）**: `src/components/account-registration/AccountRegistrationFlow.tsx`(`goNext`実装直前のコメント)、`docs/decisions/2026-08-14-07.md`「ステップベースのウィザードでsteps配列を状態から都度計算する場合、goNextに上限クランプをかけない」、計画Issue #102実装中に自己発見(evaluator指摘ではない)
 
 ## 冪等シード関数がis_system_managed等のフラグの有無だけで判定すると、既存の非システム管理レコードとの名前衝突(UNIQUE制約)でWorker起動全体がクラッシュしうる
 
@@ -385,7 +385,7 @@ tags: [guide, patterns, history]
 **原因**: 「不完全な入力行は確定対象から除外する」という寛容なフィルタリング方針自体は、単一種類の行(除外条件が全行で同一)を前提にすれば「フィルタ後に0件になっていないか」という集約チェックだけで安全に機能する。しかし本件のように除外条件が行の種類によって異なる(世帯メンバー行のみ`advanceLiabilityAccountId`の有無に依存し、世帯外相手の行は依存しない)場合、集約後の「0件かどうか」という粗いチェックでは、特定の種類の行だけがまるごと消えていても、他の種類の行が1件でも生き残っていれば検出できない。
 **対策**: 複数種類の行を許容するフィルタで、種類ごとに異なる前提条件(欠落しうる外部依存)がある場合、確定後のリスト全体の空チェックだけに頼らず、各種類について「その種類の行が1件でも入力されているのに、前提条件が満たされず全て脱落する」ケースを個別に検出し、専用のエラーメッセージで警告する。実装計画時点で「このフィルタは行の種類によって除外条件が異なるか」を確認し、異なる場合は種類ごとの事前検証を確定処理の入り口に追加する。テストは「特定の種類の行だけが前提条件を満たさず、かつ他の種類の行は有効」という組み合わせを明示的に用意し、警告が表示されることを検証する。
 **該当箇所（例。計画Issue #271で変換関数は削除し、割勘タブの`planLineExpenseSplit`・`submitExpenseSplit`に置き換えた。教訓は有効）**: `src/components/expense-splitting/ExpenseSplittingForm.tsx`(`handleSubmit`内の`hasHouseholdMemberParticipant`事前検証)、計画Issue #40 Review Attempt 1(evaluator指摘、コミットdc2e071で修正)
-- 再発例: 同じ`ExpenseSplittingForm`で、今度は世帯外の相手(`kind === 'counterparty'`)の行が`targetId === null`(取引先未選択)のまま確定できる不具合が、evaluatorのPASS後の人間による実機レビューで発見された。原因・対策とも上記と全く同型(除外条件が行の種類によって異なり、`noRecipientError`の集約チェックだけでは特定の種類の全滅を検出できない)で、`hasIncompleteCounterpartyParticipant`という同じ形の専用事前検証(`counterpartyTargetRequiredError`)を追加して対応した(コミット8ec73f2、詳細は`docs/decisions/`(2026-09-06)参照)。evaluatorのレビューをPASSしていても、同一コンポーネント内に同型の欠陥が行の種類ごとに複数個所独立して仕込まれうることを示す実例であり、1箇所修正して終わりにせず、同じ関数・同じコンポーネント内の他の行の種類にも同種の事前検証が漏れなく揃っているか横断的に確認する価値がある。
+- 再発例: 同じ`ExpenseSplittingForm`で、今度は世帯外の相手(`kind === 'counterparty'`)の行が`targetId === null`(取引先未選択)のまま確定できる不具合が、evaluatorのPASS後の人間による実機レビューで発見された。原因・対策とも上記と全く同型(除外条件が行の種類によって異なり、`noRecipientError`の集約チェックだけでは特定の種類の全滅を検出できない)で、`hasIncompleteCounterpartyParticipant`という同じ形の専用事前検証(`counterpartyTargetRequiredError`)を追加して対応した(コミット8ec73f2、詳細は`docs/decisions/2026-09-06-02.md`(2026-09-06)参照)。evaluatorのレビューをPASSしていても、同一コンポーネント内に同型の欠陥が行の種類ごとに複数個所独立して仕込まれうることを示す実例であり、1箇所修正して終わりにせず、同じ関数・同じコンポーネント内の他の行の種類にも同種の事前検証が漏れなく揃っているか横断的に確認する価値がある。
 
 ## findAll()等の配列の並び順(id採番順=挿入順)を、業務上意味のある順序(取引日順等)であるかのように暗黙に前提して先頭要素を代表値に使う
 
@@ -429,14 +429,14 @@ tags: [guide, patterns, history]
 **症状**: `AccountGroupManagementScreen`(勘定科目グループ管理画面)を、旧来の深さ付きフラットリスト+一括割り当てパネルから、ツリー表示+ドラッグ&ドロップ/チェックボックス移動の構成へ全面的に書き直した際、旧実装(計画Issue #112)が持っていた「`is_system_managed`科目(割勘用の立替金・初期残高科目等)をグループ割り当ての対象から除外する」というガード(`isEligibleForAssignmentPanel`相当)の移植が漏れた。結果、割り勘用の立替金科目がツリーに表示され、選択してグループへ移動しようとするとDBトリガー(`prevent_non_name_change_on_system_managed_account`)がSQL例外を投げる不具合になった。ユーザーの実機確認(dev server)で発覚した。
 **原因**: 画面を全面的に書き直す(コンポーネントの構造・状態管理ごと作り直す)際は、新しい機能要件(本件ではツリー表示・D&D)の実装に意識が集中し、旧実装に埋め込まれていた「目立たないが必須のガード条件」(本件では一覧のフィルタ条件、`isSystemManaged`によるデータ除外)は、新しい完了条件チェックリストに明示されていない限り見落とされやすい。この種のガードは機能要件というより「表示してはいけないデータを除外する」という裏方の制約であり、UIモックアップや計画書には現れにくい。
 **対策**: 既存画面の全面刷新(ロジック・状態管理を含む書き直し)を計画・実装する際は、着手前に旧実装のコード(または対応するテスト)から「表示・選択・操作の対象を絞り込んでいるガード条件」を明示的に洗い出し、新実装の完了条件チェックリストに「旧実装にあった除外条件が引き続き機能するか」の項目として加える。特に`is_system_managed`のような「通常のCRUDから除外されるレコード」を扱う画面では、DDLトリガー自体が最終防御線として存在していても(本件のように)アプリケーション層での事前除外が無いとユーザーに生のSQL例外が露出してしまうため、テストで「システム管理レコードが一覧・選択対象に現れないこと」を明示的に検証する。
-**該当箇所（例）**: `src/components/account-group-management/AccountGroupManagementScreen.tsx`(`visibleAccounts`による`isSystemManaged`除外、コミットd45c45f)、`docs/domain/accounts.md` 5.3、`docs/decisions/`「勘定科目グループ管理画面を…ツリー表示+ドラッグ&ドロップ/チェックボックス移動に刷新する」、計画Issue #129(実機確認で発覚、evaluatorのFAIL指摘ではない)
+**該当箇所（例）**: `src/components/account-group-management/AccountGroupManagementScreen.tsx`(`visibleAccounts`による`isSystemManaged`除外、コミットd45c45f)、`docs/domain/accounts.md` 5.3、`docs/decisions/2026-10-28-04.md`「勘定科目グループ管理画面を…ツリー表示+ドラッグ&ドロップ/チェックボックス移動に刷新する」、計画Issue #129(実機確認で発覚、evaluatorのFAIL指摘ではない)
 
 ## 画面が読み込み済みのデータを、同じ画面内の別タブの操作で古くしてしまう(計画Issue #201)
 
 **症状**: 仕訳画面の「テンプレート」タブでテンプレートを追加した直後に「テンプレートから起票」を開くと、追加したテンプレートが一覧に出なかった。`JournalScreen`が画面を開いたときに読み込んだテンプレート一覧を保持し、それで起票ダイアログを開いていたため。コンポーネントテストでは再現せず、E2Eで発覚した。
 **原因**: 子のタブ(管理画面)が自分のRepository経由でデータを書き換えても、親が先に読み込んで保持している同じデータには通知されない。コンポーネントテストは親・子を別々に検証するか、同じ読み込みを共有するため、この経路が検証されない。
 **対策**: 別の操作(別タブ・別画面)で書き換わりうるデータを使うダイアログ・選択UIは、親の保持している読み込み済み値に頼らず、開く時点で読み直す。仕訳画面の複数の機能が跨る画面では、E2Eで「タブAで追加→タブBの機能で使う」の流れを検証する。
-**該当箇所（例）**: `src/components/journal-entry/JournalScreen.tsx`(起票ダイアログを開くときにテンプレートを読み直す)、`e2e/journal-template.spec.ts`、`docs/decisions/` 2026-11-15
+**該当箇所（例）**: `src/components/journal-entry/JournalScreen.tsx`(起票ダイアログを開くときにテンプレートを読み直す)、`e2e/journal-template.spec.ts`、`docs/decisions/2026-11-15-01.md` 2026-11-15
 
 ## 親が子フォームの保存を連動させる必要があるとき、子に独自の保存ボタンを持たせてしまう(LeafFormStateパターン)(計画Issue #201)
 
@@ -454,7 +454,7 @@ tags: [guide, patterns, history]
 
 **症状(予防)**: 「差異を検出してもシステムは自動で調整仕訳を作らない」を撤回する変更では、`reconciliation.md`・`architecture.md`・`financial-statements.md`・`accounts.md`(初期残高・口座削除)など複数箇所に旧方針の文言が散在する。
 **対策**: 撤回時は`docs/decisions/`に撤回の旨と理由を書き、旧方針を述べていた箇所をgrepで洗い出して同じコミット群で改める。旧関数(`checkBalanceReconciliation`等)の廃止もドメインドキュメントから外す。
-**該当箇所（例）**: `docs/decisions/` 2026-11-15(8)
+**該当箇所（例）**: `docs/decisions/2026-11-15-03.md` 2026-11-15(8)
 
 ## 初期投入(seed)処理が`CREATE TABLE IF NOT EXISTS`で表を作ると、最新スキーマに入らず「固定データ+差分」と「新規作成」の比較がずれる(計画Issue #42)
 
@@ -482,7 +482,7 @@ tags: [guide, patterns, history]
 **症状**: 画面全体に`keydown`を付けて「Escで選択を全解除」などを実装すると、検索欄やセルの入力を取り消すためのEsc、ダイアログを閉じるためのEscまで選択解除に使われ、入力途中の値が意図せず失われたり、ダイアログと選択解除が同時に起きたりする。
 **原因**: `keydown`はフォーカスのある要素から画面全体へ伝わるため、押された時点の対象要素を見ないと、要素自身が扱うべきキーと区別できない。
 **対策**: 画面全体のキー操作は、押された対象を`src/components/common/keyboardTarget.ts`で判定して除外する。`isTextEntryTarget`(テキスト系のinput・textarea・select・contenteditable。チェックボックス・ボタンは文字を入力しないので含めない)、`ownsEscapeKey`(上に加え、`role="dialog"`・`aria-modal`の中)。処理中は無効にする。Shift+↑↓など、入力欄の中で意味を持つキーを足すときも同じ判定を使い、画面ごとに判定を書かない。Escで選択を全解除する操作は、この判定を内包した共通フック`useEscapeToClear`(`src/components/common/range-selection/`)を使い、画面ごとに`keydown`を書かない。また、選択中は行のどこを押してもチェックの操作にしたい画面で、行の中のボタン(開閉・詳細を開くなど)の動作と競合する場合は、行に`selectingRowProps`を付ける(キャプチャ段階で止める。入力欄・ダイアログ・チェック自身は除外済みで、画面固有の除外は`ignore`で足す)。ボタン側の`onClick`に選択中かの分岐を書かない。
-**該当箇所(例)**: `src/components/common/keyboardTarget.ts`、`src/components/common/range-selection/`、`src/components/journal-entry/JournalScreen.tsx`、`docs/decisions/`「複数選択に範囲選択を共通部品で導入し、各画面に適用する」、`docs/decisions/2026-11-21-02.md`「仕訳一覧で、一括編集の行を選択中は行のどこを押してもチェックを切り替える」
+**該当箇所(例)**: `src/components/common/keyboardTarget.ts`、`src/components/common/range-selection/`、`src/components/journal-entry/JournalScreen.tsx`、`docs/decisions/2026-11-21-03.md`「複数選択に範囲選択を共通部品で導入し、各画面に適用する」、`docs/decisions/2026-11-21-02.md`「仕訳一覧で、一括編集の行を選択中は行のどこを押してもチェックを切り替える」
 
 ## 検索で絞り込んだノードだけを渡すと、グループのチェックの連動など木全体にまたがる計算が崩れる(計画Issue #235)
 

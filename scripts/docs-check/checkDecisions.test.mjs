@@ -165,3 +165,30 @@ describe('checkDecisions: index.md への掲載', () => {
     expect(rules([file, indexOf(['2026-08-11-01', '2026-08-11-01'])])).toEqual(['index.md:decision-index-duplicate'])
   })
 })
+
+describe('checkDecisions: 本文中の決定への参照', () => {
+  const file = decision('2026-08-11-01')
+  const index = indexOf(['2026-08-11-01'])
+
+  it('インラインコードや本文中の docs/decisions/<id>.md の参照が実在する決定を指していれば違反なし', () => {
+    const doc = { path: 'docs/architecture.md', text: '判断は`docs/decisions/2026-08-11-01.md`を参照。' }
+    expect(run([file, index, doc])).toEqual([])
+  })
+
+  it('実在しない決定への参照は decision-ref-not-found として報告する', () => {
+    const doc = { path: 'docs/architecture.md', text: '判断は`docs/decisions/2026-08-11-99.md`を参照。' }
+    expect(rules([file, index, doc])).toEqual(['architecture.md:decision-ref-not-found'])
+  })
+
+  it('index.md や docs/decisions/ のディレクトリ参照は対象にしない', () => {
+    const doc = { path: 'docs/architecture.md', text: '`docs/decisions/index.md`と`docs/decisions/`を参照。' }
+    expect(run([file, index, doc])).toEqual([])
+  })
+
+  it('決定ファイル自身の本文中の参照も検査する', () => {
+    const body = decision('2026-08-11-02', {}, '## 見出し\n`docs/decisions/2026-01-01-01.md`')
+    expect(rules([file, body, indexOf(['2026-08-11-01', '2026-08-11-02'])])).toEqual([
+      '2026-08-11-02.md:decision-ref-not-found',
+    ])
+  })
+})

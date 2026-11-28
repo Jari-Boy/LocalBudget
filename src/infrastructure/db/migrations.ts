@@ -29,7 +29,7 @@ import { MIGRATION_V11_NORMALIZE_DETACHED_DAKUTEN_DESCRIPTIONS } from './migrati
 import { MIGRATION_V12_FINANCIAL_INSTITUTION_NAME } from './migrationV12FinancialInstitutionName'
 
 /**
- * 最新スキーマと差分の2本立て(計画Issue #42、docs/decisions/。
+ * 最新スキーマと差分の2本立て(計画Issue #42、docs/decisions/2026-11-15-06.md。
  * - 新規DB: docs/schema/*.sql(最新のDDL)をそのまま流し、user_versionを最新にする
  * - 既存DB: 差分(DIFFS)をバージョン順に1つのトランザクションで流す。SQL文字列とTypeScript関数のどちらでも書ける
  * 本番前は、スキーマ変更はDDLを直接修正してよい(差分は足さない)。初回の本番デプロイの直前に

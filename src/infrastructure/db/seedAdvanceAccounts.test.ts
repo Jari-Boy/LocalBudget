@@ -9,7 +9,7 @@
  * 検証する。資産・負債で別名にしたのは、精算画面(SettlementScreen、計画Issue #139)の
  * 「科目」選択が「立替金(資産)」「未払金(負債)」という表示ラベルを使っており、裏付けとなる
  * 科目の実名も同じ言葉で区別できる方がわかりやすいため(計画Issue #139、ユーザーレビューでの
- * 指摘対応、詳細はdocs/decisions/参照)。
+ * 指摘対応、詳細はdocs/decisions/2026-11-05-01.md参照)。
  * Review Attempt 5(evaluator FAIL指摘、計画Issue #40)を受け、既に同名(is_system_managed
  * = false)の科目が存在する場合にUNIQUE制約違反でWorker起動全体をクラッシュさせないことも
  * 検証する。外部依存: sql.js(ネットワークアクセスなし)。

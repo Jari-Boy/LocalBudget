@@ -14,7 +14,7 @@ export const ADVANCE_ASSET_ACCOUNT_NAME = '未収金(精算バッチ)'
 /**
  * 負債側のみ資産側と異なる名前にする(計画Issue #139)。精算画面の「科目」選択が資産側・負債側を
  * 別の言葉で表示しており、裏付けとなる科目の実名も同じ言葉で区別できる方がわかりやすいという、
- * 実機レビューでのユーザー指摘への対応(詳細はdocs/decisions/参照)。
+ * 実機レビューでのユーザー指摘への対応(詳細はdocs/decisions/2026-11-05-01.md参照)。
  */
 export const ADVANCE_LIABILITY_ACCOUNT_NAME = '未払金(精算バッチ)'
 

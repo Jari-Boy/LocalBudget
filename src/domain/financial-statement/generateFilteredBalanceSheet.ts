@@ -13,7 +13,7 @@ import { sumCategoryBalance } from './sumCategoryBalance'
  * 軸フィルタリングを組み合わせる。恒等式「資産=負債+純資産+(収益-費用)」の計算方法は
  * generateBalanceSheetと同一(sumCategoryBalanceを共通利用)。generateBalanceSheet自体の
  * 責務(全期間対象のBS生成)は変更せず、絞り込みが必要な呼び出し元向けに別関数として
- * 提供する(Issue #34設計協議での判断、docs/decisions/参照)。filterを省略した場合は
+ * 提供する(Issue #34設計協議での判断、docs/decisions/2026-08-15-02.md参照)。filterを省略した場合は
  * 絞り込みなしのgenerateBalanceSheetと同じ結果になる。DB非依存の純粋関数。
  */
 export function generateFilteredBalanceSheet(

@@ -46,7 +46,7 @@ export function createEmptyJournalEntryFormLine(): JournalEntryFormLine {
  * 手入力(マニュアル仕訳・定期仕訳ルール)で選択可能な科目かどうかを判定する。
  * 除外するのは無効化した科目(isActive = false)だけで、is_reconcilable = trueの科目や
  * システム管理科目も選べる(計画Issue #145。以前の除外条件は誤りを構造的に防ぐ方式だったが、
- * 警告で気づく方式へ変えた。docs/decisions/参照)。手入力と外部明細取込のズレは残高照合
+ * 警告で気づく方式へ変えた。docs/decisions/2026-11-07-02.md参照)。手入力と外部明細取込のズレは残高照合
  * (docs/domain/reconciliation.md 1.5)の警告で検知する。
  * - isActive = falseの科目(非アクティブ化済み)は新規仕訳では選択不可(docs/domain/accounts.md
  *   2.3「非アクティブ化: 過去集計はそのまま表示、新規仕訳では選択不可」)。isActiveは
