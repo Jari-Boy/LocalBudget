@@ -867,6 +867,14 @@ describe('SplitTab: 列幅の調整(計画Issue #271)', () => {
     }
   })
 
+  it('表は列幅の合計を最小幅にするだけで、幅は固定しない(画面が広いとき余った幅が各列に配られ、狭いと枠の中で横スクロールする)', () => {
+    setup()
+
+    const table = screen.getByRole('region', { name: '割勘する行' }).querySelector('table.split-settle__line-table') as HTMLElement
+    expect(table.style.width).toBe('')
+    expect(Number.parseFloat(table.style.minWidth)).toBeGreaterThan(0)
+  })
+
   it('摘要のつまみを → キーで動かすと列幅が広がり、保存される。Home キーで初期の幅に戻る', () => {
     setup()
     const before = Number(handle('摘要の列幅').getAttribute('aria-valuenow'))

@@ -142,7 +142,9 @@ export function SplitTab({
   const [filterElement, setFilterElement] = useState<HTMLDivElement | null>(null)
   const filterHeight = useElementHeight(filterElement)
   const columns = useJournalLineTableColumns(COLUMN_WIDTHS_STORAGE_KEY)
-  const { widths } = columns
+  const { widths, widthsRef } = columns
+  /** 候補の表のカード(画面に出ている表の幅を測るため) */
+  const lineCardRef = useRef<HTMLElement>(null)
 
   const relatedIds = useMemo(() => buildRelatedEntryIdsByEntryId(data.memberships), [data.memberships])
   const candidates = useMemo(
@@ -525,12 +527,23 @@ export function SplitTab({
     )
   }
 
-  /** 見出しの右端の列幅のつまみ。借方と貸方の同じ種類の列は連動する。表の幅は列幅の合計に固定するので、ドラッグ量はそのまま列の幅になる(scale 1) */
+  /** 画面に出ている表の幅 ÷ 列幅の合計(枠が広くて余った幅が各列に配られているとき、1より大きくなる) */
+  const getScale = () => {
+    const shown = lineCardRef.current?.querySelector<HTMLTableElement>('table.split-settle__line-table')?.offsetWidth ?? 0
+    const w = widthsRef.current
+    const total = w.date + w.memo + w.comment + 2 * (CHECK_COLUMN_WIDTH + w.account + w.partner + w.member + w.amount)
+    return shown > 0 ? shown / total : 1
+  }
+
+  /**
+   * 見出しの右端の列幅のつまみ。借方と貸方の同じ種類の列は連動する。表の幅は列幅の合計を最小幅にするだけなので、
+   * 枠が広いと余った幅が各列に配られる。ドラッグ量は、画面に出ている表の幅 ÷ 列幅の合計で割って列幅に直す
+   */
   const resizeHandle = (key: ColumnKey, label: string) => (
     <JournalLineTableResizeHandle
       label={`${label}の列幅`}
       value={widths[key]}
-      getScale={() => 1}
+      getScale={getScale}
       onResize={(width) => columns.resizeTo(key, width)}
       onCommit={columns.commit}
       onReset={() => columns.resetColumn(key)}
@@ -554,7 +567,7 @@ export function SplitTab({
 
       {/* 候補の表(全幅)・分担・割勘仕訳のプレビューを縦に並べる。固定したタブの行と絞り込み欄の下に追従する高さを --sticky-head-extra で渡す(計画Issue #266) */}
       <div className="split-settle__stack" style={{ '--sticky-head-extra': `${filterHeight}px` } as CSSProperties}>
-        <section aria-label="割勘する行" className="split-settle__card split-settle__card--table journal-line-table">
+        <section ref={lineCardRef} aria-label="割勘する行" className="split-settle__card split-settle__card--table journal-line-table">
           <p className="split-settle__note split-settle__note--pad">
             仕訳の明細行を選んで割勘します。費用・収益の行(借方・貸方とも)だけ選べます。割勘済みの行は表示しません。借方と貸方を
             一緒に選ぶと、貸方(返金・値引き・収益)を差し引いた額を割ります。
@@ -570,7 +583,7 @@ export function SplitTab({
             frameClassName="split-settle__scroll"
             tableClassName="journal-line-table__table split-settle__line-table"
             floatingClassName="floating-table-header--lines"
-            tableStyle={{ width: tableWidth }}
+            tableStyle={{ minWidth: tableWidth }}
             head={
               <>
                 <colgroup>
