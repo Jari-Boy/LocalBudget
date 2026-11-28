@@ -64,6 +64,13 @@
   padding: 10px 12px;
 }
 
+/* 外側の枠(.split-settle__filter)があるので、パネル自身の枠線と余白は消して二重にしない(計画Issue #314) */
+.split-settle__filter .journal-filter {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+}
+
 .split-settle__filter::before {
   content: '';
   position: absolute;

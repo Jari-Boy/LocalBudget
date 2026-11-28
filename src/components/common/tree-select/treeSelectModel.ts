@@ -22,6 +22,11 @@ export interface TreeSelectItemNode {
   pathName?: string
   /** 項目の名前の横に出す、色付きの小さな印(例: クローズ済みの精算バッチの「Close」、計画Issue #249)。選択の動作には関わらない */
   badge?: string
+  /**
+   * 子を持つ階層つきの項目を、科目などのグループ行と同じ見た目にする(出どころの「外部明細」、計画Issue #314)。
+   * 名前を押すと開閉、右端の「すべて」でその項目を選ぶ(検索中は通常の項目の行)
+   */
+  asGroup?: boolean
 }
 
 export interface TreeSelectGroupNode {
@@ -77,6 +82,8 @@ export interface TreeSelectItemRow {
    * 階層つきではない項目と、検索中の行には付かない。開閉の操作は、openOverridesの「h:値」で持つ
    */
   fold?: 'open' | 'closed' | 'leaf'
+  /** グループ行として見せる項目(TreeSelectItemNode.asGroup)。fold が付くとき(検索中でないとき)だけ付く */
+  asGroup?: boolean
 }
 
 /** 検索で親が絞り落とされたとき、階層が追えるように残す親の見出し行(押せない、計画Issue #233) */
@@ -214,6 +221,7 @@ export function buildTreeSelectRows({
       isFavorite: isFavorite(node.value),
       badge: node.badge,
       ...(q === '' ? { fold: !parentValues.has(node.value) ? ('leaf' as const) : isFoldOpen(node.value) ? ('open' as const) : ('closed' as const) } : {}),
+      ...(q === '' && node.asGroup === true && parentValues.has(node.value) ? { asGroup: true } : {}),
     })
     return rows
   }

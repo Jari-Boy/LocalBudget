@@ -1,0 +1,97 @@
+/* 金額の範囲入力(計画Issue #314)。数字入力とスライダーを、薄いグレーの1つの枠にまとめる。値はdesign/tokens.cssのトークン。 */
+.amount-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  box-sizing: border-box;
+  max-width: 640px;
+  flex: 1 1 560px;
+  /* 右は広めにとる: スライダー右端の目盛り「上限なし」が、中央を右端に合わせて置かれ、半分ほど枠の外へ出るため */
+  padding: 4px 36px 4px 12px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--color-field-subtle);
+}
+
+.amount-slider {
+  position: relative;
+  flex: 1 1 280px;
+  min-width: 240px;
+  height: 52px;
+}
+
+.amount-slider__rail {
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  top: 0;
+  height: 36px;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.amount-slider__track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 16px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border);
+}
+
+.amount-slider__fill {
+  position: absolute;
+  top: 16px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-accent);
+}
+
+.amount-slider__thumb {
+  position: absolute;
+  top: 9px;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  padding: 0;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 2px solid var(--color-accent);
+  box-shadow: 0 1px 3px rgba(23, 35, 31, 0.25);
+  cursor: grab;
+}
+
+.amount-slider__thumb:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.amount-slider__ticks {
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  top: 34px;
+  height: 16px;
+}
+
+.amount-slider__tick {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.amount-slider__tick::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  width: 1px;
+  height: 4px;
+  background: var(--color-border-strong);
+}

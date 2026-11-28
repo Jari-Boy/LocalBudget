@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { HouseholdMember } from '../../domain/household-member/HouseholdMember'
 import type { SettlementBatch } from '../../domain/settlement-batch/SettlementBatch'
 import '../common/journal-filter/JournalFilterPanel.css'
+import { PeriodRangeInput } from '../common/period-range/PeriodRangeInput'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
 import type { TreeSelectCategory } from '../common/tree-select/treeSelectModel'
 import {
@@ -27,6 +28,8 @@ export interface ImportRowFilterPanelProps {
   batches: readonly SettlementBatch[]
   /** いま開いているタブの、表示中の件数 */
   resultCount: number
+  /** 取り込む行の日付(期間を月で選ぶときの、月の選択肢を作る。計画Issue #314) */
+  dates: readonly string[]
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -55,6 +58,7 @@ export function ImportRowFilterPanel({
   members,
   batches,
   resultCount,
+  dates,
 }: ImportRowFilterPanelProps) {
   const { t } = useTranslation('statementImport')
   const unset = t('filterUnset')
@@ -97,24 +101,17 @@ export function ImportRowFilterPanel({
           value={input.description}
           onChange={(event) => onChange({ ...input, description: event.target.value })}
         />
-        <div className="journal-filter__range">
-          <span className="journal-filter__label">{t('filterPeriodLabel')}</span>
-          <input
-            type="date"
-            className="journal-filter__input"
-            aria-label={t('filterDateFromLabel')}
-            value={input.dateFrom}
-            onChange={(event) => onChange({ ...input, dateFrom: event.target.value })}
-          />
-          <span aria-hidden="true">〜</span>
-          <input
-            type="date"
-            className="journal-filter__input"
-            aria-label={t('filterDateToLabel')}
-            value={input.dateTo}
-            onChange={(event) => onChange({ ...input, dateTo: event.target.value })}
-          />
-        </div>
+        <PeriodRangeInput
+          label={t('filterPeriodLabel')}
+          fromLabel={t('filterDateFromLabel')}
+          toLabel={t('filterDateToLabel')}
+          byDateLabel={t('filterByDate')}
+          unsetLabel={t('filterEmptyLabel')}
+          from={input.dateFrom}
+          to={input.dateTo}
+          dates={dates}
+          onChange={(dateFrom, dateTo) => onChange({ ...input, dateFrom, dateTo })}
+        />
         <div className="journal-filter__range">
           <span className="journal-filter__label">{t('filterAmountLabel')}</span>
           <input
@@ -148,6 +145,10 @@ export function ImportRowFilterPanel({
       <div className="journal-filter__footer">
         {activeCount > 0 && (
           <button type="button" className="journal-filter__clear" onClick={onClear}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7" />
+              <path d="M3 4v5h5" />
+            </svg>
             {t('filterClear')}
           </button>
         )}

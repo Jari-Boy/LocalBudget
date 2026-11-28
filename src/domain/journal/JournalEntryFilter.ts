@@ -63,6 +63,30 @@ export interface JournalEntryFilter {
   counterpartyGroupIds?: readonly number[]
   /** いずれかの明細行のプロジェクトが、これらのプロジェクトグループまたはその配下に属する仕訳のみを対象にする */
   projectGroupIds?: readonly number[]
+
+  /**
+   * 借方側の明細行だけで判定する条件(計画Issue #314)。上の「まとめて」の各軸と同じ意味で、対象を借方の明細行に限る。
+   * 軸の中はOR、軸どうしはAND、判定は従来どおり仕訳単位(軸ごとに別々の借方の明細行で満たしてよい)。
+   */
+  debit?: JournalEntrySideFilter
+  /** 貸方側の明細行だけで判定する条件(計画Issue #314)。意味は debit と同じで、対象が貸方の明細行 */
+  credit?: JournalEntrySideFilter
+}
+
+/**
+ * 借方・貸方の側ごとに指定できる軸(計画Issue #314)。明細行ごとの属性の軸(科目・取引先・プロジェクト・世帯メンバー・精算バッチ)だけで、
+ * 仕訳単位の軸(期間・摘要・金額・出どころ)は含まない。各軸の意味は JournalEntryFilter の同名のフィールドと同じ。
+ * 借方と貸方を両方指定した場合はAND。「まとめて」の軸と併用した場合も、すべて満たす仕訳だけを返す(AND)。
+ */
+export interface JournalEntrySideFilter {
+  accountIds?: readonly number[]
+  accountGroupIds?: readonly number[]
+  counterpartyIds?: readonly number[]
+  counterpartyGroupIds?: readonly number[]
+  projectIds?: readonly number[]
+  projectGroupIds?: readonly number[]
+  householdMemberIds?: readonly number[]
+  settlementBatchIds?: readonly (number | null)[]
 }
 
 /**

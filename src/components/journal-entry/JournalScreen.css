@@ -113,6 +113,13 @@
   padding: 10px 12px;
 }
 
+/* 外側の枠(.journal-screen__filter)があるので、パネル自身の枠線と余白は消して二重にしない(計画Issue #314) */
+.journal-screen__filter .journal-filter {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+}
+
 .journal-screen__note {
   margin: 0;
   font-size: var(--font-size-sm);

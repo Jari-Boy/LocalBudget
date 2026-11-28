@@ -1,4 +1,4 @@
-import type { JournalEntryFilter } from '../../../domain/journal/JournalEntryFilter'
+import type { JournalEntryFilter, JournalEntrySideFilter } from '../../../domain/journal/JournalEntryFilter'
 import type { JournalEntry } from '../../../domain/journal/JournalEntry'
 import { collectFinancialInstitutionNames } from '../../../domain/statement-import/financialInstitution'
 import { SOURCE_TAGS } from '../journal-result/journalResultModel'
@@ -46,24 +46,71 @@ export function setTreeValue(filter: JournalEntryFilter, axis: TreeAxis, value: 
   return { ...cleared, [ids]: [Number(value)] }
 }
 
+/**
+ * 条件を読み書きする範囲(計画Issue #314)。'both'は従来の「まとめて」(仕訳のどの明細行でもよい)、'debit'・'credit'は
+ * 借方・貸方の明細行だけで判定する条件(JournalEntryFilter.debit / credit)。
+ */
+export type FilterScope = 'both' | 'debit' | 'credit'
+
+/** 借方・貸方に分けられる軸(明細行ごとの属性)のキー。「まとめて」の条件として JournalEntryFilter に直に持つ */
+const SIDE_AXIS_KEYS = [
+  'accountIds',
+  'accountGroupIds',
+  'counterpartyIds',
+  'counterpartyGroupIds',
+  'projectIds',
+  'projectGroupIds',
+  'householdMemberIds',
+  'settlementBatchIds',
+] as const
+
+function readScope(filter: JournalEntryFilter, scope: FilterScope): JournalEntrySideFilter {
+  return scope === 'both' ? filter : (filter[scope] ?? {})
+}
+
+/**
+ * 範囲の中の keys の条件を消し、values に書いた条件に置き換える。借方・貸方の側は、条件が1つも残らなければキーごと消す。
+ */
+function replaceScopeKeys(
+  filter: JournalEntryFilter,
+  scope: FilterScope,
+  keys: readonly (keyof JournalEntrySideFilter)[],
+  values: JournalEntrySideFilter,
+): JournalEntryFilter {
+  if (scope === 'both') return { ...without(filter, keys), ...values }
+  const side: Record<string, unknown> = { ...(filter[scope] ?? {}) }
+  for (const key of keys) delete side[key]
+  Object.assign(side, values)
+  const next = { ...filter }
+  if (Object.keys(side).length === 0) delete next[scope]
+  else next[scope] = side as JournalEntrySideFilter
+  return next
+}
+
 /** 項目(ID)→グループ(g:ID)の順に、選択ツリーの値の配列として取り出す */
-export function getTreeValues(filter: JournalEntryFilter, axis: TreeAxis): string[] {
+export function getTreeValues(filter: JournalEntryFilter, axis: TreeAxis, scope: FilterScope = 'both'): string[] {
   const { ids, groupIds } = AXIS_KEYS[axis]
+  const axes = readScope(filter, scope)
   return [
-    ...(filter[ids] ?? []).map(String),
-    ...(filter[groupIds] ?? []).map((id) => `${GROUP_VALUE_PREFIX}${id}`),
+    ...(axes[ids] ?? []).map(String),
+    ...(axes[groupIds] ?? []).map((id) => `${GROUP_VALUE_PREFIX}${id}`),
   ]
 }
 
 /** 項目の値とグループの値(g:ID)の混在した配列を、「〜Ids」と「〜GroupIds」に振り分ける。空配列でその軸を消す */
-export function setTreeValues(filter: JournalEntryFilter, axis: TreeAxis, values: readonly string[]): JournalEntryFilter {
+export function setTreeValues(
+  filter: JournalEntryFilter,
+  axis: TreeAxis,
+  values: readonly string[],
+  scope: FilterScope = 'both',
+): JournalEntryFilter {
   const { ids, groupIds } = AXIS_KEYS[axis]
-  const next = without(filter, [ids, groupIds])
   const groups = values.filter((value) => value.startsWith(GROUP_VALUE_PREFIX))
   const items = values.filter((value) => !value.startsWith(GROUP_VALUE_PREFIX))
+  const next: Record<string, unknown> = {}
   if (items.length > 0) next[ids] = items.map(Number)
   if (groups.length > 0) next[groupIds] = groups.map((value) => Number(value.slice(GROUP_VALUE_PREFIX.length)))
-  return next
+  return replaceScopeKeys(filter, scope, [ids, groupIds], next as JournalEntrySideFilter)
 }
 
 export function setMemo(filter: JournalEntryFilter, text: string): JournalEntryFilter {
@@ -100,14 +147,51 @@ export function setBatchValue(filter: JournalEntryFilter, value: string): Journa
   return { ...filter, settlementBatchIds: [value === NO_BATCH_VALUE ? null : Number(value)] }
 }
 
-export function getBatchValues(filter: JournalEntryFilter): string[] {
-  return (filter.settlementBatchIds ?? []).map((id) => (id === null ? NO_BATCH_VALUE : String(id)))
+export function getBatchValues(filter: JournalEntryFilter, scope: FilterScope = 'both'): string[] {
+  return (readScope(filter, scope).settlementBatchIds ?? []).map((id) => (id === null ? NO_BATCH_VALUE : String(id)))
 }
 
 /** 「未割当」(none)はnull、バッチはIDにして保持する。空配列で指定を消す */
-export function setBatchValues(filter: JournalEntryFilter, values: readonly string[]): JournalEntryFilter {
-  if (values.length === 0) return without(filter, ['settlementBatchIds'])
-  return { ...filter, settlementBatchIds: values.map((value) => (value === NO_BATCH_VALUE ? null : Number(value))) }
+export function setBatchValues(
+  filter: JournalEntryFilter,
+  values: readonly string[],
+  scope: FilterScope = 'both',
+): JournalEntryFilter {
+  return replaceScopeKeys(
+    filter,
+    scope,
+    ['settlementBatchIds'],
+    values.length === 0 ? {} : { settlementBatchIds: values.map((value) => (value === NO_BATCH_VALUE ? null : Number(value))) },
+  )
+}
+
+/** 世帯メンバーの選択欄の値(数値IDの文字列)の取り出し。範囲は借方・貸方・まとめて(計画Issue #314) */
+export function getMemberValues(filter: JournalEntryFilter, scope: FilterScope = 'both'): string[] {
+  return (readScope(filter, scope).householdMemberIds ?? []).map(String)
+}
+
+/** 世帯メンバーの選択欄の値を書く。空配列で指定を消す */
+export function setMemberValues(
+  filter: JournalEntryFilter,
+  values: readonly string[],
+  scope: FilterScope = 'both',
+): JournalEntryFilter {
+  return replaceScopeKeys(filter, scope, ['householdMemberIds'], values.length === 0 ? {} : { householdMemberIds: values.map(Number) })
+}
+
+/** 借方・貸方に分けるとき(計画Issue #314)。競合する「まとめて」の軸(科目・取引先・プロジェクト・世帯メンバー・精算バッチ)を消す。摘要・期間・金額・出どころは残す */
+export function toSplitMode(filter: JournalEntryFilter): JournalEntryFilter {
+  return without(filter, SIDE_AXIS_KEYS)
+}
+
+/** まとめてに戻すとき(計画Issue #314)。借方・貸方の条件を消す */
+export function toCombinedMode(filter: JournalEntryFilter): JournalEntryFilter {
+  return without(filter, ['debit', 'credit'])
+}
+
+/** 借方・貸方の条件が1つでも指定されているか */
+export function hasSideConditions(filter: JournalEntryFilter): boolean {
+  return [filter.debit, filter.credit].some((side) => side !== undefined && countSideAxes(side) > 0)
 }
 
 export function getMultiValues(filter: JournalEntryFilter, key: 'householdMemberIds' | 'sourceTypes'): string[] {
@@ -152,6 +236,8 @@ export interface SourceFilterChoice {
   name: string
   depth?: number
   parentValue?: string | null
+  /** 科目などのグループ行と同じ見た目(名前で開閉・「すべて」で選択)にする親の項目 */
+  asGroup?: boolean
 }
 
 /**
@@ -179,7 +265,7 @@ export function setSourceValues(filter: JournalEntryFilter, values: readonly str
 
 /**
  * 出どころの選択肢を作る(計画Issue #289)。作成経路をSOURCE_TAGSの順に並べ、取込済みの仕訳に金融機関名があれば、
- * 「外部明細(すべて)」を親、各金融機関(マッピング定義の候補と同じ順)を子にして階層で並べる。金融機関が不明な取込済みの仕訳も
+ * 「外部明細」(グループ行の見た目で、「すべて」で取込済みすべてを選ぶ)を親、各金融機関(マッピング定義の候補と同じ順)を子にして階層で並べる。金融機関が不明な取込済みの仕訳も
  * あるときは、最後の子に「外部明細(金融機関が不明)」を足す。取込済みの仕訳に金融機関が無ければ、従来どおり平らな並び。
  */
 export function buildSourceFilterChoices(
@@ -201,13 +287,41 @@ export function buildSourceFilterChoices(
     if (hasUnknown) {
       children.push({ value: INSTITUTION_VALUE_PREFIX, name: `${tag.label}(金融機関が不明)`, depth: 1, parentValue: value })
     }
-    return [{ value, name: `${tag.label}(すべて)`, depth: 0, parentValue: null }, ...children]
+    return [{ value, name: tag.label, depth: 0, parentValue: null, asGroup: true }, ...children]
   })
+}
+
+/**
+ * 絞り込む対象の仕訳から、期間を月で選ぶときの月の選択肢の元(取引日。重複なし・古い順)と、金額スライダーの
+ * 上限の元になる最大金額(仕訳の金額=借方合計の最大)を求める(計画Issue #314)。仕訳が無ければ空・0。
+ */
+export function buildEntryRangeOptions(
+  entries: readonly { entryDate: string; lines: readonly { side: string; amount: number }[] }[],
+): { entryDates: string[]; maxAmount: number } {
+  const dates = new Set<string>()
+  let maxAmount = 0
+  for (const entry of entries) {
+    dates.add(entry.entryDate)
+    const debitTotal = entry.lines.filter((line) => line.side === 'debit').reduce((total, line) => total + line.amount, 0)
+    if (debitTotal > maxAmount) maxAmount = debitTotal
+  }
+  return { entryDates: [...dates].sort(), maxAmount }
 }
 
 const hasItems = (list: readonly unknown[] | undefined) => (list?.length ?? 0) > 0
 
-/** 有効な条件の数。期間・金額は範囲として、各軸(科目・科目グループ等)は1件として数える。 */
+/** 借方・貸方の1つの側で、条件のある軸の数(科目・取引先・プロジェクト・世帯メンバー・精算バッチ) */
+function countSideAxes(side: JournalEntrySideFilter): number {
+  return [
+    hasItems(side.accountIds) || hasItems(side.accountGroupIds),
+    hasItems(side.counterpartyIds) || hasItems(side.counterpartyGroupIds),
+    hasItems(side.projectIds) || hasItems(side.projectGroupIds),
+    hasItems(side.householdMemberIds),
+    hasItems(side.settlementBatchIds),
+  ].filter(Boolean).length
+}
+
+/** 有効な条件の数。期間・金額は範囲として、各軸(科目・科目グループ等)は1件として数える。借方・貸方の条件は、側ごと・軸ごとに1件 */
 export function countActiveConditions(filter: JournalEntryFilter): number {
   const conditions = [
     (filter.memo ?? '').trim() !== '',
@@ -220,5 +334,6 @@ export function countActiveConditions(filter: JournalEntryFilter): number {
     hasItems(filter.settlementBatchIds),
     hasItems(filter.sourceTypes) || hasItems(filter.financialInstitutionNames),
   ]
-  return conditions.filter(Boolean).length
+  const sides = [filter.debit, filter.credit].reduce((total, side) => total + (side === undefined ? 0 : countSideAxes(side)), 0)
+  return conditions.filter(Boolean).length + sides
 }

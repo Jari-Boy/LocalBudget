@@ -99,8 +99,8 @@ describe('JournalFilterPanel', () => {
     render(<Harness />)
     const panel = screen.getByRole('search', { name: '仕訳の絞り込み' })
     expect(within(panel).getByRole('searchbox', { name: '摘要で検索' })).toBeInTheDocument()
-    expect(within(panel).getByLabelText('期間の開始')).toBeInTheDocument()
-    expect(within(panel).getByLabelText('期間の終了')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: /^期間の開始:/ })).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: /^期間の終了:/ })).toBeInTheDocument()
     expect(within(panel).getByLabelText('金額の下限')).toBeInTheDocument()
     expect(within(panel).getByLabelText('金額の上限')).toBeInTheDocument()
     for (const label of ['科目', '取引先', 'プロジェクト', '世帯メンバー', '精算バッチ', '出どころ']) {
@@ -113,6 +113,8 @@ describe('JournalFilterPanel', () => {
     render(<Harness onFilter={onFilter} />)
     fireEvent.change(screen.getByRole('searchbox', { name: '摘要で検索' }), { target: { value: '昼食' } })
     expect(onFilter).toHaveBeenLastCalledWith({ memo: '昼食' })
+    // 期間ははじめ月で選ぶ(計画Issue #314)。日付で入れるには「日付で指定」にする
+    fireEvent.click(screen.getByRole('checkbox', { name: '日付で指定' }))
     fireEvent.change(screen.getByLabelText('期間の開始'), { target: { value: '2026-10-01' } })
     fireEvent.change(screen.getByLabelText('期間の終了'), { target: { value: '2026-10-31' } })
     fireEvent.change(screen.getByLabelText('金額の下限'), { target: { value: '1000' } })

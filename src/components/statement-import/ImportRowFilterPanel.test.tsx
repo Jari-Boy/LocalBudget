@@ -46,6 +46,7 @@ function renderPanel(overrides: Partial<Parameters<typeof ImportRowFilterPanel>[
         members={members}
         batches={batches}
         resultCount={7}
+        dates={['2026-09-15', '2026-11-03']}
         {...overrides}
       />
     </I18nextProvider>,
@@ -64,8 +65,8 @@ describe('ImportRowFilterPanel', () => {
     renderPanel()
 
     expect(panel().getByRole('searchbox', { name: '摘要で検索' })).toBeInTheDocument()
-    expect(panel().getByLabelText('期間の開始')).toBeInTheDocument()
-    expect(panel().getByLabelText('期間の終了')).toBeInTheDocument()
+    expect(panel().getByRole('button', { name: /^期間の開始:/ })).toBeInTheDocument()
+    expect(panel().getByRole('button', { name: /^期間の終了:/ })).toBeInTheDocument()
     expect(panel().getByLabelText('金額の下限')).toBeInTheDocument()
     expect(panel().getByLabelText('金額の上限')).toBeInTheDocument()
     for (const label of ['相手科目', '取引先', 'プロジェクト', '世帯メンバー', '精算バッチ']) {
@@ -80,6 +81,8 @@ describe('ImportRowFilterPanel', () => {
     fireEvent.change(panel().getByRole('searchbox', { name: '摘要で検索' }), { target: { value: 'セブン' } })
     expect(onChange).toHaveBeenLastCalledWith({ ...base, description: 'セブン' })
 
+    // 期間ははじめ月で選ぶ(計画Issue #314)。日付で入れるには「日付で指定」にする
+    fireEvent.click(panel().getByRole('checkbox', { name: '日付で指定' }))
     fireEvent.change(panel().getByLabelText('期間の開始'), { target: { value: '2026-10-01' } })
     expect(onChange).toHaveBeenLastCalledWith({ ...base, dateFrom: '2026-10-01' })
 
@@ -138,5 +141,53 @@ describe('ImportRowFilterPanel', () => {
     renderPanel({ input: { ...EMPTY_FILTER_INPUT, amountMax: '1000' } })
     expect(panel().getByRole('button', { name: '条件をクリア' })).toBeInTheDocument()
     expect(onClear).not.toHaveBeenCalled()
+  })
+})
+
+describe('ImportRowFilterPanel: 期間の日付/月の切替(計画Issue #314)', () => {
+  it('はじめは月で選ぶ(「日付で指定」のチェックなし)で、月の選択欄を出す', () => {
+    renderPanel()
+
+    expect(panel().getByRole('checkbox', { name: '日付で指定' })).not.toBeChecked()
+    expect(panel().getByRole('button', { name: /^期間の開始:/ })).toBeInTheDocument()
+  })
+
+  it('チェックを入れると日付入力になる', () => {
+    renderPanel()
+    fireEvent.click(panel().getByRole('checkbox', { name: '日付で指定' }))
+
+    expect(panel().getByLabelText('期間の開始')).toHaveAttribute('type', 'date')
+  })
+
+  it('月を選ぶと、開始月1日の日付を入力に入れて通知する', () => {
+    const { onChange } = renderPanel()
+    fireEvent.click(panel().getByRole('button', { name: /^期間の開始:/ }))
+    const dialog = screen.getByRole('dialog', { name: '期間の開始' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '2026年' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '2026年9月' }))
+
+    expect(onChange).toHaveBeenLastCalledWith({ ...EMPTY_FILTER_INPUT, dateFrom: '2026-09-01' })
+  })
+
+  it('日付を入れたまま月へ切り替えると、含まれる月に広がった日付を通知する', () => {
+    const { onChange } = renderPanel({ input: { ...EMPTY_FILTER_INPUT, dateFrom: '2026-10-15', dateTo: '2026-11-03' } })
+    fireEvent.click(panel().getByRole('checkbox', { name: '日付で指定' }))
+
+    expect(onChange).toHaveBeenLastCalledWith({ ...EMPTY_FILTER_INPUT, dateFrom: '2026-10-01', dateTo: '2026-11-30' })
+  })
+})
+
+describe('ImportRowFilterPanel: 借方・貸方の切替と金額スライダーは出さない(計画Issue #314)', () => {
+  it('取込には借方・貸方の概念が無いので、「借方・貸方を分けて検索」のチェックは出ない', () => {
+    renderPanel()
+
+    expect(panel().queryByRole('checkbox', { name: '借方・貸方を分けて検索' })).toBeNull()
+  })
+
+  it('金額は取込の符号つきの比較のため、数字入力だけで、スライダーは出ない', () => {
+    renderPanel()
+
+    expect(panel().queryByRole('slider')).toBeNull()
+    expect(panel().getByLabelText('金額の下限')).toBeInTheDocument()
   })
 })
