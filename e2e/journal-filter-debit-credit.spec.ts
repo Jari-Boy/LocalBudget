@@ -86,11 +86,18 @@ test.describe('仕訳の絞り込み: 借方・貸方・期間・金額', () => 
 
     // はじめは月で選ぶ(チェックなし)。月の選択欄は新しい順に並び、先頭が「指定なし」
     await expect(panel.getByRole('checkbox', { name: '日付で指定' })).not.toBeChecked()
-    const from = panel.getByRole('combobox', { name: '期間の開始' })
-    await expect(from.getByRole('option', { name: '指定なし' })).toHaveCount(1)
-
-    await from.selectOption('2026-10')
-    await panel.getByRole('combobox', { name: '期間の終了' }).selectOption('2026-10')
+    // 月の選択欄は年ごとのグループ。年を押すとその年の月が開く(「指定なし」は先頭)
+    await panel.getByRole('button', { name: /^期間の開始:/ }).click()
+    const fromPopup = page.getByRole('dialog', { name: '期間の開始' })
+    await expect(fromPopup.getByRole('button', { name: '指定なし' })).toHaveCount(1)
+    await fromPopup.getByRole('button', { name: '2026年', exact: true }).click()
+    await fromPopup.getByRole('button', { name: '2026年10月' }).click()
+    await page.keyboard.press('Escape')
+    await panel.getByRole('button', { name: /^期間の終了:/ }).click()
+    const toPopup = page.getByRole('dialog', { name: '期間の終了' })
+    await toPopup.getByRole('button', { name: '2026年', exact: true }).click()
+    await toPopup.getByRole('button', { name: '2026年10月' }).click()
+    await page.keyboard.press('Escape')
     await expect(panel.getByRole('status')).toHaveText('2件')
 
     // 日付に戻すと、月初〜月末の日付が入っている

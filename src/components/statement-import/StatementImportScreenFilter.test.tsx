@@ -302,6 +302,8 @@ describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)',
     renderScreen()
     await chooseCsv(CSV)
 
+    // 期間ははじめ月で選ぶ。日付で入れるには「日付で指定」にする(計画Issue #314)
+    fireEvent.click(panel().getByRole('checkbox', { name: '日付で指定' }))
     fireEvent.change(panel().getByLabelText('期間の開始'), { target: { value: '2026-10-06' } })
     fireEvent.change(panel().getByLabelText('期間の終了'), { target: { value: '2026-10-07' } })
     expect(hasRow(/池袋店/)).toBe(true)
@@ -360,6 +362,7 @@ describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)',
   it('「条件をクリア」で、期間・金額の入力も空に戻る', async () => {
     renderScreen()
     await chooseCsv(CSV)
+    fireEvent.click(panel().getByRole('checkbox', { name: '日付で指定' }))
     fireEvent.change(panel().getByLabelText('期間の開始'), { target: { value: '2026-10-07' } })
     fireEvent.change(panel().getByLabelText('金額の下限'), { target: { value: '-1000' } })
 

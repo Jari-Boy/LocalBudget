@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { TreeSelect } from '../tree-select/TreeSelect'
+import type { TreeSelectCategory } from '../tree-select/treeSelectModel'
 import '../journal-filter/JournalFilterPanel.css'
 import './PeriodRange.css'
 import { buildMonthOptions, isMonthAligned, monthOf, monthToDateRange, snapRangeToMonths } from './periodRangeModel'
@@ -53,20 +55,29 @@ export function PeriodRangeInput({
     }
   }
 
-  const monthSelect = (ariaLabel: string, value: string, onPick: (month: string) => void) => (
-    <select
-      className="journal-filter__input"
-      aria-label={ariaLabel}
-      value={value}
-      onChange={(event) => onPick(event.target.value)}
-    >
-      <option value="">{unsetLabel}</option>
-      {monthOptions.map((month) => (
-        <option key={month} value={month}>
-          {monthText(month)}
-        </option>
-      ))}
-    </select>
+  // 月は年ごとのグループにまとめる(年を押すとその年の月が開く)。新しい年・新しい月が上
+  const monthCategories = useMemo<TreeSelectCategory[]>(() => {
+    const years = [...new Set(monthOptions.map((month) => month.slice(0, 4)))]
+    return [
+      {
+        key: 'months',
+        name: '',
+        nodes: years.map((year) => ({
+          kind: 'group' as const,
+          id: year,
+          name: `${year}年`,
+          children: monthOptions
+            .filter((month) => month.startsWith(year))
+            .map((month) => ({ kind: 'item' as const, value: month, name: monthText(month), isActive: true })),
+        })),
+      },
+    ]
+  }, [monthOptions])
+
+  const monthSelect = (selectLabel: string, value: string, onPick: (month: string) => void) => (
+    <div className="period-range__month">
+      <TreeSelect label={selectLabel} categories={monthCategories} value={value} onChange={onPick} emptyLabel={unsetLabel} />
+    </div>
   )
 
   return (

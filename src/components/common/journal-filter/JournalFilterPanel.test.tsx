@@ -99,8 +99,8 @@ describe('JournalFilterPanel', () => {
     render(<Harness />)
     const panel = screen.getByRole('search', { name: '仕訳の絞り込み' })
     expect(within(panel).getByRole('searchbox', { name: '摘要で検索' })).toBeInTheDocument()
-    expect(within(panel).getByLabelText('期間の開始')).toBeInTheDocument()
-    expect(within(panel).getByLabelText('期間の終了')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: /^期間の開始:/ })).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: /^期間の終了:/ })).toBeInTheDocument()
     expect(within(panel).getByLabelText('金額の下限')).toBeInTheDocument()
     expect(within(panel).getByLabelText('金額の上限')).toBeInTheDocument()
     for (const label of ['科目', '取引先', 'プロジェクト', '世帯メンバー', '精算バッチ', '出どころ']) {

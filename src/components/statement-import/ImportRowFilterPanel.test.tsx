@@ -65,8 +65,8 @@ describe('ImportRowFilterPanel', () => {
     renderPanel()
 
     expect(panel().getByRole('searchbox', { name: '摘要で検索' })).toBeInTheDocument()
-    expect(panel().getByLabelText('期間の開始')).toBeInTheDocument()
-    expect(panel().getByLabelText('期間の終了')).toBeInTheDocument()
+    expect(panel().getByRole('button', { name: /^期間の開始:/ })).toBeInTheDocument()
+    expect(panel().getByRole('button', { name: /^期間の終了:/ })).toBeInTheDocument()
     expect(panel().getByLabelText('金額の下限')).toBeInTheDocument()
     expect(panel().getByLabelText('金額の上限')).toBeInTheDocument()
     for (const label of ['相手科目', '取引先', 'プロジェクト', '世帯メンバー', '精算バッチ']) {
@@ -149,7 +149,7 @@ describe('ImportRowFilterPanel: 期間の日付/月の切替(計画Issue #314)',
     renderPanel()
 
     expect(panel().getByRole('checkbox', { name: '日付で指定' })).not.toBeChecked()
-    expect(panel().getByRole('combobox', { name: '期間の開始' })).toBeInTheDocument()
+    expect(panel().getByRole('button', { name: /^期間の開始:/ })).toBeInTheDocument()
   })
 
   it('チェックを入れると日付入力になる', () => {
@@ -161,7 +161,10 @@ describe('ImportRowFilterPanel: 期間の日付/月の切替(計画Issue #314)',
 
   it('月を選ぶと、開始月1日の日付を入力に入れて通知する', () => {
     const { onChange } = renderPanel()
-    fireEvent.change(panel().getByRole('combobox', { name: '期間の開始' }), { target: { value: '2026-09' } })
+    fireEvent.click(panel().getByRole('button', { name: /^期間の開始:/ }))
+    const dialog = screen.getByRole('dialog', { name: '期間の開始' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '2026年' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '2026年9月' }))
 
     expect(onChange).toHaveBeenLastCalledWith({ ...EMPTY_FILTER_INPUT, dateFrom: '2026-09-01' })
   })

@@ -167,12 +167,21 @@ describe('JournalFilterPanel: 借方・貸方を分けて検索', () => {
   })
 })
 
+/** 月の選択欄を開き、年のグループを開いて月を押す(年は「2026年」の形でグループ名を探す) */
+function pickMonth(label: string, monthName: string) {
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}:`) }))
+  const dialog = screen.getByRole('dialog', { name: label })
+  const group = within(dialog).getByRole('button', { name: `${monthName.slice(0, 5)}` })
+  if (group.getAttribute('aria-expanded') !== 'true') fireEvent.click(group)
+  fireEvent.click(within(dialog).getByRole('button', { name: monthName }))
+}
+
 describe('JournalFilterPanel: 期間の日付/月の切替', () => {
   it('はじめは月で選ぶ(「日付で指定」のチェックなし)で、月の選択欄を出す', () => {
     render(<Harness />)
 
     expect(screen.getByRole('checkbox', { name: '日付で指定' })).not.toBeChecked()
-    expect(screen.getByRole('combobox', { name: '期間の開始' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^期間の開始:/ })).toBeInTheDocument()
   })
 
   it('チェックを入れると日付入力になる', () => {
@@ -185,8 +194,8 @@ describe('JournalFilterPanel: 期間の日付/月の切替', () => {
   it('月を選ぶと、開始月1日〜終了月末日で通知する', () => {
     const onFilter = vi.fn()
     render(<Harness onFilter={onFilter} />)
-    fireEvent.change(screen.getByRole('combobox', { name: '期間の開始' }), { target: { value: '2026-09' } })
-    fireEvent.change(screen.getByRole('combobox', { name: '期間の終了' }), { target: { value: '2026-10' } })
+    pickMonth('期間の開始', '2026年9月')
+    pickMonth('期間の終了', '2026年10月')
 
     expect(onFilter).toHaveBeenLastCalledWith({ dateFrom: '2026-09-01', dateTo: '2026-10-31' })
   })

@@ -25,7 +25,6 @@ const UNMIGRATED = 'unmigrated' as const
 /** パス(src/からの相対、/区切り) → 許可する `<select>` の数と理由 */
 const ALLOWED: Record<string, Exception> = {
   'components/analysis/AnalysisConditionBar.tsx': { count: 3, kind: FIXED, reason: '期間の月・比較方法の固定の選択肢' },
-  'components/common/period-range/PeriodRangeInput.tsx': { count: 1, kind: FIXED, reason: '期間の開始月・終了月の選択(月は実体ではない固定の選択肢。分析画面の期間バーと同じ、計画Issue #314)' },
   'components/master/MappingMasterTab.tsx': { count: 7, kind: FIXED, reason: '明細定義の設定(精算区分・文字コード・区切り・日付形式・金額方式・CSV列名)の固定の選択肢' },
   'components/statement-import/MappingCreateDialog.tsx': { count: 5, kind: FIXED, reason: '明細定義の設定の固定の選択肢・CSV列名' },
   'components/master/FinancialInstitutionSelect.tsx': { count: 1, kind: FIXED, reason: '金融機関名(マスタの実体ではない文字列の候補)' },
