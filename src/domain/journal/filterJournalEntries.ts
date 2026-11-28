@@ -2,7 +2,7 @@ import type { Account } from '../account/Account'
 import { expandGroupIds } from '../account-group/expandGroupIds'
 import { matchesSearch } from '../search/normalizeForSearch'
 import type { JournalEntry, JournalLine } from './JournalEntry'
-import type { JournalEntryFilter, JournalEntryFilterContext } from './JournalEntryFilter'
+import type { JournalEntryFilter, JournalEntryFilterContext, JournalEntrySideFilter } from './JournalEntryFilter'
 
 /** 空配列・未指定は絞り込みなし */
 function isActive<T>(values: readonly T[] | undefined): values is readonly T[] {
@@ -34,22 +34,17 @@ export function filterJournalEntries(
   )
   const projectGroupById = new Map((context.projects ?? []).map((project) => [project.id, project.projectGroupId]))
 
-  const accountIdSet = isActive(filter.accountIds) ? new Set(filter.accountIds) : null
-  const memberIdSet = isActive(filter.householdMemberIds) ? new Set(filter.householdMemberIds) : null
-  const projectIdSet = isActive(filter.projectIds) ? new Set(filter.projectIds) : null
-  const counterpartyIdSet = isActive(filter.counterpartyIds) ? new Set(filter.counterpartyIds) : null
   const sourceTypeSet = isActive(filter.sourceTypes) ? new Set(filter.sourceTypes) : null
   const institutionNameSet = isActive(filter.financialInstitutionNames) ? new Set(filter.financialInstitutionNames) : null
-  const accountGroupSet = isActive(filter.accountGroupIds)
-    ? expandGroupIds(context.accountGroups ?? [], filter.accountGroupIds)
-    : null
-  const counterpartyGroupSet = isActive(filter.counterpartyGroupIds)
-    ? expandGroupIds(context.counterpartyGroups ?? [], filter.counterpartyGroupIds)
-    : null
-  const projectGroupSet = isActive(filter.projectGroupIds)
-    ? expandGroupIds(context.projectGroups ?? [], filter.projectGroupIds)
-    : null
   const memoKeyword = filter.memo ?? ''
+
+  // 明細行ごとの軸(科目・取引先・プロジェクト・世帯メンバー・精算バッチ)は、「まとめて」「借方」「貸方」で
+  // 同じ判定を、対象にする明細行だけを変えて使う(計画Issue #314)。条件が無ければnull
+  const lineMatchers = {
+    both: buildLineAxesMatcher(filter, accountsById, counterpartyGroupById, projectGroupById, context),
+    debit: buildLineAxesMatcher(filter.debit ?? {}, accountsById, counterpartyGroupById, projectGroupById, context),
+    credit: buildLineAxesMatcher(filter.credit ?? {}, accountsById, counterpartyGroupById, projectGroupById, context),
+  }
 
   const anyLine = (entry: JournalEntry, predicate: (line: JournalLine) => boolean): boolean =>
     entry.lines.some(predicate)
@@ -88,52 +83,82 @@ export function filterJournalEntries(
         institutionNameSet.has(entry.financialInstitutionName ?? null)
       if (!matchesSourceType && !matchesInstitution) return false
     }
-    // 項目指定とグループ指定は同じ軸の中でOR(計画Issue #203)。どちらか一方でも指定があれば、
-    // いずれかの明細行が項目指定またはグループ指定のどちらかに該当することを求める
-    if (accountIdSet !== null || accountGroupSet !== null) {
-      const matches = anyLine(entry, (line) => {
+    // 科目・取引先・プロジェクト・世帯メンバー・精算バッチ: 「まとめて」は全明細行、借方・貸方の条件はその側の明細行だけで判定する(計画Issue #314)
+    if (lineMatchers.both !== null && !lineMatchers.both(entry.lines)) return false
+    if (lineMatchers.debit !== null && !lineMatchers.debit(entry.lines.filter((line) => line.side === 'debit'))) return false
+    if (lineMatchers.credit !== null && !lineMatchers.credit(entry.lines.filter((line) => line.side === 'credit'))) return false
+
+    return true
+  })
+}
+
+type LineAxesMatcher = (lines: readonly JournalLine[]) => boolean
+
+/**
+ * 明細行ごとの軸(科目・取引先・プロジェクト・世帯メンバー・精算バッチ)の判定を作る(計画Issue #314で、まとめて・借方・貸方で共用するために切り出し)。
+ * 渡した明細行の中に、軸ごとに条件を満たす行が1つ以上あればtrue(軸どうしはAND、別々の行で満たしてよい)。
+ * 項目指定とグループ指定は同じ軸の中でOR(計画Issue #203)。条件が1つも無ければnull(絞り込まない)。
+ */
+function buildLineAxesMatcher(
+  axes: JournalEntrySideFilter,
+  accountsById: ReadonlyMap<number, Account>,
+  counterpartyGroupById: ReadonlyMap<number, number | null>,
+  projectGroupById: ReadonlyMap<number, number | null>,
+  context: JournalEntryFilterContext,
+): LineAxesMatcher | null {
+  const accountIdSet = isActive(axes.accountIds) ? new Set(axes.accountIds) : null
+  const memberIdSet = isActive(axes.householdMemberIds) ? new Set(axes.householdMemberIds) : null
+  const projectIdSet = isActive(axes.projectIds) ? new Set(axes.projectIds) : null
+  const counterpartyIdSet = isActive(axes.counterpartyIds) ? new Set(axes.counterpartyIds) : null
+  const accountGroupSet = isActive(axes.accountGroupIds) ? expandGroupIds(context.accountGroups ?? [], axes.accountGroupIds) : null
+  const counterpartyGroupSet = isActive(axes.counterpartyGroupIds)
+    ? expandGroupIds(context.counterpartyGroups ?? [], axes.counterpartyGroupIds)
+    : null
+  const projectGroupSet = isActive(axes.projectGroupIds) ? expandGroupIds(context.projectGroups ?? [], axes.projectGroupIds) : null
+  const batchIds = isActive(axes.settlementBatchIds) ? axes.settlementBatchIds : null
+
+  const checks: LineAxesMatcher[] = []
+  if (accountIdSet !== null || accountGroupSet !== null) {
+    checks.push((lines) =>
+      lines.some((line) => {
         if (accountIdSet?.has(line.accountId)) return true
         const groupId = accountsById.get(line.accountId)?.accountGroupId ?? null
         return groupId !== null && (accountGroupSet?.has(groupId) ?? false)
-      })
-      if (!matches) return false
-    }
-    if (projectIdSet !== null || projectGroupSet !== null) {
-      const matches = anyLine(entry, (line) => {
+      }),
+    )
+  }
+  if (projectIdSet !== null || projectGroupSet !== null) {
+    checks.push((lines) =>
+      lines.some((line) => {
         if (line.projectId === null) return false
         if (projectIdSet?.has(line.projectId)) return true
         const groupId = projectGroupById.get(line.projectId) ?? null
         return groupId !== null && (projectGroupSet?.has(groupId) ?? false)
-      })
-      if (!matches) return false
-    }
-    if (counterpartyIdSet !== null || counterpartyGroupSet !== null) {
-      const matches = anyLine(entry, (line) => {
+      }),
+    )
+  }
+  if (counterpartyIdSet !== null || counterpartyGroupSet !== null) {
+    checks.push((lines) =>
+      lines.some((line) => {
         if (line.counterpartyId === null) return false
         if (counterpartyIdSet?.has(line.counterpartyId)) return true
         const groupId = counterpartyGroupById.get(line.counterpartyId) ?? null
         return groupId !== null && (counterpartyGroupSet?.has(groupId) ?? false)
-      })
-      if (!matches) return false
-    }
-    if (
-      memberIdSet !== null &&
-      !anyLine(entry, (line) => memberIdSet.has(line.householdMemberId))
-    ) {
-      return false
-    }
-
-    if (isActive(filter.settlementBatchIds)) {
-      const wantsUnassigned = filter.settlementBatchIds.includes(null)
-      const batchIds = new Set(filter.settlementBatchIds.filter((id): id is number => id !== null))
-      const hasAnyTag = anyLine(entry, (line) => line.settlementBatchId !== null)
-      const matchesBatch = anyLine(
-        entry,
-        (line) => line.settlementBatchId !== null && batchIds.has(line.settlementBatchId),
-      )
-      if (!(matchesBatch || (wantsUnassigned && !hasAnyTag))) return false
-    }
-
-    return true
-  })
+      }),
+    )
+  }
+  if (memberIdSet !== null) {
+    checks.push((lines) => lines.some((line) => memberIdSet.has(line.householdMemberId)))
+  }
+  if (batchIds !== null) {
+    const wantsUnassigned = batchIds.includes(null)
+    const batchIdSet = new Set(batchIds.filter((id): id is number => id !== null))
+    checks.push((lines) => {
+      const hasAnyTag = lines.some((line) => line.settlementBatchId !== null)
+      const matchesBatch = lines.some((line) => line.settlementBatchId !== null && batchIdSet.has(line.settlementBatchId))
+      return matchesBatch || (wantsUnassigned && !hasAnyTag)
+    })
+  }
+  if (checks.length === 0) return null
+  return (lines) => checks.every((check) => check(lines))
 }
