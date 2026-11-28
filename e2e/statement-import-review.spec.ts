@@ -410,6 +410,8 @@ test.describe('明細取込画面', () => {
     const bulk = page.getByRole('group', { name: '選択した明細への一括設定' })
     await expect(bulk).toContainText('2件に一括設定')
     await pickTree(page, bulk, '一括の相手科目', 'エンタメ費')
+    // 選んだだけでは行に反映されず、「N行に適用」を押すと反映される(計画Issue #300)
+    await bulk.getByRole('button', { name: '2行に適用' }).click()
     await expect(bulk).toContainText('2件に設定しました')
 
     await page.getByRole('button', { name: /^\d+ \/ 3 件を「普通預金」に確定$/ }).click()
@@ -483,6 +485,14 @@ test.describe('明細取込画面', () => {
       await header.evaluate((el) => {
         const rect = el.getBoundingClientRect()
         return el.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
+      }),
+    ).toBe(true)
+    // バーと見出しの間の隙間にも背景が敷かれ、下の行が透けて見えない(隙間の中ほどの点が、バーの領域に属する)
+    expect(
+      await bulk.evaluate((el) => {
+        const rect = el.getBoundingClientRect()
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.bottom + 8)
+        return hit !== null && hit.closest('.import-bulk-bar') !== null
       }),
     ).toBe(true)
 

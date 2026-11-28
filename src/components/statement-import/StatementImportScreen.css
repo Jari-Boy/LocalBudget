@@ -140,83 +140,43 @@
 }
 
 /*
- * 一括設定のバナー(表の上)。選んだときだけ出て、タブ・絞り込み欄の下に固定する。表の見出しの複製は、さらにその下に固定する
- * (.import-screen--bulk が --sticky-bulk-h にバナーの高さと間隔を入れ、複製の固定位置 --floating-header-top に足される)。
+ * 一括編集のバー(表の上)。選んだときだけ出て、タブ・絞り込み欄の下に固定する。表の見出しの複製は、さらにその下に固定する
+ * (.import-screen--bulk が --sticky-bulk-h にバーの高さと間隔を入れ、複製の固定位置 --floating-header-top に足される)。
  * 出入りで表の枠が上下にずれても、行が画面上で動かないよう、画面側がスクロール位置を相殺する(useKeepRowsInPlace)。
+ * バー自身の見た目(2段構成・項目・理由の欄・ボタン)は、仕訳一覧と共通の BulkBarFrame(common/bulk-bar/BulkBarFrame.css、計画Issue #300)。
  */
 .import-bulk-bar {
   position: sticky;
   top: var(--sticky-head-h, 0px);
   z-index: 15;
   background: var(--color-bg);
+  /*
+   * バーと表の見出しの複製との間(.import-screen の gap、16px)にも背景を敷く。敷かないと、固定中は
+   * その隙間から、スクロールで通り過ぎる表の行が透けて見える。余白を足した分は、負のマージンで相殺して、並びは変えない。
+   */
+  padding-bottom: 16px;
+  margin-bottom: -16px;
 }
 
 .import-screen--bulk {
-  /* バナーの高さ(.import-bulk の height、60px) + 表との間隔(.import-screen の gap、16px) */
-  --sticky-bulk-h: 76px;
+  /*
+   * バーの高さ(--bulk-bar-h。BulkBarFrame.css の .bulk-bar の height になる)。2段構成(計画Issue #300)で、
+   * 1段目40px + 2段目80px(ラベル・選択欄36px・理由の欄) + 枠4px = 124px の固定値(仕訳一覧と同じ)。
+   * 6項目が3列に折り返す幅(BulkBarFrame.css と同じ 900px 以下)では、2段目が2行になるので 204px にする。
+   */
+  --bulk-bar-h: 124px;
+  /* バーの高さ + 表との間隔(.import-screen の gap、16px)。複製した表の見出しの固定位置(--floating-header-top)に足される */
+  --sticky-bulk-h: calc(var(--bulk-bar-h) + 16px);
 }
-/* 一括設定のバナー。固定領域を高くしないよう1行にまとめる(プロジェクト等は「その他の項目」に重ねて出す) */
-.import-bulk {
-  position: relative;
-  box-sizing: border-box;
-  height: 60px;
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-  align-items: center;
-  padding: 0 12px;
-  background: var(--color-accent-soft);
-  border: 2px solid var(--color-accent);
-  border-radius: var(--radius-lg);
+@media (max-width: 900px) {
+  .import-screen--bulk {
+    --bulk-bar-h: 204px;
+  }
 }
 
-/* 件数と結果のメッセージの2行。長いときは省略して、領域の高さを変えない */
-.import-bulk__summary {
-  flex: 0 1 260px;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.import-bulk__count {
-  /* 画面全体の文字(大きめ)を引き継がず、ほかの入力・ボタンと同じ大きさにする */
-  font-size: var(--font-size-base);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 「選択を解除」は、設定のボタンと離して右端に寄せる */
-.import-bulk__clear {
-  margin-left: auto;
-}
-
-.import-bulk__message {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--color-accent);
-}
-
-/* 「その他の項目」: バナーの下に重ねて出す(表を押し下げない) */
-.import-bulk__more {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 5;
-  box-sizing: border-box;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-popup);
+/* コメントの入力欄: 項目の幅いっぱいに広げる(選択欄と同じ幅にそろえる) */
+.bulk-bar__input {
+  width: 100%;
 }
 
 /*

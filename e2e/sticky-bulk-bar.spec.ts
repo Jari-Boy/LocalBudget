@@ -126,6 +126,13 @@ test.describe('上部固定の一括編集バーとタブ、表の見出し(明�
     expect(tabs.y).toBeLessThan(8)
     expect(bar.y).toBeGreaterThanOrEqual(tabs.y + tabs.height - 1)
     expect(header.y).toBeGreaterThanOrEqual(bar.y + bar.height - 1)
+    // バーと見出しの間の隙間にも背景が敷かれ、下の行が透けて見えない(隙間の中ほどの点が、バーの領域に属する)
+    const gapIsCovered = await bulkBar(page).evaluate((el) => {
+      const rect = el.getBoundingClientRect()
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.bottom + 3)
+      return hit !== null && hit.closest('.journal-screen__bulk-bar') !== null
+    })
+    expect(gapIsCovered).toBe(true)
   })
 
   /** 計画Issue #280: 2段構成のバーの高さは固定で、理由の有無で変わらず、表の見出しの固定位置(--sticky-bulk-h)と一致する */
@@ -146,7 +153,7 @@ test.describe('上部固定の一括編集バーとタブ、表の見出し(明�
     // 2段目の項目(ラベル・選択欄・理由)は、バーの枠の中に収まる
     const overflow = await bulkBar(page).evaluate((bar) => {
       const barRect = bar.getBoundingClientRect()
-      return Array.from(bar.querySelectorAll('.journal-line-bulk__field')).some((field) => field.getBoundingClientRect().bottom > barRect.bottom)
+      return Array.from(bar.querySelectorAll('.bulk-bar__field')).some((field) => field.getBoundingClientRect().bottom > barRect.bottom)
     })
     expect(overflow).toBe(false)
 

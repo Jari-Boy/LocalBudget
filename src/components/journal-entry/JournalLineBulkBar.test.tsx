@@ -153,13 +153,13 @@ function renderBar(ui: React.ReactElement) {
 const confirmDialog = () => screen.getByRole('dialog', { name: '一括編集の確認' })
 
 /** 選択欄(ラベル付きの項目)を囲む要素。無効の理由がこの中に出ることを確かめるために使う */
-const fieldOf = (label: string) => screen.getByText(label, { selector: '.journal-line-bulk__label' }).closest('.journal-line-bulk__field') as HTMLElement
+const fieldOf = (label: string) => screen.getByText(label, { selector: '.bulk-bar__label' }).closest('.bulk-bar__field') as HTMLElement
 
 describe('JournalLineBulkBar: 2段構成(計画Issue #280)', () => {
   it('5項目(科目・プロジェクト・取引先・精算バッチ・世帯メンバー)が、初めからラベル付きで出ている', () => {
     render(<Harness selected={[sel(e1, 11)]} />)
     for (const label of ['科目', 'プロジェクト', '取引先', '精算バッチ', '世帯メンバー']) {
-      expect(screen.getByText(label, { selector: '.journal-line-bulk__label' })).toBeInTheDocument()
+      expect(screen.getByText(label, { selector: '.bulk-bar__label' })).toBeInTheDocument()
     }
     expect(screen.getByRole('button', { name: '一括編集の科目: 変更しない' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '一括編集のプロジェクト: 変更しない' })).toBeInTheDocument()
@@ -186,8 +186,8 @@ describe('JournalLineBulkBar: 2段構成(計画Issue #280)', () => {
 
   it('理由の欄は、理由が無いときも場所を空けておく(理由の有無で2段目の高さが変わらない)', () => {
     render(<Harness selected={[sel(e1, 11)]} />)
-    expect(fieldOf('取引先').querySelector('.journal-line-bulk__why')).not.toBeNull()
-    expect(fieldOf('プロジェクト').querySelector('.journal-line-bulk__why')).not.toBeNull()
+    expect(fieldOf('取引先').querySelector('.bulk-bar__why')).not.toBeNull()
+    expect(fieldOf('プロジェクト').querySelector('.bulk-bar__why')).not.toBeNull()
   })
 
   it('確認はバーの中ではなくダイアログで出る(バーの高さが増えない)', () => {

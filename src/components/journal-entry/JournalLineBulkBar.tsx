@@ -1,7 +1,8 @@
-import { useRef, type ReactNode } from 'react'
+import { useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { ConfirmDialog } from '../common/confirm-dialog/ConfirmDialog'
 import { TreeSelect } from '../common/tree-select/TreeSelect'
+import { BulkBarField, BulkBarFrame } from '../common/bulk-bar/BulkBarFrame'
 import { BatchSelect } from '../master/BatchSelect'
 import { MemberSelect } from '../master/MemberSelect'
 import type { TreeSelectCategory, TreeSelectNode } from '../common/tree-select/treeSelectModel'
@@ -146,34 +147,26 @@ export function JournalLineBulkBar({
   const createRequester = (request: RequestCreate | undefined, patch: (id: number) => Partial<BulkPick>) =>
     request === undefined ? undefined : () => request((id) => onPickChange({ ...latestPick.current, ...patch(id) }))
 
-  /** 無効な項目の下に出す理由。選べるときや選択が空のときは出さないが、場所は常に空けておく(2段目の高さを変えない) */
-  const why = (allowed: boolean, text: string): ReactNode => (
-    <span className="journal-line-bulk__why">{!allowed && selected.length > 0 ? text : ''}</span>
-  )
+  /** 無効な項目の下に出す理由。選べるときや選択が空のときは出さない(場所は BulkBarField が常に空ける) */
+  const why = (allowed: boolean, text: string): string => (!allowed && selected.length > 0 ? text : '')
 
   return (
-    <section aria-label="一括編集" className="journal-line-bulk">
-      <div className="journal-line-bulk__top">
-        <div className="journal-line-bulk__summary">
-          <strong className="journal-line-bulk__count">{`${stats.lineCount}行を選択中(借方 ${stats.debitCount}行・貸方 ${stats.creditCount}行、${stats.entryCount}件の仕訳)`}</strong>
-          <span className="journal-line-bulk__hint">{HINT}</span>
-        </div>
-        <button type="button" className="journal-line-bulk__button" onClick={onClearSelection}>
-          選択を解除
-        </button>
-        <button
-          type="button"
-          className="journal-line-bulk__button journal-line-bulk__button--primary"
-          disabled={busy || empty || selected.length === 0}
-          onClick={onAskConfirm}
-        >
-          {empty ? '適用' : `${stats.lineCount}行に適用`}
-        </button>
-      </div>
-
-      <div className="journal-line-bulk__fields">
-        <div className="journal-line-bulk__field">
-          <span className="journal-line-bulk__label">科目</span>
+    <>
+      <BulkBarFrame
+        ariaLabel="一括編集"
+        summary={
+          <>
+            <strong className="bulk-bar__count">{`${stats.lineCount}行を選択中(借方 ${stats.debitCount}行・貸方 ${stats.creditCount}行、${stats.entryCount}件の仕訳)`}</strong>
+            <span className="bulk-bar__hint">{HINT}</span>
+          </>
+        }
+        onClearSelection={onClearSelection}
+        applyLabel={empty ? '適用' : `${stats.lineCount}行に適用`}
+        applyDisabled={busy || empty || selected.length === 0}
+        onApply={onAskConfirm}
+        columns={5}
+      >
+        <BulkBarField label="科目">
           <TreeSelect
             label="一括編集の科目"
             categories={master.accountCategories}
@@ -184,10 +177,8 @@ export function JournalLineBulkBar({
             onChange={(v) => change({ accountId: v === '' ? null : Number(v) })}
             onCreate={createRequester(onRequestCreateAccount, (id) => ({ accountId: id }))}
           />
-          {why(true, '')}
-        </div>
-        <div className="journal-line-bulk__field">
-          <span className="journal-line-bulk__label">プロジェクト</span>
+        </BulkBarField>
+        <BulkBarField label="プロジェクト">
           <TreeSelect
             label="一括編集のプロジェクト"
             categories={withClearOption(master.projectCategories)}
@@ -198,10 +189,8 @@ export function JournalLineBulkBar({
             onChange={(v) => change({ project: valueToChange(v) })}
             onCreate={createRequester(onRequestCreateProject, (id) => ({ project: { kind: 'set', value: id } }))}
           />
-          {why(true, '')}
-        </div>
-        <div className="journal-line-bulk__field">
-          <span className="journal-line-bulk__label">取引先</span>
+        </BulkBarField>
+        <BulkBarField label="取引先" reason={why(rules.counterpartyAllowed, '費用・収益の行のみ')}>
           <TreeSelect
             label="一括編集の取引先"
             categories={withClearOption(master.counterpartyCategories)}
@@ -213,10 +202,8 @@ export function JournalLineBulkBar({
             onChange={(v) => change({ counterparty: valueToChange(v) })}
             onCreate={createRequester(onRequestCreateCounterparty, (id) => ({ counterparty: { kind: 'set', value: id } }))}
           />
-          {why(rules.counterpartyAllowed, '費用・収益の行のみ')}
-        </div>
-        <div className="journal-line-bulk__field">
-          <span className="journal-line-bulk__label">精算バッチ</span>
+        </BulkBarField>
+        <BulkBarField label="精算バッチ" reason={why(rules.batchAllowed, '未収金・未払金(精算バッチ)の行のみ')}>
           <BatchSelect
             label="一括編集の精算バッチ"
             batches={master.batches}
@@ -227,10 +214,8 @@ export function JournalLineBulkBar({
             onCreateBatch={onCreateBatch}
             onChange={(v) => change({ batch: valueToChange(v) })}
           />
-          {why(rules.batchAllowed, '未収金・未払金(精算バッチ)の行のみ')}
-        </div>
-        <div className="journal-line-bulk__field">
-          <span className="journal-line-bulk__label">世帯メンバー</span>
+        </BulkBarField>
+        <BulkBarField label="世帯メンバー" reason={why(rules.memberAllowed, '既定メンバーのある科目は不可')}>
           <MemberSelect
             label="一括編集の世帯メンバー"
             members={master.members}
@@ -239,9 +224,8 @@ export function JournalLineBulkBar({
             disabled={!rules.memberAllowed}
             onChange={(value) => change({ memberId: value === '' ? null : Number(value) })}
           />
-          {why(rules.memberAllowed, '既定メンバーのある科目は不可')}
-        </div>
-      </div>
+        </BulkBarField>
+      </BulkBarFrame>
 
       {confirming &&
         // 確認はダイアログで出す。固定バーの重なり順(スタッキング)の外に出すため body に描く
@@ -266,6 +250,6 @@ export function JournalLineBulkBar({
           />,
           document.body,
         )}
-    </section>
+    </>
   )
 }

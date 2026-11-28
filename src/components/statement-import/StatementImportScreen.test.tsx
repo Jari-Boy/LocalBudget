@@ -149,13 +149,10 @@ async function chooseCsv(content: string, waitLoaded = true) {
 
 /** 補助行(確定版の確認・キーワード登録)にも同じ摘要の文字列が入るため、先頭の行(明細の行)を使う */
 const rowOf = (text: string | RegExp) => within(screen.getAllByRole('row', { name: text })[0])
-/** 一括設定のバナー。プロジェクト・世帯メンバー・精算バッチ・コメントは「その他の項目」を開くと出る(計画Issue #266)ので、開いてから返す */
-const openBulkGroup = () => {
-  const group = screen.getByRole('group', { name: '選択した明細への一括設定' })
-  const more = within(group).getByRole('button', { name: /^その他の項目/ })
-  if (more.getAttribute('aria-expanded') !== 'true') fireEvent.click(more)
-  return within(group)
-}
+/** 一括編集のバー(計画Issue #300。2段目に6項目を常に出す)。選んだ項目は「N行に適用」を押すまで行に反映されない */
+const openBulkGroup = () => within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
+/** 「N行に適用」を押して、選んだ項目を選択した行に反映する */
+const applyBulk = () => fireEvent.click(openBulkGroup().getByRole('button', { name: /^\d+行に適用$/ }))
 const pick = (scope: ReturnType<typeof within>, label: string, item: string) => {
   fireEvent.click(scope.getByRole('button', { name: new RegExp(`^${label}`) }))
   fireEvent.click(within(screen.getByRole('dialog', { name: label })).getByRole('button', { name: item }))
@@ -370,7 +367,7 @@ describe('StatementImportScreen', () => {
     expect(screen.queryByRole('tab', { name: /^重複/ })).not.toBeInTheDocument()
   })
 
-  it('一括設定のバナー: コメントのボタンは「コメントを適用」で、「選択を解除」は右端に寄せ、ほかの入力・ボタンと同じ高さの部品を使う', async () => {
+  it('一括編集のバー: 仕訳一覧と同じ骨格(2段構成)で、1段目に件数・選択解除・適用、2段目に6項目をラベル付きで出す。何も選んでいないときは適用できない', async () => {
     makeMapping()
     renderScreen()
     await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
@@ -379,13 +376,14 @@ describe('StatementImportScreen', () => {
 
     const bulk = openBulkGroup()
 
-    expect(bulk.getByRole('button', { name: 'コメントを適用' })).toBeInTheDocument()
-    expect(bulk.queryByRole('button', { name: 'コメントを設定' })).not.toBeInTheDocument()
-    // 件数の見出しは本文と同じ大きさの専用クラス、「選択を解除」は右寄せの専用クラス、ボタンは入力欄と同じ高さ(small ではない)
-    expect(bulk.getByText('1件に一括設定')).toHaveClass('import-bulk__count')
-    expect(bulk.getByRole('button', { name: '選択を解除' })).toHaveClass('import-bulk__clear')
-    expect(bulk.getByRole('button', { name: 'コメントを適用' })).not.toHaveClass('import-btn--small')
-    expect(bulk.getByRole('button', { name: '選択を解除' })).not.toHaveClass('import-btn--small')
+    expect(bulk.getByText('1件に一括設定')).toHaveClass('bulk-bar__count')
+    expect(bulk.getByRole('button', { name: '選択を解除' })).toHaveClass('bulk-bar__button')
+    expect(bulk.getByRole('button', { name: '適用' })).toBeDisabled()
+    for (const label of ['相手科目', 'プロジェクト', '取引先', '精算バッチ', '世帯メンバー', 'コメント']) {
+      expect(bulk.getByText(label, { selector: '.bulk-bar__label' })).toBeInTheDocument()
+    }
+    expect(bulk.queryByRole('button', { name: /^その他の項目/ })).not.toBeInTheDocument()
+    expect(bulk.queryByRole('button', { name: 'コメントを適用' })).not.toBeInTheDocument()
   })
 
   /**
@@ -418,7 +416,7 @@ describe('StatementImportScreen', () => {
       expect(scrollRegion).not.toBeNull()
       expect(scrollRegion).not.toContainElement(screen.getByRole('group', { name: '選択した明細への一括設定' }))
     })
-    it('バナーは1行にまとめ、相手科目と取引先だけを出す。プロジェクト・世帯メンバー・精算バッチ・コメントは「その他の項目」を開くと出る', async () => {
+    it('バナーは2段で、項目(相手科目・プロジェクト・取引先・精算バッチ・世帯メンバー・コメント)を最初から全部出す', async () => {
       makeMapping()
       renderScreen()
       await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n`)
@@ -426,17 +424,11 @@ describe('StatementImportScreen', () => {
       const group = () => within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
 
       expect(group().getByRole('button', { name: /^一括の相手科目/ })).toBeInTheDocument()
-      expect(group().getByRole('button', { name: /^一括の取引先/ })).toBeInTheDocument()
-      expect(group().queryByRole('button', { name: /^一括のプロジェクト/ })).not.toBeInTheDocument()
-      expect(group().queryByLabelText('一括で設定するコメント')).not.toBeInTheDocument()
-      expect(group().getByRole('button', { name: /^その他の項目/ })).toHaveAttribute('aria-expanded', 'false')
-
-      fireEvent.click(group().getByRole('button', { name: /^その他の項目/ }))
-
       expect(group().getByRole('button', { name: /^一括のプロジェクト/ })).toBeInTheDocument()
+      expect(group().getByRole('button', { name: /^一括の取引先/ })).toBeInTheDocument()
+      expect(group().getByRole('button', { name: /^精算バッチを一括設定/ })).toBeInTheDocument()
+      expect(group().getByRole('button', { name: /^世帯メンバーを一括設定/ })).toBeInTheDocument()
       expect(group().getByLabelText('一括で設定するコメント')).toBeInTheDocument()
-      expect(group().getByRole('button', { name: 'コメントを適用' })).toBeInTheDocument()
-      expect(group().getByRole('button', { name: /^その他の項目/ })).toHaveAttribute('aria-expanded', 'true')
     })
 
     it('タブの行と絞り込み欄は、ひとつの固定の容器にまとまっている(絞り込み欄を開いても同じ容器)', async () => {
@@ -451,27 +443,144 @@ describe('StatementImportScreen', () => {
     })
   })
 
-  it('選択した行に一括設定でき、設定できなかった行は対象外の件数で伝える', async () => {
+  it('項目を選んだだけでは行に反映されず、「N行に適用」を押すと、「変更しない」以外の項目だけが選択した行に反映される(確認ダイアログは出ない)', async () => {
     makeMapping()
     const trip = projects.create({ name: '沖縄旅行' })
-    batches.create({ name: '10月の立替', type: 'expense_splitting' })
     renderScreen()
-    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,ランチ,-800,96200\n`)
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,ランチ,-800,96200\n2026/10/07,家賃,-50000,46200\n`)
     pick(rowOf(/スーパー/), '相手科目', '食費')
-    pick(rowOf(/ランチ/), '相手科目', '立替金')
+    pick(rowOf(/ランチ/), '相手科目', '食費')
 
     fireEvent.click(screen.getByLabelText('スーパーを選択'))
     fireEvent.click(screen.getByLabelText('ランチを選択'))
     const bulk = openBulkGroup()
     expect(bulk.getByText('2件に一括設定')).toBeInTheDocument()
-    chooseBatch('精算バッチを一括設定', '10月の立替', bulk)
-
-    expect(bulk.getByText('1件に設定しました(1件は対象外)')).toBeInTheDocument()
-    expectBatch('ランチの精算バッチ', '10月の立替', rowOf(/ランチ/))
-
     pick(bulk, '一括のプロジェクト', '沖縄旅行')
+    fireEvent.change(bulk.getByLabelText('一括で設定するコメント'), { target: { value: '旅行分' } })
+
+    // 選んだだけでは、行は変わらない
+    expect(rowOf(/スーパー/).getByRole('button', { name: /^プロジェクト: / })).not.toHaveTextContent('沖縄旅行')
+    expect(screen.getByLabelText('スーパーのコメント')).toHaveValue('')
+
+    fireEvent.click(bulk.getByRole('button', { name: '2行に適用' }))
+
+    expect(screen.queryByRole('dialog', { name: '一括編集の確認' })).not.toBeInTheDocument()
     expect(bulk.getByText('2件に設定しました')).toBeInTheDocument()
-    expect(rowOf(/スーパー/).getByRole('button', { name: new RegExp(`^プロジェクト: ${trip.name}`) })).toBeInTheDocument()
+    for (const desc of ['スーパー', 'ランチ']) {
+      expect(rowOf(new RegExp(desc)).getByRole('button', { name: new RegExp(`^プロジェクト: ${trip.name}`) })).toBeInTheDocument()
+      expect(screen.getByLabelText(`${desc}のコメント`)).toHaveValue('旅行分')
+    }
+    // 選択しなかった行と、「変更しない」の項目(相手科目)は変わらない
+    expect(screen.getByLabelText('家賃のコメント')).toHaveValue('')
+    expect(rowOf(/スーパー/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
+  })
+
+  it('選んだ行に精算バッチを付けられない科目の行が混ざると、精算バッチの欄は先に無効になり、理由が項目の下に出る', async () => {
+    makeMapping()
+    batches.create({ name: '10月の立替', type: 'expense_splitting' })
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,ランチ,-800,96200\n`)
+    pick(rowOf(/スーパー/), '相手科目', '食費')
+    pick(rowOf(/ランチ/), '相手科目', '立替金')
+    fireEvent.click(screen.getByLabelText('ランチを選択'))
+    expect(openBulkGroup().getByRole('button', { name: /^精算バッチを一括設定/ })).toBeEnabled()
+
+    fireEvent.click(screen.getByLabelText('スーパーを選択'))
+
+    expect(openBulkGroup().getByRole('button', { name: /^精算バッチを一括設定/ })).toBeDisabled()
+    expect(openBulkGroup().getByText('未収金・未払金(精算バッチ)の行のみ')).toBeInTheDocument()
+  })
+
+  it('選んでいた項目が、選択の変更で選べなくなると「変更しない」に戻り、適用の対象から外れる', async () => {
+    makeMapping()
+    batches.create({ name: '10月の立替', type: 'expense_splitting' })
+    renderScreen()
+    await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,ランチ,-800,96200\n`)
+    pick(rowOf(/スーパー/), '相手科目', '食費')
+    pick(rowOf(/ランチ/), '相手科目', '立替金')
+    fireEvent.click(screen.getByLabelText('ランチを選択'))
+    chooseBatch('精算バッチを一括設定', '10月の立替', openBulkGroup())
+    expect(openBulkGroup().getByRole('button', { name: '1行に適用' })).toBeEnabled()
+
+    fireEvent.click(screen.getByLabelText('スーパーを選択'))
+
+    // 精算バッチの選択は外れ、ほかに選んだ項目も無いので、適用は押せない
+    expect(openBulkGroup().getByRole('button', { name: '適用' })).toBeDisabled()
+  })
+
+  /**
+   * 一括編集のバーのその場追加(計画Issue #300): 相手科目・プロジェクト・取引先の選択欄の末尾の「+ 新規追加」から作ると、
+   * 作ったものが「選んだ項目」になる(行にはまだ反映されず、「N行に適用」で反映される)。キャンセルしても選択は残る。
+   */
+  describe('一括編集のバーのその場追加(計画Issue #300)', () => {
+    const ONE_ROW = `${HEADER}2026/10/05,スーパー,-3000,97000\n`
+    const dialogOf = (name: string) => within(screen.getByRole('dialog', { name }))
+    const openCreate = (label: string, createLabel: string) => {
+      fireEvent.click(openBulkGroup().getByRole('button', { name: new RegExp(`^${label}`) }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: label })).getByRole('button', { name: createLabel }))
+    }
+
+    it('科目を新規追加すると、一括編集の相手科目として選ばれ、「適用」を押すまで行には反映されない', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(ONE_ROW)
+      fireEvent.click(screen.getByLabelText('スーパーを選択'))
+
+      openCreate('一括の相手科目', '+ 科目を新規追加')
+      const form = dialogOf('科目を登録')
+      fireEvent.change(form.getByLabelText('名称'), { target: { value: '新聞図書費' } })
+      fireEvent.click(form.getByRole('button', { name: '登録' }))
+
+      expect(await openBulkGroup().findByRole('button', { name: /^一括の相手科目: 新聞図書費/ })).toBeInTheDocument()
+      expect(rowOf(/スーパー/).getByRole('button', { name: /^相手科目/ })).not.toHaveTextContent('新聞図書費')
+
+      applyBulk()
+
+      expect(rowOf(/スーパー/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('新聞図書費')
+    })
+
+    it('プロジェクトを新規追加すると、一括編集のプロジェクトとして選ばれる', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(ONE_ROW)
+      fireEvent.click(screen.getByLabelText('スーパーを選択'))
+
+      openCreate('一括のプロジェクト', '+ プロジェクトを新規追加')
+      fireEvent.change(dialogOf('プロジェクトを追加').getByLabelText('プロジェクト名'), { target: { value: '夏の旅行' } })
+      fireEvent.click(dialogOf('プロジェクトを追加').getByRole('button', { name: '追加' }))
+
+      expect(await openBulkGroup().findByRole('button', { name: /^一括のプロジェクト: 夏の旅行/ })).toBeInTheDocument()
+      expect(openBulkGroup().getByRole('button', { name: '1行に適用' })).toBeEnabled()
+    })
+
+    it('取引先を新規追加すると、一括編集の取引先として選ばれる(キャンセルした場合は何も選ばれない)', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(ONE_ROW)
+      pick(rowOf(/スーパー/), '相手科目', '食費')
+      fireEvent.click(screen.getByLabelText('スーパーを選択'))
+
+      openCreate('一括の取引先', '+ 取引先を新規追加')
+      fireEvent.click(dialogOf('取引先を追加').getByRole('button', { name: 'キャンセル' }))
+      expect(openBulkGroup().getByRole('button', { name: /^一括の取引先: 変更しない/ })).toBeInTheDocument()
+
+      openCreate('一括の取引先', '+ 取引先を新規追加')
+      fireEvent.change(dialogOf('取引先を追加').getByLabelText('取引先名'), { target: { value: '新しい店' } })
+      fireEvent.click(dialogOf('取引先を追加').getByRole('button', { name: '追加' }))
+
+      expect(await openBulkGroup().findByRole('button', { name: /^一括の取引先: 新しい店/ })).toBeInTheDocument()
+    })
+
+    it('世帯メンバーの欄には「+ 新規追加」を出さない(追加の画面がどこにも無いため)', async () => {
+      makeMapping()
+      renderScreen()
+      await chooseCsv(ONE_ROW)
+      fireEvent.click(screen.getByLabelText('スーパーを選択'))
+
+      fireEvent.click(openBulkGroup().getByRole('button', { name: /^世帯メンバーを一括設定/ }))
+
+      expect(within(screen.getByRole('dialog', { name: '世帯メンバーを一括設定' })).queryByText(/新規/)).not.toBeInTheDocument()
+    })
   })
 
   /**
@@ -612,22 +721,25 @@ describe('StatementImportScreen', () => {
       fireEvent.click(screen.getByLabelText('ランチを選択'))
 
       chooseMember('世帯メンバーを一括設定', '花子', bulkGroup())
+      applyBulk()
 
       expectMember('スーパーの世帯メンバー', '花子', rowOf(/スーパー/))
       expectMember('ランチの世帯メンバー', '花子', rowOf(/ランチ/))
       expectMember('家賃の世帯メンバー', 'なし', rowOf(/家賃/))
     })
 
-    it('一括設定の「なし(クリア)」を選ぶと、選択した全行の世帯メンバーが未設定に戻る', async () => {
+    it('一括編集の「なし(外す)」を選んで適用すると、選択した全行の世帯メンバーが未設定に戻る', async () => {
       makeMapping()
       renderScreen()
       await chooseCsv(TWO_ROWS)
       fireEvent.click(screen.getByLabelText('スーパーを選択'))
       fireEvent.click(screen.getByLabelText('ランチを選択'))
       chooseMember('世帯メンバーを一括設定', '自分', bulkGroup())
+      applyBulk()
       expectMember('スーパーの世帯メンバー', '自分', rowOf(/スーパー/))
 
-      chooseMember('世帯メンバーを一括設定', 'なし(クリア)', bulkGroup())
+      chooseMember('世帯メンバーを一括設定', 'なし(外す)', bulkGroup())
+      applyBulk()
 
       expectMember('スーパーの世帯メンバー', 'なし', rowOf(/スーパー/))
       expectMember('ランチの世帯メンバー', 'なし', rowOf(/ランチ/))
@@ -675,7 +787,7 @@ describe('StatementImportScreen', () => {
     const TWO_ROWS = `${HEADER}2026/10/05,スーパー,-3000,97000\n2026/10/06,ランチ,-800,96200\n`
     const bulkGroup = () => openBulkGroup()
 
-    it('一括設定で精算バッチを選ぶと選択した行に付き、「なし(クリア)」で外れる', async () => {
+    it('一括編集で精算バッチを選んで適用すると選択した行に付き、「なし(外す)」を適用すると外れる', async () => {
       makeMapping()
       batches.create({ name: '10月の立替', type: 'expense_splitting' })
       renderScreen()
@@ -686,10 +798,12 @@ describe('StatementImportScreen', () => {
       fireEvent.click(screen.getByLabelText('ランチを選択'))
 
       chooseBatch('精算バッチを一括設定', '10月の立替', bulkGroup())
+      applyBulk()
       expectBatch('スーパーの精算バッチ', '10月の立替', rowOf(/スーパー/))
       expectBatch('ランチの精算バッチ', '10月の立替', rowOf(/ランチ/))
 
-      chooseBatch('精算バッチを一括設定', 'なし(クリア)', bulkGroup())
+      chooseBatch('精算バッチを一括設定', 'なし(外す)', bulkGroup())
+      applyBulk()
       expectBatch('スーパーの精算バッチ', '精算バッチなし', rowOf(/スーパー/))
       expectBatch('ランチの精算バッチ', '精算バッチなし', rowOf(/ランチ/))
     })
@@ -2948,6 +3062,7 @@ describe('StatementImportScreen', () => {
       const bulk = within(screen.getByRole('group', { name: '選択した明細への一括設定' }))
       fireEvent.click(bulk.getByRole('button', { name: /^一括の相手科目/ }))
       fireEvent.click(within(screen.getByRole('dialog', { name: '一括の相手科目' })).getByRole('button', { name: '食費' }))
+      applyBulk()
 
       expect(screen.getByRole('button', { name: `${PAGE} / ${TOTAL} 件を「普通預金」に確定` })).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: `${PAGE} / ${TOTAL} 件を「普通預金」に確定` }))
@@ -3234,7 +3349,7 @@ describe('StatementImportScreen', () => {
         const bulk = openBulkGroup()
         expect(bulk.getByText('2件に一括設定')).toBeInTheDocument()
         fireEvent.change(bulk.getByLabelText('一括で設定するコメント'), { target: { value: '選んだ分だけ' } })
-        fireEvent.click(bulk.getByRole('button', { name: 'コメントを適用' }))
+        fireEvent.click(bulk.getByRole('button', { name: '2行に適用' }))
 
         expect(screen.getByLabelText('スーパーのコメント')).toHaveValue('選んだ分だけ')
         expect(screen.getByLabelText('ランチのコメント')).toHaveValue('選んだ分だけ')

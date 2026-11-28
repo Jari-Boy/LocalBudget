@@ -122,6 +122,9 @@ const pickIn = (scope: ReturnType<typeof within>, label: string, item: string) =
   fireEvent.click(scope.getByRole('button', { name: new RegExp(`^${label}`) }))
   fireEvent.click(within(screen.getByRole('dialog', { name: label })).getByRole('button', { name: item }))
 }
+/** 一括編集のバーの「N行に適用」を押して、選んだ項目を反映する(計画Issue #300) */
+const applyBulk = () =>
+  fireEvent.click(within(screen.getByRole('group', { name: '選択した明細への一括設定' })).getByRole('button', { name: /^\d+行に適用$/ }))
 /** 仕訳一覧と同じ作りの、明細の絞り込みパネル。初期状態は「閉」(計画Issue #266)なので、閉じていれば開いてから返す */
 const panel = () => {
   const opener = screen.queryByRole('button', { name: /^絞り込みを開く/ })
@@ -399,6 +402,7 @@ describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)',
     fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
 
     pickIn(within(screen.getByRole('group', { name: '選択した明細への一括設定' })), '一括の相手科目', '食費')
+    applyBulk()
     clearFilter()
 
     expect(rowOf(/新宿店/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
@@ -472,6 +476,7 @@ describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)',
       fireEvent.click(screen.getByRole('checkbox', { name: '新規の明細をすべて選択' }))
 
       pickIn(within(bulkGroup()!), '一括の相手科目', '食費')
+      applyBulk()
 
       expect(bulkGroup()).not.toBeInTheDocument()
       expect(screen.getByText('条件に合う行がありません')).toBeInTheDocument()
@@ -493,6 +498,7 @@ describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)',
       expect(within(bulkGroup()!).getByText('3件に一括設定')).toBeInTheDocument()
 
       pickIn(within(bulkGroup()!), '一括の相手科目', '食費')
+      applyBulk()
       clearFilter()
       expect(rowOf(/新宿店/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
       expect(rowOf(/家賃/).getByRole('button', { name: /^相手科目/ })).toHaveTextContent('食費')
