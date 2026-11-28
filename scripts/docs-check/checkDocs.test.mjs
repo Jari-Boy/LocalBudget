@@ -65,6 +65,11 @@ describe('parseFrontmatter', () => {
     expect(result.error).toMatch(/解析できない行/)
   })
 
+  it('二重引用符で囲まれた値の \\" と \\\\ のエスケープを元の文字に戻す(決定ファイルの title・description 用)', () => {
+    const result = parseFrontmatter('---\ntitle: "「a」を\\"b\\"にする: c\\\\d"\n---\n')
+    expect(result.data).toEqual({ title: '「a」を"b"にする: c\\d' })
+  })
+
   it('CRLF 改行の文書も同じ結果になる', () => {
     expect(parseFrontmatter('---\r\ntype: Guide\r\n---\r\n本文').data).toEqual({ type: 'Guide' })
   })
@@ -225,6 +230,14 @@ describe('checkBundle', () => {
     const nested = [{ path: 'docs/domain/index.md', text: '---\nokf_version: "0.2"\n---\n' }]
     const violations = checkBundle(nested, { rootDir: 'docs', exists: () => true })
     expect(violations[0]).toMatchObject({ rule: 'index-frontmatter-forbidden' })
+  })
+
+  it('docs/decisions/ の決定ファイルは決定の検査(置き換え関係・index)も受ける', () => {
+    const decisions = [
+      { path: 'docs/decisions/2026-08-11-01.md', text: '---\ntype: Decision\ndate: 2026-08-11\n---\n## 見出し\n' },
+    ]
+    const violations = checkBundle(decisions, { rootDir: 'docs', exists: () => true })
+    expect(violations.map((v) => v.rule)).toEqual(['decision-index-missing'])
   })
 
   it('resource の存在確認違反も合わせて返す', () => {
