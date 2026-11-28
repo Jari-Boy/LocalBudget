@@ -18,6 +18,7 @@ import type { JournalEntryDraft } from '../../domain/journal/JournalEntryDraft'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import type { JournalEntryRepository } from '../../domain/journal/JournalEntryRepository'
 import { filterJournalEntries } from '../../domain/journal/filterJournalEntries'
+import { filterJournalEntriesWithPinned, pinFilteredEntryIds } from '../../domain/journal/pinFilteredEntries'
 import { SettlementBatchOnNonAdvanceAccountError } from '../../domain/journal/SettlementBatchOnNonAdvanceAccountError'
 import { UnbalancedJournalEntryError } from '../../domain/journal/UnbalancedJournalEntryError'
 import type { JournalEntryLinkGroup, JournalEntryLinkGroupMembership } from '../../domain/journal-link-group/JournalEntryLinkGroup'
@@ -237,6 +238,8 @@ function serializeEditor(value: JournalEditorValue): string {
   return JSON.stringify({ ...value, lines: value.lines.map((l) => l.line) })
 }
 
+const NO_PINNED_ENTRY_IDS: ReadonlySet<number> = new Set()
+
 function inactiveIds(items: ReadonlyArray<{ id: number; isActive: boolean }>): Set<number> {
   return new Set(items.filter((i) => !i.isActive).map((i) => i.id))
 }
@@ -286,6 +289,11 @@ export function JournalScreen(props: JournalScreenProps) {
   const [lineRegion, setLineRegion] = useState<HTMLDivElement | null>(null)
   /** 「さらに表示」で増やした表示件数の上限。null は先頭の1ページ分(計画Issue #253)。絞り込み条件を変えると戻す */
   const [displayLimit, setDisplayLimit] = useState<number | null>(null)
+  /**
+   * 絞り込み条件を変えた時点で条件に合っていた仕訳のID(計画Issue #303)。編集で仕訳が条件から外れても、
+   * 条件を変えるまでは一覧に残すために持つ。null は、まだデータを読めておらず取っていない状態
+   */
+  const [pinnedEntryIds, setPinnedEntryIds] = useState<ReadonlySet<number> | null>(null)
   /**
    * 明細行単位の表の、列見出しでの並び替え(計画Issue #302)。見出しを押した時点に描画している仕訳(1ページ分)の値で並びを決め、
    * そのあと編集で値が変わっても行は動かない。絞り込み条件・表示方式を変えると解除する。保存・削除・「さらに表示」では保つ
@@ -415,10 +423,20 @@ export function JournalScreen(props: JournalScreenProps) {
   /** 絞り込み後の全仕訳(新しい順)。件数表示の元で、描画するのはこのうち先頭の `visibleEntries` だけ */
   const matchedEntries = useMemo(() => {
     if (data === null || derived === null) return []
-    return filterJournalEntries(data.entries, data.accounts, filter, derived.filterContext).sort(
-      (a, b) => b.entryDate.localeCompare(a.entryDate) || b.id - a.id,
-    )
-  }, [data, derived, filter])
+    return filterJournalEntriesWithPinned(
+      data.entries,
+      data.accounts,
+      filter,
+      derived.filterContext,
+      pinnedEntryIds ?? NO_PINNED_ENTRY_IDS,
+    ).sort((a, b) => b.entryDate.localeCompare(a.entryDate) || b.id - a.id)
+  }, [data, derived, filter, pinnedEntryIds])
+
+  // 最初にデータが読めた時点の絞り込み結果を固定する(分析画面から条件つきで開いた場合も、編集で一覧から消えないように)
+  useEffect(() => {
+    if (pinnedEntryIds !== null || data === null || derived === null) return
+    setPinnedEntryIds(pinFilteredEntryIds(data.entries, data.accounts, filter, derived.filterContext))
+  }, [pinnedEntryIds, data, derived, filter])
 
   /**
    * 一覧に描画する仕訳(計画Issue #253)。絞り込みと並べ替えは全件に対して行い、描画だけを1ページ分ずつに分ける。
@@ -466,6 +484,12 @@ export function JournalScreen(props: JournalScreenProps) {
    */
   const changeFilter = (next: JournalEntryFilter) => {
     setFilter(next)
+    // 条件を変えた時点の該当仕訳を固定する。編集で条件から外れても、次に条件を変えるまで一覧に残す(計画Issue #303)
+    setPinnedEntryIds(
+      data === null || derived === null
+        ? null
+        : pinFilteredEntryIds(data.entries, data.accounts, next, derived.filterContext),
+    )
     setDisplayLimit(null)
     setLineSort(null)
   }
