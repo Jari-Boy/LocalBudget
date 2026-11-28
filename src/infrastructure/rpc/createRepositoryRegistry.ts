@@ -148,7 +148,7 @@ export interface RepositoryRegistry {
    * 付与することで後者の扱いになるようにしている。journalEntryDraft.confirmが抱えていた
    * 「Repositoryインスタンスを引数として構造化複製できない」制約とは問題の所在が異なり
    * (あちらは縮小シグネチャのラッパーAPIで解消、こちらはComlink.proxy()で解消)、
-   * 解決方法も別物である点に注意(docs/decisions.md参照)。
+   * 解決方法も別物である点に注意(docs/decisions/参照)。
    */
   autoSave: AutoSaveController & Comlink.ProxyMarked
   backup: BackupRpcApi

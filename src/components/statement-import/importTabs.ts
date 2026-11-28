@@ -18,7 +18,7 @@ export type ImportTabKey = RowTab | 'unreadable'
 
 /**
  * 1ページに描く行の数(タブごと)。400件規模でも操作が重くならない件数として実測して決める(計画Issue #263)。
- * 値の根拠は docs/decisions.md の同Issueの項に書く。100件では描画が重いと実機で分かったため50件に下げた(計画Issue #266)。
+ * 値の根拠は docs/decisions/ の同Issueの項に書く。100件では描画が重いと実機で分かったため50件に下げた(計画Issue #266)。
  */
 export const IMPORT_PAGE_SIZE = 50
 

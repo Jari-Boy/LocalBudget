@@ -54,7 +54,7 @@ import { withAutoSave } from '../storage/withAutoSave'
  * seedAdvanceAccounts(計画Issue #40、docs/domain/expense-splitting.md 1.2節)を呼び出し、
  * 割勘の一時勘定(立替金)科目をasset・liability区分それぞれis_system_managed科目が
  * 0件の場合に1件ずつ自動投入する。seedDefaultAccountsが意図的に対象外としていた
- * asset/liability区分への投入を割勘機能側で担う(docs/decisions.md参照)。続けて
+ * asset/liability区分への投入を割勘機能側で担う(docs/decisions/参照)。続けて
  * seedSettlementAdjustmentAccounts(計画Issue #139、docs/domain/settlement.md参照)を呼び出し、
  * 精算画面が金額不一致時の差額損益計上に使う「雑収入」(revenue)・「雑損失」(expense)科目を、
  * 科目名の有無で判定して自動投入する(is_system_managed = falseの通常科目、冪等)。最後に

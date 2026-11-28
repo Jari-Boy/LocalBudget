@@ -48,7 +48,7 @@ tags: [domain, accounts]
   | type | 対象 |
   |---|---|
   | `Architecture` | `architecture.md` |
-  | `Decision Log` | `decisions.md`(追記専用の時系列ログ) |
+  | `Decision` | `decisions/YYYY-MM-DD-NN.md`(1決定=1ファイル。書き方は下の「意思決定ログ」) |
   | `Domain Overview` | `domain.md`(各ドメインへの入口) |
   | `Domain` | `domain/*.md` |
   | `Knowledge Log` | `guides/knowledge.md`(追記専用のログ) |
@@ -64,7 +64,19 @@ tags: [domain, accounts]
   - 対応する実装のディレクトリ・ファイル(`../../src/domain/<集約>` など)。
 - **目的は乖離の検知**。実装側でディレクトリやファイルがリネーム・削除されると、docs に差分が無くても `npm run docs:check` が失敗し、docs の見直しを促す。逆に、文書の内容が実装と一致しているかまでは検査しない。
 - 指す先は少なく保つ。実装の細部まで列挙すると、移動のたびにチェックが失敗してノイズになる。集約・主要モジュールの単位にとどめる。
-- 履歴ログ(`Decision Log`・`Knowledge Log`・`Pattern Catalog`)は過去の状態を指す記述を意図的に含むため、`resource` を付けない。
+- 履歴ログ(`Decision`・`Knowledge Log`・`Pattern Catalog`)は過去の状態を指す記述を意図的に含むため、`resource` を付けない。
+
+## 意思決定ログ(docs/decisions/)
+
+実装フェーズでの個別の設計判断は、`docs/decisions/` に **1決定=1ファイル**で置く(計画Issue #310。それまでは1ファイルの追記専用ログ `decisions.md` だった)。
+
+- **ファイル名**: `YYYY-MM-DD-NN.md`(`NN` はその日の連番)。`date` はファイル名の日付と一致させる。
+- **frontmatter**: `type: Decision`・`title`・`description`・`date`・`tags: [decision]`。計画 Issue があれば `issues: [N]`。`title`・`description` は二重引用符で囲む(`"` と `\` はエスケープ)。本文は元の見出し(`## 日付: 要約`)から始める。
+- **置き換え関係**: 新しい決定が古い決定の判断を置き換えるとき、新しい側に `supersedes`(全面)・`partially_supersedes`(一部)、古い側に対応する `superseded_by`・`partially_superseded_by` を書く(いずれも決定の id の配列。双方向で対応させる)。全面的に置き換えられた決定(`superseded_by` あり)だけが `status: deprecated` を持つ。
+- **本文は書き換えない**: 決定は当時の判断の記録として残す。置き換えや訂正は、新しい決定と置き換え関係で表す。古い決定に足してよいのは frontmatter の置き換え関係だけ。
+- **一覧**: `decisions/index.md` が、全決定を「現行の決定」「置き換え済みの決定」の2節に新しい順で載せる(`superseded_by` がある決定は後者)。
+- **現行の決定を知りたいとき**: `decisions/index.md` の「現行の決定」から選ぶ。`partially_superseded_by` がある決定は、置き換えた側の決定も読む。
+- **検査**: `npm run docs:check` が、type・ファイル名と `date` の一致、置き換え関係の参照先の実在と双方向の対応、日付の前後、`status` との整合、`index.md` への掲載(漏れ・重複・節の取り違え)を検査する。
 
 ## status・stale_after・verified の方針
 
@@ -83,8 +95,8 @@ npm run docs:check
 ```
 
 - `docs/` の全 `.md` を検査し、違反があれば一覧を出して終了コード 1 で終わる。CI(`docs-check` ジョブ)でも実行する。
-- 検査する内容は、SPEC の適合条件(解析可能な frontmatter・空でない `type`・`index.md`/`log.md` の構造)、`status`・`stale_after` の値の形式(書かれている場合のみ)、`resource` が指すパスの存在(http(s) は除く)。
-- 検査しないもの: 本文の内容が実装と一致しているか、リンク切れ(SPEC は許容)、`description` の質。
+- 検査する内容は、SPEC の適合条件(解析可能な frontmatter・空でない `type`・`index.md`/`log.md` の構造)、`status`・`stale_after` の値の形式(書かれている場合のみ)、`resource` が指すパスの存在(http(s) は除く)、意思決定ログの置き換え関係と index への掲載、docs 内の相対リンク(ファイルと見出しアンカーの実在)。
+- 検査しないもの: 本文の内容が実装と一致しているか、外部(http(s))リンクの生死、`description` の質。相対リンクの切れは SPEC は許容するが、このリポジトリでは検査して違反にする(計画Issue #310)。
 - 実装は `scripts/docs-check/checkDocs.mjs`(テストは同ディレクトリ)。SPEC に lint が無いため自作しており、検査は SPEC の適合条件とパス存在確認に絞って作り込まない。
 
 ## docs を更新するときの約束
@@ -92,7 +104,7 @@ npm run docs:check
 - 概念文書を**追加**したら、frontmatter を付け、`index.md` に1行追加し、`log.md` に記録する。
 - 概念文書を**削除・改名・統合**したら、`index.md`・他の文書からのリンク・`log.md` を更新する。
 - 本文の更新で文書の趣旨が変わったときは、`description` も直す。
-- `log.md` には、ファイルの追加・削除・構造の変更・この規約の変更だけを書く。通常の本文の追記は、`decisions.md` と Issue・PR の履歴に残るため書かない。日付は `YYYY-MM-DD`、新しいものを先頭にする。
+- `log.md` には、ファイルの追加・削除・構造の変更・この規約の変更だけを書く。通常の本文の追記は、`decisions/` の決定と Issue・PR の履歴に残るため書かない。日付は `YYYY-MM-DD`、新しいものを先頭にする。
 - 最後に `npm run docs:check` を実行して、違反が無いことを確認する。
 - 運用の自動化は `.claude/agents/doc-updater.md` に定めている。
 

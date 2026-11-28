@@ -97,7 +97,7 @@ export function AppRoutes() {
   /**
    * Comlinkの型定義上、RepositoryRegistryのネストしたRepositoryプロパティは
    * Comlink.proxy()でマークされていないため、型上はPromisify<T>(Remote<T>ではない)
-   * と推論される(createRepositoryRegistry.tsのautoSaveと同じ制約、docs/decisions.md参照)。
+   * と推論される(createRepositoryRegistry.tsのautoSaveと同じ制約、docs/decisions/参照)。
    * 実行時にはExpose対象オブジェクトのプロパティとして正しくRemoteオブジェクトになる
    * (e2e/worker-rpc.spec.tsで検証済み)ため、Comlink.Remote<T>を経由した型アサーションで
    * ウィザードコンポーネントが要求する構造的型(AccountCreator等)に合わせる。

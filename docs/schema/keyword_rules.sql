@@ -1,5 +1,5 @@
 -- keyword_rules のDDL(計画Issue #219)。ドメイン定義は docs/domain/counterparties.md 1.3、
--- 設計判断は docs/decisions.md 2026-11-16 を参照
+-- 設計判断は docs/decisions/2026-11-16-06.md 2026-11-16 を参照
 -- 摘要のキーワード(部分一致)から、取引先(任意)と相手科目(任意)を推定するルール。
 -- 取引先は取引先マスタ、相手科目は勘定科目に紐づく。旧 counterparty_patterns の後継
 CREATE TABLE keyword_rules (

@@ -232,6 +232,15 @@ describe('checkBundle', () => {
     expect(violations[0]).toMatchObject({ rule: 'index-frontmatter-forbidden' })
   })
 
+  it('相対リンクの切れ(ファイル・見出しアンカー)も合わせて返す', () => {
+    const linked = [
+      { path: 'docs/a.md', text: '---\ntype: Guide\n---\n# A\n[ok](./b.md#見出し) [ng](./b.md#ない) [none](./c.md)' },
+      { path: 'docs/b.md', text: '---\ntype: Guide\n---\n# 見出し\n' },
+    ]
+    const violations = checkBundle(linked, { rootDir: 'docs', exists: () => false })
+    expect(violations.map((v) => v.rule)).toEqual(['link-anchor-not-found', 'link-not-found'])
+  })
+
   it('docs/decisions/ の決定ファイルは決定の検査(置き換え関係・index)も受ける', () => {
     const decisions = [
       { path: 'docs/decisions/2026-08-11-01.md', text: '---\ntype: Decision\ndate: 2026-08-11\n---\n## 見出し\n' },

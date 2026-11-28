@@ -22,7 +22,7 @@ function isDomainErrorWireValue(value: unknown): value is DomainErrorWireValue {
 /**
  * Comlinkの既定の"throw"transferHandler(message/name/stackのみ転送し、カスタム
  * ErrorサブクラスのプロトタイプチェーンとdebitTotal等の追加プロパティを失う)を、
- * ドメインエラー(docs/decisions.md「エラー型の使い分け基準」の6種)についてのみ
+ * ドメインエラー(docs/decisions/2026-07-31-08.md「エラー型の使い分け基準」の6種)についてのみ
  * instanceof・追加プロパティを保持する実装に差し替える。ドメインエラー以外の値
  * (通常のError・任意の値のthrow)は既定の挙動にそのまま委譲する。
  *

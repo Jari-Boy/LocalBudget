@@ -162,7 +162,7 @@ CREATE INDEX idx_settlement_batch_close_entries_entry ON settlement_batch_close_
 -- 関連仕訳グループ(多対多、計画Issue #138)。journal_entry_links(明細行単位のsettles/allocates
 -- リンク)は計画Issue #138で完全に撤廃した。残高計算・消込判定の役割は計画Issue #133で
 -- settlement_batch_idタグの集計方式に移管済みであり、残っていた表示系の役割(関連仕訳の
--- 一覧表示)は以下の多対多グループに置き換わった(経緯はdocs/decisions.md参照)。
+-- 一覧表示)は以下の多対多グループに置き換わった(経緯はdocs/decisions/参照)。
 -- 「関連仕訳を
 -- ユーザーが一覧表示できる」役割を置き換える表示専用の軽量なグルーピング。link_type(種別タグ)
 -- は持たず、残高計算・消込判定には一切関与しない。1つの仕訳(journal_entries)が複数のグループに

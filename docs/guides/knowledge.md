@@ -58,7 +58,7 @@ tags: [guide, knowledge, history]
 ## Comlinkの既定"throw" transferHandlerはカスタムErrorサブクラスのinstanceof・追加プロパティを保持しない
 
 **内容**: Comlinkは、公開(expose)された関数の呼び出しがWorker側で例外をスローした場合、内部で`"throw"`という名前のtransferHandlerを使って例外をメインスレッド側に伝播させる。既定の実装は`error.message`/`error.name`/`error.stack`のみを転送して`Error`(またはその組み込みサブクラス)を再構築するため、アプリケーション独自のErrorサブクラス(例: `UnbalancedJournalEntryError`)は`instanceof`が成立しなくなり、コンストラクタ固有の追加プロパティ(`debitTotal`等)も失われる。Comlinkの`transferHandlers`はMapとして公開されており(`import { transferHandlers } from 'comlink'`)、`transferHandlers.set('throw', {...})`で上書きできる。ただし既定ハンドラの`canHandle`は内部シンボル(`throwMarker`)の判定に依存しており外部からは再現できないため、`canHandle`は既定のものをそのまま再利用しつつ`serialize`/`deserialize`のみをカスタム実装に差し替えると、対象外の値(通常のError・任意の値のthrow)は既定の挙動へフォールバックさせられる。
-**参考**: `src/infrastructure/rpc/registerDomainErrorTransferHandler.ts`、`docs/decisions.md`「RPCプロトコルにComlinkを採用し、ドメインエラーは既定の"throw" transferHandlerを差し替えてinstanceofを保持する」、Issue #24
+**参考**: `src/infrastructure/rpc/registerDomainErrorTransferHandler.ts`、`docs/decisions/2026-08-01-10.md`「RPCプロトコルにComlinkを採用し、ドメインエラーは既定の"throw" transferHandlerを差し替えてinstanceofを保持する」、Issue #24
 
 ## Web Workerの起動直後、Comlink.exposeの前にpostMessageすると応答が失われる
 
@@ -68,22 +68,22 @@ tags: [guide, knowledge, history]
 ## Comlink(postMessageの構造化複製)越しにRepositoryインスタンス等「メソッドを持つオブジェクト」を引数として渡すことはできない
 
 **内容**: Comlink、および素のpostMessageが使う構造化複製アルゴリズムは、関数を含むオブジェクト(クラスインスタンスのメソッド等)をそのまま複製できない。あるRepositoryインターフェースのメソッドが、別のRepositoryインスタンス自体を引数に取る設計(例: `JournalEntryDraftRepository.confirm(id, journalEntryRepository)`)になっている場合、そのメソッドをそのまま`Comlink.expose()`しても、メインスレッド側から対応するRepositoryインスタンスを引数として渡す手段がない。Comlinkは`Comlink.proxy()`で関数・オブジェクトをリモート参照として明示的に渡す仕組みも提供するが、Worker側が既に当該Repositoryインスタンスを保持している場合は、exposeするAPI自体をWorker内部で結線済みの縮小されたシグネチャ(該当引数を除いたラッパー関数)に置き換える方がシンプルに解決できる。
-**参考**: `src/infrastructure/rpc/createRepositoryRegistry.ts`(`JournalEntryDraftRpcApi`)、`docs/decisions.md`「RPC越しに渡せないRepositoryインスタンス引数は、レジストリ内部で結線した縮小シグネチャのラッパーAPIとして公開する」、Issue #24
+**参考**: `src/infrastructure/rpc/createRepositoryRegistry.ts`(`JournalEntryDraftRpcApi`)、`docs/decisions/2026-08-01-11.md`「RPC越しに渡せないRepositoryインスタンス引数は、レジストリ内部で結線した縮小シグネチャのラッパーAPIとして公開する」、Issue #24
 
 ## sql.jsのdb.export()はlast_insert_rowid()をリセットする副作用を持つ
 
 **内容**: sql.jsの`Database#export()`(DB全体をシリアライズして`Uint8Array`を返すAPI)を呼び出すと、同一のDB接続上でSQLiteが内部的に保持する`last_insert_rowid()`の値がリセットされる。実機テストで`db.run('INSERT ...')` → `db.export()` → `db.exec('SELECT last_insert_rowid()')`という順に実行すると、直前のINSERTで採番された値ではなく`0`が返ることを確認した。これはsql.js/SQLiteの一般的なドキュメントには明記されていない挙動で、既存のほぼ全Repositoryの`create()`実装が`db.run(INSERT...)`直後に`last_insert_rowid()`を読む規約になっているため、`export()`を書き込み処理の直後に同期的に呼ぶ実装(例: DB変更を監視して自動保存する仕組み)を書くとRepository層が広範囲に壊れる。対策として、`export()`の呼び出しを`queueMicrotask`等でマイクロタスクへ遅延させ、呼び出し元の同期処理(sql.jsのRepositoryメソッドは同期API)が完全に終わった後にのみ実行するようにする。
-**参考**: `src/infrastructure/storage/withAutoSave.ts`、`docs/guides/patterns.md`「sql.jsのdb.export()を書き込み処理の直後に同期的に呼ぶと、last_insert_rowid()に依存する既存コードが壊れる」、`docs/decisions.md`「sql.jsのdb.export()はqueueMicrotaskで遅延実行し、Repositoryのcreate()実装が依存するlast_insert_rowid()を壊さないようにする」、Issue #25
+**参考**: `src/infrastructure/storage/withAutoSave.ts`、`docs/guides/patterns.md`「sql.jsのdb.export()を書き込み処理の直後に同期的に呼ぶと、last_insert_rowid()に依存する既存コードが壊れる」、`docs/decisions/2026-08-02-02.md`「sql.jsのdb.export()はqueueMicrotaskで遅延実行し、Repositoryのcreate()実装が依存するlast_insert_rowid()を壊さないようにする」、Issue #25
 
 ## sql.jsのdb.export()はPRAGMA foreign_keysもOFFにリセットする副作用を持つ
 
 **内容**: 上記の`last_insert_rowid()`リセットと同種の副作用として、sql.jsの`Database#export()`を呼び出すと、同一のDB接続の`PRAGMA foreign_keys`設定が`1`(ON)から`0`(OFF)にリセットされることを実機テストで発見した(`PRAGMA foreign_keys = ON` → `db.export()` → `PRAGMA foreign_keys`確認で`0`が返る)。この副作用により、`export()`を書き込みのたびに呼ぶ仕組み(`withAutoSave`)が一度でも実行された後は、`ON DELETE CASCADE`を含む全てのFK制約がアプリ全体で機能しなくなる(Node/Vitestの`createTestDatabase`では`PRAGMA`を1回設定するだけで以降ずっとONのままなので気づきにくく、`db.export()`を実際に実行する統合的なブラウザ環境でのみ顕在化する)。
-**参考**: `src/infrastructure/storage/withAutoSave.ts`(`performSave`)、`docs/guides/patterns.md`「sql.jsのdb.export()を伴う自動保存を実装すると、export()後にPRAGMA foreign_keysがリセットされCASCADE削除が機能しなくなる」、`docs/decisions.md`「sql.jsのdb.export()後はPRAGMA foreign_keysをoriginalRun経由で再設定し、ON DELETE CASCADEを保ち続ける」、計画Issue #40
+**参考**: `src/infrastructure/storage/withAutoSave.ts`(`performSave`)、`docs/guides/patterns.md`「sql.jsのdb.export()を伴う自動保存を実装すると、export()後にPRAGMA foreign_keysがリセットされCASCADE削除が機能しなくなる」、`docs/decisions/2026-08-15-09.md`「sql.jsのdb.export()後はPRAGMA foreign_keysをoriginalRun経由で再設定し、ON DELETE CASCADEを保ち続ける」、計画Issue #40
 
 ## FileSystemWritableFileStreamは書き込み失敗後にclose()を呼ぶと元のエラーではなく別のTypeErrorで拒否される
 
 **内容**: `FileSystemFileHandle#createWritable()`が返す`FileSystemWritableFileStream`(WHATWG Streams仕様の`WritableStream`を継承)で`write()`が失敗すると、ストリームは内部的にerrored状態になる。この状態で`close()`を呼んでもwrite失敗時の元のエラー(例: ディスク容量不足に相当するエラー)は再送出されず、Streams仕様に基づく別の`TypeError`(「ストリームは既にerrored」の旨)で拒否される。`try { await writable.write(x); await writable.close() } finally {...}`のように無条件でclose()を呼ぶ構造だと、この`TypeError`が本来伝播すべき元のエラーを上書きしてしまう。失敗時は`close()`ではなく`abort()`を呼ぶ必要がある(`abort()`はストリームの状態に関わらず正常に完了する)。
-**参考**: `src/infrastructure/storage/databaseFileCodec.ts`(`writeDatabaseToFileHandle`)、`docs/guides/patterns.md`「try/finally構造でストリームの後始末を書くと、close()失敗時のエラーが元のエラーを上書きしてしまう」、`docs/decisions.md`「FileSystemWritableFileStreamへのwrite()が失敗した場合、close()ではなくabort()を呼び元のエラーをそのまま伝播させる」、Issue #57
+**参考**: `src/infrastructure/storage/databaseFileCodec.ts`(`writeDatabaseToFileHandle`)、`docs/guides/patterns.md`「try/finally構造でストリームの後始末を書くと、close()失敗時のエラーが元のエラーを上書きしてしまう」、`docs/decisions/2026-08-02-07.md`「FileSystemWritableFileStreamへのwrite()が失敗した場合、close()ではなくabort()を呼び元のエラーをそのまま伝播させる」、Issue #57
 
 ## FileSystemDirectoryHandle/FileSystemFileHandleはstructured cloneに対応しておりIndexedDBにそのまま保存できる
 
@@ -103,17 +103,17 @@ tags: [guide, knowledge, history]
 ## Comlink越しに公開するオブジェクトのプロパティが「メソッドを持つオブジェクト」の場合もComlink.proxy()が必要
 
 **内容**: 既知の「Comlink越しにRepositoryインスタンス等『メソッドを持つオブジェクト』を引数として渡すことはできない」制約(前項)とは別に、`Comlink.expose()`する側のオブジェクト(例: `RepositoryRegistry`)自体のネストしたプロパティとして「メソッドを持つオブジェクト」を追加する場合にも、同種の問題が起きる。Comlinkの型定義上、ネストしたプロパティは既定で構造化複製可能な値(`Promisify<T>`、TypeScript上は単に`Promise<T>`)とみなされ、メソッド呼び出しの中継対象(`Remote<T>`)としては扱われない。`Comlink.proxy(value)`で明示的にProxyMarkedを付与したオブジェクトを返すことで、そのプロパティ経由のメソッド呼び出しがRPC越しに中継されるようになる(型も`Remote<T>`相当になる)。この問題は「引数として渡せない」問題と発生条件・症状が似ている(どちらも「メソッドを持つオブジェクトをComlinkでそのまま扱おうとすると壊れる」)ため、対処法(縮小シグネチャのラッパーAPI化 vs. `Comlink.proxy()`付与)を取り違えて比較しないよう注意が必要(実際に本Issueの実装当初、docstringでこの2つを「同種の制約」と誤って説明し、evaluatorレビューで指摘・訂正された)。
-**参考**: `src/infrastructure/rpc/createRepositoryRegistry.ts`(`RepositoryRegistry.autoSave: AutoSaveController & Comlink.ProxyMarked`)、`docs/decisions.md`「RepositoryRegistryにRPC越しに公開するメソッド持ちオブジェクト(AutoSaveController)を追加する際、Comlink.proxy()でProxyMarkedを付与する」、Issue #58 Review Attempt 1(evaluator LOW指摘・Attempt 2で訂正)
+**参考**: `src/infrastructure/rpc/createRepositoryRegistry.ts`(`RepositoryRegistry.autoSave: AutoSaveController & Comlink.ProxyMarked`)、`docs/decisions/2026-08-02-09.md`「RepositoryRegistryにRPC越しに公開するメソッド持ちオブジェクト(AutoSaveController)を追加する際、Comlink.proxy()でProxyMarkedを付与する」、Issue #58 Review Attempt 1(evaluator LOW指摘・Attempt 2で訂正)
 
 ## vite-plugin-pwaでinjectRegisterとuseRegisterSWを併用すると二重登録になりupdatefoundが検出できない
 
 **内容**: `vite-plugin-pwa`の`injectRegister`オプションは既定値`'auto'`で、ビルド後のHTMLに独立したService Worker登録スクリプト(`registerSW.js`)を自動注入する。この状態で`virtual:pwa-register/react`の`useRegisterSW`フックをアプリケーションコード側からも呼び出すと、同一オリジンに対してSW登録が2回行われる。実機検証(本番ビルド+`vite preview`)の結果、この二重登録状態では新しいService Workerを検出した際の`updatefound`イベントが`useRegisterSW`側のリスナーで正しく発火せず、`needRefresh`が更新されない(更新確認UIが表示されない)ことを確認した。`useRegisterSW`等アプリケーションコード側でSW登録を明示的に行うフレームワーク統合を使う場合は、`injectRegister: false`を指定してHTMLへの自動注入を無効化し、登録経路を一本化する必要がある。
-**参考**: `vite.config.ts`(`injectRegister: false`)、`src/components/UpdateBanner.tsx`、`docs/decisions.md`「vite-plugin-pwaのSW登録はinjectRegister: falseに固定し、useRegisterSW側に一本化する」、Issue #28
+**参考**: `vite.config.ts`(`injectRegister: false`)、`src/components/UpdateBanner.tsx`、`docs/decisions/2026-08-02-13.md`「vite-plugin-pwaのSW登録はinjectRegister: falseに固定し、useRegisterSW側に一本化する」、Issue #28
 
 ## Service Worker自身のスクリプト取得リクエストはPlaywrightのpage.route/context.routeでインターセプトできない
 
 **内容**: Service Workerが自身の更新チェック(`registration.update()`)のために発行する、SWスクリプト自体(`sw.js`等)への取得リクエストは、ブラウザ内部のService Workerプロセスが直接発行するため、Playwrightの`page.route()`・`context.route()`いずれのネットワークインターセプションの対象にもならない(実機検証で、ルートハンドラの`intercepted`フラグが一度も`true`にならないことを確認した)。SWスクリプトの内容を書き換えて「新しいバージョンがデプロイされた」状態をE2Eテストで模擬する必要がある場合は、ネットワークインターセプトではなく、ビルド済み成果物のファイル(`dist/sw.js`)自体を`fs.writeFileSync`等で直接書き換える方式を使う。`vite preview`のような静的ファイルサーバーはリクエストの都度ファイルシステムから読み直すため、書き換え後に`registration.update()`を呼べば新しいSWとして検出される。
-**参考**: `e2e/update-banner.pwa.spec.ts`・`e2e/pwa-overlay-z-index.pwa.spec.ts`、`docs/decisions.md`「Service Worker新バージョンのE2Eデプロイ模擬はdist/sw.jsの直接書き換え+registration.update()で行う」、Issue #28
+**参考**: `e2e/update-banner.pwa.spec.ts`・`e2e/pwa-overlay-z-index.pwa.spec.ts`、`docs/decisions/2026-08-02-14.md`「Service Worker新バージョンのE2Eデプロイ模擬はdist/sw.jsの直接書き換え+registration.update()で行う」、Issue #28
 
 ## WorkboxのclientsClaimは既定でfalseのため、初回訪問時にService Workerがそのページ自身を制御下に置かない
 
@@ -128,27 +128,27 @@ tags: [guide, knowledge, history]
 ## 実際の日本の金融機関CSV(楽天カード確定/未確定・PayPayカード・楽天銀行)のヘッダー表記パターン
 
 **内容**: PR #66作成後(マージ前)、ユーザーが実際に保有する明細CSVで`inferMappingDefinitionDraft`を検証した結果、以下のヘッダー表記パターンが判明した。(1) クレジットカード明細では「利用金額」列に加えて「11月支払金額」のような月次内訳列も見出しに「金額」を含むため、キーワード「金額」だけでは複数列に曖昧にマッチする。より具体的な「利用金額」を優先させる必要がある。(2) 日付列は「ご利用日」という敬語接頭辞付きの表記のカードと、接頭辞のない「利用日」表記のカード(例: PayPayカード)が混在する。(3) 摘要列は「利用店名・商品名」という表記も存在する。(4) 銀行明細(楽天銀行)では、入金・出金が別列ではなく単一の符号付き金額列(「入出金(円)」)として提供される形式があり、ヘッダー文言自体には「出金」「入金」いずれのキーワードも含まれないため、ヘッダーマッチングだけでは列の意味を判定できず値の型(数値かどうか)に頼らざるを得ない。この形式では、`debitColumn`・`creditColumn`が(本来存在しないにもかかわらず)型フォールバック等の別経路でそれぞれ解決され、偶然同一列に収束することがある(`docs/guides/patterns.md`「複数フィールドが共通の候補プールから割り当てを行う推測ロジックで、1パスの処理順ベース実装にすると結果が処理順に依存する」の続報参照)。
-**参考**: `src/domain/statement-import/columnKeywordDictionary.ts`、`src/domain/statement-import/inferMappingDefinitionDraft.test.ts`(実データ構造を模した架空fixture、実データ自体はコミットしていない)、`docs/decisions.md`「columnKeywordDictionaryはキーワードの配列ではなく階層(tier)の配列として持ち、より具体的なキーワードを広いキーワードより先に試す」、コミット9ec2454、Issue #48
+**参考**: `src/domain/statement-import/columnKeywordDictionary.ts`、`src/domain/statement-import/inferMappingDefinitionDraft.test.ts`(実データ構造を模した架空fixture、実データ自体はコミットしていない)、`docs/decisions/2026-08-03-07.md`「columnKeywordDictionaryはキーワードの配列ではなく階層(tier)の配列として持ち、より具体的なキーワードを広いキーワードより先に試す」、コミット9ec2454、Issue #48
 
 ## CSPのscript-srcで'wasm-unsafe-eval'を指定しないと、sql.js(WebAssembly.instantiate)がCompileErrorでAbortする
 
 **内容**: Content-Security-Policyで`script-src 'self'`のみを設定した状態でsql.js(SQLite WASM)を初期化すると、`WebAssembly.instantiate`が`CompileError`でAbortし、WASMのコンパイル自体が失敗する。任意のJS文字列の動的実行(`eval`/`new Function`等)を許可する`'unsafe-eval'`とは別に、WASMのコンパイル・実行のみを許可する`'wasm-unsafe-eval'`という専用のCSPソース式が存在し、`script-src`にこれを追加する必要がある。`'wasm-unsafe-eval'`は`'unsafe-eval'`と異なり任意JS文字列の実行を許可しないため、CSPが本来防ぎたい「任意コード注入によるXSS」への防御は保ったままWASM実行だけを許可できる。この挙動は`e2e/backup-export-import.spec.ts`が生成する独立した検証用sql.jsインスタンスの実機テストで発見・再現確認した(既存のCSP無し環境では顕在化せず、CSP metaタグを追加して初めて判明した)。
-**参考**: `index.html`(CSP metaタグ、`script-src 'self' 'wasm-unsafe-eval'`)、`e2e/csp.spec.ts`、`docs/decisions.md`「CSPはHTTPヘッダーではなくindex.htmlのmetaタグとして配信し、script-srcに'wasm-unsafe-eval'を含める」、Issue #30
+**参考**: `index.html`(CSP metaタグ、`script-src 'self' 'wasm-unsafe-eval'`)、`e2e/csp.spec.ts`、`docs/decisions/2026-08-03-11.md`「CSPはHTTPヘッダーではなくindex.htmlのmetaタグとして配信し、script-srcに'wasm-unsafe-eval'を含める」、Issue #30
 
 ## Vite dev serverはCSSモジュールのHMRで<style>タグを動的注入するため、style-src未指定のCSPだとdev server実行時のみ違反になる
 
 **内容**: Vite dev server(`vite dev`)は、CSSモジュールのHot Module Replacement(HMR)を実現するため、JavaScriptから`<style>`タグをDOMへ動的に注入する。CSPで`style-src`を明示的に指定していない場合、`default-src 'self'`にフォールバックし`'unsafe-inline'`が許可されないため、このインライン注入がCSP違反として検出される。この挙動は本番ビルド(`vite build`)には存在しない。本番ビルドではCSSがビルド時に外部ファイルとして出力され、HMRの仕組み自体（開発時専用の機能）が含まれないため、`style-src`を指定していないCSPのままでも違反にならない。この非対称性(dev server限定の制約)への対処として、`command === 'serve'`時のみCSPを緩和するViteプラグインを追加し、`vite.config.ts`側でのみ`style-src`を緩めることで、本番ビルドのCSPを厳格なまま保つことができる。
-**参考**: `vite.config.ts`(`relaxCspForDevServer`、`apply: 'serve'`)、`docs/decisions.md`「Vite dev server限定でCSPのstyle-srcを緩和するプラグイン(relaxCspForDevServer)を追加する」、Issue #30
+**参考**: `vite.config.ts`(`relaxCspForDevServer`、`apply: 'serve'`)、`docs/decisions/2026-08-03-12.md`「Vite dev server限定でCSPのstyle-srcを緩和するプラグイン(relaxCspForDevServer)を追加する」、Issue #30
 
 ## ComlinkのRemoteオブジェクトはtypeofが'function'と判定されるProxyであり、Reactのstate setterに直接渡すと更新関数として誤呼び出しされる
 
 **内容**: Comlinkの`Comlink.wrap()`が返す`Remote<T>`オブジェクトは、内部実装上`function(){}`をターゲットにした`Proxy`として生成されている(メソッド呼び出し自体を関数呼び出しとして中継できるようにするため)。この結果、`typeof remoteObject === 'function'`は`true`を返す。Reactの`useState`が返すセッター関数は、引数が関数型である場合、それを「直前の状態を受け取り新しい状態を返す更新関数」とみなして`updater(prevState)`のように呼び出す仕様(functional updates)を持つため、Comlinkの`Remote<T>`オブジェクトをそのまま`setState(remoteObject)`のように渡すと、Reactが`remoteObject(prevState)`という意図しない呼び出しを行ってしまう。これはComlink側から見ると、引数無しの関数呼び出し(`path: []`のAPPLYメッセージ)がWorkerへ送信されることに相当し、対応する実体が無いため`rawValue.apply is not a function`のような実行時エラーになる。回避策は`setState(() => remoteObject)`のように関数でラップし、Reactに関数呼び出しをさせず値として保持させること。この問題はモックを使うNode/Vitestのユニットテストでは再現せず、実ブラウザ(Playwright)でComlinkのRemoteオブジェクトを実際に生成し、それを`useState`に保持するコンポーネントを操作して初めて発覚する。
-**参考**: `src/infrastructure/rpc/DbClientProvider.tsx`、`docs/decisions.md`「ComlinkのRemoteオブジェクトをReactのuseStateへ渡す際は関数でラップする(setState(() => value))」、`docs/guides/patterns.md`「ComlinkのRemoteオブジェクト(typeofが'function'と判定されるProxy)をReactのuseStateにそのまま渡すと誤動作する」、Issue #31
+**参考**: `src/infrastructure/rpc/DbClientProvider.tsx`、`docs/decisions/2026-08-03-14.md`「ComlinkのRemoteオブジェクトをReactのuseStateへ渡す際は関数でラップする(setState(() => value))」、`docs/guides/patterns.md`「ComlinkのRemoteオブジェクト(typeofが'function'と判定されるProxy)をReactのuseStateにそのまま渡すと誤動作する」、Issue #31
 
 ## e2e/配下はtsconfig.app.jsonのinclude対象外のため、npm run typecheckの型チェックを受けない
 
 **内容**: `tsconfig.app.json`の`include`は`["src"]`のみであり、`e2e/*.spec.ts`はこの対象に含まれない。`npm run typecheck`(`tsc -p tsconfig.app.json --noEmit`)は`src`配下のみを検査するため、`e2e/`配下のPlaywrightテストコードに存在する型エラーはCIの型チェックでは検出されない(Playwright自体はテストランナーが型注釈を無視して直接実行するため、テストの実行自体には影響しない)。この性質により、例えば`e2e/worker-rpc.spec.ts`の`client.account.create(...)`(Comlinkの型定義上`client.account`は`Comlink.proxy()`が付与されていないため`Promisify<AccountRepository>`= `Promise<AccountRepository>`と推論され、本来`.create`は存在しないはずの型)が、実際にはTypeScriptの型チェックに一度も晒されずに動作し続けている。同じ`RepositoryRegistry`の未`Comlink.proxy()`プロパティ(`account`等)を`src/`配下(型チェック対象)のコンポーネントから初めて呼び出そうとした際(Issue #31の`App.tsx`)に、この型エラーが初めて表面化した。
-**参考**: `tsconfig.app.json`、`playwright.config.ts`、`src/routes/AppRoutes.tsx`(`Comlink.Remote<T>`型アサーション。計画Issue #118のルーティング刷新に伴い`App.tsx`から移動)、`docs/decisions.md`「App.tsxではRepositoryRegistryの未Comlink.proxy()プロパティをComlink.Remote<T>型アサーションで扱う」、Issue #31
+**参考**: `tsconfig.app.json`、`playwright.config.ts`、`src/routes/AppRoutes.tsx`(`Comlink.Remote<T>`型アサーション。計画Issue #118のルーティング刷新に伴い`App.tsx`から移動)、`docs/decisions/2026-08-03-15.md`「App.tsxではRepositoryRegistryの未Comlink.proxy()プロパティをComlink.Remote<T>型アサーションで扱う」、Issue #31
 
 ## 楽天カード・楽天銀行・PayPayカードの組み込みマッピング定義に採用した実際のCSVヘッダー・列構成
 
@@ -158,12 +158,12 @@ tags: [guide, knowledge, history]
 ## Promise.resolve(fn())はfnが同期的に投げる例外をPromiseのrejectionに変換しない
 
 **内容**: `Promise.resolve(fn())`という式では、JavaScriptの評価順序上`fn()`が`Promise.resolve`自体の呼び出しより先に評価される(関数呼び出しの引数は、外側の関数が呼ばれる前に評価される)。`fn`が同期的に例外をthrowすると、`Promise.resolve`が呼ばれることすらなく例外がその場で伝播するため、生成されるはずだったPromiseそのものが存在せず、`.then()`/`.catch()`のいずれのハンドラも呼び出されない。この例外は通常の同期的なJS例外としてそのまま呼び出し元へ伝播する(Reactのイベントハンドラ内であれば、Reactやエラーバウンダリがキャッチしない限り未処理のままになる)。対照的に、`Promise.resolve().then(() => fn())`という書き方であれば、`fn()`の呼び出し自体が`.then()`のコールバックとしてマイクロタスクの中で実行されるため、`fn`が同期的にthrowしても非同期にthrow(reject)しても、必ずそのPromiseチェーンのrejectionとして扱われ`.catch()`で一律に捕捉できる。sql.jsのRepository実装(`SqlJsXxxRepository`)は全メソッドが同期API(`Database#run`/`#exec`を直接呼ぶ)であり、DDLのCHECK制約/TRIGGER違反時は同期的にJSの例外をthrowする設計(`docs/architecture.md` 5.1節)であるため、UI側でRepositoryメソッド呼び出しをPromiseチェーンに乗せる際にこの罠を特に踏みやすい。
-**参考**: `src/components/household-member-management/HouseholdMemberManagementScreen.tsx`(コミットef2f502で`Promise.resolve(fn())`→`Promise.resolve().then(() => fn())`に修正)、`docs/guides/patterns.md`「非同期処理をPromise.resolve(fn())で開始すると、fnが同期的に投げる例外が.catch()で捕捉できない」、`docs/decisions.md`「非同期の書き込み操作は必ずPromise.resolve().then(() => fn())で開始し、Promise.resolve(fn())は使わない」、Issue #37。計画Issue #95(`AccountListScreen.tsx`)でも同型の実装がevaluatorレビューで再度FAIL指摘され、`Promise.resolve().then(() => fn())`へ修正済み(詳細は`docs/guides/patterns.md`の再発例を参照)。
+**参考**: `src/components/household-member-management/HouseholdMemberManagementScreen.tsx`(コミットef2f502で`Promise.resolve(fn())`→`Promise.resolve().then(() => fn())`に修正)、`docs/guides/patterns.md`「非同期処理をPromise.resolve(fn())で開始すると、fnが同期的に投げる例外が.catch()で捕捉できない」、`docs/decisions/2026-08-13-02.md`「非同期の書き込み操作は必ずPromise.resolve().then(() => fn())で開始し、Promise.resolve(fn())は使わない」、Issue #37。計画Issue #95(`AccountListScreen.tsx`)でも同型の実装がevaluatorレビューで再度FAIL指摘され、`Promise.resolve().then(() => fn())`へ修正済み(詳細は`docs/guides/patterns.md`の再発例を参照)。
 
 ## import.meta.env.DEVは本番ビルド時にfalseへ静的展開され、参照コードごとVite/Rollupのtree-shakingで本番バンドルから除去される
 
 **内容**: Viteは`import.meta.env.DEV`(および`.PROD`)を、開発サーバー実行時こそ動的な値として扱うが、本番ビルド(`vite build`)時にはビルド時点で確定するリテラルなboolean値(本番ビルドでは`DEV: false`)へ静的置換する。この置換により`if (import.meta.env.DEV) { seedDevSampleDataIfDev(db) }`のようなコードは`if (false) { ... }`相当になり、Rollupのtree-shaking(到達不能コード除去)によってthenブロック内で参照しているモジュール(呼び出し先の関数や、そこがインポートするダミーデータの文字列リテラル)ごと本番バンドルの成果物から物理的に除去される。この性質を利用すると、開発環境限定の機能を本番ビルドの成果物(`dist/`)に一切含めないことを、実際に`dist/`配下をテキスト検索してダミーデータの文言が含まれないことを確認する形で実機検証できる。
-**参考**: `src/infrastructure/db/seedDevSampleDataIfDev.ts`、`docs/decisions.md`「開発環境限定のダミーサンプルデータ自動投入(seedDevSampleDataIfDev)は...」、計画Issue #101
+**参考**: `src/infrastructure/db/seedDevSampleDataIfDev.ts`、`docs/decisions/2026-08-15-01.md`「開発環境限定のダミーサンプルデータ自動投入(seedDevSampleDataIfDev)は...」、計画Issue #101
 
 ## PlaywrightのwebServer.envに設定したVITE_プレフィックス付き環境変数は、Vite dev server経由でimport.meta.envから参照できる
 
@@ -187,8 +187,8 @@ tags: [guide, knowledge, history]
 **位置づけ**: 計画Issue #175の調査項目。実装の必須対象にはせず(個別対応は対象外)、分かったことと未確認のことを分けて残す。2026-11-11時点で、公式ドキュメントと関連記事のWeb検索(検索結果は断片的だった)と、本リポジトリの実装・E2Eで確認できた範囲。**実機の各同期クライアントでの動作確認はしていない**。
 
 **確認できたこと**:
-- **外部変更の検知は、ファイルの更新日時とサイズの組で行う**(`FileSystemAccessStorageAdapter`、判断は`docs/decisions.md`の計画Issue #175の項)。同期クライアントはファイルの置換で更新日時を変えるのが通常だが、更新日時を保たない/保てない置換(後述の「ミラーでは更新日時が保たれない」という報告)に備えてサイズも見る。日時もサイズも同じ内容違いの置換は見逃す(許容)。
-- **Chromiumの書き込みは、スワップファイルを使う**: `createWritable()`は書き込み中、同じフォルダに`<ファイル名>.crswap`の一時ファイルを作り、`close()`で元のファイルに置き換える(書き込み中にクラッシュしても元のファイルは壊れない)。同期フォルダでは、書き込み中の`.crswap`が一瞬だけ同期クライアントに見えうる。同期クライアントがこの一時ファイルを先にアップロードしても、消えれば取り下げられるのが一般的な挙動だが、実機では未確認。アプリは`.crswap`を意識した処理をしておらず、独自の一時ファイル経由の書き込みも足していない(`docs/decisions.md`の計画Issue #174の項8)。
+- **外部変更の検知は、ファイルの更新日時とサイズの組で行う**(`FileSystemAccessStorageAdapter`、判断は`docs/decisions/`の計画Issue #175の項)。同期クライアントはファイルの置換で更新日時を変えるのが通常だが、更新日時を保たない/保てない置換(後述の「ミラーでは更新日時が保たれない」という報告)に備えてサイズも見る。日時もサイズも同じ内容違いの置換は見逃す(許容)。
+- **Chromiumの書き込みは、スワップファイルを使う**: `createWritable()`は書き込み中、同じフォルダに`<ファイル名>.crswap`の一時ファイルを作り、`close()`で元のファイルに置き換える(書き込み中にクラッシュしても元のファイルは壊れない)。同期フォルダでは、書き込み中の`.crswap`が一瞬だけ同期クライアントに見えうる。同期クライアントがこの一時ファイルを先にアップロードしても、消えれば取り下げられるのが一般的な挙動だが、実機では未確認。アプリは`.crswap`を意識した処理をしておらず、独自の一時ファイル経由の書き込みも足していない(`docs/decisions/`の計画Issue #174の項8)。
 - **オンデマンドファイル(OneDriveのFiles On-Demand、Google ドライブのストリーミング)**: 中身をPCに持たない「プレースホルダー」で、アプリが開くと同期クライアントが必要に応じてダウンロードする、と公式の説明やコミュニティの記述にある。したがって、読み込みの時点で意図せずダウンロードが走る、オフラインだと読めない・遅い、という可能性がある。`getFile()`だけでダウンロードが走るか、プレースホルダーの更新日時・サイズが実体と一致するかは、検索では確認できなかった(**未確認**)。
 - **Google ドライブのミラー**: 「ストリーミング」と「ミラーリング」の2つの方式がある。第三者の記事(ChronoSyncのナレッジベース、古い情報)に、Google ドライブは複製したファイルの更新日時を保たないという記述がある。更新日時の比較で外部変更を見る方式にとっては、保存のたびに日時が変わるだけで誤検知にはならないが、「自分の保存後の日時」を同期クライアントが書き換える場合は、次の保存で外部変更と誤検知しうる(**未確認**。誤検知した場合は、警告から開き直すと復帰できる)。
 
@@ -205,7 +205,7 @@ tags: [guide, knowledge, history]
 **内容**: `playwright.config.ts`の`webServer`は`reuseExistingServer: !process.env.CI`のため、5173番ですでに開発サーバーが動いていると、それをそのまま使う。手動で起動した`npm run dev`には、E2Eのためのダミーデータ投入の抑制(`VITE_DISABLE_DEV_SEED`、`webServer.env`でだけ付く)が効いていないので、開発用のサンプルデータ(口座・仕訳)が入った状態になる。E2Eは「口座・仕訳が0件」のクリーンな初期状態を前提にしているため、`UNIQUE constraint failed: accounts.category, accounts.name`や、同名のボタンが2つ見つかる`strict mode violation`で失敗する。実機の画面確認で開発サーバーを起動したあとにE2Eを流すときは、先に5173番の待ち受けを止める(`Get-NetTCPConnection -LocalPort 5173 -State Listen`で見つけて停止する)。落ちた原因がテストの不具合かを疑う前に、まずこれを確認する。どうしても5173番の開発サーバーを止められないときは、別ポート(例: 5199)で`webServer`を起動する一時的なplaywright設定を作って流すと、`VITE_DISABLE_DEV_SEED`が効いたまま既存のE2Eも通る(計画Issue #231 フェーズ2で採用、設定ファイルはコミットしない)。
 Issue #187(`e2e/journal-entry.spec.ts`の「ランチ代」の`UNIQUE constraint failed`)も同じ原因だった(計画Issue #211で確認)。5173番が空きの状態では5件が連続2回とも通り、E2E全体も99件が通る。サンプルデータ入りの`npm run dev`を起動したまま実行すると、`UNIQUE constraint failed: accounts.category, accounts.name`で同スペックの4件が失敗して再現する。テストデータの重複・状態の持ち越し・アプリ側の不具合ではない。
 
-**参考**: `playwright.config.ts`、`docs/decisions.md`(開発サンプルデータの投入、計画Issue #101)、Issue #207
+**参考**: `playwright.config.ts`、`docs/decisions/`(開発サンプルデータの投入、計画Issue #101)、Issue #207
 
 ## Windowsのvitestは、Git Bashの小文字ドライブ(`/c/...`・`c:\...`)から実行すると「Vitest failed to find the runner」で全テストが落ちる
 
@@ -231,7 +231,7 @@ Issue #187(`e2e/journal-entry.spec.ts`の「ランチ代」の`UNIQUE constraint
 ## 日本語入力(IME)の変換確定のEnterは`keydown`でも届くため、Enterで何かを確定する処理では`isComposing`・keyCode 229を除外する(計画Issue #233)
 
 **内容**: 検索欄などで日本語を変換しているとき、変換を確定するEnterも`keydown`イベントとして届く。これをそのまま「選択の確定」やフォームの送信に使うと、変換の途中で意図せず確定される。`event.nativeEvent.isComposing`が`true`、または`event.keyCode === 229`のときは何もせずに戻る(ブラウザによっては、変換確定の`keydown`で`isComposing`がすでに`false`になるため、`keyCode`の229も併せて見る)。あわせて、検索欄のEnterは`preventDefault()`して、囲んでいるフォームの送信に使わせない。`TreeSelect`の検索欄(1件に絞れたらEnterで確定)がこの形になっている。
-**参考**: `src/components/common/tree-select/TreeSelect.tsx`、`docs/decisions.md`「選択欄は共通部品(EntitySelect)に統一し、画面ごとに実体の<select>を書かない」、計画Issue #233
+**参考**: `src/components/common/tree-select/TreeSelect.tsx`、`docs/decisions/2026-11-19-06.md`「選択欄は共通部品(EntitySelect)に統一し、画面ごとに実体の<select>を書かない」、計画Issue #233
 
 ## Playwrightで本物のブラウザの計測を取るときは、別ポートの開発サーバーを使う(計画Issue #253)
 
@@ -241,4 +241,4 @@ Issue #187(`e2e/journal-entry.spec.ts`の「ランチ代」の`UNIQUE constraint
 
 **内容**: sql.jsのTEMPトリガー(`OperationHistory`、計画Issue #202)の本体では、`json_object('col', OLD.col, ...)`で前後の行をJSON文字列にでき、`(SELECT name FROM accounts WHERE id = NEW.account_id)`のようなサブクエリで関連行の名前も書き込みの瞬間に引ける。科目が後で削除・統合・取消されても、記録済みのJSONには当時の名前が残る。表示時にIDから引き直す方式は、削除・取消のあとで名前を引けないため使えない。同じ操作の中で同じ行を複数回書き換えると、行ごとの記録(`__undo_log`の`row_id`・`before_json`・`after_json`)が複数できる。「操作前」には最初の書き込みの前の値を使い、「操作後」にはDBの現在の内容を使う(途中経過の値は使わない)。このため、操作の要約(`buildOperationDetail`)は操作の確定直後に組み立てる必要があり、時間が空くと現在の内容が別の操作の結果になる。なお、`runInHistoryGroup`の第4引数`getMeta`が値でなく取得関数なのは、CSV取込の確定件数のような添える情報が、確定処理の結果が出てから初めて決まるため。
 
-**参考**: `src/infrastructure/history/OperationHistory.ts`・`operationDetail.ts`・`historyGroupRunner.ts`、`docs/decisions.md`「操作履歴に操作の詳細(どの仕訳をどう変えたか)を持たせる」
+**参考**: `src/infrastructure/history/OperationHistory.ts`・`operationDetail.ts`・`historyGroupRunner.ts`、`docs/decisions/2026-11-26-02.md`「操作履歴に操作の詳細(どの仕訳をどう変えたか)を持たせる」

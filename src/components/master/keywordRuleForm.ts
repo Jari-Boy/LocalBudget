@@ -5,7 +5,7 @@ import { validateKeyword } from '../statement-import/counterpartyKeywordModel'
 
 /**
  * キーワードルールの共通検証と並び替え(計画Issue #219)。キーワードタブ・勘定科目タブ・取引先タブの
- * どの編集経路でも、ここを通して同じ理由で不正なキーワードを拒否する(docs/decisions.md 2026-11-16 決定9)。
+ * どの編集経路でも、ここを通して同じ理由で不正なキーワードを拒否する(docs/decisions/2026-11-16-06.md 2026-11-16 決定9)。
  * キーワード自体の検証(空・正規化後の重複)は、明細取込と共通の validateKeyword を使う。
  */
 export type KeywordRuleError = 'empty' | 'duplicate' | 'targetRequired' | 'counterpartyNeedsPlAccount'

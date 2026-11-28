@@ -15,6 +15,7 @@
  */
 import { posix } from 'node:path'
 import { checkDecisions } from './checkDecisions.mjs'
+import { checkLinks } from './checkLinks.mjs'
 
 const RESERVED_FILE_NAMES = ['index.md', 'log.md']
 const STATUS_VALUES = ['draft', 'stable', 'deprecated']
@@ -219,6 +220,6 @@ export function checkBundle(files, { rootDir, exists }) {
       violations.push(...checkConceptDocument(path, text), ...checkResourcePaths(path, text, exists, rootDir))
     }
   }
-  violations.push(...checkDecisions(files, { rootDir }))
+  violations.push(...checkDecisions(files, { rootDir }), ...checkLinks(files, { exists }))
   return violations
 }

@@ -2,7 +2,7 @@
  * FileSystemAccessNotSupportedError のユニットテスト。File System Access API非対応環境
  * (Firefox/Safari等)でFileSystemAccessStorageAdapterの使用を試みた際にスローされる
  * エラー型で、呼び出し側(UI側、計画Issue #57ではスコープ外)がinstanceofで判定できる
- * ことを保証する(docs/decisions.md「エラー型の使い分け基準」参照)。
+ * ことを保証する(docs/decisions/2026-07-31-08.md「エラー型の使い分け基準」参照)。
  * 外部依存: なし。
  */
 import { describe, expect, it } from 'vitest'
