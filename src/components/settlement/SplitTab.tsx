@@ -92,6 +92,8 @@ function toDate(entryDate: string): Date {
 const COLUMN_WIDTHS_STORAGE_KEY = 'localbudget:split-line-table-column-widths'
 /** 割勘仕訳のプレビューの表の列幅(%)。借方・貸方とも「科目・世帯メンバー・取引先/精算バッチ・金額」。分担相手ごとの表で同じにして縦線をそろえる */
 const PREVIEW_COLUMN_PERCENTS = [14, 11, 14, 11, 14, 11, 14, 11]
+/** 固定した絞り込み欄とタブの行との隙間(px)。SplitSettleScreen.css の .split-settle__filter の top と同じ値 */
+const FILTER_STICKY_GAP = 8
 /** 行のチェックの列の幅(px)。固定で、列幅の調整の対象外 */
 const CHECK_COLUMN_WIDTH = 32
 
@@ -589,7 +591,13 @@ export function SplitTab({
       {/* 候補の表(全幅)・分担・割勘仕訳のプレビューを縦に並べる。固定したタブの行と絞り込み欄の下に追従する高さを --sticky-head-extra で渡す(計画Issue #266) */}
       <div
         className="split-settle__stack"
-        style={{ '--sticky-head-extra': `${filterHeight}px`, '--sticky-bulk-h': `${barHeight}px` } as CSSProperties}
+        style={
+          {
+            // 絞り込み欄の高さ。開いているときは、タブの行との隙間(8px、.split-settle__filter の top)も足す
+            '--sticky-head-extra': `${filterHeight > 0 ? filterHeight + FILTER_STICKY_GAP : 0}px`,
+            '--sticky-bulk-h': `${barHeight}px`,
+          } as CSSProperties
+        }
       >
         {/* 分担のバー(計画Issue #301)。候補の表の上に、タブの行・絞り込み欄の下へ固定する。1段目は概要と記録、2段目は分担の入力(矢印でたためる) */}
         <div className="split-settle__bar" ref={setBarElement}>
