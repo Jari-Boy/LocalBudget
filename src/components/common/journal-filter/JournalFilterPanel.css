@@ -118,7 +118,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 6px 10px 10px;
-  border: 1.5px solid var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
   border-radius: var(--radius-md);
   background: var(--color-surface);
 }
