@@ -287,7 +287,7 @@ export function JournalScreen(props: JournalScreenProps) {
   /** 「さらに表示」で増やした表示件数の上限。null は先頭の1ページ分(計画Issue #253)。絞り込み条件を変えると戻す */
   const [displayLimit, setDisplayLimit] = useState<number | null>(null)
   /**
-   * 明細行単位の表の、列見出しでの並び替え(計画Issue #302)。見出しを押した時点の絞り込み後の全仕訳の値で並びを決め、
+   * 明細行単位の表の、列見出しでの並び替え(計画Issue #302)。見出しを押した時点に描画している仕訳(1ページ分)の値で並びを決め、
    * そのあと編集で値が変わっても行は動かない。絞り込み条件・表示方式を変えると解除する。保存・削除・「さらに表示」では保つ
    */
   const [lineSort, setLineSort] = useState<JournalSort | null>(null)
@@ -412,17 +412,13 @@ export function JournalScreen(props: JournalScreenProps) {
   /** 並び替えが効いているか。明細行単位の表だけで(見出しのボタンがあるため)、「新規仕訳」を仕訳単位の画面で開いている間は効かせない */
   const lineSortActive = tab === 'list' && viewMode === 'line' && selection?.kind !== 'new'
 
-  /**
-   * 絞り込み後の全仕訳(新しい順)。件数表示の元で、描画するのはこのうち先頭の `visibleEntries` だけ。
-   * 明細行単位の表で列見出しを押しているときは、その並び(押した時点の値で固定)を優先し、同じ値は新しい順(計画Issue #302)
-   */
+  /** 絞り込み後の全仕訳(新しい順)。件数表示の元で、描画するのはこのうち先頭の `visibleEntries` だけ */
   const matchedEntries = useMemo(() => {
     if (data === null || derived === null) return []
-    const sort = lineSortActive ? lineSort : null
     return filterJournalEntries(data.entries, data.accounts, filter, derived.filterContext).sort(
-      (a, b) => compareJournalSort(sort, a.id, b.id) || b.entryDate.localeCompare(a.entryDate) || b.id - a.id,
+      (a, b) => b.entryDate.localeCompare(a.entryDate) || b.id - a.id,
     )
-  }, [data, derived, filter, lineSort, lineSortActive])
+  }, [data, derived, filter])
 
   /**
    * 一覧に描画する仕訳(計画Issue #253)。絞り込みと並べ替えは全件に対して行い、描画だけを1ページ分ずつに分ける。
@@ -439,7 +435,15 @@ export function JournalScreen(props: JournalScreenProps) {
       }),
     [matchedEntries, displayLimit, pageSize, selection],
   )
-  const visibleEntries = useMemo(() => matchedEntries.slice(0, shownCount), [matchedEntries, shownCount])
+  /**
+   * 描画する仕訳。明細行単位の表で列見出しを押しているときは、描画中の1ページ分の中だけを、その並び(押した時点の値で固定)に
+   * 並べ替える(計画Issue #302)。全件の並び替えは、値の計算も、選択中の仕訳が動いたときの表示の広がり(#253)による
+   * 描画の増加も重くなるため行わない。値が無い仕訳(「さらに表示」で増えた分など)は、並び替えた分のあとに元の順で続く
+   */
+  const visibleEntries = useMemo(() => {
+    const page = matchedEntries.slice(0, shownCount)
+    return lineSortActive && lineSort !== null ? page.sort((a, b) => compareJournalSort(lineSort, a.id, b.id)) : page
+  }, [matchedEntries, shownCount, lineSort, lineSortActive])
 
   /**
    * 一括編集のチェックは、表示中の行だけを対象にする(見えない行を更新してしまわないため)。絞り込みや表示件数の
@@ -1498,8 +1502,8 @@ export function JournalScreen(props: JournalScreenProps) {
                 columns={lineColumns}
                 sort={{
                   current: lineSort,
-                  // 押した時点の、絞り込み後の全件(表示中の1ページ分だけではない)の値で並びを決める。いま効いている並びの順に渡す必要はない
-                  onSort: (key) => setLineSort((prev) => cycleJournalSort(prev, key, matchedEntries, lineLookup)),
+                  // 押した時点に描画している仕訳(1ページ分)の値で並びを決める
+                  onSort: (key) => setLineSort((prev) => cycleJournalSort(prev, key, visibleEntries, lineLookup)),
                 }}
                 entries={visibleEntries}
                 lookup={lineLookup}

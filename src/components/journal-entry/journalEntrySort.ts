@@ -68,7 +68,7 @@ export function journalSortValue(key: JournalSortKey, entry: JournalEntry, looku
 }
 
 /**
- * 見出しを押したときの次の状態。entriesは押した時点の並べる対象(絞り込み後の全件)で、並び替えの値をここで確定する。
+ * 見出しを押したときの次の状態。entriesは押した時点の並べる対象(描画中の1ページ分)で、並び替えの値をここで確定する。
  * 以後、編集で値が変わっても並びは動かない。
  */
 export function cycleJournalSort(

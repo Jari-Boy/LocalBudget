@@ -170,7 +170,7 @@ export function SplitTab({
   const [displayLimit, setDisplayLimit] = useState<number>(SPLIT_LIST_PAGE_SIZE.candidate)
   const [detailEntryId, setDetailEntryId] = useState<number | null>(null)
   /**
-   * 候補の表の、列見出しでの並び替え(計画Issue #302)。見出しを押した時点の、絞り込み後の全候補の値で並びを決め、
+   * 候補の表の、列見出しでの並び替え(計画Issue #302)。見出しを押した時点に描画している候補(1ページ分)の値で並びを決め、
    * 以後は動かさない(チェックは行のid基準なので並べても保たれる)。絞り込み条件を変えると解除する
    */
   const [lineSort, setLineSort] = useState<JournalSort | null>(null)
@@ -186,11 +186,8 @@ export function SplitTab({
     )
     return candidates
       .filter((c) => visibleIds.has(c.entry.id))
-      .sort(
-        (a, b) =>
-          compareJournalSort(lineSort, a.entry.id, b.entry.id) || b.entry.entryDate.localeCompare(a.entry.entryDate) || b.entry.id - a.entry.id,
-      )
-  }, [candidates, data.accounts, filter, derived.filterContext, lineSort])
+      .sort((a, b) => b.entry.entryDate.localeCompare(a.entry.entryDate) || b.entry.id - a.entry.id)
+  }, [candidates, data.accounts, filter, derived.filterContext])
   /** 表に出す仕訳の件数。上限までだが、チェック済みの行(絞り込みで隠れたものは数えない)が範囲の外にあるときは、いちばん後ろの行が見えるまで広げる */
   const lastCheckedIndex = shown.reduce(
     (last, item, index) => (item.lines.some((l) => checkedIds.has(l.line.id)) ? index : last),
@@ -202,7 +199,11 @@ export function SplitTab({
     pageSize: SPLIT_LIST_PAGE_SIZE.candidate,
     selectedIndex: lastCheckedIndex,
   })
-  const visible = useMemo(() => shown.slice(0, shownCount), [shown, shownCount])
+  /** 描画する候補。列見出しを押しているときは、描画中の1ページ分の中だけを並べ替える(全件は並べない、計画Issue #302) */
+  const visible = useMemo(() => {
+    const page = shown.slice(0, shownCount)
+    return lineSort === null ? page : page.sort((a, b) => compareJournalSort(lineSort, a.entry.id, b.entry.id))
+  }, [shown, shownCount, lineSort])
   const rows = useMemo(() => buildSplitLineTableRows(visible), [visible])
 
   /** 選んだ行(絞り込みで隠れた行も含む)。候補の並びのまま */
@@ -428,7 +429,7 @@ export function SplitTab({
     batchName: (id) => data.batches.find((b) => b.id === id)?.name ?? '',
     memberName: memberName,
   }
-  /** 並び替えできる列の見出し(列幅のつまみつき)。押すと、絞り込み後の全候補の値で 昇順→降順→解除 を切り替える */
+  /** 並び替えできる列の見出し(列幅のつまみつき)。押すと、描画中の候補(1ページ分)の値で 昇順→降順→解除 を切り替える */
   const sortHead = (key: JournalSortKey, label: string, resize: ReactNode, className?: string) => (
     <SortableHeaderCell
       key={key}
@@ -440,7 +441,7 @@ export function SplitTab({
           cycleJournalSort(
             prev,
             key,
-            shown.map((s) => s.entry),
+            visible.map((v) => v.entry),
             sortLookup,
           ),
         )

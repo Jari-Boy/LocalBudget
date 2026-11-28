@@ -2457,7 +2457,7 @@ describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
 
 /**
  * 仕訳画面の「明細行単位」の表の、列見出しでの並び替え(計画Issue #302)。見出しを押すごとに 昇順→降順→解除 で仕訳が並び替わり、
- * 絞り込み後の全件に対して効くこと(表示中の1ページ分だけを並べ替えない)、「さらに表示」の件数は並び替えで変わらないこと、
+ * 描画中の1ページ分の中だけを並べ替えること(全件は並べない。重くしないため)、「さらに表示」の件数は並び替えで変わらないこと、
  * 押した時点の値で固定され保存しても行が動かないこと、絞り込み条件の変更・仕訳単位への切替で解除されること、
  * 仕訳単位の一覧(従来の並び)には影響しないことを検証する。
  */
@@ -2512,18 +2512,31 @@ describe('JournalScreen: 明細行単位の列見出しでの並び替え(計画
     expect(headerCell('金額', 1)).toHaveAttribute('aria-sort', 'none')
   })
 
-  it('1ページを超えるときは、絞り込み後の全件に対して並び替え、先頭から1ページ分を表示する', async () => {
+  it('1ページを超えるときは、描画中の1ページ分の中だけを並び替え、表示する件数も仕訳も増やさない(重くしない)', async () => {
     const LINE_PAGE = JOURNAL_LIST_PAGE_SIZE.line
     setup({ entries: makeManyEntries(LINE_PAGE + 50) })
     await screen.findByText(`${LINE_PAGE} / ${LINE_PAGE + 50}件を表示中`)
-    expect(screen.queryByText(`仕訳${LINE_PAGE + 50}`)).not.toBeInTheDocument()
 
-    // 日付の昇順 = いちばん古い仕訳(idが最大)が先頭。1ページ目に出ていなかった仕訳が先頭に出る
-    // (開いた直後に強調されている仕訳1は並びの末尾へ動くが、選択中の仕訳は見えたままにする決定(計画Issue #253)のため、表示は
-    // その仕訳が見える件数まで広がる。並び替えが全件に効いていることは、先頭の仕訳で確かめる)
+    // 日付の昇順 = 描画中の1ページ分のうち、いちばん古い仕訳(idが最大)が先頭。1ページ目に出ていなかった仕訳は出ない。
+    // 開いた直後に強調されている仕訳1は並びの末尾へ動くが、並び替えは1ページ分の中だけなので、表示は広がらない
     fireEvent.click(headerButton('日付'))
-    expect(orderOf()[0]).toBe(LINE_PAGE + 50)
-    expect(orderOf().slice(0, 5)).toEqual([0, 1, 2, 3, 4].map((i) => LINE_PAGE + 50 - i))
+    expect(orderOf()).toHaveLength(LINE_PAGE)
+    expect(orderOf()[0]).toBe(LINE_PAGE)
+    expect(orderOf()[LINE_PAGE - 1]).toBe(1)
+    expect(screen.queryByText(`仕訳${LINE_PAGE + 1}`)).not.toBeInTheDocument()
+    expect(screen.getByText(`${LINE_PAGE} / ${LINE_PAGE + 50}件を表示中`)).toBeInTheDocument()
+  })
+
+  it('並べたあとに「さらに表示」を押すと、増えた仕訳は並び替えた分のあとに元の順で続く', async () => {
+    const LINE_PAGE = JOURNAL_LIST_PAGE_SIZE.line
+    setup({ entries: makeManyEntries(LINE_PAGE + 50) })
+    await screen.findByText(`${LINE_PAGE} / ${LINE_PAGE + 50}件を表示中`)
+    fireEvent.click(headerButton('日付'))
+    fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+    const order = orderOf()
+    expect(order).toHaveLength(LINE_PAGE + 50)
+    expect(order[0]).toBe(LINE_PAGE)
+    expect(order.slice(LINE_PAGE)).toEqual(Array.from({ length: 50 }, (_, i) => LINE_PAGE + 1 + i))
   })
 
   it('並び替えても「さらに表示」で増やした表示件数は変わらない', async () => {
