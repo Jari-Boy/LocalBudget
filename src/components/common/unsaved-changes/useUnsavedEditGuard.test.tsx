@@ -26,15 +26,13 @@ function Where() {
 function Panel({
   dirty,
   save,
-  description,
   extraAction,
 }: {
   dirty: boolean
-  save: () => Promise<boolean>
-  description?: string
+  save?: () => Promise<boolean>
   extraAction?: { label: string; run: () => Promise<boolean> }
 }) {
-  const dialog = useUnsavedEditGuard({ dirty, save, description, extraAction })
+  const dialog = useUnsavedEditGuard({ dirty, save, extraAction })
   return <>{dialog}</>
 }
 
@@ -50,16 +48,17 @@ function Row({ onSelect }: { onSelect: () => void }) {
 function renderScreen(props: {
   dirty: boolean
   save?: () => Promise<boolean>
+  /** trueなら、saveを渡さない(「保存して移動」を出さない) */
+  withoutSave?: boolean
   onSelect?: () => void
-  description?: string
   extraAction?: { label: string; run: () => Promise<boolean> }
 }) {
-  const save = props.save ?? (async () => true)
+  const save = props.withoutSave ? undefined : (props.save ?? (async () => true))
   const onSelect = props.onSelect ?? (() => {})
   return render(
     <MemoryRouter initialEntries={['/a']}>
       <UnsavedChangesGuardProvider>
-        <Panel dirty={props.dirty} save={save} description={props.description} extraAction={props.extraAction} />
+        <Panel dirty={props.dirty} save={save} extraAction={props.extraAction} />
         <Row onSelect={onSelect} />
         <GuardedLink to="/b">b</GuardedLink>
         <Where />
@@ -198,20 +197,12 @@ describe('useGuardedAction(画面内の操作)', () => {
   })
 })
 
-describe('useUnsavedEditGuard: 説明文と追加の保存操作(計画Issue #231 フェーズ3)', () => {
+describe('useUnsavedEditGuard: 追加の保存操作(計画Issue #231 フェーズ3、#293)', () => {
   it('追加の操作を渡さないときは、これまでどおり3つのボタン(キャンセル・破棄して移動・保存して移動)だけを出す', () => {
     renderScreen({ dirty: true })
     fireEvent.click(screen.getByRole('link', { name: 'b' }))
 
     expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['キャンセル', '破棄して移動', '保存して移動', '行'])
-  })
-
-  it('説明文を渡すと、既定の文言のあとに出す', () => {
-    renderScreen({ dirty: true, description: '入力済みの1件を確定します。' })
-    fireEvent.click(screen.getByRole('link', { name: 'b' }))
-
-    expect(screen.getByText('保存が完了していない変更があります。')).toBeInTheDocument()
-    expect(screen.getByText('入力済みの1件を確定します。')).toBeInTheDocument()
   })
 
   it('追加の操作を渡すと、「破棄して移動」と「保存して移動」の間にそのボタンを出し、押すとその操作を実行して、成功したら移動する', async () => {
@@ -254,5 +245,17 @@ describe('useUnsavedEditGuard: 説明文と追加の保存操作(計画Issue #23
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(screen.getByTestId('where')).toHaveTextContent('/a')
+  })
+
+  it('保存の操作(save)を渡さないときは、「保存して移動」を出さず、追加の操作だけを保存の操作として出す(計画Issue #293)', async () => {
+    const run = vi.fn(async () => true)
+    renderScreen({ dirty: true, withoutSave: true, extraAction: { label: '一時保存して移動', run } })
+    fireEvent.click(screen.getByRole('link', { name: 'b' }))
+
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['キャンセル', '破棄して移動', '一時保存して移動', '行'])
+    fireEvent.click(screen.getByRole('button', { name: '一時保存して移動' }))
+
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/b'))
+    expect(run).toHaveBeenCalledTimes(1)
   })
 })

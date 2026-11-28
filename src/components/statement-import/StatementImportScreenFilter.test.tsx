@@ -520,7 +520,7 @@ describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)',
       expect(confirmButton(2)).toBeInTheDocument()
     })
 
-    it('絞り込み中に離れる前の「保存して移動」を押すと、隠れた行も含めて、入力済みの全件を確定して移動する', async () => {
+    it('絞り込み中に離れる前の「一時保存して移動」を押すと、隠れた行も含めて、入力済みの全件を確定せず一時保存して移動する', async () => {
       renderScreen()
       await chooseCsv(CSV)
       pickIn(rowOf(/新宿店/), '相手科目', '食費')
@@ -529,11 +529,11 @@ describe('StatementImportScreen: 行の絞り込みパネル(計画Issue #258)',
       expect(hasRow(/ローソン/)).toBe(false)
 
       leave()
-      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+      fireEvent.click(screen.getByRole('button', { name: '一時保存して移動' }))
 
       await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/other'))
-      expect(entries.findAll().filter((e) => e.sourceType !== 'auto_balance_adjustment')).toHaveLength(2)
-      expect(new SqlJsStatementImportDraftRepository(db).findSummaries()).toHaveLength(1)
+      expect(entries.findAll().filter((e) => e.sourceType !== 'auto_balance_adjustment')).toHaveLength(0)
+      expect(new SqlJsStatementImportDraftRepository(db).findSummaries()[0]).toMatchObject({ filledRows: 2 })
     })
 
     it('重複の行の「取り込む」で別のタブの行へ移るときは、行き先を見失わないよう、絞り込みを解除する', async () => {

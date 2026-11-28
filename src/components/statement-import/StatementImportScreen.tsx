@@ -60,7 +60,7 @@ import { isStatementImportEligibleAccount, isStatementImportCounterAccountEligib
 import {
   createInitialRowState,
   defaultMemberIdOf,
-  isRowEdited,
+  hasUnsavedRows,
   isTaggableAccountId,
   replacementTargetOf,
   resolveEligibleCounterpartyId,
@@ -270,12 +270,6 @@ interface ConfirmResult {
   /** 確定できなかった行(エラー)の数 */
   failed: number
 }
-
-/**
- * 確定の結果(計画Issue #231 フェーズ3)。blocked=確定の前提を満たせず何もしなかった、done=全件を確定した、
- * partial=一部だけ確定した(doneは確定済みになった行の番号を含む、確定後の全体)
- */
-type ConfirmOutcome = { status: 'blocked' } | { status: 'done' } | { status: 'partial'; done: Set<number> }
 
 /**
  * 明細取込画面(計画Issue #151)。旧アップロード画面とレビュー画面を1画面にまとめ、取込先とCSVを
@@ -522,37 +516,20 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     )
   }, [session?.targetAccount.id, session?.targetAccount.isReconcilable, hasStatementBalance, journalEntryRepository, externalTransactionRefRepository]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 未保存の警告(計画Issue #193)。取り込んだ行の入力を初期状態から変えて、まだ確定していないとき。
-  // 「保存して移動」は、確定できる行を確定する(確定できない行が残るときは移動しない)
-  // 一時保存した状態と同じ行は、失うものが無いので未保存の編集とみなさない(計画Issue #231 フェーズ3)
+  // 未保存の警告(計画Issue #193、#293で編集の有無を問わない判定に変更)。取り込める行(重複・取り込まない行を除く)が、
+  // 確定も一時保存もされずに残っているとき。CSVを選んだ直後(未編集)でも出す。
+  // 一時保存した状態と同じ行は、失うものが無いので対象外(計画Issue #231 フェーズ3)
   const hasUnsavedEdits =
     session !== null &&
-    session.rows.some(
-      (state, index) =>
-        !session.done.has(index) &&
-        isRowEdited(state, session.initialRows[index]) &&
-        draftSavedStates.current.get(session.review.records[index].externalId) !== state,
-    )
-  // 警告の説明に出す件数: 取り込み対象の全件と、そのうち確定できる(入力済みの)件数
-  const guardCounts = { ready: 0, total: 0 }
-  if (session) {
-    session.review.records.forEach((record, index) => {
-      if (session.done.has(index)) return
-      const status = rowStatus(record, session.rows[index])
-      if (status === 'duplicate' || status === 'skipped') return
-      guardCounts.total++
-      if (status === 'new') guardCounts.ready++
+    hasUnsavedRows({
+      records: session.review.records,
+      rows: session.rows,
+      done: session.done,
+      savedStates: draftSavedStates.current,
     })
-  }
+  // 保存の操作は「一時保存して移動」だけ(何も確定せず、すべての入力を一時保存してから移動する。計画Issue #293で「保存して移動」と説明文を廃止)
   const unsavedDialog = useUnsavedEditGuard({
     dirty: hasUnsavedEdits,
-    // 「保存して移動」: 入力済みの行を確定し、確定できない行は一時保存してから移動する(計画Issue #231 フェーズ3)
-    save: () => confirmAndSaveDraft(),
-    description:
-      guardCounts.total > guardCounts.ready
-        ? t('draftGuardDescription', { ready: guardCounts.ready, rest: guardCounts.total - guardCounts.ready, total: guardCounts.total })
-        : t('draftGuardDescriptionAllReady', { ready: guardCounts.ready, total: guardCounts.total }),
-    // 「一時保存して移動」: 何も確定せず、すべての入力を一時保存してから移動する
     extraAction: { label: t('draftSaveAndLeave'), run: () => saveDraft() },
   })
   const guarded = useGuardedAction()
@@ -1184,11 +1161,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
    * 一時保存を保存する(計画Issue #231 フェーズ3)。CSVの生データ・定義・取込先・取り込むファイルのチェック・誰の明細か・
    * 初期値から変えた行の入力を、取込先の科目ごとの一時保存へ書く。確定はしない。
    * 別の取込の一時保存が同じ取込先にあるときは、上書きの確認を出す(再開した一時保存への保存は確認なし)。
-   * 保存できたときだけtrueを返す。doneは、直前に確定した行(まだ画面の状態に反映前)を除くための指定
+   * 保存できたときだけtrueを返す
    */
-  async function saveDraft(options: { done?: ReadonlySet<number> } = {}): Promise<boolean> {
+  async function saveDraft(): Promise<boolean> {
     if (!session) return false
-    const done = options.done ?? session.done
+    const done = session.done
     const account = session.targetAccount
     try {
       const existing = await Promise.resolve(statementImportDraftRepository.findByAccountId(account.id))
@@ -1230,18 +1207,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     } finally {
       setBusy(false)
     }
-  }
-
-  /**
-   * 未保存の警告の「保存して移動」(計画Issue #231 フェーズ3)。入力済みの行を確定し、確定できない行が残るときは、
-   * それを一時保存してから移動する。確定の前提(誰の明細か・キーワードの入力)を満たせないときは、何も保存せず移動しない
-   */
-  async function confirmAndSaveDraft(): Promise<boolean> {
-    // 離れる前の確定は、絞り込みに関わらず、入力済みの全件が対象(一時保存も全件を保存するため)
-    const outcome = await handleConfirm({ all: true })
-    if (outcome.status === 'blocked') return false
-    if (outcome.status === 'done') return true
-    return saveDraft({ done: outcome.done })
   }
 
   /** 保存した取込先・入力で続ける。保存時の定義で読めたときと、定義を作り直したときの、共通の続き */
@@ -1843,19 +1808,19 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   /** 確定(docs/domain/statement-import.md 1.5手順7)。1件が失敗しても残りの確定を続ける(継続処理方式) */
-  async function handleConfirm(options: { all?: boolean } = {}): Promise<ConfirmOutcome> {
+  async function handleConfirm(): Promise<void> {
     confirmMetaRef.current = undefined
     return runInHistoryGroup(
       history,
       'statementImport.confirm',
-      () => confirmImpl(options.all === true),
+      () => confirmImpl(),
       () => confirmMetaRef.current,
     )
   }
 
-  /** allがtrueなら、絞り込みに関わらず全件が対象。通常は、絞り込み中は表示中の行だけ(計画Issue #258) */
-  async function confirmImpl(all: boolean): Promise<ConfirmOutcome> {
-    if (!session || statementOwnerId === null) return { status: 'blocked' }
+  /** 絞り込み中は表示中の行だけが対象(計画Issue #258) */
+  async function confirmImpl(): Promise<void> {
+    if (!session || statementOwnerId === null) return
     setBusy(true)
     setError('')
     setDoneMessage('')
@@ -1869,7 +1834,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     // 同じ取込の行は同じ取込日時にそろえる(残高の基準点の並び順を取込単位で判定するため、計画Issue #205)
     const importedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
 
-    for (const index of all ? importable : confirmTargets) {
+    for (const index of confirmTargets) {
       const { record, externalId } = records[index]
       const state = session.rows[index]
       // 相手科目が未入力の行は、まだ入力していないだけなのでエラーにせず、確定の対象から外して表に残す(計画Issue #263)
@@ -1962,7 +1927,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       setConfirmResult({ succeeded: succeeded.size, unfilled, failed: failedCount })
     }
     setBusy(false)
-    return allConfirmed ? { status: 'done' } : { status: 'partial', done: nextDone }
   }
 
   // 残高照合(docs/domain/reconciliation.md 1.5)。確定版として置き換える旧仕訳と、取り込まない行は除く。

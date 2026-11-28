@@ -8,11 +8,10 @@ export interface UnsavedEditGuardOptions {
   dirty: boolean
   /**
    * 編集内容を保存する。保存できて移動してよいときだけtrueを返す。検証エラーなどで保存できなかった
-   * ときはfalse(エラーは画面側が表示する)。他のダイアログで確認を続ける場合もfalseにして移動を止める
+   * ときはfalse(エラーは画面側が表示する)。他のダイアログで確認を続ける場合もfalseにして移動を止める。
+   * 省略すると「保存して移動」を出さない(extraActionだけを保存の操作にする。計画Issue #293)
    */
-  save: () => Promise<boolean>
-  /** ダイアログに、既定の文言のあとに出す説明(計画Issue #231 フェーズ3) */
-  description?: string
+  save?: () => Promise<boolean>
   /**
    * 「保存して移動」とは別の保存操作(例: 確定せずに一時保存して移動)。ダイアログに、押すとrunを実行して、
    * trueなら移動するボタンを足す。falseや例外のときは、saveと同じく移動せずダイアログを閉じる
@@ -26,7 +25,7 @@ export interface UnsavedEditGuardOptions {
  * 設定が「出さない」のときは、確認もリロード・タブを閉じる操作の警告(beforeunload)も登録しない。
  * 戻り値のダイアログを、編集パネルの中に描画する。保存に失敗したときは移動せずダイアログを閉じる。
  */
-export function useUnsavedEditGuard({ dirty, save, description, extraAction }: UnsavedEditGuardOptions): ReactNode {
+export function useUnsavedEditGuard({ dirty, save, extraAction }: UnsavedEditGuardOptions): ReactNode {
   const guard = useUnsavedChangesGuard()
   const [pending, setPending] = useState<(() => void) | null>(null)
   const [saving, setSaving] = useState(false)
@@ -72,8 +71,7 @@ export function useUnsavedEditGuard({ dirty, save, description, extraAction }: U
         setPending(null)
         pending()
       }}
-      onSave={() => void saveAndLeave(save)}
-      description={description}
+      onSave={save && (() => void saveAndLeave(save))}
       extraAction={extraAction && { label: extraAction.label, onClick: () => void saveAndLeave(extraAction.run) }}
     />
   )
