@@ -123,6 +123,16 @@
   background: var(--color-surface);
 }
 
+/*
+ * 借方・貸方の2つのまとまりの並べ方。5つの選択欄が1行に収まる幅(760px)が、2つ分とれるときは横並び、
+ * とれないときは縦に積む(grid の auto-fit)
+ */
+.journal-filter__sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(760px, 1fr));
+  gap: 6px 10px;
+}
+
 /* 借方・貸方に分けたときの、側ごとのまとまり */
 .journal-filter__side {
   display: flex;

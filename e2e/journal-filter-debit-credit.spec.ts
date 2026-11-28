@@ -1,7 +1,7 @@
 /**
  * 仕訳の絞り込み(計画Issue #314)のE2Eテスト。実ブラウザ(Chromium)で仕訳画面の絞り込みを開き、
  * (1)「借方・貸方を分けて検索」で、借方の科目だけを指定すると借方に持つ仕訳だけに絞られる(まとめて指定すると両側の仕訳が残る)、
- * (2)期間を「日付で指定」のチェックで月の選択に切り替えられ、月の選択欄に「指定なし」がある、
+ * (2)期間ははじめ月の選択で、月の選択欄に「指定なし」があり、「日付で指定」のチェックで日付入力にも切り替えられる、
  * (3)金額のスライダーをキーボードで動かすと、数字入力に金額が入る、ことを検証する。
  * 事前データは別Workerで作ってからreloadして反映する(journal-entry.spec.tsと同じ方針)。
  */
@@ -78,14 +78,14 @@ test.describe('仕訳の絞り込み: 借方・貸方・期間・金額', () => 
     await expect(panel.getByRole('status')).toHaveText('0件')
   })
 
-  test('期間を「日付で指定」のチェックで月の選択に切り替えられ、月の選択欄に「指定なし」がある', async ({ page }) => {
+  test('期間ははじめ月の選択で「指定なし」があり、「日付で指定」のチェックで日付入力に切り替えられる', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('navigation', { name: 'メインメニュー' })).toBeVisible()
     await setupEntries(page)
     const panel = await openFilter(page)
 
-    await expect(panel.getByRole('checkbox', { name: '日付で指定' })).toBeChecked()
-    await panel.getByRole('checkbox', { name: '日付で指定' }).uncheck()
+    // はじめは月で選ぶ(チェックなし)。月の選択欄は新しい順に並び、先頭が「指定なし」
+    await expect(panel.getByRole('checkbox', { name: '日付で指定' })).not.toBeChecked()
     const from = panel.getByRole('combobox', { name: '期間の開始' })
     await expect(from.getByRole('option', { name: '指定なし' })).toHaveCount(1)
 

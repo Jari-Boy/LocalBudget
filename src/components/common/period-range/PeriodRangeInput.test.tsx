@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * 期間入力 PeriodRangeInput(日付/月の切替つき、計画Issue #314)のコンポーネントテスト。
- * 「日付で指定」のチェックで日付入力と月の選択欄を切り替えられること、月モードの選択は開始月1日〜終了月末日の日付に変換して
- * 通知すること、日付から月へ切り替えると含まれる月に広がること、月の選択欄に「指定なし」があることを検証する。外部依存なし。
+ * はじめは月の選択(チェックなし)で、月の途中の日付が入った条件で開いたときだけ日付入力になること、「日付で指定」のチェックで日付入力と月の選択欄を切り替えられること、月モードの選択は開始月1日〜終了月末日の日付に変換して
+ * 通知すること、日付から月へ切り替えると含まれる月に広がること、月の選択欄に「指定なし」があり、月は新しい順に並ぶことを検証する。外部依存なし。
  */
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -41,7 +41,22 @@ function Harness({
 }
 
 describe('PeriodRangeInput', () => {
-  it('はじめは日付で指定(チェックあり)で、開始・終了の日付入力を出す', () => {
+  it('はじめは月で選ぶ(「日付で指定」のチェックなし)で、開始・終了の月の選択欄を出す', () => {
+    render(<Harness />)
+
+    expect(screen.getByRole('checkbox', { name: '日付で指定' })).not.toBeChecked()
+    expect(screen.getByRole('combobox', { name: '期間の開始' })).toBeInTheDocument()
+    expect(document.querySelector('input[type="date"]')).toBeNull()
+  })
+
+  it('月初〜月末の期間で開いたときも、月の選択欄に選択中の月が入る', () => {
+    render(<Harness initial={{ from: '2026-09-01', to: '2026-10-31' }} />)
+
+    expect(screen.getByRole('combobox', { name: '期間の開始' })).toHaveValue('2026-09')
+    expect(screen.getByRole('combobox', { name: '期間の終了' })).toHaveValue('2026-10')
+  })
+
+  it('月の途中の日付が入った期間で開いたときは、日付で指定(チェックあり)で日付入力を出す', () => {
     render(<Harness initial={{ from: '2026-10-01', to: '2026-10-20' }} />)
 
     expect(screen.getByRole('checkbox', { name: '日付で指定' })).toBeChecked()
@@ -68,18 +83,16 @@ describe('PeriodRangeInput', () => {
     expect(screen.getByRole('combobox', { name: '期間の終了' })).toHaveValue('2026-11')
   })
 
-  it('月の選択欄は、仕訳のある月を途切れなく並べ、先頭に「指定なし」を置く', () => {
+  it('月の選択欄は、仕訳のある月を途切れなく新しい順に並べ、先頭に「指定なし」を置く', () => {
     render(<Harness />)
-    fireEvent.click(screen.getByRole('checkbox', { name: '日付で指定' }))
 
     const options = Array.from(screen.getByRole('combobox', { name: '期間の開始' }).querySelectorAll('option')).map((o) => o.textContent)
-    expect(options).toEqual(['指定なし', '2026年9月', '2026年10月', '2026年11月'])
+    expect(options).toEqual(['指定なし', '2026年11月', '2026年10月', '2026年9月'])
   })
 
   it('月を選ぶと、開始は月初日・終了は月末日の日付で通知する', () => {
     const onChange = vi.fn()
     render(<Harness onChange={onChange} />)
-    fireEvent.click(screen.getByRole('checkbox', { name: '日付で指定' }))
     fireEvent.change(screen.getByRole('combobox', { name: '期間の開始' }), { target: { value: '2026-09' } })
     fireEvent.change(screen.getByRole('combobox', { name: '期間の終了' }), { target: { value: '2026-10' } })
 
@@ -89,7 +102,6 @@ describe('PeriodRangeInput', () => {
   it('月の選択を「指定なし」に戻すと、その側の日付を空にして通知する', () => {
     const onChange = vi.fn()
     render(<Harness initial={{ from: '2026-09-01', to: '2026-10-31' }} onChange={onChange} />)
-    fireEvent.click(screen.getByRole('checkbox', { name: '日付で指定' }))
     fireEvent.change(screen.getByRole('combobox', { name: '期間の開始' }), { target: { value: '' } })
 
     expect(onChange).toHaveBeenLastCalledWith('', '2026-10-31')

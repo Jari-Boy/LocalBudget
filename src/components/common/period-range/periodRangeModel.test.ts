@@ -5,7 +5,7 @@
  * DB・DOM非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
-import { buildMonthOptions, monthOf, monthToDateRange, snapRangeToMonths } from './periodRangeModel'
+import { buildMonthOptions, isMonthAligned, monthOf, monthToDateRange, snapRangeToMonths } from './periodRangeModel'
 
 describe('monthOf', () => {
   it('日付から、含まれる月(YYYY-MM)を返す', () => {
@@ -47,21 +47,34 @@ describe('snapRangeToMonths', () => {
 })
 
 describe('buildMonthOptions', () => {
-  it('仕訳の日付の最も古い月から新しい月まで、途切れなく古い順に並べる', () => {
-    expect(buildMonthOptions(['2026-09-20', '2026-11-03', '2026-09-01'], [])).toEqual(['2026-09', '2026-10', '2026-11'])
+  it('仕訳の日付の最も古い月から新しい月まで、途切れなく新しい順に並べる', () => {
+    expect(buildMonthOptions(['2026-09-20', '2026-11-03', '2026-09-01'], [])).toEqual(['2026-11', '2026-10', '2026-09'])
   })
 
   it('選択中の月が範囲の外にあっても、選択肢に含める(選択が消えないように)', () => {
     expect(buildMonthOptions(['2026-10-05'], ['2026-08', '2026-12'])).toEqual([
-      '2026-08',
-      '2026-09',
-      '2026-10',
-      '2026-11',
       '2026-12',
+      '2026-11',
+      '2026-10',
+      '2026-09',
+      '2026-08',
     ])
   })
 
   it('仕訳も選択も無いときは、空の配列を返す', () => {
     expect(buildMonthOptions([], [])).toEqual([])
+  })
+})
+
+describe('isMonthAligned', () => {
+  it('開始が月初・終了が月末(または指定なし)なら、月の指定として表せる', () => {
+    expect(isMonthAligned({ from: '2026-10-01', to: '2026-11-30' })).toBe(true)
+    expect(isMonthAligned({ from: '', to: '' })).toBe(true)
+    expect(isMonthAligned({ from: '2026-10-01', to: '' })).toBe(true)
+  })
+
+  it('月の途中の日付が入っていたら、月の指定では表せない', () => {
+    expect(isMonthAligned({ from: '2026-10-15', to: '2026-11-30' })).toBe(false)
+    expect(isMonthAligned({ from: '2026-10-01', to: '2026-11-03' })).toBe(false)
   })
 })

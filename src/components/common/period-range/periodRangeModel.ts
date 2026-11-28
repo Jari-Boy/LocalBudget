@@ -43,8 +43,14 @@ function fromIndex(index: number): string {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`
 }
 
+/** 開始が月初・終了が月末(または指定なし)で、月の指定として表せるか。月の途中の日付が入っていれば false */
+export function isMonthAligned(range: DateRange): boolean {
+  const snapped = snapRangeToMonths(range)
+  return snapped.from === range.from && snapped.to === range.to
+}
+
 /**
- * 月の選択肢('YYYY-MM'、古い順)。仕訳の日付の最も古い月から最も新しい月まで途切れなく並べ、選択中の月が
+ * 月の選択肢('YYYY-MM'、新しい順)。仕訳の日付の最も古い月から最も新しい月まで途切れなく並べ、選択中の月が
  * その範囲の外にあっても含める(選択が消えないように)。どちらも無ければ空
  */
 export function buildMonthOptions(dates: readonly string[], selectedMonths: readonly string[]): string[] {
@@ -60,5 +66,5 @@ export function buildMonthOptions(dates: readonly string[], selectedMonths: read
   for (const date of dates) take(monthOf(date))
   for (const month of selectedMonths) take(month)
   if (min > max) return []
-  return Array.from({ length: max - min + 1 }, (_, offset) => fromIndex(min + offset))
+  return Array.from({ length: max - min + 1 }, (_, offset) => fromIndex(max - offset))
 }

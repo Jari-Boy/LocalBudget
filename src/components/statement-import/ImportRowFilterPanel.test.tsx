@@ -81,6 +81,8 @@ describe('ImportRowFilterPanel', () => {
     fireEvent.change(panel().getByRole('searchbox', { name: '摘要で検索' }), { target: { value: 'セブン' } })
     expect(onChange).toHaveBeenLastCalledWith({ ...base, description: 'セブン' })
 
+    // 期間ははじめ月で選ぶ(計画Issue #314)。日付で入れるには「日付で指定」にする
+    fireEvent.click(panel().getByRole('checkbox', { name: '日付で指定' }))
     fireEvent.change(panel().getByLabelText('期間の開始'), { target: { value: '2026-10-01' } })
     expect(onChange).toHaveBeenLastCalledWith({ ...base, dateFrom: '2026-10-01' })
 
@@ -143,16 +145,22 @@ describe('ImportRowFilterPanel', () => {
 })
 
 describe('ImportRowFilterPanel: 期間の日付/月の切替(計画Issue #314)', () => {
-  it('はじめは「日付で指定」(チェックあり)で日付入力を出す', () => {
+  it('はじめは月で選ぶ(「日付で指定」のチェックなし)で、月の選択欄を出す', () => {
     renderPanel()
 
-    expect(panel().getByRole('checkbox', { name: '日付で指定' })).toBeChecked()
+    expect(panel().getByRole('checkbox', { name: '日付で指定' })).not.toBeChecked()
+    expect(panel().getByRole('combobox', { name: '期間の開始' })).toBeInTheDocument()
+  })
+
+  it('チェックを入れると日付入力になる', () => {
+    renderPanel()
+    fireEvent.click(panel().getByRole('checkbox', { name: '日付で指定' }))
+
     expect(panel().getByLabelText('期間の開始')).toHaveAttribute('type', 'date')
   })
 
-  it('チェックを外すと月の選択になり、月を選ぶと開始月1日〜終了月末日の日付を入力に入れて通知する', () => {
+  it('月を選ぶと、開始月1日の日付を入力に入れて通知する', () => {
     const { onChange } = renderPanel()
-    fireEvent.click(panel().getByRole('checkbox', { name: '日付で指定' }))
     fireEvent.change(panel().getByRole('combobox', { name: '期間の開始' }), { target: { value: '2026-09' } })
 
     expect(onChange).toHaveBeenLastCalledWith({ ...EMPTY_FILTER_INPUT, dateFrom: '2026-09-01' })

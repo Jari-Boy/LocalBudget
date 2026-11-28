@@ -7,7 +7,8 @@
   box-sizing: border-box;
   max-width: 640px;
   flex: 1 1 560px;
-  padding: 4px 12px;
+  /* 右は広めにとる: スライダー右端の目盛り「上限なし」が、中央を右端に合わせて置かれ、半分ほど枠の外へ出るため */
+  padding: 4px 36px 4px 12px;
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-md);
   background: var(--color-field-subtle);

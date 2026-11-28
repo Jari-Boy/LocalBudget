@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import '../journal-filter/JournalFilterPanel.css'
 import './PeriodRange.css'
-import { buildMonthOptions, monthOf, monthToDateRange, snapRangeToMonths } from './periodRangeModel'
+import { buildMonthOptions, isMonthAligned, monthOf, monthToDateRange, snapRangeToMonths } from './periodRangeModel'
 
 export interface PeriodRangeInputProps {
   /** 左のラベル(「期間」) */
@@ -39,7 +39,8 @@ export function PeriodRangeInput({
   dates,
   onChange,
 }: PeriodRangeInputProps) {
-  const [mode, setMode] = useState<'date' | 'month'>('date')
+  // はじめは月で選ぶ。ただし、月の途中の日付が入った条件(分析画面からのリンクなど)で開いたときは、日付が見えるよう日付で指定にする
+  const [mode, setMode] = useState<'date' | 'month'>(() => (isMonthAligned({ from, to }) ? 'month' : 'date'))
   const fromMonth = monthOf(from)
   const toMonth = monthOf(to)
   const monthOptions = useMemo(() => buildMonthOptions(dates, [fromMonth, toMonth]), [dates, fromMonth, toMonth])

@@ -233,14 +233,18 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount, hid
           <input type="checkbox" checked={split} onChange={(event) => switchSplit(event.target.checked)} />
           借方・貸方を分けて検索
         </label>
-        {split
-          ? (['debit', 'credit'] as const).map((side) => (
+        {split ? (
+          <div className="journal-filter__sides">
+            {(['debit', 'credit'] as const).map((side) => (
               <div key={side} className="journal-filter__side" role="group" aria-label={`${SIDE_TITLES[side]}の条件`}>
                 <span className="journal-filter__side-title">{SIDE_TITLES[side]}</span>
                 {axisFields(side)}
               </div>
-            ))
-          : axisFields('both')}
+            ))}
+          </div>
+        ) : (
+          axisFields('both')
+        )}
       </div>
 
       <div className="journal-filter__footer">

@@ -168,17 +168,23 @@ describe('JournalFilterPanel: 借方・貸方を分けて検索', () => {
 })
 
 describe('JournalFilterPanel: 期間の日付/月の切替', () => {
-  it('はじめは「日付で指定」で、日付入力を出す', () => {
+  it('はじめは月で選ぶ(「日付で指定」のチェックなし)で、月の選択欄を出す', () => {
     render(<Harness />)
 
-    expect(screen.getByRole('checkbox', { name: '日付で指定' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: '日付で指定' })).not.toBeChecked()
+    expect(screen.getByRole('combobox', { name: '期間の開始' })).toBeInTheDocument()
+  })
+
+  it('チェックを入れると日付入力になる', () => {
+    render(<Harness />)
+    fireEvent.click(screen.getByRole('checkbox', { name: '日付で指定' }))
+
     expect(screen.getByLabelText('期間の開始')).toHaveAttribute('type', 'date')
   })
 
-  it('チェックを外すと月の選択になり、月を選ぶと開始月1日〜終了月末日で通知する', () => {
+  it('月を選ぶと、開始月1日〜終了月末日で通知する', () => {
     const onFilter = vi.fn()
     render(<Harness onFilter={onFilter} />)
-    fireEvent.click(screen.getByRole('checkbox', { name: '日付で指定' }))
     fireEvent.change(screen.getByRole('combobox', { name: '期間の開始' }), { target: { value: '2026-09' } })
     fireEvent.change(screen.getByRole('combobox', { name: '期間の終了' }), { target: { value: '2026-10' } })
 
