@@ -191,6 +191,9 @@ test.describe('上部固定の一括編集バーとタブ、表の見出し(明�
     await tableRegion(page).evaluate((el) => {
       el.scrollLeft = 260
     })
+    // 見出しの複製は、スクロールイベント(次のフレームで届く)で横位置を合わせる。反映されるのを待ってから位置を比べる
+    // (待たないと、CIの遅い環境で、複製がまだ動いていない位置を測って失敗する)
+    await expect(floatingHeader(page).locator('table')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, -260, 0)')
 
     // 見出しの「日付」の列の左端と、その列の本物のセルの左端が、横にずれていない(0px・1px以内)。複製は表の枠の中にある
     const headerLeft = (await boxOf(floatingHeader(page).getByRole('columnheader', { name: '日付' }))).x
