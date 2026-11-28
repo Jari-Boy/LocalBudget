@@ -1,0 +1,8 @@
+/* 期間の入力(計画Issue #314)。「日付で指定」のチェックは、分析画面の期間バーのチェックと同じ作り */
+.period-range__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--control-height);
+  font-size: var(--font-size-sm);
+}
