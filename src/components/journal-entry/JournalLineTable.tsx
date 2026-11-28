@@ -1,5 +1,7 @@
 import { useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { FloatingTableHeader } from '../common/sticky/FloatingTableHeader'
+import { SortableHeaderCell } from '../common/table-sort/SortableHeaderCell'
+import type { JournalSort, JournalSortKey } from './journalEntrySort'
 import type { JournalEntry, JournalLine, JournalLineSide } from '../../domain/journal/JournalEntry'
 import { isSettlementBatchTaggableAccount } from '../../domain/settlement-batch/isSettlementBatchTaggableAccount'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
@@ -104,6 +106,18 @@ export interface JournalLineTableProps {
   onSelect: (entryId: number) => void
   /** 編集中の仕訳。渡すと、その仕訳の全行が入力欄になり、下に操作バーが出る */
   editing?: JournalLineTableEditing
+  /**
+   * 渡すと、列見出し(チェックの列を除く)に並び替えボタンが付く(計画Issue #302)。並び替えの状態と、仕訳を並べ替える処理は
+   * 呼び出し側が持つ(この表は渡された順に出すだけ)。current は並んでいる列と向き(並べていなければ null)
+   */
+  sort?: JournalLineTableSort
+}
+
+/** 列見出しでの並び替え(計画Issue #302) */
+export interface JournalLineTableSort {
+  current: JournalSort | null
+  /** 見出しのボタンを押したとき。次の状態(昇順→降順→解除)は呼び出し側が決める */
+  onSort: (key: JournalSortKey) => void
 }
 
 /**
@@ -113,6 +127,9 @@ export interface JournalLineTableProps {
 const SIDE_COLUMNS = ['科目', 'プロジェクト', '取引先・精算バッチ', '世帯メンバー', '金額'] as const
 /** 日付〜コメントの列の名前(LEFT_COLUMN_KEYS と同じ並び) */
 const LEFT_COLUMNS = ['日付', '出どころ', '摘要', 'コメント'] as const
+/** 並び替えのキー(LEFT_COLUMNS・SIDE_COLUMNS と同じ並び。側ごとのキーは `debit-account` のように側を前に付ける) */
+const LEFT_SORT_KEYS = ['date', 'source', 'memo', 'comment'] as const satisfies readonly JournalSortKey[]
+const SIDE_SORT_COLUMNS = ['account', 'project', 'partner', 'member', 'amount'] as const
 const SIDE_LABEL: Record<JournalLineSide, string> = { debit: '借方', credit: '貸方' }
 /** 表の列数(日付・出どころ・摘要・コメント + 借方5列 + 貸方5列) */
 const COLUMN_COUNT = 4 + SIDE_COLUMNS.length * 2
@@ -195,7 +212,7 @@ function BulkCheckbox({
  * すべての列を初期の幅に戻せる。
  * 表示用の名前解決(lookup)と編集内容(値と変更通知)だけを受け取り、DB・Repositoryには依存しない。
  */
-export function JournalLineTable({ entries, lookup, selectedId, onSelect, editing, bulk, columns, scrollRegionRef }: JournalLineTableProps) {
+export function JournalLineTable({ entries, lookup, selectedId, onSelect, editing, bulk, columns, scrollRegionRef, sort }: JournalLineTableProps) {
   // ---- 列幅の調整(フックは、仕訳がないときの早期returnより前に置く) ----
   const ownColumns = useJournalLineTableColumns()
   const { widths, widthsRef, resizeTo, commit, resetColumn } = columns ?? ownColumns
@@ -579,6 +596,28 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
       ])}
     </colgroup>
   )
+  /**
+   * 列の見出し。sort を渡されていれば並び替えボタンつき(押した列のキーを onSort へ)、なければ従来の文字だけの見出し。
+   * 列幅のつまみ(resize)は、どちらも見出しの右端に置く(つまみとボタンは別の要素なので、互いの操作には反応しない)
+   */
+  const headCell = (key: JournalSortKey, name: string, className: string | undefined, resize: ReactNode) =>
+    sort === undefined ? (
+      <th key={key} scope="col" className={className || undefined}>
+        {name}
+        {resize}
+      </th>
+    ) : (
+      <SortableHeaderCell
+        key={key}
+        scope="col"
+        label={name}
+        className={className || undefined}
+        direction={sort.current?.key === key ? sort.current.direction : null}
+        onSort={() => sort.onSort(key)}
+      >
+        {resize}
+      </SortableHeaderCell>
+    )
   const thead = (
     <thead>
       <tr className="journal-line-table__group-head">
@@ -591,12 +630,9 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
         </th>
       </tr>
       <tr>
-        {LEFT_COLUMNS.map((name, i) => (
-          <th key={name} scope="col">
-            {name}
-            {resizeHandle(LEFT_COLUMN_KEYS[i], name)}
-          </th>
-        ))}
+        {LEFT_COLUMNS.map((name, i) =>
+          headCell(LEFT_SORT_KEYS[i], name, undefined, <>{resizeHandle(LEFT_COLUMN_KEYS[i], name)}</>),
+        )}
         {[0, 1].flatMap((side) => {
           const sideName: JournalLineSide = side === 0 ? 'debit' : 'credit'
           return [
@@ -605,21 +641,16 @@ export function JournalLineTable({ entries, lookup, selectedId, onSelect, editin
                 {sideHeadCheck(sideName)}
               </th>
             ) : null,
-            ...SIDE_COLUMNS.map((name, i) => (
-              <th
-                key={`${side}-${name}`}
-                scope="col"
-                className={[
-                  i === 0 && !hasCheck ? sideStartClass(sideName) : '',
-                  name === '金額' ? 'journal-line-table__cell--amount' : '',
-                ]
+            ...SIDE_COLUMNS.map((name, i) =>
+              headCell(
+                `${sideName}-${SIDE_SORT_COLUMNS[i]}`,
+                name,
+                [i === 0 && !hasCheck ? sideStartClass(sideName) : '', name === '金額' ? 'journal-line-table__cell--amount' : '']
                   .filter(Boolean)
-                  .join(' ')}
-              >
-                {name}
-                {resizeHandle(SIDE_COLUMN_KEYS[i], `${SIDE_LABEL[sideName]}の${name}`)}
-              </th>
-            )),
+                  .join(' '),
+                <>{resizeHandle(SIDE_COLUMN_KEYS[i], `${SIDE_LABEL[sideName]}の${name}`)}</>,
+              ),
+            ),
           ]
         })}
       </tr>

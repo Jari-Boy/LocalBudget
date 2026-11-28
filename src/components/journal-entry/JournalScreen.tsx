@@ -100,6 +100,7 @@ import { JournalLineTable, type JournalLineTableEditing, type JournalLineTableLo
 import { JournalMemberSelect } from './JournalMemberSelect'
 import { useJournalLineTableColumns } from './useJournalLineTableColumns'
 import { loadJournalViewMode, saveJournalViewMode, type JournalViewMode } from './journalViewMode'
+import { compareJournalSort, cycleJournalSort, type JournalSort } from './journalEntrySort'
 import { ListLoadMore } from '../common/list-paging/ListLoadMore'
 import { nextDisplayLimit, resolveShownCount } from '../common/list-paging/listPaging'
 import { JOURNAL_LIST_PAGE_SIZE } from './journalListPaging'
@@ -285,6 +286,11 @@ export function JournalScreen(props: JournalScreenProps) {
   const [lineRegion, setLineRegion] = useState<HTMLDivElement | null>(null)
   /** 「さらに表示」で増やした表示件数の上限。null は先頭の1ページ分(計画Issue #253)。絞り込み条件を変えると戻す */
   const [displayLimit, setDisplayLimit] = useState<number | null>(null)
+  /**
+   * 明細行単位の表の、列見出しでの並び替え(計画Issue #302)。見出しを押した時点の絞り込み後の全仕訳の値で並びを決め、
+   * そのあと編集で値が変わっても行は動かない。絞り込み条件・表示方式を変えると解除する。保存・削除・「さらに表示」では保つ
+   */
+  const [lineSort, setLineSort] = useState<JournalSort | null>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
   const [editor, setEditor] = useState<JournalEditorValue | null>(null)
   const [flash, setFlash] = useState('')
@@ -403,13 +409,20 @@ export function JournalScreen(props: JournalScreenProps) {
     [data, filter],
   )
 
-  /** 絞り込み後の全仕訳(新しい順)。件数表示の元で、描画するのはこのうち先頭の `visibleEntries` だけ */
+  /** 並び替えが効いているか。明細行単位の表だけで(見出しのボタンがあるため)、「新規仕訳」を仕訳単位の画面で開いている間は効かせない */
+  const lineSortActive = tab === 'list' && viewMode === 'line' && selection?.kind !== 'new'
+
+  /**
+   * 絞り込み後の全仕訳(新しい順)。件数表示の元で、描画するのはこのうち先頭の `visibleEntries` だけ。
+   * 明細行単位の表で列見出しを押しているときは、その並び(押した時点の値で固定)を優先し、同じ値は新しい順(計画Issue #302)
+   */
   const matchedEntries = useMemo(() => {
     if (data === null || derived === null) return []
+    const sort = lineSortActive ? lineSort : null
     return filterJournalEntries(data.entries, data.accounts, filter, derived.filterContext).sort(
-      (a, b) => b.entryDate.localeCompare(a.entryDate) || b.id - a.id,
+      (a, b) => compareJournalSort(sort, a.id, b.id) || b.entryDate.localeCompare(a.entryDate) || b.id - a.id,
     )
-  }, [data, derived, filter])
+  }, [data, derived, filter, lineSort, lineSortActive])
 
   /**
    * 一覧に描画する仕訳(計画Issue #253)。絞り込みと並べ替えは全件に対して行い、描画だけを1ページ分ずつに分ける。
@@ -443,10 +456,14 @@ export function JournalScreen(props: JournalScreenProps) {
     setBulkConfirming(false)
   }, [bulkLineIds, visibleLineIds])
 
-  /** 絞り込み条件を変える。増やした表示件数は先頭の1ページ分に戻す */
+  /**
+   * 絞り込み条件を変える。増やした表示件数は先頭の1ページ分に戻し、列見出しでの並び替えは解除する
+   * (並び替えの値は見出しを押した時点の対象に対して作るため、対象が変わったら作り直す。計画Issue #302)
+   */
   const changeFilter = (next: JournalEntryFilter) => {
     setFilter(next)
     setDisplayLimit(null)
+    setLineSort(null)
   }
 
   const sortedDrafts = useMemo(
@@ -1086,6 +1103,7 @@ export function JournalScreen(props: JournalScreenProps) {
     if (mode === (lineView ? 'line' : 'entry')) return
     guarded(() => {
       resetBulk()
+      setLineSort(null)
       setViewMode(mode)
       saveJournalViewMode(mode)
       open(selection?.kind === 'entry' ? selection : firstOf('list', data, visibleEntries), data)
@@ -1103,6 +1121,7 @@ export function JournalScreen(props: JournalScreenProps) {
       // 自動調整仕訳は編集できないので、行の入力欄にはせず、読み取り専用の詳細(仕訳単位の表示)で開く(計画Issue #205)
       if (data.entries.find((e) => e.id === id)?.sourceType === 'auto_balance_adjustment') {
         setViewMode('entry')
+        setLineSort(null)
         saveJournalViewMode('entry')
         open({ kind: 'entry', id }, data)
         return
@@ -1477,6 +1496,11 @@ export function JournalScreen(props: JournalScreenProps) {
               <JournalLineTable
                 scrollRegionRef={setLineRegion}
                 columns={lineColumns}
+                sort={{
+                  current: lineSort,
+                  // 押した時点の、絞り込み後の全件(表示中の1ページ分だけではない)の値で並びを決める。いま効いている並びの順に渡す必要はない
+                  onSort: (key) => setLineSort((prev) => cycleJournalSort(prev, key, matchedEntries, lineLookup)),
+                }}
                 entries={visibleEntries}
                 lookup={lineLookup}
                 selectedId={selection?.kind === 'entry' ? selection.id : null}
