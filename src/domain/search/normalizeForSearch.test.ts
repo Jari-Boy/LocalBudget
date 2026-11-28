@@ -1,5 +1,5 @@
 /**
- * normalizeForSearch / matchesSearch(選択欄の検索用の正規化)のテスト。
+ * normalizeForSearch / matchesSearch(検索用の正規化。選択欄・仕訳の摘要・明細取込の絞り込みで共通)のテスト。
  * ひらがな・カタカナ・半角カナ・全角半角・英字の大小・空白・長音の違いを区別せずに比べられることを検証する。
  * 漢字は変換せずそのまま比較する(読み仮名検索は対象外)。取込の摘要照合(normalizeDescriptionForMatching)とは別の関数。
  * 外部依存なし。

@@ -1,5 +1,6 @@
 import type { Account } from '../account/Account'
 import { expandGroupIds } from '../account-group/expandGroupIds'
+import { matchesSearch } from '../search/normalizeForSearch'
 import type { JournalEntry, JournalLine } from './JournalEntry'
 import type { JournalEntryFilter, JournalEntryFilterContext } from './JournalEntryFilter'
 
@@ -48,7 +49,7 @@ export function filterJournalEntries(
   const projectGroupSet = isActive(filter.projectGroupIds)
     ? expandGroupIds(context.projectGroups ?? [], filter.projectGroupIds)
     : null
-  const memoKeyword = filter.memo?.trim().toLowerCase() ?? ''
+  const memoKeyword = filter.memo ?? ''
 
   const anyLine = (entry: JournalEntry, predicate: (line: JournalLine) => boolean): boolean =>
     entry.lines.some(predicate)
@@ -69,7 +70,8 @@ export function filterJournalEntries(
       return false
     }
 
-    if (memoKeyword !== '' && !(entry.memo ?? '').toLowerCase().includes(memoKeyword)) return false
+    // 摘要はひらがな/カタカナ・全角半角・大文字小文字の違いを吸収して部分一致(計画Issue #303)
+    if (!matchesSearch(entry.memo ?? '', memoKeyword)) return false
 
     if (filter.amountMin !== undefined || filter.amountMax !== undefined) {
       const amount = entry.lines.filter((line) => line.side === 'debit').reduce((total, line) => total + line.amount, 0)

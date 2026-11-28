@@ -1,4 +1,4 @@
-import { normalizeForSearch } from '../tree-select/normalizeForSearch'
+import { normalizeForSearch } from '../../../domain/search/normalizeForSearch'
 import type { TreeTableNode } from './treeTableModel'
 
 /** 検索用の正規化: 選択欄と同じ(全角半角・大文字小文字・空白・ひらがなとカタカナの違いを無視する、計画Issue #233) */

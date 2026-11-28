@@ -548,6 +548,25 @@ describe('JournalScreen', () => {
     expect(within(detail()).getByLabelText('摘要(任意)')).toHaveValue('家賃')
   })
 
+  it('科目で絞り込み中に、仕訳の科目を変えて保存して条件から外れても、条件を変えるまでは一覧に残る(計画Issue #303)', async () => {
+    const entries = makeEntries()
+    const props = setup({ entries, initialFilter: { accountIds: [1] } })
+    // 保存すると、ランチ(食費)の借方が家賃に変わる(絞り込みの「食費」から外れる)
+    props.journalEntryRepository.update.mockImplementation(async (id: number) => {
+      const target = entries.find((e) => e.id === id)!
+      target.lines = [line(11, 1, 'debit', 4, 1200), line(12, 1, 'credit', 2, 1200)]
+      return target
+    })
+    await ready()
+    expect(screen.getByText('ランチ', { selector: '.journal-result-list__memo' })).toBeInTheDocument()
+
+    fireEvent.click(within(detail()).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(props.journalEntryRepository.update).toHaveBeenCalled())
+
+    await waitFor(() => expect(props.journalEntryRepository.findAll.mock.calls.length).toBeGreaterThan(1))
+    expect(screen.getByText('ランチ', { selector: '.journal-result-list__memo' })).toBeInTheDocument()
+  })
+
   it('摘要で絞り込むと一覧が絞られ、件数が出る', async () => {
     setup()
     await ready()
