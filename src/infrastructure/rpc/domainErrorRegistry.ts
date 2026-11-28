@@ -21,7 +21,7 @@ type DomainErrorReviver = (message: string, extra: Record<string, unknown>) => E
 /**
  * ドメインエラーのnameから、元のコンストラクタ引数を復元するレジストリ。新しい
  * ドメインエラー型を追加する際はここに1エントリ追加するだけでよい(RPC層の
- * レジストリパターンと同じ思想)。docs/decisions.md「エラー型の使い分け基準」で
+ * レジストリパターンと同じ思想)。docs/decisions/2026-07-31-08.md「エラー型の使い分け基準」で
  * 列挙された6種に加え、InvalidBackupFileError(計画Issue #26)・
  * SettlementBatchOnNonAdvanceAccountError(計画Issue #144・#167)・
  * JournalLineHouseholdMemberRequiredError(計画Issue #169)を登録済み。

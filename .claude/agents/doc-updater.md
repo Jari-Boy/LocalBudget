@@ -22,7 +22,7 @@ CLAUDE.md は更新しません（ルール・制約は手動管理）。
 | トリガー | 更新対象ファイル | 変更取得方法 |
 |---|---|---|
 | `schema` | `docs/schema/*.sql`, `docs/domain/*.md`（対応する集約のもの） | 変更した集約名を呼び出し元から受け取り、対象ファイルを Read |
-| `pr` | `docs/domain/*.md`, `docs/architecture.md`, `docs/decisions.md`, `docs/guides/patterns.md`, `docs/guides/knowledge.md`（加えて、OKF の保守が必要なときは `docs/index.md`, `docs/log.md`, 各文書の frontmatter） | `git diff main...HEAD` |
+| `pr` | `docs/domain/*.md`, `docs/architecture.md`, `docs/decisions/`, `docs/guides/patterns.md`, `docs/guides/knowledge.md`（加えて、OKF の保守が必要なときは `docs/index.md`, `docs/log.md`, 各文書の frontmatter） | `git diff main...HEAD` |
 | `after-pr` | 同上（`pr` と同じ） | `git show HEAD`（マージコミット） |
 | `all`（/update-docs） | 上記すべて | `git diff main...HEAD` |
 
@@ -62,11 +62,18 @@ CLAUDE.md は更新しません（ルール・制約は手動管理）。
 - 技術選定（ライブラリ・フレームワーク）をした
 - StorageAdapter・Repository層等のインターフェース設計を変更した
 
-#### `docs/decisions.md`（トリガー: pr / after-pr / all）
+#### `docs/decisions/`（トリガー: pr / after-pr / all）
 
-`docs/architecture.md` を更新するほどではない、実装フェーズでの個別の設計判断・技術選定を追記する。
+`docs/architecture.md` を更新するほどではない、実装フェーズでの個別の設計判断・技術選定を、**1決定=1ファイル**で追加する。
 更新判断は `docs/architecture.md` と同じ4項目（新しいアーキテクチャパターン導入・既存方針変更・技術選定・インフラ/永続化方式変更）のうち、
 アーキテクチャ全体の方針というより個別実装での判断に近いものをここに記録する。
+
+追加の手順:
+
+1. ファイル名は `docs/decisions/YYYY-MM-DD-NN.md`（`NN` はその日の既存の決定の次の2桁の連番）。frontmatter は `type: Decision`・`title`・`description`・`date`（ファイル名の日付と一致）・`tags: [decision]`（計画 Issue があれば `issues: [N]`）。`title` と `description` は二重引用符で囲み、中の `"` と `\` はエスケープする。本文は `## YYYY-MM-DD: <決定内容の要約>` の見出しから始め、`**背景**` / `**決定**` / `**影響**` を書く。
+2. `docs/decisions/index.md` の「現行の決定」の節の先頭に `* [YYYY-MM-DD タイトル](./YYYY-MM-DD-NN.md)` を1行足す。
+3. **過去の決定を置き換えるとき**: 新しい決定に `supersedes: [旧id]`（旧決定の判断を全面的に置き換える）または `partially_supersedes: [旧id]`（一部だけ置き換える）を書き、旧決定に対応する `superseded_by: [新id]`・`partially_superseded_by: [新id]` を足す。全面的に置き換えた旧決定は `status: deprecated` にして、`index.md` の「置き換え済みの決定」の節へ移す。**旧決定の本文は書き換えない**（当時の判断の記録として残す。どこが置き換わったかは新しい決定の本文に書く）。
+4. 決定の本文は、追加した後に書き換えて要約しない。誤りの訂正は、新しい決定を足して置き換え関係で表す。
 
 #### `docs/guides/patterns.md`（トリガー: pr / after-pr / all）
 
@@ -94,7 +101,7 @@ sql.js・Web Worker RPC・StorageAdapter・Service Worker/PWA・ブラウザ API
 2. **文書を追加したとき**: frontmatter（`type`・`title`・`description`・`tags`）を付け、`docs/index.md` の該当する節に `* [タイトル](./相対パス) - 説明` を1行追加する。
 3. **文書を削除・改名・統合したとき**: `docs/index.md`、他の文書からのリンク、`resource` を直す。
 4. **`docs/log.md`**: ファイルの追加・削除・構造の変更・規約の変更があったときだけ、当日の日付（`## YYYY-MM-DD`）の見出しの下に1行追記する。同じ日付の見出しがあればその下に足す。新しい日付は先頭に置く。通常の本文の追記は書かない。
-5. **`resource`**: 実装のディレクトリ・ファイルを移動・削除する変更があれば、`docs/domain/*.md` の `resource` を実体に合わせる。履歴ログ（`decisions.md`・`guides/knowledge.md`・`guides/patterns.md`）には `resource` を付けない。
+5. **`resource`**: 実装のディレクトリ・ファイルを移動・削除する変更があれば、`docs/domain/*.md` の `resource` を実体に合わせる。履歴ログ（`decisions/`・`guides/knowledge.md`・`guides/patterns.md`）には `resource` を付けない。
 6. **検査**: `npm run docs:check` を実行する。違反があれば、直せるものは直して再実行する。直せない（判断が要る）ものは、サマリーに違反の内容を載せて呼び出し元に返す。
 
 `stale_after`・`verified`・`generated` は使わない（方針と理由は `docs/guides/okf-conventions.md`）。

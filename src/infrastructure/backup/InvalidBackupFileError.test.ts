@@ -3,7 +3,7 @@
  * (計画Issue #26)時、アップロードされたバイト列が有効なLocalBudgetのDBとして
  * 扱えない場合(sql.jsが読み込めない、または想定テーブルが揃っていない)にスローされる
  * エラー型で、呼び出し側がinstanceofで判定できることを保証する
- * (docs/decisions.md「エラー型の使い分け基準」参照)。
+ * (docs/decisions/2026-07-31-08.md「エラー型の使い分け基準」参照)。
  * 外部依存: なし。
  */
 import { describe, expect, it } from 'vitest'

@@ -14,6 +14,8 @@
  * ファイルシステムには触れない純粋関数で構成し、CLI(../check-docs.mjs)が入出力を担う。
  */
 import { posix } from 'node:path'
+import { checkDecisions } from './checkDecisions.mjs'
+import { checkLinks } from './checkLinks.mjs'
 
 const RESERVED_FILE_NAMES = ['index.md', 'log.md']
 const STATUS_VALUES = ['draft', 'stable', 'deprecated']
@@ -28,7 +30,16 @@ function unquote(value) {
   if (trimmed.length >= 2) {
     const first = trimmed[0]
     const last = trimmed[trimmed.length - 1]
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) return trimmed.slice(1, -1)
+    if (first === '"' && last === '"') {
+      // 二重引用符の値は JSON 文字列と同じエスケープ(\" と \\ など)を戻す。解釈できなければ引用符だけ外す。
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (typeof parsed === 'string') return parsed
+      } catch {
+        return trimmed.slice(1, -1)
+      }
+    }
+    if (first === "'" && last === "'") return trimmed.slice(1, -1)
   }
   return trimmed
 }
@@ -209,5 +220,6 @@ export function checkBundle(files, { rootDir, exists }) {
       violations.push(...checkConceptDocument(path, text), ...checkResourcePaths(path, text, exists, rootDir))
     }
   }
+  violations.push(...checkDecisions(files, { rootDir }), ...checkLinks(files, { exists }))
   return violations
 }

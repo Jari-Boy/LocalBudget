@@ -13,7 +13,7 @@ export default defineConfig({
   fullyParallel: true,
   /**
    * CI環境(GitHub Actions)限定でworkers数を1に固定する暫定回避策。複数のE2Eテストが
-   * 固定名のIndexedDBデータベース(IndexedDBStorageAdapter、docs/decisions.md参照)を
+   * 固定名のIndexedDBデータベース(IndexedDBStorageAdapter、docs/decisions/2026-08-02-05.md参照)を
    * 直接操作しており、CI環境の並列実行下でPlaywrightのBrowserContext分離が機能して
    * いないかのようなデータ競合(タイミング違いの上書き・消失)が実機で複数パターン
    * 観測された(計画Issue #80で根本原因を調査中)。ローカル開発では並列実行を維持し

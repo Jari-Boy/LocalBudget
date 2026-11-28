@@ -2,7 +2,7 @@
  * SqlJsKeywordRuleRepository(キーワードルール keyword_rules の永続化)の統合テスト。
  * 「摘要のキーワード → 取引先(任意)+相手科目(任意)」というルールの CRUD、摘要への部分一致検索、
  * DDL の制約(取引先か科目の少なくとも一方が必須、取引先と科目の併記は収益・費用の科目だけ)を検証する
- * (計画Issue #219、docs/decisions.md 2026-11-16)。
+ * (計画Issue #219、docs/decisions/2026-11-16-06.md 2026-11-16)。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { beforeEach, describe, expect, it } from 'vitest'

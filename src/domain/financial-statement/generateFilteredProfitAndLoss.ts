@@ -11,7 +11,7 @@ import { summarizeAccountsByCategory } from './summarizeAccountsByCategory'
  * (periodFrom〜periodTo、両端を含む)に、filterJournalLinesByFinancialStatementFilterに
  * よる軸フィルタリングを組み合わせる。generateProfitAndLoss自体の責務(全期間対象の
  * PL生成)は変更せず、絞り込みが必要な呼び出し元向けに別関数として提供する
- * (Issue #34設計協議での判断、docs/decisions.md参照)。filterを省略した場合は
+ * (Issue #34設計協議での判断、docs/decisions/2026-08-15-02.md参照)。filterを省略した場合は
  * 絞り込みなしのgenerateProfitAndLossと同じ結果になる。DB非依存の純粋関数。
  */
 export function generateFilteredProfitAndLoss(

@@ -2,7 +2,7 @@
  * convertLegacyCounterpartyPatterns(旧 counterparty_patterns 表をキーワードルールへ変換する暫定処理)のテスト。
  * 移行前形式のDB・バックアップ(旧表を持つDB)が、起動時とバックアップ読み込み時に失われず
  * keyword_rules へ移ること、推定結果が移行前後で変わらないこと、二重に変換しても壊れないことを検証する
- * (計画Issue #219、docs/decisions.md 2026-11-16。凍結時に取り除く暫定措置)。
+ * (計画Issue #219、docs/decisions/2026-11-16-06.md 2026-11-16。凍結時に取り除く暫定措置)。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import { describe, expect, it } from 'vitest'

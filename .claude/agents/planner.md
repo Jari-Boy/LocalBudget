@@ -48,7 +48,7 @@ model: sonnet
    - アーキテクチャ方針・ADR を確認する場合 → `docs/architecture.md` を Read する
    - ドメインモデル（集約・値オブジェクト・不変条件等）に関わる場合 → `docs/domain.md` と該当する `docs/domain/*.md` を Read する
    - DB スキーマを変更・参照する場合 → 該当する `docs/schema/*.sql` を Read する
-   - 過去の設計判断と整合させる場合 → `docs/decisions.md` を Read する
+   - 過去の設計判断と整合させる場合 → `docs/decisions/index.md` を Read し、「現行の決定」の節から関連する決定のファイルを選んで Read する（`status: deprecated` の決定は置き換え済みで、`superseded_by` の決定が現行。`partially_superseded_by` は一部だけ置き換えられているので、置き換えた側の決定も読む）
    - 既知の実装ミスパターン・技術的知見を確認する場合 → `docs/guides/patterns.md`、`docs/guides/knowledge.md` を Read する
    - 既知のハマりポイントは「懸念点」セクションに反映する
 

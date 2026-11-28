@@ -42,7 +42,7 @@ export interface RecurringTransactionRuleRepository {
    * このルールから生成済みのjournal_entriesのうち最新の期日(土日の調整前、recurring_due_date)。
    * 1件も生成されていなければnull。提案評価の起点(1.2節)として使う。entry_dateは仕訳の編集や土日の
    * 調整で動くため使わない(計画Issue #164)。専用のチェックポイントを別途永続化せずjournal_entriesから
-   * 逆算する設計判断はdocs/decisions.md参照(max_occurrencesの専用カウンタを持たない既存方針と同じ
+   * 逆算する設計判断はdocs/decisions/2026-09-12-06.md参照(max_occurrencesの専用カウンタを持たない既存方針と同じ
    * 「二重管理を避ける」考え方)
    */
   findLatestGeneratedDueDate(id: number): string | null

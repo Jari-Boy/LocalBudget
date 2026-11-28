@@ -1,6 +1,11 @@
 # docs 更新履歴
 
-OKF v0.2 の `log.md`。docs 配下の追加・構造変更・方針変更を日付ごとに新しい順で記録する。個々の設計判断は [decisions.md](./decisions.md) に書く。
+OKF v0.2 の `log.md`。docs 配下の追加・構造変更・方針変更を日付ごとに新しい順で記録する。個々の設計判断は [decisions/](./decisions/index.md) に書く。
+
+## 2026-11-28
+
+* **Update**: [domain.md](./domain.md) と各ドメイン文書・[architecture.md](./architecture.md) を現行の姿に合わせて直した(計画Issue #310 フェーズ1)。簿記用語の見せ方の方針、軸の数、ドメインをまたぐ機能の入口表(2.1)、旧画面名、切れていたドメイン文書間のアンカーを直した。
+* **Creation**: 意思決定ログを「1決定=1ファイル」に分けた [decisions/](./decisions/index.md) を追加し、元の `decisions.md` を削除した(計画Issue #310 フェーズ2)。決定の本文は書き換えずに移し、置き換え関係(`supersedes`・`superseded_by` など)を frontmatter に足した。参照元(各文書・agents・コード内のコメント)は新しい場所へ張り替えた。
 
 ## 2026-11-25
 

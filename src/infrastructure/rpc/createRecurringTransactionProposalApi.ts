@@ -101,7 +101,7 @@ export interface RecurringTransactionProposalRpcApi {
  * 未確認の対象日を飛び越えて後の対象日だけを確認できてしまい、次回以降の評価の起点
  * (最新生成の期日)がその飛び越した対象日より後に進んでしまうことで、飛び越された
  * 対象日が仕訳化されないまま二度と提案されなくなる(evaluatorレビューAttempt 1で発見・
- * 再現された不具合、`docs/decisions.md`参照)。昇順のみ許可することで、この「実績からの
+ * 再現された不具合、`docs/decisions/2026-09-12-06.md`参照)。昇順のみ許可することで、この「実績からの
  * 逆算」方式でも取りこぼしが起こらないことを保証する。この検証はスケジュールに合致しない
  * dueDateの拒否も兼ねる(evaluateRecurringTransactionProposalsが返す候補にしか一致しない)。
  *
