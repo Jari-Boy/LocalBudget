@@ -124,6 +124,9 @@ function selectableLineIdsOfEntries(items: readonly SplittableLineEntry[], entry
  * 按分は割合のほか、均等・金額指定を選べる(金額指定は、純額が0円でないとき)。精算バッチは新規作成(既定)か既存から選ぶ。
  * 割勘仕訳の摘要は入力でき、空のときは既定の摘要を使う(新しい精算バッチを作るときは、その摘要がバッチ名になる)。
  * 記録する前に、作られる割勘仕訳のプレビュー(読み取り専用)を出す。
+ * 分担の設定は、候補の表の上に固定するバーにある(計画Issue #301)。1段目に選んだ行の数・合計・注記とエラー・選択の解除・記録、
+ * 2段目に按分の方法・分担相手・摘要・精算バッチを置き、左端の矢印で2段目をたためる(最初は開いている。たたんだ間は要約を出し、
+ * 摘要・分担相手のエラーで記録できなかったときは自動で開く)。バーの高さは測って、表の見出しの固定位置に足す。
  * 候補は仕訳150件ずつ「さらにN件表示」で出し、チェック済みの行が150件の外にあるときは、その行が見える件数まで広げる
  * (合計に含まれる行が見えなくならないため、計画Issue #268)。割勘履歴は履歴タブ(SplitHistoryTab)にある。
  */
@@ -141,6 +144,14 @@ export function SplitTab({
   /** 絞り込み欄(開いているときだけある)の要素と高さ。右のパネルの追従位置に足す(計画Issue #266) */
   const [filterElement, setFilterElement] = useState<HTMLDivElement | null>(null)
   const filterHeight = useElementHeight(filterElement)
+  /**
+   * 上部に固定する分担のバーの要素と高さ(計画Issue #301)。バーの高さは、分担相手の行・エラー・たたみ方で変わるため測る。
+   * 表の見出しの複製の固定位置(--sticky-bulk-h)に足し、バーの下に出す
+   */
+  const [barElement, setBarElement] = useState<HTMLDivElement | null>(null)
+  const barHeight = useElementHeight(barElement)
+  /** 分担のバーの2段目(入力欄)をたたんでいるか。最初は開いている */
+  const [barCollapsed, setBarCollapsed] = useState(false)
   const columns = useJournalLineTableColumns(COLUMN_WIDTHS_STORAGE_KEY)
   const { widths, widthsRef } = columns
   /** 候補の表のカード(画面に出ている表の幅を測るため) */
@@ -335,16 +346,14 @@ export function SplitTab({
     },
     scopeOf: (id) => sideByLineId.get(id),
   })
+  /** 選んだ行をすべて外す(バーの「選択を解除」・Esc) */
+  const clearSelection = () => {
+    setCheckedIds(new Set())
+    setFlash('')
+    setError('')
+  }
   // Esc で行のチェックをすべて外す
-  useEscapeToClear(
-    checkedIds.size > 0
-      ? () => {
-          setCheckedIds(new Set())
-          setFlash('')
-          setError('')
-        }
-      : null,
-  )
+  useEscapeToClear(checkedIds.size > 0 ? clearSelection : null)
 
   const changeFilter = (next: JournalEntryFilter) => {
     setDisplayLimit(SPLIT_LIST_PAGE_SIZE.candidate)
@@ -376,12 +385,15 @@ export function SplitTab({
 
   const commit = async () => {
     if (submitting || chosen.length === 0) return
+    // 摘要・分担相手のエラーは入力欄の近くに出すので、たたんでいたら開いて見せる
     if (partners.some((p) => p.targetId === null)) {
+      setBarCollapsed(false)
       setErrorTarget('partner')
       setError(ERROR_TEXT.counterpartyTargetRequired)
       return
     }
     if (memoInput.trim() === '') {
+      setBarCollapsed(false)
       setErrorTarget('memo')
       setError(ERROR_TEXT.memoRequired)
       return
@@ -404,6 +416,7 @@ export function SplitTab({
         }),
       )
       if (!result.ok) {
+        if (result.error === 'memoRequired' || result.error === 'counterpartyTargetRequired') setBarCollapsed(false)
         setErrorTarget(result.error === 'memoRequired' ? 'memo' : result.error === 'counterpartyTargetRequired' ? 'partner' : 'commit')
         setError(ERROR_TEXT[result.error])
         return
@@ -459,6 +472,14 @@ export function SplitTab({
       {resize}
     </SortableHeaderCell>
   )
+
+  /** たたんだバーの要約に出す、負担する人1人分の表記(割合なら「妻 50%」、金額指定なら「妻 ¥600」、均等なら名前だけ) */
+  const recapOfPartner = (row: ExpenseSplittingParticipantRow) => {
+    const name = partnerName(row)
+    if (mode === 'ratio') return `${name} ${row.ratioInput === '' ? 0 : row.ratioInput}%`
+    if (mode === 'amount') return `${name} ${formatCurrency(Number(row.amountInput) || 0, 'JPY')}`
+    return name
+  }
 
   const partnerName = (row: ExpenseSplittingParticipantRow) => {
     if (row.targetId === null) return '未選択'
@@ -566,7 +587,236 @@ export function SplitTab({
       )}
 
       {/* 候補の表(全幅)・分担・割勘仕訳のプレビューを縦に並べる。固定したタブの行と絞り込み欄の下に追従する高さを --sticky-head-extra で渡す(計画Issue #266) */}
-      <div className="split-settle__stack" style={{ '--sticky-head-extra': `${filterHeight}px` } as CSSProperties}>
+      <div
+        className="split-settle__stack"
+        style={{ '--sticky-head-extra': `${filterHeight}px`, '--sticky-bulk-h': `${barHeight}px` } as CSSProperties}
+      >
+        {/* 分担のバー(計画Issue #301)。候補の表の上に、タブの行・絞り込み欄の下へ固定する。1段目は概要と記録、2段目は分担の入力(矢印でたためる) */}
+        <div className="split-settle__bar" ref={setBarElement}>
+          <section aria-label="分担" className="split-settle__card split-settle__bar-card">
+            <div className="split-settle__bar-top">
+              <button
+                type="button"
+                className="split-settle__fold"
+                aria-expanded={!barCollapsed}
+                aria-controls="split-bar-fields"
+                aria-label={barCollapsed ? '分担の設定を開く' : '分担の設定をたたむ'}
+                title={barCollapsed ? '分担の設定を開く' : '分担の設定をたたむ'}
+                onClick={() => setBarCollapsed((v) => !v)}
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M3.5 6l4.5 4.5L12.5 6" />
+                </svg>
+              </button>
+              <div className="split-settle__bar-summary">
+            <div className="split-settle__totals">
+              <div className="split-settle__line">
+                <span>選んだ行</span>
+                <span className="split-settle__num">{`${chosen.length}行`}</span>
+              </div>
+              {creditTotal > 0 && (
+                <>
+                  <div className="split-settle__line split-settle__line--sub">
+                    <span>借方の合計</span>
+                    <span className="split-settle__num">{formatCurrency(debitTotal, 'JPY')}</span>
+                  </div>
+                  <div className="split-settle__line split-settle__line--sub">
+                    <span>貸方の合計(差し引き)</span>
+                    <span className="split-settle__num">{formatCurrency(-creditTotal, 'JPY')}</span>
+                  </div>
+                </>
+              )}
+              <div className="split-settle__line">
+                <span>選択した合計</span>
+                <span className="split-settle__num">{formatCurrency(net, 'JPY')}</span>
+              </div>
+            </div>
+
+                {/* たたんでいる間は、2段目の入力の中身を1行の要約で出す(開かなくても、何を設定したか分かる) */}
+                {barCollapsed && (
+                  <span className="split-settle__bar-recap">
+                    {`${MODE_LABEL[mode]}: ${partners.map((p) => recapOfPartner(p)).join('・')}`}
+                  </span>
+                )}
+                {barCollapsed && (
+                  <span className={`split-settle__bar-recap${memoInput.trim() === '' ? ' split-settle__bar-recap--warn' : ''}`}>
+                    {memoInput.trim() === '' ? '摘要が未入力です' : `摘要「${memoInput.trim()}」`}
+                  </span>
+                )}
+                {totalsMismatch && (
+                  <p role="status" className="split-settle__note split-settle__note--warn">
+                    {mode === 'ratio'
+                      ? `負担割合の合計を100%にしてください(いま${ratioSum}%)。`
+                      : `負担額の合計を${formatCurrency(Math.abs(net), 'JPY')}にしてください(いま${formatCurrency(amountSum, 'JPY')})。`}
+                  </p>
+                )}
+                {planError !== null && (
+                  <p role="status" className="split-settle__note">
+                    {ERROR_TEXT[planError]}
+                  </p>
+                )}
+                {error !== '' && errorTarget === 'commit' && (
+                  <p role="alert" className="split-settle__error">
+                    {error}
+                  </p>
+                )}
+                {flash !== '' && <span className="split-settle__flash">{flash}</span>}
+              </div>
+              <button type="button" className="split-settle__btn split-settle__btn--small" disabled={chosen.length === 0} onClick={clearSelection}>
+                選択を解除
+              </button>
+              <button
+                type="button"
+                className="split-settle__btn split-settle__btn--small split-settle__btn--primary"
+                disabled={submitting || chosen.length === 0 || totalsMismatch}
+                onClick={() => void commit()}
+              >
+                割勘を記録
+              </button>
+            </div>
+
+            {!barCollapsed && (
+            <div id="split-bar-fields" className="split-settle__panel-grid split-settle__bar-fields">
+              <div className="split-settle__field split-settle__field--mode">
+                <label className="split-settle__label" htmlFor="split-mode">
+                  按分の方法
+                </label>
+                <select
+                  id="split-mode"
+                  className="split-settle__control"
+                  aria-label="按分の方法"
+                  value={mode}
+                  onChange={(e) => changeMode(e.target.value as ExpenseSplittingAllocationMode)}
+                >
+                  {(['ratio', 'equal', 'amount'] as const).map((m) => (
+                    <option key={m} value={m} disabled={m === 'amount' && amountModeBlocked}>
+                      {MODE_LABEL[m]}
+                    </option>
+                  ))}
+                </select>
+                {amountModeBlocked && (
+                  <span className="split-settle__note">借方と貸方が差し引きで0円のため、金額は指定できません。</span>
+                )}
+              </div>
+
+              <div className="split-settle__partners">
+                <span className="split-settle__label">誰がどのくらい負担するか</span>
+                {partners.map((row) => (
+                  <div key={row.key} className="split-settle__partner">
+                    <div className="split-settle__partner-pick">
+                      <TreeSelect
+                        label="分担相手"
+                        categories={categoriesFor(row)}
+                        value={toPartnerValue(row)}
+                        onChange={(value) => patchPartner(row.key, parsePartnerValue(value))}
+                        placeholder="相手を選ぶ"
+                        onCreate={() => setCreateForRowKey(row.key)}
+                        createLabel="取引先を追加"
+                      />
+                    </div>
+                    {mode === 'ratio' && (
+                      <>
+                        <input
+                          className="split-settle__control split-settle__control--narrow"
+                          inputMode="numeric"
+                          aria-label={`${partnerName(row)}の負担割合(%)`}
+                          value={row.ratioInput}
+                          onChange={(e) => patchPartner(row.key, { ratioInput: e.target.value })}
+                        />
+                        <span className="split-settle__unit">%</span>
+                      </>
+                    )}
+                    {mode === 'amount' && (
+                      <input
+                        className="split-settle__control split-settle__control--amount"
+                        inputMode="numeric"
+                        aria-label={`${partnerName(row)}の負担額を入力`}
+                        value={row.amountInput}
+                        onChange={(e) => patchPartner(row.key, { amountInput: e.target.value })}
+                      />
+                    )}
+                    {/* ×は入力欄のすぐ右に置く。負担額の表示欄より前に置くことで、金額が出ても位置が動かない。負担額が無いときは表示欄の幅を取らない */}
+                    <button
+                      type="button"
+                      className="split-settle__icon-btn"
+                      aria-label={`${partnerName(row)}を分担相手から外す`}
+                      disabled={partners.length <= 1}
+                      onClick={() => {
+                        setRatiosTouched(false)
+                        setAmountsTouched(false)
+                        setPartners((prev) => prev.filter((p) => p.key !== row.key))
+                      }}
+                    >
+                      ×
+                    </button>
+                    <span className={`split-settle__num split-settle__share${burdenOf(row.key) === null ? ' split-settle__share--empty' : ''}`}>
+                      {burdenOf(row.key) === null ? '' : formatCurrency(burdenOf(row.key) ?? 0, 'JPY')}
+                    </span>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="split-settle__add"
+                  onClick={() => {
+                    setRatiosTouched(false)
+                    setAmountsTouched(false)
+                    setPartners((prev) => [
+                      ...prev,
+                      { key: nextKey.current++, kind: 'householdMember', targetId: null, ratioInput: '', amountInput: '' },
+                    ])
+                    setFlash('')
+                  }}
+                >
+                  + 分担相手を追加
+                </button>
+                {error !== '' && errorTarget === 'partner' && (
+                  <p role="alert" className="split-settle__error">
+                    {error}
+                  </p>
+                )}
+              </div>
+
+              <div className="split-settle__field split-settle__field--memo">
+                <label className="split-settle__label" htmlFor="split-memo">
+                  摘要
+                </label>
+                <input
+                  id="split-memo"
+                  className="split-settle__control"
+                  required
+                  aria-required="true"
+                  value={memoInput}
+                  placeholder={chosen.length === 0 ? '' : memoExample(chosen)}
+                  onChange={(e) => {
+                    setMemoInput(e.target.value)
+                    setFlash('')
+                  }}
+                />
+                {error !== '' && errorTarget === 'memo' && (
+                  <p role="alert" className="split-settle__error">
+                    {error}
+                  </p>
+                )}
+              </div>
+
+              <div className="split-settle__field split-settle__field--batch">
+                <span className="split-settle__label">精算バッチ</span>
+                {/* 「新しいバッチを作成」は操作ではなく既定の選択状態(記録するときに作る)なので、先頭に固定した項目にする */}
+                <BatchSelect
+                  label="精算バッチ"
+                  batches={data.batches}
+                  value={String(batchId)}
+                  leadingOptions={NEW_BATCH_OPTIONS}
+                  onChange={(value) => setBatchId(value === 'new' ? 'new' : Number(value))}
+                />
+                {/* 新しいバッチを作るときだけ、摘要がバッチの名前になる */}
+                {batchId === 'new' && <span className="split-settle__note">摘要がバッチの名前になります。</span>}
+              </div>
+            </div>
+            )}
+          </section>
+        </div>
+
         <section ref={lineCardRef} aria-label="割勘する行" className="split-settle__card split-settle__card--table journal-line-table">
           <p className="split-settle__note split-settle__note--pad">
             仕訳の明細行を選んで割勘します。費用・収益の行(借方・貸方とも)だけ選べます。割勘済みの行は表示しません。借方と貸方を
@@ -649,201 +899,6 @@ export function SplitTab({
             pageSize={SPLIT_LIST_PAGE_SIZE.candidate}
             onMore={() => setDisplayLimit(nextDisplayLimit(shownCount, SPLIT_LIST_PAGE_SIZE.candidate))}
           />
-        </section>
-
-        <section aria-label="分担" className="split-settle__card split-settle__panel-wide">
-          <h2 className="split-settle__h2">分担</h2>
-          <div className="split-settle__totals">
-            <div className="split-settle__line">
-              <span>選んだ行</span>
-              <span className="split-settle__num">{`${chosen.length}行`}</span>
-            </div>
-            {creditTotal > 0 && (
-              <>
-                <div className="split-settle__line split-settle__line--sub">
-                  <span>借方の合計</span>
-                  <span className="split-settle__num">{formatCurrency(debitTotal, 'JPY')}</span>
-                </div>
-                <div className="split-settle__line split-settle__line--sub">
-                  <span>貸方の合計(差し引き)</span>
-                  <span className="split-settle__num">{formatCurrency(-creditTotal, 'JPY')}</span>
-                </div>
-              </>
-            )}
-            <div className="split-settle__line">
-              <span>選択した合計</span>
-              <span className="split-settle__num">{formatCurrency(net, 'JPY')}</span>
-            </div>
-          </div>
-
-          <div className="split-settle__panel-grid">
-            <div className="split-settle__field split-settle__field--mode">
-              <label className="split-settle__label" htmlFor="split-mode">
-                按分の方法
-              </label>
-              <select
-                id="split-mode"
-                className="split-settle__control"
-                aria-label="按分の方法"
-                value={mode}
-                onChange={(e) => changeMode(e.target.value as ExpenseSplittingAllocationMode)}
-              >
-                {(['ratio', 'equal', 'amount'] as const).map((m) => (
-                  <option key={m} value={m} disabled={m === 'amount' && amountModeBlocked}>
-                    {MODE_LABEL[m]}
-                  </option>
-                ))}
-              </select>
-              {amountModeBlocked && (
-                <span className="split-settle__note">借方と貸方が差し引きで0円のため、金額は指定できません。</span>
-              )}
-            </div>
-
-            <div className="split-settle__partners">
-              <span className="split-settle__label">誰がどのくらい負担するか</span>
-              {partners.map((row) => (
-                <div key={row.key} className="split-settle__partner">
-                  <div className="split-settle__partner-pick">
-                    <TreeSelect
-                      label="分担相手"
-                      categories={categoriesFor(row)}
-                      value={toPartnerValue(row)}
-                      onChange={(value) => patchPartner(row.key, parsePartnerValue(value))}
-                      placeholder="相手を選ぶ"
-                      onCreate={() => setCreateForRowKey(row.key)}
-                      createLabel="取引先を追加"
-                    />
-                  </div>
-                  {mode === 'ratio' && (
-                    <>
-                      <input
-                        className="split-settle__control split-settle__control--narrow"
-                        inputMode="numeric"
-                        aria-label={`${partnerName(row)}の負担割合(%)`}
-                        value={row.ratioInput}
-                        onChange={(e) => patchPartner(row.key, { ratioInput: e.target.value })}
-                      />
-                      <span className="split-settle__unit">%</span>
-                    </>
-                  )}
-                  {mode === 'amount' && (
-                    <input
-                      className="split-settle__control split-settle__control--amount"
-                      inputMode="numeric"
-                      aria-label={`${partnerName(row)}の負担額を入力`}
-                      value={row.amountInput}
-                      onChange={(e) => patchPartner(row.key, { amountInput: e.target.value })}
-                    />
-                  )}
-                  {/* ×は入力欄のすぐ右に置く。負担額の表示欄より前に置くことで、金額が出ても位置が動かない。負担額が無いときは表示欄の幅を取らない */}
-                  <button
-                    type="button"
-                    className="split-settle__icon-btn"
-                    aria-label={`${partnerName(row)}を分担相手から外す`}
-                    disabled={partners.length <= 1}
-                    onClick={() => {
-                      setRatiosTouched(false)
-                      setAmountsTouched(false)
-                      setPartners((prev) => prev.filter((p) => p.key !== row.key))
-                    }}
-                  >
-                    ×
-                  </button>
-                  <span className={`split-settle__num split-settle__share${burdenOf(row.key) === null ? ' split-settle__share--empty' : ''}`}>
-                    {burdenOf(row.key) === null ? '' : formatCurrency(burdenOf(row.key) ?? 0, 'JPY')}
-                  </span>
-                </div>
-              ))}
-              <button
-                type="button"
-                className="split-settle__add"
-                onClick={() => {
-                  setRatiosTouched(false)
-                  setAmountsTouched(false)
-                  setPartners((prev) => [
-                    ...prev,
-                    { key: nextKey.current++, kind: 'householdMember', targetId: null, ratioInput: '', amountInput: '' },
-                  ])
-                  setFlash('')
-                }}
-              >
-                + 分担相手を追加
-              </button>
-              {error !== '' && errorTarget === 'partner' && (
-                <p role="alert" className="split-settle__error">
-                  {error}
-                </p>
-              )}
-            </div>
-
-            <div className="split-settle__field split-settle__field--memo">
-              <label className="split-settle__label" htmlFor="split-memo">
-                摘要
-              </label>
-              <input
-                id="split-memo"
-                className="split-settle__control"
-                required
-                aria-required="true"
-                value={memoInput}
-                placeholder={chosen.length === 0 ? '' : memoExample(chosen)}
-                onChange={(e) => {
-                  setMemoInput(e.target.value)
-                  setFlash('')
-                }}
-              />
-              {error !== '' && errorTarget === 'memo' && (
-                <p role="alert" className="split-settle__error">
-                  {error}
-                </p>
-              )}
-            </div>
-
-            <div className="split-settle__field split-settle__field--batch">
-              <span className="split-settle__label">精算バッチ</span>
-              {/* 「新しいバッチを作成」は操作ではなく既定の選択状態(記録するときに作る)なので、先頭に固定した項目にする */}
-              <BatchSelect
-                label="精算バッチ"
-                batches={data.batches}
-                value={String(batchId)}
-                leadingOptions={NEW_BATCH_OPTIONS}
-                onChange={(value) => setBatchId(value === 'new' ? 'new' : Number(value))}
-              />
-              {/* 新しいバッチを作るときだけ、摘要がバッチの名前になる */}
-              {batchId === 'new' && <span className="split-settle__note">摘要がバッチの名前になります。</span>}
-            </div>
-          </div>
-
-          <div className="split-settle__commit">
-            <div className="split-settle__commit-messages">
-              {totalsMismatch && (
-                <p role="status" className="split-settle__note split-settle__note--warn">
-                  {mode === 'ratio'
-                    ? `負担割合の合計を100%にしてください(いま${ratioSum}%)。`
-                    : `負担額の合計を${formatCurrency(Math.abs(net), 'JPY')}にしてください(いま${formatCurrency(amountSum, 'JPY')})。`}
-                </p>
-              )}
-              {planError !== null && (
-                <p role="status" className="split-settle__note">
-                  {ERROR_TEXT[planError]}
-                </p>
-              )}
-              {error !== '' && errorTarget === 'commit' && (
-                <p role="alert" className="split-settle__error">
-                  {error}
-                </p>
-              )}
-              {flash !== '' && <span className="split-settle__flash">{flash}</span>}
-            </div>
-            <button
-              type="button"
-              className="split-settle__btn split-settle__btn--primary"
-              disabled={submitting || chosen.length === 0 || totalsMismatch}
-              onClick={() => void commit()}
-            >
-              割勘を記録
-            </button>
-          </div>
         </section>
 
         {previews.length > 0 && (

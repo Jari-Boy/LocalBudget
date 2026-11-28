@@ -663,11 +663,128 @@
   color: var(--color-text-muted);
 }
 
-.split-settle__panel-wide {
-  padding: 18px;
+/*
+ * 分担のバー(計画Issue #301)。候補の表の上に固定する。タブの行(--sticky-head-h)と絞り込み欄(--sticky-head-extra)の下。
+ * 表の見出しの複製は、さらにその下に固定する(.split-settle__stack が --sticky-bulk-h にバーの高さを測って入れ、複製の固定位置に足される)。
+ * バーの高さは、分担相手の行・エラー・たたみ方で変わるので、固定値ではなく測った値を使う。
+ */
+.split-settle__bar {
+  position: sticky;
+  top: calc(var(--sticky-head-h, 0px) + var(--sticky-head-extra, 0px));
+  z-index: 15;
+  background: var(--color-bg);
+  /*
+   * バーと表の見出しの複製との間(.split-settle__stack の gap、16px)にも背景を敷く。敷かないと、固定中は
+   * その隙間から、スクロールで通り過ぎる表の行が透けて見える。余白を足した分は、負のマージンで相殺して、並びは変えない(計画Issue #300と同じ)。
+   */
+  padding-bottom: 16px;
+  margin-bottom: -16px;
+}
+
+.split-settle__bar-card {
+  border: 2px solid var(--color-accent);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+}
+
+/* 1段目: 矢印・概要(選んだ行の数と合計・注記・エラー)・選択を解除・記録。メッセージが増えたら概要の中で折り返す */
+.split-settle__bar-top {
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 4px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.split-settle__bar-top + .split-settle__bar-fields {
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.split-settle__bar-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 14px;
+  row-gap: 2px;
+  font-size: var(--font-size-xs);
+}
+
+.split-settle__bar-summary p {
+  margin: 0;
+}
+
+/* たたんだときの要約(按分の方法・分担相手・摘要) */
+.split-settle__bar-recap {
+  color: var(--color-text-muted);
+}
+
+.split-settle__bar-recap--warn {
+  color: var(--color-warning-text);
+}
+
+/* 折りたたみの矢印。枠なしの小さなボタンで、ホバーしたときだけ背景を出す。たたむと右向きに回る */
+.split-settle__fold {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin-left: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.split-settle__fold:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.split-settle__fold:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.split-settle__fold svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s;
+}
+
+.split-settle__fold[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .split-settle__fold svg {
+    transition: none;
+  }
+}
+
+/* 2段目: 分担の入力。バーの中なので、パネルのときより詰める */
+.split-settle__bar-fields {
+  padding: 8px 12px 10px;
+  gap: 8px 20px;
+}
+
+/* バーの中の分担相手は、横に並べて折り返す(行を縦に積むと、バーが高くなって表を隠すため) */
+.split-settle__bar-fields .split-settle__partners {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.split-settle__bar-fields .split-settle__partners > .split-settle__label,
+.split-settle__bar-fields .split-settle__partners > p {
+  flex: 0 0 100%;
+  margin: 0;
 }
 
 /* 選んだ行の数・借方/貸方の合計・選択した合計・負担の合計。ラベルと値を横に並べ、幅が足りなければ折り返して、高さを節約する
@@ -732,20 +849,6 @@
   align-self: flex-start;
 }
 
-.split-settle__commit {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 24px;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.split-settle__commit .split-settle__line--total {
-  border-top: 0;
-  padding-top: 0;
-  gap: 16px;
-}
-
 .split-settle__preview-head {
   display: flex;
   flex-wrap: wrap;
@@ -765,20 +868,6 @@
 
 .split-settle__preview-table tbody tr {
   cursor: default;
-}
-
-/* 「割勘を記録」ボタンの隣に、合計の注記・記録のエラー・記録の完了の表示を並べる(ボタンの左側。幅が足りなければ折り返す) */
-.split-settle__commit-messages {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  min-width: 0;
-  text-align: right;
-}
-
-.split-settle__commit-messages p {
-  margin: 0;
 }
 
 /* 精算バッチのクローズ(計画Issue #249) */
