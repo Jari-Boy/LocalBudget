@@ -272,12 +272,6 @@ interface ConfirmResult {
 }
 
 /**
- * 確定の結果(計画Issue #231 フェーズ3)。blocked=確定の前提を満たせず何もしなかった、done=全件を確定した、
- * partial=一部だけ確定した(doneは確定済みになった行の番号を含む、確定後の全体)
- */
-type ConfirmOutcome = { status: 'blocked' } | { status: 'done' } | { status: 'partial'; done: Set<number> }
-
-/**
  * 明細取込画面(計画Issue #151)。旧アップロード画面とレビュー画面を1画面にまとめ、取込先とCSVを
  * 選ぶと同じ画面に1件1行で並べる。取引先の推定・相手科目のサジェスト・重複防止・確定版の候補・
  * 残高照合(docs/domain/statement-import.md 1.5・1.6)は従来どおり。選んだ行へ一括設定でき、
@@ -524,7 +518,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
 
   // 未保存の警告(計画Issue #193、#293で編集の有無を問わない判定に変更)。取り込める行(重複・取り込まない行を除く)が、
   // 確定も一時保存もされずに残っているとき。CSVを選んだ直後(未編集)でも出す。
-  // 「保存して移動」は、確定できる行を確定する(確定できない行が残るときは移動しない)
   // 一時保存した状態と同じ行は、失うものが無いので対象外(計画Issue #231 フェーズ3)
   const hasUnsavedEdits =
     session !== null &&
@@ -1168,11 +1161,11 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
    * 一時保存を保存する(計画Issue #231 フェーズ3)。CSVの生データ・定義・取込先・取り込むファイルのチェック・誰の明細か・
    * 初期値から変えた行の入力を、取込先の科目ごとの一時保存へ書く。確定はしない。
    * 別の取込の一時保存が同じ取込先にあるときは、上書きの確認を出す(再開した一時保存への保存は確認なし)。
-   * 保存できたときだけtrueを返す。doneは、直前に確定した行(まだ画面の状態に反映前)を除くための指定
+   * 保存できたときだけtrueを返す
    */
-  async function saveDraft(options: { done?: ReadonlySet<number> } = {}): Promise<boolean> {
+  async function saveDraft(): Promise<boolean> {
     if (!session) return false
-    const done = options.done ?? session.done
+    const done = session.done
     const account = session.targetAccount
     try {
       const existing = await Promise.resolve(statementImportDraftRepository.findByAccountId(account.id))
@@ -1815,19 +1808,19 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
   }
 
   /** 確定(docs/domain/statement-import.md 1.5手順7)。1件が失敗しても残りの確定を続ける(継続処理方式) */
-  async function handleConfirm(options: { all?: boolean } = {}): Promise<ConfirmOutcome> {
+  async function handleConfirm(): Promise<void> {
     confirmMetaRef.current = undefined
     return runInHistoryGroup(
       history,
       'statementImport.confirm',
-      () => confirmImpl(options.all === true),
+      () => confirmImpl(),
       () => confirmMetaRef.current,
     )
   }
 
-  /** allがtrueなら、絞り込みに関わらず全件が対象。通常は、絞り込み中は表示中の行だけ(計画Issue #258) */
-  async function confirmImpl(all: boolean): Promise<ConfirmOutcome> {
-    if (!session || statementOwnerId === null) return { status: 'blocked' }
+  /** 絞り込み中は表示中の行だけが対象(計画Issue #258) */
+  async function confirmImpl(): Promise<void> {
+    if (!session || statementOwnerId === null) return
     setBusy(true)
     setError('')
     setDoneMessage('')
@@ -1841,7 +1834,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     // 同じ取込の行は同じ取込日時にそろえる(残高の基準点の並び順を取込単位で判定するため、計画Issue #205)
     const importedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
 
-    for (const index of all ? importable : confirmTargets) {
+    for (const index of confirmTargets) {
       const { record, externalId } = records[index]
       const state = session.rows[index]
       // 相手科目が未入力の行は、まだ入力していないだけなのでエラーにせず、確定の対象から外して表に残す(計画Issue #263)
@@ -1934,7 +1927,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       setConfirmResult({ succeeded: succeeded.size, unfilled, failed: failedCount })
     }
     setBusy(false)
-    return allConfirmed ? { status: 'done' } : { status: 'partial', done: nextDone }
   }
 
   // 残高照合(docs/domain/reconciliation.md 1.5)。確定版として置き換える旧仕訳と、取り込まない行は除く。
