@@ -8,9 +8,10 @@ export interface UnsavedEditGuardOptions {
   dirty: boolean
   /**
    * 編集内容を保存する。保存できて移動してよいときだけtrueを返す。検証エラーなどで保存できなかった
-   * ときはfalse(エラーは画面側が表示する)。他のダイアログで確認を続ける場合もfalseにして移動を止める
+   * ときはfalse(エラーは画面側が表示する)。他のダイアログで確認を続ける場合もfalseにして移動を止める。
+   * 省略すると「保存して移動」を出さない(extraActionだけを保存の操作にする。計画Issue #293)
    */
-  save: () => Promise<boolean>
+  save?: () => Promise<boolean>
   /** ダイアログに、既定の文言のあとに出す説明(計画Issue #231 フェーズ3) */
   description?: string
   /**
@@ -72,7 +73,7 @@ export function useUnsavedEditGuard({ dirty, save, description, extraAction }: U
         setPending(null)
         pending()
       }}
-      onSave={() => void saveAndLeave(save)}
+      onSave={save && (() => void saveAndLeave(save))}
       description={description}
       extraAction={extraAction && { label: extraAction.label, onClick: () => void saveAndLeave(extraAction.run) }}
     />

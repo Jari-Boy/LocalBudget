@@ -30,7 +30,7 @@ function Panel({
   extraAction,
 }: {
   dirty: boolean
-  save: () => Promise<boolean>
+  save?: () => Promise<boolean>
   description?: string
   extraAction?: { label: string; run: () => Promise<boolean> }
 }) {
@@ -50,11 +50,13 @@ function Row({ onSelect }: { onSelect: () => void }) {
 function renderScreen(props: {
   dirty: boolean
   save?: () => Promise<boolean>
+  /** trueなら、saveを渡さない(「保存して移動」を出さない) */
+  withoutSave?: boolean
   onSelect?: () => void
   description?: string
   extraAction?: { label: string; run: () => Promise<boolean> }
 }) {
-  const save = props.save ?? (async () => true)
+  const save = props.withoutSave ? undefined : (props.save ?? (async () => true))
   const onSelect = props.onSelect ?? (() => {})
   return render(
     <MemoryRouter initialEntries={['/a']}>
@@ -254,5 +256,17 @@ describe('useUnsavedEditGuard: 説明文と追加の保存操作(計画Issue #23
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(screen.getByTestId('where')).toHaveTextContent('/a')
+  })
+
+  it('保存の操作(save)を渡さないときは、「保存して移動」を出さず、追加の操作だけを保存の操作として出す(計画Issue #293)', async () => {
+    const run = vi.fn(async () => true)
+    renderScreen({ dirty: true, withoutSave: true, extraAction: { label: '一時保存して移動', run } })
+    fireEvent.click(screen.getByRole('link', { name: 'b' }))
+
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['キャンセル', '破棄して移動', '一時保存して移動', '行'])
+    fireEvent.click(screen.getByRole('button', { name: '一時保存して移動' }))
+
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/b'))
+    expect(run).toHaveBeenCalledTimes(1)
   })
 })

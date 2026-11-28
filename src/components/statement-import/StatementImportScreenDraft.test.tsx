@@ -6,7 +6,7 @@
  * 保存したあとは未保存の警告が出ないこと、開始状態の一覧から再開するとCSVを選び直さずに続きから始められること(保存した入力が
  * キーワードルールの推定より優先され、保存後に確定した行は重複として自動で除外され、削除された参照先の入力は戻さず通知する)、
  * 破棄・全行の確定で一時保存が消えること(部分確定では残る)、保存時の定義で読めないときの案内と定義の作り直し、
- * 未保存の警告の「保存して移動」(入力済みを確定し、残りを一時保存)と「一時保存して移動」(何も確定せず保存)を確認する。
+ * 未保存の警告の「一時保存して移動」(何も確定せず保存)と「破棄して移動」を確認する(「保存して移動」は計画Issue #293で廃止)。
  * 外部依存: sql.js(ネットワークアクセスなし)。
  */
 import '@testing-library/jest-dom/vitest'
@@ -577,10 +577,10 @@ describe('保存時の定義で読めないとき', () => {
   })
 })
 
-describe('未保存の警告(保存して移動 / 一時保存して移動)', () => {
+describe('未保存の警告(一時保存して移動 / 破棄して移動)', () => {
   const leave = () => fireEvent.click(screen.getByRole('link', { name: '他の画面へ' }))
 
-  it('警告に、入力済みの件数と確定できない件数を含めて、「保存して移動」と「一時保存して移動」の違いを説明する', async () => {
+  it('警告のボタンは「キャンセル」「破棄して移動」「一時保存して移動」だけで、「保存して移動」と件数の説明は出さない(計画Issue #293)', async () => {
     renderScreen()
     await chooseCsv(CSV3)
     pick(rowOf(/スーパー/), '相手科目', '食費')
@@ -588,10 +588,8 @@ describe('未保存の警告(保存して移動 / 一時保存して移動)', ()
     leave()
 
     const dialog = within(screen.getByRole('dialog', { name: '未保存の変更があります' }))
-    expect(dialog.getByText(/入力済みの1件を確定し、確定できない2件は一時保存してから移動します/)).toBeInTheDocument()
-    expect(dialog.getByText(/何も確定せず、3件の入力を一時保存してから移動します/)).toBeInTheDocument()
-    expect(dialog.getByRole('button', { name: '一時保存して移動' })).toBeInTheDocument()
-    expect(dialog.getByRole('button', { name: '保存して移動' })).toBeInTheDocument()
+    expect(dialog.getAllByRole('button').map((b) => b.textContent)).toEqual(['キャンセル', '破棄して移動', '一時保存して移動'])
+    expect(dialog.queryByText(/件を確定し/)).not.toBeInTheDocument()
   })
 
   it('「一時保存して移動」は、何も確定せず、すべての入力を一時保存して移動する', async () => {
@@ -608,37 +606,6 @@ describe('未保存の警告(保存して移動 / 一時保存して移動)', ()
     expect(drafts.findSummaries()[0]).toMatchObject({ totalRows: 3, filledRows: 1 })
   })
 
-  it('「保存して移動」は、入力済みの行を確定し、確定できない行を一時保存してから移動する', async () => {
-    renderScreen()
-    await chooseCsv(CSV3)
-    pick(rowOf(/スーパー/), '相手科目', '食費')
-
-    leave()
-    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
-
-    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/other'))
-    expect(userEntries()).toHaveLength(1)
-    const [summary] = drafts.findSummaries()
-    expect(summary).toMatchObject({ totalRows: 2, filledRows: 0 })
-  })
-
-  it('「保存して移動」で全行を確定できたときは、一時保存は作らず、再開していた一時保存は削除する', async () => {
-    renderScreen()
-    await chooseCsv(CSV3)
-    pick(rowOf(/スーパー/), '相手科目', '食費')
-    fireEvent.click(saveButtons()[0])
-    await screen.findByText(/一時保存しました/)
-    pick(rowOf(/ランチ/), '相手科目', '食費')
-    pick(rowOf(/家賃/), '相手科目', '食費')
-
-    leave()
-    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
-
-    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/other'))
-    expect(userEntries()).toHaveLength(3)
-    expect(drafts.findSummaries()).toEqual([])
-  })
-
   it('「破棄して移動」は、何も保存せず・確定せずに移動する', async () => {
     renderScreen()
     await chooseCsv(CSV3)
@@ -650,22 +617,6 @@ describe('未保存の警告(保存して移動 / 一時保存して移動)', ()
     expect(screen.getByTestId('where')).toHaveTextContent('/other')
     expect(drafts.findSummaries()).toEqual([])
     expect(userEntries()).toHaveLength(0)
-  })
-
-  it('確定に関するエラー(誰の明細か未選択)で確定できないときは、移動せず、一時保存も作らない', async () => {
-    renderScreen()
-    fireEvent.change(await screen.findByLabelText('CSVを選択'), {
-      target: { files: [new File([CSV3], 'statement.csv', { type: 'text/csv' })] },
-    })
-    await screen.findByText(/statement\.csv を読み込み済み/)
-    pick(rowOf(/スーパー/), '相手科目', '食費')
-
-    leave()
-    fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
-
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: '未保存の変更があります' })).not.toBeInTheDocument())
-    expect(screen.getByTestId('where')).toHaveTextContent('/master/here')
-    expect(drafts.findSummaries()).toEqual([])
   })
 })
 

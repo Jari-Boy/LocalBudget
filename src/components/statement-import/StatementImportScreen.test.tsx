@@ -8,7 +8,7 @@
  * (対象外の件数)、確定版の候補の置き換え、残高照合、確定、確定後に続けて次のCSVを
  * 取り込めることを、sql.jsのNode実装(createTestDatabase)を使って確認する。
  * CSVを選ぶ前の画面中央の「CSVを選択」ボタンと、編集中に新しいCSVを選ぼうとしたときの警告(計画Issue #193)、
- * 編集中に他の画面へ移ろうとしたときの未保存の警告(保存して移動・破棄して移動・キャンセル・設定オフ、計画Issue #193)も確認する。
+ * 編集中に他の画面へ移ろうとしたときの未保存の警告(一時保存して移動・破棄して移動・キャンセル・設定オフ、計画Issue #193・#293)も確認する。
  * 計画Issue #259: 相手科目・取引先それぞれのキーワードのアイコンとポップアップ(一致の強調・入力を終えたときと閉じる操作での保存・
  * キーワードごとの「N行に適用」)と、摘要の自動学習をしないことも確認する。
  * 外部依存: sql.js(ネットワークアクセスなし)。
@@ -1042,7 +1042,7 @@ describe('StatementImportScreen', () => {
       expect(userEntries()).toHaveLength(0)
     })
 
-    it('「保存して移動」では、行を確定してからファイル選択を開く', async () => {
+    it('「一時保存して移動」では、何も確定せず一時保存してからファイル選択を開く(計画Issue #293)', async () => {
       makeMapping()
       renderScreen()
       await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
@@ -1050,10 +1050,11 @@ describe('StatementImportScreen', () => {
       pick(rowOf(/スーパー/), '相手科目', '食費')
 
       clickChoose()
-      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+      fireEvent.click(screen.getByRole('button', { name: '一時保存して移動' }))
 
       await waitFor(() => expect(openPicker).toHaveBeenCalledTimes(1))
-      expect(userEntries()).toHaveLength(1)
+      expect(userEntries()).toHaveLength(0)
+      expect(new SqlJsStatementImportDraftRepository(db).findSummaries()).toHaveLength(1)
     })
   })
 
@@ -1117,21 +1118,20 @@ describe('StatementImportScreen', () => {
       expect(userEntries()).toHaveLength(0)
     })
 
-    it('「保存して移動」では、行を確定してから移動する', async () => {
+    it('警告は「キャンセル」「破棄して移動」「一時保存して移動」の3つだけで、「保存して移動」と長い説明は出さない(計画Issue #293)', async () => {
       makeMapping()
       renderScreen()
       await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
 `)
-      pick(rowOf(/スーパー/), '相手科目', '食費')
 
       leave()
-      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
 
-      await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/other'))
-      expect(userEntries()).toHaveLength(1)
+      const dialog = within(screen.getByRole('dialog', { name: '未保存の変更があります' }))
+      expect(dialog.getAllByRole('button').map((b) => b.textContent)).toEqual(['キャンセル', '破棄して移動', '一時保存して移動'])
+      expect(dialog.queryByText(/確定してから移動/)).not.toBeInTheDocument()
     })
 
-    it('確定できない行(相手科目が未選択)が残るときは、「保存して移動」で、入力済みの行を確定し、残りの行を一時保存して移動する(計画Issue #231 フェーズ3)', async () => {
+    it('「一時保存して移動」では、何も確定せず入力を一時保存してから移動する(計画Issue #231 フェーズ3、#293)', async () => {
       makeMapping()
       renderScreen()
       await chooseCsv(`${HEADER}2026/10/05,スーパー,-3000,97000
@@ -1140,10 +1140,10 @@ describe('StatementImportScreen', () => {
       pick(rowOf(/スーパー/), '相手科目', '食費')
 
       leave()
-      fireEvent.click(screen.getByRole('button', { name: '保存して移動' }))
+      fireEvent.click(screen.getByRole('button', { name: '一時保存して移動' }))
 
       await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/other'))
-      expect(userEntries()).toHaveLength(1)
+      expect(userEntries()).toHaveLength(0)
       expect(new SqlJsStatementImportDraftRepository(db).findSummaries()).toHaveLength(1)
     })
 

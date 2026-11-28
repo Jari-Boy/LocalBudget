@@ -534,26 +534,9 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       done: session.done,
       savedStates: draftSavedStates.current,
     })
-  // 警告の説明に出す件数: 取り込み対象の全件と、そのうち確定できる(入力済みの)件数
-  const guardCounts = { ready: 0, total: 0 }
-  if (session) {
-    session.review.records.forEach((record, index) => {
-      if (session.done.has(index)) return
-      const status = rowStatus(record, session.rows[index])
-      if (status === 'duplicate' || status === 'skipped') return
-      guardCounts.total++
-      if (status === 'new') guardCounts.ready++
-    })
-  }
+  // 保存の操作は「一時保存して移動」だけ(何も確定せず、すべての入力を一時保存してから移動する。計画Issue #293で「保存して移動」と説明文を廃止)
   const unsavedDialog = useUnsavedEditGuard({
     dirty: hasUnsavedEdits,
-    // 「保存して移動」: 入力済みの行を確定し、確定できない行は一時保存してから移動する(計画Issue #231 フェーズ3)
-    save: () => confirmAndSaveDraft(),
-    description:
-      guardCounts.total > guardCounts.ready
-        ? t('draftGuardDescription', { ready: guardCounts.ready, rest: guardCounts.total - guardCounts.ready, total: guardCounts.total })
-        : t('draftGuardDescriptionAllReady', { ready: guardCounts.ready, total: guardCounts.total }),
-    // 「一時保存して移動」: 何も確定せず、すべての入力を一時保存してから移動する
     extraAction: { label: t('draftSaveAndLeave'), run: () => saveDraft() },
   })
   const guarded = useGuardedAction()
@@ -1231,18 +1214,6 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
     } finally {
       setBusy(false)
     }
-  }
-
-  /**
-   * 未保存の警告の「保存して移動」(計画Issue #231 フェーズ3)。入力済みの行を確定し、確定できない行が残るときは、
-   * それを一時保存してから移動する。確定の前提(誰の明細か・キーワードの入力)を満たせないときは、何も保存せず移動しない
-   */
-  async function confirmAndSaveDraft(): Promise<boolean> {
-    // 離れる前の確定は、絞り込みに関わらず、入力済みの全件が対象(一時保存も全件を保存するため)
-    const outcome = await handleConfirm({ all: true })
-    if (outcome.status === 'blocked') return false
-    if (outcome.status === 'done') return true
-    return saveDraft({ done: outcome.done })
   }
 
   /** 保存した取込先・入力で続ける。保存時の定義で読めたときと、定義を作り直したときの、共通の続き */

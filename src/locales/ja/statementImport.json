@@ -268,8 +268,6 @@
   "draftDiscardMessage": "保存したCSVと入力内容を削除します。確定済みの仕訳には影響しません。",
   "draftDiscardConfirm": "破棄する",
   "draftSaveAndLeave": "一時保存して移動",
-  "draftGuardDescription": "「保存して移動」は、入力済みの{{ready}}件を確定し、確定できない{{rest}}件は一時保存してから移動します。「一時保存して移動」は、何も確定せず、{{total}}件の入力を一時保存してから移動します。一時保存した行は、次回、取込画面の開始状態から再開できます。",
-  "draftGuardDescriptionAllReady": "「保存して移動」は、入力済みの{{ready}}件をすべて確定してから移動します。「一時保存して移動」は、何も確定せず、{{total}}件の入力を一時保存してから移動します。一時保存した行は、次回、取込画面の開始状態から再開できます。",
   "bulkKeep": "変更しない",
   "bulkHint": "Shift+クリックで範囲選択、Esc で選択を解除できます。",
   "bulkApplyEmpty": "適用",
