@@ -55,8 +55,8 @@
 /* 絞り込み欄は、タブの行の下に固定する。タブの行の高さは画面側が --sticky-head-h に入れる */
 .split-settle__filter {
   position: sticky;
-  /* タブの行との間に8pxの隙間を空ける(計画Issue #301)。隙間は ::before で背景を敷き、スクロールで通り過ぎる行が透けないようにする */
-  top: calc(var(--sticky-head-h, 0px) + 8px);
+  /* タブの行との間に隙間を空ける(計画Issue #301。幅は SplitTab が --split-filter-gap で渡す)。隙間は ::before で背景を敷き、スクロールで通り過ぎる行が透けないようにする */
+  top: calc(var(--sticky-head-h, 0px) + var(--split-filter-gap, 0px));
   z-index: 15;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -67,10 +67,11 @@
 .split-settle__filter::before {
   content: '';
   position: absolute;
-  top: -9px;
+  /* 枠線の1pxの外側から、隙間の高さの分 */
+  top: calc(-1px - var(--split-filter-gap, 0px));
   left: -1px;
   right: -1px;
-  height: 8px;
+  height: var(--split-filter-gap, 0px);
   background: var(--color-bg);
 }
 
@@ -680,6 +681,8 @@
  * バーの高さは、分担相手の行・エラー・たたみ方で変わるので、固定値ではなく測った値を使う。
  */
 .split-settle__bar {
+  /* 固定中にタブの行・絞り込み欄との間に空ける隙間(上の余白と、負のマージンでの相殺に同じ値を使う) */
+  --split-bar-gap: 8px;
   position: sticky;
   top: calc(var(--sticky-head-h, 0px) + var(--sticky-head-extra, 0px));
   z-index: 15;
@@ -694,8 +697,8 @@
    * 上にも8pxの余白を敷き、固定中にタブの行・絞り込み欄とバーの間に隙間を空ける(接していると窮屈で、絞り込み欄を開いたときは枠が重なって見える)。
    * 固定していないときの並びは変えないよう、負のマージンで相殺する。バーの高さを測る要素に含まれるので、表の見出しの固定位置にも足される。
    */
-  padding-top: 8px;
-  margin-top: -8px;
+  padding-top: var(--split-bar-gap);
+  margin-top: calc(-1 * var(--split-bar-gap));
 }
 
 .split-settle__bar-card {

@@ -1051,6 +1051,17 @@ describe('SplitTab 分担バー', () => {
     expect(screen.getAllByRole('button', { name: /^分担相手/ })).toHaveLength(2)
   })
 
+  it('矢印のボタンの aria-controls は、2段目の欄がある(開いている)間だけ付け、たたんでいる間は外す(参照先が無いため)', () => {
+    setup()
+
+    expect(foldButton()).toHaveAttribute('aria-controls', 'split-bar-fields')
+    expect(document.getElementById('split-bar-fields')).not.toBeNull()
+
+    fireEvent.click(foldButton())
+    expect(document.getElementById('split-bar-fields')).toBeNull()
+    expect(foldButton()).not.toHaveAttribute('aria-controls')
+  })
+
   it('矢印のボタンでたたむと2段目の欄が消え、もう一度押すと元の入力のまま開く', () => {
     setup()
     fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチの割勘' } })
