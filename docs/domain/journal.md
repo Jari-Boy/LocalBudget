@@ -77,7 +77,7 @@ tags: [domain, journal]
 > | `accountIds`・`householdMemberIds`・`projectIds`・`counterpartyIds` | 複数選択。いずれかに一致すればよい(OR)。従来の単一指定(`accountId`等)は互換のため残し、同じ軸で両方を指定すると両方を満たす仕訳だけを返す(AND) |
 > | `settlementBatchIds` | 精算バッチ。数値はそのバッチのタグが付いた明細行を持つ仕訳、`null`は**未割当**(精算バッチのタグが付いた明細行が仕訳内に1行も無い)。複数指定はOR |
 > | `sourceTypes` | 作成経路([1.7](#17-作成経路source_type))。割勘(`expense_splitting`)を含む |
-> | `financialInstitutionNames` | 取込時の金融機関名(計画Issue #289)。`null`は金融機関が不明な取込済み(名前が無い`external_transaction_refs`を持つ仕訳)。複数指定はOR。**作成経路(`sourceTypes`)とはOR**(どちらかに該当すればよい)。絞り込みの「出どころ」欄は、「外部明細(すべて)」を親、各金融機関と「外部明細(金融機関が不明)」を子とする階層(共通のTreeSelectの階層つき項目) |
+> | `financialInstitutionNames` | 取込時の金融機関名(計画Issue #289)。`null`は金融機関が不明な取込済み(名前が無い`external_transaction_refs`を持つ仕訳)。複数指定はOR。**作成経路(`sourceTypes`)とはOR**(どちらかに該当すればよい)。絞り込みの「出どころ」欄は、「外部明細」を親、各金融機関と「外部明細(金融機関が不明)」を子とする階層(共通のTreeSelectの階層つき項目)。親の行は科目などのグループ行と同じ見た目で、名前で開閉し、右端の「すべて」ボタンで取込済みすべてを選ぶ(計画Issue #314) |
 > | `accountGroupIds`・`counterpartyGroupIds`・`projectGroupIds` | グループ指定。指定したグループと配下(入れ子を含む)のグループに属する科目・取引先・プロジェクトを含む仕訳を対象にする。**同じ軸の項目指定(`accountIds`等)と併用したときはOR**(どちらかに該当すればよい、計画Issue #203)。展開は`expandGroupIds`で、グループ・取引先・プロジェクトのマスタは`filterJournalEntries`の第4引数(`JournalEntryFilterContext`)で渡す(科目は第2引数のaccountsの`account_group_id`を使う) |
 >
 > **一覧での絞り込み結果の固定(計画Issue #303)**: 仕訳一覧(`JournalScreen`)は、絞り込み条件を変えた時点で該当した仕訳のidを保持し(`pinFilteredEntries.ts`)、編集で条件から外れた仕訳も、条件を変えるまで一覧に残す。`filterJournalEntries`自体は純粋関数のまま変えず、見た目の変更もない。判断は`docs/decisions/2026-11-28-04.md`の2026-11-28(計画Issue #303)を参照。

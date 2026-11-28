@@ -2,7 +2,7 @@
  * 仕訳の絞り込みの「出どころ」(作成経路+取り込んだ金融機関、計画Issue #289)の、UI値とJournalEntryFilterの相互変換と、
  * 選択肢の組み立て(journalFilterModel)のユニットテスト。
  * 選択ツリーの値は、作成経路が「manual」などそのまま、金融機関が「inst:名前」、金融機関が不明な取込済みが「inst:」。
- * 選択肢は、取込済みの仕訳に金融機関が1つでもあれば「外部明細(すべて)」を親、各金融機関を子にして階層で並べる。
+ * 選択肢は、取込済みの仕訳に金融機関が1つでもあれば「外部明細」(グループ行の見た目の親)を親、各金融機関を子にして階層で並べる。
  * DB・DOM非依存、外部依存なし。
  */
 import { describe, expect, it } from 'vitest'
@@ -62,7 +62,7 @@ describe('buildSourceFilterChoices', () => {
     expect(choices.map((c) => c.value)).toContain('manual')
   })
 
-  it('金融機関があれば、「外部明細(すべて)」の直下に、金融機関名を重複なく、マッピング定義の候補と同じ順で子として並べる', () => {
+  it('金融機関があれば、「外部明細」の直下に、金融機関名を重複なく、マッピング定義の候補と同じ順で子として並べる', () => {
     const choices = buildSourceFilterChoices([
       entry('external_import', '楽天カード'),
       entry('external_import', '三井住友銀行'),
@@ -70,7 +70,7 @@ describe('buildSourceFilterChoices', () => {
     ])
 
     const parentIndex = choices.findIndex((c) => c.value === 'external_import')
-    expect(choices[parentIndex]).toMatchObject({ name: '外部明細(すべて)', depth: 0 })
+    expect(choices[parentIndex]).toMatchObject({ name: '外部明細', depth: 0, asGroup: true })
     // 並び順は、マッピング定義の選択候補と同じ(collectFinancialInstitutionNames。漢字は読み順にならない)
     const expectedNames = collectFinancialInstitutionNames(['楽天カード', '三井住友銀行'])
     expect(choices.slice(parentIndex + 1, parentIndex + 3)).toEqual(

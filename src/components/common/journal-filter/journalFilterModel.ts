@@ -236,6 +236,8 @@ export interface SourceFilterChoice {
   name: string
   depth?: number
   parentValue?: string | null
+  /** 科目などのグループ行と同じ見た目(名前で開閉・「すべて」で選択)にする親の項目 */
+  asGroup?: boolean
 }
 
 /**
@@ -263,7 +265,7 @@ export function setSourceValues(filter: JournalEntryFilter, values: readonly str
 
 /**
  * 出どころの選択肢を作る(計画Issue #289)。作成経路をSOURCE_TAGSの順に並べ、取込済みの仕訳に金融機関名があれば、
- * 「外部明細(すべて)」を親、各金融機関(マッピング定義の候補と同じ順)を子にして階層で並べる。金融機関が不明な取込済みの仕訳も
+ * 「外部明細」(グループ行の見た目で、「すべて」で取込済みすべてを選ぶ)を親、各金融機関(マッピング定義の候補と同じ順)を子にして階層で並べる。金融機関が不明な取込済みの仕訳も
  * あるときは、最後の子に「外部明細(金融機関が不明)」を足す。取込済みの仕訳に金融機関が無ければ、従来どおり平らな並び。
  */
 export function buildSourceFilterChoices(
@@ -285,7 +287,7 @@ export function buildSourceFilterChoices(
     if (hasUnknown) {
       children.push({ value: INSTITUTION_VALUE_PREFIX, name: `${tag.label}(金融機関が不明)`, depth: 1, parentValue: value })
     }
-    return [{ value, name: `${tag.label}(すべて)`, depth: 0, parentValue: null }, ...children]
+    return [{ value, name: tag.label, depth: 0, parentValue: null, asGroup: true }, ...children]
   })
 }
 

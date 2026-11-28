@@ -437,6 +437,34 @@ export function TreeSelect(props: TreeSelectProps) {
                   </div>
                 )
               }
+              if (row.asGroup === true) {
+                // グループ行として見せる階層つきの項目(計画Issue #314)。名前で開閉、「すべて」で選択
+                return (
+                  <div key={`i:${row.section}:${row.value}`} className="tree-select__group-row">
+                    <button
+                      type="button"
+                      className="tree-select__group"
+                      style={{ paddingLeft: row.indent }}
+                      aria-label={row.name}
+                      aria-expanded={row.fold === 'open'}
+                      onClick={() => toggleGroup(`h:${row.value}`, row.fold === 'open')}
+                    >
+                      <span aria-hidden="true">{row.fold === 'open' ? '▾' : '▸'}</span> {row.name}
+                    </button>
+                    {allowGroupSelect && (
+                      <button
+                        type="button"
+                        className={`tree-select__select-all${row.isSelected ? ' tree-select__select-all--on' : ''}`}
+                        aria-label={`${row.name}をすべて選ぶ`}
+                        aria-pressed={isMulti ? row.isSelected : undefined}
+                        onClick={() => choose(row.value)}
+                      >
+                        すべて
+                      </button>
+                    )}
+                  </div>
+                )
+              }
               return (
                 <div key={`i:${row.section}:${row.value}`} className="tree-select__item-row">
                   {row.fold !== undefined && (

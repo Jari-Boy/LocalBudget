@@ -32,6 +32,8 @@ export interface JournalFilterChoice {
   /** 階層つきの選択肢(出どころの金融機関など、計画Issue #289)。深さ(最上位が0)と親の値。TreeSelectの階層つき項目としてインデントして並ぶ */
   depth?: number
   parentValue?: string | null
+  /** 科目などのグループ行と同じ見た目(名前で開閉・「すべて」で選択)にする親の項目 */
+  asGroup?: boolean
 }
 
 export interface JournalFilterOptions {
@@ -70,6 +72,7 @@ const flat = (choices: readonly JournalFilterChoice[]): TreeSelectCategory[] => 
       name: c.name,
       isActive: true,
       ...(c.depth === undefined ? {} : { depth: c.depth, parentValue: c.parentValue ?? null }),
+      ...(c.asGroup === true ? { asGroup: true } : {}),
     })),
   },
 ]
@@ -197,6 +200,7 @@ export function JournalFilterPanel({ filter, onChange, options, resultCount, hid
                 multiple
                 values={getSourceValues(filter)}
                 onValuesChange={(values) => onChange(setSourceValues(filter, values))}
+                allowGroupSelect
                 emptyLabel="指定なし"
               />
             </div>
