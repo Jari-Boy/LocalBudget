@@ -46,7 +46,7 @@ import { FilterToggleButton } from '../common/filter-toggle/FilterToggleButton'
 import { useElementHeight } from '../common/sticky/useElementHeight'
 import { KeepRowsInPlace } from '../common/sticky/useKeepRowsInPlace'
 import { JournalFilterPanel, type JournalFilterOptions } from '../common/journal-filter/JournalFilterPanel'
-import { buildSourceFilterChoices, countActiveConditions } from '../common/journal-filter/journalFilterModel'
+import { buildEntryRangeOptions, buildSourceFilterChoices, countActiveConditions } from '../common/journal-filter/journalFilterModel'
 import { JournalResultList } from '../common/journal-result/JournalResultList'
 import { AutoBalanceAdjustmentDetail } from './AutoBalanceAdjustmentDetail'
 import { describeAutoBalanceAdjustment } from '../../domain/journal/describeAutoBalanceAdjustment'
@@ -393,6 +393,7 @@ export function JournalScreen(props: JournalScreenProps) {
       members: data.members.map((m) => ({ value: String(m.id), name: m.name })),
       batches: data.batches.map((b) => ({ value: String(b.id), name: b.name })),
       sourceTypes: buildSourceFilterChoices(data.entries),
+      ...buildEntryRangeOptions(data.entries),
     }
     const master: JournalEditorMaster = {
       accounts: data.accounts,

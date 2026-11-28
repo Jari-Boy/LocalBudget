@@ -210,6 +210,18 @@ describe('科目で絞り込んだときの一覧の行', () => {
     expect(matchedAccountIdsOf({ accountGroupIds: [10] }, accounts, groups)).toEqual(new Set([1, 2]))
   })
 
+  it('借方・貸方に分けた科目の指定(項目・グループ)も、まとめての指定と合わせて集める(計画Issue #314)', () => {
+    expect(matchedAccountIdsOf({ debit: { accountIds: [3] } }, accounts, groups)).toEqual(new Set([3]))
+    expect(matchedAccountIdsOf({ credit: { accountGroupIds: [10] } }, accounts, groups)).toEqual(new Set([1, 2]))
+    expect(
+      matchedAccountIdsOf({ accountIds: [3], debit: { accountIds: [1] }, credit: { accountIds: [2] } }, accounts, groups),
+    ).toEqual(new Set([1, 2, 3]))
+  })
+
+  it('借方・貸方に科目以外の指定だけがあるときは undefined のまま(代表にする科目は無い)', () => {
+    expect(matchedAccountIdsOf({ debit: { counterpartyIds: [7] } }, accounts, groups)).toBeUndefined()
+  })
+
   it('一致した科目の金額を代表として表示する', () => {
     const e = entry([line(1, 'debit', 1, 300), line(2, 'debit', 2, 700), line(3, 'credit', 3, 1000)])
     const item = toMatchedResultItem(e, nameOf, new Set([1]))

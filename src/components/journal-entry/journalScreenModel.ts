@@ -137,8 +137,10 @@ export function matchedAccountIdsOf(
   accounts: readonly Pick<Account, 'id' | 'accountGroupId'>[],
   accountGroups: readonly GroupNode[],
 ): Set<number> | undefined {
-  const ids = filter.accountIds ?? []
-  const groupIds = filter.accountGroupIds ?? []
+  // まとめての指定に、借方・貸方に分けた指定(計画Issue #314)も合わせる。側ごとに別々の代表は持たず、集合は1つにまとめる
+  const sources = [filter, filter.debit, filter.credit]
+  const ids = sources.flatMap((source) => source?.accountIds ?? [])
+  const groupIds = sources.flatMap((source) => source?.accountGroupIds ?? [])
   if (ids.length === 0 && groupIds.length === 0) return undefined
   const matched = new Set<number>(ids)
   for (const account of accounts) {
