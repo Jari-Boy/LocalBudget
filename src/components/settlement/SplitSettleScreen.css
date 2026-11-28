@@ -793,20 +793,6 @@
   gap: 8px 20px;
 }
 
-/* バーの中の分担相手は、横に並べて折り返す(行を縦に積むと、バーが高くなって表を隠すため) */
-.split-settle__bar-fields .split-settle__partners {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
-}
-
-.split-settle__bar-fields .split-settle__partners > .split-settle__label,
-.split-settle__bar-fields .split-settle__partners > p {
-  flex: 0 0 100%;
-  margin: 0;
-}
-
 /* 選んだ行の数・借方/貸方の合計・選択した合計・負担の合計。ラベルと値を横に並べ、幅が足りなければ折り返して、高さを節約する
    (既存の .split-settle__summary は精算タブの横並びの行で別物) */
 .split-settle__totals {
@@ -819,6 +805,12 @@
 .split-settle__totals .split-settle__line {
   justify-content: flex-start;
   gap: 10px;
+  /* 大きさは、周りのラベル・注記と同じ(.bar-summary の xs)にそろえる。既定の .split-settle__line の base で浮かないように */
+  font-size: inherit;
+}
+
+.split-settle__totals .split-settle__line--sub {
+  font-size: inherit;
 }
 
 /* 合計が合っていない行と注記(立て替えた本人も入れて100%・純額に合わせる) */
