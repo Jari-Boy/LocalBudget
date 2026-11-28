@@ -46,6 +46,7 @@ function renderPanel(overrides: Partial<Parameters<typeof ImportRowFilterPanel>[
         members={members}
         batches={batches}
         resultCount={7}
+        dates={['2026-09-15', '2026-11-03']}
         {...overrides}
       />
     </I18nextProvider>,
@@ -138,5 +139,44 @@ describe('ImportRowFilterPanel', () => {
     renderPanel({ input: { ...EMPTY_FILTER_INPUT, amountMax: '1000' } })
     expect(panel().getByRole('button', { name: '条件をクリア' })).toBeInTheDocument()
     expect(onClear).not.toHaveBeenCalled()
+  })
+})
+
+describe('ImportRowFilterPanel: 期間の日付/月の切替(計画Issue #314)', () => {
+  it('はじめは「日付で指定」(チェックあり)で日付入力を出す', () => {
+    renderPanel()
+
+    expect(panel().getByRole('checkbox', { name: '日付で指定' })).toBeChecked()
+    expect(panel().getByLabelText('期間の開始')).toHaveAttribute('type', 'date')
+  })
+
+  it('チェックを外すと月の選択になり、月を選ぶと開始月1日〜終了月末日の日付を入力に入れて通知する', () => {
+    const { onChange } = renderPanel()
+    fireEvent.click(panel().getByRole('checkbox', { name: '日付で指定' }))
+    fireEvent.change(panel().getByRole('combobox', { name: '期間の開始' }), { target: { value: '2026-09' } })
+
+    expect(onChange).toHaveBeenLastCalledWith({ ...EMPTY_FILTER_INPUT, dateFrom: '2026-09-01' })
+  })
+
+  it('日付を入れたまま月へ切り替えると、含まれる月に広がった日付を通知する', () => {
+    const { onChange } = renderPanel({ input: { ...EMPTY_FILTER_INPUT, dateFrom: '2026-10-15', dateTo: '2026-11-03' } })
+    fireEvent.click(panel().getByRole('checkbox', { name: '日付で指定' }))
+
+    expect(onChange).toHaveBeenLastCalledWith({ ...EMPTY_FILTER_INPUT, dateFrom: '2026-10-01', dateTo: '2026-11-30' })
+  })
+})
+
+describe('ImportRowFilterPanel: 借方・貸方の切替と金額スライダーは出さない(計画Issue #314)', () => {
+  it('取込には借方・貸方の概念が無いので、「借方・貸方を分けて検索」のチェックは出ない', () => {
+    renderPanel()
+
+    expect(panel().queryByRole('checkbox', { name: '借方・貸方を分けて検索' })).toBeNull()
+  })
+
+  it('金額は取込の符号つきの比較のため、数字入力だけで、スライダーは出ない', () => {
+    renderPanel()
+
+    expect(panel().queryByRole('slider')).toBeNull()
+    expect(panel().getByLabelText('金額の下限')).toBeInTheDocument()
   })
 })

@@ -2429,6 +2429,7 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
                   members={data.members}
                   batches={data.batches}
                   resultCount={shownTabIndices.length}
+                  dates={records.map((r) => r.record.entryDate)}
                 />
               </div>
             )}

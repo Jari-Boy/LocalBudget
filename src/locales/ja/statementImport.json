@@ -232,6 +232,7 @@
   "filterMemberLabel": "世帯メンバー",
   "filterBatchLabel": "精算バッチ",
   "filterPeriodLabel": "期間",
+  "filterByDate": "日付で指定",
   "filterDateFromLabel": "期間の開始",
   "filterDateToLabel": "期間の終了",
   "filterAmountLabel": "金額",
