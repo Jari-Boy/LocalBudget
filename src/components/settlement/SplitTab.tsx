@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { JournalLineSide } from '../../domain/journal/JournalEntry'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import { filterJournalEntries } from '../../domain/journal/filterJournalEntries'
@@ -10,6 +10,7 @@ import {
   type SplittableLineEntry,
 } from '../../domain/expense-splitting/listSplittableLineEntries'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
+import { formatDate } from '../../infrastructure/i18n/formatDate'
 import { JournalFilterPanel } from '../common/journal-filter/JournalFilterPanel'
 import { ListLoadMore } from '../common/list-paging/ListLoadMore'
 import { nextDisplayLimit, resolveShownCount } from '../common/list-paging/listPaging'
@@ -33,6 +34,8 @@ import { buildPartnerCategories, parsePartnerValue, splitEvenly, toPartnerValue 
 import { buildSplitLineTableRows, selectableLineIdsBySide } from './splitLineTableModel'
 import { buildSplitPreviews } from './splitPreviewModel'
 import { StickyHeaderTable } from '../common/sticky/StickyHeaderTable'
+import { SortableHeaderCell } from '../common/table-sort/SortableHeaderCell'
+import { compareJournalSort, cycleJournalSort, type JournalSort, type JournalSortKey, type JournalSortLookup } from '../journal-entry/journalEntrySort'
 import { JournalLineTableResizeHandle } from '../journal-entry/JournalLineTableResizeHandle'
 import { useJournalLineTableColumns } from '../journal-entry/useJournalLineTableColumns'
 import type { ColumnKey } from '../journal-entry/journalLineTableColumns'
@@ -78,6 +81,12 @@ const MODE_LABEL: Record<ExpenseSplittingAllocationMode, string> = {
 }
 
 const SIDE_LABEL: Record<JournalLineSide, string> = { debit: '借方', credit: '貸方' }
+
+/** 'YYYY-MM-DD' の日付を表示用の Date にする(仕訳一覧の明細行単位の表と同じ表記にするため、formatDate に通す) */
+function toDate(entryDate: string): Date {
+  const [year, month, day] = entryDate.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
 
 /** 候補の表の列幅の保存先。仕訳一覧の明細行単位の表とは別に持つ(同じつまみ・同じ保存の仕組みを使う、計画Issue #271) */
 const COLUMN_WIDTHS_STORAGE_KEY = 'localbudget:split-line-table-column-widths'
@@ -167,6 +176,11 @@ export function SplitTab({
   /** 「さらに表示」で増やした表示件数の上限。絞り込み条件を変えると先頭の1ページ分に戻す */
   const [displayLimit, setDisplayLimit] = useState<number>(SPLIT_LIST_PAGE_SIZE.candidate)
   const [detailEntryId, setDetailEntryId] = useState<number | null>(null)
+  /**
+   * 候補の表の、列見出しでの並び替え(計画Issue #302)。見出しを押した時点に描画している候補(1ページ分)の値で並びを決め、
+   * 以後は動かさない(チェックは行のid基準なので並べても保たれる)。絞り込み条件を変えると解除する
+   */
+  const [lineSort, setLineSort] = useState<JournalSort | null>(null)
 
   const shown = useMemo(() => {
     const visibleIds = new Set(
@@ -192,7 +206,11 @@ export function SplitTab({
     pageSize: SPLIT_LIST_PAGE_SIZE.candidate,
     selectedIndex: lastCheckedIndex,
   })
-  const visible = useMemo(() => shown.slice(0, shownCount), [shown, shownCount])
+  /** 描画する候補。列見出しを押しているときは、描画中の1ページ分の中だけを並べ替える(全件は並べない、計画Issue #302) */
+  const visible = useMemo(() => {
+    const page = shown.slice(0, shownCount)
+    return lineSort === null ? page : page.sort((a, b) => compareJournalSort(lineSort, a.entry.id, b.entry.id))
+  }, [shown, shownCount, lineSort])
   const rows = useMemo(() => buildSplitLineTableRows(visible), [visible])
 
   /** 選んだ行(絞り込みで隠れた行も含む)。候補の並びのまま */
@@ -328,6 +346,7 @@ export function SplitTab({
 
   const changeFilter = (next: JournalEntryFilter) => {
     setDisplayLimit(SPLIT_LIST_PAGE_SIZE.candidate)
+    setLineSort(null)
     onFilterChange(next)
   }
 
@@ -408,6 +427,36 @@ export function SplitTab({
     if (line.settlementBatchId !== null) return data.batches.find((b) => b.id === line.settlementBatchId)?.name ?? ''
     return ''
   }
+
+  /** 並び替えの値に使う名前(表に出る名前と同じ) */
+  const sortLookup: JournalSortLookup = {
+    accountName: (id) => data.accounts.find((a) => a.id === id)?.name ?? '',
+    projectName: () => '',
+    counterpartyName: (id) => data.counterparties.find((c) => c.id === id)?.name ?? '',
+    batchName: (id) => data.batches.find((b) => b.id === id)?.name ?? '',
+    memberName: memberName,
+  }
+  /** 並び替えできる列の見出し(列幅のつまみつき)。押すと、描画中の候補(1ページ分)の値で 昇順→降順→解除 を切り替える */
+  const sortHead = (key: JournalSortKey, label: string, resize: ReactNode, className?: string) => (
+    <SortableHeaderCell
+      key={key}
+      label={label}
+      className={className}
+      direction={lineSort?.key === key ? lineSort.direction : null}
+      onSort={() =>
+        setLineSort((prev) =>
+          cycleJournalSort(
+            prev,
+            key,
+            visible.map((v) => v.entry),
+            sortLookup,
+          ),
+        )
+      }
+    >
+      {resize}
+    </SortableHeaderCell>
+  )
 
   const partnerName = (row: ExpenseSplittingParticipantRow) => {
     if (row.targetId === null) return '未選択'
@@ -538,18 +587,9 @@ export function SplitTab({
                 </colgroup>
                 <thead>
                   <tr>
-                    <th>
-                      日付
-                      {resizeHandle('date', '日付')}
-                    </th>
-                    <th>
-                      摘要
-                      {resizeHandle('memo', '摘要')}
-                    </th>
-                    <th>
-                      コメント
-                      {resizeHandle('comment', 'コメント')}
-                    </th>
+                    {sortHead('date', '日付', resizeHandle('date', '日付'))}
+                    {sortHead('memo', '摘要', resizeHandle('memo', '摘要'))}
+                    {sortHead('comment', 'コメント', resizeHandle('comment', 'コメント'))}
                     {(['debit', 'credit'] as const).flatMap((side) => [
                       <th
                         key={`${side}-check`}
@@ -557,22 +597,10 @@ export function SplitTab({
                       >
                         {sideHeadCheck(side)}
                       </th>,
-                      <th key={`${side}-account`}>
-                        {`${SIDE_LABEL[side]}の科目`}
-                        {resizeHandle('account', `${SIDE_LABEL[side]}の科目`)}
-                      </th>,
-                      <th key={`${side}-partner`}>
-                        取引先・精算バッチ
-                        {resizeHandle('partner', `${SIDE_LABEL[side]}の取引先・精算バッチ`)}
-                      </th>,
-                      <th key={`${side}-member`}>
-                        世帯メンバー
-                        {resizeHandle('member', `${SIDE_LABEL[side]}の世帯メンバー`)}
-                      </th>,
-                      <th key={`${side}-amount`} className="journal-line-table__cell--amount">
-                        金額
-                        {resizeHandle('amount', `${SIDE_LABEL[side]}の金額`)}
-                      </th>,
+                      sortHead(`${side}-account`, `${SIDE_LABEL[side]}の科目`, resizeHandle('account', `${SIDE_LABEL[side]}の科目`)),
+                      sortHead(`${side}-partner`, '取引先・精算バッチ', resizeHandle('partner', `${SIDE_LABEL[side]}の取引先・精算バッチ`)),
+                      sortHead(`${side}-member`, '世帯メンバー', resizeHandle('member', `${SIDE_LABEL[side]}の世帯メンバー`)),
+                      sortHead(`${side}-amount`, '金額', resizeHandle('amount', `${SIDE_LABEL[side]}の金額`), 'journal-line-table__cell--amount'),
                     ])}
                   </tr>
                 </thead>
@@ -584,7 +612,7 @@ export function SplitTab({
                 const memo = row.entry.memo ?? ''
                 return (
                   <tr key={`${row.entry.id}:${index}`} className={row.isFirst && index > 0 ? 'split-settle__entry-start' : undefined}>
-                    <td className="journal-line-table__cell">{row.isFirst ? row.entry.entryDate : ''}</td>
+                    <td className="journal-line-table__cell">{row.isFirst ? formatDate(toDate(row.entry.entryDate)) : ''}</td>
                     <td className="journal-line-table__cell">
                       {row.isFirst && (
                         <button type="button" className="journal-line-table__memo" onClick={() => setDetailEntryId(row.entry.id)}>

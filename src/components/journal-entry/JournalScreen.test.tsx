@@ -2454,3 +2454,147 @@ describe('JournalScreen: 仕訳一覧の分割表示(計画Issue #253)', () => {
     })
   })
 })
+
+/**
+ * 仕訳画面の「明細行単位」の表の、列見出しでの並び替え(計画Issue #302)。見出しを押すごとに 昇順→降順→解除 で仕訳が並び替わり、
+ * 描画中の1ページ分の中だけを並べ替えること(全件は並べない。重くしないため)、「さらに表示」の件数は並び替えで変わらないこと、
+ * 押した時点の値で固定され保存しても行が動かないこと、絞り込み条件の変更・仕訳単位への切替で解除されること、
+ * 仕訳単位の一覧(従来の並び)には影響しないことを検証する。
+ */
+describe('JournalScreen: 明細行単位の列見出しでの並び替え(計画Issue #302)', () => {
+  const VIEW_KEY = 'localbudget:journal-view-mode'
+  const lineTable = () => screen.getByRole('table', { name: '仕訳の明細行' })
+  /** 表の仕訳の並び(仕訳のid) */
+  const orderOf = () => Array.from(lineTable().querySelectorAll<HTMLElement>('tbody[data-entry-id]')).map((tbody) => Number(tbody.dataset.entryId))
+  const headerButton = (name: string, index = 0) => within(lineTable()).getAllByRole('button', { name })[index]
+  const headerCell = (name: string, index = 0) => within(lineTable()).getAllByRole('columnheader', { name: new RegExp(`^${name}`) })[index]
+
+  beforeEach(() => localStorage.setItem(VIEW_KEY, 'line'))
+  afterEach(() => localStorage.clear())
+
+  it('「摘要」の見出しを押すごとに 昇順 → 降順 → 解除(日付の新しい順)になり、aria-sort が状態を伝える', async () => {
+    setup()
+    await ready()
+    expect(orderOf()).toEqual([1, 2, 3, 4])
+    expect(headerCell('摘要')).toHaveAttribute('aria-sort', 'none')
+
+    // 文字コード順: ランチ(カタカナ) < 割勘の夕食 < 家賃 < 旅行の立替
+    fireEvent.click(headerButton('摘要'))
+    expect(orderOf()).toEqual([1, 4, 2, 3])
+    expect(headerCell('摘要')).toHaveAttribute('aria-sort', 'ascending')
+
+    fireEvent.click(headerButton('摘要'))
+    expect(orderOf()).toEqual([3, 2, 4, 1])
+    expect(headerCell('摘要')).toHaveAttribute('aria-sort', 'descending')
+
+    fireEvent.click(headerButton('摘要'))
+    expect(orderOf()).toEqual([1, 2, 3, 4])
+    expect(headerCell('摘要')).toHaveAttribute('aria-sort', 'none')
+  })
+
+  it('別の列を押すとその列の昇順になり、前の列の aria-sort は none に戻る', async () => {
+    setup()
+    await ready()
+    fireEvent.click(headerButton('摘要'))
+    fireEvent.click(headerButton('日付'))
+    expect(orderOf()).toEqual([4, 3, 2, 1])
+    expect(headerCell('日付')).toHaveAttribute('aria-sort', 'ascending')
+    expect(headerCell('摘要')).toHaveAttribute('aria-sort', 'none')
+  })
+
+  it('借方の金額で並べると、仕訳ごとに(借方・貸方の行を分けずに)並ぶ', async () => {
+    setup()
+    await ready()
+    fireEvent.click(headerButton('金額', 0))
+    // 借方の先頭行の金額: ランチ1200 < 割勘の夕食2000 < 旅行の立替5000 < 家賃80000
+    expect(orderOf()).toEqual([1, 4, 3, 2])
+    expect(headerCell('金額', 0)).toHaveAttribute('aria-sort', 'ascending')
+    expect(headerCell('金額', 1)).toHaveAttribute('aria-sort', 'none')
+  })
+
+  it('1ページを超えるときは、描画中の1ページ分の中だけを並び替え、表示する件数も仕訳も増やさない(重くしない)', async () => {
+    const LINE_PAGE = JOURNAL_LIST_PAGE_SIZE.line
+    setup({ entries: makeManyEntries(LINE_PAGE + 50) })
+    await screen.findByText(`${LINE_PAGE} / ${LINE_PAGE + 50}件を表示中`)
+
+    // 日付の昇順 = 描画中の1ページ分のうち、いちばん古い仕訳(idが最大)が先頭。1ページ目に出ていなかった仕訳は出ない。
+    // 開いた直後に強調されている仕訳1は並びの末尾へ動くが、並び替えは1ページ分の中だけなので、表示は広がらない
+    fireEvent.click(headerButton('日付'))
+    expect(orderOf()).toHaveLength(LINE_PAGE)
+    expect(orderOf()[0]).toBe(LINE_PAGE)
+    expect(orderOf()[LINE_PAGE - 1]).toBe(1)
+    expect(screen.queryByText(`仕訳${LINE_PAGE + 1}`)).not.toBeInTheDocument()
+    expect(screen.getByText(`${LINE_PAGE} / ${LINE_PAGE + 50}件を表示中`)).toBeInTheDocument()
+  })
+
+  it('並べたあとに「さらに表示」を押すと、増えた仕訳は並び替えた分のあとに元の順で続く', async () => {
+    const LINE_PAGE = JOURNAL_LIST_PAGE_SIZE.line
+    setup({ entries: makeManyEntries(LINE_PAGE + 50) })
+    await screen.findByText(`${LINE_PAGE} / ${LINE_PAGE + 50}件を表示中`)
+    fireEvent.click(headerButton('日付'))
+    fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+    const order = orderOf()
+    expect(order).toHaveLength(LINE_PAGE + 50)
+    expect(order[0]).toBe(LINE_PAGE)
+    expect(order.slice(LINE_PAGE)).toEqual(Array.from({ length: 50 }, (_, i) => LINE_PAGE + 1 + i))
+  })
+
+  it('並び替えても「さらに表示」で増やした表示件数は変わらない', async () => {
+    const LINE_PAGE = JOURNAL_LIST_PAGE_SIZE.line
+    setup({ entries: makeManyEntries(LINE_PAGE + 50) })
+    await screen.findByText(`${LINE_PAGE} / ${LINE_PAGE + 50}件を表示中`)
+    fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+    expect(orderOf()).toHaveLength(LINE_PAGE + 50)
+    fireEvent.click(headerButton('日付'))
+    expect(orderOf()).toHaveLength(LINE_PAGE + 50)
+    expect(screen.queryByRole('button', { name: /さらに/ })).not.toBeInTheDocument()
+  })
+
+  it('並べたあとに仕訳を編集して保存しても、行は動かない(押した時点の値で固定)', async () => {
+    const list = makeEntries()
+    const props = setup({ entries: list })
+    // 保存したあとの再読み込みで、直した摘要が返るようにする
+    props.journalEntryRepository.update.mockImplementation(async (id: number, input?: unknown) => {
+      const target = list.find((e) => e.id === id)!
+      target.memo = (input as { memo: string }).memo
+      return target
+    })
+    await ready()
+    fireEvent.click(headerButton('摘要'))
+    expect(orderOf()).toEqual([1, 4, 2, 3])
+
+    // 先頭のランチの摘要を、並べ直せば最後になる文字に直して保存する
+    fireEvent.click(screen.getByRole('button', { name: 'ランチ' }))
+    fireEvent.change(screen.getByLabelText('摘要'), { target: { value: '龍のランチ' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(props.journalEntryRepository.update).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByLabelText('摘要')).not.toBeInTheDocument())
+
+    expect(screen.getByRole('button', { name: '龍のランチ' })).toBeInTheDocument()
+    expect(orderOf()).toEqual([1, 4, 2, 3])
+    expect(headerCell('摘要')).toHaveAttribute('aria-sort', 'ascending')
+  })
+
+  it('絞り込み条件を変えると、並び替えは解除される(押した時点の対象が変わるため)', async () => {
+    setup()
+    await ready()
+    fireEvent.click(headerButton('摘要'))
+    expect(headerCell('摘要')).toHaveAttribute('aria-sort', 'ascending')
+    fireEvent.change(memoSearch(), { target: { value: '' } })
+    fireEvent.change(memoSearch(), { target: { value: 'ランチ' } })
+    expect(headerCell('摘要')).toHaveAttribute('aria-sort', 'none')
+  })
+
+  it('仕訳単位に切り替えると、一覧は従来の並び(日付の新しい順)のままで、明細行単位へ戻すと並び替えは解除されている', async () => {
+    setup()
+    await ready()
+    fireEvent.click(headerButton('摘要'))
+    fireEvent.click(within(screen.getByRole('group', { name: '表示方式' })).getByRole('button', { name: '仕訳単位' }))
+    const titles = screen.getAllByRole('button', { name: /ランチ|家賃|旅行の立替|割勘の夕食/ }).map((b) => b.textContent ?? '')
+    expect(titles.findIndex((t) => t.includes('ランチ'))).toBeLessThan(titles.findIndex((t) => t.includes('家賃')))
+    expect(titles.findIndex((t) => t.includes('家賃'))).toBeLessThan(titles.findIndex((t) => t.includes('旅行の立替')))
+    fireEvent.click(within(screen.getByRole('group', { name: '表示方式' })).getByRole('button', { name: '明細行単位' }))
+    expect(headerCell('摘要')).toHaveAttribute('aria-sort', 'none')
+    expect(orderOf()).toEqual([1, 2, 3, 4])
+  })
+})

@@ -110,6 +110,7 @@ import {
 } from './importRowFilter'
 import { ImportRowFilterPanel } from './ImportRowFilterPanel'
 import { compareBySort, cycleSort, type ImportSort, type SortKey, type SortableRow } from './importRowSort'
+import { SortableHeaderCell } from '../common/table-sort/SortableHeaderCell'
 import { ConfirmDialog } from '../common/confirm-dialog/ConfirmDialog'
 import { countFilledRowsOverwritten } from './overwriteSummary'
 import type {
@@ -1660,23 +1661,14 @@ export function StatementImportScreen(props: StatementImportScreenProps) {
       }
     })
   /** 並び替えできる列の見出し。ボタンで 昇順→降順→解除 を切り替え、aria-sort で今の状態を伝える */
-  const sortHeader = (key: SortKey, label: string, className?: string) => {
-    const direction = sort?.key === key ? sort.direction : null
-    return (
-      <th className={className} aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}>
-        <button
-          type="button"
-          className={`import-sort${direction !== null ? ' import-sort--on' : ''}`}
-          onClick={() => setSort((prev) => cycleSort(prev, key, toSortableRows()))}
-        >
-          <span>{label}</span>
-          <svg className="import-sort__mark" viewBox="0 0 12 12" aria-hidden="true">
-            <path d={direction === 'asc' ? 'M2.5 8L6 4l3.5 4' : direction === 'desc' ? 'M2.5 4L6 8l3.5-4' : 'M3.5 4.5L6 2l2.5 2.5M3.5 7.5L6 10l2.5-2.5'} />
-          </svg>
-        </button>
-      </th>
-    )
-  }
+  const sortHeader = (key: SortKey, label: string, className?: string) => (
+    <SortableHeaderCell
+      label={label}
+      className={className}
+      direction={sort?.key === key ? sort.direction : null}
+      onSort={() => setSort((prev) => cycleSort(prev, key, toSortableRows()))}
+    />
+  )
   /**
    * 行へ移る。行のあるタブとページを先に開いて描画してから、スクロールして強調する(計画Issue #263)。
    * rowsを渡すと、その状態になったあとの行の置き場所へ移る(重複の「取り込む」で、行が「新規」へ移ったあとを探すため)
