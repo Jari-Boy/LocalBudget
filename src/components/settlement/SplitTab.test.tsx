@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * 割勘タブ(SplitTab、計画Issue #153。計画Issue #271で明細行単位にした)のコンポーネントテスト。承認済みモックアップの構成で、
- * 絞り込み・割勘する行の表(借方を左・貸方を右)・分担(相手と割合)・割勘仕訳のプレビューが縦に並ぶことを検証する。
+ * 絞り込み・分担(相手と割合。表の上に固定するバー、計画Issue #301)・割勘する行の表(借方を左・貸方を右)・割勘仕訳のプレビューが縦に並ぶことを検証する。
  * 費用・収益の行(借方・貸方とも)だけ選べて、それ以外の行はチェックできないこと、割勘済みの行は表示しないこと、
  * 選んだ行の合計(借方と貸方は差し引き)と相手の負担額が出ること、「割勘を記録」で仕訳が作られて画面が更新されること、
  * 相手を選ばないと記録できないことを、インメモリの偽Repository(vi.fn)で検証する。
@@ -1011,5 +1011,138 @@ describe('SplitTab: 列見出しでの並び替え(計画Issue #302)', () => {
     expect(header('摘要')).toHaveAttribute('aria-sort', 'ascending')
     fireEvent.change(screen.getByRole('searchbox', { name: '摘要で検索' }), { target: { value: 'ラ' } })
     expect(header('摘要')).toHaveAttribute('aria-sort', 'none')
+  })
+})
+
+/**
+ * 分担バー(計画Issue #301)。分担の設定を候補の表の上に固定するバーにし、矢印のボタンで2段目をたためる。
+ * 固定そのもの(position: sticky と表の見出しの位置)は jsdom では確かめられないため、実機で確認する。
+ * ここでは、バーが表より前にあること、たたみ方・開き方、たたんだときの要約、たたんだまま記録して入力エラーが出たときに
+ * 自動で開くこと、選択の解除を検証する。
+ */
+describe('SplitTab 分担バー', () => {
+  const foldButton = () => screen.getByRole('button', { name: /^分担の設定を(たたむ|開く)$/ })
+
+  it('分担のバーは、候補の表より前(上)に置く', () => {
+    setup()
+
+    const bar = screen.getByRole('region', { name: '分担' })
+    const table = screen.getByRole('region', { name: '割勘する行' })
+    expect(bar.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('割勘仕訳のプレビューは、表の下のままにする', () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    chooseBothPartners()
+
+    const table = screen.getByRole('region', { name: '割勘する行' })
+    const preview = screen.getByRole('region', { name: '割勘仕訳のプレビュー' })
+    expect(table.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('最初は開いていて、按分の方法・分担相手・摘要・精算バッチの欄が見える', () => {
+    setup()
+
+    expect(foldButton()).toHaveAttribute('aria-expanded', 'true')
+    expect(foldButton()).toHaveAccessibleName('分担の設定をたたむ')
+    expect(screen.getByLabelText('按分の方法')).toBeInTheDocument()
+    expect(screen.getByLabelText('摘要')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^分担相手/ })).toHaveLength(2)
+  })
+
+  it('矢印のボタンの aria-controls は、2段目の欄がある(開いている)間だけ付け、たたんでいる間は外す(参照先が無いため)', () => {
+    setup()
+
+    expect(foldButton()).toHaveAttribute('aria-controls', 'split-bar-fields')
+    expect(document.getElementById('split-bar-fields')).not.toBeNull()
+
+    fireEvent.click(foldButton())
+    expect(document.getElementById('split-bar-fields')).toBeNull()
+    expect(foldButton()).not.toHaveAttribute('aria-controls')
+  })
+
+  it('矢印のボタンでたたむと2段目の欄が消え、もう一度押すと元の入力のまま開く', () => {
+    setup()
+    fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチの割勘' } })
+
+    fireEvent.click(foldButton())
+    expect(foldButton()).toHaveAttribute('aria-expanded', 'false')
+    expect(foldButton()).toHaveAccessibleName('分担の設定を開く')
+    expect(screen.queryByLabelText('摘要')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('按分の方法')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 分担相手を追加' })).not.toBeInTheDocument()
+
+    fireEvent.click(foldButton())
+    expect(screen.getByLabelText('摘要')).toHaveValue('ランチの割勘')
+  })
+
+  it('たたんでいる間も、選んだ行の数・合計と「割勘を記録」は見える', () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(foldButton())
+
+    const bar = screen.getByRole('region', { name: '分担' })
+    expect(within(bar).getByText('選択した合計').nextElementSibling).toHaveTextContent(formatCurrency(1200, 'JPY'))
+    expect(within(bar).getByRole('button', { name: '割勘を記録' })).toBeEnabled()
+  })
+
+  it('たたんだときは、按分の方法・分担相手と割合・摘要を1行の要約で出す(摘要が空なら未入力と出す)', () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    chooseBothPartners()
+    fireEvent.click(foldButton())
+
+    const summary = screen.getByRole('region', { name: '分担' })
+    expect(summary).toHaveTextContent('割合で分ける')
+    expect(summary).toHaveTextContent('妻 50%')
+    expect(summary).toHaveTextContent('夫 50%')
+    expect(summary).toHaveTextContent('摘要が未入力です')
+
+    fireEvent.click(foldButton())
+    fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチの割勘' } })
+    fireEvent.click(foldButton())
+    expect(screen.getByRole('region', { name: '分担' })).toHaveTextContent('摘要「ランチの割勘」')
+  })
+
+  it('たたんだまま記録して、摘要のエラーになったときは、自動で開いて摘要の欄の下にエラーを出す', async () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    chooseBothPartners()
+    fireEvent.click(foldButton())
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('摘要を入力してください')
+    expect(foldButton()).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText('摘要').parentElement).toContainElement(alert)
+  })
+
+  it('たたんだまま記録して、分担相手のエラーになったときも、自動で開く', async () => {
+    setup()
+    fireEvent.click(debitBox('ランチ'))
+    fireEvent.click(foldButton())
+    fireEvent.click(foldButton())
+    fireEvent.change(screen.getByLabelText('摘要'), { target: { value: 'ランチの割勘' } })
+    fireEvent.click(foldButton())
+
+    fireEvent.click(screen.getByRole('button', { name: '割勘を記録' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('分担相手を選んでください')
+    expect(foldButton()).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('「選択を解除」で選んだ行がすべて外れ、行を選んでいないときは押せない', () => {
+    setup()
+    const clear = () => screen.getByRole('button', { name: '選択を解除' })
+    expect(clear()).toBeDisabled()
+
+    fireEvent.click(debitBox('ランチ'))
+    expect(clear()).toBeEnabled()
+    fireEvent.click(clear())
+
+    expect(debitBox('ランチ')).not.toBeChecked()
+    expect(clear()).toBeDisabled()
   })
 })
