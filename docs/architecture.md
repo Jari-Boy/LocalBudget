@@ -13,7 +13,7 @@ tags: [architecture]
 - 家計簿データをサーバーと通信せずユーザーのブラウザ内に保持し、ユーザー側にデータ主権を持たせるWebアプリを構築する。
 - 本ドキュメントはアーキテクチャ方針の確定を目的とし、実装は別タスクとして扱う。
 - 対象プラットフォームはPWA（ブラウザ上で動作し、インストール可能）。ネイティブアプリ化は対象外。
-- ドメインは**複式簿記**をベースに構築する。勘定科目・仕訳等の詳細なドメインモデルは本ドキュメントの対象外とし、別ファイル（`docs/domain.md`、未作成）で定義する。本ドキュメントでは複式簿記であることが他のアーキテクチャ判断（DBスキーマ、外部明細取込、Repository層のインターフェース設計等）に与える影響のみ扱う。
+- ドメインは**複式簿記**をベースに構築する。勘定科目・仕訳等の詳細なドメインモデルは本ドキュメントの対象外とし、別ファイル（`docs/domain.md`を入口とし、詳細は`docs/domain/*.md`）で定義する。本ドキュメントでは複式簿記であることが他のアーキテクチャ判断（DBスキーマ、外部明細取込、Repository層のインターフェース設計等）に与える影響のみ扱う。
 
 ## 2. 全体アーキテクチャ概要
 
@@ -125,7 +125,7 @@ interface StorageAdapter {
 ## 5. DBアクセス層とWorker設計
 
 - DBは必ずWeb Worker内で実行し、Reactのメインスレッドはメッセージパッシング（RPC）経由でのみアクセスする。UIをブロックしないことが目的。RPCの実装には`Comlink`を採用する。Worker側（`src/infrastructure/worker/`）で全Repositoryインスタンスを1つのレジストリオブジェクトへ集約して`Comlink.expose()`し、メインスレッド側（`src/infrastructure/rpc/`）は`Comlink.wrap()`した型安全なプロキシとして呼び出す。Worker側の初期化（sql.jsのWASMロード等、非同期）が完了する前にメインスレッドがRPC呼び出しを送ると応答が失われるため、Worker起動完了をメインスレッドが待ち合わせてからRPCクライアントを生成する（Issue #24、詳細は`docs/decisions.md`）。
-- ドメインは複式簿記をベースとするため、Repository層は単純な「取引（Transaction）」ではなく、**勘定科目（Account）・仕訳（JournalEntry）・仕訳明細（借方/貸方の各行）**を中心としたインターフェース（例: `AccountRepository`、`JournalEntryRepository`）で設計する。エンティティの詳細な属性・制約（勘定科目の分類、貸借バランスの検証ルール等）は`docs/domain.md`で別途定義し、本ドキュメントでは扱わない。
+- ドメインは複式簿記をベースとするため、Repository層は単純な「取引（Transaction）」ではなく、**勘定科目（Account）・仕訳（JournalEntry）・仕訳明細（借方/貸方の各行）**を中心としたインターフェース（例: `AccountRepository`、`JournalEntryRepository`）で設計する。エンティティの詳細な属性・制約（勘定科目の分類、貸借バランスの検証ルール等）は`docs/domain.md`（入口）と`docs/domain/*.md`で別途定義し、本ドキュメントでは扱わない。
 - DBアクセス層のテストはこれらのRepositoryインターフェースに対して書く。sql.jsを採用しているため、Vitest上でそのまま統合テストとして記述できる。
 - **操作履歴（ロールバック、計画Issue #202）**: Worker内の`createRepositoryRegistry`が、マイグレーション・seed適用後に`OperationHistory`（`src/infrastructure/history/`）で全表（sqlite内部表を除く）にTEMPトリガーを張り、書き込みを打ち消す逆操作SQLをTEMP表（接続のメモリ）へ記録する。Repositoryの各メソッド呼び出し（1回のRPC）を1件として記録し（`recordedByHistory`のProxy）、複数RPCのバッチはメインスレッドの`runInHistoryGroup`（`history.beginGroup`〜`endGroup`）で1件にまとめる。履歴は`db.export()`に含まれないため永続化・バックアップの対象外で、リロードで消える。メインスレッドへは`history`としてRPCに公開され（`HistoryRpcApi`）、操作履歴画面（`/history`）が「選んだ操作以降」の取消を呼ぶ。設計判断は`docs/decisions.md`、永続履歴ではない旨は`docs/domain/journal.md` 1.5を参照。仕訳・仕訳明細の書き込みは、前後の行のJSONも一時表へ残し、操作の確定時に`buildOperationDetail`が仕訳ごとの変更へ要約して操作の詳細として持つ（計画Issue #295、画面は`src/components/history/`）。新しいテーブルは`rowid`表であること（`WITHOUT ROWID`は履歴の対象外）。
 - 起動時に`PRAGMA user_version`を用いたマイグレーションを実行し、スキーマバージョンを管理する(`openMigratedDatabase`、計画Issue #42)。新規DBは`docs/schema/*.sql`(最新)をそのまま流して`user_version`を最新にし、既存DBは差分(`SCHEMA_PLAN.diffs`)を1つのトランザクションで順に流す。既存DBの移行では、①流す前に元のバイト列を保存先ごとのバックアップ(IndexedDBは別キー、フォルダ保存は同じフォルダの別ファイル。直近の1つだけ)へ保存 → ②差分を適用(外部キー検査を止め、最後に`foreign_key_check`、失敗はロールバック) → ③成功したら直ちに保存、の順に行う。失敗、または`user_version`が最新より大きい(新しいアプリで保存された)DBのときは、起動を止めて`worker-init-error`に種類(`reason`)と元のバイト列を載せ、メインスレッドの`DbClientProvider`が起動エラー画面(`StartupErrorScreen`)を出す(元のデータの書き出し、アプリの更新、再読み込み)。書き込みの権利のない(読み取り専用の)タブは、メモリ上でだけ移行し、バックアップも保存もしない。凍結前の運用・凍結手順・差分の書き方は`docs/guides/schema-migration.md`、判断は`docs/decisions.md` 2026-11-15を参照。

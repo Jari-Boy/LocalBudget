@@ -41,9 +41,9 @@ tags: [domain, financial-statements]
 
 **残高調整(実残調整・基準点とのずれの自動調整)**
 
-`is_reconcilable = false`の資産(現金)は、ユーザーが数えた実際の残高と帳簿残高が食い違うことがある。実際の残高は「手で記録した残高(基準点)」として記録する。`is_reconcilable = true`の資産も、取り込んだ明細の取引後残高が基準点になる([reconciliation.md 1.5 残高の基準点](./reconciliation.md#15-残高照合)参照)。
+`is_reconcilable = false`の資産(現金)は、ユーザーが数えた実際の残高と帳簿残高が食い違うことがある。実際の残高は「手で記録した残高(基準点)」として記録する。`is_reconcilable = true`の資産も、取り込んだ明細の取引後残高が基準点になる([reconciliation.md 1.5 残高の基準点](./reconciliation.md#15-残高の基準点)参照)。
 
-いずれも、基準点の日に帳簿が合うよう、ずれた区間ごとに、システム管理科目「費用・残高調整」(`category = 'expense'`, `is_system_managed = true`、[accounts.md 1.2](./accounts.md#12-区分5要素)参照)を相手科目とする調整仕訳が**自動で**入る([reconciliation.md 1.6](./reconciliation.md#16-原因不明差異への残高調整)、計画Issue #205)。この調整仕訳の`source_type`は`auto_balance_adjustment`とする([journal.md 1.7 作成経路(source_type)](./journal.md#17-作成経路source_type)参照。旧`balance_adjustment`は旧データ用に残す)。最初の基準点の差額だけは、費用ではなく純資産「初期残高」を相手科目にする(元手がPLに載らないように)。
+いずれも、基準点の日に帳簿が合うよう、ずれた区間ごとに、システム管理科目「費用・残高調整」(`category = 'expense'`, `is_system_managed = true`、[accounts.md 1.2](./accounts.md#12-区分5要素)参照)を相手科目とする調整仕訳が**自動で**入る([reconciliation.md 1.6](./reconciliation.md#16-基準点に合わせた自動調整仕訳)、計画Issue #205)。この調整仕訳の`source_type`は`auto_balance_adjustment`とする([journal.md 1.7 作成経路(source_type)](./journal.md#17-作成経路source_type)参照。旧`balance_adjustment`は旧データ用に残す)。最初の基準点の差額だけは、費用ではなく純資産「初期残高」を相手科目にする(元手がPLに載らないように)。
 
 トリガー(手で記録した実残か、明細の取引後残高か)は異なるが、「帳簿と外部の正との差異を吸収する」という会計処理上の構造は同じである。そのため、科目を共通化する。専用のBS科目(資産・負債)を新設するのではなく、既存のexpense区分の1科目とし、`side`で過不足の向きを表現する。これにより、[2.1 生成方式](#21-生成方式)の残高計算の一般式(expenseは`debit - credit`)をそのまま適用できる。
 

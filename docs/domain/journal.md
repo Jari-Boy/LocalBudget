@@ -101,7 +101,7 @@ tags: [domain, journal]
 ```
 
 > **is_reconcilable資産への記帳**
-> 「普通預金」のような`is_reconcilable = true`の資産科目も、`source_type`によらず手入力で記帳できる(計画Issue #145で直接記帳制限を廃止、[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限))。手入力とCSVのズレは[reconciliation.md 1.5 残高照合](./reconciliation.md#15-残高照合)の警告で検知する。「給与が振り込まれる」の例はCSV到着時にその場で記帳するケースを表す。CSV到着前に先に記帳したい場合は「給与を先に見込み計上」のように未収金・未払金を経由した暫定計上を行い、CSV到着後にそれを消し込む([settlement.md](./settlement.md)参照)。
+> 「普通預金」のような`is_reconcilable = true`の資産科目も、`source_type`によらず手入力で記帳できる(計画Issue #145で直接記帳制限を廃止、[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への記帳直接記帳制限の廃止))。手入力とCSVのズレは[reconciliation.md 1.5 残高の基準点](./reconciliation.md#15-残高の基準点)の警告で検知する。「給与が振り込まれる」の例はCSV到着時にその場で記帳するケースを表す。CSV到着前に先に記帳したい場合は「給与を先に見込み計上」のように未収金・未払金を経由した暫定計上を行い、CSV到着後にそれを消し込む([settlement.md](./settlement.md)参照)。
 
 ### 1.3 貸借バランスの検証
 
@@ -143,7 +143,7 @@ tags: [domain, journal]
 
 [accounts.md 2.1](./accounts.md#21-操作ルール)の「別科目への実質変更」は反対仕訳([1.8](#18-関連仕訳グループjournal_entry_link_groups)の`reverses`)で扱う。これは科目マスタ側の大量の過去仕訳を一括付け替えする特殊な操作の文脈である。1件の仕訳を日常的に編集・削除する場面にまで同じ重さを求めると、入力ミスの訂正が煩雑になり、[domain.md 1.1 基本方針](../domain.md#11-基本方針)の「会計知識のない一般ユーザーにも使える」という方針に反する。[1.8](#18-関連仕訳グループjournal_entry_link_groups)の通り、フィールド単位の変更履歴(何をいつ変更したか)は引き続き持たない。
 
-**`source_type = 'external_import'`の仕訳(外部明細取込由来)も、`is_reconcilable`資産側の`account_id`/`amount`/`side`や`entry_date`を含め編集を許可する**(Issue #1で決着)。ただし編集すると、対応する`external_transaction_refs`が指す元のCSV明細との対応が崩れるため、UI上で警告する。[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)の「CSV由来のみ許可」はあくまで**作成経路(`source_type`)**の制約であり、事後の内容がCSVの生データと一致し続けることまでは保証しない。内容が誤っていた場合、削除して正しい内容で再取込する([reconciliation.md 1.4](./reconciliation.md#14-ライフサイクル)参照)か、その場で編集するかはユーザーの選択に委ねる。
+**`source_type = 'external_import'`の仕訳(外部明細取込由来)も、`is_reconcilable`資産側の`account_id`/`amount`/`side`や`entry_date`を含め編集を許可する**(Issue #1で決着)。ただし編集すると、対応する`external_transaction_refs`が指す元のCSV明細との対応が崩れるため、UI上で警告する。[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への記帳直接記帳制限の廃止)の「CSV由来のみ許可」はあくまで**作成経路(`source_type`)**の制約であり、事後の内容がCSVの生データと一致し続けることまでは保証しない。内容が誤っていた場合、削除して正しい内容で再取込する([reconciliation.md 1.4](./reconciliation.md#14-ライフサイクル)参照)か、その場で編集するかはユーザーの選択に委ねる。
 
 **操作履歴(ロールバック、計画Issue #202)は、永続的な変更履歴ではない**。仕訳・マスタの書き込みは、Web Worker内のメモリ上に直近50件の「操作履歴」として記録され、操作履歴画面から「選んだ操作とそれ以降」をまとめて取り消せる。この履歴は(1)ページの再読み込みで消える、(2)DBファイルにも保存先にもバックアップにも含まれない(sql.jsの一時(TEMP)表・TEMPトリガーに持つため`db.export()`に出ない)、(3)上限を超えると古い操作から破棄する。つまり「何をいつ変更したか」を後から辿れる監査ログではなく、直後の入力ミスや意図しない一括操作を取り消すための一時的な道具であり、上記の「フィールド単位の変更履歴は持たない」方針とは矛盾しない。履歴には取消用の逆操作に加え、仕訳・仕訳明細の書き込みについて「操作の詳細」(仕訳ごとの作成・編集・削除と、前後の内容・科目名)も要約して持ち、操作履歴画面に「どの仕訳をどう変えたか」を表示する(計画Issue #295。CSV取込の確定は金融機関・取込先の科目・ファイルごとの件数も添える。詳細も同じくメモリ上のみ)。取消は新しい操作を足すのではなく、記録した逆操作を実行して履歴から外す(Redoはない)。バッチ(CSV取込確定・割勘・精算)は履歴上1件の取消単位になる。仕組みと判断は[decisions.md](../decisions.md)の「操作履歴(ロールバック)」を参照。
 
@@ -160,12 +160,12 @@ tags: [domain, journal]
 | `manual` | 手入力(既定値) |
 | `external_import` | 外部明細取込のレビュー確定を経て作成された。通常の取引・消込のどちらも含む |
 | `recurring_generated` | 定期仕訳([recurring-transactions.md](./recurring-transactions.md))の提案をレビュー確認(承認)して作成された。ルールの行(2行でも3行以上でも)が仕訳の明細行になり、ルールの行に精算バッチが設定されていれば、未収金・未払金(精算バッチ)の行にそのバッチのタグが付く(計画Issue #180)。起票者はルール単位、行の世帯メンバーは 科目の既定 > 行 > 起票者 の順で決まる |
-| `auto_balance_adjustment` | 残高の基準点に合わせて自動で入る調整仕訳(元手=初期残高を含む、計画Issue #205)。科目ごとの計算で導出されるデータで、利用者は編集・削除・関連付けできない([reconciliation.md 1.6](./reconciliation.md#16-原因不明差異への残高調整)、[accounts.md 4.3](./accounts.md#43-初期残高最初の基準点の自動仕訳))。一覧には「自動調整」のタグで表示する |
+| `auto_balance_adjustment` | 残高の基準点に合わせて自動で入る調整仕訳(元手=初期残高を含む、計画Issue #205)。科目ごとの計算で導出されるデータで、利用者は編集・削除・関連付けできない([reconciliation.md 1.6](./reconciliation.md#16-基準点に合わせた自動調整仕訳)、[accounts.md 4.3](./accounts.md#43-初期残高最初の基準点の自動仕訳))。一覧には「自動調整」のタグで表示する |
 | `initial_balance` | (旧)口座/カード開設時の初期残高仕訳。計画Issue #205で「初期残高」の入力を最初の基準点に統合したため新規には作らない。旧データの表示用に値だけ残す |
 | `balance_adjustment` | (旧)残高調整。計画Issue #205の自動調整仕訳(`auto_balance_adjustment`)に置き換えた。旧データの表示用に値だけ残す |
 | `expense_splitting` | 割勘機能で作った仕訳([expense-splitting.md](./expense-splitting.md)、計画Issue #149)。割勘かどうかは科目構成ではなくこの値で判定する。精算の仕訳は分類を増やさず、口座明細からなら`external_import`、手で起票したものなら`manual`とする |
 
-`source_type`は仕訳の作成経路を表す。以前は[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への直接記帳の制限)が「この仕訳はis_reconcilable = trueの科目に記帳してよいか」を判定する根拠にしていたが、計画Issue #145でその制限を廃止したため、現在は一覧の出どころ表示など、経路を区別する用途に使う。
+`source_type`は仕訳の作成経路を表す。以前は[reconciliation.md 1.2](./reconciliation.md#12-is_reconcilable資産負債への記帳直接記帳制限の廃止)が「この仕訳はis_reconcilable = trueの科目に記帳してよいか」を判定する根拠にしていたが、計画Issue #145でその制限を廃止したため、現在は一覧の出どころ表示など、経路を区別する用途に使う。
 
 > **出どころタグの表示(計画Issue #289)**: `external_import`の仕訳は、取込時の金融機関名([reconciliation.md 2.1](./reconciliation.md#21-フィールド定義)の`financial_institution_name`、`JournalEntry.financialInstitutionName`)があればその名前を出どころタグに表示し(色は外部明細の青のまま)、無ければ従来の「外部明細」と表示する。
 
@@ -183,7 +183,7 @@ tags: [domain, journal]
 - 1つの仕訳が複数のグループに同時に所属できる(所属数の上限なし)。これにより、例えば1つの口座引き落とし仕訳(精算仕訳)が、無関係な2つの異なる精算バッチ(それぞれ別のグループ)の両方を同時に消し込むようなケースでも、精算仕訳がその2つのグループへそれぞれ参加するだけで表現でき、無関係な2つのグループ自体が意図せず統合されることはない。
 - 用途は表示専用。仕訳画面(`JournalScreen`)の詳細パネルの最下部に「関連仕訳」として、所属するグループごとに一覧表示するためだけに使う(計画Issue #152。以前はボタン起点のダイアログ`RelatedEntriesDialog`だった)。残高計算・消込判定には一切関与しない。
 - 作成契機: 割勘([expense-splitting.md](./expense-splitting.md)参照)の仕訳を作成する際は、システムが自動的にグループを作成・参加させ、関連する仕訳(元仕訳・割勘仕訳・精算仕訳)を同じグループに所属させる。それ以外のケースでは、ユーザーが仕訳画面の関連仕訳から、絞り込みポップアップで既存の仕訳を選んで手動で関連付け、グループを作成・参加させる。
-- グループへの参加/新規作成の判定は、ドメイン層の純粋関数`planJoinOrCreateGroups`(`src/domain/journal-link-group/`)が担う。anchorEntryIds(既存の仕訳群)の既存グループを調べ、1つも無ければanchor・newEntryIdsをまとめた新規グループを作成し、1つ以上あればそれら全てのグループへnewEntryIdsを参加させる(anchor自身は既存グループへ追加しない)。`JournalEntryLinkGroupRepository.joinOrCreateGroups`がこの判定に従ってDB書き込みを行う単一のエントリポイントであり、割勘の自動グルーピング(`ExpenseSplittingForm`・`SettlementScreen`)・仕訳画面からの手動関連付けの両方から使われる。
+- グループへの参加/新規作成の判定は、ドメイン層の純粋関数`planJoinOrCreateGroups`(`src/domain/journal-link-group/`)が担う。anchorEntryIds(既存の仕訳群)の既存グループを調べ、1つも無ければanchor・newEntryIdsをまとめた新規グループを作成し、1つ以上あればそれら全てのグループへnewEntryIdsを参加させる(anchor自身は既存グループへ追加しない)。`JournalEntryLinkGroupRepository.joinOrCreateGroups`がこの判定に従ってDB書き込みを行う単一のエントリポイントであり、割勘の自動グルーピング(割勘タブ`SplitTab`・精算タブ`SettleTab`)・仕訳画面からの手動関連付けの両方から使われる。
 - メンバーが0件になったグループ(全メンバーの仕訳が削除された等)は、DBトリガー(`journal_entry_link_groups_delete_when_empty`、[2.3](#23-関連仕訳グループマスタjournal_entry_link_groups)参照)により自動的に削除される。ユーザーが仕訳画面の関連仕訳から手動で関連付けを解除する操作(`JournalEntryLinkGroupRepository.removeMember`)も同じ経路で、残りが1件になった場合はトリガーが発火せずグループ自体は残る(表示側は自分以外のメンバーが0件のグループを表示しないため、UI上は見えなくなる)。
 - 関連仕訳の追加には2つの入口がある(計画Issue #152)。通常の追加は`joinOrCreateGroups`の判定に従い、この仕訳が既存グループに所属していればそこへ合流する。「+ 新しいグループ」ボタンは既存グループに合流せず、`JournalEntryLinkGroupRepository.createGroup`で、この仕訳と選んだ仕訳による新しいグループを作る(既に別グループに所属していても関係を分けて持ちたい場合のため)。
 - ユーザーが関連仕訳の各行から任意の仕訳をグループから除外できる(「解除」ボタン)(確認ダイアログは置かない。journal_entry_links撤廃時に廃止したリンク削除警告UIと同じ方針、残高計算に関与しない緩い関連付けの解除に重い確認は不要と判断)。

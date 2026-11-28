@@ -12,7 +12,7 @@ tags: [domain, reconciliation]
 [domain.md](../domain.md)(エントリポイント)から分割された、外部明細との突合に関する詳細設計。
 
 > **関連ドメイン**
-> [architecture.md 12章](../architecture.md#12-起票方式外部明細取込マニュアル起票)の外部明細取込方針を具体化した[statement-import.md](./statement-import.md)([GitHub Issue #2](https://github.com/Jari-Boy/LocalBudget/issues/2))と密接に関わる。重複防止フローは[statement-import.md 1.6 重複防止フロー](./statement-import.md#16-重複防止フロー)側で定義され、本ファイルの残高照合([1.5](#15-残高照合))はそれと`external_transaction_refs`(突合マスタ、[2章](#2-突合マスタexternal_transaction_refs)参照)を共有する。
+> [architecture.md 12章](../architecture.md#12-起票方式外部明細取込マニュアル起票)の外部明細取込方針を具体化した[statement-import.md](./statement-import.md)([GitHub Issue #2](https://github.com/Jari-Boy/LocalBudget/issues/2))と密接に関わる。重複防止フローは[statement-import.md 1.6 重複防止フロー](./statement-import.md#16-重複防止フロー)側で定義され、本ファイルの残高照合([1.5](#15-残高の基準点))はそれと`external_transaction_refs`(突合マスタ、[2章](#2-突合マスタexternal_transaction_refs)参照)を共有する。
 > 
 > 暫定計上とその後の消込という会計処理パターンは[settlement.md](./settlement.md)として独立ドメイン化されている。
 
@@ -22,11 +22,11 @@ tags: [domain, reconciliation]
 
 1. [突合](#1-突合)
    - [1.1 位置づけ](#11-位置づけ)
-   - [1.2 is_reconcilable資産・負債への記帳(直接記帳制限の廃止)](#12-is_reconcilable資産負債への直接記帳の制限)
+   - [1.2 is_reconcilable資産・負債への記帳(直接記帳制限の廃止)](#12-is_reconcilable資産負債への記帳直接記帳制限の廃止)
    - [1.3 データモデルの考え方](#13-データモデルの考え方)
    - [1.4 ライフサイクル](#14-ライフサイクル)
-   - [1.5 残高の基準点](#15-残高照合)
-   - [1.6 基準点に合わせた自動調整仕訳](#16-原因不明差異への残高調整)
+   - [1.5 残高の基準点](#15-残高の基準点)
+   - [1.6 基準点に合わせた自動調整仕訳](#16-基準点に合わせた自動調整仕訳)
 2. [突合マスタ(external_transaction_refs)](#2-突合マスタexternal_transaction_refs)
    - [2.1 フィールド定義](#21-フィールド定義)
    - [2.2 DDL](#22-ddl)
@@ -44,20 +44,20 @@ tags: [domain, reconciliation]
 > **用語: 突合と照合**
 > 本ドメインでは両者を役割で使い分ける。**突合**は、外部明細(CSVの1行)と仕訳の対応関係を記録・維持する行為を指し、突合マスタ(`external_transaction_refs`、[2章](#2-突合マスタexternal_transaction_refs)参照)・重複防止([statement-import.md 1.6 重複防止フロー](./statement-import.md#16-重複防止フロー)参照、対応する記録が既にあるかを調べる)がこれにあたる。
 > 
-> **照合**は、突合によって記録された対応関係を土台に、値同士を比較検証する行為を指し、`is_reconcilable`(照合可否)・基準点との照合([1.5](#15-残高照合)・[1.6](#16-原因不明差異への残高調整)参照、帳簿残高と基準点の残高を日付ごとに比較し、ずれを自動調整仕訳にする)がこれにあたる。両者は同義語ではない。
+> **照合**は、突合によって記録された対応関係を土台に、値同士を比較検証する行為を指し、`is_reconcilable`(照合可否)・基準点との照合([1.5](#15-残高の基準点)・[1.6](#16-基準点に合わせた自動調整仕訳)参照、帳簿残高と基準点の残高を日付ごとに比較し、ずれを自動調整仕訳にする)がこれにあたる。両者は同義語ではない。
 
 **突合(重複防止、[statement-import.md 1.6](./statement-import.md#16-重複防止フロー))の対象**: 外部明細の取込対象として選ばれた科目であれば、`is_reconcilable`の値によらずすべて対象になる。現状は次の2種類。
 
 - `asset`区分: 銀行口座・電子マネー・証券口座など、外部明細に残高情報がある資産([accounts.md 4.2](./accounts.md#42-外部明細と残高情報による照合可否の自動決定)参照)。
 - `liability`区分: クレジットカード未払金科目([accounts.md 4.4 なぜカードごとに専用科目にするか](./accounts.md#44-なぜカードごとに専用科目にするか)参照、カードごとに1科目)。利用明細CSVを取り込む際の重複防止に使う。
 
-**is_reconcilable(取引後残高の基準点[1.5](#15-残高照合))の対象**: 「自身の外部明細だけで残高が完結する科目」に限る。銀行口座・電子マネー・証券口座はこれに該当するが、クレジットカード未払金は該当しない。支払い(消込)の経路は口座振替に限らず、コンビニでの現金払いのように外部明細を伴わない経路もあるため、記帳経路を外部明細取込だけに限定できないからである([settlement.md](./settlement.md)、[accounts.md 4.5](./accounts.md#45-なぜis_reconcilable--falseにするか)参照)。将来、支払い経路が外部明細に限定される負債科目(カードローン等)が追加されれば、そちらは対象に含まれうる。
+**is_reconcilable(取引後残高の基準点[1.5](#15-残高の基準点))の対象**: 「自身の外部明細だけで残高が完結する科目」に限る。銀行口座・電子マネー・証券口座はこれに該当するが、クレジットカード未払金は該当しない。支払い(消込)の経路は口座振替に限らず、コンビニでの現金払いのように外部明細を伴わない経路もあるため、記帳経路を外部明細取込だけに限定できないからである([settlement.md](./settlement.md)、[accounts.md 4.5](./accounts.md#45-なぜis_reconcilable--falseにするか)参照)。将来、支払い経路が外部明細に限定される負債科目(カードローン等)が追加されれば、そちらは対象に含まれうる。
 
 `is_reconcilable = false`の現金は同様に対象外([financial-statements.md 1.2 資産の照合可否](./financial-statements.md#12-資産の照合可否)の実残調整で扱う)。家賃等の暫定計上に使う汎用の未払金・未収金も対象外([settlement.md](./settlement.md)参照)。
 
 本ドメインは、`is_reconcilable = true`の科目について、帳簿の乖離を**検知し、自動調整仕訳で解消する**(計画Issue #205)。
 
-かつては記帳経路をCSV(+初期登録)に絞って乖離の入口を塞ぐ「予防」も併用していたが、計画Issue #145で廃止した([1.2](#12-is_reconcilable資産負債への直接記帳の制限)参照)。手入力や定期取引でも全科目を記帳できる代わりに、[1.5 残高の基準点](#15-残高照合)と帳簿残高を日付ごとに比較し、取り込み漏れ・事後編集・手入力との二重計上・手入力の誤りのいずれが原因でも、ずれた区間に自動調整仕訳が入り、その表示で気づけるようにする。クレジットカード未払金はこの検知の対象外だが、突合(重複防止)による保護は引き続き受けられる。
+かつては記帳経路をCSV(+初期登録)に絞って乖離の入口を塞ぐ「予防」も併用していたが、計画Issue #145で廃止した([1.2](#12-is_reconcilable資産負債への記帳直接記帳制限の廃止)参照)。手入力や定期取引でも全科目を記帳できる代わりに、[1.5 残高の基準点](#15-残高の基準点)と帳簿残高を日付ごとに比較し、取り込み漏れ・事後編集・手入力との二重計上・手入力の誤りのいずれが原因でも、ずれた区間に自動調整仕訳が入り、その表示で気づけるようにする。クレジットカード未払金はこの検知の対象外だが、突合(重複防止)による保護は引き続き受けられる。
 
 ### 1.2 is_reconcilable資産・負債への記帳(直接記帳制限の廃止)
 
@@ -69,7 +69,7 @@ tags: [domain, reconciliation]
 **手入力とCSVの関係**: 手入力した取引をCSVでも取り込むと二重計上になりうるが、自動では防げない。次の2つで気づけるようにする。
 
 - [statement-import.md 1.6](./statement-import.md#16-重複防止フロー)の「似た取引」(旧称: 確定版の可能性)の候補に、突合マスタを持たない仕訳(手入力・定期取引生成)も含める。CSV取込のアップロード時に、対象科目に明細がある手入力・定期取引生成の仕訳のうち突合マスタを持たないものを、日付が3日以内・金額が3%以内なら候補として提示する(`collectUnreferencedTransactions`)。初期残高・残高調整・割勘・外部明細取込の仕訳は候補にしない。
-- [1.5 残高の基準点](#15-残高照合)と手入力行を含む全明細の帳簿残高を日付ごとに比較し、ズレを自動調整仕訳として残す。ただし基準点があるのは、取引後残高を持つCSVの科目と、残高を手で記録した科目に限られる。
+- [1.5 残高の基準点](#15-残高の基準点)と手入力行を含む全明細の帳簿残高を日付ごとに比較し、ズレを自動調整仕訳として残す。ただし基準点があるのは、取引後残高を持つCSVの科目と、残高を手で記録した科目に限られる。
 
 `is_reconcilable`が`NULL`の区分(`equity`・`revenue`・`expense`)、および`is_reconcilable = false`の科目(現金、[settlement.md](./settlement.md)の暫定計上用の汎用未払金・未収金、CSVが取得できない口座)も従来どおり自由に手入力できる。これらは[financial-statements.md 1.2](./financial-statements.md#12-資産の照合可否)の実残調整、または[settlement.md](./settlement.md)の暫定計上で運用する。クレジットカード未払金も、通常は外部明細取込(利用明細CSV)を主な記帳経路としつつ、コンビニ払い等CSVで捕捉できない支払いの手入力も許容する([accounts.md 4.5](./accounts.md#45-なぜis_reconcilable--falseにするか)参照)。
 
@@ -143,8 +143,8 @@ CSVの1行(またはCSVから生成された仕訳)を「外部取引」とし�
 | `entry_date`             | 取引日(スナップショット) | インポート時点で`ImportedRecord.entry_date`([statement-import.md 1.2](./statement-import.md#12-中間表現importedrecord)参照)から複写。書き込み後は不変 |
 | `description`            | 摘要(スナップショット) | インポート時点で`ImportedRecord.description`から複写した生文字列。書き込み後は不変。`journal_entries.memo`の初期値としても使われるが、`memo`はその後ユーザーが自由に上書きできるのに対しこちらは不変 |
 | `amount`                 | 金額(スナップショット) | インポート時点で`ImportedRecord.amount`から複写した符号付き整数(正 = 対象科目の残高が増える方向、[statement-import.md 1.2](./statement-import.md#12-中間表現importedrecord)参照)。`journal_lines.amount`/`side`に変換される前の、CSV自身の符号表現のまま保持する。書き込み後は不変 |
-| `external_balance_after` | 取引後残高      | 任意。CSVに残高列がある場合のみ格納。基準点になる([1.5](#15-残高照合)参照)                                                                                                                                |
-| `row_order`              | 取込時のCSV上の行の順番 | 任意(既存データはNULLでid順で代用、計画Issue #205)。0始まり。同じ日の複数行の「最後の残高」とCSVの並び順の判定に使う([1.5](#15-残高照合)) |
+| `external_balance_after` | 取引後残高      | 任意。CSVに残高列がある場合のみ格納。基準点になる([1.5](#15-残高の基準点)参照)                                                                                                                                |
+| `row_order`              | 取込時のCSV上の行の順番 | 任意(既存データはNULLでid順で代用、計画Issue #205)。0始まり。同じ日の複数行の「最後の残高」とCSVの並び順の判定に使う([1.5](#15-残高の基準点)) |
 | `is_settled`             | 確定済みか      | 任意(NULL許容)。[statement-import.md 1.2](./statement-import.md#12-中間表現importedrecord)の`ImportedRecord.is_settled`をそのまま引き継ぐ。確定版候補のサジェスト([statement-import.md 1.6 重複防止フロー](./statement-import.md#16-重複防止フロー))にのみ使い、FS集計には関与しない           |
 | `financial_institution_name` | 取込時の金融機関名(スナップショット) | 任意(NULL許容、スキーマv12、計画Issue #289)。取込に使ったマッピング定義の`format_group_id`を取込時点の名前のまま複写する。定義への外部キーは張らず、定義の削除・改名・統合の影響を受けない。既存データはNULL(不明)のままで、画面では従来の「外部明細」と表示する。仕訳の読み出しでは`JournalEntry.financialInstitutionName`(省略可)として返す |
 | `imported_at`            | 取込日時       |                                                                                                                                                                       |
@@ -155,7 +155,7 @@ CSVの1行(またはCSVから生成された仕訳)を「外部取引」とし�
 > 以前は`is_reconcilable = true`の科目のみを許可するTRIGGERを設けていたが、これは不要な制約だった。`external_transaction_refs`は「外部明細の取込対象としてユーザーが選んだ科目」に対して、パーサーを通過した明細を突き合わせた結果として機械的に作られるレコードである。この仕組みは、対象科目が`is_reconcilable = true`かどうかとは無関係に成立する([1.1 用語: 突合と照合](#11-位置づけ)参照)。取込対象として選べる科目自体は、勘定科目の統合登録フロー([accounts.md 4章](./accounts.md#4-資産負債収益費用の統合登録フロー計画issue-102)参照)によって`asset`または`liability`の実在する外部口座・カードに自然と絞られるため、DB側で重ねて制約する必要はない。
 
 > **なぜ`entry_date`/`description`/`amount`のコピーを持つか**
-> `journal_entries`/`journal_lines`は[1.4 ライフサイクル](#14-ライフサイクル)の通り事後編集を許可されており、`entry_date`・`memo`・`amount`はユーザーが後から自由に書き換えられる。一方この3列は、インポートされた瞬間の値を固定して保持する。両者を突き合わせて初めて「CSVは本来こう言っていたのに、今の仕訳はこう変わっている」という具体的な比較ができる。CSVファイル自体は再取込しない限りアプリの外にあるため、この複写がなければ、一度確定した後は「元々CSVが何と言っていたか」をアプリ内で確認する手段が失われる。[1.6 原因不明差異への残高調整](#16-原因不明差異への残高調整)の調査や、[journal.md 1.5](./journal.md#15-仕訳の編集削除)がUI警告に留めている「外部明細との対応が崩れる」を、CSVの再アップロードなしに具体的に(どの値がどう変わったか)提示できるようにするのが狙い。
+> `journal_entries`/`journal_lines`は[1.4 ライフサイクル](#14-ライフサイクル)の通り事後編集を許可されており、`entry_date`・`memo`・`amount`はユーザーが後から自由に書き換えられる。一方この3列は、インポートされた瞬間の値を固定して保持する。両者を突き合わせて初めて「CSVは本来こう言っていたのに、今の仕訳はこう変わっている」という具体的な比較ができる。CSVファイル自体は再取込しない限りアプリの外にあるため、この複写がなければ、一度確定した後は「元々CSVが何と言っていたか」をアプリ内で確認する手段が失われる。[1.6 基準点に合わせた自動調整仕訳](#16-基準点に合わせた自動調整仕訳)の調査や、[journal.md 1.5](./journal.md#15-仕訳の編集削除)がUI警告に留めている「外部明細との対応が崩れる」を、CSVの再アップロードなしに具体的に(どの値がどう変わったか)提示できるようにするのが狙い。
 
 ### 2.2 DDL
 
@@ -165,12 +165,12 @@ CSVの1行(またはCSVから生成された仕訳)を「外部取引」とし�
 
 `journal_entries`・`journal_lines`へのカラム追加は不要(FKは`external_transaction_refs`側が持つ)。ただし以下の点は他ドメインの反映が必要。
 
-- `JournalEntryRepository`(仕訳ドメイン、[journal.md](./journal.md))は仕訳作成時に`journal_entries.source_type`([journal.md 1.7](./journal.md#17-作成経路source_type)参照)を適切に設定する。[1.2](#12-is_reconcilable資産負債への直接記帳の制限)の通り、`is_reconcilable = true`の科目への記帳を`source_type`で拒否することはしない(計画Issue #145で廃止)。割勘の精算仕訳の場合は、未収金・未払金(精算バッチ)の行に`settlement_batch_id`タグを付与し、タグ集計方式([settlement.md](./settlement.md)参照)でどの割勘バッチの精算かを表現する責務も持つ(カード未払金などそれ以外の一時勘定の消込にはタグを付けない、計画Issue #167)。
+- `JournalEntryRepository`(仕訳ドメイン、[journal.md](./journal.md))は仕訳作成時に`journal_entries.source_type`([journal.md 1.7](./journal.md#17-作成経路source_type)参照)を適切に設定する。[1.2](#12-is_reconcilable資産負債への記帳直接記帳制限の廃止)の通り、`is_reconcilable = true`の科目への記帳を`source_type`で拒否することはしない(計画Issue #145で廃止)。割勘の精算仕訳の場合は、未収金・未払金(精算バッチ)の行に`settlement_batch_id`タグを付与し、タグ集計方式([settlement.md](./settlement.md)参照)でどの割勘バッチの精算かを表現する責務も持つ(カード未払金などそれ以外の一時勘定の消込にはタグを付けない、計画Issue #167)。
 - 重複防止(突合)の実装は[statement-import.md 1.6 重複防止フロー](./statement-import.md#16-重複防止フロー)側の責務であり、`is_reconcilable`の値によらない独立した処理として`JournalEntryRepository`が`external_transaction_refs`を作成する([2.1](#21-フィールド定義)「なぜ`account_id`にTRIGGER制約を設けないか」参照)。
 - [1.4](#14-ライフサイクル)の突合済み仕訳の編集・削除ルールは[GitHub Issue #1](https://github.com/Jari-Boy/LocalBudget/issues/1)(仕訳自体のライフサイクル設計)で決着し、[journal.md 1.5](./journal.md#15-仕訳の編集削除)に反映済み。
-- [1.6](#16-原因不明差異への残高調整)の費用の「残高調整」科目・純資産の「初期残高」科目はどちらもシステム管理科目で、Worker起動時に`seedBalanceAdjustmentAccount`・`seedInitialBalanceAccount`が冪等に投入する([accounts.md 3.1](./accounts.md#31-フィールド定義))。
+- [1.6](#16-基準点に合わせた自動調整仕訳)の費用の「残高調整」科目・純資産の「初期残高」科目はどちらもシステム管理科目で、Worker起動時に`seedBalanceAdjustmentAccount`・`seedInitialBalanceAccount`が冪等に投入する([accounts.md 3.1](./accounts.md#31-フィールド定義))。
 - `external_transaction_refs.is_settled`は[statement-import.md 1.2](./statement-import.md#12-中間表現importedrecord)の`ImportedRecord.is_settled`の値をそのまま引き継ぐ。設定するのは[statement-import.md 2章](./statement-import.md#2-マッピング定義マスタimport_mapping_definitions)のマッピング定義であり、本ドメイン側では値の判定ロジックを持たない。
 
 ### 2.4 手で記録した残高(account_balance_records)
 
-取引後残高のあるCSVの科目以外の資産・負債が、基準点を手で記録するためのテーブル(計画Issue #205)。1行が「日付`record_date`の終わり時点の正しい残高`balance`」を表し、同じ科目・同じ日は1件だけ(一意制約)。科目を削除すると一緒に消える(`ON DELETE CASCADE`)。追加・編集・削除のたびに、同じトランザクションで科目の自動調整仕訳を計算し直す([1.6](#16-原因不明差異への残高調整))。取引後残高のあるCSVの科目には記録欄を出さない。実装: [schema/reconciliation.sql](../schema/reconciliation.sql)、`SqlJsAccountBalanceRecordRepository`。
+取引後残高のあるCSVの科目以外の資産・負債が、基準点を手で記録するためのテーブル(計画Issue #205)。1行が「日付`record_date`の終わり時点の正しい残高`balance`」を表し、同じ科目・同じ日は1件だけ(一意制約)。科目を削除すると一緒に消える(`ON DELETE CASCADE`)。追加・編集・削除のたびに、同じトランザクションで科目の自動調整仕訳を計算し直す([1.6](#16-基準点に合わせた自動調整仕訳))。取引後残高のあるCSVの科目には記録欄を出さない。実装: [schema/reconciliation.sql](../schema/reconciliation.sql)、`SqlJsAccountBalanceRecordRepository`。

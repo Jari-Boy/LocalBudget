@@ -63,7 +63,7 @@ tags: [domain, expense-splitting]
 > **なぜ人・バッチごとに専用科目を作らないか**
 > 検討の初期段階では「未収入金(Aさん)」「未払金(Bさん)」のように人ごとの専用科目や、割勘バッチごとの一時的な科目を都度作成する案も検討したが、いずれも使い捨ての科目で科目一覧が肥大化する。精算バッチ(`settlement_batch_id`)を「どのバッチか」を表す軸として使えば、科目自体は`household_member_id`と組み合わせた汎用の2科目だけで足りる。
 >
-> 割勘バッチには「26/7生活費割勘」のような名前の`settlement_batches`レコード(`type = 'expense_splitting'`)を作成する([settlement.md 2章](./settlement.md#2-精算バッチマスタsettlement_batches)、計画Issue #133)。精算が終わり未収金(精算バッチ)の残高が0になると、利用者に「クローズしますか?」と確認する(クローズ済み=精算済みで、選択欄の候補から外れる。[settlement.md 1.9](./settlement.md#19-精算画面の操作モデル計画issue-139)のクローズ節、計画Issue #249)。`settlement_batches`は`projects`(イベント専用)とは独立したテーブルであり、`settlement_batch_id`は`project_id`とは別カラムのため、割勘仕訳の費用側の行に元仕訳のイベント(`project_id`)を引き継ぐことと、未収金(精算バッチ)行に精算バッチ(`settlement_batch_id`)を付与することは互いに干渉しない([1.3](#13-世帯メンバー間の割勘)・[1.4](#14-世帯外の相手との割勘)参照)。
+> 割勘バッチには「26/7生活費割勘」のような名前の`settlement_batches`レコード(`type = 'expense_splitting'`)を作成する([settlement.md 2章](./settlement.md#2-精算バッチマスタsettlement_batches)、計画Issue #133)。精算が終わり未収金(精算バッチ)の残高が0になると、利用者に「クローズしますか?」と確認する(クローズ済み=精算済みで、選択欄の候補から外れる。[settlement.md 1.9](./settlement.md#19-精算画面の操作モデル計画issue-139計画issue-153で割勘精算画面の精算タブに刷新)のクローズ節、計画Issue #249)。`settlement_batches`は`projects`(イベント専用)とは独立したテーブルであり、`settlement_batch_id`は`project_id`とは別カラムのため、割勘仕訳の費用側の行に元仕訳のイベント(`project_id`)を引き継ぐことと、未収金(精算バッチ)行に精算バッチ(`settlement_batch_id`)を付与することは互いに干渉しない([1.3](#13-世帯メンバー間の割勘)・[1.4](#14-世帯外の相手との割勘)参照)。
 
 ### 1.3 世帯メンバー間の割勘
 
@@ -141,7 +141,7 @@ tags: [domain, expense-splitting]
 
 **費用の行が複数ある仕訳(計画Issue #149。計画Issue #271で明細行単位に置き換わった)**: 以前は、借方の費用の行すべてを同じ割合で割り、「明細1行だけを割勘から外す指定は作らない」としていた。計画Issue #271で、割る行を利用者が1行ずつ選ぶ形になり(借方・貸方とも、費用・収益の行)、按分は[1.7 明細行単位の割勘](#17-明細行単位の割勘)の規則(行ごとに最大剰余法、金額指定は純額に対する割合で配分、プロジェクト(イベント)は付け替えの行へ引き継ぐ)になった。
 
-**履歴の閲覧**: 割勘仕訳作成時、元仕訳と割勘仕訳は自動的に同一の関連仕訳グループへ所属する([journal.md 1.8 関連仕訳グループ](./journal.md#18-関連仕訳グループjournal_entry_link_groups)参照、計画Issue #138)。複数の元仕訳をまとめて割勘した場合、全元仕訳+割勘仕訳が1つのグループにまとまる(多対多)。精算仕訳も、精算対象のタグ(`settlement_batch_id`・科目・世帯メンバー/取引先)が一致する割勘仕訳の所属グループへ自動的に参加する(`findEntryIdsWithSettlementTag`で対象を特定、精算タブ(`SettleTab`)の書き込み処理`submitSettlement`の配線)。元仕訳の詳細画面(`JournalEntryDetailScreen`)から、所属グループ内で`source_type`が割勘仕訳(`isExpenseSplitEntry`)の仕訳を辿り、さらにその割勘仕訳の所属グループ内で精算仕訳(`isExpenseSplitSettlementEntry`)と判定できる仕訳を辿れば、「元の支出 → 割勘 → 精算」の一連の流れを追跡できる(`traceExpenseSplittingHistory`)。また、`settlement_batch_id`でバッチ全体の仕訳を横断的に一覧することもできる(計画Issue #133)。
+**履歴の閲覧**: 割勘仕訳作成時、元仕訳と割勘仕訳は自動的に同一の関連仕訳グループへ所属する([journal.md 1.8 関連仕訳グループ](./journal.md#18-関連仕訳グループjournal_entry_link_groups)参照、計画Issue #138)。複数の元仕訳をまとめて割勘した場合、全元仕訳+割勘仕訳が1つのグループにまとまる(多対多)。精算仕訳も、精算対象のタグ(`settlement_batch_id`・科目・世帯メンバー/取引先)が一致する割勘仕訳の所属グループへ自動的に参加する(`findEntryIdsWithSettlementTag`で対象を特定、精算タブ(`SettleTab`)の書き込み処理`submitSettlement`の配線)。元仕訳の詳細(仕訳画面`JournalScreen`の詳細パネル)から、所属グループ内で`source_type`が割勘仕訳(`isExpenseSplitEntry`)の仕訳を辿り、さらにその割勘仕訳の所属グループ内で精算仕訳(`isExpenseSplitSettlementEntry`)と判定できる仕訳を辿れば、「元の支出 → 割勘 → 精算」の一連の流れを追跡できる(`traceExpenseSplittingHistory`)。また、`settlement_batch_id`でバッチ全体の仕訳を横断的に一覧することもできる(計画Issue #133)。
 
 **割勘履歴(計画Issue #110。計画Issue #153で割勘・精算画面の割勘タブの下の表になり、計画Issue #268で最上位の「履歴」タブ(割勘・精算・履歴の3タブの3つ目)へ移った)**: 上記のトラバーサル(元仕訳→割勘仕訳→精算仕訳)は`traceExpenseSplittingHistory`として実装されており、特定の元仕訳を起点にした個別の追跡に使う。これとは別に`listExpenseSplittingHistory`は、全仕訳を起点候補として`traceExpenseSplittingHistory`を実行し、結果を割勘仕訳(`splitEntry`)のidでグルーピングし直す合成関数であり、個々の元仕訳を事前に把握していなくても「これまでに行われた割勘」を横断的に一覧できる。1件の割勘仕訳が複数の元仕訳を対象にする場合(上記「複数の元仕訳をまとめた一括割勘」)、同じ割勘仕訳が起点候補の数だけ重複して見つかるが、グルーピングによって1件の履歴エントリに統合する。一覧の各行の分担者は`resolveExpenseSplittingParticipant`(未払金(精算バッチ)行の`household_member_id`、無ければ`counterparty_id`を持つ行から解決、1.3・1.4節の行構成に対応)で、精算状況は`isExpenseSplittingEntrySettled`(下記callout参照)で判定する。UI(割勘・精算画面の履歴タブの表。行の組み立ては`buildSplitHistoryRows`)はこれら3関数を組み合わせるだけの薄い層であり、各行から仕訳画面で割勘仕訳を開けば、そこで上記のトラバーサルによる詳細な追跡ができるため、履歴の表自体は追跡ロジックを再実装しない。精算が1件も進んでいない割勘は、履歴の行から2回押して取り消せる(物理削除、`hasAnySettlementActivity`で判定)。
 
@@ -151,7 +151,7 @@ tags: [domain, expense-splitting]
 > **isExpenseSplittingEntrySettledは一時勘定の科目ごとにcalculateSettlementBatchBalanceを適用する(計画Issue #133)**
 > settlement-batchドメインの`calculateSettlementBatchBalance`(タグ集計方式、[settlement.md 1.6](./settlement.md#16-分割消込消込残高による完了判定)参照)は、`(settlement_batch_id, account_id, household_member_id または counterparty_id)`の組ごとに未精算残高を計算する関数である。[1.3 世帯メンバー間の割勘](#13-世帯メンバー間の割勘)のように1件の割勘仕訳が資産側・負債側両方の一時勘定の行を持つ場合、`isExpenseSplittingEntrySettled`は割勘仕訳自身が持つ一時勘定の行それぞれについてこの集計を個別に適用し、すべての残高が0になって初めて「精算済み」と判定する(片方のみの精算を精算済みと誤判定しない)。
 >
-> 明示的なリンクを使わないタグ集計方式のため、`isExpenseSplittingEntrySettled`は関連仕訳グループではなくDB全体の明細行(`allLines`)を引数に取る。呼び出し側(`listExpenseSplittingHistory`経由の`ExpenseSplittingHistoryScreen`)は全仕訳の明細行をそのまま渡せばよく、事前絞り込みは不要である(`src/domain/expense-splitting/isExpenseSplittingEntrySettled.ts`参照)。
+> 明示的なリンクを使わないタグ集計方式のため、`isExpenseSplittingEntrySettled`は関連仕訳グループではなくDB全体の明細行(`allLines`)を引数に取る。呼び出し側(`listExpenseSplittingHistory`経由の`SplitHistoryTab`(履歴タブ))は全仕訳の明細行をそのまま渡せばよく、事前絞り込みは不要である(`src/domain/expense-splitting/isExpenseSplittingEntrySettled.ts`参照)。
 
 **取り消し**: 割勘仕訳は`source_type = 'expense_splitting'`、精算仕訳は手入力(`manual`)または外部明細取込(`external_import`)の仕訳であり、[journal.md 1.5 仕訳の編集・削除](./journal.md#15-仕訳の編集削除)の既存ルール(物理削除は常に許可)がそのまま適用される。
 

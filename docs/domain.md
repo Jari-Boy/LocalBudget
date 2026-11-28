@@ -29,9 +29,10 @@ tags: [domain, entry-point]
 ### 1.1 基本方針
 
 - **複式簿記の整合性を守る。** 資産・負債・純資産・収益・費用を含む5区分で設計する。
-- **会計用語をユーザーから抽象化し、DBには保持する。** UIは「口座を登録する」等のタスク単位で提示し、勘定科目・仕訳・借方貸方といった簿記概念を見せない。一方、内部データモデルはスキーマ・トリガーレベルで複式簿記のルールを厳格に守る。
+- **簿記の整合性はDBで守り、UIは入口をタスク単位にして用語を説明する。** 口座・クレジットカードの登録、割勘、精算、明細取込などの入口は「口座を登録する」等のタスク単位で提示し、簿記の知識を前提にしない。一方、仕訳画面は借方・貸方を並べた表で仕訳の中身をそのまま見せて編集できるようにしている(自分の記帳を確かめて直せるようにするため)。簿記用語は用語集(`/glossary`)で説明する。内部データモデルは、スキーマ・トリガーレベルで複式簿記のルールを厳格に守る。
 - **財務諸表(FS)は都度生成する。** 残高スナップショットは保持せず、財務諸表は仕訳から毎回集計する。
-- **軸を分離する。** 勘定科目(用途)・取引先(支払先/相手方)・プロジェクト(目的)・世帯メンバー(誰の)は直交する別軸として扱う。4軸すべてを各ドメインの詳細で定義する([2章](#2-各ドメインの詳細)参照)。
+- **軸を分離する。** 勘定科目(用途)・取引先(支払先/相手方)・プロジェクト(目的)・世帯メンバー(誰の)は直交する別軸として扱う。この4軸を各ドメインの詳細で定義する([2章](#2-各ドメインの詳細)参照)。仕訳の絞り込みでは、これに精算バッチ(精算のまとまり)と出どころ(`source_type`)を加えた6軸を使う。軸の内側(同じ軸の項目指定とグループ指定)はOR、軸同士はANDで結合する。
+- **現行の姿は各ドメイン文書に書き、経緯は[意思決定ログ](./decisions.md)に残す。** 各ドメイン文書は現在の仕様を書く。なぜそうしたか、何を置き換えたかは意思決定ログに残し、ドメイン文書からリンクする。
 
 ### 1.2 用語
 
@@ -43,6 +44,8 @@ tags: [domain, entry-point]
 | 仕訳明細(JournalLine) | 仕訳を構成する各行。勘定科目・金額・借方/貸方(side)を持つ |
 | プロジェクト(Project) | 「何の目的で使ったお金か」を表す軸、`projects`の1レコード |
 | 世帯メンバー(HouseholdMember) | 「誰の口座/誰の取引か」を表す軸、`household_members`の1レコード。個人のほか、複数メンバーの集合(グループ)も同じ形式で登録できる([household-members.md 1.5](./domain/household-members.md#15-グループ複数メンバーの集合)参照) |
+| 精算バッチ(SettlementBatch) | 割勘の一時勘定(未収金(精算バッチ)・未払金(精算バッチ))の消込をまとめる単位、`settlement_batches`の1レコード。仕訳明細行の`settlement_batch_id`でタグ付けし、残高は同じタグの明細の集計で求める([settlement.md 1.7](./domain/settlement.md#17-タグ付き一時勘定の消込settlement_batch_idによるタグ付け)参照) |
+| 関連仕訳グループ(JournalEntryLinkGroup) | 複数の仕訳を任意にまとめて関連づける多対多のグループ、`journal_entry_link_groups`([journal.md 1.8](./domain/journal.md#18-関連仕訳グループjournal_entry_link_groups)参照) |
 | 取引先(Counterparty) | 「どこで/誰に対しての取引か」を表す軸、`counterparties`の1レコード。外部明細取込時の相手勘定科目のデフォルト推定にも用いる([counterparties.md 1章](./domain/counterparties.md#1-取引先)参照) |
 
 ---
@@ -64,3 +67,16 @@ tags: [domain, entry-point]
 | 定期仕訳 | 家賃・サブスク・給与・ローン返済等、繰り返し発生する仕訳(複合仕訳・回ごとに金額が変わる償却やローンを含む)のテンプレート化。 | [domain/recurring-transactions.md](./domain/recurring-transactions.md) |
 | 仕訳テンプレート | よく使う仕訳のひな形(繰り返し周期・提案を持たない)。仕訳画面の「テンプレート」タブで管理し、「テンプレートから起票」で新規仕訳フォームへ展開する。 | [domain/journal-templates.md](./domain/journal-templates.md) |
 | 外部明細取込 | 金融機関の明細(CSV等)の取込フロー。マッピング定義・照合機能。 | [domain/statement-import.md](./domain/statement-import.md) |
+
+### 2.1 ドメインをまたぐ機能の入口
+
+専用のドメイン文書を持たず、複数のドメインや全体の仕組みにまたがる機能は、次の文書に書かれている。
+
+| 機能 | 概要 | 詳細 |
+|---|---|---|
+| 初回セットアップ・用語集・はじめのチェックリスト | 初回起動時の保存先・世帯メンバー・科目の初期設定(`onboarding_completed`の印は`seed_markers`)、簿記用語の用語集(`/glossary`)。 | [architecture.md 6章](./architecture.md)の実装状況(計画Issue #177)、[accounts.md 3.1](./domain/accounts.md#31-フィールド定義) |
+| キーワードルール | 摘要のキーワードから取引先・相手科目を推定する`keyword_rules`。 | [counterparties.md 1.3](./domain/counterparties.md#13-外部明細取込との関係)、[schema/keyword_rules.sql](./schema/keyword_rules.sql) |
+| 操作履歴(ロールバック) | Workerのメモリに記録する逆操作SQLによる取消。永続化しない。 | [journal.md 1.5](./domain/journal.md#15-仕訳の編集削除)、[architecture.md 2章](./architecture.md) |
+| スキーマ変更(マイグレーション) | 本番運用後のスキーマ変更の手順(最新スキーマ+差分、凍結)。 | [guides/schema-migration.md](./guides/schema-migration.md) |
+| 分析(グラフ・推移) | FS・予算・グラフ分析を1画面に統合した分析画面(`src/domain/analysis`)。 | [financial-statements.md 2章](./domain/financial-statements.md#2-財務諸表fs)、[budgets.md](./domain/budgets.md) |
+| 勘定科目グループ | 科目の表示用グルーピング(`account_groups`)。 | [accounts.md 3.3](./domain/accounts.md#33-勘定科目グループマスタaccount_groups) |
