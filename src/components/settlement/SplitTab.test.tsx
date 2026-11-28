@@ -16,6 +16,7 @@ import type { Account } from '../../domain/account/Account'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import type { JournalEntry, JournalLine } from '../../domain/journal/JournalEntry'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
+import { formatDate } from '../../infrastructure/i18n/formatDate'
 import { chooseBatchFrom } from '../master/batchSelectTestHelpers'
 import { SplitTab } from './SplitTab'
 import { deriveSplitSettle, type SplitSettleData, type SplitSettleRepositories } from './splitSettleData'
@@ -173,6 +174,13 @@ const refundEntry = () =>
   entry(4, '2026-10-04', '返品', 'manual', [line(41, 4, 'debit', 2, 200), line(42, 4, 'credit', 1, 200)])
 
 describe('SplitTab', () => {
+  it('候補の表の日付は、仕訳一覧の明細行単位の表と同じ表記(2026/10/5 のようなロケールの表記)で出す', () => {
+    setup()
+    const dateCell = rowOf('ランチ').querySelector('td') as HTMLElement
+    expect(dateCell.textContent).toBe(formatDate(new Date(2026, 9, 5)))
+    expect(dateCell.textContent).not.toContain('-')
+  })
+
   it('これまでの割勘(履歴)は割勘タブには出さない(履歴タブに移した、計画Issue #268)', () => {
     const data = makeData([splitEntry()])
     data.memberships = [

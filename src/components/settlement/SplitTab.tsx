@@ -10,6 +10,7 @@ import {
   type SplittableLineEntry,
 } from '../../domain/expense-splitting/listSplittableLineEntries'
 import { formatCurrency } from '../../infrastructure/i18n/formatCurrency'
+import { formatDate } from '../../infrastructure/i18n/formatDate'
 import { JournalFilterPanel } from '../common/journal-filter/JournalFilterPanel'
 import { ListLoadMore } from '../common/list-paging/ListLoadMore'
 import { nextDisplayLimit, resolveShownCount } from '../common/list-paging/listPaging'
@@ -80,6 +81,12 @@ const MODE_LABEL: Record<ExpenseSplittingAllocationMode, string> = {
 }
 
 const SIDE_LABEL: Record<JournalLineSide, string> = { debit: '借方', credit: '貸方' }
+
+/** 'YYYY-MM-DD' の日付を表示用の Date にする(仕訳一覧の明細行単位の表と同じ表記にするため、formatDate に通す) */
+function toDate(entryDate: string): Date {
+  const [year, month, day] = entryDate.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
 
 /** 候補の表の列幅の保存先。仕訳一覧の明細行単位の表とは別に持つ(同じつまみ・同じ保存の仕組みを使う、計画Issue #271) */
 const COLUMN_WIDTHS_STORAGE_KEY = 'localbudget:split-line-table-column-widths'
@@ -605,7 +612,7 @@ export function SplitTab({
                 const memo = row.entry.memo ?? ''
                 return (
                   <tr key={`${row.entry.id}:${index}`} className={row.isFirst && index > 0 ? 'split-settle__entry-start' : undefined}>
-                    <td className="journal-line-table__cell">{row.isFirst ? row.entry.entryDate : ''}</td>
+                    <td className="journal-line-table__cell">{row.isFirst ? formatDate(toDate(row.entry.entryDate)) : ''}</td>
                     <td className="journal-line-table__cell">
                       {row.isFirst && (
                         <button type="button" className="journal-line-table__memo" onClick={() => setDetailEntryId(row.entry.id)}>
