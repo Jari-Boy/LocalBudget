@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { JournalLineSide } from '../../domain/journal/JournalEntry'
 import type { JournalEntryFilter } from '../../domain/journal/JournalEntryFilter'
 import { filterJournalEntries } from '../../domain/journal/filterJournalEntries'
@@ -33,6 +33,8 @@ import { buildPartnerCategories, parsePartnerValue, splitEvenly, toPartnerValue 
 import { buildSplitLineTableRows, selectableLineIdsBySide } from './splitLineTableModel'
 import { buildSplitPreviews } from './splitPreviewModel'
 import { StickyHeaderTable } from '../common/sticky/StickyHeaderTable'
+import { SortableHeaderCell } from '../common/table-sort/SortableHeaderCell'
+import { compareJournalSort, cycleJournalSort, type JournalSort, type JournalSortKey, type JournalSortLookup } from '../journal-entry/journalEntrySort'
 import { JournalLineTableResizeHandle } from '../journal-entry/JournalLineTableResizeHandle'
 import { useJournalLineTableColumns } from '../journal-entry/useJournalLineTableColumns'
 import type { ColumnKey } from '../journal-entry/journalLineTableColumns'
@@ -167,6 +169,11 @@ export function SplitTab({
   /** 「さらに表示」で増やした表示件数の上限。絞り込み条件を変えると先頭の1ページ分に戻す */
   const [displayLimit, setDisplayLimit] = useState<number>(SPLIT_LIST_PAGE_SIZE.candidate)
   const [detailEntryId, setDetailEntryId] = useState<number | null>(null)
+  /**
+   * 候補の表の、列見出しでの並び替え(計画Issue #302)。見出しを押した時点の、絞り込み後の全候補の値で並びを決め、
+   * 以後は動かさない(チェックは行のid基準なので並べても保たれる)。絞り込み条件を変えると解除する
+   */
+  const [lineSort, setLineSort] = useState<JournalSort | null>(null)
 
   const shown = useMemo(() => {
     const visibleIds = new Set(
@@ -179,8 +186,11 @@ export function SplitTab({
     )
     return candidates
       .filter((c) => visibleIds.has(c.entry.id))
-      .sort((a, b) => b.entry.entryDate.localeCompare(a.entry.entryDate) || b.entry.id - a.entry.id)
-  }, [candidates, data.accounts, filter, derived.filterContext])
+      .sort(
+        (a, b) =>
+          compareJournalSort(lineSort, a.entry.id, b.entry.id) || b.entry.entryDate.localeCompare(a.entry.entryDate) || b.entry.id - a.entry.id,
+      )
+  }, [candidates, data.accounts, filter, derived.filterContext, lineSort])
   /** 表に出す仕訳の件数。上限までだが、チェック済みの行(絞り込みで隠れたものは数えない)が範囲の外にあるときは、いちばん後ろの行が見えるまで広げる */
   const lastCheckedIndex = shown.reduce(
     (last, item, index) => (item.lines.some((l) => checkedIds.has(l.line.id)) ? index : last),
@@ -328,6 +338,7 @@ export function SplitTab({
 
   const changeFilter = (next: JournalEntryFilter) => {
     setDisplayLimit(SPLIT_LIST_PAGE_SIZE.candidate)
+    setLineSort(null)
     onFilterChange(next)
   }
 
@@ -408,6 +419,36 @@ export function SplitTab({
     if (line.settlementBatchId !== null) return data.batches.find((b) => b.id === line.settlementBatchId)?.name ?? ''
     return ''
   }
+
+  /** 並び替えの値に使う名前(表に出る名前と同じ) */
+  const sortLookup: JournalSortLookup = {
+    accountName: (id) => data.accounts.find((a) => a.id === id)?.name ?? '',
+    projectName: () => '',
+    counterpartyName: (id) => data.counterparties.find((c) => c.id === id)?.name ?? '',
+    batchName: (id) => data.batches.find((b) => b.id === id)?.name ?? '',
+    memberName: memberName,
+  }
+  /** 並び替えできる列の見出し(列幅のつまみつき)。押すと、絞り込み後の全候補の値で 昇順→降順→解除 を切り替える */
+  const sortHead = (key: JournalSortKey, label: string, resize: ReactNode, className?: string) => (
+    <SortableHeaderCell
+      key={key}
+      label={label}
+      className={className}
+      direction={lineSort?.key === key ? lineSort.direction : null}
+      onSort={() =>
+        setLineSort((prev) =>
+          cycleJournalSort(
+            prev,
+            key,
+            shown.map((s) => s.entry),
+            sortLookup,
+          ),
+        )
+      }
+    >
+      {resize}
+    </SortableHeaderCell>
+  )
 
   const partnerName = (row: ExpenseSplittingParticipantRow) => {
     if (row.targetId === null) return '未選択'
@@ -538,18 +579,9 @@ export function SplitTab({
                 </colgroup>
                 <thead>
                   <tr>
-                    <th>
-                      日付
-                      {resizeHandle('date', '日付')}
-                    </th>
-                    <th>
-                      摘要
-                      {resizeHandle('memo', '摘要')}
-                    </th>
-                    <th>
-                      コメント
-                      {resizeHandle('comment', 'コメント')}
-                    </th>
+                    {sortHead('date', '日付', resizeHandle('date', '日付'))}
+                    {sortHead('memo', '摘要', resizeHandle('memo', '摘要'))}
+                    {sortHead('comment', 'コメント', resizeHandle('comment', 'コメント'))}
                     {(['debit', 'credit'] as const).flatMap((side) => [
                       <th
                         key={`${side}-check`}
@@ -557,22 +589,10 @@ export function SplitTab({
                       >
                         {sideHeadCheck(side)}
                       </th>,
-                      <th key={`${side}-account`}>
-                        {`${SIDE_LABEL[side]}の科目`}
-                        {resizeHandle('account', `${SIDE_LABEL[side]}の科目`)}
-                      </th>,
-                      <th key={`${side}-partner`}>
-                        取引先・精算バッチ
-                        {resizeHandle('partner', `${SIDE_LABEL[side]}の取引先・精算バッチ`)}
-                      </th>,
-                      <th key={`${side}-member`}>
-                        世帯メンバー
-                        {resizeHandle('member', `${SIDE_LABEL[side]}の世帯メンバー`)}
-                      </th>,
-                      <th key={`${side}-amount`} className="journal-line-table__cell--amount">
-                        金額
-                        {resizeHandle('amount', `${SIDE_LABEL[side]}の金額`)}
-                      </th>,
+                      sortHead(`${side}-account`, `${SIDE_LABEL[side]}の科目`, resizeHandle('account', `${SIDE_LABEL[side]}の科目`)),
+                      sortHead(`${side}-partner`, '取引先・精算バッチ', resizeHandle('partner', `${SIDE_LABEL[side]}の取引先・精算バッチ`)),
+                      sortHead(`${side}-member`, '世帯メンバー', resizeHandle('member', `${SIDE_LABEL[side]}の世帯メンバー`)),
+                      sortHead(`${side}-amount`, '金額', resizeHandle('amount', `${SIDE_LABEL[side]}の金額`), 'journal-line-table__cell--amount'),
                     ])}
                   </tr>
                 </thead>

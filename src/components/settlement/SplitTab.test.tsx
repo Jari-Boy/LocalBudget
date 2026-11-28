@@ -898,3 +898,102 @@ describe('SplitTab: 列幅の調整(計画Issue #271)', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
   })
 })
+
+/**
+ * 割勘タブの「割勘する行」表の、列見出しでの並び替え(計画Issue #302)。日付・摘要・コメントと、借方・貸方の科目・取引先/精算バッチ・
+ * 世帯メンバー・金額の見出しに並び替えボタンがあり、押すごとに 昇順→降順→解除 で仕訳が並び替わること(借方・貸方の行は分断しない)、
+ * 並べても選んだ行のチェックと合計は変わらないこと(選択は行のid基準)、絞り込み条件を変えると解除されること、
+ * 割勘済みの行は並べても出ないことを検証する。並び替えの値の取り方は journalEntrySort のテストが持つ。
+ */
+describe('SplitTab: 列見出しでの並び替え(計画Issue #302)', () => {
+  const convenience = () =>
+    entry(5, '2026-10-01', 'コンビニ', 'manual', [line(51, 5, 'debit', 1, 300), line(52, 5, 'credit', 6, 300)])
+  const candidates = () => makeData([refundEntry(), convenience()])
+  /** 表の仕訳の並び(摘要) */
+  const memos = () => Array.from(document.querySelectorAll('.journal-line-table__memo')).map((b) => b.textContent)
+  const button = (name: string, index = 0) => screen.getAllByRole('button', { name: new RegExp(`^${name}$`) })[index]
+  const header = (name: string, index = 0) => screen.getAllByRole('columnheader', { name: new RegExp(`^${name}`) })[index]
+
+  it('初めは日付の新しい順で、「摘要」を押すごとに 昇順 → 降順 → 解除 になり、aria-sort が伝える', () => {
+    setup(candidates())
+    expect(memos()).toEqual(['ランチ', '返品', 'コンビニ'])
+    expect(header('摘要')).toHaveAttribute('aria-sort', 'none')
+
+    // 文字コード順: コンビニ < ランチ < 返品
+    fireEvent.click(button('摘要'))
+    expect(memos()).toEqual(['コンビニ', 'ランチ', '返品'])
+    expect(header('摘要')).toHaveAttribute('aria-sort', 'ascending')
+
+    fireEvent.click(button('摘要'))
+    expect(memos()).toEqual(['返品', 'ランチ', 'コンビニ'])
+    expect(header('摘要')).toHaveAttribute('aria-sort', 'descending')
+
+    fireEvent.click(button('摘要'))
+    expect(memos()).toEqual(['ランチ', '返品', 'コンビニ'])
+    expect(header('摘要')).toHaveAttribute('aria-sort', 'none')
+  })
+
+  it('日付・コメント・借方の科目・借方の金額・貸方の科目の見出しにも並び替えボタンがある', () => {
+    setup(candidates())
+    for (const name of ['日付', '摘要', 'コメント', '借方の科目', '貸方の科目']) expect(button(name)).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '金額' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: '取引先・精算バッチ' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: '世帯メンバー' })).toHaveLength(2)
+  })
+
+  it('借方の金額で並べると、仕訳ごとに並ぶ(借方の行が無い仕訳は最後)', () => {
+    setup(candidates())
+    fireEvent.click(screen.getAllByRole('button', { name: '金額' })[0])
+    // 借方の先頭行の金額(費用でない行も含む): 返品200 < コンビニ300 < ランチ1200
+    expect(memos()).toEqual(['返品', 'コンビニ', 'ランチ'])
+    expect(screen.getAllByRole('columnheader', { name: /^金額/ })[0]).toHaveAttribute('aria-sort', 'ascending')
+    expect(screen.getAllByRole('columnheader', { name: /^金額/ })[1]).toHaveAttribute('aria-sort', 'none')
+  })
+
+  it('並べても、選んだ行のチェックは保たれ、合計も変わらない', () => {
+    setup(candidates())
+    fireEvent.click(debitBox('ランチ'))
+    const totalBefore = screen.getAllByText(formatCurrency(1200, 'JPY')).length
+    fireEvent.click(button('摘要'))
+    expect(memos()).toEqual(['コンビニ', 'ランチ', '返品'])
+    expect(debitBox('ランチ')).toBeChecked()
+    expect(debitBox('コンビニ')).not.toBeChecked()
+    expect(screen.getAllByText(formatCurrency(1200, 'JPY')).length).toBe(totalBefore)
+  })
+
+  it('割勘済みの行は、並べても表に出ない', () => {
+    const data = makeData([splitEntry(), convenience()])
+    data.memberships = [
+      { id: 1, linkGroupId: 1, journalEntryId: 1, createdAt: '' },
+      { id: 2, linkGroupId: 1, journalEntryId: 3, createdAt: '' },
+    ] as never
+    setup(data)
+    fireEvent.click(button('摘要'))
+    expect(memos()).not.toContain('ランチの割勘')
+    expect(memos()).not.toContain('ランチ')
+  })
+
+  it('絞り込み条件を変えると、並び替えは解除される', () => {
+    function Harness() {
+      const [filter, setFilter] = useState<JournalEntryFilter>({})
+      const data = candidates()
+      return (
+        <SplitTab
+          data={data}
+          derived={deriveSplitSettle(data)}
+          repositories={{} as unknown as SplitSettleRepositories}
+          today="2026-10-31"
+          onChanged={async () => {}}
+          filter={filter}
+          onFilterChange={setFilter}
+          filterOpen
+        />
+      )
+    }
+    render(<Harness />)
+    fireEvent.click(button('摘要'))
+    expect(header('摘要')).toHaveAttribute('aria-sort', 'ascending')
+    fireEvent.change(screen.getByRole('searchbox', { name: '摘要で検索' }), { target: { value: 'ラ' } })
+    expect(header('摘要')).toHaveAttribute('aria-sort', 'none')
+  })
+})
