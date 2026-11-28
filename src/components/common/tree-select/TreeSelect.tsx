@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useFavorites, type FavoriteKind } from '../favorites/FavoritesContext'
-import { matchesSearch } from './normalizeForSearch'
+import { matchesSearch } from '../../../domain/search/normalizeForSearch'
 import {
   buildTreeSelectRows,
   GROUP_VALUE_PREFIX,

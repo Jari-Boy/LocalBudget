@@ -6,7 +6,7 @@
  * expandTreeValues で対象のid(グループは配下の項目)に展開して判定に使う。
  * 絞り込みは表示だけの条件で、行の状態・並び・グループ判定には触れない。DB・DOM非依存。
  */
-import { matchesSearch } from '../common/tree-select/normalizeForSearch'
+import { matchesSearch } from '../../domain/search/normalizeForSearch'
 import { GROUP_VALUE_PREFIX, type TreeSelectCategory, type TreeSelectNode } from '../common/tree-select/treeSelectModel'
 
 /** 「未設定」(その項目が決まっていない行)を表す選択欄の値と、展開後の印 */

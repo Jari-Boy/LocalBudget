@@ -177,6 +177,26 @@ describe('filterJournalEntries: 拡張した条件(計画Issue #145)', () => {
       expect(ids(filterJournalEntries(english, [], { memo: 'amazon' }))).toEqual([1])
     })
 
+    it('ひらがなの検索語でカタカナの摘要が見つかる(計画Issue #303)', () => {
+      expect(ids(filterJournalEntries(entries, [], { memo: 'すーぱー' }))).toEqual([1])
+    })
+
+    it('カタカナの検索語でひらがなの摘要が見つかる(計画Issue #303)', () => {
+      const hira = [buildEntry({ id: 1, entryDate: '2026-08-01', memo: 'こんびに' })]
+
+      expect(ids(filterJournalEntries(hira, [], { memo: 'コンビニ' }))).toEqual([1])
+    })
+
+    it('全角英数字・半角カナ・語中の空白の違いを吸収する(計画Issue #303)', () => {
+      const mixed = [
+        buildEntry({ id: 1, entryDate: '2026-08-01', memo: 'ＡＭＡＺＯＮ１２' }),
+        buildEntry({ id: 2, entryDate: '2026-08-02', memo: 'ｺﾝﾋﾞﾆ 新宿' }),
+      ]
+
+      expect(ids(filterJournalEntries(mixed, [], { memo: 'amazon12' }))).toEqual([1])
+      expect(ids(filterJournalEntries(mixed, [], { memo: 'こんびに新宿' }))).toEqual([2])
+    })
+
     it('摘要が無い仕訳は、摘要を指定すると除外される', () => {
       expect(ids(filterJournalEntries(entries, [], { memo: '食' }))).not.toContain(3)
     })

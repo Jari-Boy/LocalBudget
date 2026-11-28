@@ -1,4 +1,4 @@
-import { matchesSearch } from './normalizeForSearch'
+import { matchesSearch } from '../../../domain/search/normalizeForSearch'
 
 /**
  * 選択ツリーの表示行を組み立てる純粋関数(計画Issue #150)。
